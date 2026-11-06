@@ -2,7 +2,7 @@ import { isSupportedFile } from '@shared/fileKind'
 import { osVerbs } from '../lib/osVerbs'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
-import type { MenuAction, MenuSection } from '../sidebar/menuSections'
+import { focusPlaces, scopeGroup, type MenuAction, type MenuSection } from '../sidebar/menuSections'
 import type { ListState } from '../lists/useVaultListsHere'
 
 /** An open tab menu: where it stands, the tab it is about, and that tab's review state as it was when the menu opened. */
@@ -88,6 +88,13 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
   // The two list toggles (YAZ-3264 D2) stand where the sidebar's file menu has them: focus right after
   // "Show in sidebar", favorites first in the last group, each with its sidebar tab's glyph (D6). Each acts on the state the menu read (S14).
   const lists = menu.lists ?? null
+  /** The flyouts' last group (YAZ-4460 demo): "Workspace" and "Vault", each a ✓ toggle of that list, as in the sidebar's menu. */
+  const tabScopeRows = (kind: 'focus' | 'favorites') => {
+    const scopes = lists?.scopes?.[kind]
+    const set = lists?.setScope
+    if (scopes === undefined || set === undefined) return []
+    return [scopeGroup(kind, scopes, (scope, on) => set(kind, [menu.path], scope, on))]
+  }
   const sections: MenuSection[] = [
     leading,
     [
@@ -98,7 +105,18 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     ],
     [
       { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onShowInSidebar?.(menu.path) },
-      ...(lists === null || onToggleFocus === undefined ? [] : [{ id: 'focus', label: lists.focus ? 'Remove from focus' : 'Add to focus', icon: <EyeIcon />, onSelect: () => onToggleFocus([menu.path], lists.focus) }]),
+      ...(lists === null || onToggleFocus === undefined
+        ? []
+        : [
+            {
+              id: 'focus',
+              label: lists.focus ? 'Remove from focus' : 'Add to focus',
+              icon: <EyeIcon />,
+              onSelect: () => onToggleFocus([menu.path], lists.focus),
+              // YAZ-4460 F4: the focus folders, as the sidebar row's menu has them — in focus too, to move the page; a click still adds or removes.
+              ...(lists.intoFolder === undefined ? {} : { children: [...focusPlaces(lists.folders ?? [], lists.focus ? (lists.folderId ?? null) : undefined, (to) => lists.intoFolder?.([menu.path], to)), ...tabScopeRows('focus')] }),
+            },
+          ]),
       { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void navigator.clipboard.writeText(menu.path) },
     ],
     [
@@ -112,7 +130,18 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     // Grey on a tab that shows no file (a folder page, Settings).
     onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', disabled: !isSupportedFile(menu.path), onSelect: () => onRenameFile(menu.path) }],
     [
-      ...(lists === null || onToggleFavorite === undefined ? [] : [{ id: 'toggle-favorite', label: lists.favorite ? 'Remove from favorites' : 'Add to favorites', icon: <HeartIcon />, onSelect: () => onToggleFavorite([menu.path], lists.favorite) }]),
+      ...(lists === null || onToggleFavorite === undefined
+        ? []
+        : [
+            {
+              id: 'toggle-favorite',
+              label: lists.favorite ? 'Remove from favorites' : 'Add to favorites',
+              icon: <HeartIcon />,
+              onSelect: () => onToggleFavorite([menu.path], lists.favorite),
+              // YAZ-4460 demo: the Favorites tab's folders, then "Workspace" / "Vault", as the sidebar row's menu has them.
+              ...(lists.intoFavoriteFolder === undefined ? {} : { children: [...focusPlaces(lists.favoriteFolders ?? [], lists.favorite ? (lists.favoriteFolderId ?? null) : undefined, (to) => lists.intoFavoriteFolder?.([menu.path], to), 'favorites'), ...tabScopeRows('favorites')] }),
+            },
+          ]),
       { id: 'reveal', label: 'Reveal in Finder', onSelect: () => os.reveal(menu.path) },
       { id: 'open-vscode', label: 'Open in VS Code', onSelect: () => os.openVsCode(menu.path) },
     ],

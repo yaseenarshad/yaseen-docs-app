@@ -12,7 +12,7 @@
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardFoldArrowsRequest, BoardHeadResponse, BoardHoverLinksRequest, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaLibraryFile, MediaUsedRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PickPicturesFolderRequest, PickPicturesFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
 import type { FoundNote } from './noteBirth'
-import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
+import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, ListScope, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
@@ -591,14 +591,17 @@ export const CONTRACT = {
     /** Fired in every window of that root after any change, internal or external. Main sends `{ root, properties }`; the preload hands the listener `properties`. */
     onChange: push<PropertiesResponse>('properties:changed'),
   },
-  /** The Favorites list over `.yaseendocs/favorites.json` (YAZ-1766 6A): absolute paths in the user's order. */
+  /**
+   * The Favorites list over `.yaseendocs/favorites.json` (YAZ-1766 6A): absolute paths in the user's order. `scope`
+   * (YAZ-4450 D1): the vault's own list, or its workspace list in `.yaseendocs/favorites-workspace.json`.
+   */
   favorites: {
     /** Absolute paths in stored order; `[]` when the file is absent or malformed. Never creates anything. */
-    get: invoke<[root: string], string[]>('favorites:get', 1),
+    get: invoke<[root: string, scope: ListScope], string[]>('favorites:get', 2),
     /** Replace the list; every path must be inside `root` (→ `BAD_REQUEST`). Creates the dotfolder and file on first write. */
-    set: invoke<[root: string, paths: readonly string[]], void>('favorites:set', 2),
-    /** Fired in every window after any change to a vault's favorites.json, own or external; filter by `root`. */
-    onChanged: push<{ root: string }>('favorites:changed'),
+    set: invoke<[root: string, paths: readonly string[], scope: ListScope], void>('favorites:set', 3),
+    /** Fired in every window after any change to a vault's favorites file of either list, own or external; filter by `root`. */
+    onChanged: push<{ root: string; scope: ListScope }>('favorites:changed'),
   },
   /** The New… box's three place shortcuts over `.yaseendocs/new-places.json` (YAZ-4252 D3): absolute folders, null for an empty one. */
   newPlaces: {
@@ -620,15 +623,34 @@ export const CONTRACT = {
   },
   /**
    * A vault's focus list (YAZ-2702): ONE list for each vault, kept in the vault as one file for each
-   * Mac, `.yaseendocs/focus.<mac id>.json`; the newest file is the list. Absolute paths in the user's order.
+   * Mac, `.yaseendocs/focus.<mac id>.json`; the newest file is the list. Absolute paths in the user's order. `scope`
+   * (YAZ-4450 D1): the vault's own list, or its workspace list in `focus-workspace.<mac id>.json` by the same rules.
    */
   focus: {
     /** Absolute paths in stored order, from the newest valid file; `[]` when there is none. Never creates anything. */
-    get: invoke<[root: string], string[]>('focus:get', 1),
+    get: invoke<[root: string, scope: ListScope], string[]>('focus:get', 2),
     /** Replace the list; every path must be inside `root` (→ `BAD_REQUEST`). Writes this Mac's file only, and nothing when the list did not change. */
-    set: invoke<[root: string, paths: readonly string[]], void>('focus:set', 2),
+    set: invoke<[root: string, paths: readonly string[], scope: ListScope], void>('focus:set', 3),
     /** Fired in every window after any change to a focus file of a vault, an own write or another Mac's file from a sync; filter by `root`. */
-    onChanged: push<{ root: string }>('focus:changed'),
+    onChanged: push<{ root: string; scope: ListScope }>('focus:changed'),
+  },
+  /**
+   * A vault's focus folders (YAZ-4460 F1, F2): `.yaseendocs/focus-folders.<mac id>.json` (the vault alone) or
+   * `focus-folders-workspace.<mac id>.json` (in a workspace), one file for each Mac, the newest is the set.
+   */
+  focusFolders: {
+    /** The folders as stored, tombstones too; `[]` when there is no file. Never creates anything. */
+    get: invoke<[root: string, scope: ListScope], FocusFolder[]>('focusFolders:get', 2),
+    /** Replace the folders; this Mac's file only, and nothing when they did not change. */
+    set: invoke<[root: string, scope: ListScope, folders: readonly FocusFolder[]], void>('focusFolders:set', 3),
+    /** Fired in every window after any change to a focus folders file of a vault; filter by `root` and `scope`. */
+    onChanged: push<{ root: string; scope: ListScope }>('focusFolders:changed'),
+  },
+  /** A vault's favorite folders (YAZ-4460 demo), by the focus folders' rules: `.yaseendocs/favorite-folders[-workspace].<mac id>.json`. */
+  favoriteFolders: {
+    get: invoke<[root: string, scope: ListScope], FocusFolder[]>('favoriteFolders:get', 2),
+    set: invoke<[root: string, scope: ListScope, folders: readonly FocusFolder[]], void>('favoriteFolders:set', 3),
+    onChanged: push<{ root: string; scope: ListScope }>('favoriteFolders:changed'),
   },
   /** Per-vault GitHub sync, off by default (YAZ-1081); every call answers the same status the push carries. */
   github: {

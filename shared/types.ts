@@ -1237,6 +1237,12 @@ export const DEFAULT_SEARCH_SORT: TabSort = { by: 'best', reverse: false }
 /** Which tabs show the last updated date at the right end of each row (YAZ-3511 D10): one switch for each tab, on for Search only. */
 export type RowDates = Record<SortMenuTab, boolean>
 export const DEFAULT_ROW_DATES: RowDates = { files: false, focus: false, favorites: false, search: true }
+/** Which list of a vault the window shows (YAZ-4450 D1): its own, or its list for a window with two or more vaults. */
+export type ListScope = 'vault' | 'workspace'
+export const LIST_SCOPES: readonly ListScope[] = ['vault', 'workspace']
+/** "Separate list for workspaces" (YAZ-4450 D4): one switch for Focus, one for Favorites. On by default: a workspace shows its own lists. */
+export type WorkspaceLists = Record<'focus' | 'favorites', boolean>
+export const DEFAULT_WORKSPACE_LISTS: WorkspaceLists = { focus: true, favorites: true }
 
 /**
  * `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. The max is only a
@@ -1885,6 +1891,10 @@ export interface SettingsState {
   searchSort: TabSort
   /** Which tabs show each row's Last updated at the right end (YAZ-3511 D7, D10): one switch for each tab of the sort menu. */
   rowDates: RowDates
+  /** Each tab's "Separate list for workspaces" (YAZ-4450 D4): a window with two or more vaults shows each vault's workspace list. Travels with the settings. */
+  workspaceLists: WorkspaceLists
+  /** Recents in a window with two or more vaults splits each day by vault (YAZ-4450 D7). Travels with the settings. */
+  recentsByVault: boolean
   /** The tab row's order, its hidden tabs and its hidden buttons (YAZ-3273 D8): global to this Mac, never part of a vault. */
   sidebarTabs: SidebarTabsPrefs
   /** The selection toolbar's group order, button order and hidden buttons (YAZ-3806 T5). Travels with the settings. */
@@ -2390,6 +2400,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   searchSort: DEFAULT_SEARCH_SORT,
   rowDates: DEFAULT_ROW_DATES,
+  workspaceLists: DEFAULT_WORKSPACE_LISTS,
+  recentsByVault: true,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   selectionToolbar: DEFAULT_TOOLBAR,
   highlightCustomColors: [],
@@ -3362,6 +3374,43 @@ export interface FocusConfig {
   version: 1
   at: string
   focus: string[]
+}
+
+/** A vault keeps this many focus folders of a scope at most, tombstones included (YAZ-4460). */
+export const MAX_FOCUS_FOLDERS = 100
+/** The items of one focus or favorite folder at most (YAZ-4479): as many as a vault's top level of Focus holds. */
+export const MAX_FOLDER_ITEMS = 500
+
+/**
+ * One focus folder (YAZ-4460 F1, F2): a named group of focus items, in the user's order, that moves nothing on disk.
+ * Each item names its vault by the vault's FOLDER NAME and the path inside it, so a copy reads the same on each Mac.
+ * `at` (ms) is the folder's last change: of two copies the later wins. `deleted` keeps a deleted folder as a tombstone.
+ */
+export interface FocusFolder {
+  id: string
+  name: string
+  /** When it was made (ms): the order of the folders on the tab, after the dragged ones. */
+  created: number
+  at: number
+  items: { vault: string; path: string }[]
+  deleted?: true
+  /** Its place on the tab once a drag set it (YAZ-4470, 13): 0 first; a folder with none goes after, by `created`. */
+  pos?: number
+}
+
+export const isFocusFolder = (v: unknown): v is FocusFolder => {
+  if (typeof v !== 'object' || v === null) return false
+  const f = v as Record<string, unknown>
+  return typeof f.id === 'string' && f.id !== '' && typeof f.name === 'string' && typeof f.created === 'number' && typeof f.at === 'number' && (f.deleted === undefined || f.deleted === true) && (f.pos === undefined || (typeof f.pos === 'number' && Number.isFinite(f.pos))) && Array.isArray(f.items) && f.items.every((i) => typeof i === 'object' && i !== null && typeof (i as Record<string, unknown>).vault === 'string' && typeof (i as Record<string, unknown>).path === 'string')
+}
+
+/** One Mac's focus folders file of a vault (YAZ-4460 F1), by `FocusConfig`'s rule: the latest `at` is the set. */
+export interface FocusFoldersConfig {
+  version: 1
+  at: string
+  folders: FocusFolder[]
+  /** The vault's folder name when the file was written (YAZ-4470, 2): a read that finds another name heals the vault's items. */
+  self?: string
 }
 
 // ---------- Bridge payloads: `window.yaseenDocs` itself is `CONTRACT` in shared/ipc.ts (GRO-2153, YAZ-2200) ----------

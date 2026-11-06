@@ -1,4 +1,5 @@
 import { isStringArray } from '@shared/guards'
+import { LIST_SCOPES, type ListScope } from '@shared/types'
 import { BridgeFailure, requireAbsPath } from './fsUtils'
 
 /**
@@ -17,6 +18,12 @@ export function requireRequest(raw: unknown): Record<string, unknown> {
 export function requireStringArray(v: unknown, name: string): string[] {
   if (!isStringArray(v)) throw new BridgeFailure('BAD_REQUEST', `'${name}' must be a string array`)
   return v
+}
+
+/** Which list of a vault a door reads or writes (YAZ-4450 D1). */
+export function requireScope(v: unknown): ListScope {
+  if (!(LIST_SCOPES as readonly unknown[]).includes(v)) throw new BridgeFailure('BAD_REQUEST', "'scope' must be 'vault' or 'workspace'")
+  return v as ListScope
 }
 
 /** Absolute paths only — one bad element refuses the whole call, named `name[i]` (Settings › Storage's `skip`, YAZ-3039). */

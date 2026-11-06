@@ -3,6 +3,7 @@ import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -37,6 +38,7 @@ import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
+import { resolveItem } from './lists/focusFolders'
 import { useVaultListsHere } from './lists/useVaultListsHere'
 import { readPageView } from './lib/pageView'
 import { buildSetupPrompt } from './lib/syncAttention'
@@ -393,10 +395,17 @@ export function App() {
   }, [])
   // The one door every surface uses (D10 amended, YAZ-1674): text, an optional glyph kind (`'info'`
   // unless the caller names one) and an optional type (YAZ-3303 D2) — so `onNotice(text)` still works.
-  const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType) => showNotice({ text, icon, type }), [showNotice])
+  const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType, action?: Notice['action']) => showNotice({ text, icon, type, ...(action !== undefined && { action }) }), [showNotice])
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
-  const lists = useVaultListsHere(roots, notify)
+  const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
+  // The new tab page's Favorites column (YAZ-4450): the tab's own list, kept by value so the page cuts its columns only on a change.
+  // Its favorite folders too (YAZ-4470, 11): each folder's items that this window shows.
+  const favoriteFolders = lists.favoritesTab.folders
+  const startFavorites = useMemo(
+    () => ({ byRoot: lists.favoritesByRoot, paths: lists.favoritePaths, scope: lists.favoritesScope, folders: favoriteFolders.map((f) => ({ id: f.id, name: f.name, paths: f.items.flatMap((item) => { const at = resolveItem(item, roots); return 'path' in at ? [at.path] : [] }) })) }),
+    [lists.favoritesByRoot, lists.favoritePaths, lists.favoritesScope, favoriteFolders, roots],
+  )
   // The vaults' own icons (YAZ-3440 D8, D9; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
   // row's icon with the sidebar hidden. The sidebar's tree reads the same object.
   const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, settings.sidebarFolderIcons === 'named', notify)
@@ -451,6 +460,15 @@ export function App() {
     setAddAsk({ root, path, background })
     return true
   }, [])
+  /**
+   * A focus folder's ghost (YAZ-4460 F6): an item of a vault this window does not show, by that vault's folder name. A
+   * vault this Mac knows by that name gets the link pills' sheet, "Add vault to this window"; an unknown one a notice.
+   */
+  const addVaultFor = useCallback((vault: string, rel: string): void => {
+    const root = storage.listVaults().map((known) => known.path).find((path) => path.slice(path.lastIndexOf('/') + 1) === vault)
+    if (root === undefined) return notify(`This item is in the vault "${vault}", which this Mac does not know. Open that folder first.`, 'error')
+    setAddAsk({ root, path: `${root}/${rel}`, background: false })
+  }, [notify])
   /** The name of the window's vault that holds `path`, as the sidebar shows it, or null (YAZ-3609 D22): a pill into another vault says which. */
   const vaultOf = useCallback((path: string) => {
     const now = live.current
@@ -1515,6 +1533,19 @@ export function App() {
    * and only after the save. A refusal closes nothing. Past MAX_SESSION_TABS a notice says the first ones are saved.
    */
   const [sessionNameRequest, setSessionNameRequest] = useState<string | null>(null)
+  // The Recents tab's vault filter (YAZ-4450 D5, D6): for this window's session only — here, not in the sidebar, which unmounts
+  // when it is hidden — and never written: a new window starts on All vaults. null is All vaults. A vault that leaves drops it,
+  // and so does a window left with one vault, so a vault that joins later never brings back a filter nobody sees.
+  const [recentVault, setRecentVault] = useState<string | null>(null)
+  // "Hide all others" on a focus folder (YAZ-4460 F8): the one folder the Focus tab shows, by the Recents filter's rule —
+  // this window's session only, never written. A folder that goes ends it (the sidebar checks it is still there).
+  const [focusOnly, setFocusOnly] = useState<string | null>(null)
+  // The Recents Type filter (YAZ-4450 demo), Search's types: the window's session only, as the vault pick.
+  const [recentType, setRecentType] = useState<SearchType>('all')
+  const recentPick = recentVault !== null && roots.length > 1 && roots.includes(recentVault) ? recentVault : null
+  useEffect(() => {
+    if (recentVault !== null && recentPick === null) setRecentVault(null)
+  }, [recentVault, recentPick])
   const clearSessionNameRequest = useCallback(() => setSessionNameRequest(null), [])
   // One save at a time: a second press of "Save open tabs" (⏎ on the focused button) before main answers is no second session.
   const savingSession = useRef(false)
@@ -3201,6 +3232,13 @@ export function App() {
           vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
           lists={lists}
           icons={vaultIcons}
+          recentVault={recentPick}
+          onRecentVault={setRecentVault}
+          focusOnly={focusOnly}
+          onFocusOnly={setFocusOnly}
+          recentType={recentType}
+          onRecentType={setRecentType}
+          onAddVaultFor={addVaultFor}
           closedVaults={closedVaults}
           onSetVaultOpen={setVaultOpen}
           onAddVault={addVault}
@@ -3213,6 +3251,7 @@ export function App() {
           onOpenFile={filesDoors?.open ?? openPage}
           onKeepFile={filesDoors?.keep ?? openKeptPage}
           onOpenFileBackground={filesDoors?.background ?? openBackgroundCopy}
+          onOpenFileTab={filesDoors?.background ?? openBackground}
           onRevealInFiles={revealInFiles}
           previewPath={previewShown}
           onPreview={setPreviewPath}
@@ -3385,7 +3424,7 @@ export function App() {
           )}
           <div className="tabstack">
             {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden, until it sleeps (YAZ-3737 5A). Mounted only while it shows (R1). */}
-            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
+            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} favorites={startFavorites} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
             {mounted.map((id) => {
               const path = pathOf.get(id)
               if (path === undefined) return null

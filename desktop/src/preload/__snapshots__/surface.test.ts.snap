@@ -31,9 +31,12 @@ dialog.savePdf/1: invoke dialog:save-pdf ["a0"]; => "answer"; !> {"code":"NOT_FO
 drawing.libraryFolder/0: invoke drawing:library-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 drawing.load/1: invoke drawing:load ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 drawing.save/1: invoke drawing:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-favorites.get/1: invoke favorites:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+favoriteFolders.get/2: invoke favoriteFolders:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+favoriteFolders.onChanged/1: on favoriteFolders:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off favoriteFolders:changed
+favoriteFolders.set/3: invoke favoriteFolders:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+favorites.get/2: invoke favorites:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 favorites.onChanged/1: on favorites:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off favorites:changed
-favorites.set/2: invoke favorites:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+favorites.set/3: invoke favorites:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.clip/1: invoke fs:clip ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.clipState/0: invoke fs:clip-state []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.delete/1: invoke fs:delete ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -51,9 +54,12 @@ file.putBack/1: invoke fs:put-back ["a0"]; => "answer"; !> {"code":"NOT_FOUND","
 file.rename/1: invoke fs:rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.repairRename/1: invoke file:repair-rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.retitle/1: invoke fs:retitle ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-focus.get/1: invoke focus:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+focus.get/2: invoke focus:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 focus.onChanged/1: on focus:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off focus:changed
-focus.set/2: invoke focus:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+focus.set/3: invoke focus:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+focusFolders.get/2: invoke focusFolders:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+focusFolders.onChanged/1: on focusFolders:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off focusFolders:changed
+focusFolders.set/3: invoke focusFolders:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.history/2: invoke github:history ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.onStatus/1: on github:status-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off github:status-changed
 github.restore/3: invoke github:restore ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

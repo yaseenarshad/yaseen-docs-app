@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_FAVORITES, VAULT_CONFIG_DIR, type FavoritesConfig } from '@shared/types'
+import { LIST_SCOPES, MAX_FAVORITES, VAULT_CONFIG_DIR, type FavoritesConfig, type ListScope } from '@shared/types'
 import { isRecord, isStringArray } from '@shared/guards'
 import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
@@ -16,9 +16,16 @@ import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
  * Dead-entry cleanup (D14): a write drops entries whose path no longer exists on disk; the
  * renderer never prunes. Repair (D13): `renamePath` / `removePath` remap or drop entries in the
  * LONGEST open root that owns the path, writing only when something changed.
+ *
+ * Two lists for each vault since YAZ-4450 (D1): its own (`scope: 'vault'`), and its list for a
+ * window with two or more vaults (`'workspace'`, `favorites-workspace.json`), by the same rules and
+ * the same merge. No workspace file is an EMPTY workspace list (D3): never the vault's own list.
  */
 
 export const FAVORITES_FILE = 'favorites.json'
+/** The vault's Favorites in a workspace (YAZ-4450 D1): the shape, rules and merge of `favorites.json`. An old build never reads it. */
+export const FAVORITES_WORKSPACE_FILE = 'favorites-workspace.json'
+const fileOf = (scope: ListScope): string => (scope === 'vault' ? FAVORITES_FILE : FAVORITES_WORKSPACE_FILE)
 
 export const toRel = (root: string, abs: string): string => path.relative(root, abs).split(path.sep).join('/')
 export const toAbs = (root: string, rel: string): string => path.join(root, ...rel.split('/'))
@@ -31,11 +38,11 @@ const clean = (rels: readonly string[]): string[] => [...new Set(rels.filter(isS
 
 type Raw = { state: 'absent' } | { state: 'ok'; rels: string[] } | { state: 'bad'; file: string }
 
-/** The file as stored, cleaned; `bad` is malformed JSON or not `{ version: 1, favorites: string[] }`. */
-async function readRaw(root: string): Promise<Raw> {
-  const res = await readConfigDetailed(root, FAVORITES_FILE)
+/** The file of `scope` as stored, cleaned; `bad` is malformed JSON or not `{ version: 1, favorites: string[] }`. */
+async function readRaw(root: string, scope: ListScope = 'vault'): Promise<Raw> {
+  const res = await readConfigDetailed(root, fileOf(scope))
   if (res.state === 'absent') return res
-  const file = path.join(root, VAULT_CONFIG_DIR, FAVORITES_FILE)
+  const file = path.join(root, VAULT_CONFIG_DIR, fileOf(scope))
   const rels = res.state === 'malformed' ? null : relsOf(res.value)
   return rels === null ? { state: 'bad', file } : { state: 'ok', rels }
 }
@@ -68,27 +75,27 @@ export function mergeFavoritesFile(base: string | null, theirs: string, mine: st
 /** Writes and repairs on one root never interleave. */
 const chained = createRootChain()
 
-/** ABSOLUTE paths in stored order; absent or malformed → `[]`. Never creates anything. */
-export async function getFavorites(root: string): Promise<string[]> {
+/** ABSOLUTE paths of the list of `scope`, in stored order; absent or malformed → `[]`. Never creates anything. */
+export async function getFavorites(root: string, scope: ListScope = 'vault'): Promise<string[]> {
   const r = requireAbsPath(root, 'root')
-  const raw = await readRaw(r)
+  const raw = await readRaw(r, scope)
   return raw.state === 'ok' ? raw.rels.map((rel) => toAbs(r, rel)) : []
 }
 
-/** Replace the list (absolute paths inside `root`); creates the dotfolder and file on first write. */
-export async function setFavorites(root: string, absPaths: readonly string[]): Promise<void> {
+/** Replace the list of `scope` (absolute paths inside `root`); creates the dotfolder and file on first write. */
+export async function setFavorites(root: string, absPaths: readonly string[], scope: ListScope = 'vault'): Promise<void> {
   const r = requireAbsPath(root, 'root')
   for (const p of absPaths) {
     if (typeof p !== 'string' || !under(r, p)) throw new BridgeFailure('BAD_REQUEST', 'a favorite must be inside the vault', { path: String(p) })
   }
   await chained(r, async () => {
-    const raw = await readRaw(r)
-    if (raw.state === 'bad') throw new BridgeFailure('INVALID_CONFIG', 'favorites.json is malformed; fix or delete it', { path: raw.file })
+    const raw = await readRaw(r, scope)
+    if (raw.state === 'bad') throw new BridgeFailure('INVALID_CONFIG', `${fileOf(scope)} is malformed; fix or delete it`, { path: raw.file })
     const unique = [...new Set(absPaths)]
     const alive = await Promise.all(unique.map((p) => stat(p).then(() => true, () => false)))
     const kept = unique.filter((_, i) => alive[i]) // D14: a favorite whose file is gone leaves the list here
     const value: FavoritesConfig = { version: 1, favorites: clean(kept.map((p) => toRel(r, p))) }
-    await writeConfig(r, FAVORITES_FILE, value)
+    await writeConfig(r, fileOf(scope), value)
   })
 }
 
@@ -114,11 +121,12 @@ export async function addFavorites(root: string, rels: readonly string[]): Promi
   })
 }
 
-/** Fires after any change to favorites.json — an own write or an external edit. Returns an unsubscribe. */
-export function subscribeFavorites(root: string, listener: (change: { root: string }) => void): () => void {
+/** Fires after any change to favorites.json or favorites-workspace.json, with its list — an own write or an external edit. Returns an unsubscribe. */
+export function subscribeFavorites(root: string, listener: (change: { root: string; scope: ListScope }) => void): () => void {
   const r = requireAbsPath(root, 'root')
   return subscribeConfig(r, (c) => {
-    if (c.name === FAVORITES_FILE) listener({ root: r })
+    const scope = LIST_SCOPES.find((s) => c.name === fileOf(s))
+    if (scope !== undefined) listener({ root: r, scope })
   })
 }
 
@@ -162,17 +170,19 @@ export function deletedAt(deleted: string): (abs: string) => string | null {
   return (p) => (p === deleted || p.startsWith(prefix) ? null : p)
 }
 
-/** Read-remap-write of the owning root's file. Untouched when nothing changed. */
+/** Read-remap-write of the owning root's two files (YAZ-4450 D1). Each is untouched when nothing in it changed. */
 function repair(roots: readonly string[], p: string, map: (abs: string) => string | null): Promise<void> {
   const root = owningRoot(roots, p)
   if (root === null) return Promise.resolve()
   return chained(root, async () => {
-    const raw = await readRaw(root)
-    if (raw.state !== 'ok') return // absent or malformed: never write
-    const next = remap(root, raw.rels, map)
-    if (next === null) return
-    const value: FavoritesConfig = { version: 1, favorites: clean(next) }
-    await writeConfig(root, FAVORITES_FILE, value)
+    for (const scope of LIST_SCOPES) {
+      const raw = await readRaw(root, scope)
+      if (raw.state !== 'ok') continue // absent or malformed: never write
+      const next = remap(root, raw.rels, map)
+      if (next === null) continue
+      const value: FavoritesConfig = { version: 1, favorites: clean(next) }
+      await writeConfig(root, fileOf(scope), value)
+    }
   })
 }
 

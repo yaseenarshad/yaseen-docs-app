@@ -14,9 +14,9 @@ export const UNDO_NOTICE_MS = 6000
 /**
  * The toast's glyph (D10 amended, YAZ-1674): what KIND of thing just happened, drawn before the
  * text. `'info'` unless the caller names a kind; the file clipboard's confirmations name their
- * verb, its failures say `'error'`; a favorite added or removed says `'favorite'` (YAZ-1766 D6).
+ * verb, its failures say `'error'`; a favorite added or removed says `'favorite'` (YAZ-1766 D6); a focus item or focus folder, `'focus'` (YAZ-4460 demo).
  */
-export type NoticeKind = 'copy' | 'cut' | 'paste' | 'favorite' | 'error' | 'info'
+export type NoticeKind = 'copy' | 'cut' | 'paste' | 'favorite' | 'focus' | 'error' | 'info'
 
 /**
  * The toasts that Settings › Notifications can turn off (YAZ-3303 D6). The code that sends a toast

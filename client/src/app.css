@@ -2284,12 +2284,69 @@ body.drag-held iframe {
 .sidebar__focus-bar {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   padding: 4px 14px;
   font-size: 12px;
   color: var(--fg-muted);
 }
 
+/* The bar's buttons (YAZ-4460 F3): "+ Folder" and "Clear", side by side, never cut. */
+.sidebar__focus-actions {
+  display: flex;
+  flex: none;
+  gap: 10px;
+}
+
+/* A focus folder row (YAZ-4460 F3, F5): the stack glyph in the accent color, so it never reads as a real folder. */
+.focus-folder__icon {
+  flex: none;
+  margin-right: 6px;
+  color: var(--accent);
+}
+
+/* Where a dragged folder row lands (YAZ-4470, 13): a line at the top or the bottom of the folder row under it. */
+.focus-folder--before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.focus-folder--after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* A focus folder under a dragged item (F5): it lights as a drop folder does. */
+.focus-folder--drop {
+  border-radius: 4px;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.focus-folder__empty {
+  padding-left: 36px;
+}
+
+/* An item of a vault this window does not show (F6): grey and italic, its vault named on the right. */
+.tree__row--ghost {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+/* Its ghost glyph (YAZ-4460 demo) stands in the file icon's slot, in the row's color: it reads in light and dark alike. */
+.tree__ghost-icon {
+  flex: none;
+  width: 14px;
+  margin: 0 6px 0 3px;
+}
+
+/* One line at any sidebar width (YAZ-4462): the words cut with an ellipsis ("2 in focus · workspace li…"), the button stays whole. */
+.sidebar__focus-bar > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .sidebar__focus-clear {
+  flex: none;
   color: var(--accent);
 }
 
@@ -2785,6 +2842,27 @@ body.drag-held iframe {
 }
 
 /* A row with a glyph (YAZ-3273): the glyph, then the label, the hint still at the right end. */
+/* An armed two-click row (YAZ-4460 demo, as the tab board's Close): its words in red when the second click removes, in
+   the accent when it adds — colored words, not a fill, so they read over the row's hover in light and dark. */
+.ctx-menu .ctx-menu__item.ctx-menu__item--armed {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.ctx-menu .ctx-menu__item.ctx-menu__item--armed-add {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* A group's heading (YAZ-4460 demo: "Show it in"): small grey words, no hover, no button. */
+.ctx-menu__heading {
+  padding: 4px 12px 2px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  cursor: default;
+  user-select: none;
+}
+
 .ctx-menu__label {
   display: inline-flex;
   align-items: center;
@@ -2811,13 +2889,13 @@ body.drag-held iframe {
 }
 
 /* A menu with a glyph on any row (YAZ-3264 D6): a row without one starts its label after an empty
-   slot (10 px padding + 15 px glyph + 8 px gap), so every label lines up. The flyout is its own menu. */
+   slot (10 px padding + 15 px glyph + 8 px gap), so every label lines up — a parent with its own glyph too (YAZ-4460). The flyout is its own menu. */
 .ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__item:not(:has(> .ctx-menu__label)),
-.ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item,
+.ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item:not(:has(> .ctx-menu__label)),
 /* A bullet's menu (YAZ-3646 D8) draws its rows flat, a line between two groups: the same empty slot. Its
    parent rows too, the link menu's "Open in ▸" (YAZ-3747 demo). */
 .ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__item:not(:has(> .ctx-menu__label)),
-.ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__parent > .ctx-menu__item {
+.ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__parent > .ctx-menu__item:not(:has(> .ctx-menu__label)) {
   padding-left: 33px;
 }
 
@@ -3013,7 +3091,8 @@ body.drag-held iframe {
 /* Level lines (YAZ-3309 D1): one grey line below the chevron of each open folder, down past every
    row inside it. A row's indent is 8 + depth * 14 px and its chevron is 14 px wide, so
    depth * 14 + 1 is the centre of the chevron that holds this level. The `role` keeps it to the
-   tree's own levels: Recents and Sessions nest a `.tree` too, and get no line (D4). All grey (D2),
+   tree's own levels: Sessions nests a `.tree` too, and gets no line (D4). Recents and the focus and favorite folders draw
+   the tree's levels since YAZ-4473, so they get the lines. All grey (D2),
    and no target (D5): the click goes to the row below. `data-sidebar-lines` on `.app` says when it
    shows (D3). "On hover" reads two attributes that `levelLinesHover.ts` writes on `.sidebar__body`:
    no rule here puts `:hover`, `:focus…` or `:has()` on an ancestor of the rows (bug YAZ-3329). */
@@ -3135,7 +3214,10 @@ body.drag-held iframe {
 /* An open folder's row can stick (YAZ-3440 D1), so it stands over the thread (z 4 and up): its hover fill would hide
    its own elbow and coloured arrow. While it is not stuck the row draws a copy of both over its fill, laid exactly
    on the li's (`::before` the elbow from the row's top, `::after` the open arrow), with the li's rest and fade.
-   While it is stuck the same two pseudo-elements are its block (above), and the li's own pieces pass behind it. */
+   While it is stuck the same two pseudo-elements are its block (above), and the li's own pieces pass behind it.
+   The arrow's copy shows while the row is on the hover path (YAZ-4474), as the li's own arrow does: the row stands
+   over the li's arrow even with no fill, its grey chevron on top. The path is `data-on-path` (`threadPath.ts`), never
+   `li:hover`, a state on an ancestor of the rows (bug YAZ-3329). */
 @container not scroll-state(stuck: top) {
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::before {
     content: '';
@@ -3173,7 +3255,7 @@ body.drag-held iframe {
     pointer-events: none;
   }
 
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::after {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky[data-on-path]::after {
     opacity: 1;
     transition: opacity 140ms ease 80ms;
   }
@@ -3211,7 +3293,7 @@ body.drag-held iframe {
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::after,
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::after {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky[data-on-path]::after {
     transition: none;
   }
 
@@ -3584,6 +3666,11 @@ body.drag-held iframe {
 /* A day heading of the Recents tab (YAZ-3235 D5): a dim, firmer row above the day's files. */
 .recents__day {
   font-weight: 500;
+  color: var(--fg-muted);
+}
+
+/* A vault group under a day of the Recents tab (YAZ-4450 D7): dim like its day, one step in, and not bold, so the day stays the top heading. */
+.recents__vault {
   color: var(--fg-muted);
 }
 

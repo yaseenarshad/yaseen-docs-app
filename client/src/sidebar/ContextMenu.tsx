@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { MenuAction, MenuEntry, MenuParent, MenuStrip } from './menuSections'
 
 /** How long a hover waits before it swaps or closes an open flyout (YAZ-3085 D4): the pointer's time to cross a row. */
@@ -22,9 +22,14 @@ interface ContextMenuProps {
 }
 
 /** Groups of items (🔒 D7): one `role="group"` per NON-EMPTY section — the root and every flyout share it. */
+/** The pick of each radio set of an open menu (YAZ-4460 demo): a row's id, once a click made one. */
+const RadioPicks = createContext<{ picked: Readonly<Record<string, string>>; pick: (group: string, id: string) => void }>({ picked: {}, pick: () => undefined })
+
 function Groups<T extends MenuEntry>({ sections, render }: { sections: readonly (readonly T[])[]; render: (item: T) => ReactNode }) {
+  const [picked, setPicked] = useState<Readonly<Record<string, string>>>({})
+  const radios = useMemo(() => ({ picked, pick: (group: string, id: string) => setPicked((was) => ({ ...was, [group]: id })) }), [picked])
   return (
-    <>
+    <RadioPicks.Provider value={radios}>
       {sections
         .filter((section) => section.length > 0)
         .map((section) => (
@@ -32,12 +37,24 @@ function Groups<T extends MenuEntry>({ sections, render }: { sections: readonly 
             {section.map(render)}
           </div>
         ))}
-    </>
+    </RadioPicks.Provider>
   )
 }
 
 /** A leaf: `onSelect()` then `onClose()` — every item closes the WHOLE menu (🔒 D8). */
 function ActionButton({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
+  if (item.heading) return <MenuHeading label={item.label} tip={item.tip} />
+  return <ActionRow item={item} onClose={onClose} onMouseEnter={onMouseEnter} />
+}
+
+/** A group's heading (YAZ-4460 demo): small grey words over the rows, no button, so a key or a click passes it by. */
+const MenuHeading = ({ label, tip }: { label: string; tip?: string }) => (
+  <div className="ctx-menu__heading" role="presentation" title={tip}>
+    {label}
+  </div>
+)
+
+function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
   // The item's preview (YAZ-3091 D8): on while the pointer or the focus is on it, off when both leave or it unmounts.
   const previewing = useRef(false)
   const preview = useRef(item.onPreview)
@@ -50,33 +67,63 @@ function ActionButton({ item, onClose, onMouseEnter }: { item: MenuAction; onClo
   useEffect(() => () => {
     if (previewing.current) preview.current?.(false)
   }, [])
+  // A two-click row (`confirm`, YAZ-4460 demo): armed after the first click, until the pointer or the focus leaves.
+  const [armed, setArmed] = useState(false)
+  const label = armed && item.confirm !== undefined ? item.confirm : item.label
+  // A check row (`onToggle`, YAZ-4460 demo): its ✓ is held here, so it flips at the click while the menu stays open.
+  const [checked, setChecked] = useState(item.checked === true)
+  const radios = useContext(RadioPicks)
+  const radioOn = item.radio === undefined ? false : radios.picked[item.radio.group] !== undefined ? radios.picked[item.radio.group] === item.id : item.radio.on
+  const hint = item.onToggle !== undefined ? (checked ? '✓' : undefined) : item.radio !== undefined ? (radioOn ? '✓' : undefined) : item.hint
+  // A two-click check row (`twoClick`): armed, it says what the second click does — add (accent) or remove (red).
+  const shown = armed && item.twoClick === true ? (checked ? 'Click again to remove' : 'Click again to add') : label
+  const armedClass = !armed ? '' : item.twoClick === true && !checked ? ' ctx-menu__item--armed-add' : ' ctx-menu__item--armed'
   return (
     <button
       type="button"
       role="menuitem"
-      className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}`}
+      className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}${armedClass}`}
       disabled={item.disabled}
-      data-hint={item.hint}
+      data-hint={armed ? undefined : hint}
+      title={item.tip}
       onMouseEnter={() => {
         onMouseEnter?.()
         setPreview(true)
       }}
-      onMouseLeave={() => setPreview(false)}
+      onMouseLeave={() => {
+        setPreview(false)
+        setArmed(false)
+      }}
       onFocus={() => setPreview(true)}
-      onBlur={() => setPreview(false)}
+      onBlur={() => {
+        setPreview(false)
+        setArmed(false)
+      }}
       // An item whose handler already closes the menu (the create group's inline input) just
       // sets the same null twice — harmless.
       onClick={() => {
+        if (item.confirm !== undefined && !armed) return setArmed(true)
+        if (item.onToggle !== undefined) {
+          if (item.twoClick === true && !armed) return setArmed(true)
+          setArmed(false)
+          setChecked(!checked)
+          return item.onToggle(!checked)
+        }
+        if (item.radio !== undefined) {
+          // A radio row keeps the menu open, and its ✓ moves here.
+          if (!radioOn) item.onSelect()
+          return radios.pick(item.radio.group, item.id)
+        }
         item.onSelect()
         onClose()
       }}
     >
       {item.icon === undefined ? (
-        item.label
+        shown
       ) : (
         <span className="ctx-menu__label">
           {item.icon}
-          {item.label}
+          {shown}
         </span>
       )}
     </button>
@@ -189,7 +236,14 @@ function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { i
           else onOpen()
         }}
       >
-        {item.label}
+        {item.icon === undefined ? (
+          item.label
+        ) : (
+          <span className="ctx-menu__label">
+            {item.icon}
+            {item.label}
+          </span>
+        )}
       </button>
       {open && <Flyout anchor={buttonRef} sections={item.children} onClose={onClose} onCloseFlyout={onCloseFlyout} />}
     </div>
@@ -200,7 +254,7 @@ function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { i
 export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
   // A glyph on any row (YAZ-3264 D6) leaves an empty slot on the rows without one, so every label
   // starts at the same place, as in a Finder menu. A flyout is its own menu and keeps its own rule.
-  const glyphs = sections.some((section) => section.some((item) => item.kind !== 'strip' && item.children === undefined && item.icon !== undefined))
+  const glyphs = sections.some((section) => section.some((item) => item.kind !== 'strip' && item.icon !== undefined))
   // The ONE open flyout (D7 amended): at most one parent is expanded at a time.
   const [openId, setOpenId] = useState<string | null>(null)
   // Hover intent (YAZ-3085 D4): three parents stand in a column, so a pointer on its way into a

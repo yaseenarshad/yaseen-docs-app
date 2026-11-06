@@ -4,7 +4,7 @@ import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
 import { isBoard, isDiagram, isDrawing } from '@shared/fileKind'
 import { VAULT_CONFIG_DIR, type GithubSyncMerge } from '@shared/types'
-import { FAVORITES_FILE, mergeFavoritesFile } from '../favorites'
+import { FAVORITES_FILE, FAVORITES_WORKSPACE_FILE, mergeFavoritesFile } from '../favorites'
 import { ICONS_FILE, mergeIconsFile } from '@shared/vaultIcons'
 import { atomicWrite } from '../fs/fsUtils'
 import { mergeSharesFile, SHARES_FILE } from '../share/shareLinks'
@@ -23,7 +23,7 @@ import { git, zList } from './exec'
  *  - a DIAGRAM (`.drawio`) KEEPS BOTH (YAZ-1802 D8): the remote's version at the path, ours beside
  *    it as `<name> (conflict, YYYY-MM-DD).drawio`. So does a drawing that will not parse, or two
  *    unrelated new drawings at one path;
- *  - the vault's `shares.json`, `favorites.json` and `icons.json` (YAZ-3440 D8) merge per entry;
+ *  - the vault's `shares.json`, `favorites.json` (and `favorites-workspace.json`, YAZ-4450) and `icons.json` (YAZ-3440 D8) merge per entry;
  *  - a board one side deleted and the other edited keeps the edit.
  *
  * DOCS IS THE FIRST-CLASS APP (YAZ-3028 D12). Everything else — a NOTE above all, any other file,
@@ -61,6 +61,8 @@ export const BOARD_MERGE_RULES = ['*.[eE][xX][cC][aA][lL][iI][dD][rR][aA][wW] -m
 
 const SHARES_PATH = `${VAULT_CONFIG_DIR}/${SHARES_FILE}`
 const FAVORITES_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_FILE}`
+/** The workspace Favorites (YAZ-4450 D1) merge by the same rule. */
+const FAVORITES_WORKSPACE_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_WORKSPACE_FILE}`
 const ICONS_PATH = `${VAULT_CONFIG_DIR}/${ICONS_FILE}`
 
 /**
@@ -230,8 +232,8 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy } }
 }
 
-/** Whether sync may settle a conflict on `rel` at all (YAZ-3028 D4): a board, or one of the two per-entry list files. Never a note. */
-const settles = (rel: string): boolean => isBoard(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === ICONS_PATH
+/** Whether sync may settle a conflict on `rel` at all (YAZ-3028 D4): a board, or one of the per-entry list files. Never a note. */
+const settles = (rel: string): boolean => isBoard(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH
 
 /**
  * The merge a file knows how to do, or null for keep-both. `clashes: null` marks a merge nobody
@@ -242,7 +244,7 @@ function mergeText(rel: string, base: string | null, theirs: string, mine: strin
   if (isDiagram(rel)) return null // 🔒 YAZ-1802 D8: no diagram merge (yet) — keep both, never a guessed XML splice
   const quiet = (json: string | null) => (json === null ? null : { json, clashes: null })
   if (rel === SHARES_PATH) return quiet(mergeSharesFile(base, theirs, mine))
-  if (rel === FAVORITES_PATH) return quiet(mergeFavoritesFile(base, theirs, mine))
+  if (rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH) return quiet(mergeFavoritesFile(base, theirs, mine))
   if (rel === ICONS_PATH) return quiet(mergeIconsFile(base, theirs, mine))
   return null
 }
