@@ -3091,7 +3091,8 @@ body.drag-held iframe {
 /* Level lines (YAZ-3309 D1): one grey line below the chevron of each open folder, down past every
    row inside it. A row's indent is 8 + depth * 14 px and its chevron is 14 px wide, so
    depth * 14 + 1 is the centre of the chevron that holds this level. The `role` keeps it to the
-   tree's own levels: Recents and Sessions nest a `.tree` too, and get no line (D4). All grey (D2),
+   tree's own levels: Sessions nests a `.tree` too, and gets no line (D4). Recents and the focus and favorite folders draw
+   the tree's levels since YAZ-4473, so they get the lines. All grey (D2),
    and no target (D5): the click goes to the row below. `data-sidebar-lines` on `.app` says when it
    shows (D3). "On hover" reads two attributes that `levelLinesHover.ts` writes on `.sidebar__body`:
    no rule here puts `:hover`, `:focus…` or `:has()` on an ancestor of the rows (bug YAZ-3329). */
@@ -3214,8 +3215,9 @@ body.drag-held iframe {
    its own elbow and coloured arrow. While it is not stuck the row draws a copy of both over its fill, laid exactly
    on the li's (`::before` the elbow from the row's top, `::after` the open arrow), with the li's rest and fade.
    While it is stuck the same two pseudo-elements are its block (above), and the li's own pieces pass behind it.
-   The arrow's copy shows while the li is on the hover path (YAZ-4470, 12), as the li's own does: the row stands over
-   the li's arrow even with no fill, its grey chevron on top, so a row lower in the folder under the mouse left it grey. */
+   The arrow's copy shows while the row is on the hover path (YAZ-4474), as the li's own arrow does: the row stands
+   over the li's arrow even with no fill, its grey chevron on top. The path is `data-on-path` (`threadPath.ts`), never
+   `li:hover`, a state on an ancestor of the rows (bug YAZ-3329). */
 @container not scroll-state(stuck: top) {
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::before {
     content: '';
@@ -3253,7 +3255,7 @@ body.drag-held iframe {
     pointer-events: none;
   }
 
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]):hover > .tree__row--sticky::after {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky[data-on-path]::after {
     opacity: 1;
     transition: opacity 140ms ease 80ms;
   }
@@ -3291,7 +3293,7 @@ body.drag-held iframe {
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::after,
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]):hover > .tree__row--sticky::after {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky[data-on-path]::after {
     transition: none;
   }
 

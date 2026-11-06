@@ -236,7 +236,8 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
       save(next)
       if (items.length > 0 && !quiet)
         notice.current(
-          `Added ${items.length > 1 ? `${items.length} ` : ''}to ${next.name} (${kind === 'focus' ? 'focus' : 'favorite'} folder)`,
+          // A new folder has no name yet when the toast shows: its name field is still open.
+          `Added ${items.length > 1 ? `${items.length} ` : ''}to ${target === undefined ? `a new ${kind === 'focus' ? 'focus' : 'favorite'} folder` : `${next.name} (${kind === 'focus' ? 'focus' : 'favorite'} folder)`}`,
           kind === 'focus' ? 'focus' : 'favorite',
           'lists',
           undoAction(() => {

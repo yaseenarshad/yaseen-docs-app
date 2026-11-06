@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { VAULT_CONFIG_DIR, type FocusFolder } from '@shared/types'
@@ -49,5 +49,24 @@ describe('focus folders in the vault (YAZ-4460)', () => {
     expect(moved.at).toBeGreaterThan(1)
     await removePath([root], path.join(root, 'Work 2', 'p.md'))
     expect((await getFocusFolders(root, 'workspace'))[0].items).toEqual([{ vault: 'Work', path: 'Clients' }])
+  })
+
+  it('YAZ-4470 2: the file records its vault\'s folder name; a vault renamed on disk heals its items on the next read, with a new `at`, and writes the file', async () => {
+    const root = await makeVault('Notes')
+    await setFocusFolders(root, 'workspace', [folder()])
+    const file = path.join(root, VAULT_CONFIG_DIR, foldersFile(A, 'workspace'))
+    expect(JSON.parse(await readFile(file, 'utf8')).self).toBe('Notes')
+    // The folder is renamed in Finder: Notes → Notes 2. Its file still names the items by the old name.
+    const renamed = path.join(base, 'Notes 2')
+    await rename(root, renamed)
+    _actAs(renamed, path.join(base, `app-data-${A}`))
+    const [healed] = await getFocusFolders(renamed, 'workspace')
+    expect(healed.items).toEqual([{ vault: 'Notes 2', path: 'Projects/p.md' }, { vault: 'Work', path: 'Clients' }])
+    expect(healed.at).toBeGreaterThan(1)
+    const onDisk = JSON.parse(await readFile(path.join(renamed, VAULT_CONFIG_DIR, foldersFile(A, 'workspace')), 'utf8'))
+    expect(onDisk.self).toBe('Notes 2')
+    expect(onDisk.folders[0].items[0]).toEqual({ vault: 'Notes 2', path: 'Projects/p.md' })
+    // A file from before YAZ-4470 has no name: it is read as it is, and gets one at its next write.
+    expect(await getFocusFolders(renamed, 'vault')).toEqual([])
   })
 })

@@ -22,6 +22,7 @@ import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
 import { levelLinesHover } from './levelLinesHover'
+import { threadPath } from './threadPath'
 import { stickyFolders } from './stickyFolders'
 import { IconPicker } from './IconPicker'
 import type { VaultIconsHere } from './useVaultIcons'
@@ -794,6 +795,9 @@ export function Sidebar({
   // node and not through state, so no level of the tree renders again. Other choices write nothing.
   const sidebarLines = settings.sidebarLines
   useEffect(() => (sidebarLines === 'hover' && bodyRef.current !== null ? levelLinesHover(bodyRef.current) : undefined), [sidebarLines])
+  // The thread's path of open folder rows (YAZ-4474): an attribute on each, so a sticky row's arrow copy takes the colour.
+  const threading = settings.sidebarLineStyle === 'thread' && sidebarLines !== 'off'
+  useEffect(() => (threading && bodyRef.current !== null ? threadPath(bodyRef.current) : undefined), [threading])
   // The folders' shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot. A snapshot that moved
   // no shortcut keeps the Map it had, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
   // Each vault's folders by its OWN index (YAZ-2602 S30); the paths of two vaults never meet, so the

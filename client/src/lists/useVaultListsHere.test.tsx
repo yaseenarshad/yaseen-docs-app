@@ -24,6 +24,7 @@ function installBridge(focus: Record<string, string[]> = {}, favorites: Record<s
     focus: listBridge(focus),
     // The focus folders (YAZ-4460): none unless a test seeds them.
     focusFolders: { get: vi.fn(async (_root: string, _scope?: unknown): Promise<FocusFolder[]> => []), set: vi.fn(async (_root: string, _scope: unknown, _folders: readonly FocusFolder[]) => undefined), onChanged: vi.fn((_listener: (change: { root: string; scope: ListScope }) => void) => () => undefined) },
+    favoriteFolders: { get: vi.fn(async (_root: string, _scope?: unknown): Promise<FocusFolder[]> => []), set: vi.fn(async (_root: string, _scope: unknown, _folders: readonly FocusFolder[]) => undefined), onChanged: vi.fn((_listener: (change: { root: string; scope: ListScope }) => void) => () => undefined) },
     favorites: listBridge(favorites),
     state: {
       get: vi.fn(async (): Promise<AppState> => defaultAppState()),
@@ -36,6 +37,11 @@ function installBridge(focus: Record<string, string[]> = {}, favorites: Record<s
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge
 }
+
+/** The reads of one scope: the other scope is read too, for the menus' "Show it in" checks (YAZ-4471). */
+const readsOf = (get: { mock: { calls: unknown[][] } }, scope: ListScope) => get.mock.calls.filter((call) => call[1] === scope)
+/** The undo action every list toast carries since the demo (YAZ-4471). */
+const UNDO = expect.objectContaining({ label: 'Undo' })
 
 let root: Root | null = null
 let lists: VaultListsHere | null = null
@@ -70,16 +76,16 @@ describe('useVaultListsHere (YAZ-3264 D1)', () => {
     let answer: ((paths: string[]) => void) | undefined
     bridge.favorites.get.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
     const { rerender } = await mount(['/a'])
-    expect(bridge.focus.get.mock.calls).toEqual([['/a', 'vault']])
-    expect(bridge.favorites.get.mock.calls).toEqual([['/a', 'vault']])
+    expect(readsOf(bridge.focus.get, 'vault')).toEqual([['/a', 'vault']])
+    expect(readsOf(bridge.favorites.get, 'vault')).toEqual([['/a', 'vault']])
     // Focus is read, Favorites is not yet: no state, so the tab menu hides both items (S7).
     expect(here().stateOf('/a/f.md')).toBeNull()
     await act(async () => answer?.(['/a/g.md']))
-    expect(here().stateOf('/a/f.md')).toEqual({ focus: true, favorite: false })
-    expect(here().stateOf('/a/g.md')).toEqual({ focus: false, favorite: true })
+    expect(here().stateOf('/a/f.md')).toMatchObject({ focus: true, favorite: false })
+    expect(here().stateOf('/a/g.md')).toMatchObject({ focus: false, favorite: true })
     expect(here().stateOf('/elsewhere/n.md')).toBeNull()
     await rerender(['/a', '/b'])
-    expect(bridge.focus.get.mock.calls).toEqual([['/a', 'vault'], ['/b', 'vault']]) // the vault that stays is not read again
+    expect(readsOf(bridge.focus.get, 'vault')).toEqual([['/a', 'vault'], ['/b', 'vault']]) // the vault that stays is not read again
     expect(here().focusList).toEqual(['/a/f.md', '/b/x.md'])
     await rerender(['/a'])
     expect(here().focusList).toEqual(['/a/f.md'])
@@ -95,12 +101,12 @@ describe('useVaultListsHere (YAZ-3264 D1)', () => {
     act(() => void (acted = here().toggleFocus(['/b/x.md'], false)))
     expect(acted).toBe(true)
     expect(bridge.focus.set.mock.calls).toEqual([['/b', ['/b/x.md'], 'vault']])
-    expect(onNotice).toHaveBeenLastCalledWith('Added to focus', 'info', 'lists')
+    expect(onNotice).toHaveBeenLastCalledWith('Added to focus', 'focus', 'lists', UNDO)
     expect(storage.getFocusOrder()).toEqual(['/a/f.md', '/b/x.md'])
-    expect(here().stateOf('/b/x.md')).toEqual({ focus: true, favorite: false })
+    expect(here().stateOf('/b/x.md')).toMatchObject({ focus: true, favorite: false })
     act(() => void here().toggleFocus(['/b/x.md'], true))
     expect(bridge.focus.set.mock.calls[1]).toEqual(['/b', [], 'vault'])
-    expect(onNotice).toHaveBeenLastCalledWith('Removed from focus', 'info', 'lists')
+    expect(onNotice).toHaveBeenLastCalledWith('Removed from focus', 'focus', 'lists', UNDO)
     expect(onNotice).toHaveBeenCalledTimes(2)
   })
 
@@ -125,7 +131,7 @@ describe('useVaultListsHere (YAZ-3264 D1)', () => {
     expect(bridge.focus.set.mock.calls).toEqual([['/a', [], 'vault']])
     expect(onNotice).toHaveBeenLastCalledWith("Can't save focus: disk full", 'error')
     expect(here().focusList).toEqual(['/a/f.md'])
-    expect(here().stateOf('/a/f.md')).toEqual({ focus: true, favorite: false })
+    expect(here().stateOf('/a/f.md')).toMatchObject({ focus: true, favorite: false })
   })
 
   it('toggleFavorite writes the vault file and toasts with the favorite glyph', async () => {
@@ -134,10 +140,10 @@ describe('useVaultListsHere (YAZ-3264 D1)', () => {
     await mount(['/a'])
     act(() => here().toggleFavorite(['/a/h.md'], false))
     expect(bridge.favorites.set.mock.calls).toEqual([['/a', ['/a/g.md', '/a/h.md'], 'vault']])
-    expect(onNotice).toHaveBeenLastCalledWith('Added to favorites', 'favorite', 'lists')
+    expect(onNotice).toHaveBeenLastCalledWith('Added to favorites', 'favorite', 'lists', UNDO)
     act(() => here().toggleFavorite(['/a/g.md'], true))
     expect(bridge.favorites.set.mock.calls[1]).toEqual(['/a', ['/a/h.md'], 'vault'])
-    expect(onNotice).toHaveBeenLastCalledWith('Removed from favorites', 'favorite', 'lists')
+    expect(onNotice).toHaveBeenLastCalledWith('Removed from favorites', 'favorite', 'lists', UNDO)
   })
 
   it('a toggle before the vault\'s list is read writes nothing and toasts; toggleFocus answers false', async () => {
@@ -175,7 +181,7 @@ describe('the workspace list (YAZ-4450 D2, D4)', () => {
     expect(here().focusScope).toBe('workspace')
     expect(here().favoritesScope).toBe('workspace')
     expect(here().focusList).toEqual(['/a/ws.md']) // /b has no workspace file: an empty list (D3), never its own
-    expect(here().stateOf('/a/own.md')).toEqual({ focus: false, favorite: false })
+    expect(here().stateOf('/a/own.md')).toMatchObject({ focus: false, favorite: false })
     await act(async () => void here().toggleFocus(['/b/new.md'], false))
     expect(bridge.focus.set.mock.calls).toEqual([['/b', ['/b/new.md'], 'workspace']])
     // The vault the add went to, alone: its own list, without the workspace's add.
@@ -193,7 +199,7 @@ describe('the workspace list (YAZ-4450 D2, D4)', () => {
     expect(here().focusList).toEqual(['/a/own.md'])
     bridge.focus.get.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
     await rerender(['/a', '/b'], ON)
-    expect(bridge.focus.get.mock.calls.slice(-2)).toEqual([['/a', 'workspace'], ['/b', 'workspace']])
+    expect(readsOf(bridge.focus.get, 'workspace').slice(-2)).toEqual([['/a', 'workspace'], ['/b', 'workspace']])
     // /a's workspace list is on its way: nothing is held, so a toggle there writes nothing (no own list into the workspace file).
     expect(here().stateOf('/a/own.md')).toBeNull()
     expect(here().toggleFocus(['/a/x.md'], false)).toBe(false)
@@ -202,7 +208,7 @@ describe('the workspace list (YAZ-4450 D2, D4)', () => {
     expect(here().focusList).toEqual(['/a/ws.md'])
   })
 
-  it('a change of the other list is not read; an answer for the scope just left is dropped', async () => {
+  it('a change of the other list is read for the menus\' checks (YAZ-4471) and never shown; an answer for the scope just left is dropped', async () => {
     const bridge = scopedBridge({ '/a': ['/a/own.md'], '/b': [] }, { '/a': ['/a/ws.md'] })
     await storage.init()
     let late: ((paths: string[]) => void) | undefined
@@ -211,11 +217,105 @@ describe('the workspace list (YAZ-4450 D2, D4)', () => {
     await rerender(['/a', '/b'], OFF)
     await act(async () => late?.(['/a/stale.md'])) // the workspace answer lands after the flip
     expect(here().focusList).toEqual(['/a/own.md'])
-    const heard = bridge.focus.onChanged.mock.calls.at(-1)?.[0]
-    const reads = bridge.focus.get.mock.calls.length
-    await act(async () => heard?.({ root: '/a', scope: 'workspace' }))
-    expect(bridge.focus.get.mock.calls.length).toBe(reads)
-    await act(async () => heard?.({ root: '/a', scope: 'vault' }))
+    // Every listener the hook ever gave the bridge hears each change (the stub's unsubscribe keeps them all).
+    const heard = (change: { root: string; scope: ListScope }) => bridge.focus.onChanged.mock.calls.forEach(([listener]) => listener(change))
+    const reads = readsOf(bridge.focus.get, 'workspace').length
+    await act(async () => heard({ root: '/a', scope: 'workspace' }))
+    expect(readsOf(bridge.focus.get, 'workspace').length).toBeGreaterThan(reads)
+    expect(here().focusList).toEqual(['/a/own.md'])
+    await act(async () => heard({ root: '/a', scope: 'vault' }))
     expect(bridge.focus.get.mock.calls.at(-1)).toEqual(['/a', 'vault'])
+  })
+})
+
+describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-4470)', () => {
+  const ON: WorkspaceLists = { focus: true, favorites: true }
+  const roots = ['/x/Notes', '/x/Work']
+  const folder = (id: string, items: FocusFolder['items'], extra: Partial<FocusFolder> = {}): FocusFolder => ({ id, name: id, created: 1, at: 1, items, ...extra })
+  /** A bridge whose focus folders and lists live in maps by vault and scope, as main keeps them in each vault. */
+  function folderBridge(folders: FocusFolder[], scopes: ListScope[] = ['workspace', 'vault']) {
+    const bridge = installBridge()
+    const held = new Map<string, FocusFolder[]>(roots.flatMap((r) => scopes.map((s) => [`${r}|${s}`, folders] as const)))
+    bridge.focusFolders.get.mockImplementation(async (r: string, scope?: unknown) => held.get(`${r}|${String(scope)}`) ?? [])
+    bridge.focusFolders.set.mockImplementation(async (r: string, scope: unknown, next: readonly FocusFolder[]) => void held.set(`${r}|${String(scope)}`, [...next]))
+    const lists = new Map<string, string[]>()
+    bridge.focus.get.mockImplementation(async (r: string, scope: ListScope) => lists.get(`${r}|${scope}`) ?? [])
+    bridge.focus.set.mockImplementation(async (r: string, paths: readonly string[], scope: ListScope) => void lists.set(`${r}|${scope}`, [...paths]))
+    const live = (r: string, scope: ListScope) => (held.get(`${r}|${scope}`) ?? []).filter((f) => !f.deleted).map((f) => f.id)
+    return { bridge, live, list: (r: string, scope: ListScope) => lists.get(`${r}|${scope}`) ?? [] }
+  }
+  const undo = () => {
+    const action = onNotice.mock.lastCall?.[3] as { run: () => void } | undefined
+    if (action === undefined) throw new Error('no Undo on the last toast')
+    act(() => action.run())
+  }
+  const items: FocusFolder['items'] = [{ vault: 'Notes', path: 'a.md' }, { vault: 'Work', path: 'b.md' }]
+
+  it('YAZ-4472: a delete reaches both scopes, and "Keep items" puts the items at the top level of each; Undo brings the folder back', async () => {
+    const { live, list } = folderBridge([folder('f', items)])
+    await storage.init()
+    await mount(roots, ON)
+    expect(here().focusTab.folders.map((f) => f.id)).toEqual(['f'])
+    await act(async () => here().focusTab.remove('f'))
+    for (const r of roots) for (const scope of ['workspace', 'vault'] as const) expect(live(r, scope), `${r} ${scope}`).toEqual([])
+    for (const scope of ['workspace', 'vault'] as const) {
+      expect(list('/x/Notes', scope)).toEqual(['/x/Notes/a.md'])
+      expect(list('/x/Work', scope)).toEqual(['/x/Work/b.md'])
+    }
+    expect(onNotice).toHaveBeenLastCalledWith('Deleted f (focus folder)', 'focus', 'lists', UNDO)
+    undo()
+    await act(async () => undefined)
+    for (const r of roots) for (const scope of ['workspace', 'vault'] as const) expect(live(r, scope), `${r} ${scope}`).toEqual(['f'])
+    expect(list('/x/Notes', 'workspace')).toEqual([])
+    expect(list('/x/Work', 'vault')).toEqual([])
+  })
+
+  it('YAZ-4471 M18: "Remove items too" deletes the folder and puts nothing at the top level', async () => {
+    const { live, list } = folderBridge([folder('f', items)])
+    await storage.init()
+    await mount(roots, ON)
+    await act(async () => here().focusTab.remove('f', false))
+    expect(live('/x/Notes', 'workspace')).toEqual([])
+    expect(live('/x/Work', 'vault')).toEqual([])
+    expect(list('/x/Notes', 'workspace')).toEqual([])
+    expect(list('/x/Work', 'vault')).toEqual([])
+  })
+
+  it('YAZ-4470 13: a drag of the folders writes each one whose place changed, with its `pos`; the tab shows the new order', async () => {
+    const { bridge } = folderBridge([folder('a', [], { created: 1 }), folder('b', [], { created: 2 })], ['workspace'])
+    await storage.init()
+    await mount(roots, ON)
+    expect(here().focusTab.folders.map((f) => f.id)).toEqual(['a', 'b'])
+    await act(async () => here().focusTab.reorderFolders(['b', 'a']))
+    expect(here().focusTab.folders.map((f) => [f.id, f.pos])).toEqual([['b', 0], ['a', 1]])
+    const last = bridge.focusFolders.set.mock.calls.filter((call) => call[0] === '/x/Notes' && call[1] === 'workspace').at(-1)?.[2]
+    expect(last?.map((f) => [f.id, f.pos])).toEqual([['a', 1], ['b', 0]])
+  })
+
+  it('YAZ-4470 7: Clear empties the top level of each vault and toasts with Undo, which brings each list back', async () => {
+    const { bridge, list } = folderBridge([])
+    bridge.focus.get.mockImplementation(async (r: string, scope: ListScope) => (scope === 'workspace' ? [`${r}/top.md`] : []))
+    await storage.init()
+    await mount(roots, ON)
+    expect(here().focusList).toEqual(['/x/Notes/top.md', '/x/Work/top.md'])
+    await act(async () => here().clearFocus())
+    expect(list('/x/Notes', 'workspace')).toEqual([])
+    expect(onNotice).toHaveBeenLastCalledWith('Cleared the top level of Focus', 'focus', 'lists', UNDO)
+    undo()
+    expect(list('/x/Notes', 'workspace')).toEqual(['/x/Notes/top.md'])
+    expect(list('/x/Work', 'workspace')).toEqual(['/x/Work/top.md'])
+  })
+
+  it('YAZ-4471 M12, YAZ-4470 8: a folder leaves the list on show for the other, with a toast that says where, and Undo', async () => {
+    const { live } = folderBridge([folder('f', items)])
+    await storage.init()
+    await mount(roots, ON)
+    await act(async () => here().focusTab.setFolderScope('f', 'workspace', false))
+    expect(live('/x/Notes', 'workspace')).toEqual([])
+    expect(live('/x/Notes', 'vault')).toEqual(['f'])
+    expect(onNotice).toHaveBeenLastCalledWith('f moved to the vault list', 'focus', 'lists', UNDO)
+    undo()
+    await act(async () => undefined)
+    expect(live('/x/Notes', 'workspace')).toEqual(['f'])
   })
 })

@@ -69,7 +69,7 @@ interface FocusFolderListProps {
 
 /**
  * The focus folders on the Focus tab (YAZ-4460 F3, F5, F6, F7), above the top-level items: a fold row with the stack
- * glyph, the name and its count — two clicks on the name rename it, a right-click offers Rename and Delete — then,
+ * glyph and the name, no count (YAZ-4470, 10) — two clicks on the name rename it, a right-click opens its menu — then,
  * unfolded, its items: the ones of a vault of the window as the tab's own rows, the others as grey ghosts that ask
  * to add their vault. A drop on a folder row puts the dragged item in it (`data-focus-folder`, read by the drag).
  * The folds last the session (YAZ-4470, 9): a tab switch keeps them, a relaunch opens every folder again.

@@ -137,16 +137,24 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     expect(rows().map((r) => r.title)).toEqual(['/v/a.md', '/v/b.md'])
   })
 
-  it('YAZ-4450 D7, D8: with groups, each day holds one fold row for each vault, in the window\'s order, with its count; a group folds on its own, and the expand-all button folds the groups too', async () => {
+  it('YAZ-4450 D7, D8: with groups, each day holds one fold row for each vault, in the window\'s order, with no count (YAZ-4470, 10); a group folds on its own, and the expand-all button folds the groups too', async () => {
     const names: Record<string, string> = { '/v': 'Notes', '/w': 'Work' }
     let fold: Parameters<NonNullable<Parameters<typeof RecentList>[0]['onFold']>>[0] = null
     await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 9), '/v/b.md': at(2026, 10, 22, 9) }, '/w': { '/w/d.md': at(2026, 10, 23, 14) } }), { groups: { nameOf: (r) => names[r] ?? r }, onFold: (f) => (fold = f) })
     const files = () => [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Recents"] .tree__row[title]')]
     const groups = () => [...el.querySelectorAll<HTMLButtonElement>('.recents__vault')].map((g) => text(g).join(' '))
     expect(dayLabels()).toEqual(['Today', 'Yesterday'])
-    expect(groups()).toEqual([' Notes 1', ' Work 1', ' Notes 1']) // the window's order, not the newest save (D8)
+    expect(groups()).toEqual([' Notes', ' Work', ' Notes']) // the window's order, not the newest save (D8)
     expect(files().map((r) => r.title)).toEqual(['/v/a.md', '/w/d.md', '/v/b.md'])
-    expect(files()[0].style.paddingLeft).toBe('46px')
+    // The tree's levels (YAZ-4473): a day is a level-0 folder, a vault group level 1, a file under it level 2 — the
+    // indents of Files (8 + level * 14, a file 14 more), so the level lines, the thread and sticky rows reach them.
+    expect(files()[0].style.paddingLeft).toBe('50px')
+    expect(el.querySelector<HTMLButtonElement>('.recents__vault')?.style.paddingLeft).toBe('22px')
+    const day = el.querySelector('.recents__day')?.closest('li')
+    expect(day?.getAttribute('role')).toBe('treeitem')
+    expect(day?.getAttribute('aria-expanded')).toBe('true')
+    expect(el.querySelector('.recents__day')?.classList.contains('tree__row--sticky')).toBe(true)
+    expect([...el.querySelectorAll<HTMLElement>('[aria-label="Recents"] ul[role="group"]')].map((ul) => ul.style.getPropertyValue('--tree-depth'))).toEqual(['1', '2', '2', '1', '2'])
     fire(el.querySelectorAll('.recents__vault')[1], 'click')
     expect(files().map((r) => r.title)).toEqual(['/v/a.md', '/v/b.md']) // Today's Work folded, Yesterday's Notes still open
     act(() => fold?.setAll(false))

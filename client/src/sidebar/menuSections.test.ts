@@ -6,7 +6,7 @@
  * keeps only the component's mechanics.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildMenuSections, type MenuAction, type MenuHandlers, type MenuParent, type MenuSection, type MenuSectionTargets } from './menuSections'
+import { buildMenuSections, type MenuAction, type MenuHandlers, type MenuParent, type MenuSection, type MenuSectionTargets, scopeGroup, SCOPE_TIPS } from './menuSections'
 
 const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => ({
   x: 0,
@@ -173,10 +173,10 @@ describe('the six groups (🔒 D7, amended; YAZ-3085 D3)', () => {
   })
 
   it('a Markdown FILE row fills all six, in the pinned order — the focus toggle is the Open group\'s one item there (YAZ-2619 R6)', () => {
-    // No plural open and no folder to open, so the focus toggle stands alone above the clipboard
-    // group; the OS verbs live in the "Open in ▸" flyout, a group of its own before Delete.
+    // No plural open and no folder to open: "Open in new window" (out of the flyout since YAZ-4470), then the focus
+    // toggle, above the clipboard group; the other OS verbs live in the "Open in ▸" flyout, a group of its own before Delete.
     expect(groupsOf(build(FILE_ROW))).toEqual([
-      ['Add to focus'],
+      ['Open in new window', 'Add to focus'],
       ['Cut', 'Copy', 'Paste', 'Copy path'],
       ['New note', 'New drawing', 'New folder'],
       ['Rename'],
@@ -308,8 +308,8 @@ describe('create parents (YAZ-3085 D1, D3)', () => {
  * (a second section). No child → no parent. The parent has no select of its own.
  */
 describe('"Open in ▸" (D7 amended)', () => {
-  it('a Markdown FILE row: the three open verbs, then Reveal in its own section', () => {
-    expect(listOf(build(FILE_ROW), 'Open in')).toEqual([['New window', 'VS Code', 'Default app'], ['Reveal in Finder']])
+  it('a Markdown FILE row: the two open verbs, then Reveal in its own section; New window left for the open group (YAZ-4470)', () => {
+    expect(listOf(build(FILE_ROW), 'Open in')).toEqual([['VS Code', 'Default app'], ['Reveal in Finder']])
   })
 
   it('the parent is a parent: no onSelect, and it stands ALONE in its own group between the this-row items and Delete', () => {
@@ -317,7 +317,7 @@ describe('"Open in ▸" (D7 amended)', () => {
     // Unlike the create parents (YAZ-3085 D1), "Open in ▸" has no default: a click only opens it.
     expect(parentOf(sections, 'Open in')).toBeDefined()
     expect(itemOf(sections, 'Open in')?.onSelect).toBeUndefined()
-    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Add to focus'])
+    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Open in new window', 'Add to focus'])
     expect(sections[3].map((i) => i.label)).toEqual(['Rename'])
     expect(sections[4].map((i) => i.label)).toEqual(['Open in'])
   })
@@ -326,12 +326,20 @@ describe('"Open in ▸" (D7 amended)', () => {
     expect(itemOf(build(), 'Open in')).toBeUndefined()
   })
 
-  it('"New window" is FILE rows only (D2, GRO-2168): blank space gets VS Code / Default app / Reveal on the root', () => {
+  it('"Open in new window" is FILE rows only (D2, GRO-2168), at the top since YAZ-4470: blank space gets VS Code / Default app / Reveal on the root', () => {
     const onOpenNewWindow = vi.fn()
     expect(listOf(build(BLANK), 'Open in')).toEqual([['VS Code', 'Default app'], ['Reveal in Finder']])
-    expect(subItemOf(build(BLANK), 'New window')).toBeUndefined()
-    subItemOf(build({ newWindowPath: '/v/a.md' }, { onOpenNewWindow }), 'New window')?.onSelect()
+    expect(itemOf(build(BLANK), 'Open in new window')).toBeUndefined()
+    expect(subItemOf(build({ newWindowPath: '/v/a.md' }), 'New window')).toBeUndefined()
+    select(build({ newWindowPath: '/v/a.md' }, { onOpenNewWindow }), 'Open in new window')
     expect(onOpenNewWindow).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+  })
+
+  it('one row says "Open in new tab" (YAZ-4470); two or more say "Open N in new tabs"', () => {
+    const onOpenInNewTabs = vi.fn()
+    select(build({ openTabPaths: ['/v/a.md'] }, { onOpenInNewTabs }), 'Open in new tab')
+    expect(onOpenInNewTabs).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+    expect(itemOf(build({ openTabPaths: ['/v/a.md', '/v/b'] }), 'Open 2 in new tabs')).toBeDefined()
   })
 
   it('each of VS Code / Default app / Reveal is a path or nothing, Default app directly after VS Code, and hands the caller its OWN path', () => {
@@ -382,7 +390,7 @@ describe('"Show in sidebar" item (YAZ-2638 D1, D3)', () => {
 
   it('S26, S27, S34: with a target it is the FIRST item of the menu — before "Add to focus" on a file row, before "Open folder page" on a folder row — and the rest of the menu is as it was', () => {
     const file = build({ ...FILE_ROW, showPath: '/v/Note.md' })
-    expect(file[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Add to focus'])
+    expect(file[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Open in new window', 'Add to focus'])
     expect(labelsOf(file)).toEqual(['Show in sidebar', ...labelsOf(build(FILE_ROW))])
     const folder = build({ openPath: '/v/Projects', focusPaths: ['/v/Projects'], showPath: '/v/Projects' })
     expect(folder[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Open folder page', 'Add to focus'])
@@ -425,7 +433,7 @@ describe('Focus item (YAZ-2619 D3)', () => {
 
   it('R6: closes the Open group — after the plural open, before the clipboard group', () => {
     const sections = build({ ...FILE_ROW, focusPaths: ['/v/a.md', '/v/b.md'], openTabPaths: ['/v/a.md', '/v/b.md'] })
-    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Add 2 to focus'])
+    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Open in new window', 'Add 2 to focus'])
     expect(sections[1][0]?.label).toBe('Cut')
   })
 })
@@ -688,7 +696,7 @@ describe('a shortcut row (YAZ-2290 E5)', () => {
 
   it('withholds Cut, Copy and Paste — even with something clipped — and keeps the real-place items, the focus toggle among them (YAZ-2619 R8)', () => {
     expect(groupsOf(build({ ...SHORTCUT_ROW, clip: { count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] } }))).toEqual([
-      ['Add to focus'],
+      ['Open in new window', 'Add to focus'],
       ['Copy path'],
       ['New note', 'New drawing', 'New folder'],
       ['Open in'],
@@ -892,5 +900,35 @@ describe('"Change icon ▸" (YAZ-3440 D8)', () => {
     expect(h.onResetIcon).toHaveBeenCalledWith(['/v/mixed 24.gif'])
     expect(h.onResetIconRule).toHaveBeenCalledWith(GIF)
     expect(flyout({ iconPaths: ['/v/a.gif'], rowKind: 'file', iconRule: GIF, iconRuleSet: true }).labels).toEqual([['This file…', 'All .gif files…'], ['Reset all .gif files']])
+  })
+})
+
+/**
+ * "Show it in · Workspace · Vault" (YAZ-4471 M7, M8, M16; YAZ-4470 16): a heading and two check rows that ask with two
+ * clicks — except the check of the list on screen, which takes the rows off it, so it asks with a box.
+ */
+describe('scopeGroup', () => {
+  it('a heading, then Workspace and Vault as two-click checks, each with its tooltip', () => {
+    const set = vi.fn()
+    const [heading, workspace, vault] = scopeGroup('focus', { workspace: true, vault: false }, set)
+    expect([heading.label, heading.heading, heading.tip]).toEqual(['Show it in', true, SCOPE_TIPS.heading])
+    expect([workspace.label, workspace.checked, workspace.twoClick, workspace.tip]).toEqual(['Workspace', true, true, SCOPE_TIPS.workspace])
+    expect([vault.label, vault.checked, vault.twoClick, vault.tip]).toEqual(['Vault', false, true, SCOPE_TIPS.vault])
+    vault.onToggle?.(true)
+    expect(set).toHaveBeenCalledExactlyOnceWith('vault', true)
+  })
+
+  it('the check of the list on screen, while on, asks with a box: no two clicks, no toggle, its select opens the box', () => {
+    const ask = vi.fn()
+    const set = vi.fn()
+    const [, workspace, vault] = scopeGroup('favorites', { workspace: true, vault: true }, set, { scope: 'workspace', ask })
+    expect([workspace.twoClick, workspace.onToggle, workspace.hint]).toEqual([undefined, undefined, '✓'])
+    workspace.onSelect()
+    expect(ask).toHaveBeenCalledOnce()
+    // The other list's check stays a two-click toggle: its rows stay on screen.
+    expect(vault.twoClick).toBe(true)
+    // Off already, the list on screen's check turns it on with two clicks.
+    expect(scopeGroup('favorites', { workspace: false, vault: true }, set, { scope: 'workspace', ask })[1].twoClick).toBe(true)
+    expect(set).not.toHaveBeenCalled()
   })
 })
