@@ -4,6 +4,7 @@
  * the table is wired. A refactor that drops a `register*` call or a preload line fails here instead
  * of as a renderer that waits forever. `preload/surface.test.ts` pins what each exposure does.
  */
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -14,6 +15,8 @@ import { registerIpc } from './main/ipc'
 import { registerClipboardIpc } from './main/ipc/clipboard'
 import { registerUpdateIpc } from './main/ipc/update'
 import { registerMemoryIpc } from './main/ipc/memory'
+import { LIBRARY_MARKER_FILE } from './main/library/copyLibrary'
+import { MEDIA_CACHE_DIR } from './main/media/cachePolicy'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
 
@@ -41,7 +44,12 @@ const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel),
 const SENDS = [SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe, SPECIAL.appFlushed, SPECIAL.memoryHeapReply, SPECIAL.windowViewsReply, SPECIAL.windowTabsReply].sort()
 
 const dir = await mkdtemp(path.join(tmpdir(), 'yd-contract-'))
-afterAll(() => rm(dir, { recursive: true, force: true }))
+// `registerIpc` starts two writes into `userData` it does not wait for: the library's launch marker (YAZ-4364) and the
+// media cache's folder (YAZ-1818). On a slow CI runner the folder was removed under the marker's write: ENOTEMPTY.
+afterAll(async () => {
+  await vi.waitFor(() => expect([LIBRARY_MARKER_FILE, MEDIA_CACHE_DIR].filter((name) => !existsSync(path.join(dir, name)))).toEqual([]), { timeout: 10_000 })
+  await rm(dir, { recursive: true, force: true })
+})
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
   // The four registrations `main/index.ts` makes on `ready`.
