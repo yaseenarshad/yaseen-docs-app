@@ -585,6 +585,12 @@ describe('folds remembered (YAZ-3451)', () => {
   const FILE = 'import x from "x"\n\nfunction one() {\n  return 1\n}\n\nfunction two() {\n  return 2\n}\n'
   /** Let the folding model answer and the restore run. */
   const restored = settle
+  // The clock moves only when a test moves it, as in 'S1: autosave': under load real time leaked into the fake
+  // clock and the 400 ms fold save ran before `after(399)` was checked (CI, 2026-11-05).
+  beforeEach(() => {
+    vi.useRealTimers()
+    vi.useFakeTimers({ shouldAdvanceTime: false })
+  })
 
   it('S1: fold a function, close the tab, reopen: still folded', async () => {
     await opened(FILE)

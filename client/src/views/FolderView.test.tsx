@@ -21,7 +21,12 @@ import { linkResolver, vaultDirs } from '../links/folderLinks'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { click, flush, press, q, rec, renderFolderView, setValue, unmountFolderView } from './testFolderView'
 
-vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn(), writeFolderValues: vi.fn(), transformFile: vi.fn() }))
+/** The real writers, loaded once with the file: a `vi.importActual` in a `beforeEach` hit the 10 s hook timeout on a loaded CI runner. */
+const realWriters = vi.hoisted(() => ({ module: null as unknown as typeof import('./writeProperty') }))
+vi.mock('./writeProperty', async (importOriginal) => {
+  realWriters.module = await importOriginal<typeof import('./writeProperty')>()
+  return { writeProperty: vi.fn(), writeProperties: vi.fn(), writeFolderValues: vi.fn(), transformFile: vi.fn() }
+})
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), mintNoteId: vi.fn(), tree: vi.fn() },
@@ -1231,9 +1236,9 @@ describe('each folder has its own properties (D19)', () => {
   const SUB_ID = 'a1b2c3d4e5f6'
   const disk = new Map<string, string>()
 
-  beforeEach(async () => {
+  beforeEach(() => {
     disk.clear()
-    const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+    const real = realWriters.module
     writeValues.mockImplementation(real.writeFolderValues)
     transform.mockImplementation(real.transformFile)
     readFile.mockImplementation(async (path) => {
@@ -1538,8 +1543,8 @@ describe('each folder has its own properties (D19)', () => {
     const OWN = [rec(LEAD, { owner: 'Ana', id: 'k3m9x2pq7abc', also_in: [ARCHIVE_ID] }), rec(SALES, { order: 1 }), rec(DEEP, { title: 'mine', order: 500, in: { [ARCHIVE_ID]: { order: 30 }, [STAGES_ID]: { order: 3 } } })]
     const headers = (el: ParentNode): string[] => texts(el, '.view-table thead th:not(.view-table__gutter)')
 
-    beforeEach(async () => {
-      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+    beforeEach(() => {
+      const real = realWriters.module
       writeOwn.mockImplementation(real.writeProperties)
       write.mockImplementation(real.writeProperty)
     })
