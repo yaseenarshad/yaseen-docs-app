@@ -299,7 +299,7 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     await mount(roots, ON)
     await act(async () => void here().focusTab.addTo(many, 'f'))
     expect(here().focusTab.folders[0].items).toHaveLength(MAX_FOLDER_ITEMS)
-    expect(onNotice).toHaveBeenCalledWith('A folder holds 500 items at most: 5 items stay where they were.', 'error')
+    expect(onNotice).toHaveBeenCalledWith('Added 500 to f (focus folder). A folder holds 500 items at most: 5 items stay where they were.', 'error', undefined, UNDO)
     onNotice.mockReset()
     await act(async () => here().focusTab.moveOut('/x/Notes/n0.md'))
     expect(onNotice).toHaveBeenLastCalledWith('Focus limit reached: 500 items. It stays in its folder.', 'error')
@@ -337,6 +337,25 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     expect(onNotice).toHaveBeenLastCalledWith('Added to f (focus folder)', 'focus', 'lists', UNDO)
     await act(async () => void here().favoritesTab.addTo(['/x/Work/c.md'], null))
     expect(onNotice).toHaveBeenLastCalledWith('Added to a new favorite folder', 'favorite', 'lists', UNDO)
+  })
+
+  it('YAZ-4480: an add into a nearly full folder moves only what fits; the rest stay where they were, and one toast counts what went in and says what stayed', async () => {
+    const fill = Array.from({ length: MAX_FOLDER_ITEMS - 1 }, (_, i) => ({ vault: 'Notes', path: `n${i}.md` }))
+    const { list } = folderBridge([folder('f', fill)], ['workspace'])
+    await storage.init()
+    await mount(roots, ON)
+    act(() => void here().toggleFocus(['/x/Notes/t1.md', '/x/Notes/t2.md', '/x/Notes/t3.md'], false))
+    await act(async () => undefined)
+    onNotice.mockReset()
+    await act(async () => void here().focusTab.addTo(['/x/Notes/t1.md', '/x/Notes/t2.md', '/x/Notes/t3.md'], 'f'))
+    expect(here().focusTab.folders[0].items).toHaveLength(MAX_FOLDER_ITEMS)
+    expect(list('/x/Notes', 'workspace')).toEqual(['/x/Notes/t2.md', '/x/Notes/t3.md'])
+    expect(onNotice.mock.calls).toEqual([['Added to f (focus folder). A folder holds 500 items at most: 2 items stay where they were.', 'error', undefined, UNDO]])
+    // Full now: nothing moves, and the toast says so.
+    onNotice.mockReset()
+    await act(async () => void here().focusTab.addTo(['/x/Notes/t2.md'], 'f'))
+    expect(list('/x/Notes', 'workspace')).toEqual(['/x/Notes/t2.md', '/x/Notes/t3.md'])
+    expect(onNotice.mock.calls).toEqual([['A folder holds 500 items at most: one item stays where it was.', 'error']])
   })
 
   it('YAZ-4471 M18: "Remove items too" deletes the folder and puts nothing at the top level', async () => {

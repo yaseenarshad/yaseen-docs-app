@@ -236,26 +236,40 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
         loading()
         return null
       }
-      // Where each path was, for the toast's Undo: a folder, the top level, or not in the list.
-      const before = paths.map((p) => ({ p, folder: folderOf(p)?.id ?? null, top: top.current.includes(p) }))
-      const atTop = paths.filter((p) => top.current.includes(p))
-      if (atTop.length > 0) toggleIn(lists, atTop, true)
-      strip(paths, id)
       const at = Date.now()
       const base: FocusFolder = target ?? { id: crypto.randomUUID(), name: kind === 'focus' ? 'New focus folder' : 'New favorite folder', created: at, at, items: [] }
-      const items = itemsOf(paths)
-      const fresh = items.filter((x) => !base.items.some((i) => sameItem(i, x)))
-      // A folder holds MAX_FOLDER_ITEMS at most (YAZ-4479): the first ones that fit go in, and the toast says so.
+      // A folder holds MAX_FOLDER_ITEMS at most (YAZ-4479): the paths that fit are cut FIRST (YAZ-4480), so a path that does
+      // not fit stays where it was — at the top level, in its folder, or out of the list — and only the others move.
       const room = Math.max(0, MAX_FOLDER_ITEMS - base.items.length)
-      const next = { ...base, items: [...base.items, ...fresh.slice(0, room)], at }
-      if (fresh.length > room) notice.current(`A folder holds ${MAX_FOLDER_ITEMS} items at most: ${fresh.length - room === 1 ? 'one item stays' : `${fresh.length - room} items stay`} where ${fresh.length - room === 1 ? 'it was' : 'they were'}.`, 'error')
+      let left = room
+      const going = paths.filter((p) => {
+        const item = itemOf(p, live.current.roots)
+        if (item === null) return false
+        if (base.items.some((i) => sameItem(i, item))) return true
+        return left-- > 0
+      })
+      const stay = paths.length - going.length
+      const limit = stay === 0 ? '' : `A folder holds ${MAX_FOLDER_ITEMS} items at most: ${stay === 1 ? 'one item stays' : `${stay} items stay`} where ${stay === 1 ? 'it was' : 'they were'}.`
+      // Nothing fits: nothing moves. (No paths at all is "+ Folder": an empty new folder.)
+      if (going.length === 0 && paths.length > 0) {
+        notice.current(limit, 'error')
+        return target?.id ?? null
+      }
+      // Where each path was, for the toast's Undo: a folder, the top level, or not in the list.
+      const before = going.map((p) => ({ p, folder: folderOf(p)?.id ?? null, top: top.current.includes(p) }))
+      const atTop = going.filter((p) => top.current.includes(p))
+      if (atTop.length > 0) toggleIn(lists, atTop, true)
+      strip(going, id)
+      const items = itemsOf(going)
+      const next = { ...base, items: [...base.items, ...items.filter((x) => !base.items.some((i) => sameItem(i, x)))], at }
       save(next)
-      if (items.length > 0 && !quiet)
+      if (items.length > 0 && (!quiet || stay > 0))
         notice.current(
-          // A new folder has no name yet when the toast shows: its name field is still open.
-          `Added ${items.length > 1 ? `${items.length} ` : ''}to ${target === undefined ? `a new ${kind === 'focus' ? 'focus' : 'favorite'} folder` : `${next.name} (${kind === 'focus' ? 'focus' : 'favorite'} folder)`}`,
-          kind === 'focus' ? 'focus' : 'favorite',
-          'lists',
+          // A new folder has no name yet when the toast shows: its name field is still open. One toast: the count is what
+          // went in, and the limit, when it held some back, rides on it, as an error that always shows (YAZ-4480).
+          `Added ${items.length > 1 ? `${items.length} ` : ''}to ${target === undefined ? `a new ${kind === 'focus' ? 'focus' : 'favorite'} folder` : `${next.name} (${kind === 'focus' ? 'focus' : 'favorite'} folder)`}${stay > 0 ? `. ${limit}` : ''}`,
+          stay > 0 ? 'error' : kind === 'focus' ? 'focus' : 'favorite',
+          stay > 0 ? undefined : 'lists',
           undoAction(() => {
             // Each path back where it was; a folder this add made goes again.
             for (const b of before) {

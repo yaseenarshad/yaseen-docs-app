@@ -7057,3 +7057,17 @@ describe('App after a memory reload (YAZ-3737 D4, D12)', () => {
     expect(el.textContent).not.toContain('This window reloaded')
   })
 })
+
+describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
+  // The sidebar's FocusFolderList hands a ghost's click to `onAddVaultFor` (FocusFolderList.test.tsx); this is App's half.
+  it('a ghost of a vault this Mac knows asks to add that vault, as a link does; one of a vault it does not know says so', async () => {
+    const { el } = await mount({ ...defaultAppState(), recents: [recent('/v', 2), recent('/o', 1)] }, { id: 'w1', root: '/v', file: null, tabs: [] })
+    const sidebar = captured.sidebar as unknown as { onAddVaultFor?: (vault: string, rel: string) => void }
+    await act(async () => sidebar.onAddVaultFor?.('o', 's.md'))
+    expect(el.querySelector('#confirm-add-vault-for-link-text')?.textContent).toContain('This file (s) is not in this vault. It is in another vault (o)')
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')?.click())
+    await act(async () => sidebar.onAddVaultFor?.('zz', 'q.md'))
+    expect(el.querySelector('#confirm-add-vault-for-link-text')).toBeNull()
+    expect(el.querySelector('.link-notice')?.textContent).toContain('This item is in the vault "zz", which this Mac does not know. Open that folder first.')
+  })
+})
