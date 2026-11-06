@@ -677,6 +677,50 @@ describe("drawn elements beat transparent interiors", () => {
     assertSelectedElements([]);
   });
 
+  // YAZ-4499 (4A1): the click picks as the hover does, on the list with the
+  // locked elements, so it never looks through a locked panel
+  it("a shape hidden under a locked filled panel is not picked through the panel", () => {
+    const hidden = API.createElement({
+      type: "rectangle",
+      id: "hidden",
+      x: 100,
+      y: 80,
+      width: 120,
+      height: 80,
+      backgroundColor: "#ffc9c9",
+      fillStyle: "solid",
+    });
+    const panel = API.createElement({
+      type: "rectangle",
+      id: "panel",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+      backgroundColor: "#a5d8ff",
+      fillStyle: "solid",
+      locked: true,
+    });
+    const box = API.createElement({
+      type: "rectangle",
+      id: "box",
+      x: 60,
+      y: 60,
+      width: 200,
+      height: 120,
+      backgroundColor: "transparent",
+    });
+    API.setElements([hidden, panel, box]);
+    const app = window.h.app as unknown as {
+      getSelectionHover: () => string | null;
+    };
+
+    mouse.moveTo(160, 120);
+    expect(app.getSelectionHover()).toBe(box.id);
+    mouse.clickAt(160, 120);
+    assertSelectedElements([box.id]);
+  });
+
   it("text at opacity 0 draws nothing: the box takes the click (A9)", () => {
     const { text, box, cx, cy } = boxOver();
     API.setElements([

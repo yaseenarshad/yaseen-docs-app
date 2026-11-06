@@ -11434,13 +11434,18 @@ class App extends React.Component<AppProps, AppState> {
         ) {
           pointerDownState.hit.element = null;
         } else {
-          // hitElement may already be set above, so check first
+          // hitElement may already be set above, so check first. YAZ-4469
+          // 4A1: an unlocked pick on the full list stands (the hover shows
+          // it); a pick without the locked elements would look through a
+          // locked panel at a shape it hides
           pointerDownState.hit.element =
             pointerDownState.hit.element ??
-            this.getElementAtPosition(
-              pointerDownState.origin.x,
-              pointerDownState.origin.y,
-            );
+            (hitElementMightBeLocked && !hitElementMightBeLocked.locked
+              ? hitElementMightBeLocked
+              : this.getElementAtPosition(
+                  pointerDownState.origin.x,
+                  pointerDownState.origin.y,
+                ));
         }
 
         this.hitLinkElement = this.getElementLinkAtPosition(

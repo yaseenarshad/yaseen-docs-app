@@ -331,7 +331,7 @@ Walk these on a packaged build (`dist-app/`), with a scratch vault and a throwaw
 
 1. Type a misspelt word (`recieve`) in a note. It gets the red squiggle.
 2. Right-click it. The note menu leads with suggestions; pick `receive`. The word is replaced and the note autosaves. `persue` leads with `pursue`; `Relavent` leads with `Relevant`.
-3. Right-click a correct word. There are no suggestions, the menu opens at once, and Cut / Copy / Paste still work.
+3. Right-click a correct word. There are no suggestions, the menu opens with no delay you notice (it waits a few milliseconds for the spell checker), and Cut / Copy / Paste still work.
 4. Type `relavent` in a note's title or a search box and right-click it. The native menu leads with `relevant` (YAZ-4464 D3).
 5. Right-click a made-up word, **Add to dictionary**. The squiggle goes, and a second right-click shows no spelling rows.
 6. Type the same made-up word in the note's title and right-click it. The native menu shows no guesses for it: the word the note menu added also reached the macOS checker.
