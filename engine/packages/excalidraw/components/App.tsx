@@ -4587,6 +4587,15 @@ class App extends React.Component<AppProps, AppState> {
     if (prevState.activeTool.type !== this.state.activeTool.type) {
       this.selectionHover = null;
     }
+    // YAZ-4469 demo: the host turned the hover outline off while one shows
+    if (
+      prevProps.hoverOutline !== this.props.hoverOutline &&
+      this.props.hoverOutline === false &&
+      this.selectionHover !== null
+    ) {
+      this.selectionHover = null;
+      this.triggerRender();
+    }
 
     if (prevProps.hostLinks !== this.props.hostLinks) {
       this.unmountHostLinks?.();
@@ -8902,13 +8911,14 @@ class App extends React.Component<AppProps, AppState> {
    * button is down (a drag, a resize, a marquee), in view mode, or on a
    * selected element (A5): nothing would draw, so nothing renders. The view
    * it was found in goes with it: a scroll or zoom under a still pointer
-   * hides it (A4).
+   * hides it (A4). None when the host turned the outline off (`hoverOutline`).
    */
   private updateSelectionHover = (
     element: NonDeleted<ExcalidrawElement> | null,
   ) => {
     const id =
       element &&
+      this.props.hoverOutline !== false &&
       this.state.activeTool.type === "selection" &&
       this.state.cursorButton !== "down" &&
       !this.state.viewModeEnabled &&

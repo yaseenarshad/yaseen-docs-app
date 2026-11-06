@@ -96,7 +96,7 @@ describe('settingCandidates', () => {
       'codeMinimap',
       'codeLanguageHelpers',
       // Settings › Drawings (YAZ-3037; "Excalidraw canvas" before the YAZ-3818 demo).
-      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
+      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
       // Settings › Images (YAZ-3038).
       'pixabayApiKey',
       'libraryFolder',
@@ -241,18 +241,18 @@ describe('searchSettings', () => {
     // The sidebar's group is "Level lines" too (YAZ-3440 D7): its other two rows follow, by the group title.
     expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['sidebarLines', 'tocLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
-    // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
+    // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037), and the drawing's hover outline (YAZ-4469 demo).
     // Settings › Editor › Outline (YAZ-4094) names its four rows.
     // A board's colour letters (YAZ-4348) come last: each names the outline its ⇧ colours, and T takes an icon's off.
     const outline = ids(searchSettings(settingCandidates(ctx()), 'outline'))
-    expect(outline.slice(0, 13)).toEqual(['hotkey-diagram-outline', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-diagram-colourOther'])
-    expect(outline.slice(13).sort()).toEqual(hotkeyRows().filter((id) => id.startsWith('hotkey-drawing-color')).sort())
-    expect(outline).toHaveLength(13 + 15)
+    expect(outline.slice(0, 14)).toEqual(['hotkey-diagram-outline', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.hoverOutline', 'canvas.framesVisible', 'hotkey-diagram-colourOther'])
+    expect(outline.slice(14).sort()).toEqual(hotkeyRows().filter((id) => id.startsWith('hotkey-drawing-color')).sort())
+    expect(outline).toHaveLength(14 + 15)
     // "guide" names the guide lines' rows (YAZ-4094; Bullet threading's hint no longer says it: one name for one thing) and is a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403). The Add panel's Hover zoom (YAZ-4447, D34)
-    // leads: its label starts with the word.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hotkey-code-showHover'])
+    // leads: its label starts with the word, after the drawing's Hover outline (YAZ-4469 demo), which comes first in registry order.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['canvas.hoverOutline', 'mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
   })

@@ -437,6 +437,32 @@ export function withBoardFoldArrows(scene: Record<string, unknown>, value: FoldA
   return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(value === null ? {} : { [FOLD_ARROWS_KEY]: value }) }, FOLD_ARROWS_KEY, at), ...rest }
 }
 
+// ---------- Hover outline, per board (YAZ-4469 demo) ----------
+
+/**
+ * The `yaseendraw` block key of the board's "Hover outline": `"hoverOutline": true` or `false` overrides the app's
+ * "Hover outline". No key: the app setting.
+ */
+export const HOVER_OUTLINE_KEY = 'hoverOutline'
+
+/** The board's own hover outline, or null for the app setting (also for a value the app does not know). */
+export function boardHoverOutlineOf(block: unknown): boolean | null {
+  const value = isRecord(block) ? block[HOVER_OUTLINE_KEY] : undefined
+  return typeof value === 'boolean' ? value : null
+}
+
+/**
+ * The scene with its hover outline (`null`: the app setting); the SAME object when it already is. The rule of
+ * `withBoardFoldArrows`.
+ */
+export function withBoardHoverOutline(scene: Record<string, unknown>, value: boolean | null, bornAt: number, at = Date.now()): Record<string, unknown> {
+  const { [BOARD_META_KEY]: own, ...rest } = scene
+  if (boardHoverOutlineOf(own) === value && (value !== null || !(isRecord(own) && HOVER_OUTLINE_KEY in own))) return scene
+  const { [HOVER_OUTLINE_KEY]: _old, createdAt, updatedAt, ...extras } = isRecord(own) ? own : {}
+  const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
+  return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(value === null ? {} : { [HOVER_OUTLINE_KEY]: value }) }, HOVER_OUTLINE_KEY, at), ...rest }
+}
+
 /** One picture inside a board: the shape the engine's `addFiles` reads (it keys on `id`). */
 export interface EmbeddedFile extends DrawingFileData {
   id: string

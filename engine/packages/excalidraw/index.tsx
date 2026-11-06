@@ -107,6 +107,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     newElementStyle,
     fillSetsTextColor,
     newShapesMatchZoom,
+    hoverOutline,
     defaultItemStyle,
     hostContextMenuItems,
     onExportPdf,
@@ -252,6 +253,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
           newElementStyle={newElementStyle}
           fillSetsTextColor={fillSetsTextColor}
           newShapesMatchZoom={newShapesMatchZoom}
+          hoverOutline={hoverOutline}
           defaultItemStyle={defaultItemStyle}
           hostContextMenuItems={hostContextMenuItems}
           onExportPdf={onExportPdf}

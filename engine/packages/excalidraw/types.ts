@@ -1142,6 +1142,11 @@ export interface ExcalidrawProps {
    * (`screenScale.ts`); the width and radius pickers speak screen px.
    */
   newShapesMatchZoom?: boolean;
+  /**
+   * Yaseen Docs (YAZ-4469 demo): the faint outline of what a click would
+   * pick, while the selection tool hovers. Absent: on.
+   */
+  hoverOutline?: boolean;
   /** Yaseen Docs (YAZ-4277 D14): the host's defaults for a new element's style. Keep it stable. */
   defaultItemStyle?: Partial<NewElementStyle>;
   /**

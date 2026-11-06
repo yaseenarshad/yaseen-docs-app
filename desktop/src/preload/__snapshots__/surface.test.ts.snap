@@ -171,6 +171,7 @@ secrets.has/1: invoke secrets:has ["a0"]; => "answer"; !> {"code":"NOT_FOUND","m
 secrets.set/1: invoke secrets:set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardFoldArrows/1: invoke board:set-fold-arrows ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardHoverLinks/1: invoke board:set-hover-links ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+setBoardHoverOutline/1: invoke board:set-hover-outline ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardPictures/1: invoke board:set-pictures ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardReadOnly/1: invoke board:set-read-only ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 share.accounts/1: invoke share:accounts ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

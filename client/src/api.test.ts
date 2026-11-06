@@ -28,6 +28,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     setBoardPictures: vi.fn(),
     setBoardHoverLinks: vi.fn(),
     setBoardFoldArrows: vi.fn(),
+    setBoardHoverOutline: vi.fn(),
     dialog: vi.fn(),
     media: vi.fn(),
     components: vi.fn(),

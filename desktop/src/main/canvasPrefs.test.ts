@@ -38,13 +38,15 @@ describe('DEFAULT_CANVAS_PREFS', () => {
       // YAZ-4404 (D21): the text color follows the fill; YAZ-4406 (D24): new shapes match the zoom. Both on.
       fillSetsTextColor: true,
       newShapesMatchZoom: true,
+      // YAZ-4469 demo: the hover outline is on.
+      hoverOutline: true,
     })
   })
 
-  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, the new text size and wrap margin (YAZ-4247), the four fold arrow keys, "New shapes and text", "Text color follows the fill" and "New shapes match the zoom" (YAZ-4277), and no more', () => {
-    expect(CANVAS_PREF_KEYS).toHaveLength(26)
-    expect(CANVAS_PREF_KEYS.slice(-10, -7)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
-    expect(CANVAS_PREF_KEYS.slice(-7)).toEqual(['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize', 'newElementStyle', 'fillSetsTextColor', 'newShapesMatchZoom'])
+  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, the new text size and wrap margin (YAZ-4247), the four fold arrow keys, "New shapes and text", "Text color follows the fill" and "New shapes match the zoom" (YAZ-4277), "Hover outline" (YAZ-4469 demo), and no more', () => {
+    expect(CANVAS_PREF_KEYS).toHaveLength(27)
+    expect(CANVAS_PREF_KEYS.slice(-11, -8)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
+    expect(CANVAS_PREF_KEYS.slice(-8)).toEqual(['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize', 'newElementStyle', 'fillSetsTextColor', 'newShapesMatchZoom', 'hoverOutline'])
     // The round-4 amendment removed the properties-toolbar pref: the toolbar mode is a constant.
     expect(CANVAS_PREF_KEYS).not.toContain('propertiesToolbar')
   })
@@ -208,6 +210,7 @@ describe('appStateToPrefs', () => {
       newElementStyle: 'keep',
       fillSetsTextColor: true,
       newShapesMatchZoom: true,
+      hoverOutline: true,
     })
   })
 

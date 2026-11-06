@@ -3,7 +3,7 @@
  * `fs/diagram.ts`, `fs/createBoard.ts`, the board's head (`fs/boardHead.ts`), the read-only switch
  * (`fs/boardReadOnly.ts`, YAZ-3076 D1), the pictures switch (`fs/boardPictures.ts`, YAZ-3943 D5) and the
  * link preview on hover switch (`fs/boardHoverLinks.ts`, YAZ-3943 demo 2) and the fold arrows choice
- * (`fs/boardFoldArrows.ts`, YAZ-4277 D5) behind the standard envelope, and nothing else.
+ * (`fs/boardFoldArrows.ts`, YAZ-4277 D5) and the hover outline choice (`fs/boardHoverOutline.ts`, YAZ-4469 demo) behind the standard envelope, and nothing else.
  *
  * NO STORE REPAIR AND NO PUSH: repair and the pushes exist for paths that MOVE or GO, and a
  * save does neither — it changes bytes at a path every window already knows. A save only goes in
@@ -18,6 +18,7 @@ import { createThumbs, THUMBS_DIR, type Thumbs } from '../drawings/thumbs'
 import { boardHead } from '../fs/boardHead'
 import { setBoardFoldArrows } from '../fs/boardFoldArrows'
 import { setBoardHoverLinks } from '../fs/boardHoverLinks'
+import { setBoardHoverOutline } from '../fs/boardHoverOutline'
 import { setBoardPictures } from '../fs/boardPictures'
 import { BridgeFailure } from '../fs/fsUtils'
 import { MAX_PICTURE_FOLDERS, PICTURE_FOLDERS_FULL } from '../fs/picturesFolders'
@@ -69,4 +70,5 @@ export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit' | 'approve
   })
   handle(CONTRACT.setBoardHoverLinks, setBoardHoverLinks)
   handle(CONTRACT.setBoardFoldArrows, setBoardFoldArrows)
+  handle(CONTRACT.setBoardHoverOutline, setBoardHoverOutline)
 }
