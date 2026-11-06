@@ -9,7 +9,7 @@ import { SPECIAL } from '@shared/ipc'
 import { createSpellWait, SPELL_WAIT_FIRST_MS, SPELL_WAIT_MS } from '@shared/spelling'
 import { registered } from './ipc/ipcFixture'
 import { registerSpellerIpc } from './ipc/speller'
-import { ASK_LIMIT_MS, createSpeller, MAX_WAITING, nativeMenuAsker, nativeMenuGuesses, spellerPath, type SpellerProcess } from './speller'
+import { ASK_LIMIT_MS, createSpeller, FIRST_ASK_LIMIT_MS, MAX_WAITING, nativeMenuAsker, nativeMenuGuesses, spellerPath, type SpellerProcess } from './speller'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }))
 
@@ -110,7 +110,7 @@ describe('createSpeller (YAZ-4464 D1)', () => {
     expect(await Promise.all(asked)).toEqual([['the'], ['relevant']])
   })
 
-  it(`a helper silent for ${ASK_LIMIT_MS} ms: the ask gets no guesses, the helper is killed, and the next ask starts a new one (S2)`, async () => {
+  it(`a helper that answered once, then is silent for ${ASK_LIMIT_MS} ms: the ask gets no guesses, the helper is killed, and the next ask starts a new one (S2)`, async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const stuck = manualChild()
     const kill = vi.spyOn(stuck, 'kill')
@@ -118,6 +118,9 @@ describe('createSpeller (YAZ-4464 D1)', () => {
     const spawn = vi.fn().mockReturnValueOnce(asProcess(stuck)).mockImplementation(helper.spawn)
     const speller = createSpeller('speller', spawn)
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const first = speller.guesses('teh')
+    stuck.stdout.write('["the"]\n')
+    expect(await first).toEqual(['the'])
 
     const asked = speller.guesses('relavent')
     vi.advanceTimersByTime(ASK_LIMIT_MS - 1)
@@ -130,6 +133,24 @@ describe('createSpeller (YAZ-4464 D1)', () => {
     stuck.stdout.write('["wrong"]\n')
     expect(await speller.guesses('teh')).toEqual(['the'])
     expect(spawn).toHaveBeenCalledTimes(2)
+  })
+
+  it(`a new helper's first answer may take up to ${FIRST_ASK_LIMIT_MS} ms: a cold spell server is not killed (CI, YAZ-4464)`, async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const slow = manualChild()
+    const kill = vi.spyOn(slow, 'kill')
+    const speller = createSpeller('speller', () => asProcess(slow))
+
+    const asked = speller.guesses('relavent')
+    vi.advanceTimersByTime(3000)
+    slow.stdout.write('["relevant"]\n')
+    expect(await asked).toEqual(['relevant'])
+    expect(kill).not.toHaveBeenCalled()
+
+    const silent = speller.guesses('teh')
+    vi.advanceTimersByTime(FIRST_ASK_LIMIT_MS - 1)
+    expect(kill).toHaveBeenCalledOnce()
+    expect(await silent).toBeNull()
   })
 
   it(`at most ${MAX_WAITING} asks wait; one more gets no guesses at once (S2)`, async () => {

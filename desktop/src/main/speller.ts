@@ -16,6 +16,12 @@ type Spawn = (file: string) => SpellerProcess
 
 /** How long one ask waits for the helper (S2). Past it the helper counts as stuck: it is killed, and the next ask starts a new one. */
 export const ASK_LIMIT_MS = 2000
+/**
+ * The same for the asks before a new helper's first answer: on a cold Mac the macOS spell server can take
+ * more than 2 s to start (seen on CI). Killing the helper then would throw that start away; the menus
+ * still open at their own wait (`createSpellWait`), and the next right-click gets the guesses.
+ */
+export const FIRST_ASK_LIMIT_MS = 10000
 /** The most asks that wait at one time (S2). One more answers null at once. */
 export const MAX_WAITING = 16
 
@@ -55,7 +61,7 @@ export function nativeMenuAsker(platform: NodeJS.Platform, guesses: (word: strin
 /** A speller over one helper file. `spawn` is for the tests. */
 export function createSpeller(file: string, spawn: Spawn = (f) => nodeSpawn(f, { stdio: ['pipe', 'pipe', 'ignore'] })) {
   /** The running helper with its own waiting asks: an old helper's late line, exit or EPIPE never reaches a new one's (S1). */
-  let helper: { child: SpellerProcess; waiting: ((guesses: string[] | null) => void)[]; end: (failure: string | null) => void } | null = null
+  let helper: { child: SpellerProcess; waiting: ((guesses: string[] | null) => void)[]; end: (failure: string | null) => void; answered: () => boolean } | null = null
   /** A helper failed on its own before its first answer (S7): no new start until the app restarts. */
   let broken = false
   let warned = false
@@ -102,7 +108,7 @@ export function createSpeller(file: string, spawn: Spawn = (f) => nodeSpawn(f, {
     child.on('exit', (code, signal) => failed(`exited (${signal ?? code})`))
     child.on('error', (error) => failed(String(error)))
     child.stdin.on('error', (error) => failed(String(error)))
-    return { child, waiting, end }
+    return { child, waiting, end, answered: () => answered }
   }
 
   return {
@@ -110,13 +116,14 @@ export function createSpeller(file: string, spawn: Spawn = (f) => nodeSpawn(f, {
     guesses(word: string): Promise<string[] | null> {
       if (broken || !isSpellWord(word)) return Promise.resolve(null)
       helper ??= start()
-      const { child, waiting, end } = helper
+      const { child, waiting, end, answered } = helper
       if (waiting.length >= MAX_WAITING) return Promise.resolve(null)
+      const limit = answered() ? ASK_LIMIT_MS : FIRST_ASK_LIMIT_MS
       return new Promise((resolve) => {
         const timer = setTimeout(() => {
-          end(`no answer in ${ASK_LIMIT_MS} ms`)
+          end(`no answer in ${limit} ms`)
           child.kill()
-        }, ASK_LIMIT_MS)
+        }, limit)
         waiting.push((guesses) => {
           clearTimeout(timer)
           resolve(guesses)
