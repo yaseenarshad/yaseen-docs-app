@@ -19,6 +19,7 @@ import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
+import { registerSpellerIpc } from './ipc/speller'
 import { registerUpdateIpc } from './ipc/update'
 import { askHeap, askTabs, askViews, registerMemoryIpc } from './ipc/memory'
 import { createMemoryMeter, createReloadWatch, helperRss, type MemoryMeter, type ReloadWatch } from './memory'
@@ -35,6 +36,7 @@ import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { movePageSwitches } from './movePageSwitches'
 import { runQuitSequence } from './quitSequence'
+import { createSpeller, nativeMenuGuesses, spellerPath } from './speller'
 import { stopAllLanguageServers } from './lsp/server'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { appZoomFactor, subscribeAppZoom } from './appZoom'
@@ -99,6 +101,8 @@ protocol.registerSchemesAsPrivileged([APP_SCHEME])
 
 const RENDERER_DIR = join(__dirname, '../renderer')
 /** The draw.io webapp (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4/D5): the pack cache in dev, `out/drawio` in a build. */
+// The macOS spell checker's guesses for both right-click menus (YAZ-4464): one helper, started at the first ask.
+const speller = createSpeller(spellerPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname }))
 const DRAWIO_DIR = resolveDrawioDir({ mainDir: __dirname, appPath: app.getAppPath(), isPackaged: app.isPackaged, exists: existsSync })
 
 /** One user-global state file (D9, GRO-2159): `~/Library/Application Support/Yaseen Docs/yaseendocs.json`. */
@@ -170,8 +174,11 @@ const manager = createWindowManager(store, {
     })
     // Electron ships no default context menu (YAZ-672), so the spellchecker's squiggles would
     // otherwise be unactionable; the template itself is pure and lives in menu.ts.
-    win.webContents.on('context-menu', (_event, params) =>
-      Menu.buildFromTemplate(buildContextMenuTemplate(params, {
+    win.webContents.on('context-menu', async (_event, params) => {
+      // On macOS Chromium marks the word but gives no guesses (YAZ-4464 D3): ask the macOS checker.
+      const dictionarySuggestions = await nativeMenuGuesses(params, process.platform, speller.guesses)
+      if (win.isDestroyed()) return
+      Menu.buildFromTemplate(buildContextMenuTemplate({ ...params, dictionarySuggestions }, {
         copyAs: (mode) => win.webContents.send(SPECIAL.menuCopyAs, mode),
         pasteAs: (mode) => win.webContents.send(SPECIAL.menuPasteAs, { mode, text: clipboard.readText(), ...(mode === 'cells' ? { html: clipboard.readHTML() } : {}) } satisfies ClipboardPasteRequest),
         replace: (s) => win.webContents.replaceMisspelling(s),
@@ -180,7 +187,8 @@ const manager = createWindowManager(store, {
         // resolves the `<img src>` through vaultProtocol.ts, so a non-vault source is a no-op there.
         copyImage: () => win.webContents.copyImageAt(params.x, params.y),
         revealImage: (src) => void revealVaultImage(src, (file) => revealItem({ path: file })),
-      })).popup({ window: win }))
+      })).popup({ window: win })
+    })
     // The window's own zoom is the App size and nothing else (YAZ-3432; ⌘+ zooms a note or the sidebar, YAZ-3389), a
     // Files window too. Chromium keeps a zoom per origin, so each load sets it again: a zoom from an older build goes.
     win.webContents.on('did-finish-load', () => win.webContents.setZoomFactor(appZoomFactor(store.get().settings)))
@@ -314,6 +322,7 @@ app.whenReady().then(() => {
   // focused window while the app is not frontmost, and a menu action must never silently no-op
   // — so the last-focused live window (tracked below) is the documented fallback target.
   const menuTarget = () => pickMenuTargetWindow(BrowserWindow.getFocusedWindow(), BrowserWindow.getAllWindows().filter((w) => !previewPopups.has(w)), lastFocusedWcId)?.webContents
+  registerSpellerIpc(speller)
   registerClipboardIpc(manager, {
     target: menuTarget,
     writeText: (text) => clipboard.writeText(text),
@@ -488,7 +497,8 @@ app.on('before-quit', (event) => {
     flushSync: () => gitSync?.flushForQuit(),
     // No language server outlives the app (YAZ-3453). Each also ends by itself when its stdin closes.
     // A helper download under way stops, and leaves no half folder (YAZ-3500).
-    stopHelpers: () => Promise.all([stopAllLanguageServers(), cancelHelperInstall()]).then(() => undefined),
+    // The spell checker helper too (YAZ-4464).
+    stopHelpers: () => Promise.all([stopAllLanguageServers(), cancelHelperInstall(), speller.stop()]).then(() => undefined),
     // The swap waits for this process to end (S21, S22): start it last, then exit.
     exit: () => {
       updater.installOnExit(reopenAfterQuit)

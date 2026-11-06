@@ -791,6 +791,8 @@ export const SPECIAL = {
   menuPasteTextFallback: invoke<[text: string], void>('menu:paste-text-fallback', 1),
   /** A note's own right-click menu (YAZ-3653): main runs the row on the sending window, as the native menu's roles do. */
   menuEdit: invoke<[action: NoteMenuAction, arg?: NoteMenuArg], void>('menu:edit', 2),
+  /** The macOS spell checker's guesses for a word, best first; null when it is spelled right (YAZ-4464). */
+  spellGuesses: invoke<[word: string], string[] | null>('spell:guesses', 1),
 } as const
 
 /** A table's leaves become functions: an invoke resolves its answer, a push subscribes and returns the unsubscribe. */
@@ -836,8 +838,8 @@ export type YaseenDocsApi = Bridge<typeof CONTRACT> & {
     edit(action: NoteMenuAction, arg?: NoteMenuArg): Promise<void>
   }
   spell: {
-    /** The spellchecker's suggestions for a misspelled `word`, or null when it is spelled right (YAZ-3653). */
-    suggestions(word: string): string[] | null
+    /** The spellchecker's suggestions for a misspelled `word`, or null when it is spelled right (YAZ-3653, YAZ-4464). */
+    suggestions(word: string): Promise<string[] | null>
   }
 }
 

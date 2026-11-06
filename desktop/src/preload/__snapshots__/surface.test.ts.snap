@@ -190,7 +190,7 @@ shell.openDefault/1: invoke shell:openDefault ["a0"]; => "answer"; !> {"code":"N
 shell.openLink/1: invoke shell:open-link ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openVsCode/1: invoke shell:openVsCode ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.reveal/1: invoke shell:reveal ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-spell.suggestions/1: (no IPC)
+spell.suggestions/1: invoke spell:guesses ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.get/0: invoke state:get []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.onChange/1: on state:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off state:changed
 state.pushRecent/1: invoke state:push-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

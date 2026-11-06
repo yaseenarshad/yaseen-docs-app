@@ -13,5 +13,7 @@ desktop/e2e/artifacts/
 # Agent working notes and plans stay local
 thoughts/
 docs/superpowers/
+# The macOS spell checker helper (YAZ-4464, `tools/buildSpeller.mjs`): built by dev, build and test, shipped in Resources/bin.
+desktop/build/bin/speller
 # The share viewer build (YAZ-3040, `tools/buildShareViewer.mjs`): made by `npm run build`, shipped as the `share-viewer` extraResource.
 share/dist/

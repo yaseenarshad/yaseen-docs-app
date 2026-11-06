@@ -77,6 +77,8 @@ export const turnIntoRows: RowProvider = (view, target) => {
     active: allLinesAre(shown, id, pick),
     run: () => {
       if (!highlighted && pick === undefined) view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, line)))
+      // The highlighted lines it showed lit, not the page selection read since (YAZ-4464: the menu waits for its guesses).
+      if (highlighted && target.selection !== undefined && !target.selection.eq(view.state.selection)) view.dispatch(view.state.tr.setSelection(target.selection))
       command(view.state, view.dispatch, view)
       view.focus()
     },

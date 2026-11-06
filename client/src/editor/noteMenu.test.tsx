@@ -11,7 +11,7 @@ import type { MenuAction, MenuItem, MenuSection } from '../sidebar/menuSections'
 import type { CopyAsMode } from '@shared/types'
 import { caretIn, endOf, md, mount, posOf, runCommand, select, unmountAll } from './marks/markTestKit'
 import { isOutlineItemCollapsed, toggleOutlineFold } from './outline/outlineFolding'
-import { lineSections, misspellingAt, NoteMenu, noteMenuSections, TABLE_HANDLE_MENU } from './noteMenu'
+import { lineSections, misspellingAt, NoteMenu, noteMenuSections, SPELL_WAIT_FIRST_MS, TABLE_HANDLE_MENU } from './noteMenu'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import { cellDOM, cellPos, mountNote as mountTable, mouseAt, unmountAll as unmountTables } from './table/tableTestKit'
 
@@ -20,6 +20,8 @@ afterEach(async () => {
   act(() => root?.unmount())
   root = null
   document.body.querySelectorAll('.ctx-overlay').forEach((el) => el.remove())
+  // A page selection left by one test is read by the next note while its menu waits for guesses (YAZ-4464 D2).
+  document.getSelection()?.removeAllRanges()
   await unmountAll()
   await unmountTables()
 })
@@ -31,6 +33,10 @@ const leaf = (sections: MenuSection[], id: string): MenuAction =>
   sections.flat().flatMap((item) => (item.children === undefined ? [item] : [item, ...item.children.flat()])).find((item) => item.id === id) as MenuAction
 
 /** `posAtCoords` needs layout jsdom does not have: the pointer stands at `pos`. */
+/** The note menu opens once a right-click's guesses come (YAZ-4464 D2): a few promise turns with a fake speller, no timer. */
+const guessesAnswered = async () => {
+  for (let turn = 0; turn < 10; turn++) await Promise.resolve()
+}
 const pointAt = (view: EditorView, pos: number) => vi.spyOn(view, 'posAtCoords').mockReturnValue({ pos, inside: -1 })
 
 describe('the note menu rows (YAZ-3653)', () => {
@@ -68,7 +74,7 @@ describe('the note menu rows (YAZ-3653)', () => {
     const { crepe, view } = await mount('Fix teh typo\n')
     pointAt(view, posOf(crepe, 'teh') + 1)
     const suggest = vi.fn((word: string) => (word === 'teh' ? ['the', 'tea'] : null))
-    const misspelling = misspellingAt(view, 0, 0, suggest)
+    const misspelling = await misspellingAt(view, 0, 0, async (word) => suggest(word))
     expect(misspelling).toEqual({ word: 'teh', from: posOf(crepe, 'teh'), to: endOf(crepe, 'teh'), suggestions: ['the', 'tea'] })
     const run = vi.fn()
     const sections = noteMenuSections(view, misspelling, run)
@@ -84,7 +90,7 @@ describe('the note menu rows (YAZ-3653)', () => {
   it('a guess after the note changed under the open menu: the word is not there, nothing is replaced', async () => {
     const { crepe, view } = await mount('Fix teh typo\n')
     pointAt(view, posOf(crepe, 'teh') + 1)
-    const misspelling = misspellingAt(view, 0, 0, () => ['the'])!
+    const misspelling = (await misspellingAt(view, 0, 0, async () => ['the']))!
     const sections = noteMenuSections(view, misspelling, vi.fn())
     view.dispatch(view.state.tr.insertText('Now ', 1))
     leaf(sections, 'guess-0').onSelect()
@@ -104,9 +110,9 @@ describe('the note menu rows (YAZ-3653)', () => {
     const { crepe, view } = await mount('fine words\n\n```\nteh\n```\n')
     const suggest = vi.fn((word: string) => (word === 'teh' ? [] : null))
     pointAt(view, posOf(crepe, 'words') + 2)
-    expect(misspellingAt(view, 0, 0, suggest)).toBeNull()
+    expect(await misspellingAt(view, 0, 0, async (word) => suggest(word))).toBeNull()
     pointAt(view, posOf(crepe, 'teh') + 1)
-    expect(misspellingAt(view, 0, 0, suggest)).toBeNull()
+    expect(await misspellingAt(view, 0, 0, async (word) => suggest(word))).toBeNull()
     expect(suggest).toHaveBeenCalledOnce()
   })
 })
@@ -114,7 +120,7 @@ describe('the note menu rows (YAZ-3653)', () => {
 describe('the right-click (YAZ-3653)', () => {
   async function open(markdown: string) {
     const mounted = await mount(markdown)
-    window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: () => null } } as typeof window.yaseenDocs
+    window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: async () => null } } as typeof window.yaseenDocs
     const host = document.createElement('div')
     document.body.append(host)
     act(() => {
@@ -123,16 +129,20 @@ describe('the right-click (YAZ-3653)', () => {
     })
     return mounted
   }
-  const rightClick = (target: Element) => {
+  /** A right-click, then the wait for its guesses (YAZ-4464 D2): the menu opens once they come. */
+  const rightClick = async (target: Element) => {
     const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })
-    act(() => void target.dispatchEvent(event))
+    await act(async () => {
+      target.dispatchEvent(event)
+      await guessesAnswered()
+    })
     return event
   }
 
   it('in the note: the app menu opens instead of the native one', async () => {
     const { crepe, view } = await open('* one\n')
     pointAt(view, posOf(crepe, 'one'))
-    const event = rightClick(view.dom.querySelector('p')!)
+    const event = await rightClick(view.dom.querySelector('p')!)
     expect(event.defaultPrevented).toBe(true)
     // The bullet's Turn into strip first (YAZ-3727 D15), then the clipboard rows.
     expect([...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['Bullet list', 'Numbered list', 'Checklist', 'Text', 'Cut', 'Copy', 'Copy as', 'Paste', 'Paste as'])
@@ -151,7 +161,7 @@ describe('the right-click (YAZ-3653)', () => {
     caretIn(crepe, 'Rules')
     view.focus()
     pointAt(view, posOf(crepe, 'Tasks'))
-    rightClick(view.dom.querySelector('p')!)
+    await rightClick(view.dom.querySelector('p')!)
     const row = (label: string) => [...document.querySelectorAll<HTMLElement>('.ctx-menu [role=menuitem]')].find((b) => b.textContent === label)!
     act(() => row('Copy as').click())
     expect(row('Without folded lines').getAttribute('aria-disabled')).not.toBe('true')
@@ -168,7 +178,7 @@ describe('the right-click (YAZ-3653)', () => {
       root = createRoot(host)
       root.render(<NoteMenu view={mounted.view} />)
     })
-    expect(rightClick(mounted.view.dom.querySelector('a')!).defaultPrevented).toBe(true)
+    expect((await rightClick(mounted.view.dom.querySelector('a')!)).defaultPrevented).toBe(true)
     expect(document.querySelectorAll('.ctx-menu')).toHaveLength(1)
     expect(document.querySelector('.ctx-menu--editor')).not.toBeNull()
     document.querySelectorAll('.ctx-menu--editor').forEach((el) => el.remove())
@@ -179,7 +189,7 @@ describe('the right-click (YAZ-3653)', () => {
     caretIn(crepe, 'one')
     view.focus()
     pointAt(view, posOf(crepe, 'one'))
-    rightClick(view.dom.querySelector('p')!)
+    await rightClick(view.dom.querySelector('p')!)
     ;(document.activeElement as HTMLElement | null)?.blur()
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(document.querySelector('.ctx-menu')).toBeNull()
@@ -201,7 +211,7 @@ describe('the right-click (YAZ-3653)', () => {
     // The handle selected column B, then asks for the menu at a cell of it in row 1.
     view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, 1)))))
     pointAt(view, cellPos(view, 0, 1) + 2)
-    rightClick(view.dom.querySelectorAll('th')[1]!)
+    await rightClick(view.dom.querySelectorAll('th')[1]!)
     const fromCell = labels()
     expect(fromCell).toContain('Sort A to Z')
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
@@ -219,7 +229,7 @@ describe('the right-click (YAZ-3653)', () => {
 
   it('a click on the real column handle of the table block opens the menu with the Table part (YAZ-3820)', async () => {
     const { view } = await mountTable()
-    window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: () => null } } as typeof window.yaseenDocs
+    window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: async () => null } } as typeof window.yaseenDocs
     const host = document.createElement('div')
     document.body.append(host)
     act(() => {
@@ -248,11 +258,11 @@ describe('the right-click (YAZ-3653)', () => {
       return image
     }
     const row = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role=menuitem]')].find((b) => b.textContent === label)!
-    expect(rightClick(imageAt('https://example.com/a.png')).defaultPrevented).toBe(true)
+    expect((await rightClick(imageAt('https://example.com/a.png'))).defaultPrevented).toBe(true)
     expect([...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => `${b.textContent}${(b as HTMLButtonElement).disabled ? '*' : ''}`)).toEqual(['Copy image', 'Reveal in Finder*'])
     await act(async () => row('Copy image').click())
     expect(edit).toHaveBeenLastCalledWith('copy-image', { x: 40, y: 50 })
-    rightClick(imageAt('app://vault/root/a.png?from='))
+    await rightClick(imageAt('app://vault/root/a.png?from='))
     await act(async () => row('Reveal in Finder').click())
     expect(edit).toHaveBeenLastCalledWith('reveal-image', 'app://vault/root/a.png?from=')
   })
@@ -261,7 +271,10 @@ describe('the right-click (YAZ-3653)', () => {
 describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ-3727 D15)', () => {
   async function open(markdown: string, options: { onOpen?: () => void; suggest?: (word: string) => string[] | null } = {}) {
     const mounted = await mount(markdown, options.onOpen === undefined ? {} : { zoom: { title: () => 'Note', onOpen: options.onOpen } })
-    window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: options.suggest ?? (() => null) } } as typeof window.yaseenDocs
+    window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: async (word: string) => (options.suggest ?? (() => null))(word) } } as typeof window.yaseenDocs
+    // A note's first change adds its empty last paragraph. An open note has it already; a fresh one would
+    // add it while the menu waits for its guesses (YAZ-4464 D2), and the line rows refuse a changed note.
+    act(() => mounted.view.dispatch(mounted.view.state.tr))
     const host = document.createElement('div')
     document.body.append(host)
     act(() => {
@@ -271,12 +284,15 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     return mounted
   }
   /** A right press on the text of `text`'s line, then its contextmenu. `between` runs in between: what the press selects. */
-  function rightClickOn(view: EditorView, at: number, between?: () => void) {
+  async function rightClickOn(view: EditorView, at: number, between?: () => void) {
     pointAt(view, at)
     const target = view.domAtPos(at).node.parentElement!
     act(() => void target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2 })))
     between?.()
-    act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    await act(async () => {
+      target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 }))
+      await guessesAnswered()
+    })
   }
   /** The menu's groups: each row's label, a strip's buttons as `<Checklist, Bullet list*, …>` (`*` lit). */
   const groups = () =>
@@ -292,7 +308,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
 
   it('on a bullet with children: Open in new tab, the strip, the children rows, then the clipboard rows, in groups', async () => {
     const { crepe, view } = await open('* a\n  * kid\n* b\n', { onOpen: vi.fn() })
-    rightClickOn(view, posOf(crepe, 'a'))
+    await rightClickOn(view, posOf(crepe, 'a'))
     expect(groups()).toEqual([['Open in new tab'], [STRIP('Bullet list', 'Text')], ['Number children', 'Collapse all⌘⇧U', 'Expand all⌘⇧I', 'Lock open'].map((label) => label.replace(/⌘.*/, '')), ...CLIPBOARD])
     // D19: no glyph, so no row is pushed right to line up after one.
     expect(document.querySelector('.ctx-menu')!.classList.contains('ctx-menu--glyphs')).toBe(false)
@@ -304,13 +320,13 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
 
   it('a misspelled word: the spelling rows first, then the line\'s rows', async () => {
     const { crepe, view } = await open('* teh list\n', { suggest: (word) => (word === 'teh' ? ['the'] : null) })
-    rightClickOn(view, posOf(crepe, 'teh') + 1)
+    await rightClickOn(view, posOf(crepe, 'teh') + 1)
     expect(groups()).toEqual([['the', 'Add to dictionary'], [STRIP('Bullet list', 'Text')], ...CLIPBOARD])
   })
 
   it('a strip button changes the whole list, as on the dot, and closes the menu', async () => {
     const { crepe, view } = await open('* a\n* b\n* c\n')
-    rightClickOn(view, posOf(crepe, 'b'))
+    await rightClickOn(view, posOf(crepe, 'b'))
     press('Numbered list')
     expect(md(crepe)).toBe('1. a\n2. b\n3. c\n')
     expect(document.querySelector('.ctx-menu')).toBeNull()
@@ -319,7 +335,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
   it('the word the right press selected is no highlight: still the whole list', async () => {
     const { crepe, view } = await open('* a\n* bee\n* c\n')
     caretIn(crepe, 'a')
-    rightClickOn(view, posOf(crepe, 'bee') + 1, () => select(crepe, posOf(crepe, 'bee'), endOf(crepe, 'bee')))
+    await rightClickOn(view, posOf(crepe, 'bee') + 1, () => select(crepe, posOf(crepe, 'bee'), endOf(crepe, 'bee')))
     expect(groups()[0]).toEqual([STRIP('Bullet list', 'Text')])
     press('Numbered list')
     expect(md(crepe)).toBe('1. a\n2. bee\n3. c\n')
@@ -328,14 +344,14 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
   it('text highlighted before the right-click: only the highlighted lines change', async () => {
     const { crepe, view } = await open('* a\n* b\n* c\n')
     select(crepe, posOf(crepe, 'b'), endOf(crepe, 'c'))
-    rightClickOn(view, posOf(crepe, 'b'))
+    await rightClickOn(view, posOf(crepe, 'b'))
     press('Numbered list')
     expect(md(crepe)).toBe('* a\n\n1. b\n2. c\n')
   })
 
   it('a plain line: the strip with Text lit, no Open in new tab; ⌘Z gives it back', async () => {
     const { crepe, view } = await open('p1\n\np2\n', { onOpen: vi.fn() })
-    rightClickOn(view, posOf(crepe, 'p2'))
+    await rightClickOn(view, posOf(crepe, 'p2'))
     expect(groups()).toEqual([[STRIP('Text')], ...CLIPBOARD])
     press('Bullet list')
     expect(md(crepe)).toBe('p1\n\n* p2\n')
@@ -347,7 +363,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     const { crepe, view } = await open('* [ ] a\n* [ ] b\n')
     // Inside the list item, before its line: where the gap between the box and the text resolves.
     expect(lineSections(view, posOf(crepe, 'a') - 1, view.state.selection).flat().filter((item) => item.kind === 'strip')).toHaveLength(1)
-    rightClickOn(view, posOf(crepe, 'a') - 1)
+    await rightClickOn(view, posOf(crepe, 'a') - 1)
     expect(groups()[0]).toEqual([STRIP('Checklist', 'Text')])
   })
 
@@ -357,7 +373,10 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     chevron.className = 'outline-toggle'
     view.dom.querySelector('p')!.prepend(chevron)
     pointAt(view, posOf(crepe, 'a'))
-    act(() => void chevron.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    await act(async () => {
+      chevron.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 }))
+      await guessesAnswered()
+    })
     expect(groups().slice(0, 2)).toEqual([[STRIP('Bullet list', 'Text')], ['Number children', 'Collapse all', 'Expand all', 'Lock open']])
     const items = () => {
       const found: number[] = []
@@ -378,10 +397,10 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
   it('a right-click in the indent left of a child line: the child\'s rows, not its parent\'s (6B nit)', async () => {
     const { crepe, view } = await open('* a\n  1. kid\n  2. kid2\n')
     // Right before the child list, inside "a"; and between the two children.
-    rightClickOn(view, posOf(crepe, 'kid') - 3)
+    await rightClickOn(view, posOf(crepe, 'kid') - 3)
     expect(groups()[0]).toEqual([STRIP('Numbered list', 'Text')])
     act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    rightClickOn(view, posOf(crepe, 'kid2') - 2)
+    await rightClickOn(view, posOf(crepe, 'kid2') - 2)
     press('Bullet list')
     expect(md(crepe)).toBe('* a\n  * kid\n  * kid2\n')
   })
@@ -394,14 +413,17 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     const { view } = await open(markdown)
     vi.spyOn(view, 'posAtCoords').mockReturnValue(null)
     const toggle = view.dom.querySelector(arrow)!
-    act(() => void toggle.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 2, clientY: 50 })))
+    await act(async () => {
+      toggle.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 2, clientY: 50 }))
+      await guessesAnswered()
+    })
     expect(groups()[0]).toEqual([STRIP(...lit)])
     expect(groups()[1]).toEqual(expect.arrayContaining(['Collapse all', 'Expand all']))
   })
 
   it('in a code block or a table cell: no line rows', async () => {
     const { crepe, view } = await open('```\ncode\n```\n')
-    rightClickOn(view, posOf(crepe, 'code') + 1)
+    await rightClickOn(view, posOf(crepe, 'code') + 1)
     expect(document.querySelector('.ctx-menu__strip')).toBeNull()
     act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     const table = await mountTable('| h1 | h2 |\n| -- | -- |\n| a | b |\n')
@@ -411,17 +433,100 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
   it('a note that cannot change: no strip and no children rows; Open in new tab stays', async () => {
     const { crepe, view } = await open('* a\n  * kid\n', { onOpen: vi.fn() })
     crepe.setReadonly(true)
-    rightClickOn(view, posOf(crepe, 'a'))
+    await rightClickOn(view, posOf(crepe, 'a'))
     expect(groups()[0]).toEqual(['Open in new tab'])
     expect(document.querySelector('.ctx-menu__strip')).toBeNull()
   })
 
   it('the note changed under the open menu: a strip button changes nothing', async () => {
     const { crepe, view } = await open('* a\n* b\n')
-    rightClickOn(view, posOf(crepe, 'a'))
+    await rightClickOn(view, posOf(crepe, 'a'))
     const button = document.querySelector<HTMLButtonElement>('.ctx-menu__strip button[aria-label="Numbered list"]')!
     view.dispatch(view.state.tr.insertText('x', endOf(crepe, 'b')))
     act(() => button.click())
     expect(md(crepe)).toBe('* a\n* bx\n')
+  })
+})
+
+describe('the right-click waits for its guesses (YAZ-4464 D2)', () => {
+  /** A speller whose answers the test gives, one ask at a time. */
+  function deferredSpeller() {
+    const asks: Array<{ word: string; answer: (guesses: string[] | null) => void }> = []
+    const suggestions = (word: string) => new Promise<string[] | null>((answer) => void asks.push({ word, answer }))
+    return { asks, suggestions }
+  }
+  async function open(markdown: string, suggestions: (word: string) => Promise<string[] | null>) {
+    const mounted = await mount(markdown)
+    window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions } } as typeof window.yaseenDocs
+    act(() => mounted.view.dispatch(mounted.view.state.tr))
+    const host = document.createElement('div')
+    document.body.append(host)
+    act(() => {
+      root = createRoot(host)
+      root.render(<NoteMenu view={mounted.view} />)
+    })
+    return mounted
+  }
+  const rightClick = (view: EditorView, at: number) => {
+    pointAt(view, at)
+    act(() => void view.dom.querySelector('p')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+  }
+  const answered = (answer: () => void) => act(async () => {
+    answer()
+    await guessesAnswered()
+  })
+  const rows = () => [...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => b.getAttribute('aria-label') ?? b.textContent)
+
+  it('opens when the guesses come, with them at the top', async () => {
+    const speller = deferredSpeller()
+    const { crepe, view } = await open('Why relavent\n', speller.suggestions)
+    rightClick(view, posOf(crepe, 'relavent') + 1)
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    expect(speller.asks.map((a) => a.word)).toEqual(['relavent'])
+    await answered(() => speller.asks[0].answer(['relevant']))
+    expect(rows().slice(0, 2)).toEqual(['relevant', 'Add to dictionary'])
+  })
+
+  it('past the wait it opens with no spelling rows', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const { crepe, view } = await open('Why relavent\n', () => new Promise(() => undefined))
+      rightClick(view, posOf(crepe, 'relavent') + 1)
+      await act(async () => {
+        vi.advanceTimersByTime(SPELL_WAIT_FIRST_MS)
+        await guessesAnswered()
+      })
+      expect(rows()).toContain('Cut')
+      expect(rows()).not.toContain('Add to dictionary')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a note that changed while it waited opens no menu', async () => {
+    const speller = deferredSpeller()
+    const { crepe, view } = await open('Why relavent\n', speller.suggestions)
+    rightClick(view, posOf(crepe, 'relavent') + 1)
+    act(() => view.dispatch(view.state.tr.insertText('Now ', 1)))
+    await answered(() => speller.asks[0].answer(['relevant']))
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('only the latest right-click opens a menu', async () => {
+    const speller = deferredSpeller()
+    const { crepe, view } = await open('Why relavent and teh\n', speller.suggestions)
+    rightClick(view, posOf(crepe, 'relavent') + 1)
+    rightClick(view, posOf(crepe, 'teh') + 1)
+    await answered(() => speller.asks[1].answer(['the']))
+    await answered(() => speller.asks[0].answer(['relevant']))
+    expect(rows()[0]).toBe('the')
+  })
+
+  it('a guess keeps the case macOS gives and the marks of the word (idea 14)', async () => {
+    const { crepe, view } = await mount('Why **Relavent** now\n')
+    pointAt(view, posOf(crepe, 'Relavent') + 1)
+    const misspelling = (await misspellingAt(view, 0, 0, async () => ['Relevant']))!
+    leaf(noteMenuSections(view, misspelling, vi.fn()), 'guess-0').onSelect()
+    expect(md(crepe)).toBe('Why **Relevant** now\n')
   })
 })

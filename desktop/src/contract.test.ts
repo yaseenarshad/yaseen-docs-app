@@ -15,6 +15,7 @@ import { registerIpc } from './main/ipc'
 import { registerClipboardIpc } from './main/ipc/clipboard'
 import { registerUpdateIpc } from './main/ipc/update'
 import { registerMemoryIpc } from './main/ipc/memory'
+import { registerSpellerIpc } from './main/ipc/speller'
 import { LIBRARY_MARKER_FILE } from './main/library/copyLibrary'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
@@ -25,7 +26,7 @@ vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
   // `file.pathFor` (YAZ-3253 D3) reads a path with no IPC: it reaches no channel.
   webUtils: { getPathForFile: () => '' },
-  // `spell.suggestions` (YAZ-3653) asks the renderer's own spellchecker: it reaches no channel.
+  // `spell.suggestions` asks main's macOS checker (YAZ-4464); elsewhere the renderer's own, which reaches no channel.
   webFrame: { isWordMisspelled: () => false, getWordSuggestions: () => [] },
   BrowserWindow: { getAllWindows: () => [], fromWebContents: () => null },
   dialog: {},
@@ -36,7 +37,7 @@ vi.mock('./main/storageWorker?modulePath', () => ({ default: '' }))
 
 const doors = leaves(CONTRACT).map(([, door]) => door)
 /** Renderer → main invokes: the table's, plus the two the preload's Copy as / Paste as fallback makes. */
-const INVOKES = [...doors.filter((d) => d.kind === 'invoke').map((d) => d.channel), SPECIAL.menuCopyText.channel, SPECIAL.menuPasteTextFallback.channel, SPECIAL.menuEdit.channel].sort()
+const INVOKES = [...doors.filter((d) => d.kind === 'invoke').map((d) => d.channel), SPECIAL.menuCopyText.channel, SPECIAL.menuPasteTextFallback.channel, SPECIAL.menuEdit.channel, SPECIAL.spellGuesses.channel].sort()
 /** Main → renderer pushes: the table's, plus the watch events, the flush request, Copy as / Paste as, the heap ask, the views ask and the tabs ask. */
 const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel), SPECIAL.watchEvent, SPECIAL.appFlush, SPECIAL.menuCopyAs, SPECIAL.menuPasteAs, SPECIAL.memoryHeap, SPECIAL.windowViews, SPECIAL.windowTabs].sort()
 /** Renderer → main sends: watch (un)subscribe, the flush ack, the heap answer, the views answer and the tabs answer. */
@@ -53,6 +54,7 @@ afterAll(async () => {
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
   // The four registrations `main/index.ts` makes on `ready`.
   registerMemoryIpc({ report: vi.fn() })
+  registerSpellerIpc({ guesses: vi.fn() })
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', checks: true, releases: [] }), check: async () => ({ kind: 'idle' }), checks: true }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), write: vi.fn(), readText: vi.fn(), readHTML: vi.fn(), revealImage: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
   registered = registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true, macId: async () => 'contracttest' }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
