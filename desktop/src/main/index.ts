@@ -181,7 +181,18 @@ const manager = createWindowManager(store, {
     // wait the menu opens with none; a newer right-click while it waits opens only its own menu (S6).
     const menuGuesses = nativeMenuAsker(process.platform, (word) => nativeSpellWait(speller.guesses(word)))
     win.webContents.on('context-menu', async (_event, params) => {
-      const dictionarySuggestions = await menuGuesses(params)
+      // A click or a key during the wait: the person moved on, so that menu opens nothing. The two
+      // listeners live only during the wait (at most 1 s), so none sits on every keystroke.
+      const movedOn = (_e: Electron.Event, input: { type: string }) => {
+        if (input.type === 'mouseDown' || input.type === 'keyDown' || input.type === 'rawKeyDown') menuGuesses.movedOn()
+      }
+      win.webContents.on('before-mouse-event', movedOn)
+      win.webContents.on('before-input-event', movedOn)
+      const dictionarySuggestions = await menuGuesses(params).finally(() => {
+        if (win.isDestroyed()) return
+        win.webContents.off('before-mouse-event', movedOn)
+        win.webContents.off('before-input-event', movedOn)
+      })
       if (dictionarySuggestions === null || win.isDestroyed()) return
       Menu.buildFromTemplate(buildContextMenuTemplate({ ...params, dictionarySuggestions }, {
         copyAs: (mode) => win.webContents.send(SPECIAL.menuCopyAs, mode),

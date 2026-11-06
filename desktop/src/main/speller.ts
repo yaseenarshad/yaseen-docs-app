@@ -36,14 +36,20 @@ export async function nativeMenuGuesses(params: { misspelledWord: string; dictio
 /**
  * One window's native menu guesses, latest-wins (S6): null when a newer right-click came while this
  * one waited, so only the latest opens a menu. `guesses` carries the menu's wait (`createSpellWait`).
+ * `movedOn()`: a click or a key during the wait, so the waiting menu opens nothing (as the note menu's, S9).
  */
 export function nativeMenuAsker(platform: NodeJS.Platform, guesses: (word: string) => Promise<string[] | null>) {
   let latest = 0
-  return async (params: { misspelledWord: string; dictionarySuggestions: string[] }): Promise<string[] | null> => {
-    const ask = ++latest
+  const ask = async (params: { misspelledWord: string; dictionarySuggestions: string[] }): Promise<string[] | null> => {
+    const mine = ++latest
     const suggestions = await nativeMenuGuesses(params, platform, guesses)
-    return ask === latest ? suggestions : null
+    return mine === latest ? suggestions : null
   }
+  return Object.assign(ask, {
+    movedOn: () => {
+      latest++
+    },
+  })
 }
 
 /** A speller over one helper file. `spawn` is for the tests. */

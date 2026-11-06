@@ -243,6 +243,18 @@ describe('nativeMenuAsker: one window\'s native menu, latest-wins (S6)', () => {
     expect(await second).toEqual(['the'])
   })
 
+  it('a click or a key during the wait: that menu opens nothing, and the next one opens', async () => {
+    const speller = deferred()
+    const menuGuesses = nativeMenuAsker('darwin', speller.guesses)
+    const waiting = menuGuesses(marked('relavent'))
+    menuGuesses.movedOn()
+    speller.answers[0](['relevant'])
+    expect(await waiting).toBeNull()
+    const next = menuGuesses(marked('teh'))
+    speller.answers[1](['the'])
+    expect(await next).toEqual(['the'])
+  })
+
   it('each window counts its own right-clicks', async () => {
     const speller = deferred()
     const one = nativeMenuAsker('darwin', speller.guesses)
