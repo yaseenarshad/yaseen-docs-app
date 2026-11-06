@@ -96,7 +96,17 @@ export type InteractiveCanvasRenderConfig = {
   /** YAZ-4277 D5: the open item whose ▾ shows on hover, and the arrows' prefs. */
   foldArrowHover?: Readonly<{ elementId: string; line: number }> | null;
   foldArrows?: FoldArrowPrefs;
+  /** YAZ-4469: the element a click would pick, outlined faintly on hover. */
+  selectionHover?: SelectionHover | null;
 };
+
+/** YAZ-4469: the element a click would pick, and the view it was found in. */
+export type SelectionHover = Readonly<{
+  id: string;
+  scrollX: number;
+  scrollY: number;
+  zoom: number;
+}>;
 
 export type RenderInteractiveSceneCallback = {
   scrollBars?: ScrollBars;

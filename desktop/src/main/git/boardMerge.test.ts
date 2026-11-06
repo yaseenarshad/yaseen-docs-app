@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mergeBoards } from '@shared/boardMerge'
-import { boardFoldArrowsOf, hoverLinksOff, picturesOut, withBoardFoldArrows, withHoverLinks, withPicturesOut } from '@shared/drawingAssets'
+import { boardFoldArrowsOf, boardHoverOutlineOf, hoverLinksOff, picturesOut, withBoardFoldArrows, withBoardHoverOutline, withHoverLinks, withPicturesOut } from '@shared/drawingAssets'
 import { isDrawingReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 
 type El = Record<string, unknown> & { id: string }
@@ -247,6 +247,21 @@ describe('mergeBoards — the switches of the yaseendraw block (YAZ-3943 1E): th
     }
     const backToApp = withBoardFoldArrows(macA, null, 1, 500)
     for (const [theirs, mine] of [[macA, backToApp], [backToApp, macA]]) expect(blockOf(macA, theirs, mine)).not.toHaveProperty('foldArrows')
+  })
+
+  it('YAZ-4469 4B: the board\'s "Hover outline" is a switch too: the newest choice wins, "app setting" (no key) included', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const macA = withBoardHoverOutline(base, false, 1, 300)
+    for (const [theirs, mine] of [[macA, edited(base, 400)], [edited(base, 400), macA]]) {
+      const merged = blockOf(base, theirs, mine)
+      expect(boardHoverOutlineOf(merged)).toBe(false)
+      expect(merged.switched).toEqual({ hoverOutline: 300 })
+    }
+    // Mac B turns it On later than Mac A's Off: On wins on both sides; then App on one Mac removes the key.
+    const macB = withBoardHoverOutline(base, true, 1, 450)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) expect(boardHoverOutlineOf(blockOf(base, theirs, mine))).toBe(true)
+    const backToApp = withBoardHoverOutline(macA, null, 1, 500)
+    for (const [theirs, mine] of [[macA, backToApp], [backToApp, macA]]) expect(blockOf(macA, theirs, mine)).not.toHaveProperty('hoverOutline')
   })
 
   it('a board whose switches have no time merges as before: ours wins, and a key only theirs holds stays', () => {

@@ -139,6 +139,8 @@ export const CANVAS_SECTION: SettingsSection = {
           keywords: ['box selection', 'contain', 'overlap'],
           render: ({ settings, onChange }) => <Segmented options={SELECT_ON_OPTIONS} value={settings.canvas.selectOn} onChange={(selectOn) => onChange(write(settings, { selectOn }))} ariaLabel="Select on" />,
         },
+        // YAZ-4469 demo: the faint outline of what a click would pick, while the selection tool hovers.
+        toggle('hoverOutline', 'Hover outline', "A faint outline shows what a click will pick, while you hover. A board's cog can choose its own.", ['hover', 'outline', 'highlight', 'select', 'selection']),
       ],
     },
     {

@@ -154,8 +154,14 @@ const api: YaseenDocsApi = {
         ? Promise.reject({ code: 'BAD_REQUEST', message: 'menu.edit runs only from a click or a key' })
         : call<void>(SPECIAL.menuEdit.channel, ...(arg === undefined ? [action] : [action, arg])),
   },
-  // The note menu's spelling rows (YAZ-3653): the same spellchecker the native menu asks, in this renderer.
-  spell: { suggestions: (word) => (webFrame.isWordMisspelled(word) ? webFrame.getWordSuggestions(word) : null) },
+  // The note menu's spelling rows (YAZ-3653). On macOS Electron loads no dictionary, so `webFrame` always
+  // says "spelled right" there: main asks the macOS checker instead (YAZ-4464). Windows keeps Hunspell here.
+  spell: {
+    suggestions: async (word) =>
+      process.platform === 'darwin'
+        ? call<string[] | null>(SPECIAL.spellGuesses.channel, word)
+        : webFrame.isWordMisspelled(word) ? webFrame.getWordSuggestions(word) : null,
+  },
   properties: {
     ...generated.properties,
     // Main sends `{ root, properties }`; a listener gets the declarations.

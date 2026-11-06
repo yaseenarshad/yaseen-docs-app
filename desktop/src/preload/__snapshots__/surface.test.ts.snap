@@ -171,6 +171,7 @@ secrets.has/1: invoke secrets:has ["a0"]; => "answer"; !> {"code":"NOT_FOUND","m
 secrets.set/1: invoke secrets:set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardFoldArrows/1: invoke board:set-fold-arrows ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardHoverLinks/1: invoke board:set-hover-links ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+setBoardHoverOutline/1: invoke board:set-hover-outline ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardPictures/1: invoke board:set-pictures ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardReadOnly/1: invoke board:set-read-only ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 share.accounts/1: invoke share:accounts ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -190,7 +191,7 @@ shell.openDefault/1: invoke shell:openDefault ["a0"]; => "answer"; !> {"code":"N
 shell.openLink/1: invoke shell:open-link ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openVsCode/1: invoke shell:openVsCode ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.reveal/1: invoke shell:reveal ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-spell.suggestions/1: (no IPC)
+spell.suggestions/1: invoke spell:guesses ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.get/0: invoke state:get []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.onChange/1: on state:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off state:changed
 state.pushRecent/1: invoke state:push-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

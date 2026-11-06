@@ -46,6 +46,8 @@ type InteractiveCanvasProps = {
   /** YAZ-4277 D5: the open item whose ▾ shows on hover. */
   foldArrowHover: InteractiveCanvasRenderConfig["foldArrowHover"];
   foldArrows: InteractiveCanvasRenderConfig["foldArrows"];
+  /** YAZ-4469: the element a click would pick, outlined faintly on hover. */
+  selectionHover: InteractiveCanvasRenderConfig["selectionHover"];
   editorInterface: EditorInterface;
   app: AppClassProperties;
   interactionEnabled: boolean;
@@ -165,6 +167,7 @@ const InteractiveCanvas = (props: InteractiveCanvasProps) => {
         renderScrollbars: props.renderScrollbars,
         foldArrowHover: props.foldArrowHover,
         foldArrows: props.foldArrows,
+        selectionHover: props.selectionHover,
         // NOTE not memoized on so we don't rerender on cursor move
         lastViewportPosition: props.app.viewport.lastPosition,
       },
@@ -299,6 +302,7 @@ const areEqual = (
     prevProps.selectedElements !== nextProps.selectedElements ||
     prevProps.renderScrollbars !== nextProps.renderScrollbars ||
     prevProps.foldArrowHover !== nextProps.foldArrowHover ||
+    prevProps.selectionHover !== nextProps.selectionHover ||
     prevProps.foldArrows !== nextProps.foldArrows ||
     prevProps.interactionEnabled !== nextProps.interactionEnabled ||
     prevProps.navigationEnabled !== nextProps.navigationEnabled

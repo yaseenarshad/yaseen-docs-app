@@ -4,6 +4,7 @@ import {
   BOARD_META_HEAD_BYTES,
   BOARD_META_KEY,
   assetFileName,
+  boardHoverOutlineOf,
   extForMime,
   fileIdOfAssetName,
   isValidFileId,
@@ -17,6 +18,7 @@ import {
   stampBoardMeta,
   stripEmbeddedScene,
   unpersistedFiles,
+  withBoardHoverOutline,
   type DrawingFileData,
 } from '@shared/drawingAssets'
 
@@ -272,5 +274,21 @@ describe('newBoardScene (YAZ-3943 demo 2 and round 3, one rule: YAZ-4074 6A item
     expect(block('assets', 'Pics')).toEqual({ createdAt: 7, updatedAt: 7, pictures: 'assets', switched: { pictures: 7 } })
     expect(block('folder', 'Pics')).toMatchObject({ pictures: 'assets', picturesFolder: 'Pics' })
     expect(block('folder', '../out')).not.toHaveProperty('picturesFolder')
+  })
+})
+
+describe('the board\'s own "Hover outline" (YAZ-4469 4B)', () => {
+  it('reads true or false, else null (the app setting); a write keeps the other keys and stamps its time, the same value gives back the SAME scene, and App removes the key', () => {
+    expect([undefined, 7, {}, { hoverOutline: 'off' }, { hoverOutline: true }, { hoverOutline: false }].map(boardHoverOutlineOf)).toEqual([null, null, null, null, true, false])
+    const scene = { [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, cloudId: 'x' }, elements: [] }
+    expect(withBoardHoverOutline(scene, null, 9, 50)).toBe(scene)
+    const off = withBoardHoverOutline(scene, false, 9, 50)
+    expect(off).toEqual({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, cloudId: 'x', hoverOutline: false, switched: { hoverOutline: 50 } }, elements: [] })
+    expect(Object.keys(off)[0]).toBe(BOARD_META_KEY)
+    expect(withBoardHoverOutline(off, false, 9, 60)).toBe(off)
+    expect(withBoardHoverOutline(off, true, 9, 60)[BOARD_META_KEY]).toEqual({ createdAt: 1, updatedAt: 2, cloudId: 'x', hoverOutline: true, switched: { hoverOutline: 60 } })
+    expect(withBoardHoverOutline(off, null, 9, 70)[BOARD_META_KEY]).toEqual({ createdAt: 1, updatedAt: 2, cloudId: 'x', switched: { hoverOutline: 70 } })
+    // a board with no block gets one, dated at its birth
+    expect(withBoardHoverOutline({ elements: [] }, true, 9, 80)).toEqual({ [BOARD_META_KEY]: { createdAt: 9, updatedAt: 9, hoverOutline: true, switched: { hoverOutline: 80 } }, elements: [] })
   })
 })

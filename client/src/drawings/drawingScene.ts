@@ -14,7 +14,7 @@
  * partial render: a half-parsed scene would be a lie about what the file holds.
  */
 import type { DrawingFileEntry, FoldArrowMode } from '@shared/types'
-import { BOARD_META_KEY, boardFoldArrowsOf, hoverLinksOff, picturesFolderOf, picturesOut, referencedFileIds } from '@shared/drawingAssets'
+import { BOARD_META_KEY, boardFoldArrowsOf, boardHoverOutlineOf, hoverLinksOff, picturesFolderOf, picturesOut, referencedFileIds } from '@shared/drawingAssets'
 import { isRecord } from '@shared/guards'
 import { isDrawingReadOnly } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
@@ -37,15 +37,18 @@ export interface DrawingScene {
   readonly hoverLinksOff?: boolean
   /** `"foldArrows"` in the block (YAZ-4277 D5): the board's own fold arrow mode; absent = the app setting. */
   readonly foldArrows?: FoldArrowMode
+  /** `"hoverOutline"` in the block (YAZ-4469 demo): the board's own hover outline; absent = the app setting. */
+  readonly hoverOutline?: boolean
 }
 
 /** The scene's switches, each present only when it is not the default: a plain scene keeps the shape it always had. */
-const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; picturesOut?: true; picturesFolder?: string; hoverLinksOff?: true; foldArrows?: FoldArrowMode } => ({
+const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; picturesOut?: true; picturesFolder?: string; hoverLinksOff?: true; foldArrows?: FoldArrowMode; hoverOutline?: boolean } => ({
   ...(isDrawingReadOnly(scene) ? { readOnly: true } : {}),
   ...(picturesOut(scene[BOARD_META_KEY]) ? { picturesOut: true } : {}),
   ...(picturesFolderOf(scene[BOARD_META_KEY]) === null ? {} : { picturesFolder: picturesFolderOf(scene[BOARD_META_KEY]) as string }),
   ...(hoverLinksOff(scene[BOARD_META_KEY]) ? { hoverLinksOff: true } : {}),
   ...(boardFoldArrowsOf(scene[BOARD_META_KEY]) === null ? {} : { foldArrows: boardFoldArrowsOf(scene[BOARD_META_KEY]) as FoldArrowMode }),
+  ...(boardHoverOutlineOf(scene[BOARD_META_KEY]) === null ? {} : { hoverOutline: boardHoverOutlineOf(scene[BOARD_META_KEY]) as boolean }),
 })
 
 /** Embed targets that get a preview — everything else renders exactly as it always has. */

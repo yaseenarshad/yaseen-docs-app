@@ -635,6 +635,18 @@ export interface BoardFoldArrowsRequest {
 }
 
 /**
+ * `board:set-hover-outline` (YAZ-4469 demo): the cog's "Hover outline" on a drawing: `'app'` (no key: the app
+ * setting), or `"hoverOutline": true` / `false` in the board's `yaseendraw` block. One read, one atomic write, as Read only.
+ */
+export interface BoardHoverOutlineRequest {
+  root: string
+  path: string
+  value: 'app' | boolean
+  /** Required: the mtime the tab last read or wrote. A differing disk mtime rejects `CONFLICT` and writes NOTHING. */
+  expectedMtime: number
+}
+
+/**
  * `fs:create-board` (YAZ-3028 D9): a NEW drawing or diagram, born with its empty content. Main picks
  * the content by the kind of `path` — the renderer sends none — stamps the dates, and never
  * overwrites (`ALREADY_EXISTS`). No note ID: IDs are for notes only.
@@ -1414,6 +1426,12 @@ export interface CanvasPrefs {
    * engine's `newShapesMatchZoom` prop.
    */
   newShapesMatchZoom: boolean
+  /**
+   * YAZ-4469 demo: "Hover outline". While the selection tool hovers, a faint outline shows what a click will pick. A
+   * board's cog can override it (`"hoverOutline"` in its `yaseendraw` block). Never appState: the engine's
+   * `hoverOutline` prop.
+   */
+  hoverOutline: boolean
 }
 
 /** YAZ-4277 D14: "Start with the default style" or "Keep the last style". */
@@ -1476,6 +1494,7 @@ export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
   newElementStyle: 'default',
   fillSetsTextColor: true,
   newShapesMatchZoom: true,
+  hoverOutline: true,
 }
 
 /**
