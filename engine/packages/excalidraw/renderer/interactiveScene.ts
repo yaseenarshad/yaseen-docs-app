@@ -972,6 +972,60 @@ const renderBindingHighlightForBindableElement = (
 /** YAZ-4469: how strong the hover outline is, against the selection's own border. */
 const SELECTION_HOVER_ALPHA = 0.35;
 
+/**
+ * YAZ-4469: the box the hover outline draws, or null. Only for the selection
+ * tool, with nothing drawn, dragged, selected or written, and only in the view
+ * the pointer found it in: a scroll or zoom under a still pointer hides it
+ * (A4). A click picks the group around the element unless that group is open,
+ * so the outline does too (A7).
+ */
+export const getSelectionHoverBox = (
+  hover: InteractiveCanvasRenderConfig["selectionHover"],
+  elementsMap: RenderableElementsMap,
+  appState: InteractiveCanvasAppState,
+): Pick<
+  ElementSelectionBorder,
+  "angle" | "x1" | "y1" | "x2" | "y2" | "cx" | "cy"
+> | null => {
+  const hovered =
+    hover &&
+    hover.scrollX === appState.scrollX &&
+    hover.scrollY === appState.scrollY &&
+    hover.zoom === appState.zoom.value
+      ? elementsMap.get(hover.id)
+      : undefined;
+  if (
+    !hovered ||
+    appState.activeTool.type !== "selection" ||
+    appState.selectedElementIds[hovered.id] ||
+    appState.viewModeEnabled ||
+    appState.editingTextElement ||
+    appState.newElement ||
+    appState.selectionElement ||
+    appState.multiElement ||
+    appState.selectedLinearElement?.isEditing
+  ) {
+    return null;
+  }
+  const at = appState.editingGroupId
+    ? hovered.groupIds.indexOf(appState.editingGroupId)
+    : -1;
+  const groupId =
+    at === -1 ? hovered.groupIds.at(-1) : hovered.groupIds[at - 1];
+  if (groupId) {
+    const [x1, y1, x2, y2] = getCommonBounds(
+      getElementsInGroup(elementsMap, groupId),
+    );
+    return { angle: 0, x1, y1, x2, y2, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 };
+  }
+  const [x1, y1, x2, y2, cx, cy] = getElementAbsoluteCoords(
+    hovered,
+    elementsMap,
+    true,
+  );
+  return { angle: hovered.angle, x1, y1, x2, y2, cx, cy };
+};
+
 type ElementSelectionBorder = {
   angle: number;
   x1: number;
@@ -1732,37 +1786,17 @@ const _renderInteractiveScene = ({
     renderElementsBoxHighlight(context, appState, appState.elementsToHighlight);
   }
 
-  // YAZ-4469: a faint outline on the element a click would pick, while the
-  // selection tool hovers and nothing is being drawn, dragged or written
-  const hovered = renderConfig.selectionHover
-    ? elementsMap.get(renderConfig.selectionHover)
-    : undefined;
-  if (
-    hovered &&
-    appState.activeTool.type === "selection" &&
-    !appState.selectedElementIds[hovered.id] &&
-    !appState.viewModeEnabled &&
-    !appState.editingTextElement &&
-    !appState.newElement &&
-    !appState.selectionElement &&
-    !appState.multiElement &&
-    !appState.selectedLinearElement?.isEditing
-  ) {
-    const [x1, y1, x2, y2, cx, cy] = getElementAbsoluteCoords(
-      hovered,
-      elementsMap,
-      true,
-    );
+  // YAZ-4469: a faint outline on what a click would pick
+  const hoverBox = getSelectionHoverBox(
+    renderConfig.selectionHover,
+    elementsMap,
+    appState,
+  );
+  if (hoverBox) {
     context.save();
     context.globalAlpha = SELECTION_HOVER_ALPHA;
     renderSelectionBorder(context, appState, {
-      angle: hovered.angle,
-      x1,
-      y1,
-      x2,
-      y2,
-      cx,
-      cy,
+      ...hoverBox,
       selectionColors: [renderConfig.selectionColor],
       activeEmbeddable: false,
     });
