@@ -11,7 +11,8 @@ import type { MenuAction, MenuItem, MenuSection } from '../sidebar/menuSections'
 import type { CopyAsMode } from '@shared/types'
 import { caretIn, endOf, md, mount, posOf, runCommand, select, unmountAll } from './marks/markTestKit'
 import { isOutlineItemCollapsed, toggleOutlineFold } from './outline/outlineFolding'
-import { lineSections, misspellingAt, NoteMenu, noteMenuSections, SPELL_WAIT_FIRST_MS, TABLE_HANDLE_MENU } from './noteMenu'
+import { lineSections, misspellingOf, NoteMenu, noteMenuSections, resetSpellWait, TABLE_HANDLE_MENU, wordAt } from './noteMenu'
+import { SPELL_WAIT_FIRST_MS, SPELL_WAIT_MS } from '@shared/spelling'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import { cellDOM, cellPos, mountNote as mountTable, mouseAt, unmountAll as unmountTables } from './table/tableTestKit'
 
@@ -22,6 +23,8 @@ afterEach(async () => {
   document.body.querySelectorAll('.ctx-overlay').forEach((el) => el.remove())
   // A page selection left by one test is read by the next note while its menu waits for guesses (YAZ-4464 D2).
   document.getSelection()?.removeAllRanges()
+  // Each test is a new session: its first right-click waits the first ask's time (S8).
+  resetSpellWait()
   await unmountAll()
   await unmountTables()
 })
@@ -38,6 +41,11 @@ const guessesAnswered = async () => {
   for (let turn = 0; turn < 10; turn++) await Promise.resolve()
 }
 const pointAt = (view: EditorView, pos: number) => vi.spyOn(view, 'posAtCoords').mockReturnValue({ pos, inside: -1 })
+/** The misspelled word under the pointer, found as a right-click finds it: `wordAt`, then its guesses. */
+const misspellingAt = async (view: EditorView, suggest: (word: string) => Promise<string[] | null>) => {
+  const word = wordAt(view, 0, 0)
+  return word === null ? null : misspellingOf(word, suggest)
+}
 
 describe('the note menu rows (YAZ-3653)', () => {
   it('a selection in an editable note: every row on, in the copy and paste groups', async () => {
@@ -74,7 +82,7 @@ describe('the note menu rows (YAZ-3653)', () => {
     const { crepe, view } = await mount('Fix teh typo\n')
     pointAt(view, posOf(crepe, 'teh') + 1)
     const suggest = vi.fn((word: string) => (word === 'teh' ? ['the', 'tea'] : null))
-    const misspelling = await misspellingAt(view, 0, 0, async (word) => suggest(word))
+    const misspelling = await misspellingAt(view, async (word) => suggest(word))
     expect(misspelling).toEqual({ word: 'teh', from: posOf(crepe, 'teh'), to: endOf(crepe, 'teh'), suggestions: ['the', 'tea'] })
     const run = vi.fn()
     const sections = noteMenuSections(view, misspelling, run)
@@ -90,7 +98,7 @@ describe('the note menu rows (YAZ-3653)', () => {
   it('a guess after the note changed under the open menu: the word is not there, nothing is replaced', async () => {
     const { crepe, view } = await mount('Fix teh typo\n')
     pointAt(view, posOf(crepe, 'teh') + 1)
-    const misspelling = (await misspellingAt(view, 0, 0, async () => ['the']))!
+    const misspelling = (await misspellingAt(view, async () => ['the']))!
     const sections = noteMenuSections(view, misspelling, vi.fn())
     view.dispatch(view.state.tr.insertText('Now ', 1))
     leaf(sections, 'guess-0').onSelect()
@@ -110,9 +118,9 @@ describe('the note menu rows (YAZ-3653)', () => {
     const { crepe, view } = await mount('fine words\n\n```\nteh\n```\n')
     const suggest = vi.fn((word: string) => (word === 'teh' ? [] : null))
     pointAt(view, posOf(crepe, 'words') + 2)
-    expect(await misspellingAt(view, 0, 0, async (word) => suggest(word))).toBeNull()
+    expect(await misspellingAt(view, async (word) => suggest(word))).toBeNull()
     pointAt(view, posOf(crepe, 'teh') + 1)
-    expect(await misspellingAt(view, 0, 0, async (word) => suggest(word))).toBeNull()
+    expect(await misspellingAt(view, async (word) => suggest(word))).toBeNull()
     expect(suggest).toHaveBeenCalledOnce()
   })
 })
@@ -349,6 +357,16 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     expect(md(crepe)).toBe('* a\n\n1. b\n2. c\n')
   })
 
+  it('the page selection moved after the menu read it: the strip changes the lines it showed lit (YAZ-4464, turnIntoRows)', async () => {
+    const { crepe, view } = await open('* a\n* b\n* c\n')
+    select(crepe, posOf(crepe, 'b'), endOf(crepe, 'c'))
+    await rightClickOn(view, posOf(crepe, 'b'))
+    // The menu waits for its guesses, and the note can read a new page selection in that time.
+    caretIn(crepe, 'a')
+    press('Numbered list')
+    expect(md(crepe)).toBe('* a\n\n1. b\n2. c\n')
+  })
+
   it('a plain line: the strip with Text lit, no Open in new tab; ⌘Z gives it back', async () => {
     const { crepe, view } = await open('p1\n\np2\n', { onOpen: vi.fn() })
     await rightClickOn(view, posOf(crepe, 'p2'))
@@ -512,20 +530,105 @@ describe('the right-click waits for its guesses (YAZ-4464 D2)', () => {
     expect(document.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('only the latest right-click opens a menu', async () => {
+  it.each([
+    ['the latest answer comes first', [1, 0]],
+    ['the first answer comes first', [0, 1]],
+  ])('only the latest right-click opens a menu: %s', async (_, order) => {
     const speller = deferredSpeller()
     const { crepe, view } = await open('Why relavent and teh\n', speller.suggestions)
     rightClick(view, posOf(crepe, 'relavent') + 1)
     rightClick(view, posOf(crepe, 'teh') + 1)
-    await answered(() => speller.asks[1].answer(['the']))
-    await answered(() => speller.asks[0].answer(['relevant']))
+    const answers = [['relevant'], ['the']]
+    await answered(() => speller.asks[order[0]].answer(answers[order[0]]))
+    // The first right-click's answer alone opens nothing: a newer one waits.
+    if (order[0] === 0) expect(document.querySelector('.ctx-menu')).toBeNull()
+    await answered(() => speller.asks[order[1]].answer(answers[order[1]]))
     expect(rows()[0]).toBe('the')
+    expect(document.querySelectorAll('.ctx-menu')).toHaveLength(1)
+  })
+
+  it(`waits ${SPELL_WAIT_FIRST_MS} ms until the first answer comes, then ${SPELL_WAIT_MS} ms (S8)`, async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const speller = deferredSpeller()
+      const { crepe, view } = await open('Why relavent\n', speller.suggestions)
+      const waited = (ms: number) => act(async () => {
+        vi.advanceTimersByTime(ms)
+        await guessesAnswered()
+      })
+      const shut = () => act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+      const menuOpen = () => document.querySelector('.ctx-menu') !== null
+      // No answer to the first ask: the menu opens at 1 s, and the next ask still waits 1 s.
+      for (let ask = 0; ask < 2; ask++) {
+        rightClick(view, posOf(crepe, 'relavent') + 1)
+        await waited(SPELL_WAIT_FIRST_MS - 1)
+        expect(menuOpen()).toBe(false)
+        await waited(1)
+        expect(rows()).not.toContain('Add to dictionary')
+        shut()
+      }
+      // The first answer comes, in time: from now on a right-click waits 400 ms.
+      rightClick(view, posOf(crepe, 'relavent') + 1)
+      await waited(SPELL_WAIT_MS)
+      expect(menuOpen()).toBe(false)
+      await answered(() => speller.asks[2].answer(['relevant']))
+      expect(rows()[0]).toBe('relevant')
+      shut()
+      rightClick(view, posOf(crepe, 'relavent') + 1)
+      await waited(SPELL_WAIT_MS - 1)
+      expect(menuOpen()).toBe(false)
+      await waited(1)
+      expect(rows()).toContain('Cut')
+      expect(rows()).not.toContain('Add to dictionary')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a menu still waiting when the note goes (another tab) opens nothing (S9)', async () => {
+    const speller = deferredSpeller()
+    const { crepe, view } = await open('Why relavent\n', speller.suggestions)
+    rightClick(view, posOf(crepe, 'relavent') + 1)
+    const other = await mount('Other note\n')
+    act(() => root!.render(<NoteMenu view={other.view} />))
+    await answered(() => speller.asks[0].answer(['relevant']))
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it.each([
+    ['a click', () => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))],
+    ['a key', () => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))],
+  ])('%s anywhere while the menu waits: it opens nothing (S9)', async (_, moveOn) => {
+    const speller = deferredSpeller()
+    const { crepe, view } = await open('Why relavent\n', speller.suggestions)
+    rightClick(view, posOf(crepe, 'relavent') + 1)
+    act(moveOn)
+    await answered(() => speller.asks[0].answer(['relevant']))
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    // The next right-click opens as usual.
+    rightClick(view, posOf(crepe, 'relavent') + 1)
+    await answered(() => speller.asks[1].answer(['relevant']))
+    expect(rows()[0]).toBe('relevant')
+  })
+
+  it('on no word or on an image it opens at once and asks nothing (S11)', async () => {
+    const suggestions = vi.fn(() => new Promise<string[] | null>(() => undefined))
+    const { crepe, view } = await open('Why 2026\n', suggestions)
+    rightClick(view, posOf(crepe, '2026') + 1)
+    expect(rows()).toContain('Cut')
+    act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    const image = document.createElement('img')
+    image.src = 'https://example.com/a.png'
+    view.dom.querySelector('p')!.append(image)
+    act(() => void image.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    expect(rows()).toEqual(['Copy image', 'Reveal in Finder'])
+    expect(suggestions).not.toHaveBeenCalled()
   })
 
   it('a guess keeps the case macOS gives and the marks of the word (idea 14)', async () => {
     const { crepe, view } = await mount('Why **Relavent** now\n')
     pointAt(view, posOf(crepe, 'Relavent') + 1)
-    const misspelling = (await misspellingAt(view, 0, 0, async () => ['Relevant']))!
+    const misspelling = (await misspellingAt(view, async () => ['Relevant']))!
     leaf(noteMenuSections(view, misspelling, vi.fn()), 'guess-0').onSelect()
     expect(md(crepe)).toBe('Why **Relevant** now\n')
   })

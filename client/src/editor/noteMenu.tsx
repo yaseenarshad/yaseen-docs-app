@@ -16,6 +16,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { NoteMenuAction, NoteMenuArg } from '@shared/types'
+import { createSpellWait } from '@shared/spelling'
 import { api } from '../api'
 import { blockMenuItems } from './blockHandleMenu'
 import { textLineTarget } from './blockHandleTarget'
@@ -44,7 +45,7 @@ const MAX_SUGGESTIONS = 5
 const WORD = /[\p{L}\p{M}]+(?:['’][\p{L}\p{M}]+)*/gu
 
 /** The word at (`x`, `y`) and its document range, or null: no word there, or a word in code. */
-function wordAt(view: EditorView, x: number, y: number): Omit<Misspelling, 'suggestions'> | null {
+export function wordAt(view: EditorView, x: number, y: number): Omit<Misspelling, 'suggestions'> | null {
   const at = view.posAtCoords({ left: x, top: y })
   if (at === null) return null
   const $pos = view.state.doc.resolve(at.pos)
@@ -59,22 +60,18 @@ function wordAt(view: EditorView, x: number, y: number): Omit<Misspelling, 'sugg
   return null
 }
 
-/** The misspelled word at (`x`, `y`), or null: no word there, a word in code, or a word spelled right. */
-export async function misspellingAt(view: EditorView, x: number, y: number, suggest: (word: string) => Promise<string[] | null>): Promise<Misspelling | null> {
-  const word = wordAt(view, x, y)
-  if (word === null) return null
+/** `word` (from `wordAt`) with its guesses, or null when it is spelled right. */
+export async function misspellingOf(word: Omit<Misspelling, 'suggestions'>, suggest: (word: string) => Promise<string[] | null>): Promise<Misspelling | null> {
   const suggestions = await suggest(word.word)
   return suggestions === null ? null : { ...word, suggestions: suggestions.slice(0, MAX_SUGGESTIONS) }
 }
 
-/**
- * How long a right-click on a word waits for its guesses (YAZ-4464 D2, idea 8): the macOS checker's
- * helper starts at the first ask, which can take most of a second on a busy Mac; then answers in
- * milliseconds. Past the wait the menu opens with no spelling rows, so rows never move under the pointer.
- */
-export const SPELL_WAIT_FIRST_MS = 1000
-export const SPELL_WAIT_MS = 400
-let spellAsked = false
+/** A right-click's wait for its guesses (YAZ-4464 D2, idea 8; `createSpellWait`). One for the window: a new one in the tests. */
+let spellWait = createSpellWait()
+/** For the tests: a new session, whose next right-click waits the first ask's time. */
+export const resetSpellWait = () => {
+  spellWait = createSpellWait()
+}
 
 /** A bullet-menu glyph, an SVG element its row makes, as React draws it: the same markup. */
 function glyphOf(make: () => SVGElement): ReactNode {
@@ -294,12 +291,20 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
           focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null,
         })
       }
-      if (image !== null || wordAt(view, event.clientX, event.clientY) === null) return open(null)
-      // YAZ-4464 D2: wait for the guesses, up to a limit; then open without them.
-      const wait = spellAsked ? SPELL_WAIT_MS : SPELL_WAIT_FIRST_MS
-      spellAsked = true
-      const late = new Promise<null>((resolve) => setTimeout(resolve, wait, null))
-      void Promise.race([misspellingAt(view, event.clientX, event.clientY, (word) => api.spell.suggestions(word)).catch(() => null), late]).then(open)
+      const word = image === null ? wordAt(view, event.clientX, event.clientY) : null
+      if (word === null) return open(null)
+      // YAZ-4464 D2: wait for the guesses, up to a limit; then open without them. A click or a key
+      // anywhere during the wait means the person moved on: that menu opens nothing (S9).
+      const moved = () => {
+        if (latest === ask) latest++
+      }
+      window.addEventListener('pointerdown', moved, true)
+      window.addEventListener('keydown', moved, true)
+      void spellWait(misspellingOf(word, (w) => api.spell.suggestions(w))).then((misspelling) => {
+        window.removeEventListener('pointerdown', moved, true)
+        window.removeEventListener('keydown', moved, true)
+        open(misspelling)
+      })
     }
     // A table's row or column handle (YAZ-3820): it selected its cells, and asks for this menu as a
     // right-click in `pos`, a cell of its row or column (the vendored table block, `operation.ts`).
@@ -312,6 +317,8 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
     view.dom.addEventListener('contextmenu', onContextMenu)
     view.dom.addEventListener(TABLE_HANDLE_MENU, onHandleMenu)
     return () => {
+      // A right-click still waiting for its guesses opens nothing once its note is gone (S9).
+      latest = -1
       view.dom.removeEventListener('mousedown', onMouseDown, true)
       view.dom.removeEventListener('contextmenu', onContextMenu)
       view.dom.removeEventListener(TABLE_HANDLE_MENU, onHandleMenu)
