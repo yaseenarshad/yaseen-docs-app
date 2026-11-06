@@ -534,3 +534,72 @@ describe('the hover wait before a switch (YAZ-3085 D4)', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 })
+
+/**
+ * The rows of the focus and favorites flyouts (YAZ-4460 demo, YAZ-4477): a radio pick and a check keep the menu open and
+ * move or flip their ✓ (M10); a two-click check arms first and says what the second click does, in colour (M8); a
+ * heading is words, no button, that the keys pass by (M7); a parent row keeps its glyph (M1).
+ */
+describe('the flyout rows of Focus and Favorites (YAZ-4477)', () => {
+  it('M10: a radio row runs its pick, keeps the menu open, and its ✓ moves to the pick; the row already picked runs nothing', () => {
+    const onClose = vi.fn()
+    const a = vi.fn()
+    const b = vi.fn()
+    const el = mount(0, 0, [[item('Clients', { radio: { group: 'place', on: true }, onSelect: a }), item('Reading', { radio: { group: 'place', on: false }, onSelect: b })]], onClose)
+    expect([buttonOf(el, 'Clients')?.dataset.hint, buttonOf(el, 'Reading')?.dataset.hint]).toEqual(['✓', undefined])
+    act(() => buttonOf(el, 'Reading')?.click())
+    expect(b).toHaveBeenCalledOnce()
+    expect([buttonOf(el, 'Clients')?.dataset.hint, buttonOf(el, 'Reading')?.dataset.hint]).toEqual([undefined, '✓'])
+    act(() => buttonOf(el, 'Reading')?.click())
+    expect(b).toHaveBeenCalledOnce()
+    expect(a).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('M10, M12: a check row flips its ✓ at the click, hands the new state, and keeps the menu open', () => {
+    const onClose = vi.fn()
+    const onToggle = vi.fn()
+    const el = mount(0, 0, [[item('Vault', { checked: false, onToggle })]], onClose)
+    act(() => buttonOf(el, 'Vault')?.click())
+    expect(onToggle).toHaveBeenLastCalledWith(true)
+    expect(buttonOf(el, 'Vault')?.dataset.hint).toBe('✓')
+    act(() => buttonOf(el, 'Vault')?.click())
+    expect(onToggle).toHaveBeenLastCalledWith(false)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('M8: a two-click check arms first — "Click again to add" in the accent, "Click again to remove" in red — and the pointer leaving disarms it', () => {
+    const onToggle = vi.fn()
+    const el = mount(0, 0, [[item('Workspace', { checked: false, twoClick: true, onToggle }), item('Vault', { checked: true, twoClick: true, onToggle })]])
+    act(() => buttonOf(el, 'Workspace')?.click())
+    expect(onToggle).not.toHaveBeenCalled()
+    const armed = buttons(el)[0]
+    expect(armed.textContent).toBe('Click again to add')
+    expect(armed.classList.contains('ctx-menu__item--armed-add')).toBe(true)
+    act(() => void armed.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })))
+    expect(buttons(el)[0].textContent).toBe('Workspace')
+    act(() => buttons(el)[1].click())
+    expect(buttons(el)[1].textContent).toBe('Click again to remove')
+    expect(buttons(el)[1].classList.contains('ctx-menu__item--armed')).toBe(true)
+    act(() => buttons(el)[1].click())
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith(false)
+    expect(buttons(el)[1].textContent).toBe('Vault')
+  })
+
+  it('M7: a heading is words over its rows, no button, so a click passes it by and Tab skips it', () => {
+    const el = mount(0, 0, [[item('Show it in', { heading: true, tip: 'Which windows show it' }), item('Workspace'), item('Vault')]])
+    const heading = el.querySelector<HTMLElement>('.ctx-menu__heading')
+    expect(heading?.tagName).toBe('DIV')
+    expect(heading?.getAttribute('title')).toBe('Which windows show it')
+    expect(labelsOf(el)).toEqual(['Workspace', 'Vault'])
+    expect(heading?.tabIndex).toBe(-1)
+    expect(heading?.getAttribute('role')).toBe('presentation')
+  })
+
+  it('M1: a parent row keeps its glyph, and its label stays the whole text', () => {
+    const el = mount(0, 0, [[parent('Add to focus', [[item('Clients')]], { icon: <svg data-glyph="eye" /> })]])
+    const row = buttonOf(el, 'Add to focus')
+    expect(row?.querySelector('svg[data-glyph="eye"]')).not.toBeNull()
+    expect(menu(el).classList.contains('ctx-menu--glyphs')).toBe(true)
+  })
+})

@@ -6257,6 +6257,21 @@ describe('focus tab (YAZ-2619)', () => {
     expect(isOpen(el, `${v}/Projects`)).toBe('false')
   })
 
+  it('YAZ-4475: a focus folder made a moment ago is in the next row menu\'s flyout, with no second right-click; a move into it puts the ✓ on it', async () => {
+    const { el, v } = await mountVault({ lens: 'focus' }, { focus: ['/top.md'] })
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__focus-bar .sidebar__focus-clear')].find((b) => b.textContent === '+ Folder')?.click())
+    const name = el.querySelector<HTMLInputElement>('.sidebar .create-inline__input')
+    await act(async () => void name?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(el.querySelectorAll('[data-focus-folder]')).toHaveLength(1)
+    rightClick(rowByPath(el, `${v}/top.md`))
+    expect(subLabels(el, 'Remove from focus')).toEqual(['New focus folder', 'No folder', 'New focus folder…', 'Workspace', 'Vault']) // the heading "Show it in" is no item
+    clickSub(el, 'New focus folder', 'Remove from focus')
+    await act(async () => undefined)
+    closeMenu(el)
+    rightClick(rowByPath(el, `${v}/top.md`))
+    expect(openFlyout(el, 'Remove from focus').find((b) => b.textContent === 'New focus folder')?.dataset.hint).toBe('✓')
+  })
+
   it('S3, S4, S6, R5, R9, R12: a selection adds in panel order; a mixed one reads Add and puts in only the missing row; an all-in one reads "Remove 3 from focus" and keeps the tab', async () => {
     const { el, v, bridge, props, rerender } = await mountVault()
     shiftClickRow(rowByPath(el, `${v}/top.md`)) // click order top → Projects → Notes…
@@ -6610,13 +6625,15 @@ describe('favorites (YAZ-1766)', () => {
 
   let vaults = 0
   /** A fresh vault + window; `favorites` seeds what `favorites.get` answers — the vault file's list, absolute, as main hands it over (6A); `focus` seeds the window's focus list. */
-  const mountVault = async (over: Partial<SidebarProps> = {}, opts: { favorites?: string[]; focus?: string[]; nodes?: (v: string) => TreeNode[] } = {}) => {
+  const mountVault = async (over: Partial<SidebarProps> = {}, opts: { favorites?: string[]; focus?: string[]; nodes?: (v: string) => TreeNode[]; folders?: (vaultName: string) => FocusFolder[] } = {}) => {
     const v = `/v-fav-${++vaults}`
     // YAZ-4460 ("Show it in"): the hook listens for the shown scope AND the other one, so main's push goes to every listener; each keeps its own scope.
     const listeners: ((c: { root: string; scope: ListScope }) => void)[] = []
     const m = await mount({ root: v, lens: 'files', ...over }, async (b) => {
       b.tree.mockResolvedValue({ root: v, tree: (opts.nodes ?? FAV)(v), generatedAt: 1 } as never)
       b.favorites.get.mockResolvedValue((opts.favorites ?? []).map((p) => `${v}${p}`))
+      // The favorite folders (YAZ-4471 M6), in the vault list's scope: none unless the test gives some.
+      b.favoriteFolders.get.mockImplementation(async (_root: string, scope?: unknown) => (scope === 'vault' ? (opts.folders?.(v.slice(1)) ?? []) : []))
       b.favorites.onChanged.mockImplementation((l) => {
         listeners.push(l)
         return () => void listeners.splice(listeners.indexOf(l), 1)
@@ -6646,6 +6663,21 @@ describe('favorites (YAZ-1766)', () => {
   /** What a drag draws: the line on a row's edge (a reorder), or the fill of a drop folder (a move on disk). */
   const marker = (el: HTMLElement) => el.querySelector('.tree__row--drop-before, .tree__row--drop-after, .tree__row--drop')
 
+
+  it('YAZ-4477 (M6, F8): the Favorites tab has folders as Focus has — the bar names the list and holds "+ Folder", a folder shows its items, and one folder shown alone reads "Only" with "Show all"', async () => {
+    const folders = (name: string): FocusFolder[] => [{ id: 'f', name: 'Client files', created: 1, at: 1, items: [{ vault: name, path: 'top.md' }] }]
+    const { el, v, props, rerender } = await mountVault({ lens: 'favorites', onFocusOnly: vi.fn() }, { favorites: ['/Notes'], folders })
+    const bar = () => el.querySelector('.sidebar__focus-bar')
+    expect(bar()?.querySelector('span')?.textContent).toBe('Vault list')
+    expect([...(bar()?.querySelectorAll('button') ?? [])].map((b) => b.textContent)).toEqual(['+ Folder'])
+    const head = el.querySelector<HTMLButtonElement>('[data-focus-folder="f"]')
+    expect(head?.textContent).toContain('Client files')
+    expect(head?.closest('li')?.querySelector(`.tree__row[data-path="${v}/top.md"]`)).not.toBeNull()
+    await rerender({ focusOnly: 'f' })
+    expect(bar()?.querySelector('span')?.textContent).toBe('Only Client files')
+    await act(async () => [...(bar()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Show all')?.click())
+    expect(props.onFocusOnly).toHaveBeenCalledExactlyOnceWith(null)
+  })
   it('YAZ-2648 S5: a row of Favorites and a row of Focus open their page as a row of Files does: a click asks for it — the page ALREADY open too — and a double click keeps it', async () => {
     for (const lens of ['favorites', 'focus'] as const) {
       const { el, v, props, rerender } = await mountVault({ lens }, { favorites: ['/top.md'], focus: ['/top.md'] })

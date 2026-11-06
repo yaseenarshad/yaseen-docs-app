@@ -1,6 +1,6 @@
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_FOCUS_FOLDERS, VAULT_CONFIG_DIR, isFocusFolder, type FocusFolder, type FocusFoldersConfig, type ListScope } from '@shared/types'
+import { MAX_FOCUS_FOLDERS, MAX_FOLDER_ITEMS, VAULT_CONFIG_DIR, isFocusFolder, type FocusFolder, type FocusFoldersConfig, type ListScope } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { isSafeRel, toAbs, toRel, under } from './favorites'
 import { createRootChain, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
@@ -39,7 +39,7 @@ const clean = (folders: readonly unknown[]): FocusFolder[] => {
   for (const f of folders) {
     if (!isFocusFolder(f) || seen.has(f.id)) continue
     seen.add(f.id)
-    out.push({ ...f, items: f.items.filter((item) => isSafeRel(item.path) && item.vault !== '') })
+    out.push({ ...f, items: f.items.filter((item) => isSafeRel(item.path) && item.vault !== '').slice(0, MAX_FOLDER_ITEMS) })
   }
   return out.slice(0, MAX_FOCUS_FOLDERS)
 }

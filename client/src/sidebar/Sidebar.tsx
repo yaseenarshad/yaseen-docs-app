@@ -1170,6 +1170,10 @@ export function Sidebar({
   // row of the new tab page. It is a row like a search row: a disk row, with "Show in sidebar"
   // first, whose tree-drawing items show it in Files first (S27, S30). It is no pick and no
   // highlight of the panel, and its menu is the menu of one row (S32).
+  // The lists as they are at the right-click (YAZ-4475): through a ref, so a folder made or a scope changed a moment
+  // ago is in the menu, and the callback stays the same — the tree's rows do not draw again on each list change.
+  const listsNow = useRef(lists)
+  listsNow.current = lists
   const openMenuAt = useCallback(
     (node: MenuRow | null, x: number, y: number, outside = false, closed = false) => {
       const filePath = node?.type === 'file' ? node.path : null
@@ -1241,20 +1245,20 @@ export function Sidebar({
         // Focus (YAZ-2619 D3): the row or its ordered selection, any kind, any lens, any vault of the
         // window — the favorites rule below. A vault row is no item of the list (YAZ-2602 A2, A3).
         focusPaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
-        focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p) || lists.focusTab.folderOf(p) !== undefined),
-        focusFolders: lists.focusTab.folders,
-        focusFolderOf: node === null || plural !== null ? null : (lists.focusTab.folderOf(node.path)?.id ?? null),
-        favoriteFolders: lists.favoritesTab.folders,
-        favoriteFolderOf: node === null || plural !== null ? null : (lists.favoritesTab.folderOf(node.path)?.id ?? null),
-        focusScopes: node === null ? null : lists.scopesOf('focus', plural ?? [node.path]),
-        favoriteScopes: node === null ? null : lists.scopesOf('favorites', plural ?? [node.path]),
+        focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p) || listsNow.current.focusTab.folderOf(p) !== undefined),
+        focusFolders: listsNow.current.focusTab.folders,
+        focusFolderOf: node === null || plural !== null ? null : (listsNow.current.focusTab.folderOf(node.path)?.id ?? null),
+        favoriteFolders: listsNow.current.favoritesTab.folders,
+        favoriteFolderOf: node === null || plural !== null ? null : (listsNow.current.favoritesTab.folderOf(node.path)?.id ?? null),
+        focusScopes: node === null ? null : listsNow.current.scopesOf('focus', plural ?? [node.path]),
+        favoriteScopes: node === null ? null : listsNow.current.scopesOf('favorites', plural ?? [node.path]),
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
         iconPaths,
         iconRule,
         ...iconTargets(iconPaths, iconRule),
         // Each row by the list of the vault that holds it (YAZ-2631 D1).
-        favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favoritesByRoot[rootOf(p)]?.includes(p) === true || lists.favoritesTab.folderOf(p) !== undefined),
+        favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favoritesByRoot[rootOf(p)]?.includes(p) === true || listsNow.current.favoritesTab.folderOf(p) !== undefined),
         // By the upkeep of the vault that holds the folder (R5).
         reviewDir: home.upkeep && node?.type === 'dir' && vaultRow === null ? node.path : null,
         reviewPath: inReview === null ? null : filePath,

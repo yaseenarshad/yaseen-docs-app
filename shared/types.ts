@@ -3378,6 +3378,8 @@ export interface FocusConfig {
 
 /** A vault keeps this many focus folders of a scope at most, tombstones included (YAZ-4460). */
 export const MAX_FOCUS_FOLDERS = 100
+/** The items of one focus or favorite folder at most (YAZ-4479): as many as a vault's top level of Focus holds. */
+export const MAX_FOLDER_ITEMS = 500
 
 /**
  * One focus folder (YAZ-4460 F1, F2): a named group of focus items, in the user's order, that moves nothing on disk.

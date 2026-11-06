@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { VAULT_CONFIG_DIR, type FocusFolder } from '@shared/types'
+import { MAX_FOLDER_ITEMS, VAULT_CONFIG_DIR, type FocusFolder } from '@shared/types'
 import { foldersFile, getFocusFolders, setFocusFolders } from './focusFolders'
 import { removePath, renamePath } from './focus'
 import { _actAs, _resetMint } from './vaultIndex/mint'
@@ -49,6 +49,13 @@ describe('focus folders in the vault (YAZ-4460)', () => {
     expect(moved.at).toBeGreaterThan(1)
     await removePath([root], path.join(root, 'Work 2', 'p.md'))
     expect((await getFocusFolders(root, 'workspace'))[0].items).toEqual([{ vault: 'Work', path: 'Clients' }])
+  })
+
+  it(`YAZ-4479: a folder keeps ${MAX_FOLDER_ITEMS} items at most, on a write and on a read`, async () => {
+    const root = await makeVault('Notes')
+    const items = Array.from({ length: MAX_FOLDER_ITEMS + 10 }, (_, i) => ({ vault: 'Notes', path: `n${i}.md` }))
+    await setFocusFolders(root, 'vault', [folder({ items })])
+    expect((await getFocusFolders(root, 'vault'))[0].items).toHaveLength(MAX_FOLDER_ITEMS)
   })
 
   it('YAZ-4470 2: the file records its vault\'s folder name; a vault renamed on disk heals its items on the next read, with a new `at`, and writes the file', async () => {

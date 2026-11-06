@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MAX_FOCUS, defaultAppState, defaultRightPanelIdentity, type AppState, type FocusFolder, type ListScope, type WindowIdentity, type WorkspaceLists } from '@shared/types'
+import { MAX_FOCUS, MAX_FOLDER_ITEMS, defaultAppState, defaultRightPanelIdentity, type AppState, type FocusFolder, type ListScope, type WindowIdentity, type WorkspaceLists } from '@shared/types'
 import { storage } from '../lib/storage'
 import { useVaultListsHere, type VaultListsHere } from './useVaultListsHere'
 
@@ -268,6 +268,75 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     for (const r of roots) for (const scope of ['workspace', 'vault'] as const) expect(live(r, scope), `${r} ${scope}`).toEqual(['f'])
     expect(list('/x/Notes', 'workspace')).toEqual([])
     expect(list('/x/Work', 'vault')).toEqual([])
+  })
+
+  it('YAZ-4476: an item in a folder of the other list shows that list as on; a check there never puts it in that list two times, and off takes it out of the folder, with Undo', async () => {
+    const { live, list, bridge } = folderBridge([folder('f', items)])
+    await storage.init()
+    await mount(roots, ON)
+    // The folder shows in both lists (workspace and vault), so b.md is in the vault list, inside f.
+    expect(here().focusTab.scopesOfFolder('f')).toEqual({ workspace: true, vault: true })
+    expect(here().scopesOf('focus', ['/x/Work/b.md']).vault).toBe(true)
+    await act(async () => here().setScope('focus', ['/x/Work/b.md'], 'vault', true))
+    expect(list('/x/Work', 'vault')).toEqual([])
+    await act(async () => here().setScope('focus', ['/x/Work/b.md'], 'vault', false))
+    const vaultCopy = () => bridge.focusFolders.set.mock.calls.filter((call) => call[0] === '/x/Work' && call[1] === 'vault').at(-1)?.[2]
+    expect(vaultCopy()?.find((f) => f.id === 'f')?.items).toEqual([{ vault: 'Notes', path: 'a.md' }])
+    expect(here().scopesOf('focus', ['/x/Work/b.md']).vault).toBe(false)
+    expect(live('/x/Work', 'workspace')).toEqual(['f']) // the folder on show keeps it
+    undo()
+    await act(async () => undefined)
+    expect(vaultCopy()?.find((f) => f.id === 'f')?.items).toEqual(items)
+    expect(list('/x/Work', 'vault')).toEqual([]) // it was in the folder, not at the top level
+  })
+
+  it(`YAZ-4479: a folder holds ${MAX_FOLDER_ITEMS} items at most and says so; at a full top level "Keep items" says what left, and a move out keeps the item in its folder`, async () => {
+    const many = Array.from({ length: MAX_FOLDER_ITEMS + 5 }, (_, i) => `/x/Notes/n${i}.md`)
+    const full = Array.from({ length: MAX_FOCUS }, (_, i) => `/x/Notes/top${i}.md`)
+    const { bridge } = folderBridge([folder('f', [])], ['workspace'])
+    bridge.focus.get.mockImplementation(async (r: string, scope: ListScope) => (r === '/x/Notes' && scope === 'workspace' ? full : []))
+    await storage.init()
+    await mount(roots, ON)
+    await act(async () => void here().focusTab.addTo(many, 'f'))
+    expect(here().focusTab.folders[0].items).toHaveLength(MAX_FOLDER_ITEMS)
+    expect(onNotice).toHaveBeenCalledWith('A folder holds 500 items at most: 5 items stay where they were.', 'error')
+    onNotice.mockReset()
+    await act(async () => here().focusTab.moveOut('/x/Notes/n0.md'))
+    expect(onNotice).toHaveBeenLastCalledWith('Focus limit reached: 500 items. It stays in its folder.', 'error')
+    expect(here().focusTab.folderOf('/x/Notes/n0.md')?.id).toBe('f')
+    await act(async () => here().focusTab.remove('f'))
+    expect(onNotice).toHaveBeenLastCalledWith('Deleted f. Focus limit reached: 500 items, so some of its items left focus.', 'error', undefined, UNDO)
+  })
+
+  it('YAZ-4477 (M13, M15): Undo of an add and of a remove in Focus and in Favorites; a folder add names the folder and its kind, a new folder says "a new … folder"', async () => {
+    const { bridge, list } = folderBridge([folder('f', [])], ['workspace'])
+    const favs = new Map<string, string[]>()
+    bridge.favorites.get.mockImplementation(async (r: string, scope: ListScope) => favs.get(`${r}|${scope}`) ?? [])
+    bridge.favorites.set.mockImplementation(async (r: string, paths: readonly string[], scope: ListScope) => void favs.set(`${r}|${scope}`, [...paths]))
+    await storage.init()
+    await mount(roots, ON)
+    act(() => void here().toggleFocus(['/x/Notes/a.md'], false))
+    expect(list('/x/Notes', 'workspace')).toEqual(['/x/Notes/a.md'])
+    undo()
+    expect(list('/x/Notes', 'workspace')).toEqual([])
+    act(() => void here().toggleFocus(['/x/Notes/a.md'], false))
+    act(() => void here().toggleFocus(['/x/Notes/a.md'], true))
+    expect(onNotice).toHaveBeenLastCalledWith('Removed from focus', 'focus', 'lists', UNDO)
+    undo()
+    expect(list('/x/Notes', 'workspace')).toEqual(['/x/Notes/a.md'])
+    act(() => here().toggleFavorite(['/x/Work/b.md'], false))
+    expect(favs.get('/x/Work|workspace')).toEqual(['/x/Work/b.md'])
+    undo()
+    expect(favs.get('/x/Work|workspace')).toEqual([])
+    act(() => here().toggleFavorite(['/x/Work/b.md'], false))
+    act(() => here().toggleFavorite(['/x/Work/b.md'], true))
+    undo()
+    expect(favs.get('/x/Work|workspace')).toEqual(['/x/Work/b.md'])
+    // A folder add: the folder's name and kind, with the eye; a new folder has no name yet.
+    await act(async () => void here().focusTab.addTo(['/x/Work/c.md'], 'f'))
+    expect(onNotice).toHaveBeenLastCalledWith('Added to f (focus folder)', 'focus', 'lists', UNDO)
+    await act(async () => void here().favoritesTab.addTo(['/x/Work/c.md'], null))
+    expect(onNotice).toHaveBeenLastCalledWith('Added to a new favorite folder', 'favorite', 'lists', UNDO)
   })
 
   it('YAZ-4471 M18: "Remove items too" deletes the folder and puts nothing at the top level', async () => {
