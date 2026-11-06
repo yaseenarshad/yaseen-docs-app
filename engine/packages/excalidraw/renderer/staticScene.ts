@@ -7,7 +7,13 @@ import {
 } from "@excalidraw/common";
 import { isElementLink } from "@excalidraw/element";
 import { createPlaceholderEmbeddableLabel } from "@excalidraw/element";
-import { getBoundTextElement } from "@excalidraw/element";
+import {
+  getBoundTextElement,
+  getContainerElement,
+  getFoldArrowPrefs,
+  getTextLayoutMaxWidth,
+  renderTextFoldArrows,
+} from "@excalidraw/element";
 import {
   isEmbeddableElement,
   isIframeLikeElement,
@@ -234,6 +240,34 @@ const renderLinkIcon = (
     context.restore();
   }
 };
+/**
+ * YAZ-4277 D5: a text box's fold arrows, over its letters. An export draws
+ * only ▸, at the size row alone (D7).
+ */
+const renderFoldArrows = (
+  element: NonDeletedExcalidrawElement,
+  elementsMap: ElementsMap,
+  context: CanvasRenderingContext2D,
+  appState: StaticCanvasAppState,
+  renderConfig: StaticCanvasRenderConfig,
+) => {
+  if (!isTextElement(element)) {
+    return;
+  }
+  renderTextFoldArrows(
+    context,
+    element,
+    getTextLayoutMaxWidth(element, getContainerElement(element, elementsMap)),
+    {
+      prefs: renderConfig.foldArrows ?? getFoldArrowPrefs(),
+      zoom: renderConfig.isExporting ? null : appState.zoom.value,
+      offsetX: appState.scrollX,
+      offsetY: appState.scrollY,
+      dark: renderConfig.theme === THEME.DARK,
+    },
+  );
+};
+
 const _renderStaticScene = ({
   canvas,
   rc,
@@ -362,6 +396,8 @@ const _renderStaticScene = ({
           );
         }
 
+        renderFoldArrows(element, elementsMap, context, appState, renderConfig);
+
         const boundTextElement = getBoundTextElement(element, elementsMap);
         if (boundTextElement) {
           renderElement(
@@ -372,6 +408,13 @@ const _renderStaticScene = ({
             context,
             renderConfig,
             appState,
+          );
+          renderFoldArrows(
+            boundTextElement,
+            elementsMap,
+            context,
+            appState,
+            renderConfig,
           );
         }
 

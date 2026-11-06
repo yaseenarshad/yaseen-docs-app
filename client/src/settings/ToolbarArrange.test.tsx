@@ -49,19 +49,19 @@ describe('Settings › Editor › Selection toolbar (YAZ-3806 T7, 4B YAZ-3856)',
     expect(preview()).toEqual([
       'Heading 1', 'Heading 2', 'Heading 3', 'Text', '|',
       'Checklist', 'Bullet list', 'Numbered list', '|',
-      'Bold', 'Italic', 'Underline', 'Strikethrough', 'Highlight', 'Highlight green', 'Highlight blue', 'More highlight colours', '|',
+      'Bold', 'Italic', 'Underline', 'Strikethrough', 'Highlight yellow', 'Highlight green', 'Highlight blue', 'More highlight colours', '|',
       'Inline code', 'Link',
     ])
     expect([...row().querySelectorAll('.toolbar-arrange__group-name')].map((n) => n.textContent)).toEqual(['Line type', 'Lists', 'Text style', 'Code and link'])
     expect(squares('lists').map((b) => b.getAttribute('aria-label'))).toEqual(['Show Checklist', 'Show Bullet list', 'Show Numbered list'])
     expect(square('bulletList').querySelector('svg')).not.toBeNull()
     expect(square('bulletList').getAttribute('aria-checked')).toBe('true')
-    // The highlight buttons as the strip draws them (YAZ-4348 demo round 2): a bold "A" on a square of the colour, then the ▾.
+    // The highlight buttons as the strip draws them (YAZ-4445): the board's tile, a dark "A" on the colour, then the ▾.
     for (const [button, token] of [['highlight', '--mark-bg'], ['highlight-green', '--mark-bg-green'], ['highlight-blue', '--mark-bg-blue']]) {
-      expect(square(button).querySelector('svg rect.highlight-icon__wash')?.getAttribute('fill')).toBe(`var(${token})`)
-      expect(square(button).querySelector('svg text')?.textContent).toBe('A')
+      expect(square(button).querySelector<HTMLElement>('.swatch-tile--on-color')?.style.getPropertyValue('--swatch-color')).toBe(`var(${token})`)
+      expect(square(button).querySelector('.swatch-tile__letter')?.textContent).toBe('A')
     }
-    expect(square('highlight-more').querySelector('svg path')).not.toBeNull()
+    expect(square('highlight-more').querySelector('.swatch-more')?.textContent).toBe('▾')
     // Pink is in the ▾ panel, not a button (YAZ-4348 demo round 2).
     expect(row().querySelector('.toolbar-arrange__square[data-button="highlight-pink"]')).toBeNull()
     // A bare row: no second "Selection toolbar" label under the group title.
@@ -72,7 +72,7 @@ describe('Settings › Editor › Selection toolbar (YAZ-3806 T7, 4B YAZ-3856)',
   it('the preview follows the setting: a hidden button leaves it, a group with none shown takes its divider, the order is the strip\'s', async () => {
     const prefs = { ...DEFAULT_TOOLBAR, groups: ['insert', 'lineType', 'lists', 'textStyle'] as typeof DEFAULT_TOOLBAR.groups, hidden: ['checklist', 'bulletList', 'numberedList', 'bold'] as typeof DEFAULT_TOOLBAR.hidden }
     await mountEditorPage({ ...DEFAULT_SETTINGS, selectionToolbar: prefs }, vi.fn())
-    expect(preview()).toEqual(['Inline code', 'Link', '|', 'Heading 1', 'Heading 2', 'Heading 3', 'Text', '|', 'Italic', 'Underline', 'Strikethrough', 'Highlight', 'Highlight green', 'Highlight blue', 'More highlight colours'])
+    expect(preview()).toEqual(['Inline code', 'Link', '|', 'Heading 1', 'Heading 2', 'Heading 3', 'Text', '|', 'Italic', 'Underline', 'Strikethrough', 'Highlight yellow', 'Highlight green', 'Highlight blue', 'More highlight colours'])
     expect(square('bold').classList.contains('toolbar-arrange__square--off')).toBe(true)
     expect(square('bold').getAttribute('aria-checked')).toBe('false')
   })

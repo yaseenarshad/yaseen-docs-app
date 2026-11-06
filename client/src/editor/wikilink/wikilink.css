@@ -18,8 +18,8 @@
 }
 .milkdown .ProseMirror[data-link-hand] .wikilink,
 .milkdown .ProseMirror[data-link-hand] a,
-.milkdown .ProseMirror[contenteditable='false'] .wikilink,
-.milkdown .ProseMirror[contenteditable='false'] a {
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .wikilink,
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) a {
   cursor: pointer;
 }
 

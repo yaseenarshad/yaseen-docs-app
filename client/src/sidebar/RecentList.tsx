@@ -4,6 +4,7 @@ import type { TreeResponse } from '@shared/types'
 import type { OnListFold } from './listFold'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
+import { newWindowClick } from '../lib/newWindowClick'
 import { FileIcon, NameEnding } from './FileIcon'
 import { rowArrows } from './Tree'
 import { typeOf, type SearchType } from '../search/searchFilter'
@@ -202,8 +203,9 @@ function RecentRow({ file, active, indent, titles, onOpenFile, onKeepFile, onOpe
         data-walk=""
         style={{ paddingLeft: indent }}
         title={path}
-        // As a Files row (S19): a click previews, ⌘ opens a background tab, the second click of a double-click keeps the tab.
-        onClick={(e) => (e.metaKey ? onOpenFileBackground(path) : onOpenFile(path))}
+        // As a Files row (S19): a click previews, ⌘ opens a background tab, the second click of a double-click keeps the tab;
+        // ⇧⌘ opens a new window, asked first (YAZ-4444 D32).
+        onClick={(e) => (newWindowClick(e, path) ? undefined : e.metaKey ? onOpenFileBackground(path) : onOpenFile(path))}
         onDoubleClick={(e) => {
           if (!e.metaKey) onKeepFile(path)
         }}

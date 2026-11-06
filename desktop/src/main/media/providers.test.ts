@@ -11,7 +11,7 @@ import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from '@shared/iconPacks'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
 import { decodeCursor, SEARCH_LIMIT } from './curation'
-import { createMediaProviders, PROVIDER_BUSY, type MediaProviders } from './providers'
+import { createMediaProviders, PROVIDER_BUSY, zoomSourceUrl, type MediaProviders } from './providers'
 
 /** The disk cache's contract, in a Map — `cache.test.ts` owns the disk half. */
 function memoryCache(): MediaCache & { store: Map<string, unknown>; reads: string[] } {
@@ -511,6 +511,31 @@ describe('the bytes, and the guards 🔒 YAZ-1775 D4 put on them', () => {
 
   it('is PROVIDER_FAILED for a Pixabay import with no key at all', async () => {
     await expect(code(build(vi.fn() as unknown as typeof globalThis.fetch, null).import({ provider: 'pixabay', id: '101' }))).resolves.toBe('PROVIDER_FAILED')
+  })
+})
+
+describe('the hover zoom`s sharp picture (YAZ-4447 demo round 2)', () => {
+  const record = { hits: [{ id: 101, type: 'illustration', tags: 'tree', previewURL: 'https://cdn.test/p_150.jpg', webformatURL: 'https://pixabay.com/get/abc_640.jpg', largeImageURL: 'https://pixabay.com/get/abc_1280.jpg' }] }
+
+  it('fetches the webformatURL at the asked width, never the large original, and does not cache it', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => (String(input).includes('pixabay.com/api') ? json(record) : new Response('JPG', { headers: { 'Content-Type': 'image/jpeg' } })))
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch)
+    for (const zoomWidth of [340, 640, 960] as const) {
+      const result = await providers.preview({ provider: 'pixabay', id: '101', zoomWidth })
+      expect(result.dataURL.startsWith('data:image/jpeg;base64,')).toBe(true)
+    }
+    const images = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => !url.includes('pixabay.com/api'))
+    expect(images).toEqual(['https://pixabay.com/get/abc_340.jpg', 'https://pixabay.com/get/abc_640.jpg', 'https://pixabay.com/get/abc_960.jpg'])
+    // The tile's own preview is still the small previewURL
+    await providers.preview({ provider: 'pixabay', id: '101' })
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toContain('https://cdn.test/p_150.jpg')
+  })
+
+  it('zoomSourceUrl swaps _640 for the width, keeps any other URL, and refuses a non-https one', () => {
+    expect(zoomSourceUrl('https://pixabay.com/get/x_640.png', 960)).toBe('https://pixabay.com/get/x_960.png')
+    expect(zoomSourceUrl('https://pixabay.com/get/x.png', 340)).toBe('https://pixabay.com/get/x.png')
+    expect(zoomSourceUrl('http://pixabay.com/get/x_640.png', 640)).toBeNull()
+    expect(zoomSourceUrl(undefined, 640)).toBeNull()
   })
 })
 

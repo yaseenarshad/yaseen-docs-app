@@ -1,6 +1,6 @@
 /** S6 with cell lists and 500 cell notes (YAZ-4263): its own file, so a fresh worker (`tableSpeedKit.ts`). */
 import { afterEach, describe, expect, it } from 'vitest'
-import { median } from '../../test-perf'
+import { budgetMs, median } from '../../test-perf'
 import { BIG, NOTED, bulletText, cellText, closeAll, mount, typeInTurn } from './tableSpeedKit'
 
 afterEach(closeAll)
@@ -24,6 +24,6 @@ describe('S6: a 500 × 10 table with cell notes stays fast', () => {
     for (const t of tables) await t.close()
     const [table, notes] = [median(keys.table), median(keys.notes)]
     console.log(`S6 cell notes: type ms/key: table ${table.toFixed(2)}, cell bullet in a cell with a mark, in a table with 1,000 cell lists and 500 cell notes ${notes.toFixed(2)} (medians of 48 keys, typed in turn; ratio ${(notes / table).toFixed(2)}, jsdom)`)
-    expect(notes).toBeLessThan(60)
+    expect(notes).toBeLessThan(budgetMs(60))
   }, 120_000)
 })

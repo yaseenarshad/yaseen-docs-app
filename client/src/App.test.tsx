@@ -1331,6 +1331,15 @@ describe('App section indent settings (YAZ-2709)', () => {
 })
 
 describe('App guide lines and folding defaults (YAZ-4094, YAZ-4119 fix 3)', () => {
+  it('puts Settings › "Bullet threading default" on <html> as `data-threading`, off by default, and not on `.app`: each note pane decides on its own host (YAZ-4432)', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const html = document.documentElement
+    expect(html.dataset.threading).toBe('off')
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, bulletThreading: true } }))
+    expect(html.dataset.threading).toBe('on')
+    expect(el.querySelector('.app')?.hasAttribute('data-threading')).toBe(false)
+  })
+
   it('puts the defaults, the show choice and the darkness on <html>, where a preview portalled to <body> sees them, and another window\'s change lands live', async () => {
     const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     const html = document.documentElement

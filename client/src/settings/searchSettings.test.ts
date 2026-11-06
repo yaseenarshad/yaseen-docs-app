@@ -96,7 +96,7 @@ describe('settingCandidates', () => {
       'codeMinimap',
       'codeLanguageHelpers',
       // Settings › Drawings (YAZ-3037; "Excalidraw canvas" before the YAZ-3818 demo).
-      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`),
+      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
       // Settings › Images (YAZ-3038).
       'pixabayApiKey',
       'libraryFolder',
@@ -104,6 +104,10 @@ describe('settingCandidates', () => {
       'favoriteCopies',
       // The icon packs (YAZ-4359), their own group.
       'iconPacks',
+      // The Add panel's hover zoom (YAZ-4447, D34), the switch of its Filter menu.
+      'mediaHoverZoom',
+      // Its size beside it (YAZ-4447 demo round 2), Filter › Hover size.
+      'mediaHoverZoomSize',
       // Settings › Files & Links › New notes (YAZ-4246), its first group.
       'newNoteLocation',
       'newNoteTitleTemplate',
@@ -199,7 +203,8 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'system'))).toEqual(['theme'])
     // "dark" is also the draw.io row's word (YAZ-3037), and draw.io's own key for its dark colours (YAZ-3564).
     // And the guide lines' darkness (YAZ-4094 G3), and the calendar tables' shade darkness (YAZ-4163 demo).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'diagramDarkColors', 'guideLineDarkness', 'tableShadeDarkness'])
+    // And "Text color follows the fill" (YAZ-4404 4H): its hint says "A dark fill turns dark text white".
+    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'diagramDarkColors', 'guideLineDarkness', 'tableShadeDarkness', 'canvas.fillSetsTextColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     // The sounds of Settings › Notifications (YAZ-3303) say "the Trash" in their hints.
     // "trash" is also the word of ⌘⌫ in the Window hotkeys (YAZ-3272 D20).
@@ -245,8 +250,9 @@ describe('searchSettings', () => {
     expect(outline).toHaveLength(13 + 15)
     // "guide" names the guide lines' rows (YAZ-4094; Bullet threading's hint no longer says it: one name for one thing) and is a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines'])
-    // And the hover preview's master switch and each place's own (YAZ-3403).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hotkey-code-showHover'])
+    // And the hover preview's master switch and each place's own (YAZ-3403). The Add panel's Hover zoom (YAZ-4447, D34)
+    // leads: its label starts with the word.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
   })

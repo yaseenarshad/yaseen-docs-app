@@ -52,6 +52,7 @@ interface NavMocks {
   createFolder: () => string
   openCurrent: Mock
   openNewTab?: Mock
+  openNewWindow?: Mock
   openBackground: Mock
   /** Settings › Hotkeys' changes (YAZ-3936): set by a test, read at each click. */
   hotkeys?: () => HotkeyOverrides | undefined
@@ -667,6 +668,19 @@ describe('wikilink click: the gestures of Settings › Hotkeys, read at the clic
     expect(openBehind(linkSpan(root, 'Known'))).toBe(true)
     expect(nav.openBackground).not.toHaveBeenCalled()
     expect(nav.openCurrent).not.toHaveBeenCalled()
+  })
+
+  it('Open in a new window (YAZ-4444) has no gesture: ⌘⇧-click stays a new tab; a gesture the user gives it opens the link menu\'s New window', async () => {
+    const { root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
+    nav.openNewTab = vi.fn()
+    nav.openNewWindow = vi.fn()
+    mousedown(linkSpan(root, 'Known'), { metaKey: true, shiftKey: true })
+    expect(nav.openNewTab).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
+    expect(nav.openNewWindow).not.toHaveBeenCalled()
+    nav.hotkeys = () => ({ 'links.newWindow': 'CmdOrCtrl+Alt+Click' })
+    expect(mousedown(linkSpan(root, 'Known'), { metaKey: true, altKey: true })).toBe(false)
+    expect(nav.openNewWindow).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
+    expect([nav.openCurrent, nav.openBackground].map((door) => door.mock.calls.length)).toEqual([0, 0])
   })
 
   it('a host with no new-tab opener opens "Open in a new tab" in this tab', async () => {

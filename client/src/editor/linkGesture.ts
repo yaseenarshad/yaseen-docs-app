@@ -25,7 +25,7 @@ export function linkClickAction(view: Pick<EditorView, 'editable'>, event: Mouse
   return !view.editable && plain(event) ? 'thisTab' : null
 }
 
-const OPEN_WORDS: Record<GestureAction, string> = { thisTab: 'to open', newTab: 'to open in a new tab', backgroundTab: 'to open in a background tab' }
+const OPEN_WORDS: Record<GestureAction, string> = { thisTab: 'to open', newTab: 'to open in a new tab', backgroundTab: 'to open in a background tab', newWindow: 'to open in a new window' }
 
 /**
  * The hover card's one quiet line (YAZ-3879 point 9): how to open the link now, from the bound gestures: Open in this

@@ -17,6 +17,7 @@ import { iconsChangedBelow, rowIcon, type RowIcons } from './rowIcons'
 import { keepsOrder, shownLabel, sortLevel, timeOf } from './treeSort'
 import { shortRelativeTime } from '../lib/relativeTime'
 import { formatDateTime } from '../lib/format'
+import { newWindowClick } from '../lib/newWindowClick'
 
 /** Inline "New note" / "New folder" input pending inside the tree (GRO-2022). */
 export interface PendingCreate {
@@ -550,6 +551,10 @@ function TreeLevel({
               type="button"
               className={`tree__row tree__row--file${node.kind === null ? ' tree__row--external' : ''}${isActive(node) ? ' tree__row--active' : ''}${isSelected(node) ? ' tree__row--selected' : ''}${dropEdge(node.path)}${context(node.path)}`}
               onClick={(e) => {
+                // ⇧⌘-click (Settings › Hotkeys › Files in lists) opens the file in a new window (YAZ-4444 D32), as
+                // the menu's "Open in ▸ New window": asked before Shift, which must not read it as a selection. The
+                // selection stays as it is.
+                if (newWindowClick(e, node.path)) return
                 // Shift is the SELECTION gesture and nothing else (YAZ-1336, 🔒 D2): it never
                 // opens, never previews — so it is asked first, before any of the open rules.
                 if (e.shiftKey) {

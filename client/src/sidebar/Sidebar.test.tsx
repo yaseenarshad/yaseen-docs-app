@@ -821,6 +821,31 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(bridge.window.open).not.toHaveBeenCalled()
   })
 
+  it('⇧⌘-click on a file row opens it in a NEW WINDOW, as the menu\'s New window (YAZ-4444 D32): no tab, no multi-selection', async () => {
+    storage.mirrorRoots(['/v'])
+    const { bridge, props, el } = await mount()
+    const row = fileRow(el) as HTMLButtonElement
+    act(() => void row.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true, shiftKey: true })))
+    expect(bridge.window.open).toHaveBeenCalledExactlyOnceWith({ root: '/v', file: '/v/a.md' })
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    // ⇧ alone is still the selection gesture and nothing else (YAZ-1336 🔒 D2): it never opens.
+    act(() => void row.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+    expect(bridge.window.open).toHaveBeenCalledTimes(1)
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(row.className).toContain('tree__row--selected')
+  })
+
+  it('⇧⌘-click on a FOLDER row opens no window (new window is files only, D2 GRO-2168): it stays a ⇧-click', async () => {
+    storage.mirrorRoots(['/v'])
+    const { bridge, props, el } = await mount()
+    const dir = el.querySelector<HTMLButtonElement>('.tree__row--dir') as HTMLButtonElement
+    act(() => void dir.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true, shiftKey: true })))
+    expect(bridge.window.open).not.toHaveBeenCalled()
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(dir.className).toContain('tree__row--selected')
+  })
+
   it('the file row context menu offers "Open in ▸ New window" above "Copy path"; it routes to the bridge and closes', async () => {
     const { bridge, props, el } = await mount()
     act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))

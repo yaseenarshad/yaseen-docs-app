@@ -204,7 +204,7 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
     expect(el.querySelector('.settings-section__title')?.textContent).toMatch(/^Storage( › |$)/)
   })
 
-  it('search for "pictures" still reaches the page (S8), after Files & Links\' picture rows (YAZ-3943 demo 2, round 3: registry order)', () => {
+  it('search for "pictures" still reaches the page (S8), with Files & Links\' picture rows (YAZ-3943 demo 2, round 3: registry order)', () => {
     const { el } = mount(STATS)
     const input = el.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!
     act(() => {
@@ -212,7 +212,9 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     const titles = [...el.querySelectorAll('.settings-section__title')].map((t) => t.textContent ?? '')
-    expect(titles[0]).toMatch(/^Files & Links( › |$)/)
+    // YAZ-4447: Images › Add panel (the picture hover zoom) comes first in registry order now
+    expect(titles[0]).toMatch(/^Images › Add panel/)
+    expect(titles.some((t) => /^Files & Links( › |$)/.test(t))).toBe(true)
     expect(titles.some((t) => /^Storage( › |$)/.test(t))).toBe(true)
   })
 

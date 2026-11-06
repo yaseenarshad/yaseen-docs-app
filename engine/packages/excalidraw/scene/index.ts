@@ -15,6 +15,8 @@ export {
 } from "@excalidraw/element";
 export {
   getNormalizedZoom,
+  getSteppedZoom,
+  getWheelZoom,
   getNormalizedGridSize,
   getNormalizedGridStep,
 } from "./normalize";

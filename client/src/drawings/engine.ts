@@ -139,6 +139,14 @@ export function loadExcalidraw(): Promise<ExcalidrawModule> {
 }
 
 /**
+ * The text box editor (YAZ-4277 D1, `textBoxEditor.ts`): the notes engine in a drawing's text box. It loads with the
+ * engine, in its own chunk, never in the entry one; the canvas mounts once both are here.
+ */
+export function loadTextBoxEditor(): Promise<typeof import('./textBoxEditor')> {
+  return import('./textBoxEditor')
+}
+
+/**
  * THE BOOT-TIME WARM-UP (Draw's YAZ-2073 4B, ported by YAZ-3044 A39): a window restored onto a
  * drawing mounts the canvas next, so the engine's download and compile start at boot, in parallel
  * with the first render, instead of after it. The same ONE promise `ExcalidrawSurface` waits on; a

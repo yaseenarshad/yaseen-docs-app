@@ -45,6 +45,7 @@ import {
 import { LinearElementEditor } from "./linearElementEditor";
 import { mutateElement, newElementWith } from "./mutateElement";
 import { getBoundTextElementId, redrawTextBoundingBox } from "./textElement";
+import { getFoldedLines } from "./textFolds";
 import {
   hasBoundTextElement,
   isBindableElement,
@@ -1921,10 +1922,23 @@ export class ElementsDelta implements DeltaContainer<SceneElementsMap> {
     const elements = scene.getNonDeletedElementsMap();
     const boxesToRedraw = new Map<
       string,
-      { container: OrderedExcalidrawElement; boundText: ExcalidrawTextElement }
+      {
+        container: OrderedExcalidrawElement | null;
+        boundText: ExcalidrawTextElement;
+      }
     >();
 
     for (const element of changed.values()) {
+      // YAZ-4277 D3: a fold is no undo step, so an undo can bring back a size
+      // from before it: a folded free box measures its visible lines again
+      if (
+        isTextElement(element) &&
+        !element.containerId &&
+        getFoldedLines(element).length
+      ) {
+        boxesToRedraw.set(element.id, { container: null, boundText: element });
+      }
+
       if (isBoundToContainer(element)) {
         const { containerId } = element as ExcalidrawTextElement;
         const container = containerId ? elements.get(containerId) : undefined;
@@ -1953,7 +1967,7 @@ export class ElementsDelta implements DeltaContainer<SceneElementsMap> {
     }
 
     for (const { container, boundText } of boxesToRedraw.values()) {
-      if (container.isDeleted || boundText.isDeleted) {
+      if (container?.isDeleted || boundText.isDeleted) {
         // skip redraw if one of them is deleted, as it would not result in a meaningful redraw
         continue;
       }

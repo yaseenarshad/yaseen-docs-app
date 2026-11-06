@@ -1,3 +1,5 @@
+import { getFontString } from "@excalidraw/common";
+
 import {
   getStyledVisualLineOffsetX,
   getStyledVisualLineStart,
@@ -8,7 +10,11 @@ import {
   STYLED_LINES_MEMO_MAX,
 } from "../src/textLineUnderlines";
 import { getWrappedTextLines } from "../src/textWrapping";
-import { setCustomTextMetricsProvider } from "../src/textMeasurements";
+import {
+  charWidth,
+  setCustomTextMetricsProvider,
+} from "../src/textMeasurements";
+import { getFoldArrowAnchors } from "../src/textFoldArrows";
 
 import type {
   ExcalidrawTextElement,
@@ -487,5 +493,99 @@ describe("YAZ-3718 D1: text runs in the layout", () => {
     // the first one left the memo: it measures again
     getTextElementStyledLines(box(0), Infinity, "Hi");
     expect(measures).toBeGreaterThan(0);
+  });
+});
+
+describe("YAZ-4438: a box lays out again with the real font", () => {
+  // `Fonts.onLoaded` clears the letter widths of each box's font. A layout
+  // made with the fallback font must not stay in the memo after that.
+  const perLetter = (px: number) => ({
+    getLineWidth: (text: string) => Array.from(text).length * px,
+  });
+  const make = (
+    id: string,
+    originalText: string,
+    extra: Partial<ExcalidrawTextElement> = {},
+  ) =>
+    ({
+      id,
+      version: 1,
+      originalText,
+      text: originalText,
+      fontFamily: 5,
+      fontSize: 20,
+      fontWeight: "normal",
+      fontStyle: "normal",
+      textDecoration: "none",
+      strikethrough: false,
+      lineHeight: 1.25,
+      textAlign: "left",
+      width: 200,
+      ...extra,
+    } as unknown as ExcalidrawTextElement);
+  // what `Fonts.onLoaded` does when the real font comes in
+  const loadRealFont = (element: ExcalidrawTextElement) => {
+    setCustomTextMetricsProvider(perLetter(12));
+    charWidth.clearCache(getFontString(element));
+  };
+  afterEach(() => {
+    setCustomTextMetricsProvider({
+      getLineWidth: (text) => text.length * 10,
+    });
+  });
+
+  const LONG = "one two three four five six seven eight nine ten";
+  it.each([
+    ["bullets, no fold", `• ${LONG}\n• b`, {}],
+    ["plain lines, no list", `${LONG}\nb`, {}],
+    [
+      "bullets with a fold",
+      `• ${LONG}\n    ○ child\n• b\n    ○ c`,
+      { foldedLines: [2] },
+    ],
+  ] as const)("%s", (name, text, extra) => {
+    setCustomTextMetricsProvider(perLetter(8)); // the fallback font
+    const element = make(`font-${name}`, text, extra);
+    const before = getTextElementStyledLines(element, 200, text).map(
+      (line) => line.text,
+    );
+    loadRealFont(element);
+    const after = getTextElementStyledLines(element, 200, text).map(
+      (line) => line.text,
+    );
+    const fresh = getTextElementStyledLines(
+      make(`fresh-${name}`, text, extra),
+      200,
+      text,
+    ).map((line) => line.text);
+    expect(fresh).not.toEqual(before); // the two fonts wrap differently
+    expect(after).toEqual(fresh);
+  });
+
+  it("the fold arrows sit on the lines of the real font", () => {
+    const text = `• ${LONG}\n    ○ child\n• b\n    ○ c`;
+    setCustomTextMetricsProvider(perLetter(8));
+    const element = make("font-arrows", text);
+    const before = getFoldArrowAnchors(element, 200);
+    loadRealFont(element);
+    const after = getFoldArrowAnchors(element, 200);
+    const fresh = getFoldArrowAnchors(make("fresh-arrows", text), 200);
+    expect(fresh).not.toEqual(before);
+    expect(after).toEqual(fresh);
+  });
+
+  it("a key in a box does not lay out again when no font loads", () => {
+    let measures = 0;
+    setCustomTextMetricsProvider({
+      getLineWidth: (line) => {
+        measures++;
+        return line.length * 10;
+      },
+    });
+    const element = make("font-steady", `• ${LONG}`);
+    getTextElementStyledLines(element, 200, element.originalText);
+    measures = 0;
+    getTextElementStyledLines(element, 200, element.originalText);
+    expect(measures).toBe(0);
   });
 });

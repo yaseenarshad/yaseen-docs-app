@@ -8,6 +8,7 @@
  *  - `section-indent: true | false`: "Section indent" (YAZ-2709).
  *  - `guide-lines: true | false`: "Guide lines" (YAZ-4094 D2).
  *  - `folding: true | false`: "Folding" (YAZ-4094 F1).
+ *  - `bullet-threading: true | false`: "Bullet threading" (YAZ-4277 D29, YAZ-4432).
  *
  * The cog's one choice that is not on/off lives here too, by the same rules: `outside-glow` (YAZ-4272 D2), this page's
  * glow for outside changes, one of `OUTSIDE_CHANGE_GLOWS`.
@@ -20,7 +21,7 @@
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 import { OUTSIDE_CHANGE_GLOWS, type OutsideChangeGlow } from './types'
 
-export const PAGE_SWITCH_KEYS = ['toc', 'section-indent', 'guide-lines', 'folding'] as const
+export const PAGE_SWITCH_KEYS = ['toc', 'section-indent', 'guide-lines', 'folding', 'bullet-threading'] as const
 export type PageSwitchKey = (typeof PAGE_SWITCH_KEYS)[number]
 /** The page's own choices; a key that is absent follows the app default. */
 export type PageSwitches = Partial<Record<PageSwitchKey, boolean>>

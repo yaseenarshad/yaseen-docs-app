@@ -81,6 +81,53 @@
     display: inline-flex;
   }
 
+  // YAZ-4277 demo: the "A" says what a swatch colors: the letters (the A in
+  // the color, on white) or their highlight (a dark A on the color)
+  .color-picker__button--letter-color,
+  .color-picker__button--letter-on-color {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .color-picker__button.color-picker__button--letter-color,
+  .color-picker__button.color-picker__button--letter-box {
+    background-color: #ffffff;
+  }
+
+  .color-picker__button--letter-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  // the box's fill: a small rounded box in the color (YAZ-4277 demo round 2)
+  .color-picker__box {
+    width: 0.875rem;
+    height: 0.625rem;
+    border-radius: 3px;
+    background-color: var(--swatch-color);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+  }
+
+  .color-picker__letter {
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1;
+    pointer-events: none;
+    color: #1e1e1e;
+  }
+
+  .color-picker__button--letter-color .color-picker__letter {
+    color: var(--swatch-color);
+  }
+
+  // a white "A" shows on a dark tile
+  .color-picker__button.color-picker__button--letter-color.is-canonical-white {
+    background-color: #1e1e1e;
+  }
+
   .color-picker__button {
     --radius: 4px;
     --size: 1.375rem;

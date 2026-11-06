@@ -24,6 +24,7 @@ import { findNode } from '../lib/treeState'
 import { PREVIEW_FOLLOW_MS } from '../sidebar/hooks/useSidebarSearch'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import { recentlyClosed } from './recentlyClosed'
+import { newWindowClick } from '../lib/newWindowClick'
 import './startPage.css'
 
 /** At this width of the page area, and under it, the columns stand one below the other: the `@container` rule of startPage.css. Keep the two the same. */
@@ -402,7 +403,10 @@ export function StartPage({ roots, favorites, openTabs = NO_TABS, titles, onOpen
                         </div>
                       )}
                       {/* `data-col` and `data-row` say where the row stands: the arrow keys walk by them (YAZ-2674). */}
-                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top && shift === 0 ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 + shift }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onMouseEnter={folder ? undefined : () => rowPreview.hoverCard(`${col} ${at}`, row.path)} onMouseLeave={() => rowPreview.leaveCard(`${col} ${at}`)} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY, col === 'closed'))}>
+                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top && shift === 0 ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 + shift }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onMouseEnter={folder ? undefined : () => rowPreview.hoverCard(`${col} ${at}`, row.path)} onMouseLeave={() => rowPreview.leaveCard(`${col} ${at}`)} onClick={(e) => {
+                        // ⇧⌘-click opens a file in a new window (YAZ-4444 D32); a folder has none.
+                        if (folder || !newWindowClick(e, row.path)) activate(row, e.metaKey)
+                      }} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY, col === 'closed'))}>
                         {/* The chevron is the mouse's Space (D13): it opens and closes the folder here, and the row's own click — the folder in Files — does not follow. */}
                         {folder && <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} onClick={(e) => (e.stopPropagation(), toggleDir(col, row.path))} />}
                         {/* A start-page row has no icon, so a board always names its kind (YAZ-3536 D4, S29). */}

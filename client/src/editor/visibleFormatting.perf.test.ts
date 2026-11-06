@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { commandsCtx } from '@milkdown/kit/core'
 import { isMarkSelectedCommand, strongSchema } from '@milkdown/kit/preset/commonmark'
-import { median } from '../test-perf'
+import { budgetMs, median } from '../test-perf'
 import { endOf, mount, posOf, pressKey, select, unmountAll } from './marks/markTestKit'
 
 afterEach(unmountAll)
@@ -40,13 +40,13 @@ describe('visibleFormatting', () => {
     const [median, worst] = await litCheck(OUTLINE, 'P0', `P${PARENTS - 1}`)
     console.log(`visibleFormatting perf: bullets, ${PARENTS * 5} lines, median ${median.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 10`)
     // ~0.5 ms measured (main's whole-range `rangeHasMark`: ~1 ms); 10 ms allowed.
-    expect(median).toBeLessThan(10)
+    expect(median).toBeLessThan(budgetMs(10))
   })
 
   it('perf smoke: the same over 1,000 folded H2 sections (5,000 lines)', async () => {
     const [median, worst] = await litCheck(SECTIONS, 'H0', `H${PARENTS - 1}`)
     console.log(`visibleFormatting perf: headings, ${PARENTS * 5} lines, median ${median.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 10`)
     // ~0.5 ms measured; a per-piece `doc.rangeHasMark` took ~22 ms here. 10 ms allowed.
-    expect(median).toBeLessThan(10)
+    expect(median).toBeLessThan(budgetMs(10))
   })
 })

@@ -1,5 +1,5 @@
 import type { UserIdleState, EditorInterface } from "@excalidraw/common";
-import type { GifPlayer } from "@excalidraw/element";
+import type { FoldArrowPrefs, GifPlayer } from "@excalidraw/element";
 import type {
   ExcalidrawElement,
   FileId,
@@ -45,6 +45,8 @@ export type StaticCanvasRenderConfig = {
   theme: AppState["theme"];
   /** YAZ-3944 D2: the board's GIF frames; absent (exports), a GIF shows its first frame */
   gifPlayer?: GifPlayer;
+  /** YAZ-4277 D5, D7: the board's fold arrows; absent, `getFoldArrowPrefs()` */
+  foldArrows?: FoldArrowPrefs;
   /** YAZ-4354 1D: Edit colors' faded preview of one icon (a loaded picture, never page SVG) */
   colorEditPreview?: ColorEditPreview;
 };
@@ -91,6 +93,9 @@ export type InteractiveCanvasRenderConfig = {
   // extra options passed to the renderer
   // ---------------------------------------------------------------------------
   renderScrollbars?: boolean;
+  /** YAZ-4277 D5: the open item whose ▾ shows on hover, and the arrows' prefs. */
+  foldArrowHover?: Readonly<{ elementId: string; line: number }> | null;
+  foldArrows?: FoldArrowPrefs;
 };
 
 export type RenderInteractiveSceneCallback = {

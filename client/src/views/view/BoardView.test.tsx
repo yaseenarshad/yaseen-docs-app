@@ -33,6 +33,7 @@ vi.mock('../../api', async (importOriginal) => {
     api: {
       ...original.api,
       shell: { reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }) },
+      window: { open: vi.fn(async () => undefined) },
     },
   }
 })
@@ -42,6 +43,9 @@ const reveal = vi.mocked(api.shell.reveal)
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
 vi.mock('../../lib/storage', () => ({
   storage: {
+    // ⇧⌘-click's new window (YAZ-4444) reads the bindings and the window's vaults.
+    getSettings: () => undefined,
+    getRoots: () => ['/vault'],
     getViewGroups: vi.fn((root: string, key: string) => groupStore.get(`${root}|${key}`) ?? []),
     setViewGroups: vi.fn((root: string, key: string, collapsed: readonly string[]) => {
       if (collapsed.length === 0) groupStore.delete(`${root}|${key}`)
@@ -341,6 +345,18 @@ describe('cards', () => {
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(openRight).not.toHaveBeenCalled()
     expect(openBackground).not.toHaveBeenCalled()
+  })
+
+  it('⇧⌘-click opens the card\'s note in a new window, title or body (YAZ-4444 D32): no tab', () => {
+    const agentic = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
+    vi.mocked(api.window.open).mockClear()
+    const openRight = vi.fn()
+    const openBackground = vi.fn()
+    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openRight, openBackground }) })
+    modClick(q(cardNamed(el, 'Agentic Agency'), '.view-board__title'), { metaKey: true, shiftKey: true })
+    modClick(cardNamed(el, 'Agentic Agency'), { metaKey: true, shiftKey: true })
+    expect(vi.mocked(api.window.open).mock.calls).toEqual([[{ root: '/vault', file: agentic }], [{ root: '/vault', file: agentic }]])
+    expect([onOpenFile, openRight, openBackground].map((door) => door.mock.calls.length)).toEqual([0, 0, 0])
   })
 
   it('⌘ opens a background tab and ⌥ the right panel — title or body, direct, nested, repeated and title-less cards, by exact record path; ⇧ does nothing', () => {

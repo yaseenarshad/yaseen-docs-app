@@ -331,7 +331,12 @@ export const zoomToFitBounds = ({
 
   const targetZoomValue =
     steppedZoom && fit !== "none"
-      ? roundToStep(adjustedZoomValue, ZOOM_STEP, "floor")
+      ? // below 10% a 10% step would floor a fit to 0: whole percents there
+        roundToStep(
+          adjustedZoomValue,
+          adjustedZoomValue < ZOOM_STEP ? MIN_ZOOM : ZOOM_STEP,
+          "floor",
+        )
       : adjustedZoomValue;
 
   const newZoomValue = getNormalizedZoom(

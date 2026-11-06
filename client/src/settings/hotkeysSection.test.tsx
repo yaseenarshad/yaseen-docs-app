@@ -304,7 +304,8 @@ describe('one card per key (YAZ-3564)', () => {
     const rows = (key: string) => [...card(key).querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)
     const action = (id: string) => row(`hotkey-${id}`).querySelector('.hotkeys__box-action')?.textContent
     expect(rows('R').slice(0, 2)).toEqual(['hotkey-drawing-rectangle', 'hotkey-drawing-colorRed'])
-    expect(action('drawing-colorRed')).toBe("Red, with a selection (⇧R: a shape's outline)")
+    // YAZ-4277 D16: ⇧ is the fill
+    expect(action('drawing-colorRed')).toBe('Red, with a selection (⇧R: the fill)')
     expect(row('hotkey-drawing-colorRed').querySelector('.hotkeys__box-foot')?.textContent).toBe('R / ⇧RBuilt in')
     expect(row('hotkey-drawing-colorRed').querySelector('.hotkeys__lost')).toBeNull()
     expect(rows('T').slice(0, 2)).toEqual(['hotkey-drawing-text', 'hotkey-drawing-colorTransparent'])
@@ -414,7 +415,7 @@ describe('the clicks and drags (YAZ-3936)', () => {
   it('the "Clicks" chip shows only the click and drag cards, the built-in ones too; All brings the keys back (YAZ-3747 demo)', async () => {
     await mount()
     const chip = (text: string) => button(el.querySelector('.hotkeys__filters') as HTMLElement, text)
-    const isClick = (id: string | undefined) => /^hotkey-(links|bullets|mouse)-/.test(id ?? '')
+    const isClick = (id: string | undefined) => /^hotkey-(links|bullets|files|mouse)-/.test(id ?? '')
     click(chip('Clicks'))
     const shown = shownRows().filter((id) => id?.startsWith('hotkey'))
     expect(shown).toEqual(expect.arrayContaining(['hotkeys-click-legend', 'hotkey-links-thisTab', 'hotkey-bullets-newTab', 'hotkey-mouse-move-block']))
@@ -458,6 +459,25 @@ describe('the clicks and drags (YAZ-3936)', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'links.thisTab': 'Click', 'links.newTab': 'CmdOrCtrl+Click', 'links.backgroundTab': null } })
   })
 
+  it('Files in lists › Open in a new window (YAZ-4444 D32): ⇧⌘-click by default, beside a link\'s new tab; Click and ⇧-click are refused; a new gesture saves', async () => {
+    await mount()
+    expect(cardOf('files-newWindow')).toBe('⌘⇧-click')
+    expect(cardOf('links-newTab')).toBe('⌘⇧-click')
+    expect(tagOf('files-newWindow')).toBe('Files in lists')
+    expect(cardOf('links-newWindow')).toBe('Clicks with no gesture')
+    click(clickBox('files-newWindow'))
+    clickWith(clickBox('files-newWindow'), { shiftKey: true })
+    expect(lines('files-newWindow')[0]).toBe('⇧-click selects files. Pick a different gesture.')
+    clickWith(clickBox('files-newWindow'))
+    expect(lines('files-newWindow')[0]).toBe('Click opens the file. Pick a different gesture.')
+    expect(onChange).not.toHaveBeenCalled()
+    clickWith(clickBox('files-newWindow'), { metaKey: true, altKey: true })
+    expect(says()).toEqual(['Change the gesture for Files in lists › Open in a new window?', '⌘⇧-click → ⌥⌘-click'])
+    click(button(popup() as HTMLElement, 'Save'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'files.newWindow': 'CmdOrCtrl+Alt+Click' } })
+    expect(cardOf('files-newWindow')).toBe('⌥⌘-click')
+  })
+
   it('⌃-click is refused (the Mac\'s right-click) and the box keeps recording; Esc stops it and never reaches the dialog; ⌫ asks to remove the gesture', async () => {
     await mount()
     click(clickBox('bullets-newTab'))
@@ -477,7 +497,7 @@ describe('the clicks and drags (YAZ-3936)', () => {
   it('the page\'s search finds a row by its place and by its action: "links in a note" → the three Links rows; Reset all lists a click change too', async () => {
     await mount({ 'links.thisTab': 'Click' })
     type(hotkeyBox(), 'links in notes and drawings')
-    expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-links-thisTab', 'hotkey-links-backgroundTab', 'hotkey-links-newTab'])
+    expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-links-thisTab', 'hotkey-links-backgroundTab', 'hotkey-links-newTab', 'hotkey-links-newWindow'])
     type(hotkeyBox(), 'open in a background tab')
     expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-links-backgroundTab', 'hotkey-bullets-backgroundTab'])
     type(hotkeyBox(), '')
