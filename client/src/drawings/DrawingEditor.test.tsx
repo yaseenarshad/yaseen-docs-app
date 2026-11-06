@@ -888,8 +888,8 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     expect(preview.mock.lastCall?.[0]).toBe(false)
   })
 
-  /** The pills of the one "Fold arrows" row (YAZ-4402 3A): text, pressed, disabled, tooltip. The first row of pills: "Hover outline" (YAZ-4469 demo) follows. */
-  const pills = () => [...(container.querySelector('.page-settings__menu .page-settings__choices')?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+  /** The pills of the one "Fold arrows" row (YAZ-4402 3A): text, pressed, disabled, tooltip. */
+  const pills = () => [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu .page-settings__choices[aria-label^="Fold arrows"] button')]
   const pill = (label: string) => pills().find((b) => b.textContent === label)!
 
   it('YAZ-4277 D5: "Fold arrows" is the board\'s own choice: a pick writes beside the autosave and reaches the canvas; a board whose file says one opens with it', async () => {
@@ -963,6 +963,68 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     await flush()
     expect(api.setBoardFoldArrows).not.toHaveBeenCalled()
     expect(container.querySelector('.page-settings__menu')).not.toBeNull()
+  })
+
+  /** The pills of the "Hover outline" row (YAZ-4469 4B): text, pressed, disabled. */
+  const outlinePills = () => [...container.querySelectorAll<HTMLButtonElement>('.page-settings__choices[aria-label^="Hover outline"] button')]
+  const outlinePill = (label: string) => outlinePills().find((b) => b.textContent === label)!
+
+  it('YAZ-4469 4B: ONE "Hover outline (app: …)" row with App, On and Off; the label names the app value; a pick writes beside the autosave and reaches the canvas; a board whose file says one opens with it', async () => {
+    vi.mocked(api.setBoardHoverOutline).mockResolvedValue({ path: PATH, mtime: 300, size: 10 })
+    load.mockResolvedValue(loaded())
+    render({ canvasPrefs: { ...DEFAULT_CANVAS_PREFS, hoverOutline: false } })
+    await flush()
+    emit(1)
+    expect(surface.props?.hoverOutline).toBeUndefined()
+    act(() => cog().click())
+    expect(rows().map((r) => r.textContent).filter((t) => t?.startsWith('Hover outline'))).toEqual(['Hover outline (app: off):'])
+    expect(outlinePills().map((b) => [b.textContent, b.getAttribute('aria-pressed'), b.title])).toEqual([
+      ['App', 'true', 'The app setting: Off'],
+      ['On', 'false', 'A faint outline shows what a click will pick'],
+      ['Off', 'false', 'No outline on hover'],
+    ])
+    await act(async () => outlinePill('On').click())
+    await flush()
+    expect(api.setBoardHoverOutline).toHaveBeenCalledWith({ root: ROOT, path: PATH, value: true, expectedMtime: 100 })
+    expect(surface.props?.hoverOutline).toBe(true)
+    // the menu stays open, the new choice pressed
+    expect(outlinePills().map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['App', 'false'], ['On', 'true'], ['Off', 'false']])
+    await act(async () => outlinePill('App').click())
+    await flush()
+    expect(vi.mocked(api.setBoardHoverOutline).mock.lastCall?.[0]).toMatchObject({ value: 'app' })
+    expect(surface.props?.hoverOutline).toBeUndefined()
+    act(() => root?.unmount())
+    root = createRoot(container)
+
+    load.mockResolvedValue(loaded({ json: withBlock({ hoverOutline: false }) }))
+    render({ canvasPrefs: { ...DEFAULT_CANVAS_PREFS, hoverOutline: true } })
+    await flush()
+    emit(1)
+    expect(surface.props?.hoverOutline).toBe(false)
+    act(() => cog().click())
+    expect(rows().map((r) => r.textContent)).toContain('Hover outline (app: on):')
+    expect(outlinePills().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent)).toEqual(['Off'])
+  })
+
+  it('YAZ-4469 4B: Read only greys out the "Hover outline" pills; a click writes nothing', async () => {
+    await openCog({ json: withBlock({ readonly: true }) })
+    expect(outlinePills().map((b) => b.disabled)).toEqual([true, true, true])
+    for (const b of outlinePills()) act(() => b.click())
+    await flush()
+    expect(api.setBoardHoverOutline).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4469 4B: a change made elsewhere reloads the board\'s "Hover outline": the canvas and the cog follow the file', async () => {
+    await openCog()
+    expect(outlinePill('App').getAttribute('aria-pressed')).toBe('true')
+    act(() => cog().click())
+    load.mockResolvedValue(loaded({ json: withBlock({ hoverOutline: false }), mtime: 400 }))
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(surface.replaced).toHaveLength(1)
+    expect(surface.props?.hoverOutline).toBe(false)
+    act(() => cog().click())
+    expect(outlinePills().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent)).toEqual(['Off'])
   })
 
   it('YAZ-3943 1F: a board whose pictures are missing says so once when it opens, and not again on a reload; a board with all its pictures says nothing', async () => {

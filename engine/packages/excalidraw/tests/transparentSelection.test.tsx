@@ -23,6 +23,7 @@ import { Excalidraw } from "../index";
 import { getNormalizedZoom } from "../scene";
 
 import { API } from "./helpers/api";
+import { testTextEditor } from "./helpers/textEditor";
 import { Keyboard, Pointer, UI } from "./helpers/ui";
 import {
   assertSelectedElements,
@@ -744,6 +745,48 @@ describe("drawn elements beat transparent interiors", () => {
     mouse.moveTo(cx, cy);
 
     expect(app.getSelectionHover()).toBe(text.id);
+  });
+
+  it("YAZ-4469 4B: with hoverOutline off, a hover stores nothing and draws nothing", async () => {
+    unmountComponent();
+    await render(<Excalidraw hoverOutline={false} />);
+    const { box, cx, cy } = boxOver();
+    const app = window.h.app as unknown as {
+      getSelectionHover: () => string | null;
+      triggerRender: () => void;
+    };
+    const renders = vi.spyOn(app, "triggerRender");
+
+    mouse.moveTo(cx, cy);
+    mouse.moveTo(180, 110);
+
+    expect(app.getSelectionHover()).toBeNull();
+    expect(renders).not.toHaveBeenCalled();
+    // The click rule does not change.
+    mouse.clickAt(180, 110);
+    assertSelectedElements([box.id]);
+  });
+
+  it("YAZ-4469 4B: hoverOutline on to off while an outline shows clears it with one render", () => {
+    const { text, cx, cy } = boxOver();
+    const app = window.h.app as unknown as {
+      getSelectionHover: () => string | null;
+      triggerRender: () => void;
+    };
+    mouse.moveTo(cx, cy);
+    expect(app.getSelectionHover()).toBe(text.id);
+    const renders = vi.spyOn(app, "triggerRender");
+
+    GlobalTestState.renderResult.rerender(
+      <Excalidraw hoverOutline={false} textEditor={testTextEditor} />,
+    );
+
+    expect(app.getSelectionHover()).toBeNull();
+    expect(renders).toHaveBeenCalledTimes(1);
+    // And a hover after it stores nothing.
+    mouse.moveTo(180, 110);
+    expect(app.getSelectionHover()).toBeNull();
+    expect(renders).toHaveBeenCalledTimes(1);
   });
 
   it("no outline and no render in view mode (A5)", () => {

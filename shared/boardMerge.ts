@@ -169,9 +169,9 @@ export function mergeBoards(baseText: string, theirsText: string, mineText: stri
 }
 
 /**
- * The switches of the block (YAZ-3943 1E): Read only, "pictures out", the link preview on hover (demo 2) and the fold
- * arrows (YAZ-4277 D5) and the hover outline (YAZ-4469 demo). The default is no key. A board's own pictures folder (`picturesFolder`, demo round 3) rides with
- * "pictures out": one switch, one time.
+ * The switches of the block (YAZ-3943 1E): Read only, "pictures out", the link preview on hover (demo 2), the fold
+ * arrows (YAZ-4277 D5) and the hover outline (YAZ-4469 demo). The default is no key. A board's own pictures folder
+ * (`picturesFolder`, demo round 3) rides with "pictures out": one switch, one time.
  */
 const SWITCHES = [READ_ONLY_KEY, PICTURES_KEY, HOVER_LINKS_KEY, FOLD_ARROWS_KEY, HOVER_OUTLINE_KEY]
 const RIDES_WITH: Readonly<Record<string, readonly string[]>> = { [PICTURES_KEY]: [PICTURES_FOLDER_KEY] }

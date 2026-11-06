@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { BOARD_META_KEY, boardFoldArrowsOf, hoverLinksOff, parseBoardMetaBlock, serializeBoard } from '@shared/drawingAssets'
+import { BOARD_META_KEY, boardFoldArrowsOf, boardHoverOutlineOf, hoverLinksOff, parseBoardMetaBlock, serializeBoard } from '@shared/drawingAssets'
 import { DIAGRAM_CREATED_ATTR, DIAGRAM_UPDATED_ATTR } from '@shared/diagramFile'
 import { DIAGRAM_READ_ONLY_ATTR, isDiagramReadOnly, isDrawingReadOnly } from '@shared/readOnly'
 import { setBoardFoldArrows } from './boardFoldArrows'
 import { setBoardHoverLinks } from './boardHoverLinks'
+import { setBoardHoverOutline } from './boardHoverOutline'
 import { setBoardReadOnly } from './boardReadOnly'
 import { loadDiagram, saveDiagram } from './diagram'
 import { loadDrawing, saveDrawing } from './drawing'
@@ -221,5 +222,37 @@ describe('board:set-fold-arrows on a drawing', () => {
     expect((await failure(setBoardFoldArrows({ root, path: 'Sketch.excalidraw', value: 'hover' }))).code).toBe('BAD_REQUEST')
     expect((await failure(setBoardFoldArrows({ root, path: 'Flow.drawio', value: 'hover', expectedMtime: mtime }))).code).toBe('UNSUPPORTED_EXTENSION')
     expect(await readFile(file, 'utf8')).toBe(SCENE)
+  })
+})
+
+/** `board:set-hover-outline` (YAZ-4469 4B): the cog's "Hover outline", the rules of Fold arrows. */
+describe('board:set-hover-outline on a drawing', () => {
+  it('refuses a bad value; a stale mtime is CONFLICT; the same value writes nothing; a write changes only the `hoverOutline` key and its time', async () => {
+    const { file, mtime } = await seed('Sketch.excalidraw', SCENE)
+    for (const value of ['on', 1, null, undefined]) {
+      const bad = await failure(setBoardHoverOutline({ root, path: 'Sketch.excalidraw', value, expectedMtime: mtime }))
+      expect(bad.code, String(value)).toBe('BAD_REQUEST')
+      expect(bad.message).toBe("'value' must be 'app', true or false")
+    }
+    expect((await failure(setBoardHoverOutline({ root, path: 'Sketch.excalidraw', value: false }))).code).toBe('BAD_REQUEST')
+    expect((await failure(setBoardHoverOutline({ root, path: 'Sketch.excalidraw', value: false, expectedMtime: mtime - 1 }))).code).toBe('CONFLICT')
+    expect(await readFile(file, 'utf8')).toBe(SCENE)
+    // App on a board with no key: nothing to write
+    expect((await setBoardHoverOutline({ root, path: 'Sketch.excalidraw', value: 'app', expectedMtime: mtime })).mtime).toBe(mtime)
+
+    const off = await setBoardHoverOutline({ root, path: 'Sketch.excalidraw', value: false, expectedMtime: mtime })
+    const written = await readFile(file, 'utf8')
+    expect(parseBoardMetaBlock(written)).toEqual({ createdAt: 1000, updatedAt: 2000, hoverOutline: false, switched: { hoverOutline: expect.any(Number) } })
+    expect(boardHoverOutlineOf(parseBoardMetaBlock(written))).toBe(false)
+    const { [BOARD_META_KEY]: _block, ...rest } = JSON.parse(written) as Record<string, unknown>
+    const { [BOARD_META_KEY]: _was, ...before } = JSON.parse(SCENE) as Record<string, unknown>
+    expect(rest).toEqual(before)
+    expect((await setBoardHoverOutline({ root, path: 'Sketch.excalidraw', value: false, expectedMtime: off.mtime })).mtime).toBe(off.mtime)
+    expect(await readFile(file, 'utf8')).toBe(written)
+
+    const on = await setBoardHoverOutline({ root, path: 'Sketch.excalidraw', value: true, expectedMtime: off.mtime })
+    expect(boardHoverOutlineOf(parseBoardMetaBlock(await readFile(file, 'utf8')))).toBe(true)
+    await setBoardHoverOutline({ root, path: 'Sketch.excalidraw', value: 'app', expectedMtime: on.mtime })
+    expect(parseBoardMetaBlock(await readFile(file, 'utf8'))).toEqual({ createdAt: 1000, updatedAt: 2000, switched: { hoverOutline: expect.any(Number) } })
   })
 })

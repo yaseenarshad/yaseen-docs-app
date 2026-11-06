@@ -159,7 +159,7 @@ export function drawingCogRows({ pictures, out, folder, home = '', folderAllowed
   }
   // YAZ-4469 demo: the same shape as Fold arrows: App / On / Off, greyed out by Read only.
   if (onHoverOutline !== undefined) {
-    const appMode = appHoverOutline === undefined ? undefined : appHoverOutline ? 'On' : 'Off'
+    const appMode = HOVER_OUTLINE_CHOICES.find((choice) => choice.value === appHoverOutline)?.label
     rows.push({
       label: appMode === undefined ? 'Hover outline' : `Hover outline (app: ${appMode.toLowerCase()})`,
       divider: true,

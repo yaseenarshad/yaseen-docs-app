@@ -559,6 +559,18 @@ describe('Settings › Drawings (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)
     }
   })
 
+  it('YAZ-4469 4B: "Hover outline" is an On · Off switch, on by default; Off writes only `canvas.hoverOutline`; the search finds it by "highlight"', () => {
+    const { el, onChange } = mountCanvas()
+    expect(row(el, 'canvas.hoverOutline')?.querySelector('.setting__label')?.textContent).toBe('Hover outline')
+    expect(rowButtons(el, 'canvas.hoverOutline').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+    act(() => rowButtons(el, 'canvas.hoverOutline')[1].click())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, hoverOutline: false } })
+    unmount()
+    const { el: all } = mount()
+    type(searchInput(all), 'highlight')
+    expect(rowIds(all)).toContain('canvas.hoverOutline')
+  })
+
   it('YAZ-4404 4H and YAZ-4406 4J: the search finds each new switch by a word its label does not have', () => {
     const { el } = mount()
     for (const word of ['contrast', 'white text', 'readable']) {

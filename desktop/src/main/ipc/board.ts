@@ -1,9 +1,10 @@
 /**
  * The board documents' IPC (YAZ-3028 D2, Draw's 🔒 YAZ-1810 / YAZ-1802 D6): `fs/drawing.ts`,
  * `fs/diagram.ts`, `fs/createBoard.ts`, the board's head (`fs/boardHead.ts`), the read-only switch
- * (`fs/boardReadOnly.ts`, YAZ-3076 D1), the pictures switch (`fs/boardPictures.ts`, YAZ-3943 D5) and the
- * link preview on hover switch (`fs/boardHoverLinks.ts`, YAZ-3943 demo 2) and the fold arrows choice
- * (`fs/boardFoldArrows.ts`, YAZ-4277 D5) and the hover outline choice (`fs/boardHoverOutline.ts`, YAZ-4469 demo) behind the standard envelope, and nothing else.
+ * (`fs/boardReadOnly.ts`, YAZ-3076 D1), the pictures switch (`fs/boardPictures.ts`, YAZ-3943 D5), the
+ * link preview on hover switch (`fs/boardHoverLinks.ts`, YAZ-3943 demo 2), the fold arrows choice
+ * (`fs/boardFoldArrows.ts`, YAZ-4277 D5) and the hover outline choice (`fs/boardHoverOutline.ts`, YAZ-4469 demo)
+ * behind the standard envelope, and nothing else.
  *
  * NO STORE REPAIR AND NO PUSH: repair and the pushes exist for paths that MOVE or GO, and a
  * save does neither — it changes bytes at a path every window already knows. A save only goes in
