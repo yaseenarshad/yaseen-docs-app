@@ -10,6 +10,7 @@ import { fileLink, isAppLink, parseFileLink } from '@shared/links'
 import { FILES_PREVIEW_FRAME, MEMORY_SAMPLE_MS, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
+import { createSpellWait } from '@shared/spelling'
 import { APP_SCHEME } from './appScheme'
 import { resolveDrawioDir, serveDrawio } from './drawio/assets'
 import { excalidrawFontsDir, viewerAssetsDir } from './ipc/share'
@@ -36,7 +37,7 @@ import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { movePageSwitches } from './movePageSwitches'
 import { runQuitSequence } from './quitSequence'
-import { createSpeller, nativeMenuGuesses, spellerPath } from './speller'
+import { createSpeller, nativeMenuAsker, spellerPath } from './speller'
 import { stopAllLanguageServers } from './lsp/server'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { appZoomFactor, subscribeAppZoom } from './appZoom'
@@ -100,9 +101,11 @@ app.on('open-file', (event, path) => {
 protocol.registerSchemesAsPrivileged([APP_SCHEME])
 
 const RENDERER_DIR = join(__dirname, '../renderer')
-/** The draw.io webapp (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4/D5): the pack cache in dev, `out/drawio` in a build. */
 // The macOS spell checker's guesses for both right-click menus (YAZ-4464): one helper, started at the first ask.
 const speller = createSpeller(spellerPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname }))
+/** The native menu's wait for its guesses, as the note menu's (S2): 1 s until the helper first answers, then 400 ms. */
+const nativeSpellWait = createSpellWait()
+/** The draw.io webapp (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4/D5): the pack cache in dev, `out/drawio` in a build. */
 const DRAWIO_DIR = resolveDrawioDir({ mainDir: __dirname, appPath: app.getAppPath(), isPackaged: app.isPackaged, exists: existsSync })
 
 /** One user-global state file (D9, GRO-2159): `~/Library/Application Support/Yaseen Docs/yaseendocs.json`. */
@@ -174,10 +177,12 @@ const manager = createWindowManager(store, {
     })
     // Electron ships no default context menu (YAZ-672), so the spellchecker's squiggles would
     // otherwise be unactionable; the template itself is pure and lives in menu.ts.
+    // On macOS Chromium marks the word but gives no guesses (YAZ-4464 D3): ask the macOS checker. Past the
+    // wait the menu opens with none; a newer right-click while it waits opens only its own menu (S6).
+    const menuGuesses = nativeMenuAsker(process.platform, (word) => nativeSpellWait(speller.guesses(word)))
     win.webContents.on('context-menu', async (_event, params) => {
-      // On macOS Chromium marks the word but gives no guesses (YAZ-4464 D3): ask the macOS checker.
-      const dictionarySuggestions = await nativeMenuGuesses(params, process.platform, speller.guesses)
-      if (win.isDestroyed()) return
+      const dictionarySuggestions = await menuGuesses(params)
+      if (dictionarySuggestions === null || win.isDestroyed()) return
       Menu.buildFromTemplate(buildContextMenuTemplate({ ...params, dictionarySuggestions }, {
         copyAs: (mode) => win.webContents.send(SPECIAL.menuCopyAs, mode),
         pasteAs: (mode) => win.webContents.send(SPECIAL.menuPasteAs, { mode, text: clipboard.readText(), ...(mode === 'cells' ? { html: clipboard.readHTML() } : {}) } satisfies ClipboardPasteRequest),

@@ -1,5 +1,6 @@
 import type { WebContents } from 'electron'
 import { SPECIAL } from '@shared/ipc'
+import { isSpellWord } from '@shared/spelling'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { WindowManagerIpc } from '../windows'
 import { isRendererUrl } from '../rendererUrl'
@@ -85,7 +86,7 @@ export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, h
         if (typeof arg === 'string' && arg.startsWith('app://vault/') && arg.length <= MAX_IMAGE_SRC_LENGTH) return host.revealImage(arg)
         break
       case 'add-word':
-        if (typeof arg === 'string' && /^\S{1,64}$/.test(arg)) {
+        if (typeof arg === 'string' && isSpellWord(arg)) {
           sender.session.addWordToSpellCheckerDictionary(arg)
           return
         }
