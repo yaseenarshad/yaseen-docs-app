@@ -13,6 +13,8 @@ import {
   type Radians,
 } from "@excalidraw/math";
 
+import { getFreeTextInteractionCoords } from "@excalidraw/element";
+
 import { Excalidraw } from "../index";
 import { getNormalizedZoom } from "../scene";
 
@@ -351,7 +353,9 @@ describe("transparent closed-shape selection", () => {
     assertSelectedElements([]);
   });
 
-  it("preserves topmost ordering and group-deep Ctrl selection", () => {
+  // YAZ-4469 D1: a drawn fill behind a transparent box wins in the overlap; the
+  // box's own border keeps topmost ordering and group-deep Ctrl selection.
+  it("picks a drawn fill behind a transparent box, and the box from its border", () => {
     const underlying = API.createElement({
       type: "rectangle",
       x: 20,
@@ -380,10 +384,15 @@ describe("transparent closed-shape selection", () => {
     API.setElements([underlying, top, groupMate]);
 
     mouse.clickAt(80, 65);
+    assertSelectedElements([underlying]);
+
+    mouse.clickAt(1, 1);
+    mouse.clickAt(80, 20);
     assertSelectedElements([top, groupMate]);
 
+    mouse.clickAt(1, 1);
     Keyboard.withModifierKeys({ ctrl: true }, () => {
-      mouse.clickAt(80, 65);
+      mouse.clickAt(80, 20);
     });
     assertSelectedElements([top]);
   });
@@ -477,4 +486,147 @@ describe("transparent closed-shape selection", () => {
       assertSelectedElements([rectangle.id]);
     },
   );
+});
+
+// YAZ-4469: what is drawn under the pointer wins over a transparent box's empty
+// inside (D1); among empty insides only, the smallest box wins (D2).
+describe("drawn elements beat transparent interiors", () => {
+  beforeEach(async () => {
+    localStorage.clear();
+    reseed(7);
+    Pointer.resetAll();
+    await render(<Excalidraw />);
+  });
+
+  const boxOver = (extra: Partial<Parameters<typeof API.createElement>[0]> = {}) => {
+    const text = API.createElement({
+      type: "text",
+      id: "text-behind",
+      x: 100,
+      y: 50,
+      width: 80,
+      height: 25,
+      text: "Lead Magnet",
+    });
+    const box = API.createElement({
+      type: "rectangle",
+      id: "box-in-front",
+      x: 20,
+      y: 20,
+      width: 200,
+      height: 120,
+      backgroundColor: "transparent",
+      strokeColor: "#1b1b1f",
+      ...extra,
+    });
+    API.setElements([text, box]);
+    // The text's own hit area hugs its measured glyphs: aim at its middle.
+    const [, , , , cx, cy] = getFreeTextInteractionCoords(
+      API.getElement(text) as typeof text & { type: "text" },
+    )!;
+    return { text, box, cx, cy };
+  };
+
+  it.each([0.5, 1, 3])(
+    "selects the text behind a transparent box at %s× zoom",
+    (zoomValue) => {
+      const { text, cx, cy } = boxOver();
+      API.setAppState({ zoom: { value: getNormalizedZoom(zoomValue) } });
+      const at = sceneCoordsToViewportCoords(
+        { sceneX: cx, sceneY: cy },
+        window.h.state,
+      );
+
+      mouse.clickAt(at.x, at.y);
+
+      assertSelectedElements([text.id]);
+    },
+  );
+
+  it("selects the box from its empty inside and from its border", () => {
+    const { box } = boxOver();
+
+    mouse.clickAt(180, 110);
+    assertSelectedElements([box.id]);
+
+    mouse.clickAt(5, 5);
+    mouse.clickAt(20, 80);
+    assertSelectedElements([box.id]);
+  });
+
+  it("uses the text for the hover cursor and the right-click", () => {
+    const { text, cx, cy } = boxOver();
+
+    mouse.moveTo(cx, cy);
+    expect(GlobalTestState.interactiveCanvas.style.cursor).toBe(
+      CURSOR_TYPE.MOVE,
+    );
+
+    mouse.rightClickAt(cx, cy);
+    expect(UI.queryContextMenu()).not.toBeNull();
+    assertSelectedElements([text.id]);
+  });
+
+  it("edits the text behind a transparent box on a double-click", () => {
+    const { text, box, cx, cy } = boxOver();
+
+    // A real double-click: the first click selects, then the dblclick.
+    mouse.clickAt(cx, cy);
+    mouse.doubleClickAt(cx, cy);
+
+    expect(window.h.state.editingTextElement?.id).toBe(text.id);
+    expect(API.getElement(box).boundElements ?? []).toEqual([]);
+  });
+
+  it("drags a selected box from its text, and a click selects the text", () => {
+    const { text, box, cx, cy } = boxOver();
+    mouse.clickAt(180, 110);
+    assertSelectedElements([box.id]);
+
+    mouse.downAt(cx, cy);
+    mouse.moveTo(cx + 30, cy + 30);
+    mouse.up();
+    expect(API.getElement(box).x).toBe(50);
+    assertSelectedElements([box.id]);
+
+    mouse.clickAt(cx, cy);
+    assertSelectedElements([text.id]);
+  });
+
+  it("selects text inside a locked transparent box", () => {
+    const { text, cx, cy } = boxOver({ locked: true });
+
+    mouse.clickAt(cx, cy);
+
+    assertSelectedElements([text.id]);
+  });
+
+  it("selects the smallest box when only empty insides are under the pointer", () => {
+    const inner = API.createElement({
+      type: "rectangle",
+      id: "inner",
+      x: 40,
+      y: 40,
+      width: 60,
+      height: 50,
+      backgroundColor: "transparent",
+    });
+    const outer = API.createElement({
+      type: "rectangle",
+      id: "outer",
+      x: 20,
+      y: 20,
+      width: 200,
+      height: 120,
+      backgroundColor: "transparent",
+    });
+    API.setElements([inner, outer]);
+
+    mouse.clickAt(70, 65);
+    assertSelectedElements([inner.id]);
+
+    mouse.clickAt(5, 5);
+    mouse.clickAt(180, 110);
+    assertSelectedElements([outer.id]);
+  });
 });

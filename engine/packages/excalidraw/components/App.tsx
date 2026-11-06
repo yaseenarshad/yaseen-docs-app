@@ -7629,30 +7629,49 @@ class App extends React.Component<AppProps, AppState> {
           }
         }
       }
-      const elementWithHighestZIndex =
-        allHitElements[allHitElements.length - 1];
-
-      // If we're hitting element with highest z-index only on its bounding box
-      // while also hitting other element figure, the latter should be considered.
-      return hitElementItself({
-        point: pointFrom(x, y),
-        element: elementWithHighestZIndex,
-        // when overlapping, we would like to be more precise
-        // this also avoids the need to update past tests
-        threshold: this.getElementHitThreshold(elementWithHighestZIndex) / 2,
-        elementsMap: this.scene.getNonDeletedElementsMap(),
-        frameNameBound: isFrameLikeElement(elementWithHighestZIndex)
-          ? this.frameNameBoundsCache.get(elementWithHighestZIndex)
-          : null,
-        insideHitPolicy:
-          opts?.insideHitPolicy === "outline" ? undefined : "selection",
-        useFreeTextInteractionBounds:
-          opts && "useFreeTextInteractionBounds" in opts
-            ? opts.useFreeTextInteractionBounds
-            : true,
-      })
-        ? elementWithHighestZIndex
-        : allHitElements[allHitElements.length - 2];
+      const point = pointFrom<GlobalPoint>(x, y);
+      const elementsMap = this.scene.getNonDeletedElementsMap();
+      const hits = (
+        element: NonDeleted<ExcalidrawElement>,
+        insideHitPolicy?: "selection",
+      ) =>
+        hitElementBoundText(point, element, elementsMap) ||
+        hitElementItself({
+          point,
+          element,
+          // when overlapping, we would like to be more precise
+          threshold: this.getElementHitThreshold(element) / 2,
+          elementsMap,
+          frameNameBound: isFrameLikeElement(element)
+            ? this.frameNameBoundsCache.get(element)
+            : null,
+          insideHitPolicy,
+          useFreeTextInteractionBounds:
+            opts && "useFreeTextInteractionBounds" in opts
+              ? opts.useFreeTextInteractionBounds
+              : true,
+        });
+      // YAZ-4469 D1: what is drawn under the pointer (a stroke, a fill, text, an
+      // image) wins over the empty inside of a transparent shape, at any depth.
+      const drawn = allHitElements.findLast((element) => hits(element));
+      if (drawn) {
+        return drawn;
+      }
+      // D2: only empty insides are under the pointer: the smallest shape wins,
+      // so a click in a box that sits inside a bigger one picks the inner box.
+      // With none (only a selected element's frame), the top element wins.
+      const insides =
+        opts?.insideHitPolicy === "outline"
+          ? []
+          : allHitElements.filter((element) => hits(element, "selection"));
+      return insides.length > 0
+        ? insides.reduce((smallest, element) =>
+            element.width * element.height <=
+            smallest.width * smallest.height
+              ? element
+              : smallest,
+          )
+        : allHitElements[allHitElements.length - 1];
     }
     if (allHitElements.length === 1) {
       return allHitElements[0];
