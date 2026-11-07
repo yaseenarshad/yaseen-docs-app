@@ -3,6 +3,7 @@ import { columnTyping } from './editorType'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
+import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
@@ -16,7 +17,7 @@ import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CalendarView } from './view/CalendarView'
-import { type DayKey, calendarDateKey, dateColumns, movedDate } from './calendar'
+import { type DayKey, calendarDateKey, dateColumns, dayLabel, movedDate } from './calendar'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
 import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, applyMoves, groupByKey, groupsByFolder } from './view/groupDrag'
@@ -82,8 +83,11 @@ export interface FolderHost {
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
   openRight?: (path: string) => void
-  /** Passive notice surface for row actions that fail because a page moved or disappeared. */
-  onNotice?: (message: string) => void
+  /**
+   * Passive notice surface for row actions that fail because a page moved or disappeared. App's
+   * `notify`: a move's "Moved to … · Undo" (YAZ-4541 S6) rides its glyph, type and action too.
+   */
+  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType, action?: Notice['action']) => void
   /**
    * The outline editor's own wikilink surfaces (YAZ-903) — the window's ONE resolve source, its
    * `[[` picker feed and the click-navigation contract, assembled by the host exactly as
@@ -307,14 +311,23 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   /**
    * The board's optimistic write, shared with the calendar (YAZ-4540 D4): the move shows at once,
    * then ONE guarded write of the note; a failure drops the move (the card snaps back) and flags it.
+   * A move that names where it went (`to`) says "Moved to <to>" once the write lands, with the app's
+   * Undo (YAZ-4541 S6): Undo writes each `prevRaw` back the same way, and says nothing itself.
    */
-  const moveValues = (path: string, writes: PendingMove) => {
+  const moveValues = (path: string, writes: PendingMove, to?: string) => {
     setMoveError(null)
     setMoves((m) => ({ ...m, [path]: writes }))
-    folder.writeValues(path, writes).catch((err: unknown) => {
-      setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
-      setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
-    })
+    folder.writeValues(path, writes).then(
+      () => {
+        if (to === undefined) return
+        const back: PendingMove = writes.map((w) => ({ key: w.key, value: w.prevRaw, prevRaw: w.value }))
+        folder.onNotice?.(`Moved to ${to}`, 'info', 'undo', { label: 'Undo', run: () => moveValues(path, back), fades: true })
+      },
+      (err: unknown) => {
+        setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
+        setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
+      },
+    )
   }
 
   const onMoveToGroup = (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => {
@@ -335,7 +348,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
     }
     const writes: PendingMove = [{ key, value, prevRaw }]
     if (drop?.outer !== undefined) writes.push({ ...drop.outer, prevRaw: props?.[drop.outer.key] })
-    moveValues(path, writes)
+    // The toast names the group the card went to: a fanned-out drop, the element it added (YAZ-4541 S6).
+    const to = swap === undefined ? (value === undefined ? null : fromYaml(value)) : swap.add
+    moveValues(path, writes, to === null ? 'No value' : render(to, resolve))
   }
 
   // The calendar (YAZ-4540 D4): its "Show by" column, and a drop on a day — or on "No date" (`null`),
@@ -348,7 +363,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   const onMoveToDay = (path: string, day: DayKey | null) => {
     if (dateKey === null || readOnly.has(path)) return
     const prevRaw = records.find((r) => r.path === path)?.properties[dateKey]
-    moveValues(path, [{ key: dateKey, value: day === null ? undefined : movedDate(prevRaw, day), prevRaw }])
+    moveValues(path, [{ key: dateKey, value: day === null ? undefined : movedDate(prevRaw, day), prevRaw }], day === null ? 'No date' : dayLabel(day))
   }
 
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this

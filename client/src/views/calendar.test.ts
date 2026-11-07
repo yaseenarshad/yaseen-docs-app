@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue } from './expr'
-import { bucketByDay, calendarDateKey, dateColumns, dayOf, monthWeeks, movedDate, timeOf } from './calendar'
+import { bucketByDay, calendarDateKey, dateColumns, dayOf, monthWeeks, movedDate, timeOf, dayLabel } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -62,6 +62,13 @@ describe('movedDate (YAZ-4540 D4): a move writes the day and keeps the time', ()
   it('a JS Date keeps its UTC time, and a bare UTC midnight stays a bare date', () => {
     expect(movedDate(new Date(Date.UTC(2026, 11, 3)), '2026-12-09')).toBe('2026-12-09')
     expect(movedDate(new Date('2026-12-03T23:30Z'), '2026-12-09')).toBe('2026-12-09T23:30:00.000Z')
+  })
+})
+
+describe('dayLabel (YAZ-4541 S6): the day a move toast names', () => {
+  it('reads Dec 9, 2026', () => {
+    expect(dayLabel('2026-12-09')).toBe('Dec 9, 2026')
+    expect(dayLabel('2027-01-31')).toBe('Jan 31, 2027')
   })
 })
 

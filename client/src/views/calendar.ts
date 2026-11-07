@@ -71,6 +71,11 @@ export function monthWeeks(year: number, month: number): DayKey[][] {
   )
 }
 
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** A day as a move's toast names it (YAZ-4541 S6): `Dec 9, 2026`. */
+export const dayLabel = (day: DayKey): string => `${SHORT_MONTHS[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8, 10))}, ${day.slice(0, 4)}`
+
 /** Today, as a day key in local time: the day the grid rings (S7). */
 export const todayKey = (): DayKey => formatDate(Date.now(), 'YYYY-MM-DD')
 

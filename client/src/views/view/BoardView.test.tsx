@@ -973,15 +973,19 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
     expect(onOpenFile).not.toHaveBeenCalled()
   })
 
-  it('empty Enter creates nothing; Escape closes the input back to the row', async () => {
-    const create = vi.fn(() => Promise.resolve('/vault/x.md'))
-    const { el } = mount(BOARD_BASE, { folder: testFolderHost({ create }) })
+  it('empty Enter makes "Untitled" in that group and stays on the board (YAZ-4541 S5); Escape closes the input back to the row', async () => {
+    const create = vi.fn(() => Promise.resolve('/vault/Untitled.md'))
+    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ create }) })
     click(byLabel(colOf(el, 'idea'), 'New card'))
     const input = byLabel<HTMLInputElement>(colOf(el, 'idea'), 'New card name')
+    setValue(input, '   ')
     press(input, 'Enter')
     await flush()
-    expect(create).not.toHaveBeenCalled()
-    press(input, 'Escape')
+    draw()
+    // No typed name: the host names it `Untitled` (`Untitled 2`… on a clash), as every other "+" does.
+    expect(create).toHaveBeenCalledExactlyOnceWith({ properties: { status: 'idea' } }, '')
+    expect(onOpenFile).not.toHaveBeenCalled()
+    press(byLabel<HTMLInputElement>(colOf(el, 'idea'), 'New card name'), 'Escape')
     expect(colOf(el, 'idea').querySelector('[aria-label="New card name"]')).toBeNull()
     expect(colOf(el, 'idea').querySelector('[aria-label="New card"]')).not.toBeNull()
   })
