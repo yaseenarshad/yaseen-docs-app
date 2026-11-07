@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'esbuild'
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { startAutomationServer, type AutomationServer } from '../automation/server'
+import { createStore } from '../main/store'
 import { prepareAutomation } from '../main/automation'
 
 const exec = promisify(execFile)
@@ -14,7 +15,8 @@ beforeAll(async () => {
   profile = await mkdtemp(join(tmpdir(), 'docs-cli-process-'))
   entry = join(profile, 'cli.cjs')
   await build({ entryPoints: [resolve(__dirname, 'index.ts')], outfile: entry, bundle: true, platform: 'node', format: 'cjs', alias: { '@shared': resolve(__dirname, '../../../shared') } })
-  server = await startAutomationServer(profile, (request, content) => prepareAutomation({ profile, version: 'test' }, request, content))
+  const store = createStore(join(profile, 'state.json'))
+  server = await startAutomationServer(profile, (request, content) => prepareAutomation({ profile, version: 'test', state: () => store.get(), store }, request, content))
 })
 afterAll(async () => { await server?.close(); await rm(profile, { recursive: true, force: true }) })
 
@@ -56,4 +58,25 @@ describe('actual CLI process', () => {
     expect(result.code).toBe(1)
     expect(JSON.parse(result.stderr).error.code).toBe('NOT_RUNNING')
   })
+  it('round-trips a large saved document, guards a stale revision, and does not replay an append', async () => {
+    const root = join(profile, 'vault'), path = join(root, 'Large.md')
+    await mkdir(root)
+    const body = 'A'.repeat(100_000)
+    await writeFile(path, body)
+    const read = JSON.parse((await run('file', 'read', '--root', root, '--path', path)).stdout)
+    expect(read).toMatchObject({ ok: true, value: { content: body, source: 'disk' } })
+    const args = ['file', 'append', '--root', root, '--path', path, '--revision', read.value.revision, '--body', '\nAdded once']
+    const appended = await run(...args)
+    expect(appended.code).toBe(0)
+    const result = JSON.parse(appended.stdout)
+    expect(result.value).toMatchObject({ diskSaved: true, rendererMerged: false })
+    expect(JSON.parse((await run(...args, '--request', result.request)).stdout)).toEqual(result)
+    expect(await readFile(path, 'utf8')).toBe(body + '\nAdded once')
+    const stale = await run('file', 'write', '--root', root, '--path', path, '--revision', read.value.revision, '--body', 'stale')
+    expect(stale.code).toBe(1)
+    expect(JSON.parse(stale.stdout).error.code).toBe('CONFLICT')
+    const absentBody = await run('file', 'write', '--root', root, '--path', path, '--revision', result.value.revision)
+    expect(absentBody.code).toBe(2)
+  })
+
 })

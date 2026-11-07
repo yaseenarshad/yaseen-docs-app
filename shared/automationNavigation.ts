@@ -26,6 +26,11 @@ export interface NavigationTarget {
   view?: string
   reveal?: boolean
 }
-export type InspectTarget = { kind: 'window' } | { kind: 'document'; tab: string }
-export type RendererCommand = { id: string; action: 'navigate'; target: NavigationTarget } | { id: string; action: 'inspect'; target: InspectTarget }
-export type RendererReply = { id: string; ok: true; value: unknown } | { id: string; ok: false; error: { code: string; message: string } }
+export type InspectTarget = { kind: 'history' } | { kind: 'window' } | { kind: 'document'; tab: string }
+export type FileOperationTarget =
+  | { command: 'file.restore' }
+  | { command: 'file.rename'; path: string; newPath: string; kind: 'file' | 'dir' }
+  | { command: 'file.retitle'; path: string; title: string; kind: 'file' | 'dir' }
+  | { command: 'file.trash'; paths: string[] }
+export type RendererCommand = { id: string; action: 'navigate'; target: NavigationTarget } | { id: string; action: 'inspect'; target: InspectTarget } | { id: string; action: 'operate'; target: FileOperationTarget }
+export type RendererReply = { id: string; ok: true; value: unknown } | { id: string; ok: false; error: { code: string; message: string; details?: Record<string, unknown> } }

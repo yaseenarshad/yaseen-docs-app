@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { AutomationFailure } from '@shared/automation'
-import type { InspectTarget, NavigationTarget, RendererCommand, RendererReply } from '@shared/automationNavigation'
+import type { FileOperationTarget, InspectTarget, NavigationTarget, RendererCommand, RendererReply } from '@shared/automationNavigation'
 
 export interface RendererPage {
   id: number
@@ -37,6 +37,10 @@ export class RendererRequests {
     return this.request(page, { id: randomUUID(), action: 'inspect', target })
   }
 
+  operate(page: RendererPage, target: FileOperationTarget): Promise<unknown> {
+    return this.request(page, { id: randomUUID(), action: 'operate', target })
+  }
+
   private request(page: RendererPage, command: RendererCommand): Promise<unknown> {
     const { id } = command
     return new Promise((resolve, reject) => {
@@ -45,7 +49,7 @@ export class RendererRequests {
       const finish = (reply: RendererReply) => {
         clearTimeout(timer); this.pending.delete(id)
         if (reply.ok) resolve(reply.value)
-        else reject(new AutomationFailure(reply.error.code, reply.error.message))
+        else reject(new AutomationFailure(reply.error.code, reply.error.message, reply.error.details))
       }
       const request = { page, command, finish, sent: false }
       this.pending.set(id, request)

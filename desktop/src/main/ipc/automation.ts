@@ -39,6 +39,11 @@ export function registerAutomationIpc(store: Store, windows: WindowManager): Nav
       if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window closed.')
       return requests.inspect(window.webContents, target)
     },
+    operate: async (id, target) => {
+      const window = BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && windows.idFor(win.webContents) === id)
+      if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window closed.')
+      return requests.operate(window.webContents, target)
+    },
     usedWorkspace: async id => { store.touchVaultSet(id); await store.flush() },
   }
 }

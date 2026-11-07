@@ -1,7 +1,7 @@
 import { startAutomationServer, type AutomationServer } from '../automation/server'
 import { prepareAutomation } from './automation'
 import { registerAutomationIpc } from './ipc/automation'
-import { navigate, type NavigationHost } from './automation/navigation'
+import { navigate, resolveNavigation, type NavigationHost } from './automation/navigation'
 import { parseNavigationLink } from '@shared/navigationLinks'
 import { rendererUrlFor } from './rendererUrl'
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, webContents } from 'electron'
@@ -446,7 +446,7 @@ app.whenReady().then(() => {
   const navigation = registerAutomationIpc(store, manager)
   automationNavigation = navigation
   automationServer = startAutomationServer(app.getPath('userData'), (request, content) =>
-    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), state: () => store.get(), navigation }, request, content))
+    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), state: () => store.get(), navigation, store }, request, content))
   void automationServer.catch(() => console.error('[cli] Could not start the local connection. Check profile permissions.'))
   // The memory meter (YAZ-3737 D1): one `getAppMetrics` each 30 s, in memory only. The rest is read only for a report.
   meter = createMemoryMeter({
@@ -503,13 +503,19 @@ app.whenReady().then(() => {
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.
-  const asked = links.pending().flatMap((url) => {
+  const askedRoots = Promise.all(links.pending().map(async url => {
+    const navigation = parseNavigationLink(url)
+    if (navigation !== null) {
+      try { return (await resolveNavigation(store.get(), navigation)).resolved.roots }
+      catch { return [] }
+    }
     const link = parseFileLink(url)
-    return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []
-  })
+    const root = link === null ? null : manager.rootFor(link.path, link.root)
+    return root === null ? [] : [root]
+  })).then(roots => roots.flat())
   // The first window waits for the settings folder's first read (YAZ-3276 D4), so a theme that the other Mac
   // changed shows no flash. At most 500 ms: a slow or lost folder never holds up a launch. No folder: at once.
-  void Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]).then(() => {
+  void Promise.all([Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]), askedRoots]).then(([, asked]) => {
     manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
     links.flush()
   })

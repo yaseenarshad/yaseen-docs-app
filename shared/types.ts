@@ -468,6 +468,8 @@ export interface DrawingLoadRequest {
 }
 
 export interface DrawingLoadResponse {
+  /** Requested by automation; exact saved bytes and modification time. */
+  revision?: string
   /** Absolute path that was read — what every later save addresses. */
   path: string
   /** The file's bytes as UTF-8 text, exactly as on disk — except that a LEGACY scene's embedded `files` map comes back empty: those bytes travel once, in `files`. */
@@ -492,6 +494,8 @@ export interface DrawingNewFile extends DrawingFileEntry {
 }
 
 export interface DrawingSaveRequest {
+  /** Automation replacement guard, checked inside the shared write turn. */
+  expectedRevision?: string
   root: string
   path: string
   /** The serialized scene. Written verbatim but for the store's own `files: {}` rewrite and the date stamp. */
@@ -503,6 +507,8 @@ export interface DrawingSaveRequest {
 }
 
 export interface DrawingSaveResponse {
+  /** Requested by automation; exact saved bytes and modification time. */
+  revision?: string
   path: string
   mtime: number
   size: number
@@ -527,6 +533,8 @@ export interface DiagramLoadRequest {
 }
 
 export interface DiagramLoadResponse {
+  /** Requested by automation; exact saved bytes and modification time. */
+  revision?: string
   /** Absolute path that was read. */
   path: string
   /** The file's XML exactly as it sits on disk (compressed pages included — draw.io inflates them). */
@@ -536,6 +544,8 @@ export interface DiagramLoadResponse {
 }
 
 export interface DiagramSaveRequest {
+  /** Automation replacement guard, checked inside the shared write turn. */
+  expectedRevision?: string
   root: string
   path: string
   /** The document as draw.io serialised it: plain `<mxfile>` XML (Draw's 🔒 YAZ-1802 D3). */
@@ -545,6 +555,8 @@ export interface DiagramSaveRequest {
 }
 
 export interface DiagramSaveResponse {
+  /** Requested by automation; exact saved bytes and modification time. */
+  revision?: string
   path: string
   mtime: number
   size: number

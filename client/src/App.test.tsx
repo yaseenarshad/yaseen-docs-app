@@ -3725,6 +3725,23 @@ describe('App rename door (⚡ YAZ-888)', () => {
   /** "Ask before renaming" switched off (YAZ-2420 3C1). */
   const askOff = (): AppState => ({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } })
 
+  it('automation rename acknowledges the full link repair and records Undo', async () => {
+    const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), identity(), files, feed)
+    await act(async () => emitAutomation({ id: 'rename-1', action: 'operate', target: { command: 'file.rename', path: '/v/B.md', newPath: '/v/B2.md', kind: 'file' } }))
+    expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'rename-1', ok: true, value: expect.objectContaining({ move: expect.objectContaining({ newPath: '/v/B2.md' }), links: { updated: 1, skipped: 0 }, diskSaved: true }) })
+  })
+
+  it('automation rename reports a partial result when a referencing note cannot be read', async () => {
+    const { bridge, emitAutomation } = await mount(defaultAppState(), identity(), {}, feed)
+    await act(async () => emitAutomation({ id: 'rename-2', action: 'operate', target: { command: 'file.rename', path: '/v/B.md', newPath: '/v/B2.md', kind: 'file' } }))
+    expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'rename-2', ok: false, error: expect.objectContaining({ code: 'PARTIAL_FAILURE', details: expect.objectContaining({ links: { updated: 0, skipped: 1 } }) }) })
+  })
+
   it('a NAME change asks first, with the honest count — and confirming runs the whole pipeline', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
@@ -7103,5 +7120,40 @@ describe('App automation live inspection', () => {
     expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'inspect-1', ok: true, value: expect.objectContaining({ source: 'live', roots: ['/v'], tabs: [], sidebarCollapsed: true }) })
     await act(async () => emitAutomation({ id: 'inspect-2', action: 'inspect', target: { kind: 'document', tab: 'missing' } }))
     expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'inspect-2', ok: false, error: expect.objectContaining({ code: 'TAB_NOT_FOUND' }) })
+  })
+})
+
+
+describe('App automation Trash', () => {
+  it('returns actual successes and failures while retaining Undo for the moved file', async () => {
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    bridge.file.delete.mockImplementation(async ({ path }) => {
+      if (path === '/v/A.md') throw new Error('failed')
+      return { path, kind: 'file', trashed: '/scratch-trash/B.md' }
+    })
+    await act(async () => emitAutomation({ id: 'trash-1', action: 'operate', target: { command: 'file.trash', paths: ['/v/A.md', '/v/B.md'] } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'trash-1', ok: false, error: expect.objectContaining({ code: 'PARTIAL_FAILURE', details: { went: [{ path: '/v/B.md', kind: 'file', trashed: '/scratch-trash/B.md' }], failed: [expect.any(String)] } }) })
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
+  })
+})
+
+describe('App automation restore', () => {
+  it('restores the last delete through put-back, reports partial failures, and retains Redo', async () => {
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    bridge.file.delete.mockImplementation(async ({ path }) => ({ path, kind: 'file', trashed: `/scratch-trash/${path.split('/').at(-1)}` }))
+    await act(async () => emitAutomation({ id: 'delete-for-restore', action: 'operate', target: { command: 'file.trash', paths: ['/v/A.md', '/v/B.md'] } }))
+    bridge.file.putBack.mockImplementation(async ({ path }) => { if (path === '/v/A.md') throw new Error('Destination exists'); return { path, kind: 'file' } })
+    await act(async () => emitAutomation({ id: 'restore-1', action: 'operate', target: { command: 'file.restore' } }))
+    expect(bridge.file.putBack).toHaveBeenNthCalledWith(1, { path: '/v/B.md', trashed: '/scratch-trash/B.md' })
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'restore-1', ok: false, error: expect.objectContaining({ code: 'PARTIAL_FAILURE', details: { restored: [expect.objectContaining({ path: '/v/B.md' })], failed: [expect.any(String)] } }) })
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Redo')
+    await act(async () => emitAutomation({ id: 'history-1', action: 'inspect', target: { kind: 'history' } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'history-1', ok: true, value: expect.objectContaining({ undo: [], redo: [{ step: 'delete', items: [expect.objectContaining({ path: '/v/B.md' })] }] }) })
+  })
+  it('refuses restore with no delete without changing files', async () => {
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    await act(async () => emitAutomation({ id: 'restore-empty', action: 'operate', target: { command: 'file.restore' } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'restore-empty', ok: false, error: expect.objectContaining({ code: 'NO_DELETE_TO_RESTORE' }) })
+    expect(bridge.file.putBack).not.toHaveBeenCalled()
   })
 })

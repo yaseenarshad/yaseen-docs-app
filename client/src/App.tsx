@@ -1914,11 +1914,40 @@ export function App() {
     }
     return { ...app.inspect(), acknowledged: true }
   }, target => {
+    if (target.kind === 'history') return { ...moveHistory.current.inspect(), source: 'live', window: storage.getWindowId() }
     if (target.kind === 'document') {
       if (!now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
       return readLiveDocument(target.tab)
     }
     return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, sidebar: sidebarLens, sidebarCollapsed }
+  }, async target => {
+    if (target.command === 'file.restore') {
+      if (replaying.current) throw new AutomationFailure('BUSY', 'An organization history action is still running.')
+      const entry = moveHistory.current.inspect().undo.at(-1)
+      if (!entry || isMoveStep(entry) || entry.step !== 'delete') throw new AutomationFailure('NO_DELETE_TO_RESTORE', 'The latest organization step is not a restorable delete. Inspect file history first.')
+      moveHistory.current.undo()
+      replaying.current = true
+      try {
+        const result = await putBackStep(entry)
+        if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some Trash items could not be restored.', result)
+        return result
+      } finally { replaying.current = false }
+    }
+    if (target.command === 'file.trash') {
+      const result = await trashMany(target.paths)
+      if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items could not be moved to Trash.', result)
+      return result
+    }
+    const catalog = await catalogForRename(target.path, target.kind)
+    if (catalog === undefined) throw new AutomationFailure('CONTEXT_CHANGED', 'The window context changed or its current file list could not be read.')
+    const out = await renameWithUndo(target.path, target.command === 'file.rename' ? { newPath: target.newPath } : { title: target.title }, catalog)
+    if (out === null) throw new AutomationFailure('OUTSIDE_SCOPE', 'The file is no longer in this window.')
+    if ('error' in out) {
+      if (out.error instanceof BridgeRequestError) throw new AutomationFailure(out.error.code, out.error.message)
+      throw out.error
+    }
+    if (out.links.skipped) throw new AutomationFailure('PARTIAL_FAILURE', 'The rename completed, but some referencing documents could not be updated.', out)
+    return { ...out, diskSaved: true }
   })
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
@@ -2323,23 +2352,28 @@ export function App() {
    * the page title, a table's Name cell — so each goes on the undo list (YAZ-3268 D17, D19): the
    * door's input forward, and back (the old path, or the old title in a vault that uses IDs). No sound (D18).
    */
-  const renameFile = useCallback(
-    async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
+  const renameWithUndo = useCallback(
+    async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<RenameOutcome | null> => {
       // The title before the edit, read while the index still has the page.
       const from: RenameTo = to.title === undefined ? { newPath: oldPath } : { title: nameOf(oldPath) }
       const out = await applyRename(oldPath, to, viewOnlyCatalog)
-      if (out === null) return
-      if ('error' in out) {
+      if (out !== null && !('error' in out)) {
+        moveHistory.current.push({ step: 'rename', path: out.move.newPath, from, to, type: out.move.kind })
+        stepToast(renamedNotice(`Renamed to "${to.title ?? nameOf(out.move.newPath)}"`, out.links), 'info', 'undo', out.links.skipped > 0)
+      }
+      return out
+    }, [applyRename, nameOf, stepToast],
+  )
+  const renameFile = useCallback(
+    async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
+      const out = await renameWithUndo(oldPath, to, viewOnlyCatalog)
+      if (out !== null && 'error' in out) {
         const err = out.error
         const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
         const cannot = to.title === undefined ? "Can't rename" : "Can't change the title"
         notify(exists ? `${cannot}: "${to.title ?? nameOf(to.newPath)}" already exists` : `${cannot}: ${err instanceof Error ? err.message : String(err)}`)
-        return
       }
-      moveHistory.current.push({ step: 'rename', path: out.move.newPath, from, to, type: out.move.kind })
-      stepToast(renamedNotice(`Renamed to "${to.title ?? nameOf(out.move.newPath)}"`, out.links), 'info', 'undo', out.links.skipped > 0)
-    },
-    [applyRename, nameOf, notify, stepToast],
+    }, [renameWithUndo, nameOf, notify],
   )
 
   /**
@@ -2503,7 +2537,7 @@ export function App() {
    * there, and the rest come back. What came back goes on the redo list; "Put back 2 files (Todo.md, Plan.md)" with Redo
    * and the land sound (D18).
    */
-  const putBackStep = useCallback(async (entry: DeleteStep): Promise<void> => {
+  const putBackStep = useCallback(async (entry: DeleteStep): Promise<{ restored: DeleteStep['items']; failed: string[] }> => {
     const back: DeleteStep['items'] = []
     const failed: string[] = []
     let gone = 0
@@ -2519,9 +2553,12 @@ export function App() {
     if (back.length > 0) moveHistory.current.undone({ step: 'delete', items: back })
     else if (failed.length > gone) moveHistory.current.redone(entry)
     const text = stepNotice('undo', back.length === 0 ? null : `Put back ${namedItems(back.map((item) => ({ name: item.name, kind: item.type })))}`, failed)
-    if (back.length === 0) return notify(text, 'error')
-    playGestureSound('land')
-    stepToast(text, 'paste', 'redo', failed.length > 0)
+    if (back.length === 0) notify(text, 'error')
+    else {
+      playGestureSound('land')
+      stepToast(text, 'paste', 'redo', failed.length > 0)
+    }
+    return { restored: back, failed }
   }, [nameOf, notify, stepToast])
 
   /**
@@ -2784,7 +2821,7 @@ export function App() {
         : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`
     }
   }, [])
-  const trashMany = useCallback(async (paths: readonly string[]): Promise<void> => {
+  const trashMany = useCallback(async (paths: readonly string[]): Promise<{ went: DeleteResponse[]; failed: string[] }> => {
     // The names before the delete, while the index still has the pages.
     const names = new Map(paths.map((path) => [path, nameOf(path)]))
     const went: DeleteResponse[] = []
@@ -2800,17 +2837,19 @@ export function App() {
     }
     if (went.length === 0) {
       if (failed.length > 0) notify(paths.length === 1 ? reason : gestureNotice(null, failed, "Can't delete")!)
-      return
+      return { went, failed }
     }
     playGestureSound('trash')
     // By kind and by name on disk (YAZ-3293 D23), as Finder shows them.
     const text = gestureNotice(`Deleted ${namedItems(went.map((res) => onDisk(res.path, res.kind)))}`, failed, "Can't delete")!
     const items = went.flatMap((res) => (res.trashed == null ? [] : [{ path: res.path, trashed: res.trashed, type: res.kind, name: onDisk(res.path, res.kind).name }]))
     // No file ID from the Trash: no Undo, but still a delete's toast (YAZ-3303 D6).
-    if (items.length === 0) return notify(text, 'info', unlessFailed('undo', failed))
+    if (items.length === 0) { notify(text, 'info', unlessFailed('undo', failed)); return { went, failed } }
     moveHistory.current.push({ step: 'delete', items })
     stepToast(text, 'info', 'undo', failed.length > 0)
+    return { went, failed }
   }, [nameOf, trashOne, notify, stepToast])
+  const trashManyFromUi = useCallback(async (paths: readonly string[]): Promise<void> => { await trashMany(paths) }, [trashMany])
 
   /** The items still in their vault's tree, read fresh (S31): one another window moved or deleted is gone. */
   const stillThere = useCallback(async (paths: readonly string[]): Promise<string[]> => {
@@ -3333,7 +3372,7 @@ export function App() {
           onMoveEntries={requestMoves}
           onMoved={recordMoves}
           onRetitle={requestRetitle}
-          onDeleteEntries={trashMany}
+          onDeleteEntries={trashManyFromUi}
           onDraggedOut={(paths) => void askAfterDragOut(paths)}
           onNotice={notify}
           // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.

@@ -1,14 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { automationError } from '@shared/automation'
-import type { InspectTarget, NavigationTarget } from '@shared/automationNavigation'
+import type { FileOperationTarget, InspectTarget, NavigationTarget } from '@shared/automationNavigation'
 import { api } from '../api'
 
-export function useAutomation(navigate: (target: NavigationTarget) => Promise<unknown>, inspect: (target: InspectTarget) => unknown): void {
-  const latest = useRef({ navigate, inspect })
-  latest.current = { navigate, inspect }
+export function useAutomation(navigate: (target: NavigationTarget) => Promise<unknown>, inspect: (target: InspectTarget) => unknown, operate: (target: FileOperationTarget) => Promise<unknown>): void {
+  const latest = useRef({ navigate, inspect, operate })
+  latest.current = { navigate, inspect, operate }
   useEffect(() => {
     const off = api.automation.onRequest(request => {
-      void Promise.resolve().then(() => request.action === 'navigate' ? latest.current.navigate(request.target) : latest.current.inspect(request.target)).then(
+      void Promise.resolve().then(() => request.action === 'navigate' ? latest.current.navigate(request.target) : request.action === 'inspect' ? latest.current.inspect(request.target) : latest.current.operate(request.target)).then(
         value => api.automation.reply({ id: request.id, ok: true, value }),
         error => {
           const result = automationError(error)

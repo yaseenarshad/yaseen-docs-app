@@ -56,6 +56,8 @@ export const isMoveStep = (entry: UndoStep): entry is MovedGesture => !('step' i
 export interface MoveHistory<T = UndoStep> {
   /** A new step: on the undo list, and the redo list empties. */
   push(entry: T): void
+  /** Bounded session state, oldest first. The caller must not mutate entries. */
+  inspect(): { undo: readonly T[]; redo: readonly T[] }
   /** The newest step to undo, taken off the list; undefined when there is none (S35). */
   undo(): T | undefined
   /** The newest step to redo, taken off the list; undefined when there is none. */
@@ -78,6 +80,7 @@ export function createMoveHistory<T = UndoStep>(limit: number = MOVE_HISTORY_LIM
       redos.length = 0
       keep(undos, entry)
     },
+    inspect: () => ({ undo: [...undos], redo: [...redos] }),
     undo: () => undos.pop(),
     redo: () => redos.pop(),
     undone: (entry) => keep(redos, entry),

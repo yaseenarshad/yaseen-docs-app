@@ -7,7 +7,7 @@ export const AUTOMATION_LIMITS = {
   waitMs: 30_000, page: 50, maxPage: 200,
 } as const
 
-export interface AutomationError { code: string; message: string }
+export interface AutomationError { code: string; message: string; details?: Record<string, unknown> }
 export type AutomationResult = { ok: true; value: unknown } | { ok: false; error: AutomationError }
 export interface AutomationRequest {
   version: typeof AUTOMATION_VERSION
@@ -27,11 +27,11 @@ export interface AutomationReceipt {
 }
 
 export class AutomationFailure extends Error {
-  constructor(readonly code: string, message: string) { super(message); this.name = 'AutomationFailure' }
+  constructor(readonly code: string, message: string, readonly details?: Record<string, unknown>) { super(message); this.name = 'AutomationFailure' }
 }
 
 export function automationError(error: unknown): AutomationResult {
-  if (error instanceof AutomationFailure) return { ok: false, error: { code: error.code, message: error.message } }
+  if (error instanceof AutomationFailure) return { ok: false, error: { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) } }
   // Do not leak provider URLs, credentials, or arbitrary exception text through the public boundary.
   return { ok: false, error: { code: 'FAILED', message: 'The operation failed. Check the app diagnostics.' } }
 }

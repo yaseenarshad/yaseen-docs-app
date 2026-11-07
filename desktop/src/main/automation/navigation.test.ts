@@ -12,7 +12,7 @@ let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-nav-')); await mkdir(join(root, 'Mochi')); await writeFile(join(root, 'Mochi/card.md'), 'card') })
 afterEach(async () => { _evictAll(); await rm(root, { recursive: true, force: true }) })
 const entry = (id: string, roots: string[]): WindowEntry => ({ id, root: roots[0], roots, tabs: [], file: null, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 1000, height: 800 } })
-const host = (windows: WindowEntry[] = []): NavigationHost => ({ state: () => defaultAppState(), windows: () => windows, open: vi.fn(() => 'new'), raise: vi.fn(), apply: vi.fn(async () => ({ acknowledged: true })), inspect: vi.fn(async () => ({})), usedWorkspace: vi.fn(async () => {}) })
+const host = (windows: WindowEntry[] = []): NavigationHost => ({ state: () => defaultAppState(), windows: () => windows, open: vi.fn(() => 'new'), raise: vi.fn(), apply: vi.fn(async () => ({ acknowledged: true })), inspect: vi.fn(async () => ({})), operate: vi.fn(async () => ({})), usedWorkspace: vi.fn(async () => {}) })
 
 describe('exact context navigation', () => {
   it('reuses only the most recent exact window and preserves unspecified state', async () => {
@@ -60,6 +60,8 @@ describe('exact context navigation', () => {
       expect(parseNavigationLink('yaseendocs://navigate?v=1&request=' + encodeURIComponent(JSON.stringify(input)))).toBeNull()
     }
     expect(parseNavigationLink('yaseendocs:///note.md')).toBeNull()
+    await expect(generateNavigationLink(defaultAppState(), { root, path: join(root, 'Mochi'), sidebar: 'favorites' })).rejects.toMatchObject({ code: 'NOT_IN_COLLECTION' })
+    await expect(generateNavigationLink(defaultAppState(), { root, window: 'ephemeral' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
   })
 })
 
