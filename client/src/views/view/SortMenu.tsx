@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent } from 'react'
 import { DragHandleIcon } from './icons'
 import { ColumnPicker } from './ColumnPicker'
+import { DirectionPicker, withOrder } from './DirectionPicker'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, type SortSpec, type GroupBySpec, groupByLevels } from '../viewSchema'
 import { propertyLabel } from '../engine'
@@ -17,6 +18,8 @@ export interface SortMenuProps {
   onUpdate: Mutate
   settings: FolderSettings
   properties?: PropertiesResponse | null
+  /** Opens the column editor on one column, for "Edit option order…" (YAZ-3940). Absent: the item is hidden. */
+  onEditColumn?: (key: string) => void
 }
 
 const EMPTY_SORT: SortSpec[] = []
@@ -24,10 +27,8 @@ const EMPTY_SORT: SortSpec[] = []
 /** Folder (YAZ-2541): a place to sort and group by, never a column — and the one property that may group twice, the second level being the next folder down. */
 const FOLDER = 'file.folder'
 
-const flip = (d: string | undefined): 'ASC' | 'DESC' => (d === 'DESC' ? 'ASC' : 'DESC')
-
 /** Sort menu (GRO-2135): `view.sort` rows (property, direction, order, remove) and `view.groupBy` beneath. */
-export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, properties }: SortMenuProps) {
+export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, properties, onEditColumn }: SortMenuProps) {
   const listed = allPropertyKeys(def, view, records, settings.columns)
   const keys = listed.includes(FOLDER) ? listed : [...listed, FOLDER]
   const sort = view.sort ?? EMPTY_SORT
@@ -82,11 +83,12 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
       else d.views[viewIndex].groupBy = second === null ? outer : [outer, second]
     })
 
-  const groupDirectionLabel = (group: GroupBySpec) => {
-    const typing = columnTyping(group.property, records, properties, settings)
-    const declaredOptions = view.type === 'board' && (typing?.assigned === 'select' || typing?.assigned === 'multi-select')
-    return declaredOptions ? (group.direction === 'DESC' ? 'Reversed option order' : 'Option order') : (group.direction === 'DESC' ? 'DESC' : 'ASC')
+  /** A Select or Multi-select column has an option order, in every view type (YAZ-3940). */
+  const hasOptions = (property: string) => {
+    const typing = columnTyping(property, records, properties, settings)
+    return typing?.assigned === 'select' || typing?.assigned === 'multi-select'
   }
+  const editOptions = (property: string) => (onEditColumn ? () => onEditColumn(canonicalKey(property)) : undefined)
 
   const options = (current: string | undefined, without?: string) =>
     propertyOptions(def, keys, current).filter((o) => o.value !== without)
@@ -139,9 +141,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
                   }}
                 ><DragHandleIcon /></button>
                 <ColumnPicker label="Sort property" value={canonicalKey(s.property)} onChange={(value) => setSort(i, { property: value })} options={options(s.property)} />
-                <button type="button" className="view-chip" aria-label="Direction" title="Toggle direction" onClick={() => setSort(i, { direction: flip(s.direction) })}>
-                  {s.direction === 'DESC' ? 'DESC' : 'ASC'}
-                </button>
+                <DirectionPicker label="Direction" spec={s} hasOptions={hasOptions(s.property)} onChange={(patch) => writeSort(sort.map((r, j) => (j === i ? withOrder(r, patch) : r)))} onEditOptions={editOptions(s.property)} />
                 <button type="button" className="view-rule__remove" aria-label="Remove sort" title="Remove sort" onClick={() => writeSort(sort.filter((_, j) => j !== i), ruleIds.filter((_, j) => j !== i))}>
                   ×
                 </button>
@@ -163,9 +163,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
           onChange={(value) => writeGroup(value ? { property: value, direction: groupBy?.direction === 'DESC' ? 'DESC' : 'ASC' } : null, thenBy ?? null)}
          options={[{value: '', label: 'None'}, ...options(groupBy?.property)]} />
         {groupBy && (
-          <button type="button" className="view-chip" aria-label="Group direction" title="Toggle direction" onClick={() => writeGroup({ property: canonicalKey(groupBy.property), direction: flip(groupBy.direction) }, thenBy ?? null)}>
-            {groupDirectionLabel(groupBy)}
-          </button>
+          <DirectionPicker label="Group direction" spec={groupBy} hasOptions={hasOptions(groupBy.property)} onChange={(patch) => writeGroup(withOrder({ ...groupBy, property: canonicalKey(groupBy.property) }, patch), thenBy ?? null)} onEditOptions={editOptions(groupBy.property)} />
         )}
       </div>
       {groupBy && (
@@ -176,9 +174,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
             onChange={(value) => writeGroup(groupBy, value ? { property: value, direction: thenBy?.direction === 'DESC' ? 'DESC' : 'ASC' } : null)}
            options={[{value: '', label: 'None'}, ...options(thenBy?.property, groupBy.property === FOLDER ? undefined : canonicalKey(groupBy.property))]} />
           {thenBy && (
-            <button type="button" className="view-chip" aria-label="Then group direction" title="Toggle direction" onClick={() => writeGroup(groupBy, { property: canonicalKey(thenBy.property), direction: flip(thenBy.direction) })}>
-              {groupDirectionLabel(thenBy)}
-            </button>
+            <DirectionPicker label="Then group direction" spec={thenBy} hasOptions={hasOptions(thenBy.property)} onChange={(patch) => writeGroup(groupBy, withOrder({ ...thenBy, property: canonicalKey(thenBy.property) }, patch))} onEditOptions={editOptions(thenBy.property)} />
           )}
         </div>
       )}

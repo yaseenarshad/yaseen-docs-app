@@ -83,4 +83,36 @@ describe('perf (GRO-2133)', () => {
     // The inner level buckets each outer separately (YAZ-745), so the same budget must still hold.
     expect(ms).toBeLessThan(budgetMs(50))
   })
+
+  it('1000 records × sort + two-level groupBy on Select columns with optionOrder under 50 ms (YAZ-3940)', () => {
+    const records = Array.from({ length: 1000 }, (_, i) => record(i))
+    // 50 options for price (one per value, in a shuffled order) and 2 for status: the option rank is a Map lookup.
+    const prices = Array.from({ length: 50 }, (_, i) => String((i * 17) % 50))
+    for (const r of records) r.properties.price = String(r.properties.price)
+    const optionOrder = (property: string) => (property === 'price' ? prices : property === 'status' ? ['todo', 'done'] : undefined)
+    const def: ViewSet = {
+      views: [
+        {
+          type: 'table',
+          name: 'T',
+          order: ['file.name', 'status', 'price'],
+          sort: [{ property: 'price', direction: 'DESC' }, { property: 'file.name', direction: 'ASC' }],
+          groupBy: [{ property: 'status' }, { property: 'price' }],
+          summaries: { price: 'Sum' },
+        },
+      ],
+    }
+    const go = () => runView(def, def.views[0], records, { root: '/vault', optionOrder })
+    go() // warm-up (JIT)
+    const { result: r, median: ms, worst } = timeMedian(7, go)
+    expect(r.errors).toEqual([])
+    expect(r.groups!.map(g => g.key)).toEqual(['todo', 'done'])
+    // The inner groups follow the option order, not the value order.
+    const inner = r.groups![0].children!.map(c => c.key)
+    expect(inner).toEqual(prices.filter(p => inner.includes(p)))
+    expect(r.rows[0].values.price).toBe(prices[prices.length - 1])
+    // eslint-disable-next-line no-console
+    console.log(`engine perf: 1000 records, option order, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7 (${r.rows.length} kept)`)
+    expect(ms).toBeLessThan(budgetMs(50))
+  })
 })

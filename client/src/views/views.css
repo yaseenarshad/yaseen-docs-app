@@ -1794,12 +1794,19 @@
 .column-picker__check { color: var(--accent); }
 .sort-menu .view-rule__main {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 48px 20px;
+  grid-template-columns: 18px minmax(0, 1fr) 118px 20px;
   align-items: start;
   gap: 8px;
 }
 .sort-menu .view-rule__main > .column-picker { grid-column: 2; }
-.sort-menu .view-rule__main > .view-chip { width: 48px; height: 30px; padding: 0; text-align: center; color: var(--fg); }
+/* The order menu (YAZ-3940): its button sits in the row's order column, and the open list takes a full-width second line of the row. */
+.direction-picker { display: contents; }
+.direction-picker__trigger { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; min-width: 0; height: 30px; padding: 0 7px; color: var(--fg); }
+.direction-picker__trigger > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.direction-picker__menu { grid-row: 2; grid-column: 1 / -1; margin-top: 0; }
+.direction-picker__menu .column-picker__option { width: 100%; text-align: left; }
+.direction-picker__menu .column-picker__option:hover, .direction-picker__menu .column-picker__option:focus-visible { background: var(--bg-hover); outline: none; }
+.direction-picker__edit { border-top: 1px solid var(--border); border-radius: 0 0 4px 4px; color: var(--fg-muted); }
 .sort-menu .view-rule__nav, .sort-menu .view-rule__remove { width: 100%; height: 30px; min-width: 0; }
 .sort-menu .view-prop__handle { opacity: .65; }
 .sort-menu .view-prop__handle:hover { opacity: 1; }
@@ -1813,5 +1820,5 @@
   color: var(--fg);
   font-weight: 600;
 }
-.sort-menu > .view-rule__main { grid-template-columns: minmax(0, 1fr) 48px; padding: 0 28px 0 26px; margin-bottom: 6px; }
+.sort-menu > .view-rule__main { grid-template-columns: minmax(0, 1fr) 118px; padding: 0 28px 0 26px; margin-bottom: 6px; }
 .sort-menu > .view-rule__main > .column-picker { grid-column: 1; }

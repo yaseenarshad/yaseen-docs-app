@@ -105,6 +105,12 @@ function click(el: Element): void {
   draw()
 }
 
+/** Open an order menu (YAZ-3940) by its button and choose one order by its words. */
+function chooseOrder(pop: ParentNode, trigger: Element, order: string): void {
+  click(trigger)
+  click(byText(pop, '[role="menuitemradio"] > span:first-child', order))
+}
+
 /** Native prototype setter + bubbling event, so React's value tracker sees the change. */
 function setValue(el: HTMLInputElement | HTMLSelectElement, value: string): void {
   const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
@@ -946,7 +952,7 @@ describe('sort menu', () => {
     click(byText(pop, 'button', 'Add sort'))
     expect(def().views[0].sort).toEqual([{ property: 'file.name', direction: 'ASC' }])
     chooseColumn(pop, 'Sort property', 'note.priority')
-    click(byLabel(pop, 'Direction'))
+    chooseOrder(pop, byLabel(pop, 'Direction'), 'Z → A')
     expect(onChange).toHaveBeenCalledTimes(4)
     expect(def().views[0].sort).toEqual([{ property: 'note.priority', direction: 'DESC' }])
     expect(rows(el).slice(0, 3)).toEqual(['Creator Economy', 'Agentic Agency', 'The Levels of an Agency'])
@@ -970,7 +976,7 @@ describe('sort menu', () => {
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
     expect(yaml()).toContain('groupBy:')
     expect(byText(el, '.view-toolbar__badge', '2')).toBeDefined()
-    click(byLabel(pop, 'Group direction'))
+    chooseOrder(pop, byLabel(pop, 'Group direction'), 'Z → A')
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'DESC' })
     chooseColumn(pop, 'Group by', '')
     expect(def().views[0].groupBy).toBeUndefined()
@@ -990,12 +996,12 @@ describe('sort menu', () => {
     ])
     expect(yaml()).toContain('- property: note.status')
     expect(byText(el, '.view-toolbar__badge', '3')).toBeDefined() // 1 sort + 2 grouping levels
-    click(byLabel(pop, 'Then group direction'))
+    chooseOrder(pop, byLabel(pop, 'Then group direction'), 'Z → A')
     expect(def().views[0].groupBy).toEqual([
       { property: 'note.status', direction: 'ASC' },
       { property: 'note.priority', direction: 'DESC' },
     ])
-    click(byLabel(pop, 'Group direction')) // the outer's chip still edits the outer alone
+    chooseOrder(pop, byLabel(pop, 'Group direction'), 'Z → A') // the outer's menu still edits the outer alone
     expect(def().views[0].groupBy).toEqual([
       { property: 'note.status', direction: 'DESC' },
       { property: 'note.priority', direction: 'DESC' },
@@ -2218,7 +2224,7 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
     expect(document.activeElement).toBe(grip(pop, 1, 'Name'))
     click(byLabel(pop, 'Remove sort'))
     click(byText(pop, 'button', 'Add sort'))
-    click([...pop.querySelectorAll<HTMLElement>('[aria-label="Direction"]')][1])
+    chooseOrder(pop, [...pop.querySelectorAll<HTMLElement>('[aria-label="Direction"]')][1], 'Z → A')
     expect(def().views[0].sort).toEqual([
       { property: 'file.name', direction: 'ASC' },
       { property: 'file.name', direction: 'DESC' },
@@ -2258,3 +2264,36 @@ describe('folder-local relation shortcut', () => {
     expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe(legacy.target)
   })
 })
+
+describe('option order in a table (YAZ-3940)', () => {
+  const settings = { columns: { status: { kind: 'select' as const, options: ['published', 'idea', 'drafting', 'later'] } }, views: [], problems: [] }
+  const GROUPED = `views:
+  - type: table
+    name: Table
+    order:
+      - file.name
+      - note.status
+    groupBy:
+      property: note.status
+`
+  const headers = (el: HTMLElement) => [...el.querySelectorAll('.view-group__value')].map((v) => v.textContent)
+
+  it('a grouped table on a Select column shows the groups in option order; A → Z groups by value', () => {
+    const { el, def } = mount(GROUPED, { folder: testFolderHost({ settings }) })
+    expect(headers(el)).toEqual(['published', 'idea', 'drafting', 'No value'])
+    const pop = openMenu(el, 'Sort')
+    chooseOrder(pop, byLabel(pop, 'Group direction'), 'A → Z')
+    expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC', by: 'value' })
+    expect(headers(el)).toEqual(['drafting', 'idea', 'published', 'No value'])
+  })
+
+  it('"Show empty groups" in a table adds the unused options as empty groups', () => {
+    const { el, def } = mount(GROUPED, { folder: testFolderHost({ settings }) })
+    const pop = openMenu(el, 'Properties')
+    const toggle = [...pop.querySelectorAll('label')].find((l) => l.textContent?.includes('Show empty groups'))!.querySelector('input')!
+    click(toggle)
+    expect(def().views[0].showEmptyColumns).toBe(true)
+    expect(headers(el)).toEqual(['published', 'idea', 'drafting', 'later', 'No value'])
+  })
+})
+

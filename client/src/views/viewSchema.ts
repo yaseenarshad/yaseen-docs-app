@@ -13,11 +13,15 @@ export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } |
 export interface SortSpec {
   property: string
   direction: 'ASC' | 'DESC'
+  /** `value` (YAZ-3940): a Select column sorts A to Z by its values, not in its option order. Absent = option order. */
+  by?: 'value'
 }
 
 export interface GroupBySpec {
   property: string
   direction?: 'ASC' | 'DESC'
+  /** As on `SortSpec` (YAZ-3940). */
+  by?: 'value'
 }
 
 export interface ViewDef {

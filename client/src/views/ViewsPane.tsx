@@ -237,13 +237,20 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   // The page the views belong to, as the index names its folder (YAZ-2541): a Folder level groups by
   // the folders below it, each headed by its title off the vault's folder records.
   const page = useMemo(() => ({ folder: relTo(root, folderPath), folders: vaultFolders, vault: folder.vaultName }), [root, folderPath, vaultFolders, folder.vaultName])
+  // A Select column's options in the column editor's order (YAZ-3940): its sorts and groups follow them.
+  const settings = folder.settings
+  const optionOrder = useCallback((key: string) => {
+    const typing = columnTyping(key, shown, properties, settings)
+    return typing?.assigned === 'select' || typing?.assigned === 'multi-select' ? typing.options : undefined
+  }, [shown, properties, settings])
   const result = useMemo(
-    () => runView(def, view, shown, { resolve, declared: Object.keys(folder.settings.columns), page }),
-    [def, view, shown, resolve, page],
+    () => runView(def, view, shown, { resolve, declared: Object.keys(folder.settings.columns), page, optionOrder }),
+    [def, view, shown, resolve, page, optionOrder],
   )
 
   const configuredGroups = boardOptionGroups(result.groups, view, key => columnTyping(key, shown, properties, folder.settings))
-  const keepEmpty = view.type === 'board' && view.showEmptyColumns === true
+  // "Show empty groups" (YAZ-3940 S11): a Table keeps its empty option groups through a search, as the board does.
+  const keepEmpty = (view.type === 'board' || view.type === 'table') && view.showEmptyColumns === true
   const needle = (search ?? '').trim().toLowerCase()
   // Search reads what the eye reads (YAZ-2293 D8): a row is found by the TITLE of a note it links to by id.
   const matches = (r: Row) => Object.values(r.values).some((v) => render(v, resolve).toLowerCase().includes(needle))

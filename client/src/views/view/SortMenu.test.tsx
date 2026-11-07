@@ -93,23 +93,94 @@ describe('SortMenu external settings refresh', () => {
 })
 
 
-describe('Board option group direction', () => {
+/** Open a DirectionPicker by its label and choose one item by its text (YAZ-3940). */
+function pick(el: HTMLElement, label: string, item: string) {
+  act(() => el.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click())
+  const choice = [...el.querySelectorAll<HTMLElement>('[role="menuitemradio"], [role="menuitem"]')].find(b => b.textContent?.replace('✓', '').trim() === item)
+  expect(choice, item).toBeDefined()
+  act(() => choice!.click())
+}
+const itemsOf = (el: HTMLElement, label: string) => {
+  act(() => el.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click())
+  const items = [...el.querySelectorAll<HTMLElement>('[role="menuitemradio"], [role="menuitem"]')].map(b => b.textContent?.replace('✓', '').trim())
+  act(() => el.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click())
+  return items
+}
+
+describe('Option order menu (YAZ-3940)', () => {
   const folder: FolderSettings = { columns: { status: { kind: 'select', options: ['Z', 'A'], optionSort: 'ascending' }, tags: { kind: 'multi-select', options: ['B', 'A'] } }, views: [], problems: [] }
   it('labels select grouping as option order and its reversal without changing stored direction semantics', () => {
-    const { el, onUpdate } = mount({ name: 'Board', type: 'board', groupBy: [{ property: 'note.status' }, { property: 'note.tags', direction: 'DESC' }] }, folder)
-    const outer = el.querySelector<HTMLButtonElement>('[aria-label="Group direction"]')!
-    const inner = el.querySelector<HTMLButtonElement>('[aria-label="Then group direction"]')!
-    expect(outer.textContent).toBe('Option order')
-    expect(inner.textContent).toBe('Reversed option order')
-    act(() => outer.click())
-    expect(outer.textContent).toBe('Reversed option order')
-    act(() => inner.click())
-    expect(inner.textContent).toBe('Option order')
+    const { el, onUpdate, view } = mount({ name: 'Board', type: 'board', groupBy: [{ property: 'note.status' }, { property: 'note.tags', direction: 'DESC' }] }, folder)
+    const outer = () => el.querySelector<HTMLButtonElement>('[aria-label="Group direction"]')!
+    const inner = () => el.querySelector<HTMLButtonElement>('[aria-label="Then group direction"]')!
+    expect(outer().textContent).toContain('Option order')
+    expect(inner().textContent).toContain('Reversed option order')
+    pick(el, 'Group direction', 'Reversed option order')
+    expect(outer().textContent).toContain('Reversed option order')
+    pick(el, 'Then group direction', 'Option order')
+    expect(inner().textContent).toContain('Option order')
+    expect(view().groupBy).toEqual([{ property: 'note.status', direction: 'DESC' }, { property: 'note.tags', direction: 'ASC' }])
     expect(onUpdate).toHaveBeenCalledTimes(2)
   })
-  it('keeps ASC/DESC labels for ordinary text groups and non-Board views', () => {
-    const { el } = mount({ name: 'Board', type: 'board', groupBy: { property: 'note.other', direction: 'DESC' } }, folder)
-    expect(el.querySelector('[aria-label="Group direction"]')?.textContent).toBe('DESC')
+  it('a Table names the option order too: the board-only guard is gone', () => {
+    const { el } = mount({ name: 'Table', type: 'table', groupBy: { property: 'note.status', direction: 'DESC' } }, folder)
+    expect(el.querySelector('[aria-label="Group direction"]')?.textContent).toContain('Reversed option order')
+  })
+  it('a Select column offers the four orders; another column offers A → Z and Z → A', () => {
+    const { el } = mount({ name: 'Table', type: 'table', sort: [{ property: 'note.status', direction: 'ASC' }, { property: 'note.other', direction: 'DESC' }] }, folder)
+    const [first, second] = [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Direction"]')]
+    expect(second.textContent).toContain('Z → A')
+    act(() => first.click())
+    expect([...el.querySelectorAll('[role="menuitemradio"]')].map(b => [b.textContent?.replace('✓', '').trim(), b.getAttribute('aria-checked')])).toEqual([
+      ['Option order', 'true'], ['Reversed option order', 'false'], ['A → Z', 'false'], ['Z → A', 'false'],
+    ])
+    act(() => first.click())
+    act(() => second.click())
+    expect([...el.querySelectorAll('[role="menuitemradio"]')].map(b => b.textContent?.replace('✓', '').trim())).toEqual(['A → Z', 'Z → A'])
+  })
+  it('A → Z on a Select column saves `by: value`; Option order removes it again', () => {
+    const { el, sort } = mount({ name: 'Table', type: 'table', sort: [{ property: 'note.status', direction: 'DESC' }] }, folder)
+    pick(el, 'Direction', 'A → Z')
+    expect(sort()).toEqual([{ property: 'note.status', direction: 'ASC', by: 'value' }])
+    expect(el.querySelector('[aria-label="Direction"]')?.textContent).toContain('A → Z')
+    pick(el, 'Direction', 'Option order')
+    expect(sort()).toEqual([{ property: 'note.status', direction: 'ASC' }])
+    expect(Object.hasOwn(sort()[0], 'by')).toBe(false)
+  })
+  it('a group level saves `by: value` the same way, and keeps it when the other level changes', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: { property: 'note.status' } }, folder)
+    pick(el, 'Group direction', 'Z → A')
+    expect(view().groupBy).toEqual({ property: 'note.status', direction: 'DESC', by: 'value' })
+  })
+  it('another column writes only the direction', () => {
+    const { el, sort } = mount({ name: 'Table', type: 'table', sort: [{ property: 'note.other', direction: 'ASC' }] }, folder)
+    pick(el, 'Direction', 'Z → A')
+    expect(sort()).toEqual([{ property: 'note.other', direction: 'DESC' }])
+  })
+  it('"Edit option order…" shows only when the menu can open the column editor, and names the column', () => {
+    expect(itemsOf(mount({ name: 'Table', type: 'table', groupBy: { property: 'note.status' } }, folder).el, 'Group direction')).not.toContain('Edit option order…')
+    act(() => root?.unmount())
+    container?.remove()
+    const onEditColumn = vi.fn()
+    const def: ViewSet = { views: [{ name: 'Table', type: 'table', groupBy: { property: 'status' } }] }
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root!.render(<SortMenu def={def} view={def.views[0]} viewIndex={0} records={TEST_RECORDS} onUpdate={vi.fn()} settings={folder} onEditColumn={onEditColumn} />))
+    expect(itemsOf(container, 'Group direction')).toContain('Edit option order…')
+    pick(container, 'Group direction', 'Edit option order…')
+    expect(onEditColumn).toHaveBeenCalledWith('note.status')
+    expect(container.querySelector('[role="menu"]')).toBeNull()
+  })
+  it('Escape closes the menu and gives the focus back to its button', () => {
+    const { el } = mount({ name: 'Table', type: 'table', sort: [{ property: 'note.status', direction: 'ASC' }] }, folder)
+    const trigger = el.querySelector<HTMLButtonElement>('[aria-label="Direction"]')!
+    act(() => trigger.click())
+    const menu = el.querySelector<HTMLElement>('[role="menu"]')!
+    expect(document.activeElement?.getAttribute('aria-checked')).toBe('true')
+    press(menu, 'Escape')
+    expect(el.querySelector('[role="menu"]')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
   })
 })
 
@@ -122,5 +193,5 @@ it('offers a declared-only property for Board grouping with zero records', () =>
   expect(choice).not.toBeNull()
   act(() => choice!.click())
   expect(view().groupBy).toEqual({ property: 'note.Stage', direction: 'ASC' })
-  expect(el.querySelector('[aria-label="Group direction"]')?.textContent).toBe('Option order')
+  expect(el.querySelector('[aria-label="Group direction"]')?.textContent).toContain('Option order')
 })

@@ -1,7 +1,7 @@
 import { vaultNoteId } from '@shared/noteId'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { type IndexRecord, inFolder } from '@shared/types'
-import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, groupByLevels } from './viewSchema'
+import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, type SortSpec, groupByLevels } from './viewSchema'
 import {
   DateValue, DurationValue, ErrorValue, type Expr, FileValue, LinkValue, type Resolver, type Scope, type Value,
   compile, equals, evaluate, fromYaml, isTruthy, linkText, render, stripBrackets,
@@ -77,6 +77,11 @@ export interface RunOptions {
    * name (YAZ-2541): given, a Folder level groups by the folders below the page, each headed by its title.
    */
   page?: { folder: string; folders: readonly IndexRecord[]; vault: string }
+  /**
+   * The options of a Select or Multi-select column, in the column editor's order (YAZ-3940); else
+   * undefined. Given, sorts and groups on that column follow it unless the spec says `by: value`.
+   */
+  optionOrder?: (property: string) => readonly string[] | undefined
 }
 
 /** Value of one property key for one row's scope. */
@@ -370,7 +375,7 @@ const rank = (v: Value): number => {
  * `resolve`, an id link by its note's title, YAZ-2293 D8), files by title; mixed types by
  * rank. Missing (null / undefined / error) always sorts last whatever the direction.
  */
-function compareValues(a: Value | undefined, b: Value | undefined, direction: 'ASC' | 'DESC' = 'ASC', resolve?: Resolver): number {
+export function compareValues(a: Value | undefined, b: Value | undefined, direction: 'ASC' | 'DESC' = 'ASC', resolve?: Resolver): number {
   const x = sortKey(a)
   const y = sortKey(b)
   const mx = isMissing(x)
@@ -388,6 +393,30 @@ function compareValues(a: Value | undefined, b: Value | undefined, direction: 'A
   else if (x instanceof LinkValue) c = collator.compare(linkText(x, resolve), linkText(y as LinkValue, resolve))
   else if (x instanceof FileValue) c = collator.compare(x.record.title, (y as FileValue).record.title)
   return sign * c
+}
+
+type Compare = (a: Value | undefined, b: Value | undefined) => number
+
+/**
+ * The order of one sort or group level (YAZ-3940). A column with options ranks its values by them:
+ * ASC is option order, DESC reverses it. A value that is not an option comes after the options,
+ * A to Z, and a missing value is last. `by: value`, or no options, is `compareValues`.
+ */
+function compareBy(spec: SortSpec | GroupBySpec, resolve: Resolver, optionOrder: RunOptions['optionOrder']): Compare {
+  const direction = spec.direction === 'DESC' ? 'DESC' : 'ASC'
+  const options = spec.by === 'value' ? undefined : optionOrder?.(spec.property)
+  if (!options?.length) return (a, b) => compareValues(a, b, direction, resolve)
+  const index = new Map(options.map((option, i) => [option, i]))
+  const sign = direction === 'DESC' ? -1 : 1
+  return (a, b) => {
+    const x = sortKey(a)
+    const y = sortKey(b)
+    const ix = typeof x === 'string' ? index.get(x) : undefined
+    const iy = typeof y === 'string' ? index.get(y) : undefined
+    if (ix !== undefined && iy !== undefined) return sign * (ix - iy)
+    if (ix !== undefined || iy !== undefined) return ix !== undefined ? -1 : 1
+    return compareValues(x, y, 'ASC', resolve)
+  }
 }
 
 const byPath = (a: Entry, b: Entry): number => (a.row.record.path < b.row.record.path ? -1 : a.row.record.path > b.row.record.path ? 1 : 0)
@@ -496,15 +525,24 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   const columnGetters = keys.map(k => [k, getter(k)] as const)
   for (const entry of entries) for (const [k, g] of columnGetters) entry.row.values[k] = g(entry.scope)
 
+  // One comparator per sort or group level, built once: an inner level buckets once per outer (YAZ-3940).
+  const compares = new Map<SortSpec | GroupBySpec, Compare>()
+  const compareOf = (spec: SortSpec | GroupBySpec): Compare => {
+    let c = compares.get(spec)
+    if (!c) compares.set(spec, (c = compareBy(spec, resolve, opts.optionOrder)))
+    return c
+  }
+
   // sort (stable: path breaks ties)
   const sort = (view.sort ?? []).filter(s => s && typeof s.property === 'string')
   if (sort.length) {
     const sortValues = new Map<Entry, Value[]>(entries.map(e => [e, sort.map(s => valueOf(e, s.property))]))
+    const sortCompares = sort.map(compareOf)
     entries.sort((a, b) => {
       const va = sortValues.get(a)!
       const vb = sortValues.get(b)!
       for (let i = 0; i < sort.length; i++) {
-        const c = compareValues(va[i], vb[i], sort[i].direction === 'DESC' ? 'DESC' : 'ASC', resolve)
+        const c = sortCompares[i](va[i], vb[i])
         if (c) return c
       }
       return byPath(a, b)
@@ -529,7 +567,8 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
    * One level over `list`: its distinct keys in the level's direction, then the value-less entries.
    * `depth` > 0 is a Folder level under a page (YAZ-2541): the key is the folder that many steps below it.
    */
-  const bucket = (list: Entry[], { property, direction }: GroupBySpec, depth: number) => {
+  const bucket = (list: Entry[], spec: GroupBySpec, depth: number) => {
+    const { property } = spec
     const page = depth > 0 ? opts.page!.folder : null
     const valued: { key: Value; entries: Entry[] }[] = []
     const noValue: Entry[] = []
@@ -570,7 +609,8 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     }
     // The homes of shortcuts come after the page's own folders, whichever the direction.
     const outside = (key: Value): number => Number(page !== null && typeof key === 'string' && !inFolder(key, page))
-    valued.sort((a, b) => outside(a.key) - outside(b.key) || compareValues(a.key, b.key, direction === 'DESC' ? 'DESC' : 'ASC', resolve))
+    const compare = compareOf(spec)
+    valued.sort((a, b) => outside(a.key) - outside(b.key) || compare(a.key, b.key))
     return { valued, noValue, fannedOut }
   }
   let titles: Map<string, string> | undefined

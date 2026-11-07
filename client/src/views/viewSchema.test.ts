@@ -221,6 +221,34 @@ describe('updateViews', () => {
     expect(out).toContain('# Top-level comment that must survive')
   })
 
+  it('`by: value` on a sort and a group level survives a round trip; a YAML without `by` reads as before (YAZ-3940)', () => {
+    const text = `views:
+  - type: table
+    name: T
+    sort:
+      - property: status
+        direction: ASC
+        by: value
+    groupBy:
+      property: status
+      direction: DESC
+      by: value
+  - type: table
+    name: Plain
+    sort:
+      - property: status
+        direction: DESC
+`
+    const parsed = parseViews(text)
+    expect(parsed.def.views[0].sort).toEqual([{ property: 'status', direction: 'ASC', by: 'value' }])
+    expect(parsed.def.views[0].groupBy).toEqual({ property: 'status', direction: 'DESC', by: 'value' })
+    expect(parsed.def.views[1].sort).toEqual([{ property: 'status', direction: 'DESC' }])
+    expect(serializeViews(updateViews(parsed, (def) => { def.views[1].name = 'Plain 2' }))).toBe(text.replace('name: Plain', 'name: Plain 2'))
+    // Back to option order: the menu writes the spec without `by`, and its line goes.
+    const back = updateViews(parseViews(text), (def) => { def.views[0].sort = [{ property: 'status', direction: 'ASC' }] })
+    expect(lineDiff(text, serializeViews(back))).toEqual({ removed: ['        by: value'], added: [] })
+  })
+
   it('an array that changed length is replaced as a whole', () => {
     const after = updateViews(parseViews(YASIN_BASE), (def) => {
       def.views[0].order = ['file.name', 'tags']

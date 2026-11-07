@@ -1067,3 +1067,54 @@ describe('runView: RunOptions.resolve (🔒 D2, YAZ-819)', () => {
     expect(runView(def, view, TEST_RECORDS).rows[0].values['formula.out']).toBeInstanceOf(FileValue)
   })
 })
+
+describe('runView: option order (YAZ-3940)', () => {
+  const OPTIONS = ['Later', 'Ready', 'Done']
+  const notes = (statuses: unknown[]): IndexRecord[] => statuses.map((status, i) => ({
+    ...TEST_RECORDS[0], path: `/vault/n${i}.md`, basename: `n${i}`, title: `n${i}`, properties: { status },
+  }))
+  const optionOrder = (property: string) => (property === 'note.status' || property === 'status' ? OPTIONS : undefined)
+  const recs = notes(['Done', 'Legacy', 'Ready', null, 'Archive', 'Later'])
+  const one = (view: Partial<ViewDef>, opts: Parameters<typeof runView>[3] = { optionOrder }) => {
+    const v: ViewDef = { type: 'table', name: 'T', order: ['file.name', 'note.status'], ...view }
+    return runView({ views: [v] }, v, recs, opts)
+  }
+  const statuses = (r: ViewResult) => r.rows.map(row => row.record.properties.status ?? null)
+
+  it('groups follow the option order; values that are not options come after the options, A to Z; No value last', () => {
+    expect(one({ groupBy: { property: 'note.status' } }).groups!.map(g => g.key)).toEqual(['Later', 'Ready', 'Done', 'Archive', 'Legacy', null])
+  })
+
+  it('DESC reverses the options; the values that are not options stay A to Z after them', () => {
+    expect(one({ groupBy: { property: 'note.status', direction: 'DESC' } }).groups!.map(g => g.key)).toEqual(['Done', 'Ready', 'Later', 'Archive', 'Legacy', null])
+  })
+
+  it('sorts follow the option order too, with a missing value last whatever the direction', () => {
+    expect(statuses(one({ sort: [{ property: 'note.status', direction: 'ASC' }] }))).toEqual(['Later', 'Ready', 'Done', 'Archive', 'Legacy', null])
+    expect(statuses(one({ sort: [{ property: 'note.status', direction: 'DESC' }] }))).toEqual(['Done', 'Ready', 'Later', 'Archive', 'Legacy', null])
+  })
+
+  it('`by: value` sorts and groups by the value, A to Z or Z to A, as without options', () => {
+    expect(statuses(one({ sort: [{ property: 'note.status', direction: 'ASC', by: 'value' }] }))).toEqual(['Archive', 'Done', 'Later', 'Legacy', 'Ready', null])
+    expect(one({ groupBy: { property: 'note.status', direction: 'DESC', by: 'value' } }).groups!.map(g => g.key)).toEqual(['Ready', 'Legacy', 'Later', 'Done', 'Archive', null])
+  })
+
+  it('without `optionOrder` the engine orders by value as before', () => {
+    expect(one({ groupBy: { property: 'note.status' } }, {}).groups!.map(g => g.key)).toEqual(['Archive', 'Done', 'Later', 'Legacy', 'Ready', null])
+  })
+
+  it('a Multi-select list sorts by its first element and groups each element in option order', () => {
+    const tagged = notes([['Done', 'Later'], ['Ready']])
+    const v: ViewDef = { type: 'table', name: 'T', sort: [{ property: 'note.status', direction: 'ASC' }], groupBy: { property: 'note.status' } }
+    const r = runView({ views: [v] }, v, tagged, { optionOrder })
+    expect(r.rows.map(row => row.record.basename)).toEqual(['n1', 'n0'])
+    expect(r.groups!.map(g => g.key)).toEqual(['Later', 'Ready', 'Done'])
+  })
+
+  it('asks for the options once per sort or group level, not once per comparison', () => {
+    let calls = 0
+    const counted = (property: string) => { calls++; return optionOrder(property) }
+    one({ sort: [{ property: 'note.status', direction: 'ASC' }], groupBy: [{ property: 'file.folder' }, { property: 'note.status' }] }, { optionOrder: counted })
+    expect(calls).toBeLessThanOrEqual(3)
+  })
+})

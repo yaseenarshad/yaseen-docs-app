@@ -493,8 +493,9 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
           </label>
         </>
       )}
-      {view.type === 'board' && <div className="property-board-setting">
-        <label><span>Show empty columns</span><input type="checkbox" role="switch" checked={view.showEmptyColumns === true} onChange={e => onUpdate(d => { if (e.target.checked) d.views[viewIndex].showEmptyColumns = true; else delete d.views[viewIndex].showEmptyColumns })} /></label>
+      {/* A Table shows its empty option groups too (YAZ-3940 S11), under the name "Show empty groups". */}
+      {(view.type === 'board' || view.type === 'table') && <div className="property-board-setting">
+        <label><span>{view.type === 'board' ? 'Show empty columns' : 'Show empty groups'}</span><input type="checkbox" role="switch" checked={view.showEmptyColumns === true} onChange={e => onUpdate(d => { if (e.target.checked) d.views[viewIndex].showEmptyColumns = true; else delete d.views[viewIndex].showEmptyColumns })} /></label>
         <small>Include unused options from the grouping property.</small>
       </div>}
       {view.type === 'board' && (

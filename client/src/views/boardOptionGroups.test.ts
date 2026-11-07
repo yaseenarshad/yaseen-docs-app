@@ -75,10 +75,28 @@ describe('board option groups', () => {
     expect(result[0].direct).toHaveLength(1)
   })
 
-  it('leaves non-Board views and unconfigured property kinds unchanged', () => {
+  it('leaves views other than Board and Table, and unconfigured property kinds, unchanged', () => {
     const groups = observed(['Ready'])
-    expect(boardOptionGroups(groups, { ...board, type: 'table' }, () => select(['Later']))).toBe(groups)
+    expect(boardOptionGroups(groups, { ...board, type: 'list' }, () => select(['Later']))).toBe(groups)
     expect(boardOptionGroups(groups, board, () => ({ assigned: 'text', dominant: null }))).toBe(groups)
     expect(boardOptionGroups(null, board, () => select(['Later']))).toBeNull()
+  })
+
+  it('a Table gets the empty option groups too when "Show empty groups" is on (YAZ-3940 S11)', () => {
+    const table: ViewDef = { ...board, type: 'table' }
+    expect(boardOptionGroups(observed(['Ready', 'Legacy'], table), table, () => select(['Later', 'Ready', 'Done']))!.map(g => g.key)).toEqual(['Later', 'Ready', 'Done', 'Legacy'])
+    const off: ViewDef = { ...table, showEmptyColumns: false }
+    const result = boardOptionGroups(observed(['Ready', 'Legacy'], off), off, () => select(['Later', 'Ready', 'Done']))!
+    expect(result.map(g => [g.key, g.optionValue])).toEqual([['Ready', 'Ready'], ['Legacy', undefined]])
+  })
+
+  it('`by: value` keeps the value order and puts each empty option in its place by value (YAZ-3940)', () => {
+    const asc: ViewDef = { ...board, groupBy: { property: 'note.status', by: 'value' } }
+    const options = () => select(['Later', 'Ready', 'Done'])
+    expect(boardOptionGroups(observed(['Ready', 'Legacy', null], asc), asc, options)!.map(g => [g.key, g.optionValue])).toEqual([
+      ['Done', 'Done'], ['Later', 'Later'], ['Legacy', undefined], ['Ready', 'Ready'], [null, undefined],
+    ])
+    const desc: ViewDef = { ...board, groupBy: { property: 'note.status', direction: 'DESC', by: 'value' } }
+    expect(boardOptionGroups(observed(['Ready', 'Legacy', null], desc), desc, options)!.map(g => g.key)).toEqual(['Ready', 'Legacy', 'Later', 'Done', null])
   })
 })
