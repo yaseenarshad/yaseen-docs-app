@@ -1,3 +1,5 @@
+import { startAutomationServer, type AutomationServer } from '../automation/server'
+import { prepareAutomation } from './automation'
 import { rendererUrlFor } from './rendererUrl'
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
@@ -300,6 +302,8 @@ app.on('browser-window-focus', (_event, win) => {
   for (const root of store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.roots ?? []) gitSync?.notifyFocus(root)
 })
 
+let automationServer: Promise<AutomationServer> | undefined
+
 app.whenReady().then(() => {
   if (!isPrimaryInstance) return
   // A dev run wears the app's own Dock icon instead of Electron's; a packaged build gets it from the bundle.
@@ -430,6 +434,9 @@ app.whenReady().then(() => {
     },
   })
   updater.start()
+  automationServer = startAutomationServer(app.getPath('userData'), (request, content) =>
+    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion() }, request, content))
+  void automationServer.catch(() => console.error('[cli] Could not start the local connection. Check profile permissions.'))
   // The memory meter (YAZ-3737 D1): one `getAppMetrics` each 30 s, in memory only. The rest is read only for a report.
   meter = createMemoryMeter({
     metrics: () => app.getAppMetrics(),
@@ -505,7 +512,10 @@ app.on('before-quit', (event) => {
   if (quitting) return
   quitting = true
   void runQuitSequence({
-    flushWindows: () => manager.flushAllForQuit(),
+    flushWindows: async () => {
+      await automationServer?.then(server => server.close(), () => undefined)
+      await manager.flushAllForQuit()
+    },
     // The settings folder's pending write (YAZ-3276 D4) goes with the state file's.
     flushStore: () => Promise.all([store.flush(), settingsFolder.flush()]).then(() => undefined),
     // The index cache's pending persist, and each vault's diary of links to the IDs this Mac made (YAZ-2677 R27): neither flush throws.
