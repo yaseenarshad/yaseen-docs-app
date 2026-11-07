@@ -242,6 +242,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     return offset
   })
   const isFrozen = (index: number) => index < frozen
+  /** The freeze line (YAZ-4534): the table block's 3px edge on the last frozen column. */
+  const frozenClass = (index: number): string | false => isFrozen(index) && (index === frozen - 1 ? 'view-table__frozen view-table__frozen-end' : 'view-table__frozen')
   const frozenStyle = (index: number): CSSProperties | undefined => (isFrozen(index) ? { left: frozenLeft[index] } : undefined)
 
   // one flat display list (headers + visible data rows) so windowing and keyboard nav share it
@@ -443,7 +445,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 <th
                   key={key}
                   scope="col"
-                  className={[isFrozen(index) && 'view-table__frozen', ...headerDragClass(index)].filter(Boolean).join(' ') || undefined}
+                  className={[frozenClass(index), ...headerDragClass(index)].filter(Boolean).join(' ') || undefined}
                   style={{ width: widthOf(key), ...frozenStyle(index) }}
                   onContextMenu={openHeaderMenu(key)}
                   {...headerDrag(index)}
@@ -500,7 +502,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       <td
                         key={key}
                         // `view-table__name` has no style: the tests and the end-to-end specs find the Name cell by it.
-                        className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', isFrozen(c) && 'view-table__frozen'].filter(Boolean).join(' ') || undefined}
+                        className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', frozenClass(c)].filter(Boolean).join(' ') || undefined}
                         style={frozenStyle(c)}
                         tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
                         data-cell={`${line.r}:${c}`}
@@ -569,7 +571,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   const label = propertyLabel(def, key)
                   const kind = summaryKindOf(view, key)
                   return (
-                    <td key={key} className={`view-table__summary${isFrozen(index) ? ' view-table__frozen' : ''}`} style={frozenStyle(index)}>
+                    <td key={key} className={['view-table__summary', frozenClass(index)].filter(Boolean).join(' ')} style={frozenStyle(index)}>
                       <button
                         type="button"
                         className="view-table__summary-btn"

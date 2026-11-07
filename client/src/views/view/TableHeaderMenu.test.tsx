@@ -109,7 +109,18 @@ describe('the header menu (YAZ-1513)', () => {
     const { el, onChange } = mount()
     expect(el.querySelector('.ctx-menu')).toBeNull()
     rightClick(th(el, 1))
-    expect(menuItems(el)).toEqual(['Edit column…', 'Rename column…', 'Hide column', 'Add column to the right…', 'Delete column…'])
+    expect(menuItems(el)).toEqual([
+      'Edit column…',
+      'Rename column…',
+      'Hide column',
+      'Add column to the right…',
+      'Sort A to Z',
+      'Sort Z to A',
+      'Group by this column',
+      '✓ Frozen up to this column', // BASE freezes two: Status is the last frozen column
+      'Unfreeze columns',
+      'Delete column…',
+    ])
     press(window.document.body, 'Escape')
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(onChange).not.toHaveBeenCalled()
@@ -312,5 +323,86 @@ describe('the type line and "Edit column…" (YAZ-4533)', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].order).toEqual(['file.name', 'note.priority'])
     expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+})
+
+describe('freeze, sort and group from the header (YAZ-4534)', () => {
+  const view = (def: () => ViewSet) => def().views[0]
+
+  it('Sort A to Z / Z to A replace the sort with ONE rule on this column', () => {
+    const { el, onChange, def, yaml } = mount(`${BASE}    sort:\n      - property: note.priority\n        direction: DESC\n`)
+    rightClick(th(el, 1))
+    click(item(el, 'Sort A to Z'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(view(def).sort).toEqual([{ property: 'note.status', direction: 'ASC' }])
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    rightClick(th(el, 0))
+    click(item(el, 'Sort Z to A'))
+    expect(view(def).sort).toEqual([{ property: 'file.name', direction: 'DESC' }])
+    expect(yaml()).toContain('property: file.name\n        direction: DESC')
+  })
+
+  it('Group by this column sets the FIRST level: no grouping yet → the single-object form', () => {
+    const { el, def } = mount()
+    rightClick(th(el, 1))
+    click(item(el, 'Group by this column'))
+    expect(view(def).groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
+  })
+
+  it('Group by this column keeps the other levels and the first level’s style; the column leaves a later level', () => {
+    const levels = `${BASE}    groupBy:\n      - property: note.pillar\n        direction: DESC\n        highlight: blue\n      - property: note.priority\n        direction: ASC\n`
+    const first = mount(levels)
+    rightClick(th(first.el, 1))
+    click(item(first.el, 'Group by this column'))
+    expect(view(first.def).groupBy).toEqual([
+      { property: 'note.status', direction: 'ASC', highlight: 'blue' },
+      { property: 'note.priority', direction: 'ASC' },
+    ])
+    act(() => root?.unmount())
+    container?.remove()
+
+    const again = mount(levels)
+    rightClick(th(again.el, 2)) // priority, the second level today
+    click(item(again.el, 'Group by this column'))
+    expect(view(again.def).groupBy).toEqual({ property: 'note.priority', direction: 'ASC', highlight: 'blue' })
+  })
+
+  it('Freeze up to this column writes frozenColumns; on the last frozen column the item reads ✓ and a click unfreezes', () => {
+    const { el, def } = mount() // frozenColumns: 2
+    rightClick(th(el, 1))
+    expect(menuItems(el)).toContain('✓ Frozen up to this column')
+    expect(menuItems(el)).not.toContain('Freeze up to this column')
+    click(item(el, '✓ Frozen up to this column'))
+    expect(view(def).frozenColumns).toBeUndefined()
+
+    rightClick(th(el, 2))
+    click(item(el, 'Freeze up to this column'))
+    expect(view(def).frozenColumns).toBe(3)
+  })
+
+  it('Unfreeze columns deletes frozenColumns, and is disabled when nothing is frozen', () => {
+    const { el, def, yaml } = mount()
+    rightClick(th(el, 2))
+    click(item(el, 'Unfreeze columns'))
+    expect(view(def).frozenColumns).toBeUndefined()
+    expect(yaml()).not.toContain('frozenColumns')
+    rightClick(th(el, 2))
+    expect((item(el, 'Unfreeze columns') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('the freeze line: view-table__frozen-end sits on the LAST frozen column — header, body cells and the summary cell', () => {
+    const { el } = mount() // frozenColumns: 2 → the Status column
+    const ends = (sel: string) => [...el.querySelectorAll<HTMLElement>(sel)].map((c) => c.classList.contains('view-table__frozen-end'))
+    expect(ends('.view-table thead th:not(.view-table__gutter)')).toEqual([false, true, false])
+    const bodyRow = q<HTMLElement>(el, '.view-table tbody tr:has(td[data-cell])')
+    expect(ends('.view-table tbody tr:has(td[data-cell]) td:not(.view-table__gutter)').slice(0, 3)).toEqual([false, true, false])
+    expect(bodyRow.querySelectorAll('.view-table__frozen-end')).toHaveLength(1)
+    expect(ends('.view-table tfoot td:not(.view-table__gutter)')).toEqual([false, true, false])
+    expect(el.querySelectorAll('tbody .view-table__frozen-end').length).toBe(el.querySelectorAll('tbody tr:has(td[data-cell])').length)
+  })
+
+  it('no frozen columns → no freeze line', () => {
+    const { el } = mount(BASE.replace('    frozenColumns: 2\n', ''))
+    expect(el.querySelector('.view-table__frozen-end')).toBeNull()
   })
 })

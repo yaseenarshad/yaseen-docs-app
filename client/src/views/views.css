@@ -815,6 +815,12 @@
   z-index: 4;
 }
 
+/* The freeze line (YAZ-4534): where the frozen columns end, the table block's 3px line. */
+.view-table .view-table__frozen-end {
+  border-right-width: 3px;
+  border-right-color: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+}
+
 /* The `#` gutter (YAZ-1513): the always-first, always-sticky column, pinned like a frozen cell at
    left 0 — display position only, so it is muted, right-aligned and never selectable. */
 .view-table .view-table__gutter {
