@@ -15,6 +15,8 @@ import type { ColumnDecl, FolderSettings } from './folderSettings'
 import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
+import { CalendarView } from './view/CalendarView'
+import { type DayKey, calendarDateKey, dateColumns, movedDate } from './calendar'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
 import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, applyMoves, groupByKey, groupsByFolder } from './view/groupDrag'
@@ -155,7 +157,8 @@ function seedGroup(seed: NewNoteSeed, group: Group, view: ViewDef, level: number
  * One set of views (GRO-2135): the toolbar (view switcher, sort / properties menus, search,
  * count) over the body — the real table for `type: table` (GRO-2136), the board for
  * `type: board` (4D, GRO-2138), the card grid for `type: cards` (4E, GRO-2139), the list for
- * `type: list` (4F, GRO-2140), the outline for `type: outline` (YAZ-820), a placeholder row list
+ * `type: list` (4F, GRO-2140), the outline for `type: outline` (YAZ-820), the month grid for
+ * `type: calendar` (YAZ-4540), a placeholder row list
  * for unknown view types. Only the active tab and the search text are component state —
  * everything else is the file.
  */
@@ -301,6 +304,19 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   // and flags the card instead. `drop` names
   // the LEVEL the row landed on (YAZ-1101) and may carry the outer's write — inner first, then the
   // outer, both optimistic as ONE unit so either failing snaps the whole move back (🔒 YAZ-745).
+  /**
+   * The board's optimistic write, shared with the calendar (YAZ-4540 D4): the move shows at once,
+   * then ONE guarded write of the note; a failure drops the move (the card snaps back) and flags it.
+   */
+  const moveValues = (path: string, writes: PendingMove) => {
+    setMoveError(null)
+    setMoves((m) => ({ ...m, [path]: writes }))
+    folder.writeValues(path, writes).catch((err: unknown) => {
+      setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
+      setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
+    })
+  }
+
   const onMoveToGroup = (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => {
     const key = groupByKey(view, drop?.level ?? 0)
     // A read-only note never moves, not even optimistically: the move writes a property (YAZ-3076 S53).
@@ -319,12 +335,20 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
     }
     const writes: PendingMove = [{ key, value, prevRaw }]
     if (drop?.outer !== undefined) writes.push({ ...drop.outer, prevRaw: props?.[drop.outer.key] })
-    setMoveError(null)
-    setMoves((m) => ({ ...m, [path]: writes }))
-    folder.writeValues(path, writes).catch((err: unknown) => {
-      setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
-      setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
-    })
+    moveValues(path, writes)
+  }
+
+  // The calendar (YAZ-4540 D4): its "Show by" column, and a drop on a day — or on "No date" (`null`),
+  // which clears the value. The new day keeps the time the value had (`movedDate`).
+  const calendarColumns = useMemo(
+    () => (view.type === 'calendar' ? dateColumns(def, view, records, properties, folder.settings) : []),
+    [def, view, records, properties, folder.settings],
+  )
+  const dateKey = view.type === 'calendar' ? calendarDateKey(view, calendarColumns) : null
+  const onMoveToDay = (path: string, day: DayKey | null) => {
+    if (dateKey === null || readOnly.has(path)) return
+    const prevRaw = records.find((r) => r.path === path)?.properties[dateKey]
+    moveValues(path, [{ key: dateKey, value: day === null ? undefined : movedDate(prevRaw, day), prevRaw }])
   }
 
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
@@ -332,9 +356,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   // IN the folder, from its template and that seed alone (YAZ-2290 D4/E1): a group "+" seeds its
   // group — or, grouped by Folder, is born in it. The note opens once the create lands; a failure shows the alert.
   // A `name` means the board's inline add (YAZ-943) — it already named the card and the caller is
-  // mid-typing in the column, so that create STAYS on the board and opens nothing.
-  const onNewNote = (group: Group | null, name?: string, at?: GroupSpot) => {
+  // mid-typing in the column, so that create STAYS on the board and opens nothing. `values` seed
+  // more: a calendar day's "+" seeds its date (YAZ-4540 S10).
+  const onNewNote = (group: Group | null, name?: string, at?: GroupSpot, values?: Record<string, unknown>) => {
     const seed = deriveSeed(def, view)
+    if (values !== undefined) Object.assign(seed.properties, values)
     if (group !== null) {
       // 🔒 YAZ-745: an INNER "+" seeds the outer too, so the note lands in the very section clicked.
       // The outer goes FIRST (YAZ-2541): under Folder then Folder both levels set `seed.folder`, and
@@ -515,6 +541,21 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
           moveError={moveError}
           onNewInGroup={onNewNote}
           resolve={resolve}
+        />
+      ) : view.type === 'calendar' ? (
+        <CalendarView
+          hover={viewHover}
+          readOnly={readOnly}
+          rows={rows}
+          dateKey={dateKey}
+          onOpenFile={onOpenFile}
+          onOpenFileRight={folder.openRight}
+          onOpenFileBackground={folder.openBackground}
+          onMoveToDay={onMoveToDay}
+          moveError={moveError}
+          onNewOnDay={(day) => {
+            if (dateKey !== null) onNewNote(null, undefined, undefined, { [dateKey]: day })
+          }}
         />
       ) : view.type === 'cards' ? (
         <CardsView

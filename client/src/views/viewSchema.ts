@@ -48,6 +48,8 @@ export interface ViewDef {
   propertySeparator?: string
   /** Board card styling (YAZ-1206, reshaped by YAZ-1217): per canonical property key — bold/underline the value's row, hide its label, or `join` it onto the row being built instead of starting a new one. */
   cardStyle?: Record<string, { bold?: boolean; underline?: boolean; hideLabel?: boolean; join?: boolean }>
+  /** A calendar's "Show by" (YAZ-4540 D4): the canonical date column it places notes on. Absent = the first date column. */
+  dateProperty?: string
   [extra: string]: unknown
 }
 

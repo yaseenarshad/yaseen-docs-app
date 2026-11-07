@@ -245,6 +245,13 @@ const TYPE_GLYPHS: Record<string, ReactElement> = {
       <rect x="10.8" y="2.5" width="3.2" height="9" rx="0.8" />
     </>
   ),
+  // The calendar tab (YAZ-4540): `CalendarIcon`'s page.
+  calendar: (
+    <>
+      <rect x="1.75" y="2.75" width="12.5" height="11.5" rx="1.5" />
+      <path d="M1.75 6.25h12.5M5 1.25V4M11 1.25V4" />
+    </>
+  ),
 }
 
 /** Small glyph for a view's `type`; unknown types get a plain frame. */

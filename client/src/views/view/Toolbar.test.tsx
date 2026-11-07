@@ -480,13 +480,13 @@ describe('view tabs — "+" adds a view (YAZ-1471)', () => {
     expect(plus(el).closest('[role="tablist"]')).toBeNull() // the strip scrolls; "+" does not go with it
     const pop = openPicker(el)
     expect(expanded(el)).toBe('true')
-    expect(kinds(pop)).toEqual(['Table', 'Board', 'Cards', 'List', 'Outline'])
+    expect(kinds(pop)).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List', 'Outline'])
     expect(onChange).not.toHaveBeenCalled()
   })
 
   it('Outline is offered only while the page has none — a page owns ONE document', () => {
     const { el } = mount(WITH_OUTLINE)
-    expect(kinds(openPicker(el))).toEqual(['Table', 'Board', 'Cards', 'List'])
+    expect(kinds(openPicker(el))).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List'])
   })
 
   it('picking a type appends it in ONE update and mounts it in rename; Escape keeps the given name', () => {

@@ -20,6 +20,7 @@ import { allPropertyKeys } from './properties'
 import { TextField } from './TextField'
 import { frozenColumnCount } from './frozenColumns'
 import { cardWidth } from './cardWidth'
+import { CalendarShowBy } from './CalendarView'
 
 export interface PropertiesMenuProps {
   def: ViewSet
@@ -522,6 +523,15 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
               />
               <span>px</span>
             </span>
+          </label>
+        </>
+      )}
+      {view.type === 'calendar' && (
+        <>
+          <p className="view-menu__label">Calendar</p>
+          <label className="view-settings-row">
+            <span>Show by</span>
+            <CalendarShowBy def={def} view={view} viewIndex={viewIndex} records={records} properties={properties} settings={folder.settings} onUpdate={onUpdate} />
           </label>
         </>
       )}

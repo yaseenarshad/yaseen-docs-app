@@ -1379,6 +1379,262 @@
   }
 }
 
+/* ---------- calendar (YAZ-4540) ---------- */
+
+.view-cal {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  margin-top: 8px;
+  padding-bottom: 8px;
+  overflow: auto;
+}
+
+.view-cal__show-by {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.view-cal__show-by .view-select {
+  max-width: 160px;
+}
+
+.view-cal__nav {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.view-cal__nav .view-toolbar__btn {
+  min-width: 26px;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.view-cal__nav .view-cal__today {
+  font-size: 12px;
+}
+
+.view-cal__month {
+  margin: 0 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* Seven equal columns that may shrink below their cards: a long title ellipses, the page never scrolls sideways. */
+.view-cal__grid {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.view-cal__week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.view-cal__week + .view-cal__week {
+  border-top: 1px solid var(--border);
+}
+
+.view-cal__weekday {
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  background: var(--bg-side);
+}
+
+.view-cal__day {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 104px;
+  padding: 4px;
+  background: var(--bg);
+}
+
+.view-cal__day + .view-cal__day,
+.view-cal__weekday + .view-cal__weekday {
+  border-left: 1px solid var(--border);
+}
+
+/* The days of the next and previous month: there, but quiet. */
+.view-cal__day--other {
+  background: var(--bg-side);
+}
+
+.view-cal__day--other .view-cal__date {
+  color: var(--fg-muted);
+}
+
+.view-cal__day--drop,
+.view-cal__tray--drop {
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-soft);
+}
+
+.view-cal__day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+}
+
+.view-cal__date {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--fg);
+  border-radius: 999px;
+}
+
+/* Today's ring (S7). */
+.view-cal__day--today .view-cal__date {
+  font-weight: 600;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+/* The day's "+" (S10): shown on the hovered or focused day, so the grid stays quiet. */
+.view-cal__add {
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  opacity: 0;
+}
+
+.view-cal__day:hover .view-cal__add,
+.view-cal__add:focus-visible {
+  opacity: 1;
+}
+
+.view-cal__add:hover {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+.view-cal__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.view-cal__card {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 18px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.view-cal__card:hover {
+  border-color: var(--fg-muted);
+}
+
+.view-cal__card:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.view-cal__card[draggable='true'] {
+  cursor: grab;
+}
+
+.view-cal__card--drag {
+  opacity: 0.4;
+}
+
+.view-cal__card-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-cal__time {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.view-cal__more {
+  align-self: flex-start;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+.view-cal__more:hover {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+/* "No date" (D4): below the grid, its cards in a wrapping row. */
+.view-cal__tray {
+  padding: 8px;
+  background: var(--bg-side);
+  border-radius: 8px;
+}
+
+.view-cal__tray-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.view-cal__tray-count {
+  margin-left: 4px;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+
+.view-cal__tray-cards {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.view-cal__tray-cards .view-cal__card {
+  max-width: 240px;
+}
+
+.view-cal__hint {
+  margin: 48px auto;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
 /* ---------- cards (4E) ---------- */
 
 .view-cards {
