@@ -53,7 +53,10 @@ async function startApp(profile: string): Promise<void> {
     throw new AutomationFailure('START_UNAVAILABLE', 'Start the dev app with HMR first, or supply YASEEN_DOCS_APP_ENTRY.')
   }
   const child = spawn(executable, entry ? [entry] : [], { detached: true, stdio: 'ignore', env })
-  await new Promise<void>((done, failed) => { child.once('spawn', done); child.once('error', failed) })
+  await new Promise<void>((done, failed) => {
+    child.once('spawn', done)
+    child.once('error', () => failed(new AutomationFailure('START_FAILED', 'Docs could not start. Check that its executable exists and can run.')))
+  })
   child.unref()
 }
 
@@ -61,7 +64,7 @@ async function connectionFor(profile: string, start: boolean): Promise<Connectio
   try {
     const connection = await readConnection(profile)
     // A descriptor can survive a crash. Probe before considering the app ready, without mutations.
-    const result = await sendRequest(connection, makeRequest(connection, 'app.status', {}), Buffer.alloc(0), 1000)
+    const result = await sendRequest(connection, makeRequest(connection, 'request.status', { id: 'connection-probe' }), Buffer.alloc(0), 1000)
     if (result.ok) return connection
   } catch (error) {
     if (error instanceof AutomationFailure && error.code === 'UNSAFE_PROFILE') throw error
@@ -73,7 +76,7 @@ async function connectionFor(profile: string, start: boolean): Promise<Connectio
     await new Promise(done => setTimeout(done, 100))
     try {
       const connection = await readConnection(profile)
-      const result = await sendRequest(connection, makeRequest(connection, 'app.status', {}), Buffer.alloc(0), 1000)
+      const result = await sendRequest(connection, makeRequest(connection, 'request.status', { id: 'connection-probe' }), Buffer.alloc(0), 1000)
       if (result.ok) return connection
     } catch { /* The app has not installed its connection yet. */ }
   } while (Date.now() < deadline)

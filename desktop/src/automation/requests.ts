@@ -55,7 +55,8 @@ export class RequestQueue {
     if (this.contentBytes + content.length > AUTOMATION_LIMITS.inFlightContentBytes) throw new AutomationFailure('BUSY', 'Too much content is in flight. No request was accepted.')
     // Count queued work independently: requests blocked on a resource must not exceed the queue bound.
     const operation = prepare()
-    const canStart = this.active < AUTOMATION_LIMITS.active && operation.writes.every(key => !this.locked.has(key))
+    const waiting = new Set(this.queue.flatMap(entry => entry.operation.writes))
+    const canStart = this.active < AUTOMATION_LIMITS.active && operation.writes.every(key => !this.locked.has(key) && !waiting.has(key))
     if (!canStart && this.queue.length >= AUTOMATION_LIMITS.queued) throw new AutomationFailure('BUSY', 'The request queue is full. No request was accepted.')
     let resolve!: Entry['resolve']
     const promise = new Promise<AutomationResult>(done => { resolve = done })
