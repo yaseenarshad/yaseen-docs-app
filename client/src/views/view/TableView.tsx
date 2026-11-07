@@ -21,6 +21,8 @@ import { openByGesture } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
 import { frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
+import { FillMenu } from './FillMenu'
+import { cellFillOf, fillIndex, fillPaint, setViewFill } from './fills'
 import { TableHeaderMenu } from './TableHeaderMenu'
 import { TextField } from './TextField'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
@@ -149,7 +151,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
+  /** The row right-click's menu: its record, and the column key of the cell it was opened on (the fill target, YAZ-4536). */
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; record: IndexRecord; column: string } | null>(null)
   /** The header's own menu (YAZ-1513): `key` null = the `#` gutter header. */
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; key: string | null } | null>(null)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
@@ -240,6 +243,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   })
   const isFrozen = (index: number) => index < frozen
   const frozenStyle = (index: number): CSSProperties | undefined => (isFrozen(index) ? { left: frozenLeft[index] } : undefined)
+  /** The view's cell and row fills by note path (YAZ-4536): built once per fills write, two map reads per cell. */
+  const fills = useMemo(() => fillIndex(view.fills, resolveLink), [view.fills, resolveLink])
 
   // one flat display list (headers + visible data rows) so windowing and keyboard nav share it
   const collapsedSet = new Set(collapsed)
@@ -321,14 +326,15 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     })
 
   /** Google-Sheets style: right-click selects the data cell, unless a typed editor owns it. */
-  const openRowMenu = ({ path, title }: IndexRecord) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
+  const openRowMenu = (record: IndexRecord) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
     if (!(event.target instanceof Element)) return
     if (event.target.closest('[data-editing]') !== null) return
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
     if (cell === null) return
     event.preventDefault()
     cell.focus()
-    setRowMenu({ x: event.clientX, y: event.clientY, path, title })
+    // `data-cell` is `row:column`; the column index names the key the fill is for (YAZ-4536).
+    setRowMenu({ x: event.clientX, y: event.clientY, record, column: keys[Number(cell.dataset.cell?.split(':')[1])] })
   }
 
   /**
@@ -493,12 +499,14 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     const v = line.row.values[key]
                     const { path, title } = line.row.record
                     const locked = readOnly.has(path)
+                    const fill = cellFillOf(fills, path, key)
                     return (
                       <td
                         key={key}
                         // `view-table__name` has no style: the tests and the end-to-end specs find the Name cell by it.
-                        className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', isFrozen(c) && 'view-table__frozen'].filter(Boolean).join(' ') || undefined}
-                        style={frozenStyle(c)}
+                        className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', isFrozen(c) && 'view-table__frozen', fill !== undefined && 'view-table__cell--fill'].filter(Boolean).join(' ') || undefined}
+                        // A fill (YAZ-4536) is a custom property that views.css paints over the cell's base.
+                        style={fill === undefined ? frozenStyle(c) : ({ ...frozenStyle(c), '--view-cell-fill': fillPaint(fill) } as CSSProperties)}
                         tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
                         data-cell={`${line.r}:${c}`}
                         // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
@@ -611,13 +619,20 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           <PageContextMenu
             x={rowMenu.x}
             y={rowMenu.y}
-            path={rowMenu.path}
-            title={rowMenu.title}
+            path={rowMenu.record.path}
+            title={rowMenu.record.title}
             onOpen={onOpenFile}
             onOpenRight={onOpenFileRight}
             onOpenBackground={onOpenFileBackground}
             onNotice={onNotice}
             onClose={() => setRowMenu(null)}
+            extra={
+              <FillMenu
+                start={cellFillOf(fills, rowMenu.record.path, rowMenu.column)}
+                onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, records, resolveLink))}
+                onClose={() => setRowMenu(null)}
+              />
+            }
           />
         )}
         {headerMenu !== null && (

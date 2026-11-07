@@ -815,6 +815,19 @@
   z-index: 4;
 }
 
+/* A cell or row fill (YAZ-4536, `view/fills.ts`): `--view-cell-fill` on the cell, painted as an image over the
+   cell's own background colour, so a frozen cell keeps its opaque `--bg` under the see-through wash. */
+.view-table tbody td.view-table__cell--fill {
+  background-image: linear-gradient(var(--view-cell-fill), var(--view-cell-fill));
+}
+
+/* "Custom colour…" in a Fill flyout (YAZ-4536, `FillMenu.tsx`): the colour box under the item, as wide as the
+   table block's (`table.css` `.table-colour-box`, 190px less its padding). */
+.view-fill-menu__box .colour-box {
+  width: 166px;
+  margin: 4px 6px 2px;
+}
+
 /* The `#` gutter (YAZ-1513): the always-first, always-sticky column, pinned like a frozen cell at
    left 0 — display position only, so it is muted, right-aligned and never selectable. */
 .view-table .view-table__gutter {
