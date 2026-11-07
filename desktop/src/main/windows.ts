@@ -114,6 +114,9 @@ export interface WindowHost {
 }
 
 export interface WindowManager extends WindowLookup {
+  /** Programmatic navigation uses only live full windows, in focus order. */
+  automationWindows(): WindowEntry[]
+  openAutomationWindow(opts: OpenWindowOptions): string
   /**
    * The stored windows that come back at launch (YAZ-2589), bounds clamped: those on the vaults in
    * `which` (a launch that asked for them, D1), or what the setting says (D2): every one, those of
@@ -961,6 +964,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
   return {
     idFor,
+    automationWindows: () => [...new Set([...focusOrder, ...live.keys()])].flatMap(id => {
+      const entry = entryOf(id)
+      return entry !== undefined && !isFilesWindow(entry) && liveWindow(id) !== undefined ? [entry] : []
+    }),
+    openAutomationWindow: openWindow,
 
     rootFor(path, rootOverride) {
       if (host.dirExists(path)) return stripSlash(path)

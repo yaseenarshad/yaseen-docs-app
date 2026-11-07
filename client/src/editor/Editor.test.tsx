@@ -1,3 +1,4 @@
+import { readLiveDocument } from '../automation/liveDocument'
 /**
  * CrepeHost external-change handling (GRO-2186): a property write from a base (GRO-2141)
  * rewrites only the frontmatter block on disk; the open editor must absorb it silently —
@@ -2716,5 +2717,21 @@ describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
     } finally {
       vi.mocked(moveCaretIntoZoom).mockReset()
     }
+  })
+})
+
+
+describe('automation live Markdown read', () => {
+  it('returns current typing and selection without saving or substituting disk content', async () => {
+    const el = await mount('---\ntitle: Original\n---\nSaved body\n')
+    el.dataset.tab = 'live-markdown'
+    type('Unsaved body\n')
+    const view = { ...emptyView(), state: { selection: { anchor: 1, head: 8, from: 1, to: 8 }, doc: { textBetween: () => 'Unsaved' } } }
+    vi.mocked(editorViewOf).mockReturnValue(view as never)
+    try {
+      expect(readLiveDocument('live-markdown')).toMatchObject({ source: 'live', path: PATH, kind: 'markdown', content: '---\ntitle: Original\n---\nUnsaved body\n', baselineMtime: 1, dirty: true, selection: { text: 'Unsaved', coordinate: 'prosemirror' } })
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(() => readLiveDocument('missing')).toThrow('no ready live document')
+    } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
   })
 })

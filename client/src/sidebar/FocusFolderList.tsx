@@ -1,3 +1,4 @@
+import { useAutomationSurface } from '../automation/surfaces'
 import { useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { MAX_VAULT_NAME, cleanVaultName, type FocusFolder } from '@shared/types'
@@ -81,6 +82,21 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
       SHUT[kind] = next(was)
       return SHUT[kind]
     })
+  useAutomationSurface(`groups:${kind}`, {
+    ready: true,
+    inspect: () => ({ open: folders.filter(folder => !shut.has(folder.id)).map(folder => folder.id) }),
+    reveal: target => setShut(previous => {
+      const next = new Set(previous)
+      for (const folder of folders) {
+        const contains = target.path !== undefined && folder.items.some(item => {
+          const resolved = resolveItem(item, roots)
+          return 'path' in resolved && (target.path === resolved.path || target.path!.startsWith(`${resolved.path}/`))
+        })
+        if (folder.id === target.group || contains) next.delete(folder.id)
+      }
+      return next
+    }),
+  })
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   // "Delete focus folder" asks first (YAZ-4460 demo): two clicks, as "Delete session".
   const [deleting, setDeleting] = useState<FocusFolder | null>(null)

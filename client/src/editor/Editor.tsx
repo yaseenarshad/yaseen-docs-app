@@ -1,3 +1,4 @@
+import { registerLiveDocument } from '../automation/liveDocument'
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
 import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
@@ -892,6 +893,7 @@ function CrepeHost({
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
     let offPageView: (() => void) | null = null
+    let offLiveDocument: (() => void) | null = null
     const ready = crepe.create().then(() => {
       if (cancelled) return
       controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body)
@@ -932,6 +934,11 @@ function CrepeHost({
       startViewRef.current = undefined
       // This tab's page view, read only when a copy action asks (YAZ-2951 D4): nothing runs per keystroke.
       if (scroller) {
+        offLiveDocument = registerLiveDocument(scroller, () => {
+          const parts = diskParts(), bodyNow = getMarkdownForSave(crepe)
+          const { selection, doc } = editorViewOf(crepe).state
+          return { path: file.path, kind: 'markdown', content: parts.frontmatter + bodyNow, baselineMtime: controller!.mtime, dirty: bodyNow !== parts.body, selection: { anchor: selection.anchor, head: selection.head, text: doc.textBetween(selection.from, selection.to, '\n'), coordinate: 'prosemirror' } }
+        })
         offPageView = registerPageView(scroller, () => ({
           scrollTop: scroller.scrollTop,
           zoomKey: getZoomKeyOf(crepe),
@@ -1016,6 +1023,7 @@ function CrepeHost({
       cancelled = true
       crepeRef.current = null
       offPageView?.()
+      offLiveDocument?.()
       unsubscribe()
       offTwin()
       offRefused()

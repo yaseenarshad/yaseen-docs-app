@@ -27,7 +27,7 @@ The response includes its request reference. Large results are not kept in recei
 Existing edit and delete commands still operate on comments.
 `
 
-export const isAutomationCommand = (argv: readonly string[]): boolean => argv[0] === 'capabilities' || AUTOMATION_COMMANDS.some(command => command.name.split('.')[0] === argv[0])
+export const isAutomationCommand = (argv: readonly string[]): boolean => argv[0] === 'capabilities' || AUTOMATION_COMMANDS.some(command => command.name.split('.')[0] === argv[0] && (argv[0] !== 'comment' || command.name === `${argv[0]}.${argv[1]}`))
 
 function parsedValue(schema: CommandSchema, value: string): unknown {
   if (schema.type === 'string') return value
@@ -133,6 +133,7 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
       }
     }
     validateInput(definition.input, args)
+    if (body === undefined && definition.contentRequired) throw new AutomationFailure('INVALID_INPUT', 'This command requires --body, including an empty string for an empty document.')
     if (body !== undefined && !definition.content) throw new AutomationFailure('INVALID_INPUT', 'This command accepts no body.')
     if (definition.content === 'secret' && body !== '-' && !body?.startsWith('@')) throw new AutomationFailure('INVALID_INPUT', 'Supply secrets through stdin or a private file.')
     const content = Buffer.from(body === undefined ? '' : await source(body, io))

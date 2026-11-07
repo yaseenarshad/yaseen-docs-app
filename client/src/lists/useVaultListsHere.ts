@@ -411,15 +411,15 @@ export type VaultListsHere = ReturnType<typeof useVaultListsHere>
  * order. App calls it once and hands it to the sidebar (`useVaultTree`) and to the tab menu
  * (`stateOf`, `toggleFocus`, `toggleFavorite`).
  */
-export function useVaultListsHere(roots: readonly string[], onNotice: Notice, separate: WorkspaceLists) {
+export function useVaultListsHere(roots: readonly string[], onNotice: Notice, separate: WorkspaceLists, scopes: Partial<Record<'favorites' | 'focus', ListScope>> = {}) {
   // What the callbacks below ask at call time, so each keeps its identity.
   const live = useRef({ roots })
   live.current = { roots }
   // YAZ-4450 D2, D4: a window with two or more vaults is a workspace. With a tab's switch on (the default), each vault
   // shows its ONE workspace list there, the same in every workspace; a vault alone always shows its own list.
   const multi = roots.length > 1
-  const favoritesScope: ListScope = multi && separate.favorites ? 'workspace' : 'vault'
-  const focusScope: ListScope = multi && separate.focus ? 'workspace' : 'vault'
+  const favoritesScope: ListScope = scopes.favorites ?? (multi && separate.favorites ? 'workspace' : 'vault')
+  const focusScope: ListScope = scopes.focus ?? (multi && separate.focus ? 'workspace' : 'vault')
   /** The vault that holds `path`, the most specific one; a path in no vault of the window gets the first. */
   const rootOf = useCallback((path: string): string => rootOfPath(live.current.roots, path) ?? live.current.roots[0], [])
   // Favorites (YAZ-1766 D2, in the vault since 6A/D11): each vault's pinned files and folders in the

@@ -1,0 +1,40 @@
+import { useLayoutEffect } from 'react'
+import { AutomationFailure } from '@shared/automation'
+import type { NavigationTarget } from '@shared/automationNavigation'
+
+export interface AutomationSurface {
+  ready: boolean
+  inspect(): Record<string, unknown>
+  reveal?(target: NavigationTarget): void | Promise<void>
+  selectView?(name: string): void
+}
+const surfaces = new Map<string, AutomationSurface>()
+const waiting = new Set<() => void>()
+
+/** Registration holds current callbacks without adding work to typing, scrolling, or hover events. */
+export function useAutomationSurface(key: string | null | (() => string | null), surface: AutomationSurface): void {
+  useLayoutEffect(() => {
+    const resolved = typeof key === 'function' ? key() : key
+    if (resolved === null) return
+    surfaces.set(resolved, surface)
+    for (const check of waiting) queueMicrotask(check)
+    return () => { if (surfaces.get(resolved) === surface) surfaces.delete(resolved) }
+  })
+}
+
+/** Wait for actual component state, including lazy loading. No polling or synthetic input events. */
+export function waitForSurface(key: string, condition: (surface: AutomationSurface) => boolean = surface => surface.ready): Promise<AutomationSurface> {
+  return new Promise((resolve, reject) => {
+    const finish = (surface?: AutomationSurface, error?: unknown) => {
+      clearTimeout(timer); waiting.delete(check)
+      if (error) reject(error)
+      else resolve(surface!)
+    }
+    const check = () => {
+      const surface = surfaces.get(key)
+      try { if (surface && condition(surface)) finish(surface) } catch (error) { finish(undefined, error) }
+    }
+    const timer = setTimeout(() => finish(undefined, new AutomationFailure('SURFACE_TIMEOUT', `The requested ${key.split(':')[0]} state did not become ready.`)), 60_000)
+    waiting.add(check); check()
+  })
+}

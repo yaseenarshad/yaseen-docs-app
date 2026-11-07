@@ -749,6 +749,8 @@ export interface FileWriteRequest {
    * `BridgeError` whose code is `CONFLICT` (carrying the disk `mtime`) and does NOT write.
    */
   expectedMtime?: number
+  /** Automation's saved-content hash and mtime, checked inside the shared write turn. */
+  expectedRevision?: string
   /**
    * A tidy-up write that the user did not make on this file (YAZ-3235 D1): a link rewrite after a
    * rename, a deleted column stripped from each note, stale folder values dropped after a move, a

@@ -4,6 +4,7 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
+import type { RendererCommand } from '@shared/automationNavigation'
 import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
@@ -211,6 +212,7 @@ import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'>>
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
+  const automationRequests = new Set<(request: RendererCommand) => void>()
   const stateChanged = new Set<(next: AppState) => void>()
   const windowViews = new Set<() => (StartView | null)[]>()
   const windowTabs = new Set<() => MemoryTabFacts[]>()
@@ -264,6 +266,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       return () => set.delete(l)
     })
   const bridge = {
+    automation: { onRequest: vi.fn((listener: (request: RendererCommand) => void) => { automationRequests.add(listener); return () => automationRequests.delete(listener) }), ready: vi.fn(async () => {}), reply: vi.fn(async () => {}) },
     tree: vi.fn(async (root: string): Promise<TreeResponse> => ({ root, tree: [], generatedAt: 1 })),
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
     index: vi.fn(async (root: string): Promise<IndexResponse> => ({ root, records: [], folders: [], generatedAt: 1, ids: true })),
@@ -567,6 +570,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
     bridge,
+    emitAutomation: (request: RendererCommand) => automationRequests.forEach(listener => listener(request)),
     emitStateChanged: (next: AppState) => stateChanged.forEach((listener) => listener(next)),
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitOpenFolder: () => menuOpenFolder.forEach((l) => l()),
@@ -7069,5 +7073,35 @@ describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
     await act(async () => sidebar.onAddVaultFor?.('zz', 'q.md'))
     expect(el.querySelector('#confirm-add-vault-for-link-text')).toBeNull()
     expect(el.querySelector('.link-notice')?.textContent).toContain('This item is in the vault "zz", which this Mac does not know. Open that folder first.')
+  })
+})
+
+
+describe('App automation navigation acknowledgement', () => {
+  it('opens the requested page and sidebar before replying', async () => {
+    const path = '/v/Mochi.md'
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Mochi', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-1', action: 'navigate', target: { path, sidebar: 'favorites', reveal: false } }))
+    expect(captured.sidebar?.lens).toBe('favorites')
+    expect(captured.sidebar?.activeFile).toBe(path)
+    expect(bridge.automation.reply).toHaveBeenCalledExactlyOnceWith({ id: 'nav-1', ok: true, value: expect.objectContaining({ path, sidebar: 'favorites', sidebarCollapsed: false, acknowledged: true }) })
+  })
+  it('preserves the hidden sidebar when only a page was requested', async () => {
+    const path = '/v/Journal.md'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Journal', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-2', action: 'navigate', target: { path } }))
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-2', ok: true, value: expect.objectContaining({ path, sidebarCollapsed: true }) })
+  })
+})
+
+
+describe('App automation live inspection', () => {
+  it('reads current tabs without navigating and reports a missing tab', async () => {
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
+    await act(async () => emitAutomation({ id: 'inspect-1', action: 'inspect', target: { kind: 'window' } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'inspect-1', ok: true, value: expect.objectContaining({ source: 'live', roots: ['/v'], tabs: [], sidebarCollapsed: true }) })
+    await act(async () => emitAutomation({ id: 'inspect-2', action: 'inspect', target: { kind: 'document', tab: 'missing' } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'inspect-2', ok: false, error: expect.objectContaining({ code: 'TAB_NOT_FOUND' }) })
   })
 })

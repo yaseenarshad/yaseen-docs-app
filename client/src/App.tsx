@@ -1,3 +1,9 @@
+import { AutomationFailure } from '@shared/automation'
+import { readLiveDocument } from './automation/liveDocument'
+import { flushSync } from 'react-dom'
+import { useAutomation } from './automation/useAutomation'
+import { useAutomationSurface, waitForSurface } from './automation/surfaces'
+import type { ListScope } from '@shared/types'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
@@ -398,7 +404,8 @@ export function App() {
   const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType, action?: Notice['action']) => showNotice({ text, icon, type, ...(action !== undefined && { action }) }), [showNotice])
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
-  const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
+  const [automationScopes, setAutomationScopes] = useState<Partial<Record<'favorites' | 'focus', ListScope>>>({})
+  const lists = useVaultListsHere(roots, notify, settings.workspaceLists, automationScopes)
   // The new tab page's Favorites column (YAZ-4450): the tab's own list, kept by value so the page cuts its columns only on a change.
   // Its favorite folders too (YAZ-4470, 11): each folder's items that this window shows.
   const favoriteFolders = lists.favoritesTab.folders
@@ -1878,6 +1885,41 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
+  useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
+  useAutomation(async target => {
+    flushSync(() => {
+      if (target.scope && (target.sidebar === 'favorites' || target.sidebar === 'focus')) {
+        setAutomationScopes(previous => ({ ...previous, [target.sidebar!]: target.scope }))
+      }
+      if (target.sidebar !== undefined) {
+        if (sidebarCollapsedRef.current) toggleSidebar()
+        changeLens(target.sidebar)
+      }
+      if (target.path !== undefined) openPage(target.path)
+    })
+    const app = await waitForSurface('app', surface => {
+      const state = surface.inspect()
+      return (target.path === undefined || state.path === target.path) && (target.sidebar === undefined || (state.sidebar === target.sidebar && state.sidebarCollapsed === false))
+    })
+    if ((target.path || target.group) && target.reveal !== false && target.sidebar && ['files', 'favorites', 'focus'].includes(target.sidebar)) {
+      const sidebar = await waitForSurface('sidebar')
+      await sidebar.reveal?.(target)
+      await waitForSurface('sidebar', surface => surface.ready && surface.inspect().revealed === (target.group ?? target.path))
+    }
+    if (target.view !== undefined) {
+      const key = `view:${String(app.inspect().tab)}`
+      const view = await waitForSurface(key)
+      flushSync(() => view.selectView?.(target.view!))
+      await waitForSurface(key, surface => String(surface.inspect().view).toLowerCase() === target.view!.toLowerCase() || surface.inspect().viewId === target.view)
+    }
+    return { ...app.inspect(), acknowledged: true }
+  }, target => {
+    if (target.kind === 'document') {
+      if (!now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
+      return readLiveDocument(target.tab)
+    }
+    return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, sidebar: sidebarLens, sidebarCollapsed }
+  })
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
   const moveBoardCardToSlot = useCallback((id: string, slot: number) => {

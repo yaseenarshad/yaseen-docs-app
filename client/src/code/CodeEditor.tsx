@@ -1,3 +1,4 @@
+import { registerLiveDocument } from '../automation/liveDocument'
 /**
  * A code file open in a tab (YAZ-3448, D1/D2): Monaco, VS Code's editor, on the document host — save
  * and sync chips, conflict bar, 500 ms autosave, quit flush, rename continuity, all from
@@ -378,6 +379,11 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
       },
     })
     const host = mount.closest('.code-editor')
+    const offLiveDocument = host === null ? null : registerLiveDocument(host, () => {
+      const selection = caretOf(editor, model)
+      const text = model.getValue().slice(Math.min(selection.anchor, selection.head), Math.max(selection.anchor, selection.head))
+      return { path, kind: 'text', content: textNow(), baselineMtime: doc.autosave.current?.mtime ?? loaded.mtime, dirty: doc.autosave.current?.dirty ?? false, selection: { ...selection, text, coordinate: 'utf16' } }
+    })
     const offPageView = host === null ? null : registerPageView(host, () => ({ scrollTop: editor.getScrollTop(), zoomKey: null, folds: folds.keys(), magnification: zoomRef.current, selection: caretOf(editor, model) }))
 
     // The project's helper for the jumps across files.
@@ -408,6 +414,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
       jumps.dispose()
       helper.dispose()
       offPageView?.()
+      offLiveDocument?.()
       folds.dispose()
       changes.dispose()
       toggleWrap.dispose()

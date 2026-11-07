@@ -1,5 +1,8 @@
 import { startAutomationServer, type AutomationServer } from '../automation/server'
 import { prepareAutomation } from './automation'
+import { registerAutomationIpc } from './ipc/automation'
+import { navigate, type NavigationHost } from './automation/navigation'
+import { parseNavigationLink } from '@shared/navigationLinks'
 import { rendererUrlFor } from './rendererUrl'
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
@@ -75,6 +78,11 @@ claimDeepLinkScheme(app, process.env)
 
 /** A parsed link routes to the best window; a bad one gets the unobtrusive notice, never a dialog. */
 function handleLink(url: string): void {
+  const target = parseNavigationLink(url)
+  if (target !== null && automationNavigation !== undefined) {
+    void navigate(automationNavigation, target).catch(() => manager.linkNotice('The requested navigation target could not be opened.'))
+    return
+  }
   const parsed = parseFileLink(url)
   if (parsed === null) {
     manager.linkNotice(`Can't open link: ${url}`)
@@ -303,6 +311,7 @@ app.on('browser-window-focus', (_event, win) => {
 })
 
 let automationServer: Promise<AutomationServer> | undefined
+let automationNavigation: NavigationHost | undefined
 
 app.whenReady().then(() => {
   if (!isPrimaryInstance) return
@@ -434,8 +443,10 @@ app.whenReady().then(() => {
     },
   })
   updater.start()
+  const navigation = registerAutomationIpc(store, manager)
+  automationNavigation = navigation
   automationServer = startAutomationServer(app.getPath('userData'), (request, content) =>
-    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion() }, request, content))
+    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), state: () => store.get(), navigation }, request, content))
   void automationServer.catch(() => console.error('[cli] Could not start the local connection. Check profile permissions.'))
   // The memory meter (YAZ-3737 D1): one `getAppMetrics` each 30 s, in memory only. The rest is read only for a report.
   meter = createMemoryMeter({

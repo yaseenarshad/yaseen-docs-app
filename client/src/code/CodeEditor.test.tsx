@@ -1,3 +1,4 @@
+import { readLiveDocument } from '../automation/liveDocument'
 /**
  * The code tab on the REAL document host (YAZ-3448) with a fake Monaco (`monacoTestKit.ts`): the
  * scenarios S1–S4 and S9 of YAZ-3448, the bytes of YAZ-3445 (line break, BOM) through the host, the
@@ -1023,5 +1024,17 @@ describe('Appearance (YAZ-3447 S2)', () => {
     await settle()
     expect(applyAppTheme).toHaveBeenLastCalledWith('dark')
     expect(created.editors).toHaveLength(1)
+  })
+})
+
+
+describe('automation live code read', () => {
+  it('reads unsaved code, line breaks, and the explicit tab selection without saving', async () => {
+    container.dataset.tab = 'live-code'
+    await opened('saved\r\n')
+    type('unsaved\ncode\n')
+    editor().setSelection({ selectionStartLineNumber: 1, selectionStartColumn: 1, positionLineNumber: 1, positionColumn: 8 })
+    expect(readLiveDocument('live-code')).toMatchObject({ source: 'live', path: PATH, kind: 'text', content: 'unsaved\r\ncode\r\n', baselineMtime: 100, dirty: true, selection: { anchor: 0, head: 7, text: 'unsaved', coordinate: 'utf16' } })
+    expect(writeFile).not.toHaveBeenCalled()
   })
 })

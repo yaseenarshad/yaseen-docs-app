@@ -1,4 +1,6 @@
 import path from 'node:path'
+import { tree } from '../fs/tree'
+import type { TreeResponse } from '@shared/types'
 import { canonicalNoteId, IDS_FILE, NOTE_ID_KEY, idsAnswer, isIdLetters, vaultNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IdsState, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
 import { boardIdOf, formerBoardIdsOf } from '@shared/drawingAssets'
@@ -18,6 +20,10 @@ import { backfill, configWithLetters, idsStateOf, planLeft, reletter, type Pass,
 import { fileTitle, scanFile, walk } from './scan'
 
 interface Entry {
+  /** A CLI read shares the live cache without enabling vault mutations. */
+  writable: boolean
+  /** Structural changes invalidate this lazy snapshot. Ordinary queries and content edits do not walk the tree. */
+  catalog?: Promise<TreeResponse>
   records: Map<string, IndexRecord>
   unsubscribe: () => void
   idle?: NodeJS.Timeout
@@ -50,6 +56,7 @@ const pending = new Map<string, Promise<Entry>>()
 let idleMs = DEFAULT_IDLE_MS
 
 function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
+  if (ev.type !== 'change' && ev.type !== 'error') entry.catalog = undefined
   switch (ev.type) {
     case 'add':
     case 'change': {
@@ -65,7 +72,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
           (record) => {
             entry.records.set(ev.path, record)
             // The diary notes each link to an ID this Mac made, with the time (YAZ-2677 R27).
-            if (entry.ids) see(root, record, Date.now())
+            if (entry.writable && entry.ids) see(root, record, Date.now())
             // Every other indexed note is known to hold what it holds; this one, what it held before.
             void sweep(root, entry, [record], (p) => (p === ev.path ? held : entry.records.get(p)?.id))
           },
@@ -89,7 +96,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       entry.records.delete(ev.path)
       entry.waits.delete(ev.path)
       schedulePersist(root, entry.records)
-      if (id !== undefined) void restoreFolderId(root, ev.path, id)
+      if (entry.writable && id !== undefined) void restoreFolderId(root, ev.path, id)
       return
     }
     case 'unlinkDir': {
@@ -220,6 +227,7 @@ export function onIdFixes(listener: FixListener | undefined): void {
  * USER asks for sweeps with no `waits` (`giveIdsNow`, `checkDuplicates`, R32).
  */
 function sweep(root: string, entry: Entry, among: readonly IndexRecord[], knew: (path: string) => string | undefined, dirs: readonly string[] = [], over: readonly string[] = []): Promise<void> {
+  if (!entry.writable) return Promise.resolve()
   return sweepIds(root, entry.records, among, knew, dirs, { waits: entry.waits, indexed: () => Promise.all([...entry.inFlight]) }).then((result) => {
     // `over` are the files whose wait was over when this sweep started: whatever it did, they wait no more, so the timer never runs for one file two times.
     for (const file of over) entry.waits.delete(file)
@@ -275,9 +283,28 @@ function wouldWrite(records: ReadonlyMap<string, IndexRecord>, dirs: readonly st
   }
 }
 
-async function build(root: string): Promise<Entry> {
+/** Normal app reads retain the existing ID adoption rule; CLI-only entries never write. */
+async function adoptExistingIds(root: string, entry: Entry): Promise<void> {
+  const { letters, ...held } = await vaultIds(root)
+  let answer = held.answer
+  // A vault that already uses IDs carries over with no question (YAZ-2523 🔒 V11): some note holds
+  // an id and a yes would write nothing, so yes is saved. One that cannot be written to stays
+  // unanswered, and so does one whose `ids.json` is not valid JSON: it is not written over. Each
+  // other key of the file stays (YAZ-2677 R10), and an answer that arrived meanwhile stands.
+  const ask = wouldWrite(entry.records, entry.dirs, letters)
+  if (entry.writable && answer === undefined && ask.notes === 0 && ask.folders === 0 && [...entry.records.values()].some((r) => !isFolderSettingsPath(r.path) && vaultNoteId(r.id, letters) !== undefined)) {
+    let now: boolean | undefined
+    answer = await saveIds(root, (config) => ((now = idsAnswer(config)) === undefined ? { ...config, enabled: true } : undefined)).then(
+      () => now ?? true,
+      () => undefined,
+    )
+  }
+  entry.ids = answer === true
+}
+
+async function build(root: string, readOnly = false): Promise<Entry> {
   const dirs: string[] = []
-  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), kept: new Map(), boards: new Map(), formerIds: new Map() }
+  const entry: Entry = { writable: !readOnly, records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), kept: new Map(), boards: new Map(), formerIds: new Map() }
   const files: string[] = []
   const boards: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
@@ -302,24 +329,10 @@ async function build(root: string): Promise<Entry> {
     })
     entry.records = records
     entry.coldDiff = diff
-    const { letters, ...held } = await vaultIds(root)
-    let answer = held.answer
-    // A vault that already uses IDs carries over with no question (YAZ-2523 🔒 V11): some note holds
-    // an id and a yes would write nothing, so yes is saved. One that cannot be written to stays
-    // unanswered, and so does one whose `ids.json` is not valid JSON: it is not written over. Each
-    // other key of the file stays (YAZ-2677 R10), and an answer that arrived meanwhile stands.
-    const ask = wouldWrite(records, dirs, letters)
-    if (answer === undefined && ask.notes === 0 && ask.folders === 0 && [...records.values()].some((r) => !isFolderSettingsPath(r.path) && vaultNoteId(r.id, letters) !== undefined)) {
-      let now: boolean | undefined
-      answer = await saveIds(root, (config) => ((now = idsAnswer(config)) === undefined ? { ...config, enabled: true } : undefined)).then(
-        () => now ?? true,
-        () => undefined,
-      )
-    }
-    entry.ids = answer === true
+    await adoptExistingIds(root, entry)
     // The diary sees each link the index holds (YAZ-2677 R27): one it saw before keeps its time.
     const now = Date.now()
-    if (entry.ids) for (const r of records.values()) see(root, r, now)
+    if (entry.writable && entry.ids) for (const r of records.values()) see(root, r, now)
   } catch (err) {
     entry.unsubscribe()
     throw err
@@ -357,14 +370,24 @@ function touch(root: string, entry: Entry): void {
  * subscribes to the root's watcher; later calls return the live map (sorted by path) with a
  * fresh `generatedAt`. Transport-agnostic: no HTTP here — the Desktop bridge calls this directly.
  */
-export async function getIndex(root: string): Promise<IndexResponse> {
-  const entry = await liveEntry(root)
+/** The metadata query's tree, held by the same entry, watcher, and idle eviction as the index. */
+export async function getReadOnlyTree(root: string): Promise<TreeResponse> {
+  const entry = await liveEntry(root, true)
+  if (!entry.catalog) {
+    const scan = tree(root).catch(error => { if (entry.catalog === scan) entry.catalog = undefined; throw error })
+    entry.catalog = scan
+  }
+  return entry.catalog
+}
+
+export async function getIndex(root: string, options: { readOnly?: boolean } = {}): Promise<IndexResponse> {
+  const entry = await liveEntry(root, options.readOnly)
   // The vault's kind is applied HERE, where the index is handed out (YAZ-2523 🔒 V5): the live
   // records hold what is in the files, whatever the answer was when they were read. So are its
   // letters (YAZ-2677 R5): they, too, can change after a record was read.
   const { answer, letters, saved } = await vaultIds(root)
   const ids = answer === true
-  if (ids && !entry.ids) sweepIndexed(root)
+  if (!options.readOnly && ids && !entry.ids) sweepIndexed(root)
   entry.ids = ids
   const sorted = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   // One map holds notes and folder settings files alike; the file name tells them apart (YAZ-2290 D8).
@@ -466,15 +489,21 @@ export async function indexWrote(p: string): Promise<void> {
 }
 
 /** The live index of `root`: built on the first call, with each scan the watcher has started already in it. */
-async function liveEntry(root: string): Promise<Entry> {
+async function liveEntry(root: string, readOnly = false): Promise<Entry> {
   let entry = entries.get(root)
   if (entry === undefined) {
     let scan = pending.get(root)
     if (scan === undefined) {
-      scan = build(root).finally(() => pending.delete(root))
+      scan = build(root, readOnly).finally(() => pending.delete(root))
       pending.set(root, scan)
     }
     entry = await scan
+  }
+  if (!readOnly && !entry.writable) {
+    entry.writable = true
+    // This is a normal app request now. Enable the same migration and sweep as an ordinary cold build.
+    await adoptExistingIds(root, entry)
+    void sweep(root, entry, [...entry.records.values()], p => entry!.records.get(p)?.id, entry.dirs)
   }
   touch(root, entry)
   // Drain scans the watcher has already started: a create that beat this call is in this snapshot,

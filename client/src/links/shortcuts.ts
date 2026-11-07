@@ -9,6 +9,8 @@
  * rule from the note's side). The vault root's entry is the notes directly in it. An `also_in`
  * entry no folder has is ignored.
  */
+import { foldersByDir } from '@shared/folderRecords'
+export { foldersByDir } from '@shared/folderRecords'
 import { ALSO_IN_KEY, alsoIn, alsoInEntries } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, withoutStaleFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
@@ -27,8 +29,6 @@ export function folderRecord(folders: readonly IndexRecord[], dir: string): Inde
 /** A folder's title (YAZ-2420 🔒 D14): its settings record's, else, while it has no `.folder.md`, its directory's name. */
 export const folderTitle = (folders: readonly IndexRecord[], dir: string): string => folderRecord(folders, dir)?.title ?? basename(dir)
 
-/** The settings records by the directory each is the folder of. */
-export const foldersByDir = (folders: readonly IndexRecord[]): Map<string, IndexRecord> => new Map(folders.map((r) => [dirname(r.path), r]))
 
 /** How a folder's name reads where a note's could stand: the `[[` picker's row, an id link's menu. */
 export const folderLabel = (name: string): string => `${name} (folder)`
