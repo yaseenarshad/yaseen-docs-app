@@ -17,6 +17,8 @@ export interface AutomationRequest {
   issuedAt: number
   command: string
   args: Record<string, unknown>
+  /** Distinguish an omitted body from a deliberately empty body. */
+  hasContent?: boolean
 }
 export interface AutomationReceipt {
   id: string

@@ -1,3 +1,5 @@
+import { registerLiveDocument } from '../automation/liveDocument'
+import { AutomationFailure } from '@shared/automation'
 /**
  * A `.drawio` open in a tab (YAZ-3028 D2, Draw's YAZ-1802): `DrawingEditor`'s twin — save and sync chips, conflict bar,
  * debounced autosave, quit flush, rename continuity, all from `useDocumentHost` (YAZ-2073 🔒 D16) —
@@ -189,6 +191,17 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     focus: () => frameRef.current?.focus(),
   })
   const { autosave, retired, start } = board
+
+  useEffect(() => {
+    const host = board.hostRef.current
+    if (!host) return
+    return registerLiveDocument(host, () => {
+      const save = autosave.current
+      if (!save || retired.current || pendingLoad.current !== null) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The diagram is not ready.')
+      return { path, kind: 'diagram', content: wantedReadOnly.current ? setDiagramReadOnly(latestXml.current, true) : latestXml.current, baselineMtime: save.mtime, dirty: save.dirty }
+    })
+  }, [path, board.hostRef, retired, autosave])
+
 
   // The one message listener: the protocol, in the order drawioProtocol.ts documents.
   useEffect(() => {

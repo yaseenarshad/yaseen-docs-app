@@ -1,3 +1,4 @@
+import { readLiveDocument } from '../automation/liveDocument'
 /**
  * The drawing document's chrome, with the ENGINE replaced by a stub (Draw's 🔒 YAZ-1810, ported by YAZ-3028).
  *
@@ -1118,5 +1119,18 @@ describe('YAZ-3943 demo round 3 — what the confirm box before a picture move s
     expect(OUTSIDE_FOLDER_WARNING).toBe('This folder is outside the vault. Your other Macs, Version history and copies of the vault will not have these pictures unless you sync this folder yourself.')
     // A folder outside the home folder shows its whole path.
     expect(picturesMoveAsk('folder', { count: 1, bytes: 1 }, 'x', '/Volumes/Disk/pics', '/Users/me').body).toContain('to /Volumes/Disk/pics.')
+  })
+})
+
+describe('automation live drawing', () => {
+  it('reads the unsaved scene and its image bytes without flushing', async () => {
+    container.dataset.tab = 'live-drawing'
+    render(); await flush(); emit(1, scene())
+    const files = { image: { mimeType: 'image/png', dataURL: 'data:image/png;base64,aGk=' } }
+    emit(2, scene([{ id: 'unsaved', type: 'image', fileId: 'image' }]), files)
+    const live = readLiveDocument('live-drawing')
+    expect(live).toMatchObject({ path: PATH, kind: 'drawing', source: 'live', baselineMtime: 100, dirty: true })
+    expect(JSON.parse(live.content)).toMatchObject({ elements: [{ id: 'unsaved' }], files })
+    expect(save).not.toHaveBeenCalled()
   })
 })

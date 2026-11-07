@@ -44,7 +44,7 @@ export class RequestQueue {
     this.prune()
     const age = this.now() - request.issuedAt
     if (age >= AUTOMATION_LIMITS.receiptMs || age < -30_000) throw new AutomationFailure('UNKNOWN_REQUEST', 'This request is outside the receipt window. Inspect state before another mutation.')
-    const fingerprint = createHash('sha256').update(canonical({ command: request.command, args: request.args })).update(content).digest('hex')
+    const fingerprint = createHash('sha256').update(canonical({ command: request.command, args: request.args, hasContent: request.hasContent ?? content.length > 0 })).update(content).digest('hex')
     const existing = this.entries.get(request.id)
     if (existing) {
       if (existing.fingerprint !== fingerprint || existing.issuedAt !== request.issuedAt) throw new AutomationFailure('REQUEST_MISMATCH', 'This request ID was used with different input.')
@@ -110,7 +110,15 @@ export class RequestQueue {
     this.contentBytes -= entry.contentBytes
     entry.operation.writes.forEach(key => this.locked.delete(key))
     this.active--
-    const retained = Buffer.byteLength(JSON.stringify(result)) <= AUTOMATION_LIMITS.receiptBytes
+    let bytes: number
+    try {
+      bytes = Buffer.byteLength(JSON.stringify(result))
+      if (bytes > AUTOMATION_LIMITS.contentBytes) throw new AutomationFailure('TOO_LARGE', 'The result exceeds the connection limit. Use a paged read or file export.')
+    } catch (error) {
+      result = automationError(error instanceof AutomationFailure ? error : new AutomationFailure('INVALID_RESULT', 'The command returned a value that cannot be serialized. Inspect its current state before another mutation.'))
+      bytes = Buffer.byteLength(JSON.stringify(result))
+    }
+    const retained = bytes <= AUTOMATION_LIMITS.receiptBytes
     entry.receipt = { id: entry.receipt.id, state: 'completed', resultRetained: retained, ...(retained ? { result } : {}) }
     entry.resolve(result)
     // Do not retain a resolved promise or closure containing a large body or a protected input.

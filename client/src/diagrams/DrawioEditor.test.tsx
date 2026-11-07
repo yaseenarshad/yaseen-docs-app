@@ -1,3 +1,4 @@
+import { readLiveDocument } from '../automation/liveDocument'
 /**
  * The diagram document's host (YAZ-1802), with draw.io replaced by the one thing the host can see
  * of it: postMessage. The iframe never loads in jsdom, so the test plays draw.io — it posts the
@@ -395,5 +396,17 @@ describe('read only: a change draw.io queued before the switch landed (YAZ-3116 
     const written = save.mock.calls[0]![0]
     expect(written.expectedMtime).toBe(300)
     expect(written.xml).toBe(EDITED.replace('<mxfile>', '<mxfile yaseendraw-readonly="1">'))
+  })
+})
+
+describe('automation live diagram', () => {
+  it('reads the unsaved XML without flushing and refuses a loading frame', async () => {
+    container.dataset.tab = 'live-diagram'
+    render(); await settle()
+    expect(() => readLiveDocument('live-diagram')).toThrow('not ready')
+    tapFrame(); drawio({ event: 'init' }); drawio({ event: 'load', xml: XML })
+    drawio({ event: 'autosave', xml: EDITED })
+    expect(readLiveDocument('live-diagram')).toMatchObject({ path: PATH, kind: 'diagram', content: EDITED, source: 'live', baselineMtime: 100, dirty: true })
+    expect(save).not.toHaveBeenCalled()
   })
 })

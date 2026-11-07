@@ -9,7 +9,7 @@ export function makeRequest(connection: Connection, command: string, args: Recor
   return { version: connection.version, token: connection.token, session: connection.session, id: randomUUID(), issuedAt: Date.now(), command, args }
 }
 
-export async function sendRequest(connection: Connection, request: AutomationRequest, content = Buffer.alloc(0), waitMs: number = AUTOMATION_LIMITS.waitMs): Promise<AutomationResult> {
+export async function sendRequest(connection: Connection, request: AutomationRequest, content: Buffer = Buffer.alloc(0), waitMs: number = AUTOMATION_LIMITS.waitMs): Promise<AutomationResult> {
   const packet = encodePacket(request, content)
   const socket = connect(connection.endpoint)
   const deadline = setTimeout(() => socket.destroy(new AutomationFailure('WAIT_TIMEOUT', `The wait ended. Request ${request.id} may still finish. Inspect its receipt; do not replay the mutation.`)), waitMs)

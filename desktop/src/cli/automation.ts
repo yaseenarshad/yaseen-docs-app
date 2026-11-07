@@ -1,7 +1,7 @@
+import { commandInput } from './input'
 import { spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, isAbsolute, resolve } from 'node:path'
+import { basename, isAbsolute } from 'node:path'
 import { AUTOMATION_LIMITS, AUTOMATION_VERSION, AutomationFailure, type AutomationRequest } from '@shared/automation'
 import { AUTOMATION_COMMANDS, commandDefinition, validateInput, type CommandSchema } from '@shared/automationCommands'
 import { makeRequest, sendRequest } from '../automation/client'
@@ -27,17 +27,11 @@ The response includes its request reference. Large results are not kept in recei
 Existing edit and delete commands still operate on comments.
 `
 
-export const isAutomationCommand = (argv: readonly string[]): boolean => argv[0] === 'capabilities' || AUTOMATION_COMMANDS.some(command => command.name.split('.')[0] === argv[0] && (argv[0] !== 'comment' || command.name === `${argv[0]}.${argv[1]}`))
+export const isAutomationCommand = (argv: readonly string[]): boolean => argv[0] === 'capabilities' || AUTOMATION_COMMANDS.some(command => command.name.split('.')[0] === argv[0] && (!['comment', 'daily'].includes(argv[0]) || command.name === `${argv[0]}.${argv[1]}`))
 
 function parsedValue(schema: CommandSchema, value: string): unknown {
   if (schema.type === 'string') return value
   try { return JSON.parse(value) } catch { throw new AutomationFailure('INVALID_INPUT', 'Expected JSON for this input field.') }
-}
-
-async function source(value: string, io: Io): Promise<string> {
-  if (value === '-') return io.stdin()
-  if (value.startsWith('@')) return readFile(resolve(value.slice(1)), 'utf8')
-  return value
 }
 
 /** Launch this CLI's owning executable, never an app found by name or a user's shell command. */
@@ -125,7 +119,7 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
     if (!Number.isInteger(waitMs) || waitMs < 1 || waitMs > 300_000) throw new AutomationFailure('INVALID_INPUT', '--wait-ms must be between 1 and 300000.')
     if (input === '-' && body === '-') throw new AutomationFailure('INVALID_INPUT', 'Only one input can read stdin.')
     if (input !== undefined) {
-      const data: unknown = JSON.parse(await source(input, io))
+      const data: unknown = JSON.parse((await commandInput(input, io, AUTOMATION_LIMITS.controlBytes)).toString('utf8'))
       validateInput(definition.input, data)
       for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
         if (Object.hasOwn(args, key)) throw new AutomationFailure('INVALID_INPUT', `Repeated input: ${key}`)
@@ -136,10 +130,10 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
     if (body === undefined && definition.contentRequired) throw new AutomationFailure('INVALID_INPUT', 'This command requires --body, including an empty string for an empty document.')
     if (body !== undefined && !definition.content) throw new AutomationFailure('INVALID_INPUT', 'This command accepts no body.')
     if (definition.content === 'secret' && body !== '-' && !body?.startsWith('@')) throw new AutomationFailure('INVALID_INPUT', 'Supply secrets through stdin or a private file.')
-    const content = Buffer.from(body === undefined ? '' : await source(body, io))
+    const content = body === undefined ? Buffer.alloc(0) : await commandInput(body, io, definition.content === 'secret' ? AUTOMATION_LIMITS.controlBytes : AUTOMATION_LIMITS.contentBytes, definition.content === 'secret')
     if (content.length > AUTOMATION_LIMITS.contentBytes) throw new AutomationFailure('TOO_LARGE', 'The body is too large.')
     const connection = await connectionFor(profile, start)
-    request = makeRequest(connection, name, args)
+    request = { ...makeRequest(connection, name, args), hasContent: body !== undefined }
     if (reference !== undefined) {
       const [session, id, issuedAt, extra] = reference.split('/')
       if (!session || !id || !issuedAt || extra !== undefined || !Number.isFinite(Number(issuedAt))) throw new AutomationFailure('INVALID_INPUT', 'Invalid request reference.')

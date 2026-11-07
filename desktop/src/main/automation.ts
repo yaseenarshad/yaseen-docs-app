@@ -1,3 +1,8 @@
+import { vaultConfiguration } from './automation/vaultConfiguration'
+import { linkCommand } from './automation/links'
+import { noteCommand } from './automation/notes'
+import { ReviewsShapeError } from '@shared/reviews'
+import { editorCommand } from './automation/editor'
 import { boardCommand } from './automation/boards'
 import { fileOperation } from './automation/fileOperations'
 import { groupCommand } from './automation/groups'
@@ -18,8 +23,19 @@ import type { NavigationInput } from '@shared/automationNavigation'
 function prepare(context: { profile: string; version: string; state?: () => AppState; navigation?: NavigationHost; store?: Store }, request: AutomationRequest, content: Buffer): Operation {
   const definition = commandDefinition(request.command)
   validateInput(definition.input, request.args)
-  if (!definition.content && content.length) throw new AutomationFailure('INVALID_INPUT', 'This command accepts no content.')
+  const hasContent = request.hasContent ?? content.length > 0
+  if (!hasContent && content.length) throw new AutomationFailure('INVALID_INPUT', 'Content bytes require the body flag.')
+  if (definition.contentRequired && !hasContent) throw new AutomationFailure('INVALID_INPUT', 'This command requires a body, including an empty body when intended.')
+  if (!definition.content && hasContent) throw new AutomationFailure('INVALID_INPUT', 'This command accepts no content.')
   switch (request.command) {
+    case 'declaration.list': case 'declaration.patch': case 'declaration.remove': case 'icon.list': case 'icon.set': case 'icon.remove': case 'vaultConfig.read': case 'vaultConfig.patch':
+      return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => vaultConfiguration(context.state!(), request.command, request.args) }
+    case 'link.resolve': case 'link.outgoing': case 'link.incoming':
+      return { writes: [], run: () => linkCommand(context.state!(), request.command, request.args) }
+    case 'daily.find': case 'daily.create': case 'template.read': case 'template.write': case 'review.queue':
+      return { writes: definition.effect === 'read' ? [] : ['documents'], run: () => noteCommand(context.state!(), request.command, request.args, content) }
+    case 'editor.select': case 'editor.replace': case 'editor.format': case 'editor.undo': case 'editor.redo': case 'editor.save':
+      return { writes: ['navigation', 'documents'], run: () => editorCommand(context.navigation!, request.command, request.args, content) }
     case 'drawing.read': case 'drawing.save': case 'drawing.export': case 'diagram.read': case 'diagram.save': case 'diagram.export':
       return { writes: ['large-content', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => boardCommand(context.state!(), request.command, request.args, content) }
     case 'file.rename': case 'file.retitle': case 'file.trash': case 'file.restore':
@@ -53,9 +69,10 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
       const { roots } = await scopeRoots(context.state!(), request.args as ResourceScope)
       return readSaved(await resolveTarget(roots, request.args as TargetInput))
     } }
+    case 'review.list': case 'review.keep': case 'review.remove': case 'review.reset': case 'review.setEnabled':
     case 'file.write': case 'file.append': case 'property.set': case 'property.remove':
     case 'comment.list': case 'comment.add': case 'comment.update': case 'comment.remove': case 'note.create':
-      return { writes: request.command === 'comment.list' ? [] : ['documents'], run: () => documentCommand(context.state!(), request.command, request.args, content) }
+      return { writes: definition.effect === 'read' ? [] : ['documents'], run: () => documentCommand(context.state!(), request.command, request.args, content, hasContent) }
     default: throw new AutomationFailure('UNKNOWN_COMMAND', 'This command has no adapter.')
   }
 }
@@ -67,7 +84,7 @@ export function prepareAutomation(...args: Parameters<typeof prepare>): Operatio
     try { return await operation.run() }
     catch (error) {
       if (error instanceof BridgeFailure) throw new AutomationFailure(error.code, error.message)
-      if (error instanceof FrontmatterWriteError || error instanceof CommentsShapeError) throw new AutomationFailure('INVALID_INPUT', error.message)
+      if (error instanceof FrontmatterWriteError || error instanceof CommentsShapeError || error instanceof ReviewsShapeError) throw new AutomationFailure('INVALID_INPUT', error.message)
       throw error
     }
   } }

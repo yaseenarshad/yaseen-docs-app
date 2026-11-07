@@ -1,3 +1,5 @@
+import { registerLiveDocument } from '../automation/liveDocument'
+import { AutomationFailure } from '@shared/automation'
 /**
  * THE DRAWING DOCUMENT (Draw's 🔒 YAZ-1810, ported by YAZ-3028 D2): a `.excalidraw` opened full-pane in a
  * tab. `Editor` dispatches `kind === 'drawing'` here, and this is the shell's ordinary document host — save
@@ -379,6 +381,18 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     focus: () => surface.current?.focus(),
   })
   const { autosave, start, chips, readOnly, reload } = board
+
+  useEffect(() => {
+    const host = board.hostRef.current
+    if (!host) return
+    return registerLiveDocument(host, () => {
+      const current = snapshot.current, save = autosave.current
+      if (!current || !save || board.retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The drawing is not ready.')
+      const { json, files } = current.serialize()
+      return { path, kind: 'drawing', content: JSON.stringify({ ...JSON.parse(json), files }), baselineMtime: save.mtime, dirty: save.dirty }
+    })
+  }, [path, board.hostRef, board.retired, autosave])
+
   // The hover preview: the app's "Links in drawings" AND this board's own switch (YAZ-3943 demo 2); clicks stay.
   const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: { ...linkProps, hoverLinks: linkProps.hoverLinks === true && !hoverLinksOff } })
   /**

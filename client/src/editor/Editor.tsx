@@ -1,4 +1,5 @@
-import { registerLiveDocument } from '../automation/liveDocument'
+import { markdownAction } from './automationActions'
+import { registerLiveDocument, editorStateVersion } from '../automation/liveDocument'
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
 import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
@@ -938,6 +939,14 @@ function CrepeHost({
           const parts = diskParts(), bodyNow = getMarkdownForSave(crepe)
           const { selection, doc } = editorViewOf(crepe).state
           return { path: file.path, kind: 'markdown', content: parts.frontmatter + bodyNow, baselineMtime: controller!.mtime, dirty: bodyNow !== parts.body, selection: { anchor: selection.anchor, head: selection.head, text: doc.textBetween(selection.from, selection.to, '\n'), coordinate: 'prosemirror' } }
+        }, {
+          version: () => `${editorStateVersion(editorViewOf(crepe).state)}:${controller!.mtime}`,
+          actions: ['select', 'replace', 'format', 'undo', 'redo', 'save'],
+          run: async action => {
+            if (action.action !== 'save') markdownAction(crepe, action)
+            controller!.update(getMarkdownForSave(crepe))
+            if (action.action === 'save') await controller!.flush()
+          },
         })
         offPageView = registerPageView(scroller, () => ({
           scrollTop: scroller.scrollTop,

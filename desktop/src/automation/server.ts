@@ -37,7 +37,8 @@ function validate(value: unknown, connection: Connection): AutomationRequest {
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new AutomationFailure('UNAUTHORIZED', 'The profile token is invalid.')
   if (request.version !== AUTOMATION_VERSION) throw new AutomationFailure('PROTOCOL_VERSION', 'This CLI protocol version is unsupported.')
   if (request.session !== connection.session) throw new AutomationFailure('UNKNOWN_REQUEST', 'Docs restarted. Inspect state before another mutation.')
-  if (Object.keys(request).some(key => !['version', 'session', 'token', 'id', 'issuedAt', 'command', 'args'].includes(key)) ||
+  if (Object.keys(request).some(key => !['version', 'session', 'token', 'id', 'issuedAt', 'command', 'args', 'hasContent'].includes(key)) ||
+      (request.hasContent !== undefined && typeof request.hasContent !== 'boolean') ||
       typeof request.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(request.id) ||
       typeof request.command !== 'string' || request.command.length > 100 || !Number.isFinite(request.issuedAt) ||
       !request.args || typeof request.args !== 'object' || Array.isArray(request.args)) throw new AutomationFailure('BAD_REQUEST', 'Invalid request fields.')

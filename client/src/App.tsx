@@ -1,5 +1,5 @@
 import { AutomationFailure } from '@shared/automation'
-import { readLiveDocument } from './automation/liveDocument'
+import { readLiveDocument, runEditorAction } from './automation/liveDocument'
 import { flushSync } from 'react-dom'
 import { useAutomation } from './automation/useAutomation'
 import { useAutomationSurface, waitForSurface } from './automation/surfaces'
@@ -1921,6 +1921,7 @@ export function App() {
     }
     return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, sidebar: sidebarLens, sidebarCollapsed }
   }, async target => {
+    if (target.command === 'editor.action') return runEditorAction(target)
     if (target.command === 'file.restore') {
       if (replaying.current) throw new AutomationFailure('BUSY', 'An organization history action is still running.')
       const entry = moveHistory.current.inspect().undo.at(-1)

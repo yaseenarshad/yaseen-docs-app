@@ -33,12 +33,8 @@ export const folderTitle = (folders: readonly IndexRecord[], dir: string): strin
 /** How a folder's name reads where a note's could stand: the `[[` picker's row, an id link's menu. */
 export const folderLabel = (name: string): string => `${name} (folder)`
 
-/** The settings records by folder id. Of two folders still sharing an id the first in path order is the one it names — the id sweep's own choice. */
-export function foldersById(folders: readonly IndexRecord[]): Map<string, IndexRecord> {
-  const byId = new Map<string, IndexRecord>()
-  for (const folder of folders) if (folder.id !== undefined && !byId.has(folder.id)) byId.set(folder.id, folder)
-  return byId
-}
+export { foldersById } from '@shared/folderRecords'
+import { foldersById } from '@shared/folderRecords'
 
 const rowsCache = new WeakMap<readonly IndexRecord[], WeakMap<readonly IndexRecord[], Map<string, IndexRecord[]>>>()
 

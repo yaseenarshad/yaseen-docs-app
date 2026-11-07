@@ -1,3 +1,4 @@
+import { AutomationFailure } from '@shared/automation'
 import { registerLiveDocument } from '../automation/liveDocument'
 /**
  * A code file open in a tab (YAZ-3448, D1/D2): Monaco, VS Code's editor, on the document host — save
@@ -383,6 +384,26 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
       const selection = caretOf(editor, model)
       const text = model.getValue().slice(Math.min(selection.anchor, selection.head), Math.max(selection.anchor, selection.head))
       return { path, kind: 'text', content: textNow(), baselineMtime: doc.autosave.current?.mtime ?? loaded.mtime, dirty: doc.autosave.current?.dirty ?? false, selection: { ...selection, text, coordinate: 'utf16' } }
+    }, {
+      version: () => `${model.getAlternativeVersionId()}:${JSON.stringify(caretOf(editor, model))}:${doc.autosave.current?.mtime}`,
+      actions: ['select', 'replace', 'undo', 'redo', 'save'],
+      run: async action => {
+        if (retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'This editor has retired.')
+        if (action.action === 'select') {
+          if (![action.anchor, action.head].every(at => Number.isInteger(at) && at >= 0 && at <= model.getValueLength())) throw new AutomationFailure('INVALID_INPUT', 'Selection positions are outside this document.')
+          const anchor = model.getPositionAt(action.anchor), head = model.getPositionAt(action.head)
+          editor.setSelection({ selectionStartLineNumber: anchor.lineNumber, selectionStartColumn: anchor.column, positionLineNumber: head.lineNumber, positionColumn: head.column })
+        } else if (action.action === 'replace') {
+          const range = editor.getSelection()
+          if (!range) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'This editor has no selection.')
+          model.pushStackElement()
+          model.pushEditOperations([range], [{ range, text: action.text }], () => null)
+          model.pushStackElement()
+        } else if (action.action === 'undo' || action.action === 'redo') {
+          if (!(action.action === 'undo' ? model.canUndo() : model.canRedo())) throw new AutomationFailure('NO_HISTORY', 'There is no editor history for this action.')
+          await (action.action === 'undo' ? model.undo() : model.redo())
+        } else if (action.action === 'save') await doc.autosave.current?.flush()
+      },
     })
     const offPageView = host === null ? null : registerPageView(host, () => ({ scrollTop: editor.getScrollTop(), zoomKey: null, folds: folds.keys(), magnification: zoomRef.current, selection: caretOf(editor, model) }))
 

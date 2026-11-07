@@ -64,4 +64,15 @@ describe('bounded requests', () => {
     expect(queue.receipt('small-255').state).toBe('unknown')
     expect(() => queue.submit(request('small-255'), Buffer.alloc(0), () => ({ writes: [], run: async () => null }))).toThrow('outside the receipt window')
   })
+  it('refuses changed empty-body meaning on a retry and drains after an invalid result', async () => {
+    const queue = new RequestQueue(() => 100_000)
+    const req = { ...request('empty'), hasContent: true }
+    await queue.submit(req, Buffer.alloc(0), () => ({ writes: [], run: async () => 'done' }))
+    expect(() => queue.submit({ ...req, hasContent: false }, Buffer.alloc(0), () => ({ writes: [], run: async () => 'wrong' }))).toThrow('different input')
+    const circular: Record<string, unknown> = {}; circular.self = circular
+    expect(await queue.submit(request('invalid'), Buffer.alloc(0), () => ({ writes: ['file'], run: async () => circular }))).toMatchObject({ ok: false, error: { code: 'INVALID_RESULT' } })
+    expect(await queue.submit(request('after'), Buffer.alloc(0), () => ({ writes: ['file'], run: async () => 'later' }))).toEqual({ ok: true, value: 'later' })
+    await queue.close()
+  })
+
 })

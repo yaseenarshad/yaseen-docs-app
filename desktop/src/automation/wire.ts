@@ -2,7 +2,7 @@ import type { Socket } from 'node:net'
 import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
 
 /** Two bounded frames: a small control object, then optional content. Never one unbounded JSON line. */
-export function encodePacket(control: unknown, content = Buffer.alloc(0)): Buffer {
+export function encodePacket(control: unknown, content: Buffer = Buffer.alloc(0)): Buffer {
   const head = Buffer.from(JSON.stringify(control))
   if (head.length > AUTOMATION_LIMITS.controlBytes || content.length > AUTOMATION_LIMITS.contentBytes) {
     throw new AutomationFailure('TOO_LARGE', 'The request exceeds the transport limit.')

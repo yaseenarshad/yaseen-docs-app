@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { cleanIconPaths, ICONS_FILE, parseIconsConfig, remapIconPaths, type IconsConfig, type VaultIcons } from '@shared/vaultIcons'
+import { cleanIconPaths, ICONS_FILE, isIconId, MAX_ICON_PATHS, parseIconsConfig, remapIconPaths, type IconsConfig, type VaultIcons } from '@shared/vaultIcons'
 import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
 import { deletedAt, owningRoot, renamedTo, toAbs, toRel, under } from './favorites'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
@@ -89,4 +89,22 @@ export function renamePath(roots: readonly string[], oldPath: string, newPath: s
 /** D: a deleted row's pick, and every pick under a deleted folder, leaves the file. */
 export function removePath(roots: readonly string[], deleted: string): Promise<void> {
   return repair(roots, deleted, deletedAt(deleted))
+}
+
+/** Patch only named icon picks against the latest value, sharing UI/rename locks. */
+export async function patchIcons(root: string, changes: Record<string, string | null>): Promise<VaultIcons> {
+  const r = requireAbsPath(root, 'root')
+  for (const [p, icon] of Object.entries(changes)) {
+    if (!path.isAbsolute(p) || !under(r, p) || p === r || (icon !== null && !isIconId(icon))) throw new BridgeFailure('BAD_REQUEST', 'An icon patch needs paths inside the vault and valid icon IDs or null.')
+  }
+  return chained(r, async () => {
+    const raw = await readRaw(r)
+    if (raw.state === 'bad') throw new BridgeFailure('INVALID_CONFIG', 'icons.json is malformed; fix or delete it', { path: raw.file })
+    const current = raw.state === 'ok' ? toVault(r, raw.config) : { paths: {} }
+    const paths = { ...current.paths }
+    for (const [p, icon] of Object.entries(changes)) { if (icon === null) delete paths[p]; else paths[p] = icon }
+    if (Object.keys(paths).length > MAX_ICON_PATHS) throw new BridgeFailure('BAD_REQUEST', 'The icon pick limit would be exceeded.')
+    if (JSON.stringify(paths) !== JSON.stringify(current.paths)) await writeConfig(r, ICONS_FILE, toConfig(r, { paths }))
+    return { paths }
+  })
 }
