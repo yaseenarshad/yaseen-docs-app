@@ -839,6 +839,15 @@
   min-width: 200px;
 }
 
+/* "Edit column…" (YAZ-4533): the Properties popover's column editor, at that popover's size. */
+.view-header-menu .column-detail {
+  width: 260px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  font-size: 13px;
+}
+
 .view-header-menu .view-header-menu__rename,
 .view-header-menu .view-relation .view-input {
   width: 100%;

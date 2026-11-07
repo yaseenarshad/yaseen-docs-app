@@ -30,6 +30,7 @@ import { setViewOrder } from './columnOrder'
 import { NO_READ_ONLY, READ_ONLY_TIP, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
+import type { FolderHost } from '../ViewsPane'
 
 export interface TableViewProps {
   /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
@@ -73,6 +74,8 @@ export interface TableViewProps {
   resolve: Resolver
   /** The window's link resolver, by which a link column's target names its folder. */
   resolveLink: ResolveLink
+  /** `FolderHost.setColumn`: the header menu's "Edit column…" writes one declaration through it (YAZ-4533). */
+  setColumn: FolderHost['setColumn']
   /** `FolderHost.setColumns` (YAZ-1513): the header menu's "Add column to the right…" declares through it. */
   declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
   /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. Absent → the menu has no such item. */
@@ -137,7 +140,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
@@ -629,7 +632,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             viewIndex={viewIndex}
             keys={keys}
             takenKeys={() => allPropertyKeys(def, view, records, settings.columns)}
-            columns={settings.columns}
+            records={records}
+            properties={properties}
+            folder={{ settings, setColumn, deleteColumn, valueCount }}
             onUpdate={onUpdate}
             declareColumn={declareColumn}
             onDeleteColumn={deleteColumn && setConfirmDelete}

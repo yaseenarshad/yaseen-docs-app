@@ -488,6 +488,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
           vaultFolders={vaultFolders}
           resolve={resolve}
           resolveLink={folder.resolveLink}
+          setColumn={folder.setColumn}
           declareColumn={folder.setColumns}
           deleteColumn={folder.deleteColumn}
           valueCount={folder.valueCount}
