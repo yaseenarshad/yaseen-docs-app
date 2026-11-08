@@ -32,6 +32,7 @@ import { setViewOrder } from './columnOrder'
 import { NO_READ_ONLY, READ_ONLY_TIP, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
+import type { FolderHost } from '../ViewsPane'
 
 export interface TableViewProps {
   /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
@@ -75,6 +76,8 @@ export interface TableViewProps {
   resolve: Resolver
   /** The window's link resolver, by which a link column's target names its folder. */
   resolveLink: ResolveLink
+  /** `FolderHost.setColumn`: the header menu's "Edit column…" writes one declaration through it (YAZ-4533). */
+  setColumn: FolderHost['setColumn']
   /** `FolderHost.setColumns` (YAZ-1513): the header menu's "Add column to the right…" declares through it. */
   declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
   /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. Absent → the menu has no such item. */
@@ -139,7 +142,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
@@ -242,6 +245,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     return offset
   })
   const isFrozen = (index: number) => index < frozen
+  /** The freeze line (YAZ-4534): the table block's 3px edge on the last frozen column. */
+  const frozenClass = (index: number): string | false => isFrozen(index) && (index === frozen - 1 ? 'view-table__frozen view-table__frozen-end' : 'view-table__frozen')
   const frozenStyle = (index: number): CSSProperties | undefined => (isFrozen(index) ? { left: frozenLeft[index] } : undefined)
   /** The view's cell and row fills by note path (YAZ-4536): built once per fills write, two map reads per cell. */
   const fills = useMemo(() => fillIndex(view.fills, resolveLink), [view.fills, resolveLink])
@@ -438,7 +443,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 <th
                   key={key}
                   scope="col"
-                  className={[isFrozen(index) && 'view-table__frozen', ...headerDragClass(index)].filter(Boolean).join(' ') || undefined}
+                  className={[frozenClass(index), ...headerDragClass(index)].filter(Boolean).join(' ') || undefined}
                   style={{ width: widthOf(key), ...frozenStyle(index) }}
                   onContextMenu={openHeaderMenu(key)}
                   {...headerDrag(index)}
@@ -496,7 +501,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       <td
                         key={key}
                         // `view-table__name` has no style: the tests and the end-to-end specs find the Name cell by it.
-                        className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', isFrozen(c) && 'view-table__frozen', fill !== undefined && 'view-table__cell--fill'].filter(Boolean).join(' ') || undefined}
+                        className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', frozenClass(c), fill !== undefined && 'view-table__cell--fill'].filter(Boolean).join(' ') || undefined}
                         // A fill (YAZ-4536) is a custom property that views.css paints over the cell's base.
                         style={fill === undefined ? frozenStyle(c) : ({ ...frozenStyle(c), '--view-cell-fill': fillPaint(fill) } as CSSProperties)}
                         tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
@@ -566,7 +571,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   const label = propertyLabel(def, key)
                   const kind = summaryKindOf(view, key)
                   return (
-                    <td key={key} className={`view-table__summary${isFrozen(index) ? ' view-table__frozen' : ''}`} style={frozenStyle(index)}>
+                    <td key={key} className={['view-table__summary', frozenClass(index)].filter(Boolean).join(' ')} style={frozenStyle(index)}>
                       <button
                         type="button"
                         className="view-table__summary-btn"
@@ -636,7 +641,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             viewIndex={viewIndex}
             keys={keys}
             takenKeys={() => allPropertyKeys(def, view, records, settings.columns)}
-            columns={settings.columns}
+            records={records}
+            properties={properties}
+            folder={{ settings, setColumn, deleteColumn, valueCount }}
             onUpdate={onUpdate}
             declareColumn={declareColumn}
             onDeleteColumn={deleteColumn && setConfirmDelete}

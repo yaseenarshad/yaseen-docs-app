@@ -1,12 +1,16 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { defaultLabel, propertyLabel } from '../engine'
 import { undeletableReason } from '../deleteColumn'
 import type { ColumnDecl } from '../folderSettings'
-import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
+import { type Mutate, type ViewDef, type ViewSet, groupByLevels } from '../viewSchema'
+import type { FolderHost } from '../ViewsPane'
 import { AddColumn } from './AddColumn'
+import { ColumnDetail, columnTypeLabel } from './ColumnDetail'
 import { displayNameOf, setDisplayName } from './columnLabel'
 import { setViewOrder, withOrder } from './columnOrder'
+import { frozenColumnCount } from './frozenColumns'
 import { canonicalKey } from './keys'
 import { TextField } from './TextField'
 
@@ -21,8 +25,12 @@ export interface TableHeaderMenuProps {
   keys: readonly string[]
   /** Every key the folder already offers, declared columns included — "Add column" refuses a repeat. Asked only once the form opens. */
   takenKeys: () => readonly string[]
-  /** The folder's own declarations, spread under the new one. */
-  columns: Record<string, ColumnDecl>
+  /** The folder's rows: the type line infers an undeclared column's kind from them (YAZ-4533). */
+  records: readonly IndexRecord[]
+  /** The vault's property declarations, the type line's and the editor's fallback. */
+  properties: PropertiesResponse | null
+  /** The host's AHEAD declarations — spread under a new one — and the doors "Edit column…" writes through (YAZ-4533). */
+  folder: Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount'>
   onUpdate: Mutate
   /** `FolderHost.setColumns`: declare on the folder AND show, one write. */
   declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
@@ -45,9 +53,16 @@ export function insertAfter(keys: readonly string[], after: string, next: string
  * YAZ-1007); "Add column to the right…" is the SAME "+ Add column" form, landing the new key
  * after this column instead of at the end; "Delete column…" (confirm-first, `views/deleteColumn.ts`)
  * is disabled with a tooltip for built-in keys. The `#` header offers only "Hide row numbers".
+ * A grey "<Type> · <key>" line tops the column menu, and "Edit column…" opens `ColumnDetail` — the
+ * Properties menu's own column editor — inside it (YAZ-4533). Sort A to Z / Z to A, "Group by this
+ * column" and Freeze / ✓ Frozen / Unfreeze write the same `sort`, `groupBy` and `frozenColumns` the
+ * Sort and Properties menus write (YAZ-4534).
  */
-export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, columns, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
-  const [mode, setMode] = useState<'menu' | 'rename' | 'add'>('menu')
+export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, records, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
+  const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
+  /** Once per menu, not per keystroke in its fields: the kind may walk the rows. */
+  const typeLabel = useMemo(() => (columnKey === null ? '' : columnTypeLabel(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
+  const columns = folder.settings.columns
 
   if (columnKey === null) {
     return (
@@ -72,11 +87,51 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
   const key = columnKey
   const label = propertyLabel(def, key)
   const reason = undeletableReason(key)
+  const c = canonicalKey(key)
+  const hide = () => onUpdate((d) => setViewOrder(d, viewIndex, keys.filter((k) => canonicalKey(k) !== c)))
+  const index = keys.findIndex((k) => canonicalKey(k) === c)
+  const frozen = frozenColumnCount(def.views[viewIndex].frozenColumns, keys.length)
+  /** One write, then the menu closes. */
+  const write = (edit: (v: ViewDef) => void) => () => {
+    onUpdate((d) => edit(d.views[viewIndex]))
+    onClose()
+  }
+  /** One rule on this column replaces the sort (YAZ-4534). */
+  const sortBy = (direction: 'ASC' | 'DESC') => write((v) => {
+      v.sort = [{ property: c, direction }]
+    })
+  /**
+   * This column becomes the FIRST group level (YAZ-4534). The first level's other fields (its style)
+   * stay; the later levels stay, less this column if it was one; one level keeps the single-object form.
+   */
+  const groupHere = write((v) => {
+    const [first, ...rest] = groupByLevels(v)
+    const levels = [{ ...first, property: c, direction: 'ASC' as const }, ...rest.filter((l) => canonicalKey(l.property) !== c)]
+    v.groupBy = levels.length === 1 ? levels[0] : levels
+  })
+  /** The last frozen column, or not (the table block's ✓ rule, YAZ-3696): a click on ✓ unfreezes. */
+  const frozenHere = index >= 0 && frozen === index + 1
 
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>
       <div className="view-header-menu">
-        {mode === 'rename' ? (
+        {mode === 'edit' ? (
+          <ColumnDetail
+            columnKey={key}
+            def={def}
+            view={def.views[viewIndex]}
+            viewIndex={viewIndex}
+            records={records}
+            onUpdate={onUpdate}
+            properties={properties}
+            folder={folder}
+            shown={keys.some((k) => canonicalKey(k) === canonicalKey(key))}
+            canHide
+            onHide={hide}
+            onBack={() => setMode('menu')}
+            onLeave={onClose}
+          />
+        ) : mode === 'rename' ? (
           <TextField
             className="view-input view-header-menu__rename"
             aria-label={`Rename ${label}`}
@@ -101,37 +156,82 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
           />
         ) : (
           <>
-            <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('rename')}>
-              Rename column…
-            </button>
-            <button
-              type="button"
-              className="ctx-menu__item"
-              role="menuitem"
-              onClick={() => {
-                onUpdate((d) => setViewOrder(d, viewIndex, keys.filter((k) => canonicalKey(k) !== canonicalKey(key))))
-                onClose()
-              }}
-            >
-              Hide column
-            </button>
-            <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('add')}>
-              Add column to the right…
-            </button>
-            {onDeleteColumn && (
+            <div className="ctx-menu__heading" role="presentation">
+              {typeLabel} · {canonicalKey(key)}
+            </div>
+            <div className="ctx-menu__group">
+              <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('edit')}>
+                Edit column…
+              </button>
+              <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('rename')}>
+                Rename column…
+              </button>
               <button
                 type="button"
-                className="ctx-menu__item ctx-menu__item--danger"
+                className="ctx-menu__item"
                 role="menuitem"
-                disabled={reason !== null}
-                title={reason ?? undefined}
                 onClick={() => {
-                  onDeleteColumn(key)
+                  hide()
                   onClose()
                 }}
               >
-                Delete column…
+                Hide column
               </button>
+              <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('add')}>
+                Add column to the right…
+              </button>
+            </div>
+            <div className="ctx-menu__group">
+              <button type="button" className="ctx-menu__item" role="menuitem" onClick={sortBy('ASC')}>
+                Sort A to Z
+              </button>
+              <button type="button" className="ctx-menu__item" role="menuitem" onClick={sortBy('DESC')}>
+                Sort Z to A
+              </button>
+              <button type="button" className="ctx-menu__item" role="menuitem" onClick={groupHere}>
+                Group by this column
+              </button>
+            </div>
+            <div className="ctx-menu__group">
+              <button
+                type="button"
+                className="ctx-menu__item"
+                role="menuitem"
+                onClick={write((v) => {
+                  if (frozenHere) delete v.frozenColumns
+                  else v.frozenColumns = index + 1
+                })}
+              >
+                {frozenHere ? '✓ Frozen up to this column' : 'Freeze up to this column'}
+              </button>
+              <button
+                type="button"
+                className="ctx-menu__item"
+                role="menuitem"
+                disabled={frozen === 0}
+                onClick={write((v) => {
+                  delete v.frozenColumns
+                })}
+              >
+                Unfreeze columns
+              </button>
+            </div>
+            {onDeleteColumn && (
+              <div className="ctx-menu__group">
+                <button
+                  type="button"
+                  className="ctx-menu__item ctx-menu__item--danger"
+                  role="menuitem"
+                  disabled={reason !== null}
+                  title={reason ?? undefined}
+                  onClick={() => {
+                    onDeleteColumn(key)
+                    onClose()
+                  }}
+                >
+                  Delete column…
+                </button>
+              </div>
             )}
           </>
         )}

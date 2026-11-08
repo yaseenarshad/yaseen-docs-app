@@ -836,6 +836,12 @@
   margin: 4px 6px 2px;
 }
 
+/* The freeze line (YAZ-4534): where the frozen columns end, the table block's 3px line. */
+.view-table .view-table__frozen-end {
+  border-right-width: 3px;
+  border-right-color: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+}
+
 /* The `#` gutter (YAZ-1513): the always-first, always-sticky column, pinned like a frozen cell at
    left 0 — display position only, so it is muted, right-aligned and never selectable. */
 .view-table .view-table__gutter {
@@ -858,6 +864,15 @@
 /* The header's own context menu (YAZ-1513): room for the inline rename and the add-column form. */
 .view-header-menu {
   min-width: 200px;
+}
+
+/* "Edit column…" (YAZ-4533): the Properties popover's column editor, at that popover's size. */
+.view-header-menu .column-detail {
+  width: 260px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  font-size: 13px;
 }
 
 .view-header-menu .view-header-menu__rename,
