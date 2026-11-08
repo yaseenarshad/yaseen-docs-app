@@ -1,4 +1,4 @@
-import { AutomationFailure } from '@shared/automation'
+import { AutomationFailure, pageOf } from '@shared/automation'
 import { isMediaFilters } from '@shared/iconPacks'
 import { normalizeMediaItem } from '@shared/mediaLibrary'
 import { MAX_COMPONENT_FRAGMENT_BYTES, type MediaSearchRequest, type MediaBytesRequest } from '@shared/types'
@@ -8,10 +8,6 @@ import { decodeViewOnlyText } from '../fs/file'
 import { absolute } from './resources'
 import type { AutomationServices } from './services'
 
-const page = <T>(items: T[], args: Record<string, unknown>) => {
-  const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
-  return { items: items.slice(offset, offset + limit), total: items.length, nextOffset: offset + limit < items.length ? offset + limit : null }
-}
 async function output(path: unknown, bytes: string | Buffer) {
   const outputFile = absolute(path as string)
   await fsCall(outputFile, () => createDurable(outputFile, bytes))
@@ -21,7 +17,7 @@ export async function mediaCommand(services: AutomationServices, command: string
   const { components, studio, media, copies } = services
   if (command === 'media.favoriteCopies') return copies.status()
   if (command === 'media.favoriteElements') return { itemKey: args.itemKey, fragmentJson: await copies.readElements(args.itemKey as string) }
-  if (command === 'media.favoritesForPanel') return page(await copies.missingForPanel(), args)
+  if (command === 'media.favoritesForPanel') return pageOf(await copies.missingForPanel(), args)
   if (command === 'media.saveFavoriteElements') {
     if (body.length > MAX_COMPONENT_FRAGMENT_BYTES) throw new AutomationFailure('TOO_LARGE', 'The favorite copy exceeds the 32 MiB fragment limit.')
     const kept = await copies.saveElements(args.itemKey as string, decodeViewOnlyText(body, 'favorite elements'))
@@ -30,7 +26,7 @@ export async function mediaCommand(services: AutomationServices, command: string
   if (command.startsWith('component.')) {
     const slug = args.slug as string
     switch (command) {
-      case 'component.list': return page(await components.list(), args)
+      case 'component.list': return pageOf(await components.list(), args)
       case 'component.read': return { slug, fragmentJson: await components.read({ slug }) }
       case 'component.rename': return { component: await components.rename({ slug, name: args.name as string }), diskSaved: true }
       case 'component.remove': await components.delete({ slug }); return { slug, removed: true, diskSaved: true }
@@ -57,9 +53,9 @@ export async function mediaCommand(services: AutomationServices, command: string
     if (!match) throw new AutomationFailure('INVALID_RESULT', 'The media provider returned no supported binary payload.')
     return { ...await output(args.outputFile, Buffer.from(match[1], 'base64')), item: imported.item, mimeType: imported.mimeType }
   }
-  if (command === 'media.drawingIndex') return page((await studio.providers.drawingIndex()).items, args)
+  if (command === 'media.drawingIndex') return pageOf((await studio.providers.drawingIndex()).items, args)
   if (command === 'media.drawing') return studio.providers.drawing({ id: args.id as string })
-  if (command === 'media.packList') return page(await studio.providers.packList(), args)
+  if (command === 'media.packList') return pageOf(await studio.providers.packList(), args)
   if (command === 'media.packStatus') return studio.packs.status()
   if (command === 'media.downloadPacks') return studio.packs.download()
   if (command === 'media.stopPacks') return studio.packs.stop()
@@ -67,7 +63,7 @@ export async function mediaCommand(services: AutomationServices, command: string
   if (command === 'media.removePacks') return studio.packs.remove()
   if (command === 'media.library') {
     const library = await media.used({ op: 'list' })
-    return { kind: args.kind, ...page(library[args.kind as 'favorites' | 'used' | 'recent'], args) }
+    return { kind: args.kind, ...pageOf(library[args.kind as 'favorites' | 'used' | 'recent'], args) }
   }
   if (command === 'media.unfavorite') {
     await media.favorites({ op: 'remove', itemKey: args.itemKey as string })

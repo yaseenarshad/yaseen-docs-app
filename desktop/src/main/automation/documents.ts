@@ -6,7 +6,7 @@ import { dirname } from 'node:path'
 import { createDir } from '../fs/create'
 import { doorOf, vaultIds } from '../vaultIndex/mint'
 import { readConfig } from '../vaultConfig'
-import { AutomationFailure } from '@shared/automation'
+import { AutomationFailure, pageOf } from '@shared/automation'
 import { addComment, deleteComment, editComment, newCommentId, nowIso, readComments } from '@shared/comments'
 import { setFrontmatterIn } from '@shared/frontmatter'
 import { isMarkdown } from '@shared/fileKind'
@@ -51,12 +51,10 @@ export async function documentCommand(state: AppState, command: string, args: Re
   const before = await readSaved(path)
   const comments = command.startsWith('comment.') ? readComments(before.content) : []
   if (command === 'review.list') {
-    const items = reviewsOf(before.content), offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
-    return { path, revision: before.revision, items: items.slice(offset, offset + limit), total: items.length, nextOffset: offset + limit < items.length ? offset + limit : null }
+    return { path, revision: before.revision, ...pageOf(reviewsOf(before.content), args) }
   }
   if (command === 'comment.list') {
-    const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
-    return { path, revision: before.revision, items: comments.slice(offset, offset + limit), total: comments.length, nextOffset: offset + limit < comments.length ? offset + limit : null }
+    return { path, revision: before.revision, ...pageOf(comments, args) }
   }
   if (before.revision !== args.revision) throw new AutomationFailure('CONFLICT', 'The saved file no longer matches this revision. Read it again before editing.')
   if ((command.startsWith('property.') || command.startsWith('comment.') || command.startsWith('review.')) && !isMarkdown(path)) throw new AutomationFailure('UNSUPPORTED_EXTENSION', 'Properties and comments require a Markdown document.')

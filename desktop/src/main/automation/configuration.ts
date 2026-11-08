@@ -1,4 +1,4 @@
-import { AutomationFailure } from '@shared/automation'
+import { AutomationFailure, pageOf } from '@shared/automation'
 import { MAX_FAVORITES, MAX_FOCUS, MAX_SESSION_TABS, listVaults, type ListScope, type StoredTab } from '@shared/types'
 import { patchSettings, readStoredTab, type Store } from '../store'
 import { getFavorites, updateFavorites } from '../favorites'
@@ -8,14 +8,10 @@ import { allowPictureFolder } from '../pictureFolderActions'
 import { serializeFile } from '../fs/revision'
 import { requireShippedIcon } from './vaultConfiguration'
 
-const page = <T>(items: readonly T[], args: Record<string, unknown>) => {
-  const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
-  return { items: items.slice(offset, offset + limit), total: items.length, nextOffset: offset + limit < items.length ? offset + limit : null }
-}
 
 export async function configurationCommand(store: Store, command: string, args: Record<string, unknown>, forgetPicturePick?: (folder: string) => void): Promise<unknown> {
   if (command === 'settings.get') return { settings: store.get().settings }
-  if (command === 'vault.list') return page(listVaults(store.get()), args)
+  if (command === 'vault.list') return pageOf(listVaults(store.get()), args)
   if (command === 'vault.patch') {
     const { roots: [root] } = await scopeRoots(store.get(), { root: args.root as string })
     const changes = args.changes as { name?: string | null; key?: number | null }
@@ -36,7 +32,7 @@ export async function configurationCommand(store: Store, command: string, args: 
     if (command !== 'pictureFolder.list') await store.flush()
     return { folders: store.get().approvedPictureFolders, ...(command === 'pictureFolder.list' ? {} : { diskSaved: true }) }
   }
-  if (command === 'session.list') return { ...page(store.get().sessions, args), source: 'saved' }
+  if (command === 'session.list') return { ...pageOf(store.get().sessions, args), source: 'saved' }
   if (command === 'settings.patch') {
     const rules = (args.changes as Record<string, unknown>).sidebarIconRules
     if (Array.isArray(rules)) for (const rule of rules) if (typeof rule?.icon === 'string') await requireShippedIcon(rule.icon)
@@ -97,7 +93,7 @@ async function collectionCommand(store: Store, command: string, args: Record<str
   const { roots: [root] } = await scopeRoots(store.get(), { root: args.root as string })
   const kind = args.kind as 'favorites' | 'focus', scope = args.scope as ListScope
   const read = kind === 'favorites' ? getFavorites : getFocus
-  if (command === 'collection.list') return { root, kind, scope, ...page(await read(root, scope), args) }
+  if (command === 'collection.list') return { root, kind, scope, ...pageOf(await read(root, scope), args) }
   const raw = (args.paths as string[]).map(absolute)
   const paths = [...new Set(raw)]
   if (command === 'collection.reorder' && paths.length !== raw.length) throw new AutomationFailure('INVALID_INPUT', 'Reordering requires every member exactly once.')

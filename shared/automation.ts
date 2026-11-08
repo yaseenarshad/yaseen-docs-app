@@ -7,6 +7,12 @@ export const AUTOMATION_LIMITS = {
   waitMs: 30_000, page: 50, maxPage: 200,
 } as const
 
+/** One page of a list: the caller's offset and limit, or the first `AUTOMATION_LIMITS.page` items (YAZ-4527 P10). */
+export function pageOf<T>(items: readonly T[], args: { offset?: unknown; limit?: unknown }): { items: T[]; total: number; nextOffset: number | null } {
+  const offset = typeof args.offset === 'number' ? args.offset : 0, limit = typeof args.limit === 'number' ? args.limit : AUTOMATION_LIMITS.page
+  return { items: items.slice(offset, offset + limit), total: items.length, nextOffset: offset + limit < items.length ? offset + limit : null }
+}
+
 export interface AutomationError { code: string; message: string; details?: Record<string, unknown> }
 export type AutomationResult = { ok: true; value: unknown } | { ok: false; error: AutomationError }
 export interface AutomationRequest {

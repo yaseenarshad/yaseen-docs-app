@@ -1,4 +1,4 @@
-import { AutomationFailure } from '@shared/automation'
+import { AutomationFailure, pageOf } from '@shared/automation'
 import { stat } from 'node:fs/promises'
 import { getNewPlaces, patchNewPlace } from '../newPlaces'
 import { isRecord } from '@shared/guards'
@@ -12,10 +12,6 @@ import { getIcons, patchIcons } from '../icons'
 import { patchConfig, readConfigDetailed } from '../vaultConfig'
 import { scopeRoots, resolveTarget, absolute } from './resources'
 
-const page = <T>(items: T[], args: Record<string, unknown>) => {
-  const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
-  return { items: items.slice(offset, offset + limit), total: items.length, nextOffset: offset + limit < items.length ? offset + limit : null }
-}
 let shipped: Promise<ReadonlySet<string>> | undefined
 /** Material's icon ids, as the app ships them: loaded on the first icon command, then kept. */
 export const shippedIcons = () => shipped ??= import('@shared/materialIconData').then(data => new Set(data.MATERIAL_IDS.split(' ')))
@@ -51,7 +47,7 @@ function patchPublic(name: string, current: unknown, changes: Record<string, unk
   return next
 }
 export async function vaultConfiguration(state: AppState, command: string, args: Record<string, unknown>) {
-  if (command === 'icon.names') return page(pickableIconIds(await shippedIcons()).sort().filter(iconMatcher(args.query as string ?? '')), args)
+  if (command === 'icon.names') return pageOf(pickableIconIds(await shippedIcons()).sort().filter(iconMatcher(args.query as string ?? '')), args)
   const { roots: [root] } = await scopeRoots(state, { root: args.root as string })
   if (command === 'newPlace.list') return { root, places: await getNewPlaces(root) }
   if (command === 'newPlace.set') {
@@ -63,13 +59,13 @@ export async function vaultConfiguration(state: AppState, command: string, args:
     if (command === 'declaration.patch') await patchProperty(root, args.name as string, args.changes as Record<string, unknown>)
     else if (command === 'declaration.remove') await removeProperty(root, args.name as string)
     const value = await getProperties(root)
-    return { root, version: value.version, ...(value.error ? { error: value.error } : {}), ...page(Object.entries(value.properties).map(([name, declaration]) => ({ name, ...declaration })), args), ...(command === 'declaration.list' ? {} : { diskSaved: true }) }
+    return { root, version: value.version, ...(value.error ? { error: value.error } : {}), ...pageOf(Object.entries(value.properties).map(([name, declaration]) => ({ name, ...declaration })), args), ...(command === 'declaration.list' ? {} : { diskSaved: true }) }
   }
   if (command.startsWith('icon.')) {
     const path = command === 'icon.list' ? undefined : absolute(args.path as string)
     if (command === 'icon.set') { await resolveTarget([root], { path }); await requireShippedIcon(args.icon as string) }
     const value = command === 'icon.list' ? await getIcons(root) : await patchIcons(root, { [path!]: command === 'icon.remove' ? null : args.icon as string })
-    return { root, ...page(Object.entries(value.paths).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, icon]) => ({ path, icon })), args), ...(command === 'icon.list' ? {} : { diskSaved: true }) }
+    return { root, ...pageOf(Object.entries(value.paths).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, icon]) => ({ path, icon })), args), ...(command === 'icon.list' ? {} : { diskSaved: true }) }
   }
   const name = args.name as string
   if (!['review.json', 'text-formatting.json'].includes(name)) throw new AutomationFailure('INVALID_INPUT', 'Use a named command for this configuration area.')

@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { basename, dirname, relative } from 'node:path'
-import { AutomationFailure } from '@shared/automation'
+import { AutomationFailure, pageOf as listPage } from '@shared/automation'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import { columnChange, folderSettingsOf, folderSettingsValue } from '@shared/folderSettings'
 import { canonicalKey, declarationForKind, pruneColumnFromViews, pruneColumnLabel, removeColumn, setDisplayName, undeletableReason } from '@shared/folderColumns'
@@ -182,8 +182,8 @@ async function shortcutCommand(page: Page, command: string, args: Record<string,
     const index = await getIndex(page.root, { readOnly: true })
     const byId = foldersById(index.folders)
     const rows = index.records.filter(record => isShortcut(record, folder) && foldersShowing(record.folder, record.properties, byId).includes(folder))
-    const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
-    return { root: page.root, path: page.dir, items: rows.slice(offset, offset + limit).map(row => ({ path: row.path, title: row.title, id: row.id ?? null })), total: rows.length, nextOffset: offset + limit < rows.length ? offset + limit : null }
+    const shown = listPage(rows, args)
+    return { root: page.root, path: page.dir, ...shown, items: shown.items.map(row => ({ path: row.path, title: row.title, id: row.id ?? null })) }
   }
   const note = await resolveTarget([page.root], { path: args.note as string })
   if (!isMarkdown(note)) throw new AutomationFailure('UNSUPPORTED_EXTENSION', 'A shortcut shows a note.')

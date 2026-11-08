@@ -1,4 +1,4 @@
-import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
+import { AUTOMATION_LIMITS, AutomationFailure, pageOf } from '@shared/automation'
 import { rootOfPath, type AppState } from '@shared/types'
 import { isDrawing, isDiagram } from '@shared/fileKind'
 import { isRecord } from '@shared/guards'
@@ -12,10 +12,6 @@ import { absolute, resolveTarget, scopeRoots } from './resources'
 import type { AutomationServices } from './services'
 import { refuseLiveEdits, type LiveEdits } from './liveEdits'
 
-const page = <T>(items: T[], args: Record<string, unknown>) => {
-  const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
-  return { items: items.slice(offset, offset + limit), total: items.length, nextOffset: offset + limit < items.length ? offset + limit : null }
-}
 export async function connectedCommand(services: AutomationServices, state: AppState, command: string, args: Record<string, unknown>, body: Buffer, liveEdits?: LiveEdits): Promise<unknown> {
   if (command === 'provider.status') return { provider: 'pixabay', configured: await services.credentials.hasPixabay() }
   if (command === 'provider.clear') { await services.credentials.setPixabay(null); return { provider: 'pixabay', configured: false, diskSaved: true } }
@@ -26,7 +22,7 @@ export async function connectedCommand(services: AutomationServices, state: AppS
     // Errors can come from a remote provider. Never echo its response or the supplied secret.
     try {
       if (command === 'provider.set') { await services.credentials.setPixabay(token); return { provider: 'pixabay', configured: true, diskSaved: true } }
-      if (command === 'share.accounts') return page(await services.sharing.accounts(token), args)
+      if (command === 'share.accounts') return pageOf(await services.sharing.accounts(token), args)
       return await services.sharing.setup(token, () => {}, args.accountId as string | undefined)
     } catch { throw new AutomationFailure('PROVIDER_FAILED', 'The credential operation failed. Check provider access and app settings; no credential was returned.') }
   }
@@ -42,13 +38,13 @@ export async function connectedCommand(services: AutomationServices, state: AppS
   if (command === 'sync.status') return services.sync.status(root)
   if (command === 'sync.now') return services.sync.syncNow(root)
   if (command === 'sync.setEnabled') return services.sync.setEnabled(root, args.enabled as boolean)
-  if (command === 'share.list' || command === 'share.check') return page(await services.sharing.list(root, { check: command === 'share.check' }), args)
+  if (command === 'share.list' || command === 'share.check') return pageOf(await services.sharing.list(root, { check: command === 'share.check' }), args)
   const savedSharePath = ['share.get', 'share.stop', 'share.setPermission'].includes(command) && args.path !== undefined
   if (savedSharePath && (args.id !== undefined || args.name !== undefined)) throw new AutomationFailure('INVALID_INPUT', 'Choose exactly one path, id, or name target.')
   const path = savedSharePath ? absolute(args.path as string) : await resolveTarget(roots, args)
   if (rootOfPath(roots, path) === null || path === root) throw new AutomationFailure('OUTSIDE_SCOPE', 'Choose a board inside the vault.')
   if (command.startsWith('share.') && !isDrawing(path) && !isDiagram(path)) throw new AutomationFailure('UNSUPPORTED_EXTENSION', 'Sharing requires an Excalidraw drawing or draw.io diagram.')
-  if (command === 'history.list') return { path, ...page(await boardHistory(root, path), args) }
+  if (command === 'history.list') return { path, ...pageOf(await boardHistory(root, path), args) }
   if (command === 'history.restore') {
     await refuseLiveEdits(liveEdits, path)
     await restoreBoardVersion(root, path, args.ref, args.revision as string)

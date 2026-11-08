@@ -9,7 +9,7 @@ import { ReviewsShapeError } from '@shared/reviews'
 import { BridgeFailure } from './fs/fsUtils'
 import { FrontmatterWriteError } from '@shared/frontmatter'
 import { CommentsShapeError } from '@shared/comments'
-import { AutomationFailure, type AutomationRequest, AUTOMATION_VERSION } from '@shared/automation'
+import { AutomationFailure, pageOf, type AutomationRequest, AUTOMATION_VERSION } from '@shared/automation'
 import { commandDefinition, validateInput, validateOutput } from '@shared/automationCommands'
 import { DRAWING_VIEW_ACTIONS } from '@shared/automationEditor'
 import type { NavigationInput } from '@shared/automationNavigation'
@@ -65,10 +65,6 @@ const app: Route['run'] = (a, c) => a.appCommand(c.context.app!, c.command)
 const boardImages: Route['run'] = (a, c) => a.boardImageCommand(c.context.navigation!, c.command, c.args, a.printSvgToPdf)
 const inspect = (kind: 'window' | 'history' | 'document'): Route['run'] => (_a, { context, args }) =>
   context.navigation!.inspect(args.window as string, kind === 'document' ? { kind, tab: args.tab as string } : { kind })
-const page = <T>(all: T[], args: Args) => {
-  const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
-  return { items: all.slice(offset, offset + limit), total: all.length, nextOffset: offset + limit < all.length ? offset + limit : null }
-}
 const languageHelpers: Route['run'] = async (_a, { context, command }) => {
   const service = context.services!.languageHelpers
   if (command === 'languageHelper.install') return service.install()
@@ -108,13 +104,13 @@ const ROUTES: Record<string, Route> = {
     if (!context.navigation?.manage) throw new AutomationFailure('UNAVAILABLE', 'Window management is unavailable in this app instance.')
     return context.navigation.manage(args.window as string, command.slice('window.'.length) as 'show' | 'close' | 'rename', args.name as string | null | undefined)
   } },
-  'window.list': { locks: none, run: (_a, { context, args }) => page(context.navigation!.windows().map(window => ({ id: window.id, roots: window.roots, name: window.name ?? null, source: 'live' })), args) },
+  'window.list': { locks: none, run: (_a, { context, args }) => pageOf(context.navigation!.windows().map(window => ({ id: window.id, roots: window.roots, name: window.name ?? null, source: 'live' })), args) },
   'window.inspect': { locks: none, run: inspect('window') },
   'document.live': { locks: none, run: inspect('document') },
   ...each(['tab', 'sidebar', 'rightPanel', 'session.restore', 'session.capture'], { locks: join(keys('navigation', 'configuration'), windowVaults), run: tabs }),
 
   ...each(['settings', 'vault', 'pictureFolder', 'workspace', 'session', 'collection'], { locks: keys('configuration'), run: configuration }),
-  'workspace.list': { locks: none, run: (_a, { context, args }) => page(context.state!().vaultSets, args) },
+  'workspace.list': { locks: none, run: (_a, { context, args }) => pageOf(context.state!().vaultSets, args) },
   ...each(['newPlace', 'declaration', 'icon', 'vaultConfig'], { locks: keys('configuration'), run: vaultConfiguration }),
   group: { locks: keys('configuration'), run: (a, c) => a.groupCommand(c.context.state!(), c.command, c.args) },
   settingsFolder: { locks: keys('configuration'), run: (a, c) => a.settingsFolderCommand(c.context.store!, c.context.services!, c.command, c.args) },

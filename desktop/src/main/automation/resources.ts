@@ -2,7 +2,7 @@ import { revisionOf } from '../fs/revision'
 export { revisionOf } from '../fs/revision'
 import { stat } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
-import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
+import { AUTOMATION_LIMITS, AutomationFailure, pageOf } from '@shared/automation'
 import { mergeFolders, resolveItem } from '@shared/collectionFolders'
 import { fileCandidates, folderCandidates, searchCandidates, searchRows, type SearchCandidate } from '@shared/searchCandidates'
 import { MAX_WINDOW_ROOTS, rootOfPath, shownListScope, type AppState, type ListScope, type TreeNode } from '@shared/types'
@@ -141,8 +141,7 @@ export async function search(state: AppState, input: ResourceScope & { query: st
   const byPath = new Map<string, SearchCandidate>()
   for (const row of matched) if (!byPath.has(row.path)) byPath.set(row.path, row)
   const uniqueRows = [...byPath.values()]
-  const offset = input.offset ?? 0, limit = input.limit ?? AUTOMATION_LIMITS.page
-  return { roots, items: uniqueRows.slice(offset, offset + limit), total: uniqueRows.length, nextOffset: offset + limit < uniqueRows.length ? offset + limit : null }
+  return { roots, ...pageOf(uniqueRows, input) }
 }
 
 export async function readSaved(path: string) {

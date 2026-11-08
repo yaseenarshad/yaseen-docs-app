@@ -4,7 +4,7 @@ import { makeResolver } from '@shared/noteResolver'
 import { pathResolver } from '@shared/pathResolver'
 import { getIndex } from '../vaultIndex/live'
 import { catalog, resolveTarget, scopeRoots } from './resources'
-import { AutomationFailure } from '@shared/automation'
+import { AutomationFailure, pageOf } from '@shared/automation'
 import { outlineLinks, referenceTargets, referencing } from '@shared/backlinks'
 import { dirname } from '@shared/paths'
 
@@ -32,6 +32,5 @@ export async function linkCommand(state: AppState, command: string, args: Record
       ? { kind: 'folder', path: dirname(record.path), settings: record.path, title: record.title }
       : { kind: 'note', path: record.path, title: record.title })
   }
-  const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
-  return { root, path, source: 'index', items: items.slice(offset, offset + limit), total: items.length, nextOffset: offset + limit < items.length ? offset + limit : null }
+  return { root, path, source: 'index', ...pageOf(items, args) }
 }

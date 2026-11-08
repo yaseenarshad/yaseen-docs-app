@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { AutomationFailure } from '@shared/automation'
+import { AutomationFailure, pageOf } from '@shared/automation'
 import { folderDeletion, folderScopeChange, itemOf, mergeFolders, onTopLevel, resolveItem, sameItem, TOP_LEVEL_MAX } from '@shared/collectionFolders'
 import { MAX_FOLDER_ITEMS, rootOfPath, type AppState, type FocusFolder, type ListScope } from '@shared/types'
 import { getFavorites, updateFavorites } from '../favorites'
@@ -15,8 +15,8 @@ export async function groupCommand(state: AppState, command: string, args: Recor
   if (scope === 'vault' && roots.length !== 1) throw new AutomationFailure('INVALID_INPUT', 'A vault-scoped group needs exactly one vault.')
   if (command === 'group.list') {
     const copies = Object.fromEntries(await Promise.all(roots.map(async root => [root, await getFocusFolders(root, scope, kind, { readOnly: true })])))
-    const folders = mergeFolders(copies), offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
-    return { roots, kind, scope, items: folders.slice(offset, offset + limit).map(folder => ({ ...folder, resolvedItems: folder.items.map(item => ({ ...item, ...resolveItem(item, roots) })) })), total: folders.length, nextOffset: offset + limit < folders.length ? offset + limit : null }
+    const shown = pageOf(mergeFolders(copies), args)
+    return { roots, kind, scope, ...shown, items: shown.items.map(folder => ({ ...folder, resolvedItems: folder.items.map(item => ({ ...item, ...resolveItem(item, roots) })) })) }
   }
   const paths = args.paths as string[] | undefined
   const rawItems = args.items as FocusFolder['items'] | undefined
