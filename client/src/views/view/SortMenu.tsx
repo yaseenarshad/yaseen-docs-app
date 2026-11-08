@@ -193,6 +193,8 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
 
   const options = (current: string | undefined, without?: ReadonlySet<string>) =>
     propertyOptions(def, keys, current).filter((o) => !without?.has(o.value))
+  /** A calendar's days are its groups (YAZ-4540 D4): it ignores `groupBy`, so the menu offers only Sort. */
+  const grouping = view.type !== 'calendar'
 
   return (
     <div className="view-menu sort-menu">
@@ -214,8 +216,8 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
           Add sort
         </button>
       </div>
-      <p className="view-menu__label">Group by</p>
-      {levels.length > 0 && (
+      {grouping && <p className="view-menu__label">Group by</p>}
+      {grouping && levels.length > 0 && (
         <ul className="view-menu__list">
           {levels.map((level, i) => ruleRow(groupRows, i, levels.length, moveLevel, `Reorder group level ${i + 1}: ${propertyLabel(def, level.property)}`, <>
             <ColumnPicker
@@ -233,7 +235,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
           </>, 'sort-menu__level'))}
         </ul>
       )}
-      {levels.length < MAX_GROUP_LEVELS && (
+      {grouping && levels.length < MAX_GROUP_LEVELS && (
         <div className="view-rule__main">
           <ColumnPicker
             label={GROUP_LABELS[levels.length]}
@@ -242,7 +244,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
             options={[{ value: '', label: 'None' }, ...options(undefined, above(levels.length))]} />
         </div>
       )}
-      {levels.length > 0 && (
+      {grouping && levels.length > 0 && (
         <div className="sort-menu__indent">
           <span>Indent</span>
           <div className="view-seg" role="group" aria-label="Group indent">

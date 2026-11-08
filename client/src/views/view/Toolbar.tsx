@@ -1,10 +1,13 @@
 import { type ReactNode, useCallback, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
-import type { EngineError } from '../engine'
+import { type EngineError, propertyKeys } from '../engine'
 import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
 import { CalendarShowBy } from './CalendarView'
+import { ColumnDetail } from './ColumnDetail'
+import { setViewOrder } from './columnOrder'
+import { canonicalKey } from './keys'
 import { CollapseAllIcon, ExpandAllIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { FilterMenu } from './FilterMenu'
 import { Popover } from './Popover'
@@ -54,12 +57,20 @@ export const countLabel = (shown: number, total: number): string =>
 /** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
 export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
-  const close = useCallback(() => setOpen(null), [])
+  /** "Edit option order…" (YAZ-3940): the column the Sort popover shows its column editor on, or null for the menu. */
+  const [editing, setEditing] = useState<string | null>(null)
+  const close = useCallback(() => {
+    setOpen(null)
+    setEditing(null)
+  }, [])
   // Each grouping LEVEL that shows is one rule in the badge (YAZ-745, S2 YAZ-4531): an empty
   // `groupBy: []`, a level with no property and a level past the third count none.
-  const sorts = (view.sort?.length ?? 0) + shownGroupLevels(view).length
+  // A calendar ignores `groupBy` (YAZ-4540): its levels show nowhere, so they count none.
+  const sorts = (view.sort?.length ?? 0) + (view.type === 'calendar' ? 0 : shownGroupLevels(view).length)
   const allCollapsed = allGroupKeys.every((k) => collapsed.includes(k))
   const groupsLabel = allCollapsed ? 'Expand all groups' : 'Collapse all groups'
+  /** The view's shown columns, for the column editor's "Hide in this view" (the Properties menu's rule). */
+  const shownKeys = () => propertyKeys(def, view, records, Object.keys(folder.settings.columns))
 
   const button = (menu: Menu, label: string, icon: ReactNode, badge: number, body: ReactNode, extraClass?: string) => (
     <div className="view-toolbar__menu">
@@ -70,7 +81,10 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
         title={label}
         aria-haspopup="dialog"
         aria-expanded={open === menu}
-        onClick={() => setOpen(open === menu ? null : menu)}
+        onClick={() => {
+          setOpen(open === menu ? null : menu)
+          setEditing(null)
+        }}
       >
         {icon}
         {badge > 0 && <span className="view-toolbar__badge">{badge}</span>}
@@ -94,7 +108,16 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
             <CalendarShowBy def={def} view={view} viewIndex={viewIndex} records={records} properties={properties} settings={folder.settings} onUpdate={onUpdate} />
           </label>
         )}
-        {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu settings={folder.settings} properties={properties} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
+        {button('sort', 'Sort', <SortIcon />, sorts, editing === null ? (
+          <SortMenu settings={folder.settings} properties={properties} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} onEditColumn={setEditing} />
+        ) : (
+          // The Properties menu's column editor, in this popover: ‹ and Esc go back to the menu (YAZ-3940).
+          <ColumnDetail key={editing} columnKey={editing} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder}
+            shown={shownKeys().some((k) => canonicalKey(k) === editing)}
+            canHide={!(editing === 'file.name' && view.type !== 'table' && view.type !== 'board')}
+            onHide={() => onUpdate((d) => setViewOrder(d, viewIndex, shownKeys().filter((k) => canonicalKey(k) !== editing)))}
+            onBack={() => setEditing(null)} onLeave={() => setEditing(null)} />
+        ))}
         {!documentView &&
           button(
             'properties',

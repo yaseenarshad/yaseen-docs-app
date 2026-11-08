@@ -2322,6 +2322,38 @@ describe('option order in a table (YAZ-3940)', () => {
     expect(headers(el)).toEqual(['drafting', 'idea', 'published', 'No value'])
   })
 
+  it('"Edit option order…" opens the column editor in the Sort popover: a reorder writes folder_settings and the groups follow; ‹ goes back', async () => {
+    // A host that hands out a NEW settings object per write, as FolderView does, so the engine sees the new order.
+    const status = settings.columns.status
+    let live = settings
+    const setColumn = vi.fn(async (key: string, next: ColumnDecl) => {
+      live = { ...live, columns: { ...live.columns, [key]: next } }
+    })
+    const folder = testFolderHost({ setColumn })
+    Object.defineProperty(folder, 'settings', { get: () => live })
+    const { el, onChange } = mount(GROUPED, { folder })
+    expect(headers(el)).toEqual(['published', 'idea', 'drafting', 'No value'])
+    const pop = openMenu(el, 'Sort')
+    click(byLabel(pop, 'Group direction'))
+    click(byText(pop, '[role="menuitem"] > span', 'Edit option order…'))
+    expect(pop.querySelector('.sort-menu')).toBeNull()
+    expect(q(pop, '.column-detail .column-detail__key').textContent).toBe('note.status')
+    press(byLabel(pop, 'Reorder drafting'), 'ArrowUp')
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', { ...status, options: ['published', 'drafting', 'idea', 'later'] }, status)
+    await settle()
+    expect(headers(el)).toEqual(['published', 'drafting', 'idea', 'No value'])
+    expect(onChange).not.toHaveBeenCalled() // the order is the column's, not the view's
+    click(byLabel(pop, 'Back to columns'))
+    expect(pop.querySelector('.sort-menu')).not.toBeNull()
+  })
+
+  it('"Edit option order…" is offered only on a Select or Multi-select column', () => {
+    const { el } = mount(GROUPED.replace('property: note.status', 'property: note.pillar'), { folder: testFolderHost({ settings }) })
+    const pop = openMenu(el, 'Sort')
+    click(byLabel(pop, 'Group direction'))
+    expect(pop.textContent).not.toContain('Edit option order…')
+  })
+
   it('"Show empty groups" in a table adds the unused options as empty groups', () => {
     const { el, def } = mount(GROUPED, { folder: testFolderHost({ settings }) })
     const pop = openMenu(el, 'Properties')

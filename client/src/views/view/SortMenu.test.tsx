@@ -346,3 +346,20 @@ describe('Group header style chip (YAZ-3742 D5)', () => {
     expect(view().groupBy).toEqual({ property: 'note.priority', direction: 'DESC', highlight: 'pink', large: true })
   })
 })
+
+describe('a calendar tab (YAZ-4540)', () => {
+  it('offers Sort only: no Group by, no levels, no indent, even when the YAML has a groupBy', () => {
+    const { el } = mount({ name: 'Cal', type: 'calendar', sort: [{ property: 'note.status', direction: 'ASC' }], groupBy: [{ property: 'note.status' }, { property: 'note.priority' }] })
+    expect(el.querySelector('[aria-label="Sort property"]')).not.toBeNull()
+    expect(el.textContent).toContain('Add sort')
+    expect([...el.querySelectorAll('.view-menu__label')].map((p) => p.textContent)).not.toContain('Group by')
+    expect(el.querySelector('[aria-label^="Group by"], [aria-label^="Then group by"], [aria-label^="Reorder group level"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Group indent"]')).toBeNull()
+  })
+
+  it('a table still offers Group by', () => {
+    const { el } = mount({ name: 'T', type: 'table', groupBy: { property: 'note.status' } })
+    expect([...el.querySelectorAll('.view-menu__label')].map((p) => p.textContent)).toContain('Group by')
+    expect(el.querySelector('[aria-label="Group indent"]')).not.toBeNull()
+  })
+})

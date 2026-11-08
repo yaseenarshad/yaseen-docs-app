@@ -249,6 +249,16 @@ describe('calendar "+" on a day (YAZ-4540 S10) and "Show by"', () => {
     expect(titlesIn(day(el, '2026-12-21'))).toEqual(['Started'])
   })
 
+  it('Sort and group offers Sort only, and its badge counts no group level the calendar ignores', () => {
+    const { el } = mount(`${CALENDAR}    sort:\n      - property: note.due\n        direction: ASC\n    groupBy:\n      property: note.due\n`)
+    expect(q(el, '.view-toolbar [aria-label="Sort"] .view-toolbar__badge').textContent).toBe('1')
+    click(q(el, '.view-toolbar [aria-label="Sort"]'))
+    const pop = q(el, '.view-popover--sort')
+    expect(pop.querySelector('[aria-label="Sort property"]')).not.toBeNull()
+    expect([...pop.querySelectorAll('.view-menu__label')].map((l) => l.textContent)).not.toContain('Group by')
+    expect(pop.querySelector('[aria-label="Group indent"], [aria-label^="Reorder group level"]')).toBeNull()
+  })
+
   it('Properties has a "Calendar" section with the same "Show by"', () => {
     const { el } = mount(CALENDAR)
     click(q(el, '.view-toolbar [aria-label="Properties"]'))
