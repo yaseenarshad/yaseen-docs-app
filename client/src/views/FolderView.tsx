@@ -425,8 +425,9 @@ export function FolderView({
     setSettingsError(null)
     const before = aheadRef.current
     setAhead(columns)
-    // The LIVE settings: a move to Other files still in flight is kept (YAZ-4597).
-    return track(writeFolderSettings(file, { ...liveSettings, columns, views, properties, defaultView: parsed.def.defaultView })).then(
+    // The LIVE settings: a move to Other files still in flight is kept (YAZ-4597). The base is the index's block, the
+    // disk as this page last heard it (YAZ-4596 S38): another tab's write it has not heard yet stays.
+    return track(writeFolderSettings(file, { ...liveSettings, columns, views, properties, defaultView: parsed.def.defaultView }, settings)).then(
       () => undefined,
       (err: unknown) => {
         setAhead(before)
@@ -446,7 +447,7 @@ export function FolderView({
     pending.current.push(stampOf({ views: next.def.views, formulas: settings.formulas, properties: next.def.properties, defaultView: next.def.defaultView }))
     // The AHEAD columns, never the snapshot's: the whole block is written, and a folder's first
     // column write is not in the index until its file is (D1).
-    track(writeFolderSettings(file, { ...liveSettings, views: next.def.views, properties: next.def.properties, defaultView: next.def.defaultView })).catch((err: unknown) =>
+    track(writeFolderSettings(file, { ...liveSettings, views: next.def.views, properties: next.def.properties, defaultView: next.def.defaultView }, settings)).catch((err: unknown) =>
       setSettingsError(err instanceof Error ? err.message : String(err)),
     )
   }
@@ -481,7 +482,7 @@ export function FolderView({
     setSettingsError(null)
     const before = aheadOtherRef.current
     setAheadOther(next)
-    return track(writeFolderSettings(file, { ...liveSettings, otherFiles: next, views: parsed.def.views, properties: parsed.def.properties, defaultView: parsed.def.defaultView })).then(
+    return track(writeFolderSettings(file, { ...liveSettings, otherFiles: next, views: parsed.def.views, properties: parsed.def.properties, defaultView: parsed.def.defaultView }, settings)).then(
       () => undefined,
       (err: unknown) => {
         setAheadOther(before)

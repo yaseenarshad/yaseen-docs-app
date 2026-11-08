@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import appCss from '../../app.css?inline'
+import folderViewCss from '../../views/folderView.css?inline'
 
 /** Every `selector { body }` whose selector names a numbered block. */
 const rules = [...appCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
@@ -56,6 +57,14 @@ describe('line numbers CSS contract', () => {
     const [, gap] = bodyOf(`${ON} [data-line]::after`).match(/right:\s*calc\(100cqw \+ (\d+)px/)!
     expect(48 + 64 - Number(gap)).toBe(60)
     expect(Number(gap)).toBeGreaterThan(49)
+  })
+
+  it('on a folder page the lane is the Page’s own: the scroller keeps its place, and the Page body takes 64px on screen (YAZ-3746 10D)', () => {
+    const css = folderViewCss.replace(/\/\*[\s\S]*?\*\//g, '')
+    // A folder page's scroller wears no `data-page="note"`: the note's 64px is undone there, at a greater weight.
+    expect(css).toMatch(/\.editor-host\[data-line-numbers\]:not\(\[data-page='note'\]\)\s*\{\s*padding-left:\s*0;\s*\}/)
+    // The views pane is zoomed, so 64px divided by the zoom is 64px on screen; the number keeps its 52px gap inside it.
+    expect(css).toMatch(/\.editor-host\[data-line-numbers\] \.folder-page-doc\s*\{\s*padding-left:\s*calc\(64px \/ var\(--document-zoom, 1\)\);\s*\}/)
   })
 
   it('divides the number’s size and its gap by the document zoom, and nothing else: 11px and 52px on screen at every zoom (S53)', () => {

@@ -16,7 +16,7 @@ vi.mock('./writeProperty', () => ({
   }),
 }))
 import { writeProperty } from './writeProperty'
-import { DEFAULT_COLUMNS, DEFAULT_VIEWS, folderSettings, writeFolderSettings } from './folderSettings'
+import { DEFAULT_COLUMNS, DEFAULT_VIEWS, folderSettings, rebaseSettings, writeFolderSettings } from './folderSettings'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -389,4 +389,46 @@ describe('properties: column labels (YAZ-1513) — `ViewSet.properties` verbatim
     ])
   })
 
+})
+
+describe('the rebase of a settings write (YAZ-4596 S38): this page\'s change, laid onto the block on disk', () => {
+  const T = { type: 'table', name: 'T' }
+  const B = { type: 'board', name: 'B' }
+  const base = { columns: { a: { kind: 'text' } }, views: [T, B] }
+
+  it('keeps the other writer\'s change to another key, and its change to another view or another key of one view', () => {
+    const mine = { ...base, defaultView: 'B' }
+    const theirs = { ...base, columns: { a: { kind: 'text' }, b: { kind: 'number' } }, views: [{ ...T, sort: [{ property: 'file.name', direction: 'ASC' }] }, B] }
+    expect(rebaseSettings(base, mine, theirs)).toEqual({ ...theirs, defaultView: 'B' })
+    const mineView = { ...base, views: [T, { ...B, cardSize: 2 }] }
+    const theirsView = { ...base, views: [{ ...T, frozenColumns: 1 }, B] }
+    expect(rebaseSettings(base, mineView, theirsView)).toEqual({ ...base, views: [{ ...T, frozenColumns: 1 }, { ...B, cardSize: 2 }] })
+    const mineKey = { ...base, views: [{ ...T, rowHeight: 'tall' }, B] }
+    expect(rebaseSettings(base, mineKey, theirsView)).toEqual({ ...base, views: [{ ...T, frozenColumns: 1, rowHeight: 'tall' }, B] })
+  })
+
+  it('a view added, deleted or moved on one side: that side\'s list, each view merged with its namesake', () => {
+    const added = { ...base, views: [T, B, { type: 'list', name: 'L' }] }
+    const theirs = { ...base, views: [{ ...T, frozenColumns: 1 }, B] }
+    expect(rebaseSettings(base, added, theirs)).toEqual({ ...base, views: [{ ...T, frozenColumns: 1 }, B, { type: 'list', name: 'L' }] })
+    expect(rebaseSettings(base, { ...base, views: [{ ...T, frozenColumns: 1 }, B] }, { ...base, views: [B] })).toEqual({ ...base, views: [B] })
+  })
+
+  it('the same key changed on both sides takes this write, the later one; a key this page removed goes', () => {
+    expect(rebaseSettings({ ...base, defaultView: 'T' }, { ...base, defaultView: 'B' }, { ...base, defaultView: 'X' })).toEqual({ ...base, defaultView: 'B' })
+    expect(rebaseSettings({ ...base, defaultView: 'T' }, base, { ...base, defaultView: 'T', formulas: { f: '1' } })).toEqual({ ...base, formulas: { f: '1' } })
+    // Nobody else wrote: exactly this write.
+    expect(rebaseSettings(base, { ...base, defaultView: 'B' }, base)).toEqual({ ...base, defaultView: 'B' })
+  })
+
+  it('writeFolderSettings with a base reads the block on disk as the reader does: a stored `outline` is the Page, so it is no change of theirs', () => {
+    const write = vi.mocked(writeProperty)
+    write.mockClear()
+    const was = { columns: {}, views: [{ type: 'page', name: 'Page' }], problems: [] }
+    void writeFolderSettings('/vault/F/.folder.md', { ...was, defaultView: 'Page' }, was)
+    const rebase = write.mock.calls[0][3]!
+    expect(write.mock.calls[0].slice(0, 3)).toEqual(['/vault/F/.folder.md', 'folder_settings', { views: [{ type: 'page', name: 'Page' }], defaultView: 'Page' }])
+    expect(rebase({ views: [{ type: 'outline', name: 'Page' }], other_files: ['[[x]]'] })).toEqual({ views: [{ type: 'page', name: 'Page' }], defaultView: 'Page', other_files: ['[[x]]'] })
+    expect(rebase(undefined)).toEqual({ views: [{ type: 'page', name: 'Page' }], defaultView: 'Page' })
+  })
 })

@@ -1,5 +1,5 @@
 import { setFolderValue } from '@shared/folderValues'
-import { setFrontmatterProperty } from '@shared/frontmatter'
+import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { isFolderSettingsPath, type FileResponse } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 
@@ -89,9 +89,14 @@ export async function writeProperties(path: string, writes: readonly PropertyWri
   return transformFile(path, (content) => writes.reduce((next, { key, value }) => setFrontmatterProperty(next, key, value), content))
 }
 
-/** Change one frontmatter key; the one-key specialization of `writeProperties` (GRO-2141). */
-export async function writeProperty(path: string, key: string, value: unknown): Promise<{ mtime: number }> {
-  return writeProperties(path, [{ key, value }])
+/**
+ * Change one frontmatter key; the one-key specialization of `writeProperties` (GRO-2141). With `rebase`, the value
+ * written is `rebase` of the key's value in the bytes just read, at the first read and again at the retry after a
+ * CONFLICT (YAZ-4596 S38): a whole-block writer lays its own change onto what another writer has put there.
+ */
+export async function writeProperty(path: string, key: string, value: unknown, rebase?: (onDisk: unknown) => unknown): Promise<{ mtime: number }> {
+  if (rebase === undefined) return writeProperties(path, [{ key, value }])
+  return transformFile(path, (content) => setFrontmatterProperty(content, key, rebase(parseFrontmatter(splitFrontmatter(content).frontmatter).properties[key])))
 }
 
 /**

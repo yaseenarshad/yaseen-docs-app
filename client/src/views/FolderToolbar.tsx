@@ -5,14 +5,14 @@
  *    file" (D37, `show_page_file` in `.folder.md`: On, Off, or Settings — no key, which follows Settings › Folder pages),
  *    "Preview on hover" (YAZ-4601 D51, `hover_preview` in `.folder.md`) and "Show Other files" (YAZ-4597 D43,
  *    `show_other_files`), each with the same three choices.
- *    On the Page tab, the note's page switches follow it (`FolderPageTab`).
+ *    On the Page tab, the note's page switches follow it, and the note's fold-all button stands left of it (`FolderPageTab`).
  *  - ZOOM: per app tab and never stored, as a note's. The host keeps it.
  *  - SAVED / SAVING: the folder's own writes — its settings writes, and the Page body's saves (`FolderPageTab.save`).
  *
  * The parts that change often (the save state, the Page tab's part) live in a small store, so a save re-renders this
  * toolbar alone, never the views.
  */
-import { createContext, useSyncExternalStore } from 'react'
+import { createContext, useSyncExternalStore, type ReactNode } from 'react'
 import type { GithubSyncStatus } from '@shared/types'
 import { PageSettings, type PageSettingsProps, type PageSwitch } from '../editor/PageSettings'
 import { StatusChips } from '../editor/StatusChips'
@@ -32,6 +32,8 @@ export interface FolderPageTab {
   cog: Omit<PageSettingsProps, 'readOnly' | 'onToggleReadOnly' | 'switches' | 'switchesHeading' | 'rows'>
   /** The Page body's save state: the save chip shows it with the settings writes' (the worse of the two). */
   save: SaveStatus
+  /** The note's fold-all button (YAZ-3746 10D): it stands left of the cog, as on a note page. Null while Folding is off. */
+  foldAll: ReactNode
 }
 
 export interface FolderChipsState {
@@ -90,6 +92,7 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
   const switches = [choiceRow('Show folder page file', showPageFile, onChangeShowPageFile), choiceRow('Preview on hover', hoverPreview, onChangeHoverPreview), choiceRow('Show Other files', showOtherFiles, onChangeShowOtherFiles)]
   return (
     <StatusChips zoom={zoom} onZoom={onZoom} readOnly={readOnly ? { asking, onAsk, onAllow, onCancel } : null} sync={sync} onSyncNow={onSyncNow} save={page === null ? save : worse(save, page.save)}>
+      {page?.foldAll}
       <PageSettings {...page?.cog} readOnly={readOnly} onToggleReadOnly={onToggleReadOnly} switches={switches} switchesHeading="This folder page" />
     </StatusChips>
   )
