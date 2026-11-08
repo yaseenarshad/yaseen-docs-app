@@ -10,7 +10,7 @@ const OPEN_CONTENT = [
   /^vaultConfig\.(read|patch):\.value$/, // review.json or text-formatting.json content
   /^media\.drawing:\.elements\[\]$/, // provider Excalidraw elements
   /^request\.status:\.result\.(value|error\.details)$/, // another command's value, or its error facts
-  /^file\.(rename|retitle):\.cleared\[\]\.values$/, /^file\.history:\.(undo|redo)\[\]\.cleared\[\]\.values$/, // cleared folder values
+  /^file\.(rename|move|retitle):\.cleared\[\]\.values$/, /^file\.history:\.(undo|redo)\[\]\.cleared\[\]\.values$/, // cleared folder values
   /^(folder|folderView|folderColumn|folderFormula)\.\w+:\.(views\[\]|properties)$/, // stored views and the folder's own properties
 ]
 

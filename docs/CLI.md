@@ -101,6 +101,14 @@ A board write fails with `UNSAVED_LIVE_EDITS` while an open editor holds unsaved
 
 `file rename`, `file retitle`, `file trash`, `file copy`, `folder create`, `tab move`, and `file undo` / `file redo` run the same complete actions as the app. They save open editors first, repair links, and use the window's Undo history. A command that changes several items reports each failure. It never reports a partial result as success.
 
+`file rename` gives an item a new name in its folder, as the sidebar's Rename does. To change the folder, use `file move`. `file move` moves items into a folder of the same vault, as a drag does: each keeps its name, and the list is one Undo step. When a move clears other folders' values, it fails with `CONFIRMATION_REQUIRED` and names the folders in `details`. Pass `--dropValues true` to confirm, as the app's Move button does. Items in two vaults fail with `BETWEEN_VAULTS`. Every organization write returns `history` (the Undo and Redo counts after it) and `diskSaved`.
+
+```sh
+yaseendocs file rename --window <id> --path "<vault>/Projects/plan.md" --name "plan-v2.md"
+yaseendocs file move   --window <id> --paths '["<vault>/Projects/plan.md"]' --targetDir "<vault>/Archive" --dropValues true
+yaseendocs file undo   --window <id>
+```
+
 ### Settings, collections, and folder pages
 
 `settings get/patch`, `collection add/remove/reorder`, `group …`, `workspace …`, `folder read`, `folderView …`, `shortcut …`, and `ids …` change stored state against the latest copy. A command that clears data, or turns a feature off, needs an explicit confirmation input in place of the app's dialog. Settings output never shows a stored secret. `provider status` reports only whether a key is present. `provider set` reads the key from stdin or a private file.

@@ -1977,9 +1977,7 @@ export function App() {
       const run = replayStep(verb)
       if (run === 'busy') throw new AutomationFailure('BUSY', 'An organization history action is still running.')
       if (run === null) throw new AutomationFailure(verb === 'undo' ? 'NOTHING_TO_UNDO' : 'NOTHING_TO_REDO', `This window has no organization step to ${verb}.`)
-      const outcome = await run
-      const { undo, redo } = moveHistory.current.inspect()
-      const result = { ...outcome, history: { undo: undo.length, redo: redo.length } }
+      const result = { ...(await run), history: historyCounts() }
       // The window's own toasts and history rules already ran; the reply only reports them.
       if (result.done === 0) throw new AutomationFailure('HISTORY_STEP_FAILED', `The ${verb} changed nothing. Inspect file history before another step.`, result)
       if (result.failed.length > 0 || (result.links?.skipped ?? 0) > 0) throw new AutomationFailure('PARTIAL_FAILURE', `Part of the ${verb} failed.`, { ...result, diskSaved: true })
@@ -1992,14 +1990,26 @@ export function App() {
       moveHistory.current.undo()
       replaying.current = true
       try {
-        const result = await putBackStep(entry)
+        const restored = await putBackStep(entry)
+        const result = { ...restored, history: historyCounts(), diskSaved: restored.restored.length > 0 }
         if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some Trash items could not be restored.', result)
         return result
       } finally { replaying.current = false }
     }
     if (target.command === 'file.trash') {
-      const result = await trashMany(target.paths)
+      const trashed = await trashMany(target.paths)
+      const result = { ...trashed, history: historyCounts(), diskSaved: trashed.went.length > 0 }
       if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items could not be moved to Trash.', result)
+      return result
+    }
+    if (target.command === 'file.move') {
+      const plan = planMoves(target.moves)
+      if (plan === 'between') throw new AutomationFailure('BETWEEN_VAULTS', BETWEEN_VAULTS)
+      // The GUI's D21 sheet asks here; the caller's dropValues is its Move button.
+      if (plan !== null && plan.lost.folders.length > 0 && !target.dropValues) throw new AutomationFailure('CONFIRMATION_REQUIRED', 'This move clears values of other folders. Pass dropValues: true to confirm.', { folders: plan.lost.folders, notes: plan.lost.notes })
+      const run = plan === null ? null : await runMoves(plan.moves)
+      const result = { moved: run?.moves ?? [], cleared: run?.cleared ?? [], failed: run?.failed ?? [], links: run?.links ?? { updated: 0, skipped: 0 }, history: historyCounts(), diskSaved: (run?.moves.length ?? 0) > 0 }
+      if (result.failed.length > 0 || result.links.skipped > 0) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items did not move, or some links could not be updated.', result)
       return result
     }
     const catalog = await catalogForRename(target.path, target.kind)
@@ -2010,8 +2020,9 @@ export function App() {
       if (out.error instanceof BridgeRequestError) throw new AutomationFailure(out.error.code, out.error.message)
       throw out.error
     }
-    if (out.links.skipped) throw new AutomationFailure('PARTIAL_FAILURE', 'The rename completed, but some referencing documents could not be updated.', out)
-    return { ...out, diskSaved: true }
+    const result = { ...out, history: historyCounts(), diskSaved: true }
+    if (out.links.skipped) throw new AutomationFailure('PARTIAL_FAILURE', 'The rename completed, but some referencing documents could not be updated.', result)
+    return result
   })
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
@@ -2398,6 +2409,11 @@ export function App() {
 
   // The window's undo list (YAZ-3255 D10; YAZ-3268 D17): moves, renames and deletes, per window, for the session only (S42).
   const moveHistory = useRef(createMoveHistory())
+  /** How many steps each list holds, as every CLI organization write reports it. */
+  const historyCounts = (): { undo: number; redo: number } => {
+    const { undo, redo } = moveHistory.current.inspect()
+    return { undo: undo.length, redo: redo.length }
+  }
   const replaying = useRef(false)
   // ⌘Z, ⌘⇧Z and the toast's buttons reach the newest undo and redo through this box.
   const moveReplay = useRef<{ undo: () => boolean; redo: () => boolean }>({ undo: () => false, redo: () => false })
@@ -2737,20 +2753,26 @@ export function App() {
    * drag makes (`requestRename`). D21 asks ONCE for the whole list, judged on the window's own
    * snapshot (`valuesLeftBehind`); a list that clears nothing runs at once. A move into the folder
    * the item is already in is no move (S7). All moves stay in one vault (YAZ-2602 R11).
+   * `planMoves` is that judgment; the CLI's `file move` shares it, and its `dropValues` is the sheet's answer (YAZ-4566).
    */
+  const planMoves = useCallback((list: readonly Move[]): { root: string; moves: Move[]; lost: LeftBehind } | 'between' | null => {
+    const moves = list.filter((move) => move.newPath !== move.oldPath)
+    const first = moves[0]
+    if (first === undefined) return null
+    const { root, wikilinks } = scopeOf(first.oldPath)
+    if (root === null) return null
+    if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return 'between'
+    return { root, moves, lost: valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders }) }
+  }, [scopeOf])
   const requestMoves = useCallback(
     async (list: readonly Move[]): Promise<void> => {
-      const moves = list.filter((move) => move.newPath !== move.oldPath)
-      const first = moves[0]
-      if (first === undefined) return
-      const { root, wikilinks } = scopeOf(first.oldPath)
-      if (root === null) return
-      if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return notify(BETWEEN_VAULTS)
-      const lost = valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders })
-      if (lost.folders.length > 0) return setPendingMoves({ root, moves, lost })
-      await runMoves(moves)
+      const plan = planMoves(list)
+      if (plan === null) return
+      if (plan === 'between') return notify(BETWEEN_VAULTS)
+      if (plan.lost.folders.length > 0) return setPendingMoves(plan)
+      await runMoves(plan.moves)
     },
-    [scopeOf, runMoves, notify],
+    [planMoves, runMoves, notify],
   )
 
   /** The move sheet's Move: the list runs as it does unasked, unless its vault left the window. Its Cancel moves nothing (S10). */
