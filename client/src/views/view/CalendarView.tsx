@@ -77,16 +77,17 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   const { days, undated } = useMemo(() => bucketByDay(rows, dateKey), [rows, dateKey])
   const weeks = useMemo(() => (scale === 'week' ? [weekDays(anchor)] : monthWeeks(month.y, month.m)), [scale, anchor, month.y, month.m])
-  // A week's 7 days in their order (D22), once per rows or week change, not on each dragover.
-  const weekCards = useMemo(
-    () => (scale === 'week' && dateKey !== null ? new Map(weeks[0].map((day) => [day, timeFirst(days.get(day) ?? [], dateKey)])) : null),
-    [scale, weeks, days, dateKey],
+  // Each day on screen in its order, the timed cards first in time order (D22), in Month and in Week alike, so the
+  // note window steps exactly as the days show. Once per rows or page change, not on each dragover.
+  const dayCards = useMemo(
+    () => new Map(weeks.flat().map((day) => [day, dateKey === null ? [] : timeFirst(days.get(day) ?? [], dateKey)])),
+    [weeks, days, dateKey],
   )
   // The note window (YAZ-4547 D24): day by day across the days on screen, the timed cards first within a day (every
   // card, also those behind "+N more"), then "No date". Once per rows or page change, not on each dragover.
   const windowOrder = useMemo(
-    () => (dateKey === null ? [] : [...weeks.flat().flatMap((day) => weekCards?.get(day) ?? timeFirst(days.get(day) ?? [], dateKey)), ...undated]),
-    [weeks, weekCards, days, undated, dateKey],
+    () => (dateKey === null ? [] : [...weeks.flat().flatMap((day) => dayCards.get(day) ?? []), ...undated]),
+    [weeks, dayCards, undated, dateKey],
   )
   const rootRef = useRef<HTMLDivElement>(null)
   useNoteWindowItems(windowLink, windowOrder, rootRef)
@@ -222,10 +223,10 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
         {weeks.map((week) => (
           <div key={week[0]} className="view-cal__week" role="row">
             {week.map((day) => {
-              const list = days.get(day) ?? []
+              const list = dayCards.get(day) ?? []
               const all = expanded === day
-              // Week shows every card, the timed ones first (D22); Month keeps the row order and "+N more".
-              const shown = weekCards?.get(day) ?? (all ? list : list.slice(0, DAY_CARDS))
+              // Week shows every card (D22); Month shows DAY_CARDS and "+N more". Both put the timed cards first.
+              const shown = isWeek || all ? list : list.slice(0, DAY_CARDS)
               const inMonth = isWeek || Number(day.slice(5, 7)) === month.m + 1
               return (
                 <div

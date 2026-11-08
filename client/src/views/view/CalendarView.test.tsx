@@ -130,7 +130,8 @@ describe('calendar grid (YAZ-4540 D11)', () => {
 
   it('a card goes on the date part as written: a time zone does not move it (S3)', () => {
     const { el } = mount(CALENDAR)
-    expect(titlesIn(day(el, '2026-12-03'))).toEqual(['Bare', 'Late zone'])
+    // Both stay on Dec 3; the timed one comes first, as in Week (YAZ-4558 D22, so the note window steps as the day shows).
+    expect(titlesIn(day(el, '2026-12-03'))).toEqual(['Late zone', 'Bare'])
     expect(titlesIn(day(el, '2026-12-04'))).toEqual(['Timed'])
   })
 
