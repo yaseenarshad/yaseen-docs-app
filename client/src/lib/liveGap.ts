@@ -51,12 +51,14 @@ export function drawnPlaces(strip: HTMLElement | null, items: Iterable<HTMLEleme
 
 /**
  * THE GLIDE (YAZ-3808 D6): each item slides from where it was drawn (`from`) to where the layout puts it now. An item
- * not in `from` stood nowhere, and does not move. The animation is the compositor's.
+ * not in `from` stood nowhere, and does not move. The animation is the compositor's. `now`: the places after, by key, where
+ * the offset parent is not the list's own (a table's sticky cells, YAZ-4606); without it, each item's offset.
  */
-export function glide(items: Iterable<HTMLElement>, keyOf: (el: HTMLElement) => string, from: ReadonlyMap<string, number>, axis: Axis = 'x'): void {
+export function glide(items: Iterable<HTMLElement>, keyOf: (el: HTMLElement) => string, from: ReadonlyMap<string, number>, axis: Axis = 'x', now?: ReadonlyMap<string, number>): void {
   for (const el of items) {
-    const at = axis === 'x' ? el.offsetLeft : el.offsetTop
-    const d = (from.get(keyOf(el)) ?? at) - at
+    const key = keyOf(el)
+    const at = now?.get(key) ?? (axis === 'x' ? el.offsetLeft : el.offsetTop)
+    const d = (from.get(key) ?? at) - at
     // Under a pixel is rounding, not a move.
     if (Math.abs(d) >= 1) el.animate?.([{ transform: partTransform(d, axis) }, { transform: 'none' }], { duration: GLIDE_MS, easing: EASING })
   }
