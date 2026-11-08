@@ -66,16 +66,17 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 
 ## Work still required before coverage closes
 
-These are remaining implementation or verification tasks, not approved exclusions.
+These are remaining verification tasks, not approved exclusions. Items 1–5 of the earlier list are built: live board exports, drawing actions, right panel, tab moves, organization Undo/Redo, folder pages, columns, formulas, shortcuts, and ID maintenance.
 
-1. Explicit live board exports to PNG, SVG, and PDF. Reuse the current renderer and PDF service without a dialog.
-2. Inventory supported drawing/diagram actions and expose safe actions through the ready editor surface.
-3. Cover right-panel navigation, cross-window tab moves, and organization Undo/Redo through complete actions.
-4. Cover folder-page settings, views, shortcuts, and folder-level properties through the current format and action services.
-5. Cover ID settings and maintenance. Reads must not initiate ID assignment.
-6. Verify live Markdown and Monaco actions, Read only behavior, dirty board conflicts, and outside-edit Undo separation.
-7. Reconcile YAZ-4279 if its merge behavior becomes available. Do not build a second collaboration engine.
-8. Complete composed hidden runtime flows, size/latency/memory measurements, fresh checker rounds, and the isolated HMR demo.
+1. Prove live Markdown and code-editor actions end to end, human Read only, and outside-edit Undo separation.
+2. Declare a precise output schema for every command, with a contract check that the real result matches it.
+3. YAZ-4279 (board merge) is not on `main`. Until it lands, CLI board writes refuse stale revisions and unsaved live edits; they do not merge.
+4. Fresh checker rounds, size, latency and memory on the final head, and the isolated HMR demo.
+
+Known limits that stay by design:
+- Diagram live actions other than Save: draw.io's embed protocol runs an action with no reply and no enabled check, so the app cannot report a result.
+- Diagram PDF export: the app's diagram export offers PNG and SVG only.
+- Board image exports need an open tab; rendering needs the live engine.
 
 ## Deliberate boundaries
 
