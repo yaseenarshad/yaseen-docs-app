@@ -1305,8 +1305,14 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             className="view-table__group-cell"
             colSpan={span}
             style={{ '--depth': line.depth } as CSSProperties}
-            // The empty part of a group header row shows no system menu (YAZ-4604); the group menu (2F) is wired at merge.
-            onContextMenu={(e) => e.preventDefault()}
+            // The empty part of a group header row opens the header's own menu (YAZ-4604, 2F), never the system one: the
+            // event goes on to the header, whose state holds the menu, so only that header re-renders.
+            onContextMenu={(e) => {
+              e.preventDefault()
+              const header = e.currentTarget.querySelector('.view-group')
+              if (header === null || header.contains(e.target as Node)) return
+              header.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: e.clientX, clientY: e.clientY }))
+            }}
           >
             <GroupHeader
               def={def}

@@ -128,6 +128,16 @@ describe('group header right-click (YAZ-4604, D55)', () => {
     expect(items()).toEqual(['Collapse this group', 'New note in this group'])
   })
 
+  it('a right-click on the empty part of a table group row opens the same menu (not the system one)', () => {
+    const el = mount(viewOf('table'))
+    const cell = headersOf(el, 'A')[0].closest<HTMLElement>('td.view-table__group-cell')!
+    const event = rightClick(cell)
+    expect(event.defaultPrevented).toBe(true)
+    expect(items()).toEqual(['Collapse this group', 'New note in this group'])
+    pick('Collapse this group')
+    expect(expanded(headersOf(el, 'A')[0])).toBe('false')
+  })
+
   it('the item collapses only that inner group, stores its key, and then reads "Expand this group"', async () => {
     const { storage } = await import('../../lib/storage')
     const el = mount(viewOf('table'))
