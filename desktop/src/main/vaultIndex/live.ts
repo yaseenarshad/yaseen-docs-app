@@ -592,11 +592,18 @@ async function idsVault(root: unknown): Promise<{ r: string; entry: Entry; lette
  * The state of `root` after a pass. The index takes what the pass did at once: the watcher tells it
  * the same a moment later, and Settings must not show the counts of before meanwhile.
  */
-async function stateAfter(root: string, entry: Entry, { changed, gone }: Pass): Promise<IdsState> {
-  for (const file of gone) entry.records.delete(file)
-  for (const file of changed) await scanFile(root, file).then((record) => entry.records.set(file, record), () => undefined)
-  if (changed.length > 0 || gone.length > 0) schedulePersist(root, entry.records)
-  return idsStateOf(entry.records.values(), (await vaultIds(root)).letters, await planLeft(root))
+async function stateAfter(root: string, entry: Entry, pass: Pass): Promise<{ state: IdsState; pass: Pass }> {
+  for (const file of pass.gone) entry.records.delete(file)
+  for (const file of pass.changed) await scanFile(root, file).then((record) => entry.records.set(file, record), () => undefined)
+  if (pass.changed.length > 0 || pass.gone.length > 0) schedulePersist(root, entry.records)
+  return { state: idsStateOf(entry.records.values(), (await vaultIds(root)).letters, await planLeft(root)), pass }
+}
+
+/** What the CLI reads of a vault's IDs (YAZ-4518): off a read-only entry, so the read never adopts, sweeps or mints. Any answer. */
+export async function readIdsState(root: string): Promise<IdsState & { answer: boolean | null; saved: boolean; ask: NonNullable<IndexResponse['ask']> }> {
+  const entry = await liveEntry(root, true)
+  const { answer, letters, saved } = await vaultIds(root)
+  return { answer: answer ?? null, saved, ...idsStateOf(entry.records.values(), letters, await planLeft(root)), ask: wouldWrite(entry.records, entry.dirs, letters) }
 }
 
 /** What the rows "ID letters" and "Old IDs" of Settings show (YAZ-2677 🔒 D5, D6, `IdsState`). */
@@ -614,6 +621,11 @@ export async function idsState(root: unknown): Promise<IdsState> {
  * writes the same bytes (S84): no number is taken, and nothing depends on the time.
  */
 export async function changeLetters(root: unknown, letters: unknown, renamed?: Renamed): Promise<IdsState> {
+  return (await changeLettersPass(root, letters, renamed)).state
+}
+
+/** `changeLetters` with what its pass did: the files changed, renamed and left, and whether it stopped (YAZ-4518). */
+export async function changeLettersPass(root: unknown, letters: unknown, renamed?: Renamed): Promise<{ state: IdsState; pass: Pass }> {
   if (typeof letters !== 'string' || !isIdLetters(letters)) throw new BridgeFailure('BAD_REQUEST', "'letters' must be 2 to 5 letters")
   const { r, entry, letters: held, saved } = await idsVault(root)
   const to = letters.toUpperCase()
@@ -627,6 +639,11 @@ export async function changeLetters(root: unknown, letters: unknown, renamed?: R
  * the notes the index holds. Never throws for a file it could not write: the state says what is left.
  */
 export async function giveOldIdsNumbers(root: unknown, renamed?: Renamed): Promise<IdsState> {
+  return (await giveOldIdsNumbersPass(root, renamed)).state
+}
+
+/** `giveOldIdsNumbers` with what its pass did (YAZ-4518). */
+export async function giveOldIdsNumbersPass(root: unknown, renamed?: Renamed): Promise<{ state: IdsState; pass: Pass }> {
   const { r, entry, letters } = await idsVault(root)
   return stateAfter(r, entry, await backfill(r, entry.records.values(), letters, renamed))
 }
@@ -649,11 +666,32 @@ export async function giveIdsNow(root: string): Promise<void> {
 }
 
 /**
+ * "Give IDs" with its counts (YAZ-4518): `giveIdsNow`, then each file it was to write is read again
+ * into the index, so `left` tells what it could not give now instead of what the watcher has not yet seen.
+ */
+export async function giveIdsNowCounted(root: string): Promise<{ before: NonNullable<IndexResponse['ask']>; left: NonNullable<IndexResponse['ask']> }> {
+  const entry = await liveEntry(root)
+  const { letters } = await vaultIds(root)
+  const before = wouldWrite(entry.records, entry.dirs, letters)
+  const notes = [...entry.records.values()].filter((r) => !isFolderSettingsPath(r.path) && vaultNoteId(r.id, letters) === undefined).map((r) => r.path)
+  await giveIdsNow(root)
+  const files = [...notes, ...entry.dirs.map((dir) => path.join(dir, FOLDER_SETTINGS_FILE))]
+  for (const file of files) await scanFile(root, file).then((record) => entry.records.set(file, record), () => undefined)
+  schedulePersist(root, entry.records)
+  return { before, left: wouldWrite(entry.records, entry.dirs, (await vaultIds(root)).letters) }
+}
+
+/**
  * "Check for duplicates" (YAZ-2677 🔒 D7, S55 to S57): the notes of `root` that share an ID are
  * swept now, on this Mac (R32), and what happened is told in one line. A clash that another Mac
  * must fix is told and not touched. A note with no ID is not given one here.
  */
 export async function checkDuplicates(root: unknown): Promise<string> {
+  return (await checkDuplicatesResult(root)).line
+}
+
+/** `checkDuplicates` with the sweep's result, for the counts (YAZ-4518). */
+export async function checkDuplicatesResult(root: unknown): Promise<{ line: string; result: SweepResult }> {
   const r = requireAbsPath(root, 'root')
   const entry = await liveEntry(r)
   const { answer, letters } = await vaultIds(r)
@@ -667,7 +705,7 @@ export async function checkDuplicates(root: unknown): Promise<string> {
   const result = await sweepIds(r, entry.records, among, (p) => entry.records.get(p)?.id)
   // The line below tells the result: no notice beside it.
   report(r, entry, result, false)
-  return checkLine(result)
+  return { line: checkLine(result), result }
 }
 
 /**

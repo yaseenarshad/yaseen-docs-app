@@ -31,7 +31,7 @@ import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import { requireRequest, requireStringArray } from '../fs/validate'
 import type { Store } from '../store'
-import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
+import { changeLettersPass, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbersPass, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import { dailyNote } from '../notes/daily'
@@ -52,7 +52,13 @@ const repairFocus = (p: Promise<void>): Promise<void> => p.catch((err: unknown) 
 const repairIcons = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[icons] repair failed: ${String(err)}`))
 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */
-export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor' | 'vaultNotice'>): void {
+/** The two vault-wide ID changes as Settings runs them, with each rename's follow-up and the `ids:changed` broadcast: the CLI's `ids` commands call these too (YAZ-4518). */
+export interface IdChanges {
+  reletter(root: string, letters: string): ReturnType<typeof changeLettersPass>
+  backfill(root: string): ReturnType<typeof giveOldIdsNumbersPass>
+}
+
+export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor' | 'vaultNotice'>): IdChanges {
   handle(CONTRACT.tree, tree)
   handle(CONTRACT.readFile, readFile)
   // The pages of the tab board (YAZ-2648 D6): read-only, one call for every open tab.
@@ -191,14 +197,12 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // When either ends, done or stopped, each window of the vault reads its index at once: notes have
   // new paths, and the watcher's events would hold the read back until they settle (YAZ-3102).
   const thenTell = <T>(root: string, change: Promise<T>): Promise<T> => change.finally(() => broadcastAll(CONTRACT.ids.onChanged.channel, { root }))
-  handleWithEvent(CONTRACT.ids.reletter, async (e, root: unknown, letters: unknown) => {
-    const r = ownVault(e, root)
-    return thenTell(r, changeLetters(r, letters, followed))
-  })
-  handleWithEvent(CONTRACT.ids.backfill, async (e, root: unknown) => {
-    const r = ownVault(e, root)
-    return thenTell(r, giveOldIdsNumbers(r, followed))
-  })
+  const idChanges: IdChanges = {
+    reletter: (root, letters) => thenTell(root, changeLettersPass(root, letters, followed)),
+    backfill: (root) => thenTell(root, giveOldIdsNumbersPass(root, followed)),
+  }
+  handleWithEvent(CONTRACT.ids.reletter, async (e, root: unknown, letters: unknown) => (await idChanges.reletter(ownVault(e, root), letters as string)).state)
+  handleWithEvent(CONTRACT.ids.backfill, async (e, root: unknown) => (await idChanges.backfill(ownVault(e, root))).state)
   // A clash this Mac fixed (S45): a note whose file name followed its new ID (R26) takes the rename
   // handler's downstream, so its open tab, its favorite and its stored paths follow; then ONE
   // notice in each window that shows the vault. Set once: `registerFsIpc` runs once.
@@ -467,4 +471,5 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     const { paths } = requireRequest(req)
     dropLanded(e.sender, requireStringArray(paths, 'paths').map((p) => requireAbsPath(p, 'paths')))
   })
+  return idChanges
 }

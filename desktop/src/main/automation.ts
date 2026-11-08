@@ -1,4 +1,6 @@
 import { assetCommand } from './automation/assets'
+import { folderCommand } from './automation/folders'
+import { idsCommand } from './automation/ids'
 import { storageCommand } from './automation/storage'
 import { settingsFolderCommand } from './automation/settingsFolder'
 import { recordSaved } from './documentSaves'
@@ -45,6 +47,11 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
     }
   }
   switch (request.command) {
+    case 'folder.read': case 'folder.setProperty': case 'folder.removeProperty': case 'shortcut.list': case 'shortcut.add': case 'shortcut.remove':
+    case 'folderView.add': case 'folderView.rename': case 'folderView.duplicate': case 'folderView.remove': case 'folderView.move': case 'folderView.setOptions': case 'folderView.setDefault':
+      return { writes: definition.effect === 'read' ? [] : ['documents', 'configuration'], run: () => folderCommand(context.state!(), context.store!, request.command, request.args, record) }
+    case 'ids.state': case 'ids.enable': case 'ids.disable': case 'ids.reletter': case 'ids.backfill': case 'ids.check':
+      return { writes: definition.effect === 'read' ? [] : ['documents', 'configuration'], run: () => idsCommand(context.state!(), context.services!.idChanges, request.command, request.args) }
     case 'languageHelper.state': case 'languageHelper.install': case 'languageHelper.cancel':
       return { writes: request.command === 'languageHelper.install' ? ['language-helpers'] : [], run: async () => {
         const service = context.services!.languageHelpers
