@@ -26,7 +26,7 @@ import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY, writableKey } from './readOnlyRows'
-import { valueHistory } from './view/valueHistory'
+import { noteRef, valueHistory } from './view/valueHistory'
 import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
@@ -217,6 +217,8 @@ export function freeName(base: string, taken: ReadonlySet<string>): string {
  */
 const backViews = new Map<string, string>()
 const MAX_BACK_VIEWS = 200
+/** A file at a new row's path born this long after the row is another note (YAZ-4637 T3): its Undo trashes nothing. */
+const NEWER_FILE_MS = 60_000
 function keepBackView(key: string, name: string): void {
   backViews.delete(key)
   backViews.set(key, name)
@@ -348,8 +350,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // collection a previous edit created would throw ("Expected YAML collection"). The round trip
   // through text keeps comments and rebuilds proper nodes.
   // An Undo runs after later renders (YAZ-4594 S29): it writes through the def and the door that are current then.
-  const latest = useRef({ parsed, onChange })
-  latest.current = { parsed, onChange }
+  const latest = useRef({ parsed, onChange, folder })
+  latest.current = { parsed, onChange, folder }
   const write = (mutate: (def: ViewSet) => void): ViewSet => {
     const now = latest.current
     const next = parseViews(serializeViews(updateViews(now.parsed, mutate)))
@@ -647,14 +649,26 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       seedGroup(seed, group, view, at.level)
     }
     setCreateError(null)
+    const bornAt = Date.now()
     return folder.create(seed).then(
       (path) => {
         const trash = folder.trash
         if (trash !== undefined) {
-          const undo = () => void trash([path]).catch((err: unknown) => folder.onNotice?.(`Can't undo: ${err instanceof Error ? err.message : String(err)}`))
-          // One step of the page's history too (S41); its undo trashes the note, so it has no redo.
-          history.push({ undo })
-          folder.onNotice?.('Added a row', 'info', 'undo', { label: 'Undo', run: undo, fades: true })
+          // The note as a ref (YAZ-4637 T3): a retitle in a vault without ids renames the file, and the ref follows; a
+          // delete retires it. The Undo trashes only the note it made: nothing once it is gone, and nothing when the
+          // index shows a file at that path born well after this row (the create-time marker).
+          const ref = noteRef(path)
+          const undo = () => {
+            const at = ref.path
+            if (at === null) return
+            const now = latest.current.folder.vaultRecords.find((r) => r.path === at)
+            if (now !== undefined && now.ctime > bornAt + NEWER_FILE_MS) return folder.onNotice?.("Can't undo: another note stands where the new row was")
+            void trash([at]).catch((err: unknown) => folder.onNotice?.(`Can't undo: ${err instanceof Error ? err.message : String(err)}`))
+          }
+          // One step of the page's history too (S41); its undo trashes the note, so it has no redo. The toast's Undo is that step (T9e).
+          const step = { undo, notes: [ref] }
+          history.push(step)
+          folder.onNotice?.('Added a row', 'info', 'undo', { label: 'Undo', run: () => void history.undoStep(step), fades: true })
         }
         return path
       },

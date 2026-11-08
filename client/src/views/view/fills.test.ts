@@ -8,7 +8,7 @@ import type { IndexRecord } from '@shared/types'
 import { linkResolver, vaultDirs } from '../../links/folderLinks'
 import { TEST_RECORDS } from '../testRecords'
 import type { ViewSet } from '../viewSchema'
-import { cellFillOf, fillIndex, fillPaint, noteLinkOf, setViewFill } from './fills'
+import { cellFillOf, fillIndex, fillPaint, noteLinkOf, setViewFill, setViewFills } from './fills'
 
 const resolveLink = linkResolver(TEST_RECORDS, '/vault', vaultDirs('/vault'))
 const [AGENCY, LEVELS] = TEST_RECORDS
@@ -83,6 +83,16 @@ describe('setViewFill', () => {
 
   // Until YAZ-4636 T9b a write dropped the fills of notes outside the folder's shown records and of links that did not
   // resolve: Subfolders: Hide narrows the shown records, so a fill of a hidden note went with the next write.
+  it('with the vault index loaded (YAZ-4637, after T9b): a write drops the entries whose note is in no record, and keeps a hidden note\'s', () => {
+    const d = def([
+      { note: '[[The Levels of an Agency]]', fill: 'red' }, // a note outside the shown rows: kept
+      { note: '[[Gone Note]]', fill: 'blue' }, // in no record of the vault: dropped
+      { fill: 'pink' }, // not a fill of ours to judge: kept
+    ])
+    setViewFills(d, 0, [{ record: AGENCY }], 'grey', resolveLink, true)
+    expect(d.views[0].fills).toEqual([{ note: '[[The Levels of an Agency]]', fill: 'red' }, { fill: 'pink' }, { note: '[[Agentic Agency]]', fill: 'grey' }])
+  })
+
   it('a write changes only the cells it is for: a fill of a note the view does not show, or a link to nothing, stays (YAZ-4636 T9b)', () => {
     const d = def([
       { note: '[[The Levels of an Agency]]', fill: 'red' },

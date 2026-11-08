@@ -12,7 +12,7 @@ import { ViewsPane, type FolderHost, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import { readOnlyPaths } from '../readOnlyRows'
-import { MAX_STEPS, dropAllHistories, valueHistory } from './valueHistory'
+import { MAX_STEPS, dropAllHistories, renameHistoryPaths, valueHistory } from './valueHistory'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -139,6 +139,63 @@ describe('⌘Z / ⇧⌘Z over value changes (S41)', () => {
       [NOTES[1].path, [{ key: 'num', value: 2 }, { key: 'word', value: 'w1' }]],
     ])
     expect(key(cell(el, 0, 1), 'z', { metaKey: true })).toBe(true)
+  })
+
+  it('two quick commits to one cell before the index refreshes (YAZ-4637 T4): ⌘Z steps back through both values', async () => {
+    const { el, writeValues } = mount()
+    const edit = async (text: string) => {
+      act(() => cell(el, 0, 2).focus())
+      key(cell(el, 0, 2), 'Enter')
+      const input = el.querySelector<HTMLInputElement>('input[aria-label="Edit word"]')!
+      typeInto(input, text)
+      key(input, 'Enter')
+      await flush()
+    }
+    await edit('new')
+    await edit('newer') // the record still says w0
+    expect(calls(writeValues).map(([, w]) => w[0].value)).toEqual(['new', 'newer'])
+    writeValues.mockClear()
+    key(cell(el, 1, 2), 'z', { metaKey: true })
+    key(cell(el, 1, 2), 'z', { metaKey: true })
+    expect(calls(writeValues).map(([, w]) => w[0].value)).toEqual(['new', 'w0'])
+  })
+
+  it('the toast\'s Undo is the ⌘Z step (YAZ-4637 T9e): after it, ⌘Z has nothing of the table\'s and ⇧⌘Z redoes the fill', async () => {
+    // Words with no series in them, so the fill copies the first down.
+    const words = [note(0, { num: 1, word: 'alpha' }), note(1, { num: 2, word: 'beta' })]
+    const { el, writeValues, onNotice } = mount(TABLE, { records: words })
+    // The fill handle, alpha down one row: the one bulk gesture with a toast.
+    act(() => cell(el, 0, 2).focus())
+    down(el.querySelector<HTMLElement>('.view-table__fill-handle')!)
+    move(cell(el, 1, 2))
+    up(cell(el, 1, 2))
+    await flush()
+    expect(calls(writeValues)).toEqual([[words[1].path, [{ key: 'word', value: 'alpha' }]]])
+    const [message, , type, action] = onNotice.mock.lastCall as [string, string, string, { run: () => void }]
+    expect([message, type]).toEqual(['Filled 1 cell', 'undo'])
+    writeValues.mockClear()
+    act(() => action.run())
+    await flush()
+    expect(calls(writeValues)).toEqual([[words[1].path, [{ key: 'word', value: 'beta' }]]])
+    writeValues.mockClear()
+    expect(key(cell(el, 0, 1), 'z', { metaKey: true })).toBe(true) // nothing left: the page's
+    expect(writeValues).not.toHaveBeenCalled()
+    key(cell(el, 0, 1), 'z', { metaKey: true, shiftKey: true })
+    expect(calls(writeValues)).toEqual([[words[1].path, [{ key: 'word', value: 'alpha' }]]])
+  })
+
+  it('a step follows its note\'s rename (YAZ-4637 T3): ⌘Z writes the old value to the new path', async () => {
+    const { el, writeValues } = mount()
+    act(() => cell(el, 0, 2).focus())
+    key(cell(el, 0, 2), 'Enter')
+    const input = el.querySelector<HTMLInputElement>('input[aria-label="Edit word"]')!
+    typeInto(input, 'new')
+    key(input, 'Enter')
+    await flush()
+    writeValues.mockClear()
+    renameHistoryPaths(NOTES[0].path, '/vault/f/Renamed.md')
+    key(cell(el, 1, 2), 'z', { metaKey: true })
+    expect(calls(writeValues)).toEqual([['/vault/f/Renamed.md', [{ key: 'word', value: 'w0' }]]])
   })
 
   it('⌘Z inside an open cell editor is the editor\'s own', () => {

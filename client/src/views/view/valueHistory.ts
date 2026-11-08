@@ -3,18 +3,31 @@
  * is one gesture — a typed cell, a paste, a fill, a clear, a Set value, a New row below — however many notes it wrote.
  * Undo runs the step's `undo` and moves it to the redo list; a new step empties that list. A step with no `redo` (New
  * row below: its undo trashes the note) leaves no redo. At most `MAX_STEPS` steps a page, and `MAX_PAGES` pages, the
- * oldest out.
+ * oldest out. A toast's Undo is `undoStep` on its own step (YAZ-4637 T9e): the same move to the redo list as ⌘Z.
+ * The notes a step writes are `PathRef`s (T3): a rename remaps them and a delete retires them, so a step written
+ * before a retitle still reaches its note — and never another file at the old path.
  */
 export interface HistoryStep {
   undo: () => void
   redo?: () => void
+  /** The notes the step writes (YAZ-4637 T3), remapped by `renameHistoryPaths`, retired by `dropHistoryPaths`. */
+  notes?: PathRef[]
 }
+
+/** A note as a step holds it: its current path, or null once the note was deleted. */
+export interface PathRef {
+  path: string | null
+}
+
+export const noteRef = (path: string): PathRef => ({ path })
 
 export interface ValueHistory {
   push: (step: HistoryStep) => void
   /** False when there was nothing to undo (or redo): the key is then not the table's. */
   undo: () => boolean
   redo: () => boolean
+  /** Undo THIS step, wherever it stands in the past, and move it to the redo list as ⌘Z would (T9e). False when it is not in the past. */
+  undoStep: (step: HistoryStep) => boolean
 }
 
 export const MAX_STEPS = 100
@@ -33,6 +46,13 @@ export function valueHistory(key: string): ValueHistory {
     }
     return page
   }
+  const undoAt = (page: { past: HistoryStep[]; future: HistoryStep[] }, at: number): boolean => {
+    if (at < 0) return false
+    const [step] = page.past.splice(at, 1)
+    step.undo()
+    if (step.redo !== undefined) page.future.push(step)
+    return true
+  }
   return {
     push: (step) => {
       const page = lists()
@@ -42,11 +62,11 @@ export function valueHistory(key: string): ValueHistory {
     },
     undo: () => {
       const page = lists()
-      const step = page.past.pop()
-      if (step === undefined) return false
-      step.undo()
-      if (step.redo !== undefined) page.future.push(step)
-      return true
+      return undoAt(page, page.past.length - 1)
+    },
+    undoStep: (step) => {
+      const page = lists()
+      return undoAt(page, page.past.indexOf(step))
     },
     redo: () => {
       const page = lists()
@@ -61,6 +81,27 @@ export function valueHistory(key: string): ValueHistory {
 
 /** For tests: every page's history gone. */
 export const dropAllHistories = (): void => pages.clear()
+
+const isAtOrUnder = (path: string, at: string): boolean => path === at || path.startsWith(`${at}/`)
+
+/** Every step's refs, in every page's past and future. */
+function eachRef(visit: (ref: PathRef) => void): void {
+  for (const page of pages.values()) for (const step of [...page.past, ...page.future]) for (const ref of step.notes ?? []) visit(ref)
+}
+
+/** A note or folder renamed (App's `file:renamed`, YAZ-4637 T3): every step's note at or under it follows. */
+export function renameHistoryPaths(oldPath: string, newPath: string): void {
+  eachRef((ref) => {
+    if (ref.path !== null && isAtOrUnder(ref.path, oldPath)) ref.path = newPath + ref.path.slice(oldPath.length)
+  })
+}
+
+/** A note or folder deleted (App's `file:deleted`, T3): every step's note at or under it is retired — an Undo writes nothing there. */
+export function dropHistoryPaths(path: string): void {
+  eachRef((ref) => {
+    if (ref.path !== null && isAtOrUnder(ref.path, path)) ref.path = null
+  })
+}
 
 /** At most this many notes are written at once (S48): a big paste does not start hundreds of writes together. */
 export const WRITE_BATCH = 8

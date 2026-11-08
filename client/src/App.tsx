@@ -60,6 +60,7 @@ import { setCalendarDaySetting, setTimeFormatSetting } from './editor/table/time
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
 import { dropNoteWindowsAt, renameNoteWindows } from './views/view/NoteWindow'
+import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
@@ -2183,6 +2184,8 @@ export function App() {
         const now = live.current
         // A shared board's pending live-link upload follows it (YAZ-3040); by prefix, so a folder too.
         noteBoardRenamed(oldPath, newPath)
+        // A folder table's ⌘Z steps and Undo toasts on the note follow it (YAZ-4637 T3); by prefix, so a folder too.
+        renameHistoryPaths(oldPath, newPath)
         // E1c: an in-app rename's watcher echo (unlink+add with preserved stats) must never
         // be re-offered as an "external rename" hypothesis, by any vault's detector.
         for (const vault of now.vaults) vault.renames.suppress(oldPath, newPath, kind)
@@ -2712,6 +2715,8 @@ export function App() {
   useEffect(
     () =>
       api.file.onDeleted(({ path, kind }) => {
+        // A folder table's ⌘Z steps on the note retire with it (YAZ-4637 T3): an Undo never writes or trashes another file at that path.
+        dropHistoryPaths(path)
         if (kind === 'dir') {
           retireDeletedDir(path)
           dropNoteWindowsAt(path)

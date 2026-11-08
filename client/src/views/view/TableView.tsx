@@ -8,7 +8,7 @@ import type { ColumnDecl, FolderSettings } from '../folderSettings'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { fillSeries } from '../../editor/table/fillSeries'
-import { type ValueHistory, inBatches } from './valueHistory'
+import { type HistoryStep, type ValueHistory, inBatches, noteRef } from './valueHistory'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { edgeScroller } from '../../lib/edgeScroll'
 import { flushSync } from 'react-dom'
@@ -165,6 +165,8 @@ interface WritePlan {
 const PROGRESS_AT = 20
 /** Clearing more cells than this asks first (S49). */
 const CONFIRM_CLEAR_AT = 50
+/** The most (note, key) pairs `lastWritten` keeps while the index catches up (YAZ-4637 T4). */
+const LAST_WRITTEN_MAX = 500
 /** The editors a typed letter opens with that letter in them (YAZ-4612 S42): a field. A box, a choice or a date picker opens by Enter. */
 const TYPE_KINDS = new Set(['text', 'number', 'link', 'list', 'multi-link'])
 /** The step of each arrow key for ⇧+arrow (YAZ-4603 D53): rows, then columns. */
@@ -835,6 +837,35 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * The bulk write (YAZ-4593): the cells' values grouped into ONE guarded write per note. A read-only note, the Name
    * column and a column no view writes are skipped, and so is a value the note already has.
    */
+  /**
+   * The last value this table wrote per note and key, until the index shows it (YAZ-4637 T4): two quick commits to one
+   * cell before the index refreshes would otherwise both record the rendered value as their `before`, and ⌘Z would skip
+   * a state. Read by `liveValue`; an entry goes once the record catches up (or the note leaves the rows), and the map
+   * keeps at most `LAST_WRITTEN_MAX` entries, the oldest out. A ref: no render on a write.
+   */
+  const lastWritten = useRef(new Map<string, unknown>())
+  const liveValue = (path: string, bare: string): unknown => {
+    const at = `${path}\n${bare}`
+    return lastWritten.current.has(at) ? lastWritten.current.get(at) : records.find((r) => r.path === path)?.properties[bare]
+  }
+  const noteWritten = (path: string, writes: readonly PropertyWrite[]): void => {
+    const map = lastWritten.current
+    for (const { key, value } of writes) {
+      map.delete(`${path}\n${key}`)
+      map.set(`${path}\n${key}`, value)
+    }
+    while (map.size > LAST_WRITTEN_MAX) map.delete(map.keys().next().value!)
+  }
+  useEffect(() => {
+    const map = lastWritten.current
+    if (map.size === 0) return
+    const byPath = new Map(records.map((r) => [r.path, r]))
+    for (const [at, value] of map) {
+      const [path, bare] = at.split('\n') as [string, string]
+      const record = byPath.get(path)
+      if (record === undefined || JSON.stringify(record.properties[bare] ?? null) === JSON.stringify(value ?? null)) map.delete(at)
+    }
+  }, [records])
   const planWrites = (cells: Iterable<{ r: number; c: number; value: unknown }>): WritePlan => {
     const byPath = new Map<string, PropertyWrite[]>()
     /** Each note's values before the write, for Undo: one write per note back (undefined deletes the key). */
@@ -844,12 +875,13 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       const row = flat[r]
       const bare = bares[c]
       if (row === undefined || bare == null || readOnly.has(row.record.path)) continue
-      if (JSON.stringify(row.record.properties[bare] ?? null) === JSON.stringify(value)) continue
+      const was = liveValue(row.record.path, bare)
+      if (JSON.stringify(was ?? null) === JSON.stringify(value)) continue
       count++
       const writes = byPath.get(row.record.path)
       if (writes === undefined) byPath.set(row.record.path, [{ key: bare, value }])
       else writes.push({ key: bare, value })
-      before.set(row.record.path, [...(before.get(row.record.path) ?? []), { key: bare, value: row.record.properties[bare] }])
+      before.set(row.record.path, [...(before.get(row.record.path) ?? []), { key: bare, value: was }])
     }
     return { byPath, before, count }
   }
@@ -857,6 +889,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** Each note's writes, one write per note, at most 8 at a time (YAZ-4612 S48); more than 20 notes say so first. */
   const writeNotes = (writes: ReadonlyMap<string, PropertyWrite[]>): Promise<void> => {
     if (writes.size > PROGRESS_AT) onNotice?.(`Writing ${writes.size} notes…`)
+    for (const [path, w] of writes) noteWritten(path, w)
     return inBatches(
       [...writes].map(([path, w]) => () =>
         onWriteValues(path, w).catch((error: unknown) => {
@@ -868,15 +901,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   }
   /**
    * A planned bulk write: ONE step of the page's ⌘Z history (S41), then the writes. With `undo`, one S29 toast for the
-   * whole gesture once every write landed (YAZ-4609 D61).
+   * whole gesture once every write landed (YAZ-4609 D61); its Undo is the step's own (YAZ-4637 T9e), so ⌘Z and ⇧⌘Z
+   * agree with it. The step holds its notes as refs (T3): a rename since moves the writes with the note.
    */
   const commitWrites = (plan: WritePlan, undo?: (count: number) => string): void => {
     if (plan.count === 0) return
-    const back = () => void writeNotes(plan.before).catch(() => {})
-    history?.push({ undo: back, redo: () => void writeNotes(plan.byPath).catch(() => {}) })
-    writeNotes(plan.byPath).then(
+    const notes = [...plan.byPath].map(([path, writes]) => ({ ref: noteRef(path), writes, before: plan.before.get(path)! }))
+    const live = (pick: 'writes' | 'before') => new Map(notes.flatMap((note) => (note.ref.path === null ? [] : [[note.ref.path, note[pick]] as const])))
+    const back = () => void writeNotes(live('before')).catch(() => {})
+    const step: HistoryStep = { undo: back, redo: () => void writeNotes(live('writes')).catch(() => {}), notes: notes.map((note) => note.ref) }
+    history?.push(step)
+    writeNotes(live('writes')).then(
       () => {
-        if (undo !== undefined) onNotice?.(undo(plan.count), 'info', 'undo', { label: 'Undo', run: back, fades: true })
+        if (undo !== undefined) onNotice?.(undo(plan.count), 'info', 'undo', { label: 'Undo', run: () => (history === undefined ? back() : void history.undoStep(step)), fades: true })
       },
       () => {},
     )
@@ -890,9 +927,17 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (plan.count > CONFIRM_CLEAR_AT) setConfirmClear(plan)
     else commitWrites(plan)
   }
-  /** One typed cell's commit, one step of the history (S41): undo writes the value it had. */
-  const commitCell = (path: string, bare: string, before: unknown, next: unknown): Promise<unknown> => {
-    history?.push({ undo: () => void onWriteValues(path, [{ key: bare, value: before }]).catch(failed), redo: () => void onWriteValues(path, [{ key: bare, value: next }]).catch(failed) })
+  /** One typed cell's commit, one step of the history (S41): undo writes the value it had — the last one this table wrote when the index is behind (T4). */
+  const commitCell = (path: string, bare: string, next: unknown): Promise<unknown> => {
+    const before = liveValue(path, bare)
+    const ref = noteRef(path)
+    const write = (value: unknown) => {
+      if (ref.path === null) return
+      noteWritten(ref.path, [{ key: bare, value }])
+      void onWriteValues(ref.path, [{ key: bare, value }]).catch(failed)
+    }
+    history?.push({ undo: () => write(before), redo: () => write(next), notes: [ref] })
+    noteWritten(path, [{ key: bare, value: next }])
     return onWriteValue(path, bare, next)
   }
   /**
@@ -1070,7 +1115,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (sel?.cols === null) targets.push(...notes.map((record) => ({ record })))
     const unwrap = sel?.rows === null ? new Set(area.cols.map((c) => canonicalKey(keys[c]))) : null
     const clear = (d: ViewSet) => {
-      setViewFills(d, viewIndex, targets, null, resolveLink)
+      setViewFills(d, viewIndex, targets, null, resolveLink, true)
       const v = d.views[viewIndex]
       if (unwrap === null || v.columnWrap === undefined) return
       const kept = Object.fromEntries(Object.entries(v.columnWrap).filter(([k]) => !unwrap.has(canonicalKey(k))))
@@ -1337,7 +1382,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         onFill={(target, fill) => {
           const targets = area.rows.flatMap((r) => (target === 'row' ? [{ record: flat[r].record }] : area.cols.map((c) => ({ record: flat[r].record, column: keys[c] }))))
           // No fill offers Undo, as the row menu's (YAZ-4594 S29).
-          onUpdate((d) => setViewFills(d, viewIndex, targets, fill, resolveLink), fill === null ? 'Cleared fill' : undefined)
+          onUpdate((d) => setViewFills(d, viewIndex, targets, fill, resolveLink, true), fill === null ? 'Cleared fill' : undefined)
         }}
         onSetValue={(value) => writeCells(area.rows.map((r) => ({ r, c: one, value })))}
         onClearFormatting={() => clearFormatting(sel, area)}
@@ -1490,7 +1535,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     titles={linkNames[c] ?? titles}
                     resolve={resolve}
                     readOnly={locked}
-                    onCommit={(next) => commitCell(line.row.record.path, bares[c]!, line.row.record.properties[bares[c]!], next)}
+                    onCommit={(next) => commitCell(line.row.record.path, bares[c]!, next)}
                   />
                 ) : (
                   rowCell(line.row, key, resolve)
@@ -1650,7 +1695,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 <FillMenu
                   start={cellFillOf(fills, rowMenu.record.path, rowMenu.column)}
                   // No fill offers Undo (YAZ-4594 S29).
-                  onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, resolveLink), fill === null ? 'Cleared fill' : undefined)}
+                  onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, resolveLink, true), fill === null ? 'Cleared fill' : undefined)}
                   onClose={() => setRowMenu(null)}
                 />
                 {/* ⌘\ on this one cell (YAZ-4603 D54). */}

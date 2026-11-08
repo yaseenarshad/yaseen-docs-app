@@ -12,7 +12,7 @@ import { ViewsPane } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import type { NewNoteSeed } from '../newNote'
-import { dropAllHistories } from './valueHistory'
+import { dropAllHistories, dropHistoryPaths, renameHistoryPaths } from './valueHistory'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -83,8 +83,9 @@ function mount(text: string, records: IndexRecord[] = RECORDS) {
     )
   draw()
   /** The index brings the new note, with its seed. */
-  const arrive = () => {
-    shown = [...shown, note('Untitled', seeds.at(-1)!.properties)]
+  const arrive = (ctime?: number) => {
+    shown = [...shown, { ...note('Untitled', seeds.at(-1)!.properties), ...(ctime !== undefined && { ctime }) }]
+    folder.vaultRecords = shown
     draw()
   }
   return { el: container, seeds, create, trash, retitle, onNotice, onOpenFile, arrive }
@@ -161,6 +162,31 @@ describe('New row below (YAZ-4611 D63)', () => {
     expect([message, type]).toEqual(['Added a row', 'undo'])
     act(() => action.run())
     expect(trash).toHaveBeenCalledExactlyOnceWith([NEW])
+  })
+
+  it('the Undo follows the note\'s rename (YAZ-4637 T3): a retitle in a vault without ids renames the file, and Undo trashes THAT file', async () => {
+    const { el, onNotice, trash } = mount(TABLE)
+    await newBelow(el, 'B')
+    renameHistoryPaths(NEW, '/vault/f/My title.md')
+    const [, , , action] = onNotice.mock.lastCall as [string, string, string, { run: () => void }]
+    act(() => action.run())
+    expect(trash).toHaveBeenCalledExactlyOnceWith(['/vault/f/My title.md'])
+  })
+
+  it('the Undo trashes only the note it created (T3): nothing once that note was deleted, and nothing when a newer file stands at its path', async () => {
+    const a = mount(TABLE)
+    await newBelow(a.el, 'B')
+    dropHistoryPaths(NEW)
+    act(() => (a.onNotice.mock.lastCall as [string, string, string, { run: () => void }])[3].run())
+    expect(a.trash).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    // A file born long after the row: not the one the Undo made.
+    const b = mount(TABLE)
+    await newBelow(b.el, 'B')
+    b.arrive(Date.now() + 120_000)
+    act(() => (b.onNotice.mock.lastCall as [string, string, string, { run: () => void }])[3].run())
+    expect(b.trash).not.toHaveBeenCalled()
+    expect(b.onNotice.mock.lastCall![0]).toContain("Can't undo")
   })
 
   it('⌘Z on the table trashes it too: one step of the page\'s history (YAZ-4612 S41)', async () => {
