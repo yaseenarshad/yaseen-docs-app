@@ -336,6 +336,7 @@ export function BoardView({
               onToggle={() => onToggleGroup(ck)}
               onNew={onNewInGroup === undefined || !adds[at.level] ? undefined : () => onNewInGroup(child, undefined, at)}
               resolve={resolve}
+              level={at.level}
             />
           )
           return (
@@ -377,6 +378,7 @@ export function BoardView({
               onToggle={() => onToggleGroup(gk)}
               onNew={onNewInGroup === undefined || !adds[0] ? undefined : () => onNewInGroup(g)}
               resolve={resolve}
+              level={0}
             />
           )
           return (

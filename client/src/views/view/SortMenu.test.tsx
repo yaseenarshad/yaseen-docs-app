@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { SortMenu } from './SortMenu'
-import type { Mutate, SortSpec, ViewSet, ViewDef } from '../viewSchema'
+import { type GroupBySpec, type Mutate, type SortSpec, type ViewSet, type ViewDef, groupByLevels } from '../viewSchema'
 import type { FolderSettings } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
 
@@ -194,4 +194,155 @@ it('offers a declared-only property for Board grouping with zero records', () =>
   act(() => choice!.click())
   expect(view().groupBy).toEqual({ property: 'note.Stage', direction: 'ASC' })
   expect(el.querySelector('[aria-label="Group direction"]')?.textContent).toContain('Option order')
+})
+
+describe('Group levels: handles, remove, third level, indent (YAZ-4532)', () => {
+  const THREE: GroupBySpec[] = [
+    { property: 'note.status', direction: 'ASC' },
+    { property: 'note.priority', direction: 'DESC' },
+    { property: 'note.pillar', direction: 'ASC' },
+  ]
+  const levelGrip = (el: HTMLElement, index: number, label: string) => el.querySelector<HTMLButtonElement>(`[aria-label="Reorder group level ${index}: ${label}"]`)!
+
+  it('a drag moves a level: the outer dropped below the last makes it the innermost', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: structuredClone(THREE) })
+    drag(levelGrip(el, 1, 'Status'), 'dragstart')
+    const last = levelGrip(el, 3, 'Pillar').closest('li')!
+    drag(last, 'dragover', 5)
+    expect(last.classList.contains('view-prop--insert-after')).toBe(true)
+    drag(last, 'drop', 5)
+    expect(view().groupBy).toEqual([THREE[1], THREE[2], THREE[0]])
+  })
+
+  it('arrow keys move the focused level, and the focus stays on its handle', () => {
+    const { el, view, onUpdate } = mount({ name: 'Table', type: 'table', groupBy: structuredClone(THREE) })
+    const grip = levelGrip(el, 2, 'Priority')
+    grip.focus()
+    press(grip, 'ArrowUp')
+    expect(view().groupBy).toEqual([THREE[1], THREE[0], THREE[2]])
+    expect(document.activeElement).toBe(levelGrip(el, 1, 'Priority'))
+    press(levelGrip(el, 1, 'Priority'), 'ArrowUp') // already first: nothing to write
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('× removes the outer level and the inner moves up into the single-object form', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: [THREE[0], THREE[1]] })
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Remove group level 1: Status"]')!.click())
+    expect(view().groupBy).toEqual(THREE[1])
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Remove group level 1: Priority"]')!.click())
+    expect(view().groupBy).toBeUndefined()
+  })
+
+  it('a handle is disabled while there is one level only', () => {
+    const { el } = mount({ name: 'Table', type: 'table', groupBy: THREE[0] })
+    expect(levelGrip(el, 1, 'Status').disabled).toBe(true)
+  })
+
+  it('the third picker shows when two levels are set, adds a third level, and is gone at three', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: THREE[0] })
+    expect(el.querySelector('[aria-label="Then group by (level 3)"]')).toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Then group by"]')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.priority"]')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Then group by (level 3)"]')!.click())
+    const offered = [...el.querySelectorAll<HTMLElement>('[role="option"]')].map(o => o.dataset.value)
+    expect(offered).not.toContain('note.status') // the same property twice is refused
+    expect(offered).not.toContain('note.priority')
+    act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.pillar"]')!.click())
+    expect(view().groupBy).toEqual([THREE[0], { property: 'note.priority', direction: 'ASC' }, { property: 'note.pillar', direction: 'ASC' }])
+    expect(el.querySelectorAll('[aria-label^="Reorder group level"]')).toHaveLength(3)
+    expect(el.querySelectorAll('[aria-label="Group by"], [aria-label="Then group by"], [aria-label="Then group by (level 3)"]')).toHaveLength(3) 
+    expect(el.querySelector('[aria-label="Then group by (level 4)"]')).toBeNull() // no fourth picker
+  })
+
+  it('Folder may repeat at every level (YAZ-2541)', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: [{ property: 'file.folder', direction: 'ASC' }, { property: 'file.folder', direction: 'ASC' }] })
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Then group by (level 3)"]')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="file.folder"]')!.click())
+    expect(groupByLevels(view()).map(l => l.property)).toEqual(['file.folder', 'file.folder', 'file.folder'])
+  })
+
+  it('every write keeps a level\'s `by`, `highlight` and `large`: direction, property, move and remove', () => {
+    const styled: GroupBySpec[] = [
+      { property: 'note.status', direction: 'ASC', by: 'value', highlight: 'yellow', large: true },
+      { property: 'note.priority', direction: 'ASC', highlight: 'blue' },
+      { property: 'note.pillar', direction: 'ASC', large: true },
+    ]
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: structuredClone(styled) })
+    pick(el, 'Then group direction', 'Z → A')
+    expect(view().groupBy).toEqual([styled[0], { ...styled[1], direction: 'DESC' }, styled[2]])
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Then group by (level 3)"]')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.tags"]')!.click())
+    expect(groupByLevels(view())[2]).toEqual({ property: 'note.tags', direction: 'ASC', large: true })
+    const grip = levelGrip(el, 1, 'Status')
+    grip.focus()
+    press(grip, 'ArrowDown')
+    expect(groupByLevels(view())[1]).toEqual(styled[0])
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Remove group level 1: Priority"]')!.click())
+    expect(view().groupBy).toEqual([styled[0], { property: 'note.tags', direction: 'ASC', large: true }])
+  })
+
+  it('Group indent: Small and Large write `groupIndent`; Medium, the default, removes the key', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: THREE[0] })
+    const step = (name: string) => el.querySelector<HTMLElement>('[aria-label="Group indent"]')!.querySelector<HTMLButtonElement>(`[data-indent="${name}"]`)!
+    expect(step('medium').getAttribute('aria-pressed')).toBe('true')
+    act(() => step('small').click())
+    expect(view().groupIndent).toBe('small')
+    act(() => step('large').click())
+    expect(view().groupIndent).toBe('large')
+    expect(step('large').getAttribute('aria-pressed')).toBe('true')
+    act(() => step('medium').click())
+    expect(Object.hasOwn(view(), 'groupIndent')).toBe(false)
+  })
+
+  it('no Group indent control without a group level', () => {
+    const { el } = mount({ name: 'Table', type: 'table' })
+    expect(el.querySelector('[aria-label="Group indent"]')).toBeNull()
+  })
+})
+
+describe('Group header style chip (YAZ-3742 D5)', () => {
+  const chip = (el: HTMLElement, level: number) => el.querySelector<HTMLButtonElement>(`[aria-label="Style of group level ${level}"]`)!
+  const panel = (el: HTMLElement) => el.querySelector<HTMLElement>('[role="dialog"][aria-label^="Style of group level"]')
+
+  it('each level has an "Aa" chip that opens None, the 8 colours and Large', () => {
+    const { el } = mount({ name: 'Table', type: 'table', groupBy: [{ property: 'note.status' }, { property: 'note.priority' }] })
+    expect(chip(el, 1).textContent).toBe('Aa')
+    expect(chip(el, 2)).not.toBeNull()
+    act(() => chip(el, 1).click())
+    expect(chip(el, 1).getAttribute('aria-expanded')).toBe('true')
+    expect([...panel(el)!.querySelectorAll('[data-highlight]')].map(b => b.getAttribute('data-highlight'))).toEqual(['', 'yellow', 'green', 'blue', 'pink', 'orange', 'purple', 'red', 'gray'])
+    expect(panel(el)!.querySelector('[data-highlight=""]')!.getAttribute('aria-pressed')).toBe('true')
+    expect(panel(el)!.querySelector('[aria-label="Large"]')!.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('a swatch writes `highlight`, Large writes `large`, and None / Large off remove the keys; the other level is untouched', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: [{ property: 'note.status', direction: 'DESC', by: 'value' }, { property: 'note.priority', direction: 'ASC' }] })
+    act(() => chip(el, 1).click())
+    act(() => panel(el)!.querySelector<HTMLButtonElement>('[data-highlight="green"]')!.click())
+    expect(view().groupBy).toEqual([{ property: 'note.status', direction: 'DESC', by: 'value', highlight: 'green' }, { property: 'note.priority', direction: 'ASC' }])
+    expect(panel(el)).not.toBeNull() // stays open for the next choice
+    act(() => panel(el)!.querySelector<HTMLButtonElement>('[aria-label="Large"]')!.click())
+    expect(groupByLevels(view())[0]).toEqual({ property: 'note.status', direction: 'DESC', by: 'value', highlight: 'green', large: true })
+    expect(chip(el, 1).querySelector('.group-style__sample--large')).not.toBeNull() // the chip shows the style
+    act(() => panel(el)!.querySelector<HTMLButtonElement>('[data-highlight=""]')!.click())
+    act(() => panel(el)!.querySelector<HTMLButtonElement>('[aria-label="Large"]')!.click())
+    expect(groupByLevels(view())[0]).toEqual({ property: 'note.status', direction: 'DESC', by: 'value' })
+    expect(groupByLevels(view())[1]).toEqual({ property: 'note.priority', direction: 'ASC' })
+  })
+
+  it('Escape closes the panel and gives the focus back to the chip', () => {
+    const { el } = mount({ name: 'Table', type: 'table', groupBy: { property: 'note.status' } })
+    act(() => chip(el, 1).click())
+    press(panel(el)!, 'Escape')
+    expect(panel(el)).toBeNull()
+    expect(document.activeElement).toBe(chip(el, 1))
+  })
+
+  it('the style stays through a property change and an order change', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: { property: 'note.status', highlight: 'pink', large: true } })
+    pick(el, 'Group direction', 'Z → A')
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Group by"]')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.priority"]')!.click())
+    expect(view().groupBy).toEqual({ property: 'note.priority', direction: 'DESC', highlight: 'pink', large: true })
+  })
 })

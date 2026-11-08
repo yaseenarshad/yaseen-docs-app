@@ -1,6 +1,6 @@
-import { type MouseEvent as ReactMouseEvent, type ReactNode, useMemo, useState } from 'react'
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useMemo, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import type { ViewSet, ViewDef } from '../viewSchema'
+import { type ViewSet, type ViewDef, groupIndentOf } from '../viewSchema'
 import { titleCandidates, type LinkCandidate } from '../../links/completion'
 import { belongsToTitles } from '../../links/folderLinks'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
@@ -191,6 +191,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
           onToggle={() => onToggleGroup(gk)}
           onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g, undefined, at)}
           resolve={resolve}
+          level={at.level}
         />
         {!isCollapsed && (g.children === undefined ? items(g.rows) : (g.direct?.length ?? 0) > 0 && items(g.direct ?? []))}
         {!isCollapsed && g.children?.map((child) => section(child, childSpot(g, at)))}
@@ -199,7 +200,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   }
 
   return (
-    <div className="view-list">
+    <div className="view-list" style={{ '--view-group-indent': `${groupIndentOf(view)}px` } as CSSProperties}>
       {groups === null
         ? items(rows)
         : groups.map((g) => section(g, TOP_SPOT))}

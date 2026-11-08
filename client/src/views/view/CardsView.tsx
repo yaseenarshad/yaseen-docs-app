@@ -2,7 +2,7 @@ import { type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode,
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { api } from '../../api'
 import { createPreviewCache } from '../../lib/previewCache'
-import type { ViewSet, ViewDef } from '../viewSchema'
+import { type ViewSet, type ViewDef, groupIndentOf } from '../viewSchema'
 import { titleCandidates, type LinkCandidate } from '../../links/completion'
 import { belongsToTitles } from '../../links/folderLinks'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
@@ -178,6 +178,8 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     '--view-card-w': `${cardWidth(view.cardSize)}px`,
     '--view-card-fit': view.imageFit === 'contain' ? 'contain' : 'cover',
     '--view-card-ratio': Number.isFinite(ratio) && ratio > 0 ? ratio : 1,
+    // The nested-group step, the same setting as the table and the list (YAZ-4532 D10).
+    '--view-group-indent': `${groupIndentOf(view)}px`,
   } as CSSProperties
 
   const grid = (shown: readonly Row[]) => (
@@ -240,6 +242,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
           onToggle={() => onToggleGroup(gk)}
           onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g, undefined, at)}
           resolve={resolve}
+          level={at.level}
         />
         {!isCollapsed && (g.children === undefined ? grid(g.rows) : (g.direct?.length ?? 0) > 0 && grid(g.direct ?? []))}
         {!isCollapsed && g.children?.map((child) => section(child, childSpot(g, at)))}

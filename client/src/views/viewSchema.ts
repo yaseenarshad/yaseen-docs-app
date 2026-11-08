@@ -22,6 +22,10 @@ export interface GroupBySpec {
   direction?: 'ASC' | 'DESC'
   /** As on `SortSpec` (YAZ-3940). */
   by?: 'value'
+  /** This level's header highlight (YAZ-3742 D5): a highlight colour name — yellow, green, blue, pink, orange, purple, red, gray. */
+  highlight?: string
+  /** This level's header in the Large size, 14px bold (YAZ-3742 D5). */
+  large?: boolean
 }
 
 export interface ViewDef {
@@ -43,6 +47,8 @@ export interface ViewDef {
   /** The `#` gutter (YAZ-1513). Absent = shown. */
   rowNumbers?: boolean
   rowHeight?: string
+  /** The step of each nested group level (YAZ-4532 D10): `small` 14px, `medium` 28px, `large` 42px. Absent = medium. */
+  groupIndent?: 'small' | 'medium' | 'large'
   image?: string
   cardSize?: string | number
   imageFit?: string
@@ -67,6 +73,13 @@ export const MAX_GROUP_LEVELS = 3
 /** The levels the engine groups by: those with a property name, the first `MAX_GROUP_LEVELS` of them. */
 export const shownGroupLevels = (view: ViewDef): GroupBySpec[] =>
   groupByLevels(view).filter(g => g && typeof g.property === 'string').slice(0, MAX_GROUP_LEVELS)
+
+/** The group indent steps in px (YAZ-4532 D10); `medium` is the 28px step tables had before. */
+export const GROUP_INDENTS = { small: 14, medium: 28, large: 42 } as const
+
+/** A view's group indent in px. An absent or unknown `groupIndent` gives the medium step. */
+export const groupIndentOf = (view: ViewDef): number =>
+  typeof view.groupIndent === 'string' && Object.hasOwn(GROUP_INDENTS, view.groupIndent) ? GROUP_INDENTS[view.groupIndent] : GROUP_INDENTS.medium
 
 export interface ViewSet {
   filters?: FilterNode

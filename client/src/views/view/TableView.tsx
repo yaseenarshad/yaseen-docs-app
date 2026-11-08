@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf } from '../viewSchema'
 import { titleCandidates } from '../../links/completion'
 import { belongsToTitles } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -255,6 +255,12 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** The freeze line (YAZ-4534): the table block's 3px edge on the last frozen column. */
   const frozenClass = (index: number): string | false => isFrozen(index) && (index === frozen - 1 ? 'view-table__frozen view-table__frozen-end' : 'view-table__frozen')
   const frozenStyle = (index: number): CSSProperties | undefined => (isFrozen(index) ? { left: frozenLeft[index] } : undefined)
+  /** A body cell's inline style: the frozen offset, a fill (YAZ-4536, painted by views.css) and the Name cell's group depth (YAZ-4532 D10). */
+  const cellStyle = (index: number, fill: string | undefined, depth: number | undefined): CSSProperties | undefined => {
+    const base = frozenStyle(index)
+    if (fill === undefined && depth === undefined) return base
+    return { ...base, ...(fill !== undefined && { '--view-cell-fill': fillPaint(fill) }), ...(depth !== undefined && { '--depth': depth }) } as CSSProperties
+  }
   /** The view's cell and row fills by note path (YAZ-4536): built once per fills write, two map reads per cell. */
   const fills = useMemo(() => fillIndex(view.fills, resolveLink), [view.fills, resolveLink])
 
@@ -467,7 +473,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}>
         <table
           className="view-table"
-          style={{ width: gutterWidth + keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px` } as CSSProperties}
+          style={{ width: gutterWidth + keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px`, '--view-group-indent': `${groupIndentOf(view)}px` } as CSSProperties}
           onKeyDown={onKeyDown}
         >
           <thead>
@@ -517,6 +523,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       onToggle={() => onToggleGroup(line.gk)}
                       onNew={onNewInGroup === undefined || !groupTakesNew(view, line.at.level) ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
                       resolve={resolve}
+                      level={line.at.level}
                     />
                   </td>
                 </tr>
@@ -538,10 +545,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     return (
                       <td
                         key={key}
-                        // `view-table__name` has no style: the tests and the end-to-end specs find the Name cell by it.
+                        // The tests and the end-to-end specs find the Name cell by `view-table__name`; its only style is the group indent (YAZ-4532).
                         className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', frozenClass(c), fill !== undefined && 'view-table__cell--fill'].filter(Boolean).join(' ') || undefined}
                         // A fill (YAZ-4536) is a custom property that views.css paints over the cell's base.
-                        style={fill === undefined ? frozenStyle(c) : ({ ...frozenStyle(c), '--view-cell-fill': fillPaint(fill) } as CSSProperties)}
+                        // The Name cell steps in by one group indent per level above the row (YAZ-4532 D10).
+                        style={cellStyle(c, fill, c === nameCol && line.at !== null ? line.at.level + 1 : undefined)}
                         tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
                         data-cell={`${line.r}:${c}`}
                         // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
