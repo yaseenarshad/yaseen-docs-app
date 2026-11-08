@@ -7,6 +7,7 @@ import { atomicWrite, BridgeFailure, byNameCi, createDurable, fsCall, isSkipped,
 import { requireRequest } from './validate'
 import { readBoundedRegularFile } from './boundedRead'
 import { revisionOf, serializeFile } from './revision'
+import { parseScene } from './pictureStore'
 
 /**
  * `window.yaseenDocs.readAsset(root, ref)` / `.writeAsset(req)` (Bases 4E, GRO-2139 — Desktop
@@ -134,7 +135,8 @@ export async function readAssetFile(file: string, includeRevision = false): Prom
  * search has no counterpart. Write semantics are `file.ts`'s: atomic tmp+rename, `expectedMtime`
  * → `CONFLICT` with nothing written, and `create` for `createFile`'s never-overwrite `wx`. The
  * request crosses IPC from a sandboxed renderer, so its shape is checked like a request body,
- * not trusted from the type.
+ * not trusted from the type. So is its content (YAZ-4571): a drawing must parse as a scene, as
+ * `drawing:save` demands, and picture bytes must carry a picture's header (`isPicture`).
  */
 export async function writeAsset(req: AssetWriteRequest & { expectedRevision?: string }): Promise<AssetWriteResponse> {
   const body = requireRequest(req)
@@ -142,6 +144,17 @@ export async function writeAsset(req: AssetWriteRequest & { expectedRevision?: s
   if (typeof body.path !== 'string' || body.path.trim() === '' || body.path.includes('\0')) throw new BridgeFailure('BAD_REQUEST', "missing 'path'")
   const file = resolveUnderRoot(root, body.path)
   return serializeFile(file, () => writeAssetUnlocked(req))
+}
+
+/**
+ * The headers of the `IMAGE_EXTENSIONS` formats, read as latin1 (one char per byte). A raster name takes any raster
+ * header: the app names a paste by the system's MIME type, which can disagree with the bytes, and the browser
+ * shows such a file anyway. An SVG is text, so it needs an `<svg` element.
+ */
+const RASTER_HEAD = /^(?:\x89PNG\r\n\x1a\n|\xff\xd8\xff|GIF8|RIFF[^]{4}WEBP|[^]{4}ftyp|BM)/
+function isPicture(ext: string, bytes: Uint8Array): boolean {
+  const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  return ext === 'svg' ? buf.includes('<svg') : RASTER_HEAD.test(buf.toString('latin1', 0, 12))
 }
 
 async function writeAssetUnlocked(req: AssetWriteRequest & { expectedRevision?: string }): Promise<AssetWriteResponse> {
@@ -170,6 +183,8 @@ async function writeAssetUnlocked(req: AssetWriteRequest & { expectedRevision?: 
   }
   const size = typeof body === 'string' ? Buffer.byteLength(body, 'utf8') : body.byteLength
   if (size > MAX_FILE_BYTES) throw new BridgeFailure('TOO_LARGE', `content exceeds ${MAX_FILE_BYTES} bytes`, { path: file })
+  if (typeof body === 'string') parseScene(body, file, 'BAD_REQUEST')
+  else if (!isPicture(ext, body)) throw new BridgeFailure('BAD_REQUEST', ext === 'svg' ? 'the text is not an SVG picture' : 'the bytes are not a PNG, JPEG, GIF, WebP, AVIF or BMP picture', { path: file })
   if (expectedMtime !== undefined && typeof expectedMtime !== 'number') {
     throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: file })
   }

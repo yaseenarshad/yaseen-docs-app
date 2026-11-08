@@ -157,7 +157,7 @@ describe('registerFsIpc', () => {
   })
 
   it('fs:write-asset writes a drawing sidecar and envelopes its failures (YAZ-876)', async () => {
-    const req = { root, path: 'assets/drawings/scene.excalidraw', content: '{"type":"excalidraw"}' }
+    const req = { root, path: 'assets/drawings/scene.excalidraw', content: '{"type":"excalidraw","elements":[]}' }
     const ok = await registered(CONTRACT.writeAsset.channel)({ sender: {} }, req)
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')
@@ -172,7 +172,7 @@ describe('registerFsIpc', () => {
   })
 
   it('fs:write-asset takes image BYTES on an image path and passes them through untouched (YAZ-1661)', async () => {
-    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff])
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff])
     const ok = await registered(CONTRACT.writeAsset.channel)({ sender: {} }, { root, path: 'assets/pasted.png', content: bytes })
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')

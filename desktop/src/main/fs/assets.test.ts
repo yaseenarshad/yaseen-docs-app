@@ -222,11 +222,11 @@ describe('writeAsset', () => {
   it("the receipt's mtime is the file's own, and a fresh expectedMtime writes while a stale one CONFLICTs", async () => {
     const file = path.join(vault, 'assets', 'drawings', 'first.excalidraw')
     const before = (await stat(file)).mtimeMs
-    expect(await code(writeAsset({ root: vault, path: rel('first.excalidraw'), content: '{"stale":true}', expectedMtime: before - 1000 }))).toBe('CONFLICT')
+    expect(await code(writeAsset({ root: vault, path: rel('first.excalidraw'), content: '{"stale":true,"elements":[]}', expectedMtime: before - 1000 }))).toBe('CONFLICT')
     expect(await readFile(file, 'utf8')).toBe(SCENE) // nothing was written
-    const res = await writeAsset({ root: vault, path: rel('first.excalidraw'), content: '{"fresh":true}', expectedMtime: before })
+    const res = await writeAsset({ root: vault, path: rel('first.excalidraw'), content: '{"fresh":true,"elements":[]}', expectedMtime: before })
     expect(res.mtime).toBe((await stat(file)).mtimeMs)
-    expect(await readFile(file, 'utf8')).toBe('{"fresh":true}')
+    expect(await readFile(file, 'utf8')).toBe('{"fresh":true,"elements":[]}')
   })
 
   it('CONFLICT carries the disk mtime so the renderer can show it', async () => {
@@ -244,7 +244,7 @@ describe('writeAsset', () => {
   it('create mode never overwrites: a second create is ALREADY_EXISTS and the bytes stand', async () => {
     const file = path.join(vault, 'assets', 'drawings', 'once.excalidraw')
     expect((await writeAsset({ root: vault, path: rel('once.excalidraw'), content: SCENE, create: true })).path).toBe(file)
-    expect(await code(writeAsset({ root: vault, path: rel('once.excalidraw'), content: '{"clobber":true}', create: true }))).toBe('ALREADY_EXISTS')
+    expect(await code(writeAsset({ root: vault, path: rel('once.excalidraw'), content: '{"clobber":true,"elements":[]}', create: true }))).toBe('ALREADY_EXISTS')
     expect(await readFile(file, 'utf8')).toBe(SCENE)
   })
 
@@ -309,9 +309,9 @@ describe('writeAsset image bytes', () => {
   })
 
   it('a subarray writes exactly its own byte range, never its backing buffer', async () => {
-    const backing = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8])
-    await writeAsset({ root: vault, path: rel('slice.gif'), content: backing.subarray(2, 6) })
-    expect([...(await readFile(path.join(vault, 'assets', 'slice.gif')))]).toEqual([3, 4, 5, 6])
+    const backing = Uint8Array.from([1, 2, ...PNG, 3, 4])
+    await writeAsset({ root: vault, path: rel('slice.gif'), content: backing.subarray(2, 2 + PNG.length) })
+    expect(await readFile(path.join(vault, 'assets', 'slice.gif'))).toEqual(PNG)
   })
 
   it('a BYTE body is an image: UNSUPPORTED_EXTENSION on a drawing or any other path', async () => {
@@ -319,6 +319,17 @@ describe('writeAsset image bytes', () => {
     expect(await code(writeAsset({ root: vault, path: rel('note.md'), content: new Uint8Array(PNG) }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(writeAsset({ root: vault, path: rel('pic'), content: new Uint8Array(PNG) }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await stat(path.join(vault, 'assets', 'scene.excalidraw')).catch(() => null)).toBeNull()
+  })
+
+  it('YAZ-4571: content must be what the name says: BAD_REQUEST for garbage bytes or a text that is not a scene, and nothing lands', async () => {
+    expect(await code(writeAsset({ root: vault, path: rel('garbage.png'), content: Buffer.from('garbage') }))).toBe('BAD_REQUEST')
+    expect(await code(writeAsset({ root: vault, path: rel('plain.svg'), content: Buffer.from('not a picture') }))).toBe('BAD_REQUEST')
+    expect(await code(writeAsset({ root: vault, path: rel('bad.excalidraw'), content: 'not json' }))).toBe('BAD_REQUEST')
+    expect(await code(writeAsset({ root: vault, path: rel('bad.excalidraw'), content: '{"type":"excalidraw"}' }))).toBe('BAD_REQUEST')
+    for (const name of ['garbage.png', 'plain.svg', 'bad.excalidraw']) expect(await stat(path.join(vault, 'assets', name)).catch(() => null)).toBeNull()
+    // A raster name takes any raster header (a paste is named by its MIME type); an SVG needs its element.
+    await writeAsset({ root: vault, path: rel('jpeg-named.png'), content: Buffer.from([0xff, 0xd8, 0xff, 0xdb]) })
+    await writeAsset({ root: vault, path: rel('pic.svg'), content: Buffer.from('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"/>') })
   })
 
   it('neither a string nor bytes is BAD_REQUEST', async () => {
@@ -334,14 +345,14 @@ describe('writeAsset image bytes', () => {
   it('create mode never overwrites an image either: ALREADY_EXISTS and the bytes stand', async () => {
     const file = path.join(vault, 'assets', 'once.webp')
     expect((await writeAsset({ root: vault, path: rel('once.webp'), content: new Uint8Array(PNG), create: true })).path).toBe(file)
-    expect(await code(writeAsset({ root: vault, path: rel('once.webp'), content: Uint8Array.from([0]), create: true }))).toBe('ALREADY_EXISTS')
+    expect(await code(writeAsset({ root: vault, path: rel('once.webp'), content: Buffer.from('GIF89a'), create: true }))).toBe('ALREADY_EXISTS')
     expect(await readFile(file)).toEqual(PNG)
   })
 
   it('expectedMtime guards an image write like a drawing: stale → CONFLICT with nothing written', async () => {
     const file = path.join(vault, 'assets', 'pasted.png')
     const before = (await stat(file)).mtimeMs
-    expect(await code(writeAsset({ root: vault, path: rel('pasted.png'), content: Uint8Array.from([0]), expectedMtime: before - 1000 }))).toBe('CONFLICT')
+    expect(await code(writeAsset({ root: vault, path: rel('pasted.png'), content: Buffer.from('GIF89a'), expectedMtime: before - 1000 }))).toBe('CONFLICT')
     expect(await readFile(file)).toEqual(PNG)
   })
 
