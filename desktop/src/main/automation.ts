@@ -32,9 +32,8 @@ export function routeFor(command: string): Route {
 /** Tests prove each result against the command's declared output (YAZ-4506). A packaged or dev app does not. */
 const checkOutputs = process.env.VITEST !== undefined
 
-export function prepareAutomation(context: AutomationContext, request: AutomationRequest, content: Buffer): Operation {
+export function prepareAutomation(context: AutomationContext, request: AutomationRequest): Operation {
   validateInput(commandDefinition(request.command).input, request.args)
-  if (content.length || request.hasContent) throw new AutomationFailure('INVALID_INPUT', 'This command accepts no content.')
   const route = routeFor(request.command)
   return { writes: route.locks(request.args), run: async () => {
     try {

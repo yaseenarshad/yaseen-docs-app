@@ -1,11 +1,7 @@
 /** Public automation protocol. It contains no Electron channels or renderer implementation names. */
 export const AUTOMATION_VERSION = 1
-export const AUTOMATION_LIMITS = {
-  active: 4, queued: 64, receipts: 256, receiptMs: 5 * 60_000,
-  controlBytes: 64 * 1024, contentBytes: 64 * 1024 * 1024, receiptBytes: 4096,
-  inFlightContentBytes: 128 * 1024 * 1024,
-  waitMs: 30_000, page: 50, maxPage: 200,
-} as const
+/** Four running requests and 64 waiting; 256 small receipts for five minutes; one bounded JSON frame each way. */
+export const AUTOMATION_LIMITS = { active: 4, queued: 64, receipts: 256, receiptMs: 5 * 60_000, receiptBytes: 4096, controlBytes: 64 * 1024, waitMs: 30_000 } as const
 
 export interface AutomationError { code: string; message: string; details?: Record<string, unknown> }
 export type AutomationResult = { ok: true; value: unknown } | { ok: false; error: AutomationError }
@@ -17,14 +13,12 @@ export interface AutomationRequest {
   issuedAt: number
   command: string
   args: Record<string, unknown>
-  /** Distinguish an omitted body from a deliberately empty body. */
-  hasContent?: boolean
 }
 export interface AutomationReceipt {
   id: string
   state: 'queued' | 'running' | 'completed' | 'unknown'
   result?: AutomationResult
-  /** Large results are delivered to waiting callers, never retained by the receipt cache. */
+  /** A result over `receiptBytes` goes to the waiting caller only; the receipt does not keep it. */
   resultRetained?: boolean
 }
 

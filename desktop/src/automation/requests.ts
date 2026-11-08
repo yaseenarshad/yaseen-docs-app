@@ -10,7 +10,6 @@ export interface Operation {
 interface Entry {
   fingerprint: string
   issuedAt: number
-  contentBytes: number
   receipt: AutomationReceipt
   operation: Operation
   promise: Promise<AutomationResult>
@@ -21,9 +20,6 @@ interface Entry {
 export const CLOSE_WAIT_MS = 3_000
 const overlaps = (a: string, b: string) => a === b || a.startsWith(`${b}:`) || b.startsWith(`${a}:`) || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)
 const taken = (keys: Iterable<string>, key: string) => { for (const held of keys) if (overlaps(held, key)) return true; return false }
-/** The result's JSON, made once by the queue for its size check and kept for the reply (YAZ-4527 P22). */
-const encoded = new WeakMap<AutomationResult, Buffer>()
-export const resultBytes = (result: AutomationResult): Buffer => encoded.get(result) ?? Buffer.from(JSON.stringify(result))
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
@@ -37,7 +33,6 @@ export class RequestQueue {
   private readonly queue: Entry[] = []
   private readonly locked = new Set<string>()
   private active = 0
-  private contentBytes = 0
   private closing = false
   private forgottenThrough = 0
   private drained: (() => void)[] = []
@@ -48,12 +43,12 @@ export class RequestQueue {
     return this.entries.get(id)?.receipt ?? { id, state: 'unknown' }
   }
 
-  submit(request: AutomationRequest, content: Buffer, prepare: () => Operation): Promise<AutomationResult> {
+  submit(request: AutomationRequest, prepare: () => Operation): Promise<AutomationResult> {
     if (this.closing) throw new AutomationFailure('STOPPING', 'Docs is stopping. No request was accepted.')
     this.prune()
     const age = this.now() - request.issuedAt
     if (age >= AUTOMATION_LIMITS.receiptMs || age < -30_000) throw new AutomationFailure('UNKNOWN_REQUEST', 'This request is outside the receipt window. Inspect state before another mutation.')
-    const fingerprint = createHash('sha256').update(canonical({ command: request.command, args: request.args, hasContent: request.hasContent ?? content.length > 0 })).update(content).digest('hex')
+    const fingerprint = createHash('sha256').update(canonical({ command: request.command, args: request.args })).digest('hex')
     const existing = this.entries.get(request.id)
     if (existing) {
       if (existing.fingerprint !== fingerprint || existing.issuedAt !== request.issuedAt) throw new AutomationFailure('REQUEST_MISMATCH', 'This request ID was used with different input.')
@@ -61,7 +56,6 @@ export class RequestQueue {
       return Promise.resolve(existing.receipt.result ?? { ok: true, value: existing.receipt })
     }
     if (request.issuedAt <= this.forgottenThrough) throw new AutomationFailure('UNKNOWN_REQUEST', 'The receipt may have expired. Inspect state before another mutation.')
-    if (this.contentBytes + content.length > AUTOMATION_LIMITS.inFlightContentBytes) throw new AutomationFailure('BUSY', 'Too much content is in flight. No request was accepted.')
     // Count queued work independently: requests blocked on a resource must not exceed the queue bound.
     const operation = prepare()
     const waiting = this.queue.flatMap(entry => entry.operation.writes)
@@ -69,8 +63,7 @@ export class RequestQueue {
     if (!canStart && this.queue.length >= AUTOMATION_LIMITS.queued) throw new AutomationFailure('BUSY', 'The request queue is full. No request was accepted.')
     let resolve!: Entry['resolve']
     const promise = new Promise<AutomationResult>(done => { resolve = done })
-    const entry: Entry = { fingerprint, issuedAt: request.issuedAt, contentBytes: content.length, receipt: { id: request.id, state: 'queued' }, operation, promise, resolve }
-    this.contentBytes += content.length
+    const entry: Entry = { fingerprint, issuedAt: request.issuedAt, receipt: { id: request.id, state: 'queued' }, operation, promise, resolve }
     this.entries.set(request.id, entry)
     this.queue.push(entry)
     this.pump()
@@ -120,22 +113,20 @@ export class RequestQueue {
   }
 
   private complete(entry: Entry, result: AutomationResult): void {
-    this.contentBytes -= entry.contentBytes
     entry.operation.writes.forEach(key => this.locked.delete(key))
     this.active--
-    let bytes: Buffer
+    let bytes: number
     try {
-      bytes = Buffer.from(JSON.stringify(result))
-      if (bytes.length > AUTOMATION_LIMITS.contentBytes) throw new AutomationFailure('TOO_LARGE', 'The result exceeds the connection limit. Use a paged read or file export.')
+      bytes = Buffer.byteLength(JSON.stringify(result))
+      if (bytes > AUTOMATION_LIMITS.controlBytes) throw new AutomationFailure('TOO_LARGE', 'The result exceeds the connection limit.')
     } catch (error) {
-      result = automationError(error instanceof AutomationFailure ? error : new AutomationFailure('INVALID_RESULT', 'The command returned a value that cannot be serialized. Inspect its current state before another mutation.'))
-      bytes = Buffer.from(JSON.stringify(result))
+      result = automationError(error instanceof AutomationFailure ? error : new AutomationFailure('INVALID_RESULT', 'The command returned a value that cannot be serialized. Inspect its current state.'))
+      bytes = 0
     }
-    encoded.set(result, bytes)
-    const retained = bytes.length <= AUTOMATION_LIMITS.receiptBytes
+    const retained = bytes <= AUTOMATION_LIMITS.receiptBytes
     entry.receipt = { id: entry.receipt.id, state: 'completed', resultRetained: retained, ...(retained ? { result } : {}) }
     entry.resolve(result)
-    // Do not retain a resolved promise or closure containing a large body or a protected input.
+    // Do not retain a resolved promise or closure that holds a large result.
     entry.promise = Promise.resolve(entry.receipt.result ?? { ok: true, value: entry.receipt })
     entry.resolve = () => {}
     entry.operation = { writes: [], run: async () => undefined }

@@ -37,10 +37,10 @@ describe('checker: foundation edge cases', () => {
     const queue = new RequestQueue(() => 100_000)
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
-    const work = [queue.submit(request('active'), Buffer.alloc(0), () => ({ writes: ['a'], run: () => gate }))]
-    for (let i = 0; i < 64; i++) work.push(queue.submit(request(`waiting-${i}`), Buffer.alloc(0), () => ({ writes: ['a', 'b'], run: async () => undefined })))
+    const work = [queue.submit(request('active'), () => ({ writes: ['a'], run: () => gate }))]
+    for (let i = 0; i < 64; i++) work.push(queue.submit(request(`waiting-${i}`), () => ({ writes: ['a', 'b'], run: async () => undefined })))
     try {
-      expect(() => work.push(queue.submit(request('overflow'), Buffer.alloc(0), () => ({ writes: ['b'], run: async () => undefined })))).toThrow('queue is full')
+      expect(() => work.push(queue.submit(request('overflow'), () => ({ writes: ['b'], run: async () => undefined })))).toThrow('queue is full')
     } finally {
       release(); await Promise.all(work); await queue.close()
     }

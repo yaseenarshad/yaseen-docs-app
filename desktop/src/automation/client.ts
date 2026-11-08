@@ -9,20 +9,20 @@ export function makeRequest(connection: Connection, command: string, args: Recor
   return { version: connection.version, token: connection.token, session: connection.session, id: randomUUID(), issuedAt: Date.now(), command, args }
 }
 
-export async function sendRequest(connection: Connection, request: AutomationRequest, content: Buffer = Buffer.alloc(0), waitMs: number = AUTOMATION_LIMITS.waitMs): Promise<AutomationResult> {
-  const packet = encodePacket(request, content)
+/** The reply frame is the result itself. */
+export async function sendRequest(connection: Connection, request: AutomationRequest, waitMs: number = AUTOMATION_LIMITS.waitMs): Promise<AutomationResult> {
+  const packet = encodePacket(request)
   const socket = connect(connection.endpoint)
-  const deadline = setTimeout(() => socket.destroy(new AutomationFailure('WAIT_TIMEOUT', `The wait ended. Request ${request.id} may still finish. Inspect its receipt; do not replay the mutation.`)), waitMs)
+  const deadline = setTimeout(() => socket.destroy(new AutomationFailure('WAIT_TIMEOUT', `The wait ended. Request ${request.id} may still finish. Inspect its receipt before you try again.`)), waitMs)
   let connected = false
   try {
     const reply = readPacket(socket)
     socket.once('connect', () => { connected = true; socket.write(packet) })
-    const result = await reply
-    return JSON.parse(result.content.toString('utf8')) as AutomationResult
+    return await reply as AutomationResult
   } catch (error) {
     if (error instanceof AutomationFailure) throw error
     // Nothing listens: the request never reached an app, so this outcome is known.
     if (!connected && ['ECONNREFUSED', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '')) throw new AutomationFailure('NOT_RUNNING', 'Docs is not running in this profile. Start it, or pass --start.')
-    throw new AutomationFailure('CONNECTION_LOST', `No result was received for request ${request.id}. Inspect state before another mutation.`)
+    throw new AutomationFailure('CONNECTION_LOST', `No result was received for request ${request.id}. Inspect its receipt before you try again.`)
   } finally { clearTimeout(deadline); socket.destroy() }
 }

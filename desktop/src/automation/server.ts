@@ -2,10 +2,10 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { chmod, lstat, rename, unlink, writeFile } from 'node:fs/promises'
 import { connect, createServer, type Socket } from 'node:net'
 import { dirname } from 'node:path'
-import { AUTOMATION_LIMITS, AUTOMATION_VERSION, AutomationFailure, automationError, type AutomationRequest } from '@shared/automation'
+import { AUTOMATION_LIMITS, AUTOMATION_VERSION, AutomationFailure, automationError, type AutomationRequest, type AutomationResult } from '@shared/automation'
 import { commandDefinition, validateInput } from '@shared/automationCommands'
 import { descriptorPath, endpointFor, privateDirectory, type Connection } from './connection'
-import { RequestQueue, resultBytes, type Operation } from './requests'
+import { RequestQueue, type Operation } from './requests'
 import { encodePacket, readPacket } from './wire'
 
 export interface AutomationServer { close(): Promise<void>; connection: Connection }
@@ -37,19 +37,15 @@ function validate(value: unknown, connection: Connection): AutomationRequest {
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new AutomationFailure('UNAUTHORIZED', 'The profile token is invalid.')
   if (request.version !== AUTOMATION_VERSION) throw new AutomationFailure('PROTOCOL_VERSION', 'This CLI protocol version is unsupported.')
   if (request.session !== connection.session) throw new AutomationFailure('UNKNOWN_REQUEST', 'Docs restarted. Inspect state before another mutation.')
-  if (Object.keys(request).some(key => !['version', 'session', 'token', 'id', 'issuedAt', 'command', 'args', 'hasContent'].includes(key)) ||
-      (request.hasContent !== undefined && typeof request.hasContent !== 'boolean') ||
+  if (Object.keys(request).some(key => !['version', 'session', 'token', 'id', 'issuedAt', 'command', 'args'].includes(key)) ||
       typeof request.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(request.id) ||
       typeof request.command !== 'string' || request.command.length > 100 || !Number.isFinite(request.issuedAt) ||
       !request.args || typeof request.args !== 'object' || Array.isArray(request.args)) throw new AutomationFailure('BAD_REQUEST', 'Invalid request fields.')
   return request
 }
 
-/**
- * Same-user connection owned by the app, with no TCP listener and no service after app exit. `stopWork` ends the long
- * services a command can wait on (a pack download, a helper install) when the app closes, so a quit never waits for them.
- */
-export async function startAutomationServer(profile: string, prepare: (request: AutomationRequest, content: Buffer) => Operation, stopWork?: () => Promise<unknown>): Promise<AutomationServer> {
+/** Same-user connection owned by the app, with no TCP listener and no service after app exit. */
+export async function startAutomationServer(profile: string, prepare: (request: AutomationRequest) => Operation): Promise<AutomationServer> {
   const descriptor = descriptorPath(profile)
   await privateDirectory(dirname(descriptor))
   const endpoint = await endpointFor(profile)
@@ -57,34 +53,21 @@ export async function startAutomationServer(profile: string, prepare: (request: 
   const connection: Connection = { version: AUTOMATION_VERSION, endpoint, session: randomBytes(16).toString('hex'), token: randomBytes(32).toString('hex'), startedAt: Date.now() }
   const queue = new RequestQueue()
   const sockets = new Set<Socket>()
-  let contentInFlight = 0
   const server = createServer(socket => {
     sockets.add(socket)
     socket.once('close', () => sockets.delete(socket))
     socket.on('error', () => {})
     socket.setTimeout(AUTOMATION_LIMITS.waitMs, () => socket.destroy())
     void (async () => {
-      let reserved = 0
+      let reply: AutomationResult
       try {
-        const packet = await readPacket(socket, (control, bytes) => {
-          validate(control, connection)
-          if (contentInFlight + bytes > AUTOMATION_LIMITS.inFlightContentBytes) throw new AutomationFailure('BUSY', 'Too much content is in flight. No request was accepted.')
-          reserved = bytes
-          contentInFlight += reserved
-        })
-        const request = validate(packet.control, connection)
-        if (request.command === 'request.status') {
-          validateInput(commandDefinition('request.status').input, request.args)
-          if (packet.content.length) throw new AutomationFailure('INVALID_INPUT', 'Receipt inspection accepts no content.')
-        }
+        const request = validate(await readPacket(socket), connection)
+        if (request.command === 'request.status') validateInput(commandDefinition('request.status').input, request.args)
         socket.setTimeout(0) // Accepted work can outlive the caller's wait. It is never cancelled by disconnect.
-        const result = request.command === 'request.status'
-          ? Buffer.from(JSON.stringify({ ok: true, value: queue.receipt(String(request.args.id ?? '')) }))
-          : resultBytes(await queue.submit(request, packet.content, () => prepare(request, packet.content)))
-        if (!socket.destroyed) socket.end(encodePacket({ version: AUTOMATION_VERSION, id: request.id }, result))
-      } catch (error) {
-        if (!socket.destroyed) socket.end(encodePacket({ version: AUTOMATION_VERSION }, Buffer.from(JSON.stringify(automationError(error)))))
-      } finally { contentInFlight -= reserved }
+        reply = request.command === 'request.status' ? { ok: true, value: queue.receipt(String(request.args.id)) } : await queue.submit(request, () => prepare(request))
+      } catch (error) { reply = automationError(error) }
+      if (socket.destroyed) return
+      try { socket.end(encodePacket(reply)) } catch (error) { socket.end(encodePacket(automationError(error))) }
     })()
   })
   server.maxConnections = AUTOMATION_LIMITS.active + AUTOMATION_LIMITS.queued + 8
@@ -104,10 +87,8 @@ export async function startAutomationServer(profile: string, prepare: (request: 
     connection,
     async close() {
       const closed = new Promise<void>(resolve => server.close(() => resolve()))
-      // Refuse new work, stop the long services, then wait for the rest at most CLOSE_WAIT_MS (YAZ-4527 P1).
-      const drained = queue.close()
-      void Promise.resolve().then(stopWork).catch(() => {})
-      await drained
+      // Refuse new work, then wait for the rest at most CLOSE_WAIT_MS (YAZ-4527 P1).
+      await queue.close()
       for (const socket of sockets) socket.destroy()
       await closed
       await unlink(descriptor).catch(() => {})

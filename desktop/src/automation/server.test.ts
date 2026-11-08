@@ -3,7 +3,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connect } from 'node:net'
-import { AutomationFailure } from '@shared/automation'
+import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
 import { validateOutput } from '@shared/automationCommands'
 import { makeRequest, sendRequest } from './client'
 import { descriptorPath, readConnection } from './connection'
@@ -16,19 +16,21 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map(server => server.close()))
   await Promise.all(profiles.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
-async function start(run: (content: Buffer) => Promise<unknown>, stopWork?: () => Promise<unknown>) {
+async function start(run: () => Promise<unknown>) {
   const profile = await mkdtemp(join(tmpdir(), 'docs-cli-test-')); profiles.push(profile)
-  const server = await startAutomationServer(profile, (_request, content) => ({ writes: ['test'], run: () => run(content) }), stopWork)
+  const server = await startAutomationServer(profile, () => ({ writes: ['test'], run }))
   servers.push(server)
   return { profile, server, connection: await readConnection(profile) }
 }
 
 describe('real local socket', () => {
-  it('keeps profiles private, transfers large content separately, and removes its connection on shutdown', async () => {
-    const { profile, server, connection } = await start(async body => ({ bytes: body.length, tail: body.subarray(-4).toString() }))
+  it('keeps profiles private, refuses a result over the frame limit, and removes its connection on shutdown', async () => {
+    let size = 10
+    const { profile, server, connection } = await start(async () => 'x'.repeat(size))
     if (process.platform !== 'win32') expect((await stat(descriptorPath(profile))).mode & 0o777).toBe(0o600)
-    const content = Buffer.from('x'.repeat(128_000) + 'tail')
-    expect(await sendRequest(connection, makeRequest(connection, 'file.patch', {}), content)).toEqual({ ok: true, value: { bytes: 128004, tail: 'tail' } })
+    expect(await sendRequest(connection, makeRequest(connection, 'file.patch', {}))).toEqual({ ok: true, value: 'x'.repeat(10) })
+    size = AUTOMATION_LIMITS.controlBytes
+    expect(await sendRequest(connection, makeRequest(connection, 'file.patch', {}))).toMatchObject({ ok: false, error: { code: 'TOO_LARGE' } })
     await server.close(); servers.splice(servers.indexOf(server), 1)
     await expect(readConnection(profile)).rejects.toMatchObject({ code: 'NOT_RUNNING' })
   })
@@ -48,7 +50,7 @@ describe('real local socket', () => {
     const gate = new Promise<void>(resolve => { finish = resolve })
     const { connection } = await start(async () => { calls++; began(); await gate; return { diskSaved: true } })
     const request = makeRequest(connection, 'file.patch', {})
-    const pending = sendRequest(connection, request, Buffer.alloc(0), 25)
+    const pending = sendRequest(connection, request, 25)
     const failed = expect(pending).rejects.toMatchObject({ code: 'WAIT_TIMEOUT' })
     await started; await failed
     finish()
@@ -64,32 +66,14 @@ describe('real local socket', () => {
     expect(await sendRequest(connection, makeRequest(connection, 'file.patch', {}))).toEqual({ ok: false, error: { code: 'FAILED', message: 'The operation failed. Check the app diagnostics.' } })
     const socket = connect(connection.endpoint)
     const response = readPacket(socket)
-    socket.once('connect', () => { const header = Buffer.alloc(8); header.writeUInt32BE(1_000_000, 0); socket.write(header) })
-    const packet = await response
-    expect(JSON.parse(packet.content.toString())).toMatchObject({ ok: false, error: { code: 'TOO_LARGE' } })
+    socket.once('connect', () => { const header = Buffer.alloc(4); header.writeUInt32BE(1_000_000, 0); socket.write(header) })
+    expect(await response).toMatchObject({ ok: false, error: { code: 'TOO_LARGE' } })
     socket.destroy()
   })
 
   it('does not replace a live endpoint for the same profile', async () => {
     const { profile } = await start(async () => null)
     await expect(startAutomationServer(profile, () => ({ writes: [], run: async () => null }))).rejects.toBeInstanceOf(AutomationFailure)
-  })
-
-  it('serializes a result once, for both its size check and the reply', async () => {
-    let serialized = 0
-    const { connection } = await start(async () => ({ toJSON: () => { serialized++; return { large: true } } }))
-    expect(await sendRequest(connection, makeRequest(connection, 'file.patch', {}))).toEqual({ ok: true, value: { large: true } })
-    expect(serialized).toBe(1)
-  })
-
-  it('stops long work first when it closes, so the caller still gets the result', async () => {
-    let finish!: (value: unknown) => void, began!: () => void
-    const started = new Promise<void>(resolve => { began = resolve })
-    const { server, connection } = await start(() => { began(); return new Promise(resolve => { finish = resolve }) }, async () => finish({ stopped: true }))
-    const pending = sendRequest(connection, makeRequest(connection, 'media.downloadPacks', {}))
-    await started
-    await server.close(); servers.splice(servers.indexOf(server), 1)
-    expect(await pending).toEqual({ ok: true, value: { stopped: true } })
   })
 
   it('closes within its limit while an operation never ends, and the caller loses the connection', async () => {

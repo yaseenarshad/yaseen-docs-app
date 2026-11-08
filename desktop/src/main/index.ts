@@ -437,8 +437,8 @@ app.whenReady().then(() => {
   })
   updater.start()
   const navigation = registerAutomationIpc(store, manager)
-  automationServer = startAutomationServer(app.getPath('userData'), (request, content) =>
-    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), packaged: app.isPackaged, state: () => store.get(), navigation }, request, content))
+  automationServer = startAutomationServer(app.getPath('userData'), (request) =>
+    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), packaged: app.isPackaged, state: () => store.get(), navigation }, request))
   void automationServer.catch(() => console.error('[cli] Could not start the local connection. Check profile permissions.'))
   // The memory meter (YAZ-3737 D1): one `getAppMetrics` each 30 s, in memory only. The rest is read only for a report.
   meter = createMemoryMeter({

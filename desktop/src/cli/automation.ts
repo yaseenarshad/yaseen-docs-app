@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
-import { basename, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { AUTOMATION_LIMITS, AUTOMATION_VERSION, AutomationFailure, type AutomationRequest } from '@shared/automation'
 import { AUTOMATION_COMMANDS, commandDefinition, validateInput, type CommandSchema } from '@shared/automationCommands'
 import { makeRequest, sendRequest } from '../automation/client'
-import { readConnection, type Connection } from '../automation/connection'
+import { descriptorPath, privateDirectory, readConnection, type Connection } from '../automation/connection'
 import { userDataDir } from '../main/userData'
 import type { Io } from './cli'
 
@@ -91,7 +91,7 @@ const holdsLock = (profile: string) => new Promise<boolean>(resolve => {
   socket.once('error', () => resolve(false))
 })
 /** Receipt inspection runs outside the four operation slots, so a busy app still answers it (YAZ-4529). */
-const probe = (connection: Connection, waitMs: number) => sendRequest(connection, makeRequest(connection, 'request.status', { id: 'connection-probe' }), Buffer.alloc(0), waitMs)
+const probe = (connection: Connection, waitMs: number) => sendRequest(connection, makeRequest(connection, 'request.status', { id: 'connection-probe' }), waitMs)
 
 /**
  * A descriptor can survive a crash: probe before considering the app ready. Only an app that is absent (no descriptor,
@@ -112,17 +112,41 @@ async function connectionFor(profile: string, start: boolean, waitMs: number): P
   }
   const starting = await holdsLock(profile)
   if (!starting && !start) throw new AutomationFailure('NOT_RUNNING', 'Docs is not running in this profile. Start it, or pass --start.')
-  if (!starting) await startApp(profile)
-  const deadline = Date.now() + (starting ? waitMs : AUTOMATION_LIMITS.waitMs)
-  do {
-    await new Promise(done => setTimeout(done, 100))
-    try {
-      const connection = await readConnection(profile)
-      if ((await probe(connection, 1000)).ok) return connection
-    } catch { /* The app has not installed its connection yet. */ }
-  } while (Date.now() < deadline)
+  const lock = starting ? null : await startOnce(profile)
+  try {
+    const deadline = Date.now() + (starting ? waitMs : AUTOMATION_LIMITS.waitMs)
+    do {
+      await new Promise(done => setTimeout(done, 100))
+      try {
+        const connection = await readConnection(profile)
+        if ((await probe(connection, 1000)).ok) return connection
+      } catch { /* The app has not installed its connection yet. */ }
+    } while (Date.now() < deadline)
+  } finally { if (lock) await unlink(lock).catch(() => {}) }
   if (starting) throw new AutomationFailure('WAIT_TIMEOUT', 'Docs is running, but its CLI connection was not ready within the wait. No operation was submitted.')
   throw new AutomationFailure('START_TIMEOUT', 'Docs did not become ready. No operation was submitted.')
+}
+
+/**
+ * One launch per profile (YAZ-4640): the caller that makes `cli/start.lock` starts Docs and answers the lock's path; the
+ * callers that find it wait for the connection (null). A lock older than two start waits was left by a caller that died.
+ */
+async function startOnce(profile: string): Promise<string | null> {
+  const lock = join(dirname(descriptorPath(profile)), 'start.lock')
+  await privateDirectory(dirname(lock))
+  try { await writeFile(lock, String(process.pid), { flag: 'wx', mode: 0o600 }) }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    const age = Date.now() - await stat(lock).then(info => info.mtimeMs, () => 0)
+    if (age < 2 * AUTOMATION_LIMITS.waitMs) return null
+    await unlink(lock).catch(() => {})
+    return startOnce(profile)
+  }
+  try {
+    // The caller that held the lock before may have started Docs already.
+    if (!(await holdsLock(profile))) await startApp(profile)
+    return lock
+  } catch (error) { await unlink(lock).catch(() => {}); throw error }
 }
 
 /** Exit 0 done · 1 refused or failed · 2 invalid usage. Results print as one JSON line on stdout; failures before sending on stderr. */
@@ -135,6 +159,7 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
       return 0
     }
     if (argv[1] === '--help' || argv[1] === '-h') { io.stdout(AUTOMATION_HELP); return 0 }
+    if (argv[1] === undefined) throw new AutomationFailure('INVALID_INPUT', `Name an action: yaseendocs ${argv[0]} <action>. Run yaseendocs ${argv[0]} --help.`)
     const name = `${argv[0]}.${argv[1] ?? ''}`
     const definition = commandDefinition(name)
     const args: Record<string, unknown> = {}
@@ -184,7 +209,7 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
       request = { ...request, session, id, issuedAt: Number(issuedAt) }
     }
     // The probe spends part of the caller's wait.
-    const result = await sendRequest(connection, request, Buffer.alloc(0), Math.max(1, waitMs - (Date.now() - connected)))
+    const result = await sendRequest(connection, request, Math.max(1, waitMs - (Date.now() - connected)))
     io.stdout(`${JSON.stringify({ ...result, request: `${request.session}/${request.id}/${request.issuedAt}` })}\n`)
     return result.ok ? 0 : 1
   } catch (error) {

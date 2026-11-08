@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'esbuild'
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -21,7 +21,7 @@ beforeAll(async () => {
   entry = join(profile, 'cli.cjs')
   await build({ entryPoints: [resolve(__dirname, 'index.ts')], outfile: entry, bundle: true, platform: 'node', format: 'cjs', alias: { '@shared': resolve(__dirname, '../../../shared') } })
   const store = createStore(join(profile, 'state.json'))
-  server = await startAutomationServer(profile, (request, content) => prepareAutomation({ profile, version: 'test', state: () => store.get() }, request, content))
+  server = await startAutomationServer(profile, request => prepareAutomation({ profile, version: 'test', state: () => store.get() }, request))
 })
 afterAll(async () => { await server?.close(); await rm(profile, { recursive: true, force: true }) })
 
@@ -50,7 +50,7 @@ describe('actual CLI process', () => {
     for (const args of [
       ['app', 'status', '--bogus', 'true'], ['app', 'status', '--input', '{"bogus":true}'],
       ['app', 'status', '--profile', 'relative'], ['app', 'status', '--wait-ms', 'NaN'],
-      ['app', 'status', '--body', 'no'], ['app', 'status', '--input'], ['app', 'secret'], ['navigation', 'link', '--root', '/v'],
+      ['app', 'status', '--input'], ['app', 'secret'], ['navigation', 'link', '--root', '/v'],
       ['navigation', 'open', '--root', '/v', '--sidebar', 'search'], ['navigation', 'open', '--root', '/v', '--tab', 't1'], ['navigation', 'open', '--root', '/v', '--input', '{"name":"x"}'],
     ]) {
       const result = await run(...args)
@@ -65,6 +65,43 @@ describe('actual CLI process', () => {
     expect(JSON.parse(result.stderr).error.code).toBe('NOT_RUNNING')
   })
 
+})
+
+describe('parallel cold starts (YAZ-4640)', () => {
+  it.each([['no lock', false], ['a stale lock a dead caller left', true]])('start Docs once for one profile with %s; the other callers wait for its connection', async (_name, stale) => {
+    const cold = await mkdtemp(join(tmpdir(), 'docs-cli-cold-'))
+    if (stale) {
+      await privateDirectory(dirname(descriptorPath(cold)))
+      const lock = join(dirname(descriptorPath(cold)), 'start.lock'), old = new Date(Date.now() - 120_000)
+      await writeFile(lock, '1'); await utimes(lock, old, old)
+    }
+    const launches = join(cold, 'launches.txt'), launcher = join(cold, 'docs.sh')
+    await writeFile(launcher, `#!/bin/sh\necho launch >> "${launches}"\n`, { mode: 0o755 })
+    const original = process.env.YASEEN_DOCS_EXECUTABLE
+    process.env.YASEEN_DOCS_EXECUTABLE = launcher
+    const servers: AutomationServer[] = []
+    // The fake app: its connection comes up a moment after the first launch.
+    const app = setInterval(() => void readFile(launches, 'utf8').then(() => {
+      clearInterval(app)
+      setTimeout(() => void startAutomationServer(cold, () => ({ writes: [], run: async () => ({ answered: true }) })).then(server => servers.push(server)), 300)
+    }, () => {}), 20)
+    const cli = async () => {
+      let out = ''
+      const code = await runAutomation(['navigation', 'open', '--root', cold, '--profile', cold, '--wait-ms', '10000'], { stdin: async () => '', stdout: value => { out += value }, stderr: value => { out += value } })
+      return { code, result: JSON.parse(out) }
+    }
+    try {
+      const results = await Promise.all([cli(), cli(), cli()])
+      expect(results.map(result => result.code), JSON.stringify(results)).toEqual([0, 0, 0])
+      expect((await readFile(launches, 'utf8')).trim().split('\n')).toEqual(['launch'])
+    } finally {
+      clearInterval(app)
+      await Promise.all(servers.map(server => server.close()))
+      if (original === undefined) delete process.env.YASEEN_DOCS_EXECUTABLE
+      else process.env.YASEEN_DOCS_EXECUTABLE = original
+      await rm(cold, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('a slow app', () => {
@@ -137,6 +174,13 @@ describe('help and routing', () => {
     expect(one.code).toBe(0)
     expect(one.stdout.startsWith(AUTOMATION_HELP)).toBe(true)
     expect(JSON.parse(one.stdout.slice(AUTOMATION_HELP.length))).toMatchObject({ name: 'navigation.open', effect: 'navigate' })
+  })
+  it('answers a bare resource with a short usage that points to its help', async () => {
+    for (const resource of ['navigation', 'app', 'request']) {
+      const result = await run(resource)
+      expect(result.code, resource).toBe(2)
+      expect(JSON.parse(result.stderr).error, resource).toEqual({ code: 'INVALID_INPUT', message: `Name an action: yaseendocs ${resource} <action>. Run yaseendocs ${resource} --help.` })
+    }
   })
   it('reads --input from a file and from stdin, and refuses it with a flag for the same field', async () => {
     const file = join(profile, 'input.json')
