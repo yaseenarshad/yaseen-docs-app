@@ -682,6 +682,18 @@ describe('vertical header pinning', () => {
     expect(pinning.wrap.style.getPropertyValue('--view-table-header-y')).toBe('80px')
   })
 
+  it('moves by whole device pixels, as the table block does: a part of a pixel showed a seam under the frozen rows (YAZ-4582)', () => {
+    vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(2)
+    const pinning = pinningHarness({ tableTop: -80.3 })
+    pinning.scroll()
+    pinning.flush()
+    expect(pinning.wrap.style.getPropertyValue('--view-table-header-y')).toBe('80px')
+    pinning.setTableTop(-80.6)
+    pinning.scroll()
+    pinning.flush()
+    expect(pinning.wrap.style.getPropertyValue('--view-table-header-y')).toBe('80.5px')
+  })
+
   it('stays at the table start and releases at the table bottom', () => {
     const pinning = pinningHarness({ tableTop: 40, tableHeight: 200 })
 

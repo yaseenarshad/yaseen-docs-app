@@ -263,7 +263,8 @@ describe('the frozen lines’ place and look (YAZ-4537)', () => {
     expect(row).toMatch(/transform:\s*translateY\(var\(--view-table-header-y, 0px\)\)/)
     const cell = rule('.view-table tbody tr.view-table__row--frozen > td')
     expect(cell).toMatch(/position:\s*sticky/)
-    expect(cell).toMatch(/top:\s*calc\(var\(--view-table-head-h, 0px\) \+ var\(--view-frozen-i, 0\) \* var\(--view-table-row-h, 28px\)\)/)
+    // The measured top (YAZ-4582), with the header's height plus the line's place × the row height before it.
+    expect(cell).toMatch(/top:\s*var\(--view-frozen-top, calc\(var\(--view-table-head-h, 0px\) \+ var\(--view-frozen-i, 0\) \* var\(--view-table-row-h, 28px\)\)\)/)
     expect(rule('.view-table__row--frozen > td')).toMatch(/background-color:\s*var\(--bg\)/)
     // The 3px line is the cell's 1px border in the line's colour and a 2px strip inside it (YAZ-4534 polish): a 3px
     // border made the last frozen line 2px taller than the row height windowing counts on.

@@ -23,7 +23,7 @@ import { frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 import { FillMenu } from './FillMenu'
 import { cellFillOf, fillIndex, fillPaint, setViewFill } from './fills'
-import { TableHeaderMenu } from './TableHeaderMenu'
+import { TableHeaderMenu, clipsColumn } from './TableHeaderMenu'
 import { TextField } from './TextField'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
 import { dropIndex, insertionSlot } from '../../lib/dragSlot'
@@ -147,6 +147,9 @@ function activateEditorFromCell(event: ReactMouseEvent<HTMLTableCellElement>): v
   event.currentTarget.querySelector<HTMLElement>('[data-edit]')?.click()
 }
 
+/** A clipped cell's tooltip (YAZ-4582 D29): its whole value as text; none for a checkbox or an empty cell. */
+const clipTitle = (v: Value, resolve: Resolver | undefined): string | undefined => (typeof v === 'boolean' ? undefined : render(v, resolve) || undefined)
+
 /** A single click selects the cell without entering edit mode. */
 function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
   if (event.target !== event.currentTarget) return
@@ -219,7 +222,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       const zoom = cssZoom(wrap)
       const tableRect = table.getBoundingClientRect()
       const scrollerTop = scroller.getBoundingClientRect().top + scroller.clientTop * zoom
-      const offset = pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, header.getBoundingClientRect().height) / zoom
+      // Whole device pixels, as the table block does (YAZ-3788): a part of a pixel puts the frozen rows' edges off the
+      // pixel grid, and a seam shows the rows under them (YAZ-4582). `floor`: the part goes under the scroller's top.
+      const ratio = window.devicePixelRatio || 1
+      const offset = Math.floor(pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, header.getBoundingClientRect().height) * ratio) / ratio / zoom
       wrap.style.setProperty('--view-table-header-y', `${offset}px`)
     }
     const schedule = () => {
@@ -239,23 +245,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       wrap.style.removeProperty('--view-table-header-y')
     }
   }, [])
-
-  // The frozen rows stick under the header (YAZ-4537), whose height can differ from a row's: measured at mount
-  // and when the header resizes, into `--view-table-head-h`; never on scroll.
-  const hasFrozenRows = (view.frozenRows ?? 0) !== 0
-  useLayoutEffect(() => {
-    const wrap = wrapRef.current
-    const header = wrap?.querySelector<HTMLElement>('.view-table thead')
-    if (!hasFrozenRows || wrap == null || header == null) return
-    const measure = () => wrap.style.setProperty('--view-table-head-h', `${header.getBoundingClientRect().height / cssZoom(wrap)}px`)
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(header)
-    return () => {
-      observer.disconnect()
-      wrap.style.removeProperty('--view-table-head-h')
-    }
-  }, [hasFrozenRows])
 
   const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
   const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
@@ -345,10 +334,42 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     }
   }
   const head = lines.slice(0, pinned)
+  /** The frozen lines by key: the measuring below runs again only when they change, never on a scroll's render. */
+  const frozenKey = head.map((l) => ('add' in l ? `new:${l.gk}` : 'header' in l ? `group:${l.gk}` : rowKey(l))).join('\n')
+  // The frozen rows stick under the header (YAZ-4537), each at the header's height plus the real heights of the
+  // frozen lines above it: a wrapped row is taller than the row height (YAZ-4582 D29). Measured at mount and when the
+  // header or a frozen line resizes, into `--view-table-head-h` and each line's `--view-frozen-top`; never on scroll.
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current
+    const header = wrap?.querySelector<HTMLElement>('.view-table thead')
+    if (frozenKey === '' || wrap == null || header == null) return
+    const frozenLines = [...wrap.querySelectorAll<HTMLElement>('.view-table tbody tr.view-table__row--frozen')]
+    const measure = () => {
+      const zoom = cssZoom(wrap)
+      let top = header.getBoundingClientRect().height / zoom
+      wrap.style.setProperty('--view-table-head-h', `${top}px`)
+      for (const tr of frozenLines) {
+        tr.style.setProperty('--view-frozen-top', `${top}px`)
+        top += tr.getBoundingClientRect().height / zoom
+      }
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(header)
+    for (const tr of frozenLines) observer.observe(tr)
+    return () => {
+      observer.disconnect()
+      wrap.style.removeProperty('--view-table-head-h')
+      for (const tr of frozenLines) tr.style.removeProperty('--view-frozen-top')
+    }
+  }, [frozenKey])
 
   // windowing: mount only the slice around the scroll position, spacer rows keep the scrollbar honest.
   // The frozen lines always mount; the window starts below them (YAZ-4537).
   const windowed = lines.length > WINDOW_AT
+  // Wrap or Clip per column (YAZ-4582 D29): a column wraps and its row grows, unless the view clips it. A windowed
+  // table clips every cell, so each line is exactly the row height its spacer maths counts.
+  const clipped = keys.map((key) => windowed || clipsColumn(view, key))
   const viewH = wrapRef.current?.clientHeight || FALLBACK_VIEWPORT
   const first = windowed ? Math.max(pinned, Math.min(lines.length - 1, Math.floor(scrollTop / rowH) - OVERSCAN)) : pinned
   const count = windowed ? Math.min(lines.length - first, Math.ceil(viewH / rowH) + 2 * OVERSCAN) : lines.length - first
@@ -592,7 +613,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               <td
                 key={key}
                 // The tests and the end-to-end specs find the Name cell by `view-table__name`; its only style is the group indent (YAZ-4532).
-                className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', frozenClass(c), fill !== undefined && 'view-table__cell--fill'].filter(Boolean).join(' ') || undefined}
+                className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', frozenClass(c), fill !== undefined && 'view-table__cell--fill', clipped[c] && 'view-table__cell--clip'].filter(Boolean).join(' ') || undefined}
                 // A fill (YAZ-4536) is a custom property that views.css paints over the cell's base.
                 // The Name cell steps in by one group indent per level above the row (YAZ-4532 D10).
                 style={cellStyle(c, fill, c === nameCol && line.at !== null ? line.at.level + 1 : undefined)}
@@ -602,7 +623,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 // ⇧⌘ opens it in a new window (YAZ-4444 D32), asked first.
                 onClick={c === nameCol ? (e) => (newWindowClick(e, path) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
                 // A read-only note's Name cell opens no title field: a title edit renames the note (YAZ-3076 D6).
-                title={c === nameCol && locked ? READ_ONLY_TIP : undefined}
+                // A clipped cell shows its full value on hover (YAZ-4582 D29).
+                title={c === nameCol && locked ? READ_ONLY_TIP : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
                 onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
               >
                 {c === nameCol ? (

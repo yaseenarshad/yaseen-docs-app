@@ -4,7 +4,7 @@
  *
  *  (a) the declaration `folder_settings.columns.<key>` of THIS folder,
  *  (b) every reference the folder's views hold to the key — `order`, `sort`, `groupBy`,
- *      `summaries`, `columnSize`, `cardStyle`, a cards `image`, and every filter leaf that names
+ *      `summaries`, `columnSize`, `columnWrap`, `cardStyle`, a cards `image`, and every filter leaf that names
  *      it — and its label under `properties`, so nothing dangles (a `frozenColumns` prefix follows
  *      the shortened order through the one order writer, `withOrder`),
  *  (c) the field from THIS folder's block (D19, `shared/folderValues.ts`) in every indexed note
@@ -117,7 +117,7 @@ export function pruneColumnFromViews(views: readonly ViewDef[], key: string): Vi
         else next.filters = filters
       }
     }
-    for (const map of ['summaries', 'columnSize', 'cardStyle'] as const) {
+    for (const map of ['summaries', 'columnSize', 'columnWrap', 'cardStyle'] as const) {
       const entries = view[map]
       if (entries === undefined || entries === null || typeof entries !== 'object') continue
       const keptEntries = Object.fromEntries(Object.entries(entries).filter(([k]) => !names(k)))

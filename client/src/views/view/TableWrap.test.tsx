@@ -1,0 +1,225 @@
+/**
+ * Wrap or Clip per column (YAZ-4582, D29): ViewsPane mounted in jsdom. A column wraps by default and its row grows;
+ * `view.columnWrap[<canonical key>] = false` clips it to one line with the full value in `title`. A windowed table
+ * clips every cell, so each line is exactly the row height. Frozen rows stick by their measured heights.
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import type { IndexRecord } from '@shared/types'
+import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
+import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
+import { testFolderHost } from '../testFolderHost'
+import { TEST_RECORDS } from '../testRecords'
+import viewsCss from '../views.css?inline'
+
+;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: vi.fn(() => []), setViewGroups: vi.fn() } }))
+
+const table = (extra = '') => `views:
+  - type: table
+    name: T
+    order:
+      - file.name
+      - note.tags
+      - note.status
+    sort:
+      - property: file.name
+        direction: ASC
+${extra}`
+
+const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
+  ...TEST_RECORDS[0],
+  path: `/vault/${name}.md`,
+  name: `${name}.md`,
+  basename: name,
+  title: name,
+  properties,
+})
+/** 600 notes, n000…n599, for the windowing case. */
+const manyRecords = (n = 600): IndexRecord[] => Array.from({ length: n }, (_, i) => rec(`n${String(i).padStart(3, '0')}`, { tags: ['a', 'b'], status: 'idea' }))
+
+let root: Root | null = null
+let container: HTMLElement | null = null
+
+function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
+  let parsed = parseViews(text)
+  const records = props.records ?? TEST_RECORDS
+  container = document.createElement('div')
+  document.body.appendChild(container)
+  root = createRoot(container)
+  const draw = () =>
+    act(() =>
+      root?.render(<ViewsPane parsed={parsed} onChange={onChange} root="/vault" folderPath="/vault/pillars.md" records={records} folder={testFolderHost({ vaultRecords: records })} onOpenFile={vi.fn()} {...props} />),
+    )
+  const onChange = vi.fn((next: ParsedViews) => {
+    parsed = next
+    draw()
+  })
+  draw()
+  return { el: container, yaml: () => serializeViews(parsed) }
+}
+
+afterEach(() => {
+  act(() => root?.unmount())
+  root = null
+  container?.remove()
+  container = null
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
+const q = <T extends Element>(el: ParentNode, sel: string): T => {
+  const n = el.querySelector<T>(sel)
+  if (n === null) throw new Error(`missing ${sel}`)
+  return n
+}
+const th = (el: ParentNode, index: number): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-table thead th:not(.view-table__gutter)')][index]
+const items = (el: ParentNode) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+const item = (el: ParentNode, label: string) => {
+  const found = items(el).find((b) => b.textContent === label)
+  if (found === undefined) throw new Error(`no item ${label}: ${items(el).map((b) => b.textContent).join(', ')}`)
+  return found
+}
+function rightClick(target: Element): void {
+  act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 20 })))
+}
+/** The body cells of column `c`, in row order. */
+const column = (el: ParentNode, c: number) => [...el.querySelectorAll<HTMLElement>(`.view-table tbody td[data-cell$=":${c}"]`)]
+const CLIP = 'view-table__cell--clip'
+
+describe('"Wrap text" and "Clip text" in the column header menu (YAZ-4582, D29)', () => {
+  it('Wrap is the default with ✓; Clip text writes columnWrap[canonical key] = false, and Wrap text deletes it and the empty map', () => {
+    const { el, yaml } = mount(table())
+    rightClick(th(el, 1))
+    expect(items(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['✓ Wrap text', 'Clip text']))
+    act(() => item(el, 'Clip text').click())
+    expect(yaml()).toContain('columnWrap:\n      note.tags: false')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+
+    rightClick(th(el, 1))
+    expect(items(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['Wrap text', '✓ Clip text']))
+    act(() => item(el, 'Wrap text').click())
+    expect(yaml()).not.toContain('columnWrap')
+  })
+
+  it('reads a key in any spelling, and Wrap text removes that spelling; other columns keep theirs', () => {
+    const { el, yaml } = mount(table('    columnWrap:\n      tags: false\n      note.status: false\n'))
+    expect(column(el, 1).every((td) => td.classList.contains(CLIP))).toBe(true)
+    rightClick(th(el, 1))
+    act(() => item(el, 'Wrap text').click())
+    expect(yaml()).toContain('columnWrap:\n      note.status: false')
+    expect(yaml()).not.toContain('tags: false')
+  })
+
+  it('the two items are their own group, after Sort and Group', () => {
+    const { el } = mount(table())
+    rightClick(th(el, 1))
+    const groups = [...el.querySelectorAll('.ctx-menu .ctx-menu__group')].map((g) => [...g.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent))
+    const at = groups.findIndex((g) => g.includes('Sort A to Z'))
+    expect(groups[at + 1]).toEqual(['✓ Wrap text', 'Clip text'])
+  })
+})
+
+describe('the cells of a Wrap or a Clip column (YAZ-4582)', () => {
+  it('a wrapped cell has no clip class and no title; a clipped cell has the class and its full value in title', () => {
+    const { el } = mount(table('    columnWrap:\n      note.tags: false\n'))
+    const status = column(el, 2)
+    expect(status.some((td) => td.classList.contains(CLIP) || td.hasAttribute('title'))).toBe(false)
+    const tags = column(el, 1)
+    expect(tags.every((td) => td.classList.contains(CLIP))).toBe(true)
+    // Agentic Agency's tags: the whole list, as text.
+    expect(tags[0].title).toBe('agentic, pillar')
+  })
+
+  it('a clipped Name column shows the title in title', () => {
+    const { el } = mount(table('    columnWrap:\n      file.name: false\n'))
+    expect(column(el, 0)[0].classList.contains(CLIP)).toBe(true)
+    expect(column(el, 0)[0].title).toBe('Agentic Agency')
+  })
+
+  it('a windowed table (more than 500 lines) clips every cell, whatever columnWrap says', () => {
+    const { el } = mount(table(), { records: manyRecords() })
+    const cells = [...el.querySelectorAll<HTMLElement>('.view-table tbody td[data-cell]')]
+    expect(cells.length).toBeGreaterThan(0)
+    expect(cells.every((td) => td.classList.contains(CLIP))).toBe(true)
+  })
+
+  it('the CSS: a wrapped cell wraps its text and chips, a clipped one is one line with "…", and its chips stay in the row height', () => {
+    const rule = (selector: string) => new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(viewsCss)?.[1] ?? ''
+    const wrap = rule('.view-table tbody td')
+    expect(wrap).toMatch(/white-space:\s*normal/)
+    expect(wrap).toMatch(/height:\s*var\(--view-table-row-h, 28px\)/)
+    const clip = rule('.view-table tbody td.view-table__cell--clip')
+    expect(clip).toMatch(/white-space:\s*nowrap/)
+    expect(clip).toMatch(/overflow:\s*hidden/)
+    expect(clip).toMatch(/text-overflow:\s*ellipsis/)
+    expect(rule('.view-table tbody td.view-table__cell--clip .property-choice-chips')).toMatch(/flex-wrap:\s*nowrap/)
+    expect(rule('.view-table tbody td.view-table__cell--clip .property-choice-chip')).toMatch(/line-height:\s*17px/)
+    // No chip rule outside the clip class: a Wrap column's chips wrap and keep their size.
+    expect(viewsCss).not.toMatch(/\n\.view-table tbody td \.property-choice-chips?\s*\{/)
+  })
+})
+
+describe('frozen rows with rows of different heights (YAZ-4582)', () => {
+  /** Line heights by the row's Name: a wrapped Attribution is 60px; every other line 28px; the header 31px. */
+  function fakeHeights(heights: Record<string, number> = { Attribution: 60 }) {
+    vi.spyOn(HTMLTableSectionElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 31))
+    return vi.spyOn(HTMLTableRowElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLTableRowElement) {
+      return new DOMRect(0, 0, 400, heights[this.querySelector('.view-table__name')?.textContent ?? ''] ?? 28)
+    })
+  }
+  const tops = (el: ParentNode) => [...el.querySelectorAll<HTMLElement>('.view-table tbody tr.view-table__row--frozen')].map((tr) => tr.style.getPropertyValue('--view-frozen-top'))
+
+  it('a frozen row taller than the row height pushes the next frozen line down by its real height', () => {
+    fakeHeights()
+    const { el } = mount(table('    frozenRows: 3\n'))
+    // Agentic Agency 28, Attribution 60, then Creator Economy.
+    expect(tops(el)).toEqual(['31px', '59px', '119px'])
+  })
+
+  it('a ResizeObserver watches the header and the frozen lines only, and a resize measures again; a scroll reads nothing', () => {
+    const observed: Element[] = []
+    const callbacks: (() => void)[] = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          callbacks.push(cb)
+        }
+        observe(t: Element) {
+          observed.push(t)
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+    const heights: Record<string, number> = { Attribution: 60 }
+    const rect = fakeHeights(heights)
+    const { el } = mount(table('    frozenRows: 2\n'), { records: manyRecords().map((r, i) => (i === 0 ? { ...r, title: 'Attribution' } : r)) })
+    const frozen = [...el.querySelectorAll('.view-table tbody tr.view-table__row--frozen')]
+    expect(frozen).toHaveLength(2)
+    const rows = observed.filter((t) => t instanceof HTMLTableRowElement)
+    expect(rows).toEqual(frozen)
+    expect(tops(el)).toEqual(['31px', '91px'])
+
+    const reads = rect.mock.calls.length
+    const wrap = q<HTMLElement>(el, '.view-table-wrap')
+    act(() => {
+      Object.defineProperty(wrap, 'scrollTop', { value: 4000, configurable: true })
+      wrap.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+    expect(rect.mock.calls.length).toBe(reads)
+    expect(observed.filter((t) => t instanceof HTMLTableRowElement)).toHaveLength(2)
+
+    heights.Attribution = 28
+    act(() => callbacks.forEach((cb) => cb()))
+    expect(tops(el)).toEqual(['31px', '59px'])
+  })
+
+  it('the CSS: a frozen cell sticks at its measured top, with the old sum as the fallback', () => {
+    const rule = (selector: string) => new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(viewsCss)?.[1] ?? ''
+    expect(rule('.view-table tbody tr.view-table__row--frozen > td')).toMatch(/top:\s*var\(--view-frozen-top, calc\(var\(--view-table-head-h, 0px\) \+ var\(--view-frozen-i, 0\) \* var\(--view-table-row-h, 28px\)\)\)/)
+  })
+})
