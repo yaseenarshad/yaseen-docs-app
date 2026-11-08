@@ -148,8 +148,10 @@ const inlineOf = (item: HTMLElement): string | null => item.querySelector('.view
 const sections = (el: ParentNode): HTMLElement[] => [...el.querySelectorAll<HTMLElement>('.view-list__group')]
 const headerTexts = (el: ParentNode): string[] => sections(el).map((s) => q(s, '.view-group__value').textContent ?? '')
 const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `Toggle group ${label}`)
+/** The Properties popover on its View tab (YAZ-4607 D59), where the List section lives. */
 const openProperties = (el: ParentNode): HTMLElement => {
   click(byLabel(el, 'Properties'))
+  click(q(el, '.view-popover .view-menu__tab[data-tab="view"]'))
   return q(el, '.view-popover')
 }
 

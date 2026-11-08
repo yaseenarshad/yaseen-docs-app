@@ -189,6 +189,14 @@ const openMenu = (el: ParentNode, label: string): HTMLElement => {
   click(byLabel(el, label))
   return q(el, '.view-popover')
 }
+/** The Properties popover on its View tab (YAZ-4607 D59), where the view settings live. */
+const openView = (el: ParentNode): HTMLElement => {
+  const pop = openMenu(el, 'Properties')
+  click(q(pop, '.view-menu__tab[data-tab="view"]'))
+  return pop
+}
+/** "Add group level" (YAZ-4607 D60): a level's picker exists only once its row does. */
+const addLevel = (pop: ParentNode): void => click(byText(pop, 'button', 'Add group level'))
 
 // ---------- tests ----------
 
@@ -993,8 +1001,9 @@ describe('sort menu', () => {
     const { el, onChange, def, yaml } = mount()
     expect(byText(el, '.view-toolbar__badge', '1')).toBeDefined() // the existing sort
     const pop = openMenu(el, 'Sort')
+    addLevel(pop) // D60: the row (one write), then its column (one more)
     chooseColumn(pop, 'Group by', 'note.status')
-    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledTimes(2)
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
     expect(yaml()).toContain('groupBy:')
     expect(byText(el, '.view-toolbar__badge', '2')).toBeDefined()
@@ -1017,8 +1026,10 @@ describe('sort menu', () => {
   it('a Then-by level writes the LIST form, omits the outer property, and clears back to the object form (YAZ-745)', () => {
     const { el, def, yaml } = mount()
     const pop = openMenu(el, 'Sort')
+    addLevel(pop)
     chooseColumn(pop, 'Group by', 'note.status')
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
+    addLevel(pop) // D60: the second row, then its picker
     click(byLabel(pop, 'Then group by'))
     expect([...pop.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => option.dataset.value)).not.toContain('note.status')
     chooseColumn(pop, 'Then group by', 'note.priority')
@@ -1046,10 +1057,13 @@ describe('sort menu', () => {
     const { el, def } = mount()
     const pop = openMenu(el, 'Sort')
     expect(pop.querySelector('[aria-label="Then group by"]')).toBeNull()
+    addLevel(pop)
     chooseColumn(pop, 'Group by', 'note.status')
+    addLevel(pop)
     chooseColumn(pop, 'Then group by', 'note.priority')
     chooseColumn(pop, 'Group by', 'note.priority')
     expect(def().views[0].groupBy).toEqual({ property: 'note.priority', direction: 'ASC' })
+    addLevel(pop)
     chooseColumn(pop, 'Then group by', 'note.status')
     chooseColumn(pop, 'Group by', '')
     expect(def().views[0].groupBy).toBeUndefined()
@@ -1066,21 +1080,26 @@ describe('sort menu', () => {
     const { el } = mount()
     const pop = openMenu(el, 'Sort')
     expect(optionValues(pop, 'Sort property').filter((v) => v === 'file.folder')).toHaveLength(1)
+    addLevel(pop)
     expect(optionValues(pop, 'Group by').filter((v) => v === 'file.folder')).toHaveLength(1)
     chooseColumn(pop, 'Group by', 'note.status')
+    addLevel(pop)
     expect(optionValues(pop, 'Then group by').filter((v) => v === 'file.folder')).toHaveLength(1)
     expect(openMenu(el, 'Properties').querySelectorAll('[aria-label="Show Folder"]')).toHaveLength(1)
   })
 
   it('a view whose hand-written `order` already names `file.folder` still lists Folder once (YAZ-2541)', () => {
     const pop = openMenu(mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - file.folder\n').el, 'Sort')
+    addLevel(pop)
     expect(optionValues(pop, 'Group by').filter((v) => v === 'file.folder')).toHaveLength(1)
   })
 
   it('Folder twice IS a grouping (YAZ-2541): Then group by still offers Folder under a Folder outer, and both levels are written; any other property is still offered and kept once', () => {
     const { el, def } = mount()
     const pop = openMenu(el, 'Sort')
+    addLevel(pop)
     chooseColumn(pop, 'Group by', 'file.folder')
+    addLevel(pop)
     expect(optionValues(pop, 'Then group by')).toContain('file.folder')
     chooseColumn(pop, 'Then group by', 'file.folder')
     expect(def().views[0].groupBy).toEqual([
@@ -1215,7 +1234,7 @@ views:
 
   it('offers a Table-only Frozen columns select over the visible positional prefix', () => {
     const { el } = mount('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - note.status\n      - note.priority\n  - type: cards\n    name: Cards\n')
-    const table = openMenu(el, 'Properties')
+    const table = openView(el)
     const select = byLabel<HTMLSelectElement>(table, 'Frozen columns')
     expect([...select.options].map((option) => option.textContent)).toEqual(['None', '1 — through Name', '2 — through Status', '3 — through Priority'])
     expect(select.value).toBe('0')
@@ -1227,7 +1246,7 @@ views:
 
   it('writes the selected frozen prefix once; choosing None deletes the optional key', () => {
     const { el, onChange, def, yaml } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n')
-    const select = byLabel<HTMLSelectElement>(openMenu(el, 'Properties'), 'Frozen columns')
+    const select = byLabel<HTMLSelectElement>(openView(el), 'Frozen columns')
 
     setValue(select, '2')
     expect(onChange).toHaveBeenCalledTimes(1)
@@ -1242,7 +1261,7 @@ views:
 
   it('offers a Table-only Row numbers toggle (YAZ-1513): unchecking writes rowNumbers: false, checking DELETES the key', () => {
     const { el, onChange, def, yaml } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n  - type: cards\n    name: Cards\n')
-    const box = byLabel<HTMLInputElement>(openMenu(el, 'Properties'), 'Row numbers')
+    const box = byLabel<HTMLInputElement>(openView(el), 'Row numbers')
     expect(box.checked).toBe(true)
 
     click(box)
@@ -1877,7 +1896,7 @@ describe('the default view', () => {
 
   it('the properties menu ends with Page → Default view, listing First view then every view', () => {
     const { el } = mount()
-    const menu = openMenu(el, 'Properties')
+    const menu = openView(el)
     const select = byLabel<HTMLSelectElement>(menu, 'Default view')
     expect([...select.options].map((o) => o.text)).toEqual(['First view', 'Table', 'View', 'View 2'])
     expect(select.value).toBe('')
@@ -1885,7 +1904,7 @@ describe('the default view', () => {
 
   it('picking a view writes the def’s defaultView — ONE update, never a second door', () => {
     const { el, onChange, yaml } = mount()
-    setValue(byLabel<HTMLSelectElement>(openMenu(el, 'Properties'), 'Default view'), 'View')
+    setValue(byLabel<HTMLSelectElement>(openView(el), 'Default view'), 'View')
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(onChange.mock.calls[0][0].def.defaultView).toBe('View')
     expect(yaml()).toContain('defaultView: View')
@@ -1893,7 +1912,7 @@ describe('the default view', () => {
 
   it('the dropdown reflects the def’s value, and First view DELETES the key', () => {
     const { el, onChange, yaml } = mount(started('View'))
-    const select = byLabel<HTMLSelectElement>(openMenu(el, 'Properties'), 'Default view')
+    const select = byLabel<HTMLSelectElement>(openView(el), 'Default view')
     expect(select.value).toBe('View')
     setValue(select, '')
     expect(onChange).toHaveBeenCalledTimes(1)
@@ -2201,11 +2220,13 @@ views:
   it('picker Escape closes only the chooser without saving; keyboard selection commits once', () => {
     const { el, onChange, def } = mount(SEARCHABLE)
     const pop = openMenu(el, 'Sort')
+    addLevel(pop) // D60: the row is one write; the picker below saves nothing until a match commits
+    expect(onChange).toHaveBeenCalledTimes(1)
     click(byLabel(pop, 'Group by'))
     let search = byLabel<HTMLInputElement>(pop, 'Search group by columns')
     setValue(search, 'no-such-column')
     press(search, 'Enter')
-    expect(onChange).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledTimes(1)
     press(search, 'Escape')
     expect(el.querySelector('.view-popover')).toBe(pop)
     expect(pop.querySelector('[role="listbox"]')).toBeNull()
@@ -2217,7 +2238,7 @@ views:
     press(search, 'ArrowDown')
     press(search, 'Enter')
     expect(def().views[0].groupBy).toEqual({ property: 'note.priority', direction: 'ASC' })
-    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledTimes(2)
   })
 
   it('declared-only columns remain available in Properties and Sort', () => {
@@ -2446,7 +2467,7 @@ describe('option order in a table (YAZ-3940)', () => {
 
   it('"Show empty groups" in a table adds the unused options as empty groups', () => {
     const { el, def } = mount(GROUPED, { folder: testFolderHost({ settings }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openView(el)
     const toggle = [...pop.querySelectorAll('label')].find((l) => l.textContent?.includes('Show empty groups'))!.querySelector('input')!
     click(toggle)
     expect(def().views[0].showEmptyColumns).toBe(true)

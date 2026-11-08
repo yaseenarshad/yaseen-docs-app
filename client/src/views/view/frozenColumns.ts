@@ -8,3 +8,5 @@ export function frozenColumnCount(value: unknown, visibleColumns: number): numbe
 /** The Undo toasts of an unfreeze (YAZ-4594 S29): the column menu's and Properties' columns, the row menu's rows. */
 export const UNFROZE_COLUMNS = 'Unfroze columns'
 export const UNFROZE_ROWS = 'Unfroze rows'
+/** Row freeze (YAZ-4537): at most this many data rows, the row menu's and Properties › View › Frozen rows' ceiling (YAZ-4607). */
+export const MAX_FROZEN_ROWS = 10

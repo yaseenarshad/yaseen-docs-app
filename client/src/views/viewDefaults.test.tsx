@@ -78,6 +78,11 @@ const q = <T extends Element>(el: ParentNode, sel: string): T => {
   return n
 }
 const click = (el: Element): void => act(() => void el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
+/** The Properties popover on its View tab (YAZ-4607 D59), where the view settings live. */
+const openView = (el: ParentNode): void => {
+  click(q(el, '.view-toolbar [aria-label="Properties"]'))
+  click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+}
 const rightClick = (el: Element): void => act(() => void el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
 function choose(select: HTMLSelectElement, value: string): void {
   act(() => {
@@ -214,7 +219,7 @@ describe('each reader: no view key → Settings; a view key → the view (YAZ-45
 describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ-4585)', () => {
   it('Properties › Row numbers: from Settings with no key; a choice off Settings writes it, then Reset removes it', () => {
     const { el, yaml } = mount(table(), { folderPages: fp({ rowNumbers: false }) })
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    openView(el)
     const toggle = () => q<HTMLInputElement>(el, '.view-popover--properties [aria-label="Row numbers"]')
     const hint = () => toggle().closest('label')!.querySelector('.view-from-settings')
     expect(toggle().checked).toBe(false)
@@ -230,7 +235,7 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
 
   it('Properties › Row height (YAZ-4544 10A): from Settings with no key; a choice off Settings writes it and the rows follow; Reset removes it', () => {
     const { el, yaml } = mount(table(), { folderPages: fp({ rowHeight: 'tall' }) })
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    openView(el)
     const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Row height"]')
     const hint = () => select().closest('label')!.querySelector('.view-from-settings')
     const rowH = () => q<HTMLElement>(el, '.view-table').style.getPropertyValue('--view-table-row-h')
@@ -251,7 +256,7 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
   it('Properties › Text in cells (YAZ-4544 10A): a view-wide default under the column’s own choice and over Settings; from Settings and Reset', () => {
     const clipped = (c: number) => [...el.querySelectorAll<HTMLElement>(`.view-table tbody td[data-cell$=":${c}"]`)].every((td) => td.classList.contains('view-table__cell--clip'))
     const { el, yaml } = mount(table('    columnWrap:\n      note.status: true\n'))
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    openView(el)
     const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Text in cells"]')
     const hint = () => select().closest('label')!.querySelector('.view-from-settings')
     expect(select().value).toBe('kind')
@@ -274,16 +279,17 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
     expect(clipped(el, 2)).toBe(false)
   })
 
-  it('Sort and group › Indent and Subfolders: Settings’ value removes the key', () => {
+  // Both moved from the ⇅ popover to Properties › View (YAZ-4607 D60): Group indent under Groups, Subfolders under Rows.
+  it('Properties › View › Group indent and Subfolders: Settings’ value removes the key', () => {
     const { el, yaml } = mount(GROUPED, { folderPages: fp({ groupIndent: 'small', subfolders: 'rows' }) })
-    click(q(el, '.view-toolbar [aria-label="Sort"]'))
-    const indent = (step: string) => q<HTMLButtonElement>(el, `.view-popover--sort [data-indent="${step}"]`)
+    openView(el)
+    const indent = (step: string) => q<HTMLButtonElement>(el, `.view-popover--properties [data-indent="${step}"]`)
     expect(indent('small').getAttribute('aria-pressed')).toBe('true')
     click(indent('medium'))
     expect(yaml()).toContain('groupIndent: medium')
     click(indent('small'))
     expect(yaml()).not.toContain('groupIndent')
-    const subfolders = () => q<HTMLSelectElement>(el, '.view-popover--sort [aria-label="Subfolders"]')
+    const subfolders = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]')
     expect(subfolders().value).toBe('rows')
     expect(subfolders().closest('label')!.querySelector('.view-from-settings')?.textContent).toBe('from Settings')
     choose(subfolders(), 'notes')
@@ -294,14 +300,14 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
 
   it('Properties › Show empty groups and Calendar › Card titles read Settings and write the same way', () => {
     let { el, yaml } = mount(GROUPED, { folderPages: fp({ showEmptyGroups: true }) })
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    openView(el)
     const empty = q<HTMLInputElement>(el, '.view-popover--properties .property-board-setting input')
     expect(empty.checked).toBe(true)
     click(empty)
     expect(yaml()).toContain('showEmptyColumns: false')
     act(() => root?.unmount())
     ;({ el, yaml } = mount(CALENDAR(), { folderPages: fp({ cardTitles: 'wrap' }) }))
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    openView(el)
     const titles = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Card titles"]')
     expect(titles().value).toBe('wrap')
     choose(titles(), 'clip')

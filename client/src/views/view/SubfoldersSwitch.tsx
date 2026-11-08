@@ -17,20 +17,18 @@ interface SubfoldersSwitchProps {
   viewIndex: number
   onUpdate: Mutate
   className?: string
-  /** The text beside the select: the Sort and group menu heads its section "Subfolders", so its row says "Show". */
-  text?: string
 }
 
 /**
- * "Subfolders" (YAZ-4579 D30): one switch, in Properties and in the Sort and group menu, so it changes where the user
- * works. Settings' choice removes the key (Their notes unless Settings › Folder pages says otherwise, YAZ-4585). Every
- * view type has it.
+ * "Subfolders" (YAZ-4579 D30): one switch, in the sliders popover's View › Rows (YAZ-4607 D60; before that in
+ * Properties and in the ⇅ popover too). Settings' choice removes the key (Their notes unless Settings › Folder pages
+ * says otherwise, YAZ-4585). Every view type has it.
  */
-export function SubfoldersSwitch({ view, own, viewIndex, onUpdate, className = 'view-settings-row', text = 'Subfolders' }: SubfoldersSwitchProps) {
+export function SubfoldersSwitch({ view, own, viewIndex, onUpdate, className = 'view-settings-row' }: SubfoldersSwitchProps) {
   const defaults = useViewDefaults()
   return (
     <label className={className}>
-      <span>{text}</span>
+      <span>Subfolders</span>
       <select
         className="view-select"
         aria-label="Subfolders"
@@ -52,9 +50,9 @@ export function SubfoldersSwitch({ view, own, viewIndex, onUpdate, className = '
 }
 
 /**
- * "Folders first" (YAZ-4579 D33), beside the switch in the Sort and group menu: Settings' value (on, unless Settings ›
- * Folder pages says off, YAZ-4585) removes the key; the other writes `foldersFirst`. Only while the view shows
- * subfolder rows, the one time it changes anything.
+ * "Folders first" (YAZ-4579 D33), under Sort in the ⇅ popover — a sort rule (YAZ-4607 D60): Settings' value (on,
+ * unless Settings › Folder pages says off, YAZ-4585) removes the key; the other writes `foldersFirst`. Only while the
+ * view shows subfolder rows, the one time it changes anything.
  */
 export function FoldersFirstToggle({ view, own, viewIndex, onUpdate, className = 'view-menu__toggle' }: SubfoldersSwitchProps) {
   const defaults = useViewDefaults()

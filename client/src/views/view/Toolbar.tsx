@@ -11,7 +11,7 @@ import { canonicalKey } from './keys'
 import { CollapseAllIcon, ExpandAllIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { FilterMenu } from './FilterMenu'
 import { Popover } from './Popover'
-import { PropertiesMenu } from './PropertiesMenu'
+import { PropertiesMenu, rememberPropertiesTab } from './PropertiesMenu'
 import { SortMenu } from './SortMenu'
 import { ViewTabs, type ViewTabsProps } from './ViewTabs'
 
@@ -57,6 +57,8 @@ export interface ToolbarProps {
   documentView?: boolean
   /** The folder's bundle, for the Properties menu: its declarations, and the door they are written back through (YAZ-895). */
   folder: FolderHost
+  /** The app tab that shows this folder page: the key of the Properties popover's remembered tab (YAZ-4607 D59). Absent in the right panel. */
+  tabId?: string
 }
 
 /** `8 items`, or `1 / 8 items` when search or limit reduce what the body shows. */
@@ -70,13 +72,20 @@ export const rowsLabel = (shown: number, total: number, folders?: { shown: numbe
     : `${countLabel(shown - folders.shown, total - folders.total)} · ${countLabel(folders.shown, folders.total, 'folder')}`
 
 /** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
-export function Toolbar({ selectionChip, def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS }: ToolbarProps) {
+export function Toolbar({ selectionChip, def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS, tabId }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   /** "Edit option order…" (YAZ-3940): the column the Sort popover shows its column editor on, or null for the menu. */
   const [editing, setEditing] = useState<string | null>(null)
+  /**
+   * "View settings…" asks (YAZ-4585 D34, YAZ-4607 D59): how many times since the Properties popover last opened or
+   * closed by its button. Above 0 the menu starts on View, and each ask remounts it (its `key`), so an ask while the
+   * popover is open on Columns switches it too. The toolbar's own state: the table does not re-render.
+   */
+  const [viewAsks, setViewAsks] = useState(0)
   const close = useCallback(() => {
     setOpen(null)
     setEditing(null)
+    setViewAsks(0)
   }, [])
   // Each grouping LEVEL that shows is one rule in the badge (YAZ-745, S2 YAZ-4531): an empty
   // `groupBy: []`, a level with no property and a level past the third count none.
@@ -99,6 +108,7 @@ export function Toolbar({ selectionChip, def, view, viewIndex, records, filterEr
         onClick={() => {
           setOpen(open === menu ? null : menu)
           setEditing(null)
+          setViewAsks(0)
         }}
       >
         {icon}
@@ -114,11 +124,13 @@ export function Toolbar({ selectionChip, def, view, viewIndex, records, filterEr
 
   return (
     <div className="view-toolbar">
-      {/* "View settings…" (YAZ-4585): that view becomes active, and its Properties menu opens. */}
+      {/* "View settings…" (YAZ-4585): that view becomes active, and its Properties menu opens on View (D59), which is then the remembered tab. */}
       <ViewTabs
         {...tabs}
         onSettings={(i) => {
           tabs.onSelect(i)
+          rememberPropertiesTab(tabId, 'view')
+          setViewAsks((n) => n + 1)
           setOpen('properties')
           setEditing(null)
         }}
@@ -147,7 +159,7 @@ export function Toolbar({ selectionChip, def, view, viewIndex, records, filterEr
             'Properties',
             <PropertiesIcon />,
             0,
-            <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder} dateColumns={dateColumns} />,
+            <PropertiesMenu key={viewAsks} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder} dateColumns={dateColumns} tabId={tabId} startTab={viewAsks > 0 ? 'view' : undefined} />,
           )}
         {/* An outline is a DOCUMENT, not rows (YAZ-903): there is nothing there to filter. */}
         {!documentView &&

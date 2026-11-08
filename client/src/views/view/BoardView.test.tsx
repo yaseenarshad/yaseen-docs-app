@@ -213,8 +213,10 @@ const headerTexts = (el: ParentNode): string[] => cols(el).map((c) => q(c, '.vie
 const titles = (el: ParentNode): string[] => [...el.querySelectorAll('.view-board__title')].map((b) => b.textContent ?? '')
 const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `Toggle group ${label}`)
 const colWidth = (el: ParentNode): string => q<HTMLElement>(el, '.view-board').style.getPropertyValue('--view-board-col-w')
+/** The Properties popover on its View tab (YAZ-4607 D59), where Column width lives. */
 const openProperties = (el: ParentNode): HTMLElement => {
   click(byLabel(el, 'Properties'))
+  click(q(el, '.view-popover .view-menu__tab[data-tab="view"]'))
   return q(el, '.view-popover')
 }
 const widthField = (el: ParentNode): HTMLInputElement => byLabel(el, 'Column width in pixels')

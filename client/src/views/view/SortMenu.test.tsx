@@ -37,6 +37,10 @@ function mount(view: ViewDef = { name: 'Table', type: 'table', sort: structuredC
   return { el, grip, replace, onUpdate, sort: () => def.views[0].sort!, view: () => def.views[0] }
 }
 
+/** "Add group level" (YAZ-4607 D60): a row on the first free column; null while the button is hidden (three levels). */
+const addLevelButton = (el: ParentNode) => [...el.querySelectorAll<HTMLButtonElement>('.view-menu__action')].find((b) => b.textContent === 'Add group level') ?? null
+const addLevel = (el: ParentNode) => act(() => addLevelButton(el)!.click())
+
 function drag(target: HTMLElement, type: string, clientY = 0) {
   act(() => { target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })) })
 }
@@ -188,6 +192,7 @@ describe('Option order menu (YAZ-3940)', () => {
 it('offers a declared-only property for Board grouping with zero records', () => {
   const folder: FolderSettings = { columns: { Stage: { kind: 'select', options: ['Inbox', 'Ready'] } }, views: [{ type: 'table', name: 'Table', order: ['note.Stage'] }], problems: [] }
   const { el, view } = mount({ type: 'board', name: 'Board' }, folder, [])
+  addLevel(el) // D60: the row first, then its picker
   act(() => el.querySelector<HTMLButtonElement>('[aria-label="Group by"]')!.click())
   const choice = el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.Stage"]')
   expect(choice).not.toBeNull()
@@ -196,7 +201,7 @@ it('offers a declared-only property for Board grouping with zero records', () =>
   expect(el.querySelector('[aria-label="Group direction"]')?.textContent).toContain('Option order')
 })
 
-describe('Group levels: handles, remove, third level, indent (YAZ-4532)', () => {
+describe('Group levels: handles, remove, third level (YAZ-4532)', () => {
   const THREE: GroupBySpec[] = [
     { property: 'note.status', direction: 'ASC' },
     { property: 'note.priority', direction: 'DESC' },
@@ -237,8 +242,7 @@ describe('Group levels: handles, remove, third level, indent (YAZ-4532)', () => 
     const { el, onUpdate } = mount({ name: 'Table', type: 'table', groupBy: [THREE[0], THREE[1]] })
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Remove group level 1: Status"]')!.click())
     expect(onUpdate.mock.lastCall?.[1]).toBe('Removed group level Status')
-    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Then group by"]')!.click())
-    act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.pillar"]')!.click())
+    addLevel(el)
     expect(onUpdate.mock.lastCall?.[1]).toBeUndefined()
   })
 
@@ -247,11 +251,15 @@ describe('Group levels: handles, remove, third level, indent (YAZ-4532)', () => 
     expect(levelGrip(el, 1, 'Status').disabled).toBe(true)
   })
 
-  it('the third picker shows when two levels are set, adds a third level, and is gone at three', () => {
+  // YAZ-4607 D60: "Add group level" replaced the empty third picker; a level's picker exists only once its row does.
+  it('"Add group level" adds the second and third level, each row picker refuses a column used above, and the button is gone at three', () => {
     const { el, view } = mount({ name: 'Table', type: 'table', groupBy: THREE[0] })
-    expect(el.querySelector('[aria-label="Then group by (level 3)"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Then group by"]')).toBeNull()
+    addLevel(el)
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Then group by"]')!.click())
     act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.priority"]')!.click())
+    expect(el.querySelector('[aria-label="Then group by (level 3)"]')).toBeNull()
+    addLevel(el)
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Then group by (level 3)"]')!.click())
     const offered = [...el.querySelectorAll<HTMLElement>('[role="option"]')].map(o => o.dataset.value)
     expect(offered).not.toContain('note.status') // the same property twice is refused
@@ -259,12 +267,13 @@ describe('Group levels: handles, remove, third level, indent (YAZ-4532)', () => 
     act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.pillar"]')!.click())
     expect(view().groupBy).toEqual([THREE[0], { property: 'note.priority', direction: 'ASC' }, { property: 'note.pillar', direction: 'ASC' }])
     expect(el.querySelectorAll('[aria-label^="Reorder group level"]')).toHaveLength(3)
-    expect(el.querySelectorAll('[aria-label="Group by"], [aria-label="Then group by"], [aria-label="Then group by (level 3)"]')).toHaveLength(3) 
-    expect(el.querySelector('[aria-label="Then group by (level 4)"]')).toBeNull() // no fourth picker
+    expect(el.querySelectorAll('[aria-label="Group by"], [aria-label="Then group by"], [aria-label="Then group by (level 3)"]')).toHaveLength(3)
+    expect(addLevelButton(el)).toBeNull() // no fourth level
   })
 
   it('Folder may repeat at every level (YAZ-2541)', () => {
     const { el, view } = mount({ name: 'Table', type: 'table', groupBy: [{ property: 'file.folder', direction: 'ASC' }, { property: 'file.folder', direction: 'ASC' }] })
+    addLevel(el)
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Then group by (level 3)"]')!.click())
     act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="file.folder"]')!.click())
     expect(groupByLevels(view()).map(l => l.property)).toEqual(['file.folder', 'file.folder', 'file.folder'])
@@ -290,33 +299,7 @@ describe('Group levels: handles, remove, third level, indent (YAZ-4532)', () => 
     expect(view().groupBy).toEqual([styled[0], { property: 'note.tags', direction: 'ASC', large: true }])
   })
 
-  it('Group indent: Small and Large write `groupIndent`; Medium, the default, removes the key', () => {
-    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: THREE[0] })
-    const step = (name: string) => el.querySelector<HTMLElement>('[aria-label="Group indent"]')!.querySelector<HTMLButtonElement>(`[data-indent="${name}"]`)!
-    expect(step('medium').getAttribute('aria-pressed')).toBe('true')
-    act(() => step('small').click())
-    expect(view().groupIndent).toBe('small')
-    act(() => step('large').click())
-    expect(view().groupIndent).toBe('large')
-    expect(step('large').getAttribute('aria-pressed')).toBe('true')
-    act(() => step('medium').click())
-    expect(Object.hasOwn(view(), 'groupIndent')).toBe(false)
-  })
-
-  it('no Group indent control without a group level', () => {
-    const { el } = mount({ name: 'Table', type: 'table' })
-    expect(el.querySelector('[aria-label="Group indent"]')).toBeNull()
-  })
-
-  it('a Board, which does not indent its groups, has no Group indent control; List and Cards have it (YAZ-4544)', () => {
-    for (const [type, shows] of [['board', false], ['list', true], ['cards', true]] as const) {
-      const { el } = mount({ name: 'V', type, groupBy: THREE[0] })
-      expect(el.querySelector('[aria-label="Group indent"]') !== null).toBe(shows)
-      expect(el.querySelector('[aria-label="Group by"]')).not.toBeNull()
-      act(() => root?.unmount())
-      container?.remove()
-    }
-  })
+  // Group indent moved to Properties › View › Groups (YAZ-4607 D60): its tests are in PropertiesTabs.test.tsx.
 })
 
 describe('a group level with no column (YAZ-4544, finding 21)', () => {
@@ -326,7 +309,7 @@ describe('a group level with no column (YAZ-4544, finding 21)', () => {
     expect(el.querySelector('[aria-label="Group by"]')).not.toBeNull()
     expect(el.querySelector('[aria-label="Remove group level 1: Status"]')).not.toBeNull()
     expect(el.querySelector('[aria-label^="Remove group level 2"]')).toBeNull()
-    expect(el.querySelector('[aria-label="Then group by"]')).not.toBeNull()
+    expect(addLevelButton(el)).not.toBeNull() // D60: a button, no empty picker
     pick(el, 'Group direction', 'Z → A')
     expect(view().groupBy).toEqual([{ property: 'note.status', direction: 'DESC' }, {}])
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Remove group level 1: Status"]')!.click())
@@ -386,14 +369,59 @@ describe('a calendar tab (YAZ-4540)', () => {
     const { el } = mount({ name: 'Cal', type: 'calendar', sort: [{ property: 'note.status', direction: 'ASC' }], groupBy: [{ property: 'note.status' }, { property: 'note.priority' }] })
     expect(el.querySelector('[aria-label="Sort property"]')).not.toBeNull()
     expect(el.textContent).toContain('Add sort')
-    expect([...el.querySelectorAll('.view-menu__label')].map((p) => p.textContent)).not.toContain('Group by')
+    expect([...el.querySelectorAll('.view-menu__label')].map((p) => p.textContent)).toEqual(['Sort']) // no "Group" section (D60's name)
     expect(el.querySelector('[aria-label^="Group by"], [aria-label^="Then group by"], [aria-label^="Reorder group level"]')).toBeNull()
-    expect(el.querySelector('[aria-label="Group indent"]')).toBeNull()
+    expect(addLevelButton(el)).toBeNull()
   })
 
-  it('a table still offers Group by', () => {
+  it('a table still offers Group', () => {
     const { el } = mount({ name: 'T', type: 'table', groupBy: { property: 'note.status' } })
-    expect([...el.querySelectorAll('.view-menu__label')].map((p) => p.textContent)).toContain('Group by')
-    expect(el.querySelector('[aria-label="Group indent"]')).not.toBeNull()
+    expect([...el.querySelectorAll('.view-menu__label')].map((p) => p.textContent)).toContain('Group')
+    expect(addLevelButton(el)).not.toBeNull()
+  })
+})
+
+describe('the ⇅ popover holds only sorting and grouping (YAZ-4607 D60)', () => {
+  it('two sections, Sort and Group; the Indent and the Subfolders switch are gone (they live in Properties › View)', () => {
+    const { el } = mount({ name: 'Table', type: 'table', groupBy: { property: 'note.status' } })
+    expect([...el.querySelectorAll('.view-menu__label')].map((p) => p.textContent)).toEqual(['Sort', 'Group'])
+    expect(el.querySelector('[aria-label="Group indent"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Subfolders"]')).toBeNull()
+    expect(el.textContent).not.toContain('Indent')
+  })
+
+  it('an empty sort shows "Add sort" alone, no "No sort" line', () => {
+    const { el } = mount({ name: 'Table', type: 'table' })
+    expect(el.textContent).not.toContain('No sort')
+    expect([...el.querySelectorAll('.view-menu__action')].map((b) => b.textContent)).toEqual(['Add sort', 'Add group level'])
+  })
+
+  it('"Add group level" adds a level on the first free column; no empty picker; the button is gone at three levels', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table' })
+    const add = () => [...el.querySelectorAll<HTMLButtonElement>('.view-menu__action')].find((b) => b.textContent === 'Add group level')
+    expect(el.querySelector('[aria-label="Group by"]')).toBeNull()
+    act(() => add()!.click())
+    expect(el.querySelector('[aria-label="Group by"]')).not.toBeNull()
+    expect(el.querySelector('[aria-label="Then group by"]')).toBeNull()
+    expect(groupByLevels(view())).toHaveLength(1)
+    act(() => add()!.click())
+    act(() => add()!.click())
+    expect(groupByLevels(view())).toHaveLength(3)
+    expect(new Set(groupByLevels(view()).map((l) => l.property)).size).toBe(3) // three different columns
+    expect(add()).toBeUndefined()
+    expect(el.querySelectorAll('[aria-label^="Reorder group level"]')).toHaveLength(3)
+  })
+
+  it('"Folders first" sits under Sort, before Group, and only while the view shows folder rows', () => {
+    expect(mount({ name: 'Table', type: 'table' }).el.querySelector('[aria-label="Folders first"]')).toBeNull()
+    act(() => root?.unmount())
+    container?.remove()
+    const { el, view } = mount({ name: 'Table', type: 'table', subfolders: 'both' })
+    const toggle = el.querySelector<HTMLInputElement>('[aria-label="Folders first"]')!
+    expect(toggle.checked).toBe(true)
+    const group = [...el.querySelectorAll('.view-menu__label')].find((p) => p.textContent === 'Group')!
+    expect(toggle.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    act(() => toggle.click())
+    expect(view().foldersFirst).toBe(false)
   })
 })
