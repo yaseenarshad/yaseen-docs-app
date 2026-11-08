@@ -16,6 +16,7 @@ import { act } from 'react'
 import { noteFileName } from '@shared/noteName'
 import type { CreateFileRequest, IndexRecord, TreeNode } from '@shared/types'
 import { DEFAULT_COLUMNS } from './folderSettings'
+import { declarationForKind } from './view/declarationForKind'
 import { fetchTree } from '../lib/treeFeed'
 import { linkResolver, vaultDirs } from '../links/folderLinks'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -113,8 +114,8 @@ const onOpenFile = vi.fn()
  * folder has no `.folder.md`. The vault uses IDs, here and wherever a test feeds the source itself,
  * but for the blocks that say otherwise (YAZ-2523): with `ids` false no record has an id, the folder's included.
  */
-function feed(settings: unknown = SETTINGS, records: IndexRecord[] = vault(), ids = true): void {
-  const folders = settings === null ? [] : [{ ...rec(SETTINGS_FILE, { folder_settings: settings }), ...(ids && { id: STAGES_ID }) }]
+function feed(settings: unknown = SETTINGS, records: IndexRecord[] = vault(), ids = true, mtime = 1): void {
+  const folders = settings === null ? [] : [{ ...rec(SETTINGS_FILE, { folder_settings: settings }, mtime), ...(ids && { id: STAGES_ID }) }]
   act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, ids))
 }
 
@@ -246,14 +247,18 @@ describe('a folder with no settings file', () => {
     expect(byLabel<HTMLInputElement>(el, 'View name').value).toBe('Cards') // the appended tab mounts in rename
   })
 
-  it('a column added there, then a view edit before the index echoes either: the second write still states the column', async () => {
+  it('a column added there, then a view edit before the index echoes either: the second write still leaves the column on disk', async () => {
     const el = await mount(null)
     act(() => captured.folder!.setColumns({ ...DEFAULT_COLUMNS, owner: { kind: 'link' } }))
     click(byLabel(el, 'Sort'))
     click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add sort')!)
     await flush()
     expect(write).toHaveBeenCalledTimes(2)
-    expect((write.mock.calls[1][2] as { columns: unknown }).columns).toEqual({ ...DEFAULT_COLUMNS, owner: { kind: 'link' } })
+    const columns = { ...DEFAULT_COLUMNS, owner: { kind: 'link' } }
+    expect((write.mock.calls[0][2] as { columns: unknown }).columns).toEqual(columns)
+    // The view write changed no column (YAZ-4637 M1): its rebase keeps the one the first write put on disk.
+    const onDisk = { columns, views: [{ type: 'table', name: 'Table' }, { type: 'board', name: 'Board' }] }
+    expect((write.mock.calls[1][3]!(onDisk) as { columns: unknown }).columns).toEqual(columns)
   })
 
   it.each([
@@ -1019,8 +1024,64 @@ describe('the declarations ride AHEAD of the index (YAZ-1549)', () => {
     await setColumn('owner', { kind: 'link' })
     await act(async () => captured.folder!.deleteColumn!('order'))
     expect(write).toHaveBeenCalledTimes(1)
-    expect((write.mock.calls[0][2] as { columns: unknown }).columns).toEqual({ related: SETTINGS.columns.related, owner: { kind: 'link' } })
+    // The delete is this write's one change (YAZ-4637 M1); the declaration, on disk since its own write, is kept by the rebase.
+    expect((write.mock.calls[0][2] as { columns: unknown }).columns).toEqual({ related: SETTINGS.columns.related })
+    expect((write.mock.calls[0][3]!({ ...SETTINGS, columns: { ...SETTINGS.columns, owner: { kind: 'link' } } }) as { columns: unknown }).columns).toEqual({ related: SETTINGS.columns.related, owner: { kind: 'link' } })
     expect(columnsOf()).toEqual({ related: SETTINGS.columns.related, owner: { kind: 'link' } })
+  })
+
+  /** A sort added on the Table tab: one view write, whose rebase the test then runs over a block "on disk". */
+  const addSort = async (el: HTMLElement) => {
+    click(tab(el, 'Table'))
+    click(byLabel(el, 'Sort'))
+    click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add sort')!)
+    await flush()
+  }
+  const rebased = (call: number, onDisk: unknown) => write.mock.calls[call][3]!(onDisk) as { columns: unknown }
+
+  it('the echo of this page\'s own write clears the ahead copy whatever else disk holds (YAZ-4637 M1): an outside column change shows, and the next view write keeps it', async () => {
+    const el = await mount()
+    // "+ Add column", a Link with no target, as AddColumn builds it (the undefined target that kept the stamps apart).
+    act(() => captured.folder!.setColumns({ ...SETTINGS.columns, rel: declarationForKind({ kind: 'link', target: undefined }, 'link') }))
+    await flush()
+    // Meanwhile a note's Properties panel made `order` a Text column; the index echoes disk after the write landed (mtime 2).
+    const echoed = { ...SETTINGS, columns: { order: { kind: 'text' as const }, related: SETTINGS.columns.related, rel: { kind: 'link' as const } } }
+    feed(echoed, vault(), true, 2)
+    await flush()
+    expect(columnsOf()).toEqual(echoed.columns)
+    await addSort(el)
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(rebased(1, echoed).columns).toEqual(echoed.columns)
+  })
+
+  it('a view write never carries a column this page did not change (M1): with the ahead copy stuck, the rebase still keeps disk\'s columns', async () => {
+    const el = await mount()
+    act(() => captured.folder!.setColumns({ ...SETTINGS.columns, rel: { kind: 'link' } }))
+    await flush()
+    // The echo differs (an outside change) and is not known to be this write's (mtime 1): the ahead copy stays.
+    const echoed = { ...SETTINGS, columns: { order: { kind: 'text' as const }, related: SETTINGS.columns.related, rel: { kind: 'link' as const } } }
+    feed(echoed)
+    await flush()
+    await addSort(el)
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(rebased(1, echoed).columns).toEqual(echoed.columns)
+    // A column added now rides as THE change: disk's other columns are kept under it.
+    act(() => captured.folder!.setColumns({ ...columnsOf(), extra: { kind: 'text' } }))
+    await flush()
+    expect(write).toHaveBeenCalledTimes(3)
+    expect((write.mock.calls[2][2] as { columns: unknown }).columns).toEqual({ ...echoed.columns, extra: { kind: 'text' } })
+  })
+
+  it('two windows (M1): this one sets a column\'s type while another adds a column — the echo shows both, and a later view write keeps the other\'s column', async () => {
+    const el = await mount()
+    await setColumn('order', { kind: 'text' })
+    const echoed = { ...SETTINGS, columns: { order: { kind: 'text' as const }, related: SETTINGS.columns.related, y: { kind: 'number' as const } } }
+    feed(echoed, vault(), true, 2)
+    await flush()
+    expect(columnsOf()).toEqual(echoed.columns)
+    await addSort(el)
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(rebased(0, echoed).columns).toEqual(echoed.columns)
   })
 
   it('a refused settings write ABORTS a delete: the banner says why, the ahead copy is put back, and not one note is touched', async () => {

@@ -431,4 +431,25 @@ describe('the rebase of a settings write (YAZ-4596 S38): this page\'s change, la
     expect(rebase({ views: [{ type: 'outline', name: 'Page' }], other_files: ['[[x]]'] })).toEqual({ views: [{ type: 'page', name: 'Page' }], defaultView: 'Page', other_files: ['[[x]]'] })
     expect(rebase(undefined)).toEqual({ views: [{ type: 'page', name: 'Page' }], defaultView: 'Page' })
   })
+
+  it('reads the block on disk with the vault\'s own kind (YAZ-4637 M2): without ids a block with no views is one Table, so a sort adds no Board', () => {
+    const write = vi.mocked(writeProperty)
+    write.mockClear()
+    const onDisk = { columns: { due: { kind: 'date' } } }
+    const base = folderSettings(rec('/vault/F/.folder.md', { folder_settings: onDisk }), false)
+    expect(base.views.map((v) => v.name)).toEqual(['Table'])
+    const sorted = { ...base.views[0], sort: [{ property: 'note.due', direction: 'ASC' as const }] }
+    void writeFolderSettings('/vault/F/.folder.md', { ...base, views: [sorted] }, base, false)
+    const rebase = write.mock.calls[0][3]!
+    expect(rebase(onDisk)).toEqual({ columns: { due: { kind: 'date' } }, views: [sorted] })
+  })
+
+  it('both sides changed the views\' names (M3): the other side\'s adds and removes stay, and this side\'s land on them', () => {
+    // This side puts X back (an Undo of its delete); the other side added Y meanwhile: both are there, X in its place.
+    const X = { type: 'list', name: 'X' }
+    const Y = { type: 'cards', name: 'Y' }
+    expect(rebaseSettings({ ...base, views: [T, B] }, { ...base, views: [T, X, B] }, { ...base, views: [T, B, Y] })).toEqual({ ...base, views: [T, X, B, Y] })
+    // This side removed B; the other side added Y and changed T: B goes, Y and T's change stay.
+    expect(rebaseSettings({ ...base, views: [T, B] }, { ...base, views: [T] }, { ...base, views: [{ ...T, frozenColumns: 1 }, B, Y] })).toEqual({ ...base, views: [{ ...T, frozenColumns: 1 }, Y] })
+  })
 })

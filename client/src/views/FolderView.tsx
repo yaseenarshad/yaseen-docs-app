@@ -158,9 +158,31 @@ function folderViewSet({ views, formulas, properties, defaultView }: FolderSetti
 /** A folder's own keys as a folder row's values where the vault does not use IDs (YAZ-4579 D31): its view settings are no column. */
 const withoutSettings = ({ [FOLDER_SETTINGS_KEY]: _, ...values }: Record<string, unknown>): Record<string, unknown> => values
 
+/** Order-insensitive identity for one declaration; a field that is undefined is one that is absent (YAZ-4637 M1), as on disk. */
+const declStamp = (decl: ColumnDecl): string =>
+  JSON.stringify(
+    Object.entries(decl)
+      .filter(([, value]) => value !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : 1)),
+  )
+
 /** Order-insensitive identity for a columns map: the index re-reads what we wrote, key order and all, but never trust that. */
 const columnsStamp = (columns: Readonly<Record<string, ColumnDecl>>): string =>
-  JSON.stringify(Object.keys(columns).sort().map((key) => [key, Object.entries(columns[key]).sort(([a], [b]) => (a < b ? -1 : 1))]))
+  JSON.stringify(Object.keys(columns).sort().map((key) => [key, declStamp(columns[key])]))
+
+/**
+ * The columns a settings write states as ITS change (YAZ-4637 M1): `base` (the index's) with only the declarations the
+ * caller changed between `from` (the live copy it edited) and `to`. The rebase then sees this page's real change and
+ * nothing a stale live copy still holds — an outside delete or type change is kept, never put back.
+ */
+function columnsChanged(base: Readonly<Record<string, ColumnDecl>>, from: Readonly<Record<string, ColumnDecl>>, to: Readonly<Record<string, ColumnDecl>>): Record<string, ColumnDecl> {
+  const out: Record<string, ColumnDecl> = { ...base }
+  for (const key of new Set([...Object.keys(from), ...Object.keys(to)])) {
+    if (!(key in to)) delete out[key]
+    else if (!(key in from) || declStamp(from[key]) !== declStamp(to[key])) out[key] = to[key]
+  }
+  return out
+}
 
 /** The comparable tuple every stamp below is spelled as — everything `folderViewSet` builds: views, formulas, labels (YAZ-1513) and the saved START. */
 const stampOf = (s: Pick<FolderSettings, 'views' | 'formulas' | 'properties' | 'defaultView'>): string =>
@@ -220,9 +242,6 @@ export function FolderView({
     setAheadOtherState(next)
   }
   const indexOther = JSON.stringify(settings?.otherFiles ?? [])
-  useEffect(() => {
-    if (aheadOtherRef.current !== null && JSON.stringify(aheadOtherRef.current) === indexOther) setAheadOther(null)
-  }, [indexOther])
   const otherLinks = aheadOther ?? settings?.otherFiles
   /**
    * The moved notes, note path → its link, in `other_files` order: a link that names a note of this folder (`rows`),
@@ -349,9 +368,31 @@ export function FolderView({
     setAheadState(next)
   }
   const indexColumns = settings === null ? '' : columnsStamp(settings.columns)
+  /**
+   * The mtime the ahead writes settled at (YAZ-4637 M1): once every write that set an ahead copy has landed, the index
+   * record at or past that mtime is disk WITH this page's write — so the copies clear then, whatever else disk holds
+   * (an outside change rides in the same echo), and never stick on a stamp that can not match. Null while one is in flight.
+   */
+  const [landed, setLanded] = useState<number | null>(null)
+  const aheadWrites = useRef({ count: 0, mtime: 0 })
+  const aheadWrite = <T extends { mtime: number },>(write: Promise<T>): Promise<T> => {
+    const w = aheadWrites.current
+    if (w.count === 0) w.mtime = 0
+    w.count += 1
+    setLanded(null)
+    const settle = (mtime: number | null) => {
+      w.count -= 1
+      if (mtime !== null) w.mtime = Math.max(w.mtime, mtime)
+      if (w.count === 0) setLanded(w.mtime || null)
+    }
+    write.then(({ mtime }) => settle(mtime), () => settle(null))
+    return write
+  }
   useEffect(() => {
-    if (aheadRef.current !== null && indexColumns === columnsStamp(aheadRef.current)) setAhead(null)
-  }, [indexColumns])
+    const echoed = revision !== undefined && landed !== null && revision >= landed
+    if (aheadRef.current !== null && (echoed || indexColumns === columnsStamp(aheadRef.current))) setAhead(null)
+    if (aheadOtherRef.current !== null && (echoed || JSON.stringify(aheadOtherRef.current) === indexOther)) setAheadOther(null)
+  }, [indexColumns, indexOther, revision, landed])
   const liveSettings = useMemo(
     () => (settings === null ? null : ahead === null && aheadOther === null ? settings : { ...settings, columns: ahead ?? settings.columns, otherFiles: aheadOther ?? settings.otherFiles }),
     [settings, ahead, aheadOther],
@@ -420,14 +461,27 @@ export function FolderView({
    * back, shows the banner and REJECTS — so a caller that must not go on (a column delete's note
    * strips) does not.
    */
+  /**
+   * The block a settings write states (YAZ-4596 S38, YAZ-4637 M1): the index's — the base, disk as this page last heard
+   * it — under the LIVE def (its own view writes still in flight ride again) and the caller's change. A part the caller
+   * did not change is the base's, so the rebase leaves it to disk: a move to Other files in flight, or an outside
+   * column change, is kept either way.
+   */
+  const block = (changes: Partial<Pick<FolderSettings, 'columns' | 'otherFiles' | 'views' | 'properties' | 'defaultView'>>): FolderSettings => ({
+    ...settings,
+    views: parsed.def.views,
+    properties: parsed.def.properties,
+    defaultView: parsed.def.defaultView,
+    ...changes,
+  })
   const commitSettings = (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']): Promise<void> => {
     if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
     setSettingsError(null)
     const before = aheadRef.current
+    // The caller edited the live copy: what it changed there is this write's; the rest is disk's.
+    const mine = columnsChanged(settings.columns, liveSettings.columns, columns)
     setAhead(columns)
-    // The LIVE settings: a move to Other files still in flight is kept (YAZ-4597). The base is the index's block, the
-    // disk as this page last heard it (YAZ-4596 S38): another tab's write it has not heard yet stays.
-    return track(writeFolderSettings(file, { ...liveSettings, columns, views, properties, defaultView: parsed.def.defaultView }, settings)).then(
+    return track(aheadWrite(writeFolderSettings(file, block({ columns: mine, views, properties }), settings, ids))).then(
       () => undefined,
       (err: unknown) => {
         setAhead(before)
@@ -445,9 +499,9 @@ export function FolderView({
     // What this write will stamp as when the index returns it (YAZ-1241) — formulas ride unchanged;
     // the labels are the DEF's (YAZ-1513), since a rename is one of the edits that lands here.
     pending.current.push(stampOf({ views: next.def.views, formulas: settings.formulas, properties: next.def.properties, defaultView: next.def.defaultView }))
-    // The AHEAD columns, never the snapshot's: the whole block is written, and a folder's first
-    // column write is not in the index until its file is (D1).
-    track(writeFolderSettings(file, { ...liveSettings, views: next.def.views, properties: next.def.properties, defaultView: next.def.defaultView }, settings)).catch((err: unknown) =>
+    // The columns are the base's (YAZ-4637 M1): this write changed none, so the rebase keeps disk's — a column added a
+    // moment ago is on disk, or lands on it when that write retries after this one.
+    track(writeFolderSettings(file, block({ views: next.def.views, properties: next.def.properties, defaultView: next.def.defaultView }), settings, ids)).catch((err: unknown) =>
       setSettingsError(err instanceof Error ? err.message : String(err)),
     )
   }
@@ -482,7 +536,7 @@ export function FolderView({
     setSettingsError(null)
     const before = aheadOtherRef.current
     setAheadOther(next)
-    return track(writeFolderSettings(file, { ...liveSettings, otherFiles: next, views: parsed.def.views, properties: parsed.def.properties, defaultView: parsed.def.defaultView }, settings)).then(
+    return track(aheadWrite(writeFolderSettings(file, block({ otherFiles: next }), settings, ids))).then(
       () => undefined,
       (err: unknown) => {
         setAheadOther(before)
@@ -558,7 +612,7 @@ export function FolderView({
       if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
       const before = aheadRef.current
       setAhead({ ...liveSettings.columns, [key]: next })
-      const written = track(writeFolderColumn(file, key, next, base, ids)).catch((err: unknown) => {
+      const written = track(aheadWrite(writeFolderColumn(file, key, next, base, ids))).catch((err: unknown) => {
         setAhead(before)
         throw err
       })

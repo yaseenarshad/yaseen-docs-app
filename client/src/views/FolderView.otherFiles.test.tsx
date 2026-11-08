@@ -90,7 +90,10 @@ beforeEach(async () => {
     if (f === undefined) throw new BridgeRequestError('NOT_FOUND', 'path does not exist')
     return { path, ...f, size: f.content.length }
   })
-  writeFile.mockImplementation(async ({ path, content }) => {
+  // As the bridge: a write against bytes that moved since the read is a CONFLICT, which the one writer retries with its rebase (YAZ-4596 S38).
+  writeFile.mockImplementation(async ({ path, content, expectedMtime }) => {
+    const was = disk.get(path)?.mtime ?? 0
+    if (expectedMtime !== undefined && expectedMtime !== was) throw new BridgeRequestError('CONFLICT', 'file changed')
     disk.set(path, { content, mtime: ++clock })
     return { path, mtime: clock, size: content.length }
   })

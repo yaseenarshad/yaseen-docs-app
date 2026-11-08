@@ -272,14 +272,16 @@ export function writeFolderSettings(
   path: string,
   next: FolderSettings | undefined,
   base?: FolderSettings,
+  ids = true,
 ): Promise<{ mtime: number }> {
   if (next === undefined || base === undefined) return writeProperty(path, FOLDER_SETTINGS_KEY, next === undefined ? undefined : plain(next))
   const mine = plain(next)
   const from = plain(base)
   // The block on disk, read as this module reads it (a stored `outline` is a Page, as in `base`), then the change.
-  // `true`: the kind of vault only picks the views of a block that has none usable.
+  // `ids` is the vault's own kind, the one `base` was read with (YAZ-4637 M2): a block with no views is one Table
+  // without ids, and reading it as two would write a Board the folder never had.
   return writeProperty(path, FOLDER_SETTINGS_KEY, mine, (onDisk) =>
-    isRecord(onDisk) ? rebaseSettings(from, mine, plain(folderSettings({ properties: { [FOLDER_SETTINGS_KEY]: onDisk } } as unknown as IndexRecord, true))) : mine,
+    isRecord(onDisk) ? rebaseSettings(from, mine, plain(folderSettings({ properties: { [FOLDER_SETTINGS_KEY]: onDisk } } as unknown as IndexRecord, ids))) : mine,
   )
 }
 
@@ -331,6 +333,21 @@ export function rebaseSettings(base: unknown, mine: unknown, theirs: unknown): u
           return kept ? rebaseSettings(at, others, entry) : rebaseSettings(at, entry, others)
         })
       }
+      // Both sides changed the names (YAZ-4637 M3): disk's list and order, less the views this side removed, plus the
+      // views it added — each after the view before it in this side's list — and each shared view merged.
+      const out: unknown[] = theirs.filter((_, i) => !(b.includes(t[i]) && !m.includes(t[i])))
+      const outNames = t.filter((name) => !(b.includes(name) && !m.includes(name)))
+      m.forEach((name, i) => {
+        if (b.includes(name) || t.includes(name)) return
+        const after = i === 0 ? -1 : outNames.indexOf(m[i - 1])
+        out.splice(after + 1, 0, mine[i])
+        outNames.splice(after + 1, 0, name)
+      })
+      return out.map((entry, i) => {
+        const name = outNames[i]
+        if (!b.includes(name) || !m.includes(name) || !t.includes(name)) return entry
+        return rebaseSettings(base[b.indexOf(name)], mine[m.indexOf(name)], entry)
+      })
     }
   }
   return mine

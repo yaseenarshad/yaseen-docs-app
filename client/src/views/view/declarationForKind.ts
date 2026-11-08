@@ -19,5 +19,7 @@ export function declarationForKind(decl: Partial<PropertyDecl> | undefined, kind
   if (kind !== 'link' && kind !== 'multi-link') delete next.target
   else if (next.target !== undefined && next.target.trim() === '') delete next.target
   if (next.format !== undefined && !formatFits(kind, next.format)) delete next.format
+  // No undefined field (YAZ-4637 M1): the disk never holds one, so a declaration with one would never match its echo.
+  for (const field of Object.keys(next) as (keyof PropertyDecl)[]) if (next[field] === undefined) delete next[field]
   return next
 }
