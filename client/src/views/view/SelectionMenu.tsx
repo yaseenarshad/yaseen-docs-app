@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import type { EditorKind } from '../editorType'
 import { FillMenu, type FillTarget } from './FillMenu'
-import { FlyoutItem, FlyoutParent, useFlyout } from './HeaderFlyout'
+import { FlyoutItem, FlyoutParent, useFlyout } from '../../components/Flyout'
 import { valueFromText } from './tableSelection'
 
 interface SelectionMenuProps {

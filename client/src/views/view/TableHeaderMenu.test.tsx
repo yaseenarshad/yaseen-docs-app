@@ -555,13 +555,14 @@ describe('the Sort, Group and Text flyouts (YAZ-4588 D42)', () => {
     }
   })
 
-  it('Group › not grouped: Group by this column and Add as next group level; no Levels', () => {
+  // Changed by YAZ-4544 (4F, D42): with nothing grouped "Add as next group level" is the same act, so it is hidden.
+  it('Group › not grouped: only Group by this column; no Levels', () => {
     const { el, def } = mount()
     rightClick(th(el, 1))
     click(item(el, 'Group'))
-    expect(flyoutItems(el)).toEqual(['Group by this column', 'Add as next group level'])
+    expect(flyoutItems(el)).toEqual(['Group by this column'])
     expect(flyoutHeading(el)).toBeNull()
-    click(item(el, 'Add as next group level'))
+    click(item(el, 'Group by this column'))
     expect(view(def).groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
   })
 

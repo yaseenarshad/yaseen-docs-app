@@ -182,6 +182,18 @@ describe('"Fill cell ›" and "Fill row ›" in the row right-click (YAZ-4536 D1
     expect(el.querySelector('.ctx-menu__sub .colour-box')).not.toBeNull()
   })
 
+  it('the Fill flyout is the app’s one flyout (YAZ-4544 4F): the first Esc closes it alone, the next closes the menu', () => {
+    const { el } = mount(TABLE)
+    rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":0"]'))
+    click(item(el, 'Fill row'))
+    const esc = () => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    esc()
+    expect(el.querySelector('.ctx-menu__sub')).toBeNull()
+    expect(el.querySelector('.ctx-menu')).not.toBeNull()
+    esc()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
   it('other views show no fill items', () => {
     const { el } = mount('views:\n  - type: cards\n    name: C\n')
     rightClick(q(el, '.view-card'))

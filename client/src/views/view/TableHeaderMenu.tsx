@@ -14,7 +14,7 @@ import { displayNameOf, setDisplayName } from './columnLabel'
 import { setViewOrder, withOrder } from './columnOrder'
 import { UNFROZE_COLUMNS, frozenColumnCount } from './frozenColumns'
 import { groupAppend, groupLevels, groupOnly, groupRemoveLevel } from './groupLevels'
-import { FlyoutItem, FlyoutParent, useFlyout } from './HeaderFlyout'
+import { FlyoutItem, FlyoutParent, useFlyout } from '../../components/Flyout'
 import { canonicalKey } from './keys'
 import { TextField } from './TextField'
 
@@ -259,8 +259,8 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
               <FlyoutParent label="Group" open={flyout.open === 'group'} onHover={() => flyout.hover('group')} onOpen={() => flyout.openNow('group')} onCloseFlyout={() => flyout.openNow(null)}>
                 <div className="ctx-menu__group" role="group">
                   <FlyoutItem label="Group by this column" onSelect={write((v) => groupOnly(v, key))} />
-                  {/* Hidden when this column is a level; Folder may group twice (YAZ-2541). */}
-                  {(ownLevel === -1 || c === 'file.folder') && (
+                  {/* Hidden when this column is a level; Folder may group twice (YAZ-2541). Hidden with nothing grouped, where it is "Group by this column" (YAZ-4544 4F, D42). */}
+                  {levels.length > 0 && (ownLevel === -1 || c === 'file.folder') && (
                     <FlyoutItem
                       label="Add as next group level"
                       disabled={levels.length >= MAX_GROUP_LEVELS}
