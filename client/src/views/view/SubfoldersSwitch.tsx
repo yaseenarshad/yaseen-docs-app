@@ -13,16 +13,18 @@ interface SubfoldersSwitchProps {
   viewIndex: number
   onUpdate: Mutate
   className?: string
+  /** The text beside the select: the Sort and group menu heads its section "Subfolders", so its row says "Show". */
+  text?: string
 }
 
 /**
  * "Subfolders" (YAZ-4579 D30): one switch, in Properties and in the Sort and group menu, so it changes where the user
  * works. Their notes is the default: it removes the key. Every view type has it.
  */
-export function SubfoldersSwitch({ view, viewIndex, onUpdate, className = 'view-settings-row' }: SubfoldersSwitchProps) {
+export function SubfoldersSwitch({ view, viewIndex, onUpdate, className = 'view-settings-row', text = 'Subfolders' }: SubfoldersSwitchProps) {
   return (
     <label className={className}>
-      <span>Subfolders</span>
+      <span>{text}</span>
       <select
         className="view-select"
         aria-label="Subfolders"
