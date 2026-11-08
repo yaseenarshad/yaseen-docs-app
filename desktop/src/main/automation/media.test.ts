@@ -50,6 +50,8 @@ it('keeps library favorites, use words and removal in the same durable store', a
   expect(services.copies.remove).toHaveBeenCalledExactlyOnceWith(item.itemKey)
   expect(await run('media.library', { kind: 'favorites' })).toMatchObject({ items: [] })
   expect(JSON.parse(await readFile(join(root, 'media-aaaaaaaaaaaa.json'), 'utf8')).used[0].words).toEqual(['green'])
+  // A favorite starts the copy worker's provider fetch, so it declares the network (YAZ-4520 nit); the others only write.
+  expect(['media.favorite', 'media.recordUse', 'media.addWord'].map(name => commandDefinition(name).effect)).toEqual(['remote', 'write', 'write'])
 })
 it('uses provider bytes verbatim and refuses an existing output file', async () => {
   const outputFile = join(root, 'photo.png')
