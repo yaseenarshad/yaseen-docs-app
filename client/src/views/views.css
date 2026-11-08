@@ -923,7 +923,6 @@
 }
 
 .view-table tbody td[data-find='active'] {
-  color: #1f1f1f;
   background-image: linear-gradient(var(--find-match-active-bg), var(--find-match-active-bg));
 }
 
@@ -932,8 +931,26 @@
 }
 
 .views-pane li[data-hover-item][data-find='active'] {
-  color: #1f1f1f;
   background-color: var(--find-match-active-bg);
+}
+
+/* The current match's text is dark in BOTH themes, down to its children (YAZ-4643 S4): a card's title (`--accent`), its
+   labels and placeholders (`--fg-muted`) and its values (`--fg`) read the tokens, so the tokens turn dark on it; a chip
+   or a pill keeps its own box, as a light wash with dark text. Each colour is at least 4.5:1 on the solid yellow. */
+.view-table tbody td[data-find='active'],
+.views-pane li[data-hover-item][data-find='active'] {
+  --fg: #1f1f1f;
+  --fg-muted: #3d3d3d;
+  --accent: #1f1f1f;
+  color: #1f1f1f;
+}
+
+.view-table tbody td[data-find='active'] .view-table__chip,
+.view-table tbody td[data-find='active'] .view-link-pill,
+.views-pane li[data-hover-item][data-find='active'] .view-table__chip,
+.views-pane li[data-hover-item][data-find='active'] .view-link-pill {
+  color: #1f1f1f;
+  background: rgba(255, 255, 255, 0.5);
 }
 
 /* The fill handle (YAZ-4609 D61), the table block's look (`editor/table/table.css`): a square in the corner of the
@@ -1349,8 +1366,10 @@
 .wikilink--unresolved.view-link-pill {
   cursor: inherit;
 }
-.view-link-pill + .view-link-pill {
-  margin-left: 4px;
+/* The gap between pills hangs on the pill BEFORE it (YAZ-4643 S1): a pill that wraps to the next line starts flush,
+   as the chips do (`.view-table__chip`'s `margin-right`); one clipped line and the Properties panel read the same. */
+.view-link-pill:has(+ .view-link-pill) {
+  margin-right: 4px;
 }
 /* Each pill wears its page's icon (YAZ-4544 4G). The editor hides the icon of a link's second piece
    (`.wikilink + .wikilink`, wikilink.css, `!important`); a Multi-link cell's next pill is another link, so it keeps its own. */
@@ -2703,8 +2722,10 @@
 .sort-menu > .view-menu__label:first-child { border-top: 0; padding-top: 0; margin-top: 2px; }
 .sort-menu > .view-rule__main { grid-template-columns: minmax(0, 1fr) 118px; padding: 0 28px 0 26px; margin-bottom: 6px; }
 .sort-menu > .view-rule__main > .column-picker { grid-column: 1; }
-/* A group level's row has one more column, the "Aa" style chip (YAZ-3742). */
+/* A group level's row has one more column, the "Aa" style chip (YAZ-3742). A sort row leaves that column empty, so
+   its × stands under the group rows' × (YAZ-4643 S6). */
 .sort-menu .view-rule__main.sort-menu__level { grid-template-columns: 18px minmax(0, 1fr) 118px 30px 20px; }
+.sort-menu .sort-menu__level > .view-rule__remove { grid-column: 5; }
 .group-style { display: contents; }
 .group-style__trigger { display: flex; align-items: center; justify-content: center; width: 100%; height: 30px; padding: 0; color: var(--fg); }
 .group-style__sample { font-size: 12px; font-weight: 600; }

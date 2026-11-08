@@ -45,6 +45,12 @@
   top: 8px;
 }
 
+/* On a view the table's sticky header and frozen cells reach z-index 4 (views.css): the bar paints over them, and
+   stays under the popovers and menus (20 and 40) (YAZ-4643 S3). */
+.find-bar-dock--views {
+  z-index: 5;
+}
+
 .find-bar {
   position: absolute;
   top: 0;

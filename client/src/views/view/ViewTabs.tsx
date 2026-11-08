@@ -60,9 +60,21 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
   // Overflow (TabBar's idiom): the strip scrolls with no scrollbar, so keep the ACTIVE tab in
   // view on every activation. jsdom has no scrollIntoView — hence the `?.()`.
   const activeRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
+  // In braces: an effect returns nothing or a cleanup, and Chromium's `scrollIntoView` returns a Promise.
+  const showActive = (): void => {
     activeRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
-  }, [active])
+  }
+  useEffect(showActive, [active])
+  // A narrower window keeps the strip's scroll where it was, so the active tab can leave the screen (YAZ-4643 S5):
+  // one observer on the strip itself brings it back on each resize; no tab is watched, and a scroll runs nothing.
+  useEffect(() => {
+    const strip = live.ref.current
+    if (strip === null) return
+    const observer = new ResizeObserver(showActive)
+    observer.observe(strip)
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the strip is mounted once; `showActive` reads the live ref
+  }, [])
 
   /** Names key `defaultView` and the collapse store: a rename commits only a non-empty name no OTHER view has. */
   const uniqueName = (i: number) => (draft: string): string | null => {
@@ -196,15 +208,15 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
               View settings…
             </button>
           )}
+          {/* The Page is a document: it has no rows to export, so it offers neither item (YAZ-4594 S30, YAZ-4643 S8). */}
           {onExport !== undefined &&
+            menuView.type !== PAGE_VIEW_TYPE &&
             ([['csv', 'Export as CSV…'], ['copy', 'Copy as table']] as const).map(([as, label]) => (
               <button
                 key={as}
                 type="button"
                 role="menuitem"
                 className="ctx-menu__item"
-                // The Page is a document: it has no rows to export (YAZ-4594 S30).
-                disabled={menuView.type === PAGE_VIEW_TYPE}
                 onClick={() => {
                   onExport(menu.i, as)
                   setMenu(null)

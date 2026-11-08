@@ -626,6 +626,48 @@ describe('view tabs — overflow (YAZ-1471)', () => {
     expect(scrolled.querySelector('[role="tab"]')?.textContent).toBe('View 2')
   })
 
+  it('scrolls the ACTIVE tab into view when the strip RESIZES too (YAZ-4643 S5): a narrower window can leave it off-screen', () => {
+    const observers: { fire: () => void; targets: Element[] }[] = []
+    class StripObserver {
+      targets: Element[] = []
+      constructor(cb: () => void) {
+        observers.push({ fire: cb, targets: this.targets })
+      }
+      observe(el: Element) {
+        this.targets.push(el)
+      }
+      unobserve() {}
+      disconnect() {
+        this.targets.length = 0
+      }
+      takeRecords() {
+        return []
+      }
+    }
+    const had = globalThis.ResizeObserver
+    globalThis.ResizeObserver = StripObserver as unknown as typeof ResizeObserver
+    // Chromium's `scrollIntoView` returns a Promise: an effect that handed it on as its cleanup crashed the folder page
+    // on the next tab change (seen in the built app). React throws on a cleanup that is not a function.
+    scrollIntoView.mockReturnValue(Promise.resolve())
+    try {
+      const { el } = mount()
+      click(byText(el, '[role="tab"]', 'View 2'))
+      const strip = q<HTMLElement>(el, '.view-tabs[role="tablist"]')
+      const onStrip = observers.filter((o) => o.targets.includes(strip))
+      expect(onStrip).toHaveLength(1) // ONE observer on the strip itself; no tab is watched
+      expect(onStrip[0].targets).toEqual([strip])
+      scrollIntoView.mockClear()
+      act(() => onStrip[0].fire())
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+      expect(scrollIntoView.mock.contexts[0]).toBe(wrap(el, 2)) // the ACTIVE tab, View 2
+      act(() => root?.unmount())
+      expect(onStrip[0].targets).toEqual([]) // disconnected with the strip
+    } finally {
+      globalThis.ResizeObserver = had
+    }
+  })
+
   it('the tablist IS the scroller, and the "+" sits outside it', () => {
     const { el } = mount()
     expect(q(el, '.view-tabs-wrap > .view-tabs[role="tablist"]')).toBe(q(el, '[role="tablist"]'))
