@@ -1456,7 +1456,7 @@ describe('the note window holds a real editor (YAZ-4547)', () => {
             <Editor {...props} />
           </div>
           <section className="editor">
-            <NoteWindow start={PATH} renderEditor={(path) => <Editor {...props} path={path} />} link={noteWindowLink()} titleOf={() => 'note'} memory={noteWindowMemory()} onOpenInTab={noop} onClose={noop} />
+            <NoteWindow renderEditor={(path) => <Editor {...props} path={path} />} link={noteWindowLink()} titleOf={() => 'note'} memory={noteWindowMemory(PATH)} onOpenInTab={noop} onClose={noop} />
           </section>
         </>,
       ),

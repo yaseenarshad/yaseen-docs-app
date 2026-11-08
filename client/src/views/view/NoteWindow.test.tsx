@@ -12,6 +12,7 @@ import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { setCellNotePinnedAtStart } from '../../editor/table/cellNoteCard'
+import { MAX_OPEN_WINDOWS, dropAllNoteWindows, keepNoteWindow, noteWindowKey, noteWindowMemory, openNoteWindow } from './NoteWindow'
 
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => ['/vault'] } }))
 
@@ -91,6 +92,7 @@ afterEach(() => {
   container?.remove()
   container = null
   setCellNotePinnedAtStart(true)
+  dropAllNoteWindows()
 })
 
 const q = <T extends Element>(sel: string): T => {
@@ -251,6 +253,43 @@ describe('Open in a window (YAZ-4547)', () => {
     expect(card()).not.toBeNull()
     expect(shownPath()).toBe(path('D'))
     expect(currentRows()).toEqual(['D'])
+  })
+
+  it('a folder page that unmounts and mounts again (a tab that sleeps) shows its card again on the same note', () => {
+    mount(SORTED)
+    openOn('B')
+    click(button('Next row'))
+    click(button('Unpin window'))
+    act(() => root?.unmount())
+    container?.remove()
+    expect(card()).toBeNull()
+    mount(SORTED)
+    expect(shownPath()).toBe(path('D'))
+    expect(count()).toBe('2 of 5')
+    expect(currentRows()).toEqual(['D'])
+    expect(button('Pin window').getAttribute('aria-pressed')).toBe('false')
+    // A closed card is gone for good: its entry goes with it.
+    click(button('Close window'))
+    act(() => root?.unmount())
+    container?.remove()
+    mount(SORTED)
+    expect(card()).toBeNull()
+  })
+
+  it('the card belongs to its view tab: another view shows none, and the card is back on its own tab', () => {
+    mount(`${SORTED}  - type: table\n    name: U\n`)
+    openOn('C')
+    click([...document.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'U')!)
+    expect(card()).toBeNull()
+    click([...document.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'T')!)
+    expect(shownPath()).toBe(path('C'))
+  })
+
+  it('the open cards are bounded: at most MAX_OPEN_WINDOWS, the oldest open out', () => {
+    for (let i = 0; i <= MAX_OPEN_WINDOWS; i++) keepNoteWindow(noteWindowKey(`/vault/p${i}`, 'T'), noteWindowMemory(`/vault/p${i}/n.md`))
+    expect(openNoteWindow(noteWindowKey('/vault/p0', 'T'))).toBeUndefined()
+    expect(openNoteWindow(noteWindowKey('/vault/p1', 'T'))?.path).toBe('/vault/p1/n.md')
+    expect(openNoteWindow(noteWindowKey(`/vault/p${MAX_OPEN_WINDOWS}`, 'T'))).toBeDefined()
   })
 
   describe('the place, the size and the pin are remembered for the tab', () => {

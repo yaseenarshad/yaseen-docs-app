@@ -21,8 +21,10 @@ export interface NoteWindowLink {
 
 export const noteWindowLink = (): NoteWindowLink => ({ rows: [], current: null, show: () => {} })
 
-/** The card's place, size and pin, kept for the tab's folder page while the app runs (D17): in memory only. */
+/** An open card: the note it shows now, and its place, size and pin, kept while the app runs (D17): in memory only. */
 export interface NoteWindowMemory {
+  /** The note the card shows now: its start, then each step. */
+  path: string
   /** The top-left corner after a drag or a resize, in layout px of the folder page; null for the default place. */
   placed: { x: number; y: number } | null
   width: number | null
@@ -30,16 +32,34 @@ export interface NoteWindowMemory {
   pinned: boolean
 }
 
-/** A new memory: the pin starts as Settings › "Keep cell notes open (pinned)" says (5E, no new setting). */
-export const noteWindowMemory = (): NoteWindowMemory => ({ placed: null, width: null, height: null, pinned: cellNotePinnedAtStart() })
+/** A new memory on `path`: the pin starts as Settings › "Keep cell notes open (pinned)" says (5E, no new setting). */
+export const noteWindowMemory = (path: string): NoteWindowMemory => ({ path, placed: null, width: null, height: null, pinned: cellNotePinnedAtStart() })
+
+/**
+ * The open cards, by folder page and view tab (YAZ-4547 D17). A tab that sleeps unmounts its folder page; when it
+ * mounts again, its card shows again on the same note, at the same place. Bounded: a card that closes drops its
+ * entry, and at most `MAX_OPEN_WINDOWS` stay, the oldest open out.
+ */
+const openWindows = new Map<string, NoteWindowMemory>()
+export const MAX_OPEN_WINDOWS = 50
+
+export const noteWindowKey = (folderPath: string, viewName: string): string => JSON.stringify([folderPath, viewName])
+export const openNoteWindow = (key: string): NoteWindowMemory | undefined => openWindows.get(key)
+export function keepNoteWindow(key: string, memory: NoteWindowMemory): void {
+  openWindows.delete(key)
+  openWindows.set(key, memory)
+  if (openWindows.size > MAX_OPEN_WINDOWS) openWindows.delete(openWindows.keys().next().value!)
+}
+export const dropNoteWindow = (key: string): void => void openWindows.delete(key)
+/** For tests: no card open anywhere. */
+export const dropAllNoteWindows = (): void => openWindows.clear()
 
 interface NoteWindowProps {
-  /** The note the card opens on. */
-  start: string
   /** A full `Editor` on a note (App's `renderNoteEditor`): the tab itself, in the card. */
   renderEditor: (path: string) => ReactNode
   link: NoteWindowLink
   titleOf: (path: string) => string
+  /** The card's note, place, size and pin: the card opens on `memory.path` and writes each step there. */
   memory: NoteWindowMemory
   onOpenInTab: (path: string) => void
   onClose: () => void
@@ -79,8 +99,8 @@ const stepIndex = (found: number, last: number, dir: -1 | 1): number => (found =
  * views' document zoom. One editor is mounted at a time, keyed by the path: a step saves the note and mounts the next.
  * A drag or a resize writes the card's style only: nothing renders while the pointer moves.
  */
-export function NoteWindow({ start, renderEditor, link, titleOf, memory, onOpenInTab, onClose }: NoteWindowProps) {
-  const [path, setPath] = useState(start)
+export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, onClose }: NoteWindowProps) {
+  const [path, setPath] = useState(memory.path)
   const [pinned, setPinned] = useState(memory.pinned)
   const [host, setHost] = useState<HTMLElement | null>(null)
   const anchorRef = useRef<HTMLSpanElement>(null)
@@ -117,9 +137,10 @@ export function NoteWindow({ start, renderEditor, link, titleOf, memory, onOpenI
 
   // The table marks the card's row and scrolls it into view; the mark goes with the card.
   useLayoutEffect(() => {
+    memory.path = path
     link.current = path
     link.show()
-  }, [link, path])
+  }, [memory, link, path])
   useEffect(
     () => () => {
       link.current = null

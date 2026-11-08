@@ -24,7 +24,7 @@ import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_S
 import { ListView } from './view/ListView'
 import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
-import { NoteWindow, type NoteWindowMemory, noteWindowLink, noteWindowMemory } from './view/NoteWindow'
+import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, noteWindowKey, noteWindowLink, noteWindowMemory, openNoteWindow } from './view/NoteWindow'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { NO_READ_ONLY } from './readOnlyRows'
@@ -201,13 +201,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
     return items.find((el) => el.matches(':hover')) ?? items[0] ?? null
   })
   const { hoverCard, leaveCard, close: closeItemHover } = itemHover
-  // The note window (YAZ-4547): which note it opened on (`n` mounts a new card per open), its link to the table, and its
-  // place, size and pin, kept for this folder page (the tab's) while the app runs.
-  const [noteWindow, setNoteWindow] = useState<{ path: string; n: number } | null>(null)
+  // The note window (YAZ-4547): `opens` mounts a new card per open and renders each open and close; the link to the
+  // table; the place, size and pin of the last card closed here, for the next open while this folder page is mounted.
+  const [opens, setOpens] = useState(0)
   const windowLink = useMemo(noteWindowLink, [])
-  const windowMemory = useRef<NoteWindowMemory | null>(null)
-  const openWindow = folder.renderNoteEditor === undefined ? undefined : (path: string) => setNoteWindow((open) => ({ path, n: (open?.n ?? 0) + 1 }))
-  const closeWindow = useCallback(() => setNoteWindow(null), [])
+  const lastWindow = useRef<NoteWindowMemory | null>(null)
   const itemProps = useCallback((path: string) => ({ 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard])
   const viewHover = useMemo<ViewHover>(() => ({ itemProps }), [itemProps])
   // New records (a sync, another window's edit) can remove or move the item under the panel, and a removed item
@@ -221,6 +219,23 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
    * `folderViewSet` both fall back to `DEFAULT_VIEWS` — and `index` is clamped into that list.
    */
   const view = views[index]!
+  // The open card of this folder page and view tab is in a module map (`NoteWindow.tsx`, D17), so a tab that sleeps and
+  // mounts again shows it again on the same note.
+  const windowKey = noteWindowKey(folderPath, view.name)
+  const noteWindow = openNoteWindow(windowKey)
+  const openWindow =
+    folder.renderNoteEditor === undefined
+      ? undefined
+      : (path: string) => {
+          const { placed, width, height, pinned } = openNoteWindow(windowKey) ?? lastWindow.current ?? noteWindowMemory(path)
+          keepNoteWindow(windowKey, { path, placed, width, height, pinned })
+          setOpens((n) => n + 1)
+        }
+  const closeWindow = useCallback(() => {
+    lastWindow.current = openNoteWindow(windowKey) ?? lastWindow.current
+    dropNoteWindow(windowKey)
+    setOpens((n) => n + 1)
+  }, [windowKey])
   // Re-parse after every edit: `doc.setIn` stores plain JS values, so a second edit inside a
   // collection a previous edit created would throw ("Expected YAML collection"). The round trip
   // through text keeps comments and rebuilds proper nodes.
@@ -664,14 +679,13 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
         </p>
       )}
       {/* After the views: the table has written this render's rows to the link when the card reads them. */}
-      {noteWindow !== null && folder.renderNoteEditor !== undefined && (
+      {noteWindow !== undefined && folder.renderNoteEditor !== undefined && (
         <NoteWindow
-          key={noteWindow.n}
-          start={noteWindow.path}
+          key={`${windowKey}:${opens}`}
           renderEditor={folder.renderNoteEditor}
           link={windowLink}
           titleOf={(path) => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')}
-          memory={(windowMemory.current ??= noteWindowMemory())}
+          memory={noteWindow}
           onOpenInTab={onOpenFile}
           onClose={closeWindow}
         />
