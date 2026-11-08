@@ -32,6 +32,8 @@ import { PICKER_W, suggestIcons } from './iconSuggestions'
 import { keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
 import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
 import { folderShortcuts } from './folderShortcuts'
+import { folderPageRows, showFolderPageFiles } from './folderPageRows'
+import { askPageTab } from '../views/pageTabRequest'
 import { datedSeed, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
@@ -586,6 +588,25 @@ const INERT_MOVE: TreeFileMove ={ accepts: () => false, start: () => undefined, 
 /** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
 const NO_NODES: readonly TreeNode[] = []
 const NO_SHORTCUTS: ReadonlyMap<string, readonly TreeNode[]> = new Map()
+const NO_PAGE_ROWS: ReadonlySet<string> = new Set()
+/**
+ * A folder page row's menu (YAZ-4587, D37): the folder page's own items — open it, in a new tab, copy its path, reveal
+ * it, show it in the sidebar — and nothing that creates in, clips, renames, deletes, pins, marks or changes the folder.
+ */
+const PAGE_ROW_MENU = {
+  targetDir: null,
+  clipPaths: null,
+  renamePath: null,
+  deletePaths: null,
+  focusPaths: null,
+  favoritePaths: null,
+  iconPaths: null,
+  iconRule: null,
+  reviewDir: null,
+  shortcutDir: null,
+  folderPaths: [] as string[],
+}
+const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => a.size === b.size && [...a].every((x) => b.has(x))
 /** The folders the Sessions tab unfolds — none: it has no file tree (YAZ-3147 D4), so it has no expand-all button. One array, so nothing reads a change. */
 const NO_DIRS: readonly string[] = []
 
@@ -827,6 +848,27 @@ export function Sidebar({
     const offs = indexes.map((index) => index.subscribe(read))
     return () => offs.forEach((off) => off())
   }, [readShortcuts, indexes])
+  // The folder page rows (YAZ-4587, D37): one pass over each vault's folder records when a vault's folder records or
+  // the switch change; a snapshot that moved no folder record reads nothing, and a set that names the same folders
+  // keeps its identity, so a save elsewhere re-renders no tree level.
+  const pagesOn = showFolderPageFiles(settings)
+  const [pageRows, setPageRows] = useState<ReadonlySet<string>>(NO_PAGE_ROWS)
+  useEffect(() => {
+    let seen: (readonly IndexRecord[])[] | null = null
+    const read = () => {
+      const folders = indexes.map((index) => index.folders)
+      if (seen !== null && folders.every((one, i) => one === seen![i])) return
+      seen = folders
+      const next = new Set<string>()
+      roots.forEach((vault, i) => {
+        for (const dir of folderPageRows(vault, folders[i], pagesOn)) next.add(dir)
+      })
+      setPageRows((prev) => (sameSet(prev, next) ? prev : next))
+    }
+    read()
+    const offs = indexes.map((index) => index.subscribe(read))
+    return () => offs.forEach((off) => off())
+  }, [roots, indexes, pagesOn])
   // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
   const titles = useAllPathTitles(indexes)
   /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
@@ -1113,6 +1155,14 @@ export function Sidebar({
     },
     [onKeepFile],
   )
+  // A folder page row's click (YAZ-4587, D37): the Page tab is asked for, then the folder page opens by the "Open folder page" door.
+  const openPageFromTree = useCallback(
+    (dir: string, top?: string) => {
+      askPageTab(dir)
+      keepFromTree(dir, top)
+    },
+    [keepFromTree],
+  )
   const clickedTop = openCopy !== null && openCopy.path === activeFile && copyTops?.some((t) => t.path === openCopy.top) === true ? openCopy.top : null
   const activeTop = useMemo(
     () => (activeFile === null || copyTops === null ? null : (clickedTop ?? firstCopy(copyTops, activeFile, expandedSet))),
@@ -1183,14 +1233,14 @@ export function Sidebar({
       // BLANK SPACE is not a row and never touches it (YAZ-1337): its menu is about the vault
       // root, and a right-click into the empty space below the tree must not throw a selection away.
       // Nor is a SHORTCUT row a pick (YAZ-2290 D2): the selection is what ⌘C / ⌘X act on.
-      if (!outside && node !== null && node.shortcutIn === undefined && !selectedPaths.has(node.path)) selection.set(node.path, lens === 'focus' || lens === 'favorites' ? (node.top ?? undefined) : undefined)
+      if (!outside && node !== null && node.shortcutIn === undefined && node.pageOf === undefined && !selectedPaths.has(node.path)) selection.set(node.path, lens === 'focus' || lens === 'favorites' ? (node.top ?? undefined) : undefined)
       // On a search row the highlight follows the right-click too, as it follows a click (YAZ-803; S26 on YAZ-2620).
       if (!outside && searching && node !== null) searchCursor.set(node.path)
       // The plural gesture exists only when the right-clicked row — file or folder (YAZ-1578) — is
       // ITSELF in a selection of two or more (🔒 D5): a selection of one already IS the singular
       // menu, and a row outside the selection just ended it above. Read once, here, like every
       // other target this menu pins.
-      const plural = !outside && node !== null && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
+      const plural = !outside && node !== null && node.pageOf === undefined && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
       // A VAULT row (YAZ-2602 D3) is its own kind: a folder that is a vault, with that vault's root.
       // It creates and pastes like a folder; it is not opened, clipped, renamed, deleted, favorited,
       // reviewed or put in the focus list (S13, A2). A selection that holds one has no plural item (A3).
@@ -1273,6 +1323,7 @@ export function Sidebar({
         forgetClosed: closed && node !== null ? node.path : null,
         infoPath: plural === null && shortcutIn === null && filePath !== null && isBoard(filePath) ? filePath : null,
         folderPaths: node === null ? [] : (plural ?? [node.path]).filter((path) => (path === node.path ? node.type === 'dir' : dirs.includes(path))),
+        ...(node?.pageOf !== undefined ? PAGE_ROW_MENU : {}),
       })
     },
     [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState, dirs, iconTargets],
@@ -1530,6 +1581,8 @@ export function Sidebar({
     renaming,
     selection,
     shortcuts,
+    pageRows,
+    onOpenPage: openPageFromTree,
     titles,
     onLeaveToPage,
     onHoverFile: hoverFile,
@@ -1537,7 +1590,7 @@ export function Sidebar({
     dates: sortedTab !== null && settings.rowDates[sortedTab],
   }
   // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags.
-  const searchTreeProps = { ...treeProps, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, marks, sort: searchSort, dates: settings.rowDates.search, scores }
+  const searchTreeProps = { ...treeProps, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, sort: searchSort, dates: settings.rowDates.search, scores }
 
   // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
   const errorLines = errors.map((message, at) => (
