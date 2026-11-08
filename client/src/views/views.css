@@ -1088,16 +1088,20 @@
   cursor: grab;
 }
 
-.view-table thead th.view-table__th--drag-source {
-  opacity: 0.45;
+/* A column drag is the tab bar's live gap, across the table (YAZ-4606 D58): TableView writes one rule per moved column
+   (its header, mounted body cells and summary cell), and each part slides with the tab bar's time and easing.
+   `--drag-source`, `--insert-before` and `--insert-after` name the grabbed header and where the gap opens; they draw
+   nothing, the gap is the marker. */
+.view-table[data-live-parting] th,
+.view-table[data-live-parting] td {
+  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.view-table thead th.view-table__th--insert-before {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.view-table thead th.view-table__th--insert-after {
-  box-shadow: inset -2px 0 0 var(--accent);
+@media (prefers-reduced-motion: reduce) {
+  .view-table[data-live-parting] th,
+  .view-table[data-live-parting] td {
+    transition: none;
+  }
 }
 
 .view-table__resize {

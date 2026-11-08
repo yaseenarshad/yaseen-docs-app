@@ -1,4 +1,4 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf, MAX_GROUP_LEVELS } from '../viewSchema'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
@@ -34,7 +34,8 @@ import { useViewDefaults } from '../viewDefaults'
 import { orderOf } from './DirectionPicker'
 import { TextField } from './TextField'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
-import { dropIndex, insertionSlot } from '../../lib/dragSlot'
+import { partTransform } from '../../lib/liveGap'
+import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import { allPropertyKeys } from './properties'
 import { setViewOrder } from './columnOrder'
 import { NO_READ_ONLY, READ_ONLY_TIP, writableKey } from '../readOnlyRows'
@@ -232,22 +233,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; key: string | null } | null>(null)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  /**
-   * A header drag in flight (YAZ-1548): `from` is an index in `keys`, `to` the insertion slot it
-   * would land in (0..keys.length). The Properties list's own reorder model, on the table itself.
-   */
-  const [colDrag, setColDrag] = useState<{ from: number; to: number } | null>(null)
-  // Esc cancels: real drags fire `dragend`; jsdom (and any missed dragend) goes through this fallback —
-  // `useGroupDrag`'s idiom. Subscribed once per DRAG, not once per slot the pointer crosses.
-  const dragging = colDrag !== null
-  useEffect(() => {
-    if (!dragging) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setColDrag(null)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [dragging])
   const wrapRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
@@ -713,20 +698,43 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   }
 
   /**
-   * Header reorder (YAZ-1548), the tab strips' own slot arithmetic (`lib/dragSlot.ts`): the slot is
-   * an index in the WITH-dragged-column list, so past the grab point it shifts one left. ONE write
+   * Header reorder (YAZ-1548): the column at `from` lands at final index `to`. ONE write
    * through the SHARED `setViewOrder` — the Properties checklist's and "Hide column"'s writer — so
-   * `frozenColumns` follows positionally here exactly as it does there. A view with no explicit
+   * `frozenColumns` follows positionally here exactly as it does there: a column dropped into the frozen part freezes,
+   * one dropped out of it thaws (YAZ-4606: the drag may cross the freeze line, as before). A view with no explicit
    * `order` writes the full current keys list in the new order, as the list does on its first drag.
    */
-  const moveColumn = (from: number, slot: number): void => {
-    const to = dropIndex(from, slot)
-    if (to === from) return
+  const moveColumn = (from: number, to: number): void => {
     const next = [...keys]
     const [key] = next.splice(from, 1)
     next.splice(to, 0, key)
     onUpdate((d) => setViewOrder(d, viewIndex, next))
   }
+  /**
+   * The slot at a client x of the header (YAZ-4606), by each column's midpoint WHERE THE LAYOUT PUTS IT: the table's
+   * widths are fixed, so the places are known without a read of any cell. A frozen column sticks at its offset, so
+   * while the table is scrolled it is drawn that far on. One read of the header row's place, and of the scroll.
+   */
+  const columnSlot = (x: number): number => {
+    const head = live.ref.current
+    if (head === null) return keys.length
+    const at = x - head.getBoundingClientRect().left
+    const scrolled = frozen > 0 ? (wrapRef.current?.scrollLeft ?? 0) : 0
+    let start = gutterWidth
+    for (let c = 0; c < keys.length; c++) {
+      const width = widthOf(keys[c])
+      if (at < start + width / 2 + (c < frozen ? scrolled : 0)) return c
+      start += width
+    }
+    return keys.length
+  }
+  /** The cells of each column that move with its header (YAZ-4606): the header, every mounted body cell and the summary cell. */
+  const columnCells = (): HTMLElement[] => [...(wrapRef.current?.querySelectorAll<HTMLElement>('thead th[data-col], tbody td[data-cell], tfoot td.view-table__summary:not(.view-table__gutter)') ?? [])]
+  const columnOfCell = (el: HTMLElement): string =>
+    el.dataset.col !== undefined ? (keys[Number(el.dataset.col)] ?? '') : el.dataset.cell !== undefined ? (keys[Number(el.dataset.cell.split(':')[1])] ?? '') : (keys[(el as HTMLTableCellElement).cellIndex - (numbered ? 1 : 0)] ?? '')
+  // THE COLUMN DRAG (YAZ-4606 D58): the tab bar's live gap, across the table. The grabbed column leaves it, and the other
+  // columns part, each moving as one: its header, its mounted body cells and its summary cell.
+  const live = useLiveGapReorder<HTMLTableRowElement>({ axis: 'x', keys, onMove: moveColumn, slotAt: columnSlot, roomOf: (c) => widthOf(keys[c]), scroller: () => wrapRef.current, cells: columnCells, keyOfCell: columnOfCell })
   /** The property headers' drag wiring (YAZ-1548); the `#` gutter gets none — not a source, not a target. */
   const headerDrag = (index: number) => ({
     draggable: true,
@@ -740,32 +748,37 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       // The groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none.
       e.dataTransfer?.setData(COLUMN_MIME, keys[index])
       if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-      setColDrag({ from: index, to: index })
+      live.start(e, index)
     },
-    onDragOver: (e: ReactDragEvent<HTMLTableCellElement>) => {
-      if (colDrag === null) return
-      e.preventDefault()
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-      const to = insertionSlot(e, index)
-      if (colDrag.to !== to) setColDrag({ ...colDrag, to })
-    },
-    onDrop: (e: ReactDragEvent<HTMLTableCellElement>) => {
-      if (colDrag === null) return
-      e.preventDefault()
-      setColDrag(null)
-      moveColumn(colDrag.from, insertionSlot(e, index))
-    },
-    onDragEnd: () => setColDrag(null),
+    onDragEnter: live.over,
+    onDragOver: live.over,
+    onDrop: live.drop,
+    onDragEnd: live.end,
   })
-  /** The indicator classes (YAZ-1548): the source dims; an accent edge marks the slot before — or, for the end slot, after the last — header. */
+  /** The grabbed header and where the gap opens — before a header, or after the last for the end slot (YAZ-1548): they draw nothing, the gap is the marker (YAZ-4606). */
   const headerDragClass = (index: number): string[] => {
-    if (colDrag === null) return []
+    if (live.drag === null) return []
     const cls: string[] = []
-    if (colDrag.from === index) cls.push('view-table__th--drag-source')
-    if (colDrag.to === index) cls.push('view-table__th--insert-before')
-    if (colDrag.to === keys.length && index === keys.length - 1) cls.push('view-table__th--insert-after')
+    if (live.drag.from === index) cls.push('view-table__th--drag-source')
+    if (live.gap === index) cls.push('view-table__th--insert-before')
+    if (live.gap === keys.length && index === keys.length - 1) cls.push('view-table__th--insert-after')
     return cls
   }
+  // Each column's slide and the grabbed column's lift, as ONE rule per moved column for this table (YAZ-4606): a slot
+  // change re-renders no cell's style, and the cells a scroll mounts mid-drag take the rule too.
+  const tableId = useId()
+  const scope = `.view-table[data-table-id="${tableId}"]`
+  const columnRules =
+    live.drag === null
+      ? ''
+      : keys
+          .map((_, c) => {
+            const shift = live.shiftOf(c)
+            if (shift === 0 && !live.lifted(c)) return ''
+            const cells = `${scope} thead th[data-col="${c}"],${scope} tbody td[data-cell$=":${c}"],${scope} tfoot td:nth-child(${c + 1 + (numbered ? 1 : 0)})`
+            return `${cells}{${shift === 0 ? '' : `transform:${partTransform(shift, 'x')};`}${live.lifted(c) ? 'opacity:0;' : ''}}`
+          })
+          .join('')
 
   /** A header right-click (YAZ-1513): rename / hide / add-right on a column, hide on the `#` gutter. */
   const openHeaderMenu = (key: string | null) => (event: ReactMouseEvent<HTMLTableCellElement>): void => {
@@ -969,13 +982,16 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   return (
     <>
       <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}>
+        {columnRules !== '' && <style>{columnRules}</style>}
         <table
           className="view-table"
+          data-table-id={tableId}
+          data-live-parting={live.parting ? '' : undefined}
           style={{ width: gutterWidth + keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px`, '--view-group-indent': `${groupIndentOf(view)}px` } as CSSProperties}
           onKeyDown={onKeyDown}
         >
           <thead>
-            <tr>
+            <tr ref={live.ref}>
               {numbered && (
                 <th scope="col" className="view-table__gutter" style={{ width: GUTTER_WIDTH }} onContextMenu={openHeaderMenu(null)}>
                   #
@@ -997,6 +1013,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     // The column's description on hover (YAZ-4590 S23).
                     title={c.startsWith('note.') ? settings.columns[c.slice('note.'.length)]?.description : undefined}
                     data-col={index}
+                    data-live-item={key}
                     onMouseDown={onHeaderMouseDown(index)}
                     onContextMenu={openHeaderMenu(key)}
                     {...headerDrag(index)}

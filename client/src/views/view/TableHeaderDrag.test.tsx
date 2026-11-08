@@ -66,8 +66,19 @@ function q<T extends Element>(el: ParentNode, sel: string): T {
   return n
 }
 
+/**
+ * The slot is read from where the LAYOUT puts each column (YAZ-4606): the header row starts at x 0 in jsdom, and each
+ * cell is as wide as its own style says. On a property header, `half` is px from its midpoint (negative: its left half).
+ */
+function headerPoint(th: Element, half: number): number {
+  const cells = [...(th.parentElement?.children ?? [])] as HTMLElement[]
+  const left = cells.slice(0, cells.indexOf(th as HTMLElement)).reduce((x, cell) => x + parseFloat(cell.style.width), 0)
+  return left + parseFloat((th as HTMLElement).style.width) / 2 + half
+}
+
 /** A synthetic drag event: jsdom has no `DragEvent`, so a `MouseEvent` carries the pointer and `dataTransfer` is absent. */
-function fire(target: Element, type: string, clientX = 0): MouseEvent {
+function fire(target: Element, type: string, half = 0): MouseEvent {
+  const clientX = target.matches('thead th[data-col]') ? headerPoint(target, half) : half
   const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX })
   act(() => void target.dispatchEvent(event))
   draw()
@@ -83,7 +94,7 @@ function pressEscape(): void {
 const ths = (el: ParentNode): HTMLElement[] => [...el.querySelectorAll<HTMLElement>('.view-table thead th:not(.view-table__gutter)')]
 const headers = (el: ParentNode): string[] => ths(el).map((t) => t.textContent ?? '')
 const gutter = (el: ParentNode): HTMLElement => q(el, '.view-table thead th.view-table__gutter')
-/** Left half of a header (jsdom rects sit at 0): the slot BEFORE it; right half: AFTER it. */
+/** Left half of a header: the slot BEFORE it; right half: AFTER it. */
 const LEFT = -5
 const RIGHT = 5
 
@@ -211,6 +222,69 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     fire(ths(el)[0], 'drop', LEFT)
     const [first, second, ...rest] = before
     expect(def().views[0].order).toEqual([second, first, ...rest])
+  })
+
+  /** The rule TableView writes for the drag (YAZ-4606): one per moved column. */
+  const rules = (el: ParentNode): string => el.querySelector('style')?.textContent ?? ''
+  /** A column's width, from its header's style. */
+  const widthAt = (el: ParentNode, i: number): number => parseFloat(ths(el)[i].style.width)
+
+  it('LIVE GAP (YAZ-4606): the columns between the grab and the slot part by its room — header, body cells and summary cell — and the grabbed column leaves one frame on', async () => {
+    const { el } = mount()
+    fire(ths(el)[0], 'dragstart')
+    expect(rules(el)).toBe('') // the Mac takes its picture first
+    await act(() => new Promise<void>((done) => requestAnimationFrame(() => done())))
+    draw()
+    expect(rules(el)).toContain('th[data-col="0"]')
+    expect(rules(el)).toContain('opacity:0')
+    fire(ths(el)[2], 'dragover', RIGHT) // the end slot
+    const room = widthAt(el, 0)
+    for (const c of [1, 2]) {
+      expect(rules(el)).toMatch(new RegExp(`th\\[data-col="${c}"\\],[^{]*td\\[data-cell\\$=":${c}"\\],[^{]*tfoot td:nth-child\\(${c + 2}\\)\\{transform:translateX\\(-${room}px\\)`))
+    }
+    expect(el.querySelector('.view-table')!.hasAttribute('data-live-parting')).toBe(true)
+    // A body cell of a parted column is one the rule names.
+    expect(el.querySelector('td[data-cell$=":1"]')).not.toBeNull()
+    fire(ths(el)[2], 'drop', RIGHT)
+    expect(rules(el)).toBe('')
+    expect(el.querySelector('.view-table')!.hasAttribute('data-live-parting')).toBe(false)
+  })
+
+  it('LIVE GAP across the freeze line (YAZ-4606, coordinator ruling B): a column dragged into the frozen part parts the frozen column too, and the drop freezes it', () => {
+    const { el, def } = mount(`${BASE}    frozenColumns: 1\n`)
+    fire(ths(el)[2], 'dragstart')
+    fire(ths(el)[0], 'dragover', LEFT)
+    const room = widthAt(el, 2)
+    expect(rules(el)).toContain(`tfoot td:nth-child(2){transform:translateX(${room}px);}`)
+    expect(rules(el)).toContain(`tfoot td:nth-child(3){transform:translateX(${room}px);}`)
+    fire(ths(el)[0], 'drop', LEFT)
+    expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
+    expect(def().views[0].frozenColumns).toBe(1)
+  })
+
+  it('the slot is read from the layout, not the drawn header: a parted header under the pointer does not move the gap', () => {
+    const { el } = mount()
+    fire(ths(el)[2], 'dragstart')
+    fire(ths(el)[0], 'dragover', LEFT) // the first slot: Name and Status slide right
+    expect(ths(el)[0].classList.contains('view-table__th--insert-before')).toBe(true)
+    // Name is drawn one room on now; a pointer on its drawn left half is on Status's right half in the layout.
+    fire(ths(el)[1], 'dragover', RIGHT)
+    expect(el.querySelector('.view-table__th--insert-before, .view-table__th--insert-after')).toBeNull() // the slot next to Priority: no gap
+  })
+
+  it('COUNT (YAZ-4606): a dragover reads the header row\'s place and the scroller\'s, and no cell', () => {
+    const { el } = mount(`${BASE}    frozenColumns: 1\n`)
+    fire(ths(el)[0], 'dragstart')
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect')
+    const style = vi.spyOn(window, 'getComputedStyle')
+    for (let i = 0; i < 10; i++) {
+      act(() => void ths(el)[2].dispatchEvent(new MouseEvent('dragover', { bubbles: true, cancelable: true, clientX: headerPoint(ths(el)[2], i - 5) })))
+    }
+    expect(rect.mock.instances.filter((t) => t instanceof HTMLTableCellElement)).toHaveLength(0)
+    expect(rect).toHaveBeenCalledTimes(20) // the header row (the slot) and the table's scroller (its end zones), once each
+    expect(style).not.toHaveBeenCalled()
+    rect.mockRestore()
+    style.mockRestore()
   })
 
   it('keyboard navigation, resize and the header menu keep working around the drag wiring', () => {
