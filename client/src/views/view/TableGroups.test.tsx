@@ -25,7 +25,7 @@ const HOST = testFolderHost()
 /** In-memory stand-in for the main-owned store: collapse state must go through here, not the file. */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
 vi.mock('../../lib/storage', () => ({
-  storage: {
+  storage: { getSettings: () => undefined,
     getViewGroups: vi.fn((root: string, key: string) => groupStore.get(`${root}|${key}`) ?? []),
     setViewGroups: vi.fn((root: string, key: string, collapsed: readonly string[]) => {
       if (collapsed.length === 0) groupStore.delete(`${root}|${key}`)

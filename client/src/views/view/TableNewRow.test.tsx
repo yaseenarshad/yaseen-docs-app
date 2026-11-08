@@ -18,7 +18,7 @@ import viewsCss from '../views.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: vi.fn(() => []), setViewGroups: vi.fn() } }))
+vi.mock('../../lib/storage', () => ({ storage: { getSettings: () => undefined, getViewGroups: vi.fn(() => []), setViewGroups: vi.fn() } }))
 
 const create = vi.fn<(seed: NewNoteSeed, name?: string) => Promise<string>>(async () => '/vault/Untitled.md')
 

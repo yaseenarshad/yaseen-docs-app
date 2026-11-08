@@ -16,7 +16,7 @@ import { TEST_RECORDS } from '../testRecords'
 import '../views.css'
 
 /** No store behind this mount: collapse state stays in the pane. */
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
+vi.mock('../../lib/storage', () => ({ storage: { getSettings: () => undefined, getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
 import { writeProperty } from '../writeProperty'
 
