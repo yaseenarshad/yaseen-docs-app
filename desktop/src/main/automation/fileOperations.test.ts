@@ -33,11 +33,11 @@ it('file.move sends the window’s move door each item with its own name, and fi
     writeFileSync(`${vault}/Projects/task.md`, 'x')
     const navigation = { ...host(), windows: () => [{ ...entry, root: vault, roots: [vault] }], operate: vi.fn(async (_window: string, target: { command: string }) => {
       const after = { cleared: [], links: { updated: 0, skipped: 0 }, history: { undo: 1, redo: 0 }, diskSaved: true }
-      return target.command === 'file.move' ? { moved: [], failed: [], ...after } : { move: { oldPath: 'a', newPath: 'b', kind: 'file' }, ...after }
+      return target.command === 'file.move' ? { moved: [], failed: [], betweenVaults: false, ...after } : { move: { oldPath: 'a', newPath: 'b', kind: 'file' }, ...after }
     }) }
     const value = await run(navigation, 'file.move', { window: 'w1', paths: [`${vault}/Projects/task.md`, `${vault}/Projects`], targetDir: `${vault}/Archive`, dropValues: true }).run()
     validateOutput('file.move', value)
-    expect(navigation.operate).toHaveBeenLastCalledWith('w1', { command: 'file.move', moves: [{ oldPath: `${vault}/Projects/task.md`, newPath: `${vault}/Archive/task.md`, kind: 'file' }, { oldPath: `${vault}/Projects`, newPath: `${vault}/Archive/Projects`, kind: 'dir' }], dropValues: true })
+    expect(navigation.operate).toHaveBeenLastCalledWith('w1', { command: 'file.move', targetDir: `${vault}/Archive`, moves: [{ oldPath: `${vault}/Projects/task.md`, newPath: `${vault}/Archive/task.md`, kind: 'file' }, { oldPath: `${vault}/Projects`, newPath: `${vault}/Archive/Projects`, kind: 'dir' }], dropValues: true })
     await run(navigation, 'file.move', { window: 'w1', paths: [`${vault}/Projects/task.md`], targetDir: `${vault}/Archive` }).run()
     expect(navigation.operate).toHaveBeenLastCalledWith('w1', expect.objectContaining({ dropValues: false })) // the D21 answer is never assumed
     await expect(run(navigation, 'file.move', { window: 'w1', paths: [`${vault}/Projects/task.md`], targetDir: `${vault}/Projects/task.md` }).run()).rejects.toMatchObject({ code: 'INVALID_INPUT' })

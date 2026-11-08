@@ -71,6 +71,7 @@ import { setTypingArrows } from './editor/typingArrows'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
 import type { CodeSettingsPatch } from './code/codeSettings'
+import { landPaste } from './sidebar/landPaste'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
@@ -2013,11 +2014,25 @@ export function App() {
     }
     if (target.command === 'file.move') {
       const plan = planMoves(target.moves)
-      if (plan === 'between') throw new AutomationFailure('BETWEEN_VAULTS', BETWEEN_VAULTS)
+      if (plan === 'between') {
+        // A drag refuses this (YAZ-2602 R11); the GUI moves between vaults only by Cut and Paste. This is that paste, with
+        // explicit items and neither clipboard: D21 as `pasteInto` judges it, on the target vault's index, then `landPaste`.
+        const { root: vault, wikilinks: index } = scopeOf(target.targetDir)
+        if (vault === null) throw new AutomationFailure('OUTSIDE_SCOPE', 'The folder is no longer in this window.')
+        const lost = valuesLeftBehind({ root: vault, moves: target.moves, records: index.records, folders: index.folders })
+        if (lost.folders.length > 0 && !target.dropValues) throw new AutomationFailure('CONFIRMATION_REQUIRED', 'This move clears values of other folders. Pass dropValues: true to confirm.', { folders: lost.folders, notes: lost.notes })
+        const before = { records: index.records, folders: index.folders }
+        const res = await api.file.moveTo({ paths: target.moves.map((move) => move.oldPath), targetDir: target.targetDir })
+        const { gesture, failed } = await landPaste({ vault, index, before, res }, { onNotice: notify, onMoved: recordMoves })
+        // A Paste of a Cut rewrites no link.
+        const result = { moved: gesture?.moves ?? [], cleared: gesture?.cleared ?? [], failed, links: { updated: 0, skipped: 0 }, betweenVaults: true, history: historyCounts(), diskSaved: res.pasted.length > 0 }
+        if (failed.length > 0) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items did not move.', result)
+        return result
+      }
       // The GUI's D21 sheet asks here; the caller's dropValues is its Move button.
       if (plan !== null && plan.lost.folders.length > 0 && !target.dropValues) throw new AutomationFailure('CONFIRMATION_REQUIRED', 'This move clears values of other folders. Pass dropValues: true to confirm.', { folders: plan.lost.folders, notes: plan.lost.notes })
       const run = plan === null ? null : await runMoves(plan.moves)
-      const result = { moved: run?.moves ?? [], cleared: run?.cleared ?? [], failed: run?.failed ?? [], links: run?.links ?? { updated: 0, skipped: 0 }, history: historyCounts(), diskSaved: (run?.moves.length ?? 0) > 0 }
+      const result = { moved: run?.moves ?? [], cleared: run?.cleared ?? [], failed: run?.failed ?? [], links: run?.links ?? { updated: 0, skipped: 0 }, betweenVaults: false, history: historyCounts(), diskSaved: (run?.moves.length ?? 0) > 0 }
       if (result.failed.length > 0 || result.links.skipped > 0) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items did not move, or some links could not be updated.', result)
       return result
     }
