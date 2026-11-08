@@ -1285,6 +1285,22 @@
   border-radius: 4px;
 }
 
+/* A subfolder's row (YAZ-4579 D32): the folder icon before its title, "N inside" after it, quiet like the shortcut mark. */
+.view-folder-row__icon {
+  flex: none;
+  margin-right: 4px;
+  vertical-align: -2px;
+  color: var(--fg-muted);
+}
+.view-folder-row__inside {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
 /* The Folder column's chip is a button (YAZ-4564 D26). */
 .view-folder-chip {
   border: 0;
@@ -2426,3 +2442,5 @@
 .group-style__large[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
 /* Small / Medium / Large under the group levels (YAZ-4532 D10). */
 .sort-menu__indent { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 28px 0 26px; margin-top: 4px; font-size: 12px; color: var(--fg-muted); }
+/* "Folders first" under the Subfolders switch (YAZ-4579 D33), lined up with it. */
+.sort-menu__folders-first { display: flex; padding: 0 28px 0 26px; margin-top: 8px; }

@@ -9,7 +9,7 @@ import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wiki
 import { pageResolver } from '../links/folderLinks'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeViews, updateViews } from './viewSchema'
+import { type ViewSet, type ViewDef, type ParsedViews, hidesSubfolderNotes, parseViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
 import { type Group, type Row, propertyKeys, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import type { ColumnDecl, FolderSettings } from './folderSettings'
@@ -32,7 +32,7 @@ import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
 import { FolderPages, type FolderPagesValue } from './view/GroupHeader'
-import { directlyIn } from '../links/shortcuts'
+import { directlyIn, rowPage, rowsByFolder } from '../links/shortcuts'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -80,7 +80,7 @@ export interface FolderHost {
    * host knows where a note keeps them (D19: its block of `in`).
    */
   writeValues: (path: string, writes: readonly PropertyWrite[]) => Promise<unknown>
-  /** A row's title edited in a table's Name cell (YAZ-2420 🔒 D19): the one title edit, through App's rename door. */
+  /** A row's title edited in a table's Name cell (YAZ-2420 🔒 D19): the one title edit, through App's rename door. A folder row's renames its folder (YAZ-4579 D32). */
   retitle: (path: string, title: string) => void
   /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
@@ -128,6 +128,11 @@ export interface ViewsPaneProps {
   viewKey?: string
   /** The notes the views query (YAZ-2290 D4) — the folder's own rows, never the whole vault — each with the FOLDER's values for it as its `properties` (D19). */
   records: IndexRecord[]
+  /**
+   * The folder's DIRECT subfolders as rows (YAZ-4579 D31), each its `.folder.md` with the folder's values for it as its
+   * `properties`, like `records`. A view shows them when its "Subfolders" switch says As rows or Both. Absent = none.
+   */
+  folderRows?: IndexRecord[]
   /**
    * The read-only notes among `records` (YAZ-3076 D6): the host reads the switch off each note's OWN
    * properties (`readOnlyPaths`), because `records` carry the folder's values. Their cells open no
@@ -199,7 +204,11 @@ function keepBackView(key: string, name: string): void {
   if (backViews.size > MAX_BACK_VIEWS) backViews.delete(backViews.keys().next().value!)
 }
 
-export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', foldingOnByDefault }: ViewsPaneProps) {
+const NO_FOLDER_ROWS: IndexRecord[] = []
+/** A folder row has no note to preview (YAZ-4579 D32): the hover panel is the notes', so its dwell never starts. */
+const noHover = (): void => undefined
+
+export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', foldingOnByDefault }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -232,11 +241,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const [opens, setOpens] = useState(0)
   const windowLink = useMemo(noteWindowLink, [])
   const lastWindow = useRef<NoteWindowMemory | null>(null)
-  const itemProps = useCallback((path: string) => ({ 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard])
+  const itemProps = useCallback((path: string) => (rowPage(path) !== path ? { 'data-hover-item': path, onMouseEnter: noHover, onMouseLeave: noHover } : { 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard])
   const viewHover = useMemo<ViewHover>(() => ({ itemProps }), [itemProps])
   // New records (a sync, another window's edit) can remove or move the item under the panel, and a removed item
   // fires no `mouseleave`: the panel goes.
-  useEffect(() => closeItemHover(), [records, closeItemHover])
+  useEffect(() => closeItemHover(), [noteRecords, closeItemHover])
   const { def } = parsed
   const views = def.views
   const index = Math.max(0, Math.min(active, views.length - 1))
@@ -245,6 +254,10 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * `folderViewSet` both fall back to `DEFAULT_VIEWS` — and `index` is clamped into that list.
    */
   const view = views[index]!
+  // "Subfolders: As rows / Both" (YAZ-4579 D30/D31): this view's records are the notes and a row per direct subfolder.
+  // Every use below reads these — the engine, the menus' columns, a move's raw — so a folder row is a row like a note.
+  const withFolders = showsFolderRows(view) && folderRows.length > 0
+  const records = useMemo(() => (withFolders ? [...noteRecords, ...folderRows] : noteRecords), [withFolders, noteRecords, folderRows])
   useEffect(() => {
     if (backKey !== undefined) keepBackView(backKey, view.name)
   }, [backKey, view.name])
@@ -285,8 +298,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
 
   // The page the views belong to, as the index names its folder (YAZ-2541).
   const pageFolder = relTo(root, folderPath)
-  // "Notes in subfolders: Hide" (YAZ-4564 D25): this view narrows the folder's set, as its filters do.
-  const hideSubfolders = view.subfolders === false
+  // "Subfolders: As rows / Hide" (YAZ-4579 D30, YAZ-4564 D25): this view keeps the notes directly in the folder and
+  // its shortcuts — a folder row is directly in it — narrowing the folder's set as its filters do.
+  const hideSubfolders = hidesSubfolderNotes(view)
   const inView = useMemo(() => (hideSubfolders ? records.filter((r) => directlyIn(r, pageFolder)) : records), [records, hideSubfolders, pageFolder])
   const shown = useMemo(() => (Object.keys(moves).length === 0 ? inView : applyMoves(inView, moves)), [inView, moves])
   // YAZ-2290 D4: a folder's rows are the notes IN it, so the engine's own rows-are-the-vault
@@ -313,8 +327,22 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       folder: pageFolder,
       title: (dir) => titles.get(dir) ?? dir.slice(dir.lastIndexOf('/') + 1),
       open: openFolderPage === undefined ? undefined : (dir) => openFolderPage(absFrom(root, dir)),
+      // A folder row's "N inside" (YAZ-4579 D32): what its own page shows, its notes below and its shortcuts (D4), off the snapshot's one map.
+      inside: (dir) => rowsByFolder(vaultRecords, vaultFolders).get(dir)?.length ?? 0,
     }
-  }, [vaultFolders, folder.vaultName, pageFolder, openFolderPage, root])
+  }, [vaultRecords, vaultFolders, folder.vaultName, pageFolder, openFolderPage, root])
+  /**
+   * A row's page through the door that fits it (YAZ-4579 D32): a folder row's is its folder, so a click opens it through
+   * "Open folder page" (`FolderHost.openFolderPage`) and the other doors — a background tab, the right panel — take its
+   * directory path, as a folder tab does (D3). A note's path passes through unchanged.
+   */
+  const openFolderRow = (dir: string) => (openFolderPage ?? onOpenFile)(dir)
+  const openRow = (path: string) => (rowPage(path) !== path ? openFolderRow(rowPage(path)) : onOpenFile(path))
+  const openBackground = folder.openBackground
+  const openRowBackground = openBackground === undefined ? undefined : (path: string) => openBackground(rowPage(path))
+  const openRight = folder.openRight
+  const openRowRight = openRight === undefined ? undefined : (path: string) => openRight(rowPage(path))
+  const renderNoteEditor = folder.renderNoteEditor
   // A Select column's options in the column editor's order (YAZ-3940): its sorts and groups follow them. One typing
   // per key for these records (YAZ-4544): a run that the view's def starts reads no record for it again.
   const settings = folder.settings
@@ -594,9 +622,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onUpdate={update}
-          onOpenFile={onOpenFile}
-          onOpenFileRight={folder.openRight}
-          onOpenFileBackground={folder.openBackground}
+          onOpenFile={openRow}
+          onOpenFileRight={openRowRight}
+          onOpenFileBackground={openRowBackground}
           onOpenWindow={openWindow}
           windowLink={windowLink}
           onNotice={folder.onNotice}
@@ -631,9 +659,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onUpdate={update}
-          onOpenFile={onOpenFile}
-          onOpenFileRight={folder.openRight}
-          onOpenFileBackground={folder.openBackground}
+          onOpenFile={openRow}
+          onOpenFileRight={openRowRight}
+          onOpenFileBackground={openRowBackground}
           onOpenWindow={openWindow}
           windowLink={windowLink}
           onNotice={folder.onNotice}
@@ -648,9 +676,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           readOnly={readOnly}
           rows={rows}
           dateKey={dateKey}
-          onOpenFile={onOpenFile}
-          onOpenFileRight={folder.openRight}
-          onOpenFileBackground={folder.openBackground}
+          onOpenFile={openRow}
+          onOpenFileRight={openRowRight}
+          onOpenFileBackground={openRowBackground}
           onOpenWindow={openWindow}
           windowLink={windowLink}
           onNotice={folder.onNotice}
@@ -681,9 +709,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           groups={groups}
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
-          onOpenFile={onOpenFile}
-          onOpenFileRight={folder.openRight}
-          onOpenFileBackground={folder.openBackground}
+          onOpenFile={openRow}
+          onOpenFileRight={openRowRight}
+          onOpenFileBackground={openRowBackground}
           onOpenWindow={openWindow}
           windowLink={windowLink}
           onNotice={folder.onNotice}
@@ -707,9 +735,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           groups={groups}
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
-          onOpenFile={onOpenFile}
-          onOpenFileRight={folder.openRight}
-          onOpenFileBackground={folder.openBackground}
+          onOpenFile={openRow}
+          onOpenFileRight={openRowRight}
+          onOpenFileBackground={openRowBackground}
           onOpenWindow={openWindow}
           windowLink={windowLink}
           onNotice={folder.onNotice}
@@ -727,7 +755,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         <ul className="view-rows">
           {rows.map((row) => (
             <li key={row.record.path} className="view-row">
-              <button type="button" className="view-row__link" onClick={() => onOpenFile(row.record.path)}>
+              <button type="button" className="view-row__link" onClick={() => openRow(row.record.path)}>
                 {row.record.title}
               </button>
               {rest.length > 0 && <span className="view-row__values">{rest.map((k) => render(row.values[k], resolve)).join(' · ')}</span>}
@@ -741,14 +769,15 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         </p>
       )}
       {/* After the views: the table has written this render's rows to the link when the card reads them. */}
-      {noteWindow !== undefined && folder.renderNoteEditor !== undefined && (
+      {noteWindow !== undefined && renderNoteEditor !== undefined && (
         <NoteWindow
           key={`${windowKey}:${opens}`}
-          renderEditor={folder.renderNoteEditor}
+          // A folder row's window shows its folder page (YAZ-4579 D32): the editor a folder tab has, on the directory.
+          renderEditor={(path) => renderNoteEditor(rowPage(path))}
           link={windowLink}
           titleOf={(path) => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')}
           memory={noteWindow}
-          onOpenInTab={onOpenFile}
+          onOpenInTab={openRow}
           onClose={closeWindow}
         />
       )}

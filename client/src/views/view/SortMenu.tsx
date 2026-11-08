@@ -10,6 +10,7 @@ import { columnTyping } from '../editorType'
 import type { FolderSettings } from '../folderSettings'
 import { canonicalKey } from './keys'
 import { allPropertyKeys, propertyOptions } from './properties'
+import { FoldersFirstToggle, SubfoldersSwitch } from './SubfoldersSwitch'
 
 export interface SortMenuProps {
   def: ViewSet
@@ -269,6 +270,10 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
           </div>
         </div>
       )}
+      {/* The rows themselves (YAZ-4579 D30/D33): the Subfolders switch, as Properties has it, and whether folder rows lead. */}
+      <p className="view-menu__label">Subfolders</p>
+      <SubfoldersSwitch view={view} viewIndex={viewIndex} onUpdate={onUpdate} className="sort-menu__indent" />
+      <FoldersFirstToggle view={view} viewIndex={viewIndex} onUpdate={onUpdate} className="view-menu__toggle sort-menu__folders-first" />
     </div>
   )
 }

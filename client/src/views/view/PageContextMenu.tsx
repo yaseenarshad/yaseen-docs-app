@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { api, BridgeRequestError } from '../../api'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
+import { rowPage } from '../../links/shortcuts'
 
 interface PageContextMenuProps {
   x: number
@@ -22,9 +23,11 @@ interface PageContextMenuProps {
 
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
 export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose, extra, onOpenWindow }: PageContextMenuProps) {
+  // A folder row's page is its folder (YAZ-4579 D32): Copy path and Reveal name the directory, not its hidden `.folder.md`.
+  const page = rowPage(path)
   const reveal = (): void => {
     onClose()
-    api.shell.reveal({ path }).catch((error: unknown) => {
+    api.shell.reveal({ path: page }).catch((error: unknown) => {
       onNotice?.(
         error instanceof BridgeRequestError && error.code === 'NOT_FOUND'
           ? `Can't reveal "${title}" — it is no longer there`
@@ -66,7 +69,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
         className="ctx-menu__item"
         role="menuitem"
         onClick={() => {
-          void navigator.clipboard.writeText(path).catch((error: unknown) => {
+          void navigator.clipboard.writeText(page).catch((error: unknown) => {
             onNotice?.(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`)
           })
           onClose()

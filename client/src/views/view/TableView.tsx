@@ -19,6 +19,7 @@ import { holdColResize } from '../../lib/colResize'
 import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
 import { openByGesture } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
+import { rowPage } from '../../links/shortcuts'
 import { frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 import { FillMenu } from './FillMenu'
@@ -600,7 +601,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 data-cell={`${line.r}:${c}`}
                 // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
                 // ⇧⌘ opens it in a new window (YAZ-4444 D32), asked first.
-                onClick={c === nameCol ? (e) => (newWindowClick(e, path) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
+                onClick={c === nameCol ? (e) => (newWindowClick(e, rowPage(path)) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
                 // A read-only note's Name cell opens no title field: a title edit renames the note (YAZ-3076 D6).
                 title={c === nameCol && locked ? READ_ONLY_TIP : undefined}
                 onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}

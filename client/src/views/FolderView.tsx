@@ -17,6 +17,9 @@
  *    note drops the values of the folders that no longer show it (D20). Where the vault does not
  *    use IDs (YAZ-2523 🔒 V6) there is no block: the rows are the notes' own properties, a value is
  *    written at the top of its note, and no column is deleted.
+ *  - SUBFOLDERS AS ROWS (YAZ-4579 D31): each direct subfolder is a row too, for the views whose "Subfolders"
+ *    switch asks for it — its `.folder.md`, read and written like a note: its values for this folder are in its
+ *    block of `in`, or at its top level where the vault does not use IDs, and its first write creates the file.
  *  - THE PAGE AROUND THE VIEWS (D9/D10): the title (a commit renames the directory), the folder's
  *    OWN properties and comments, both stored in `.folder.md`, and its linked mentions — the
  *    components a note uses.
@@ -40,7 +43,9 @@ import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from '../links/BacklinksSection'
-import { dropStaleFolderValues, folderId, folderRecord, folderRows } from '../links/shortcuts'
+import { dropStaleFolderValues, folderId, folderRecord, folderRows, rowPage, subfolderRows } from '../links/shortcuts'
+import { vaultDirs } from '../links/folderLinks'
+import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
@@ -115,6 +120,9 @@ function folderViewSet({ views, formulas, properties, defaultView }: FolderSetti
   }
 }
 
+/** A folder's own keys as a folder row's values where the vault does not use IDs (YAZ-4579 D31): its view settings are no column. */
+const withoutSettings = ({ [FOLDER_SETTINGS_KEY]: _, ...values }: Record<string, unknown>): Record<string, unknown> => values
+
 /** Order-insensitive identity for a columns map: the index re-reads what we wrote, key order and all, but never trust that. */
 const columnsStamp = (columns: Readonly<Record<string, ColumnDecl>>): string =>
   JSON.stringify(Object.keys(columns).sort().map((key) => [key, Object.entries(columns[key]).sort(([a], [b]) => (a < b ? -1 : 1))]))
@@ -164,8 +172,18 @@ export function FolderView({
   const id = record?.id
   /** The rows as the views read them (D19): each row's `properties` are THIS folder's values for the note — or, where the vault does not use IDs, the note's own. */
   const shown = useMemo(() => (ids ? rows.map((row) => ({ ...row, properties: folderValues(row.properties, id) })) : rows), [rows, id, ids])
-  /** The read-only notes (YAZ-3076 D6), read off each note's OWN properties before `shown` swaps in the folder's values. */
-  const locked = useMemo(() => readOnlyPaths(rows), [rows])
+  /**
+   * The direct subfolders as rows (YAZ-4579 D31), off the Files tree — it knows a folder with no `.folder.md` — and the
+   * settings records. A new resolver is the feed's word that the tree's folders moved (`WikilinkIndexBridge`).
+   */
+  const subfolders = useMemo(() => subfolderRows(root, folder, vaultDirs(root), feed.folders), [root, folder, feed.folders, feed.resolve])
+  /** As the views read them, like `shown`: this folder's block, or the file's own keys less the view settings block (the views' own). */
+  const shownSubfolders = useMemo(
+    () => subfolders.map((row) => ({ ...row, properties: ids ? folderValues(row.properties, id) : withoutSettings(row.properties) })),
+    [subfolders, id, ids],
+  )
+  /** The read-only notes (YAZ-3076 D6), read off each note's OWN properties before `shown` swaps in the folder's values; a folder row's off its `.folder.md` (D32). */
+  const locked = useMemo(() => readOnlyPaths([...rows, ...subfolders]), [rows, subfolders])
 
   /**
    * The settings file's own BYTES (D9), which the properties panel and the comments read as a note's
@@ -371,14 +389,18 @@ export function FolderView({
         deleteColumnEverywhere(key, {
           columns: liveSettings.columns,
           def: parsed.def,
-          records: feed.records,
+          // A subfolder's `.folder.md` holds its values for this folder as a note does (YAZ-4579 D31): it is stripped too.
+          records: [...feed.records, ...feed.folders],
           folderId: id,
           writeSettings: commitSettings,
         }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     }),
-    valueCount: (key: string) => notesHolding(feed.records, id, key).length,
+    valueCount: (key: string) => notesHolding(feed.records, id, key).length + notesHolding(feed.folders, id, key).length,
+    // A folder row's title is its folder's (YAZ-4579 D32): the folder is renamed, title and directory, as its page title does.
     retitle: (note, title) => {
-      if (!locked.has(note)) onRetitle(note, title, 'file')
+      if (locked.has(note)) return
+      if (rowPage(note) !== note) onRetitle(rowPage(note), title, 'dir')
+      else onRetitle(note, title, 'file')
     },
     openRight: onOpenFileRight,
     openFolderPage: onOpenFolderPage,
@@ -416,6 +438,7 @@ export function FolderView({
             tabId={tabId}
             viewKey={viewKey}
             records={shown}
+            folderRows={shownSubfolders}
             readOnly={locked}
             properties={properties}
             onOpenFile={onOpenFile}

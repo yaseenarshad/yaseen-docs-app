@@ -2,6 +2,7 @@ import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type Ke
 import type { IndexRecord } from '@shared/types'
 import { type Modifiers, openByGesture, openTarget } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
+import { rowPage } from '../../links/shortcuts'
 import type { FolderSettings } from '../folderSettings'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -212,7 +213,7 @@ export function BoardView({
           className="view-board__title"
           onClick={(event) => {
             event.stopPropagation()
-            if (!newWindowClick(event, row.record.path)) openCard(row, event)
+            if (!newWindowClick(event, rowPage(row.record.path))) openCard(row, event)
           }}
         >
           {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
@@ -265,7 +266,7 @@ export function BoardView({
           aria-label={nameKey === undefined ? row.record.title : undefined}
           // ⇧⌘-click opens the note in a new window (YAZ-4444 D32), asked before ⇧ vetoes the open.
           onClick={(event) => {
-            if (newWindowClick(event, row.record.path)) return
+            if (newWindowClick(event, rowPage(row.record.path))) return
             if (openTarget(event) === 'current') event.currentTarget.focus()
             else openCard(row, event)
           }}

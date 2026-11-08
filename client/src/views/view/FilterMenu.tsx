@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import type { ViewSet, ViewDef, FilterNode, Mutate } from '../viewSchema'
+import { type ViewSet, type ViewDef, type FilterNode, type Mutate, showsFolderRows } from '../viewSchema'
 import { type ColumnTyping, columnTyping } from '../editorType'
 import type { FolderHost } from '../ViewsPane'
 import type { EngineError } from '../engine'
@@ -71,7 +71,9 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   const conj = group.items.length ? group.conj : pendingConj
   // Folder is a menu key too since YAZ-4564 D26: each extra once.
   const listed = allPropertyKeys(def, view, records, folder.settings.columns)
-  const keys = [...listed, ...FILE_EXTRAS.filter((k) => !listed.includes(k))]
+  // Kind (`file.kind`, YAZ-4579 D31) is one too where the view shows subfolder rows: notes or folders.
+  const extras = showsFolderRows(view) ? [...FILE_EXTRAS, 'file.kind'] : FILE_EXTRAS
+  const keys = [...listed, ...extras.filter((k) => !listed.includes(k))]
   /** The column's rung of the typing ladder (D4), the same one the table's cell editors read. */
   const typingOf = (property: string): ColumnTyping => columnTyping(property, records, properties, folder.settings)
 
@@ -109,6 +111,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     if (property === 'file.tags') for (const r of records) for (const tag of r.tags) add(tag)
     else if (property === 'file.folder') for (const r of records) add(r.folder)
     else if (property === 'file.links') for (const r of records) for (const link of r.links) add(link)
+    else if (property === 'file.kind') for (const kind of ['note', 'folder']) add(kind)
     else if (!property.startsWith('file.') && !property.startsWith('formula.')) {
       for (const option of typingOf(property)?.options ?? []) add(option)
       const bare = property.startsWith('note.') ? property.slice(5) : property

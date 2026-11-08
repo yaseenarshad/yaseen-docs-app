@@ -118,15 +118,16 @@ describe('"Notes in subfolders: Show / Hide", per view (D25)', () => {
     }
   })
 
-  it('Properties › "Notes in subfolders" writes `subfolders: false`; Show deletes the key', () => {
+  // YAZ-4579 D30 replaced the Show / Hide select with the "Subfolders" switch: Hide is now written `hide`.
+  it('Properties › "Subfolders" › Hide writes `subfolders: hide`; Their notes deletes the key', () => {
     const { el, yaml } = mount(TABLE)
     click(q(el, '.view-toolbar [aria-label="Properties"]'))
-    const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Notes in subfolders"]')
-    expect(select().value).toBe('show')
+    const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]')
+    expect(select().value).toBe('notes')
     choose(select(), 'hide')
-    expect(yaml()).toContain('subfolders: false')
+    expect(yaml()).toContain('subfolders: hide')
     expect(names(el)).toEqual(['Plan', 'Idea'])
-    choose(select(), 'show')
+    choose(select(), 'notes')
     expect(yaml()).not.toContain('subfolders')
     expect(names(el)).toEqual(['Plan', 'Spec', 'Notes', 'Idea'])
   })

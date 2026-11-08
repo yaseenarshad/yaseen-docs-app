@@ -7,6 +7,8 @@ import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
 import { type NoteWindowLink, currentItemClass, useNoteWindowItems } from './NoteWindow'
 import { PageContextMenu } from './PageContextMenu'
 import { ReadOnlyName } from './ReadOnlyMark'
+import { FolderIcon } from './icons'
+import { isFolderRow } from '../../links/shortcuts'
 import type { ViewHover } from './viewHover'
 
 export interface CalendarViewProps {
@@ -181,7 +183,11 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
       >
         {time !== null && <span className="view-cal__time">{time}</span>}
         {/* Clip shows the full title on a hover (D23); a wrapped title is all there. */}
-        <span className="view-cal__card-title" title={wrap ? undefined : row.record.title}>{locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}</span>
+        <span className="view-cal__card-title" title={wrap ? undefined : row.record.title}>
+          {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too. */}
+          {isFolderRow(row.record) && <FolderIcon size={12} className="view-folder-row__icon" />}
+          {locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}
+        </span>
         {moveError?.path === path && (
           <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
             Move failed

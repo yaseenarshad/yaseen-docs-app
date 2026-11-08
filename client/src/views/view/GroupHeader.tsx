@@ -1,11 +1,11 @@
 import { createContext, useContext, type CSSProperties, type ReactNode } from 'react'
-import { isShortcut } from '../../links/shortcuts'
+import { isFolderRow, isShortcut } from '../../links/shortcuts'
 import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
 import { type ViewSet, type ViewDef, type GroupBySpec, shownGroupLevels } from '../viewSchema'
 import { type Row, propertyLabel } from '../engine'
 import { ErrorValue, FileValue, LinkValue, type Resolver, type Value, linkText, render } from '../expr'
 import { summarize } from '../summaries'
-import { ShortcutIcon } from './icons'
+import { FolderIcon, ShortcutIcon } from './icons'
 import { canonicalKey } from './keys'
 
 /**
@@ -72,6 +72,8 @@ export interface FolderPagesValue {
   folder: string
   title: (dir: string) => string
   open?: (dir: string) => void
+  /** How many notes a folder's page shows (YAZ-4579 D32): a folder row's "N inside". */
+  inside?: (dir: string) => number
 }
 export const FolderPages = createContext<FolderPagesValue | null>(null)
 
@@ -108,12 +110,31 @@ function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?:
 
 function RowTitle({ row }: { row: Row }) {
   const folder = useContext(ViewFolder)
+  const pages = useContext(FolderPages)
+  // A subfolder's row (YAZ-4579 D32): the folder icon, its title, and how many notes its page shows.
+  if (isFolderRow(row.record)) {
+    const inside = pages?.inside?.(folderOfRow(row.record))
+    return (
+      <>
+        <FolderIcon size={13} className="view-folder-row__icon" />
+        {row.record.title}
+        {inside !== undefined && <span className="view-folder-row__inside">{inside} inside</span>}
+      </>
+    )
+  }
   return (
     <>
       {row.record.title}
       {folder !== null && isShortcut(row.record, folder) && <ShortcutIcon />}
     </>
   )
+}
+
+/** A folder row's own folder as the index names it: its parent (the row's `folder`), then its directory's name. */
+const folderOfRow = ({ path, folder }: Row['record']): string => {
+  const dir = path.slice(0, path.lastIndexOf('/'))
+  const name = dir.slice(dir.lastIndexOf('/') + 1)
+  return folder === '' ? name : `${folder}/${name}`
 }
 
 /** Typed cell body (shared by table cells and board cards): error chip, read-only checkbox (editing is 5B), chips for lists/links, `render()` for the rest. */
