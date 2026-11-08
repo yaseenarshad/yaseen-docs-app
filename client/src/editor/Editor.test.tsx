@@ -2948,6 +2948,25 @@ describe('the folder Page tab (YAZ-4584 D38)', () => {
     expect(frontmatter.splitFrontmatter(disk.content).body).toBe('# Intro\n')
   })
 
+  it("the Page's fold-all button stands in the folder page's toolbar, left of the cog, and runs on the Page; it goes as another view shows (10D)", async () => {
+    const view = { state: { doc: 'the state' }, dispatch: vi.fn(), dom: document.createElement('div') }
+    vi.mocked(editorViewOf).mockReturnValue(view as never)
+    try {
+      const el = await openFolder(`${SETTINGS}# Intro\n`)
+      expect([...el.querySelector('.status-chips')!.children].map((c) => c.className.split(' ')[0])).toEqual(['fold-all__trigger', 'page-settings', 'document-zoom', 'save-indicator'])
+      expect(el.querySelectorAll('.fold-all__trigger')).toHaveLength(1)
+      foldAll.next = 'collapse'
+      await act(async () => el.querySelector<HTMLElement>('.status-chips > .fold-all__trigger')!.click())
+      expect(setAllDocumentFolds).toHaveBeenLastCalledWith(true)
+      expect(foldAll.command).toHaveBeenLastCalledWith(view.state, view.dispatch)
+      click([...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'Table')!)
+      await settle()
+      expect(el.querySelector('.fold-all__trigger')).toBeNull()
+    } finally {
+      vi.mocked(editorViewOf).mockImplementation(emptyView as never)
+    }
+  })
+
   it('a read-only folder page makes the Page read only (D36), and the toolbar takes the Page back off as another view shows', async () => {
     const el = await openFolder(`---\nreadonly: true\n${SETTINGS.slice(4)}# Intro\n`)
     expect((crepe() as FakeCrepe & { readonly: boolean }).readonly).toBe(true)

@@ -13,7 +13,7 @@ import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '
 import { createStore } from '../lib/store'
 import { click, flush, q, rec, renderFolderView, unmountFolderView } from './testFolderView'
 import { FolderToolbar, type FolderChipsState } from './FolderToolbar'
-import type { FolderViewProps } from './FolderView'
+import { FolderView, type FolderViewProps } from './FolderView'
 import { hoverPreviewOf } from '@shared/folderPage'
 import { DEFAULT_FOLDER_PAGES } from '@shared/types'
 
@@ -278,7 +278,7 @@ describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar s
     const noop = () => undefined
     act(() => root!.render(<FolderToolbar store={store} zoom={100} onZoom={noop} readOnly={false} onToggleReadOnly={noop} asking={false} onAsk={noop} onAllow={noop} onCancel={noop} showPageFile={undefined} onChangeShowPageFile={noop} hoverPreview={undefined} onChangeHoverPreview={noop} showOtherFiles={undefined} onChangeShowOtherFiles={noop} />))
     const onToggleLineNumbers = vi.fn()
-    act(() => store.set({ page: { cog: { lineNumbers: true, onToggleLineNumbers, readText: () => 'a b' }, save: 'unsaved' } }))
+    act(() => store.set({ page: { cog: { lineNumbers: true, onToggleLineNumbers, readText: () => 'a b' }, save: 'unsaved', foldAll: null } }))
     expect(q(container, '.save-indicator').textContent).toBe('Unsaved')
     click(q(container, '.page-settings__trigger'))
     const menu = q(container, '.page-settings__menu')
@@ -289,5 +289,61 @@ describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar s
     expect(q(container, '.save-indicator').textContent).toBe('Saving…')
     act(() => store.set({ page: null }))
     expect(container.querySelector('.page-settings__menu')?.textContent).not.toContain('Line numbers')
+  })
+})
+
+describe('two folder pages on one `.folder.md` (YAZ-4596 S38)', () => {
+  it('two tabs write different settings at once, then again after the echo: the mtime guard and the retry keep both writes each time', async () => {
+    // The main process's guard: a write against an older mtime is a CONFLICT that names the disk's.
+    let conflicts = 0
+    writeFile.mockImplementation(async ({ path, content, expectedMtime }) => {
+      const now = disk.get(path)
+      if (now !== undefined && expectedMtime !== now.mtime) {
+        conflicts += 1
+        throw new BridgeRequestError('CONFLICT', 'file changed on disk since last read', now.mtime)
+      }
+      disk.set(path, { content, mtime: ++clock })
+      return { path, mtime: clock, size: content.length }
+    })
+    const a = await mount()
+    const b = document.createElement('div')
+    document.body.append(b)
+    const rootB: Root = createRoot(b)
+    const noop = () => undefined
+    try {
+      act(() => rootB.render(<FolderView root="/vault" path={STAGES} source={source} onOpenFile={noop} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} />))
+      await flush()
+      const onDiskNow = () => parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties as { show_page_file?: boolean; hover_preview?: boolean; folder_settings: { views: { name: string }[] } }
+
+      // At once: B duplicates a view (the whole `folder_settings` block) and A's cog sets "Show folder page file".
+      // Both read the same bytes; the later write is refused, reads again and lands on top.
+      openCog(a)
+      duplicateView(b)
+      click(pill(a, 'On'))
+      await flush()
+      await flush()
+      expect(conflicts).toBe(1)
+      expect(onDiskNow().show_page_file).toBe(true)
+      expect(onDiskNow().folder_settings.views).toHaveLength(2)
+
+      // The watcher speaks to both tabs. Then at once: A duplicates a view, B's cog turns "Preview on hover" off.
+      feed()
+      await flush()
+      openCog(b)
+      duplicateView(a)
+      click(button(q(b, '[role="group"][aria-label="Preview on hover"]'), 'Off'))
+      await flush()
+      await flush()
+      expect(conflicts).toBe(2)
+      const end = onDiskNow()
+      expect(end.show_page_file).toBe(true)
+      expect(end.hover_preview).toBe(false)
+      expect(end.folder_settings.views).toHaveLength(3) // B's copy and A's copy: A wrote on the settings it heard from B
+      expect(end.folder_settings.views[0].name).toBe('Pipeline')
+      expect(writeFile).toHaveBeenCalledTimes(6) // four writes, two of them refused once
+    } finally {
+      act(() => rootB.unmount())
+      b.remove()
+    }
   })
 })

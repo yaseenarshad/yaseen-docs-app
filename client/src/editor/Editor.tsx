@@ -1252,11 +1252,11 @@ function CrepeHost({
   )
   /** The cog's page switches: a note's own cog, or the folder page's for its Page tab (YAZ-4584 D38). */
   const cog: FolderPageTab['cog'] = { lineNumbers: lineNumbersOn, onToggleLineNumbers: () => setLineNumbersOn((on) => !on), sectionIndent: sectionIndentOn, onToggleSectionIndent: toggleSectionIndent, guideLines: guideLinesOn, onToggleGuideLines: toggleGuideLines, folding: foldingOn, onToggleFolding: toggleFolding, bulletThreading: threadingOn, onToggleBulletThreading: toggleThreading, headingLevels: headingLevelsOn, onToggleHeadingLevels: () => setHeadingLevelsOn((on) => !on), tableOfContents: tableOfContentsOn, onToggleTableOfContents: toggleTableOfContents, tocSource, onChangeTocSource: tableOfContentsOn ? changeTocSource : undefined, outsideGlow: pageGlow, appGlow: outsideChangeGlow, onChangeOutsideGlow: changeOutsideGlow, readText: () => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '') }
-  // The Page tab hands its switches and save state to the folder page's toolbar while it shows, again on each render
-  // (a switch or the save state moved), and takes them back as it goes (YAZ-4584 D38, YAZ-3746 D35). A render is a
-  // save cycle or a switch, never a keystroke.
+  // The Page tab hands its switches, save state and fold-all button to the folder page's toolbar while it shows, again
+  // on each render (a switch or the save state moved), and takes them back as it goes (YAZ-4584 D38, YAZ-3746 D35, 10D).
+  // A render is a save cycle or a switch, never a keystroke.
   useEffect(() => {
-    folderChips?.set({ page: { cog, save: autosave.status } })
+    folderChips?.set({ page: { cog, save: autosave.status, foldAll: foldAllButton || null } })
   })
   useEffect(() => () => folderChips?.set({ page: null }), [folderChips])
 
@@ -1264,7 +1264,7 @@ function CrepeHost({
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. The toolbar a folder page shares
           (YAZ-3746 D35): this note's fold-all button and cog, then the shared chips. A folder's Page tab has none of its
-          own: it hands its cog and save state to the folder page's toolbar (YAZ-4584 D38, below). */}
+          own: it hands its fold-all button, cog and save state to the folder page's toolbar (YAZ-4584 D38, 10D, below). */}
       {!inFolderPage && (
         <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={readOnly ? { asking: askingUnlock, onAsk: () => setAskingUnlock(true), onAllow: () => { setAskingUnlock(false); void setReadOnly(false) }, onCancel: () => setAskingUnlock(false) } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
           {foldAllButton}

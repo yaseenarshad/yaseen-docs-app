@@ -50,6 +50,17 @@
   zoom: 1;
 }
 
+/* Line numbers on the Page (YAZ-3746 10D): the lane is the Page's own. The folder page's scroller does not take the
+   note's 64px (app.css `.editor-host[data-line-numbers]`), so the title, the tabs and the tray stay where they are; the
+   Page body takes the 64px instead, 64px on screen at every zoom (the views pane is zoomed). */
+.editor-host[data-line-numbers]:not([data-page='note']) {
+  padding-left: 0;
+}
+
+.editor-host[data-line-numbers] .folder-page-doc {
+  padding-left: calc(64px / var(--document-zoom, 1));
+}
+
 /*
  * The Other files tray (YAZ-4597, D43): under the views, in the page's column. Its header is a group header's
  * look (the toggle is `.view-group__toggle` from views.css); a row dragged
