@@ -13,6 +13,7 @@
  *
  * `HELP` IS the contract: it is the only documentation an agent reads, so its wording is UI copy.
  */
+import { isAutomationCommand, runAutomation } from './automation'
 import { execFile } from 'node:child_process'
 import { readFile as readRaw, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -510,6 +511,8 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
 
 /** The program: resolves to the exit code (0 done · 1 refused or failed · 2 usage). */
 export async function main(argv: readonly string[], io: Io): Promise<number> {
+  // Navigation through the running app (YAZ-4502): its own resources, so no command above changes.
+  if (isAutomationCommand(argv)) return runAutomation(argv, io)
   try {
     await run(argv, io)
     return 0

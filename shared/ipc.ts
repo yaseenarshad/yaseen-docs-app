@@ -18,6 +18,7 @@ import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './ls
 import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
 import type { SystemHotkey } from './macosHotkeys'
 import type { VaultIcons } from './vaultIcons'
+import type { RendererCommand, RendererReply } from './automationNavigation'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -42,6 +43,12 @@ export const invoke = <A extends unknown[], R>(channel: string, arity: A['length
 const push = <T = void>(channel: string): Push<T> => ({ kind: 'push', channel })
 
 export const CONTRACT = {
+  /** CLI navigation (YAZ-4502): main asks a window to show a target; the window says it is ready and replies once it shows it. */
+  automation: {
+    onRequest: push<RendererCommand>('automation:request'),
+    ready: invoke<[ready: boolean], void>('automation:ready', 1),
+    reply: invoke<[reply: RendererReply], void>('automation:reply', 1),
+  },
   tree: invoke<[root: string], TreeResponse>('fs:tree', 1),
   readFile: invoke<[path: string], FileResponse>('fs:read', 1),
   /** The top of each note in `paths`, in their order (YAZ-2648 D6): only the head is read off disk, never the file. `null` for a path that is no note or could not be read; one never fails the rest. */

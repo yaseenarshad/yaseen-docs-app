@@ -4,6 +4,9 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
+import { FolderView } from './views/FolderView'
+import type { WikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
+import type { RendererCommand } from '@shared/automationNavigation'
 import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
@@ -165,6 +168,7 @@ vi.mock('./editor/Editor', () => ({
     captured.linkOpeners.push({ path, open: onOpenLink })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
+    if (path === '/v/Automation Folder') return <FolderView path={path} root={root} source={wikilinks as WikilinkResolveSource} onOpenFile={onOpenFile} onRetitle={() => {}} commentsOrder="oldest" onChangeCommentsOrder={() => {}} />
     return (
       <div data-editor data-root={root} data-path={path ?? ''} data-review-settings={reviewSettings === undefined ? 'none' : 'given'}>
         <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
@@ -211,6 +215,7 @@ import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'>>
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
+  const automationRequests = new Set<(request: RendererCommand) => void>()
   const stateChanged = new Set<(next: AppState) => void>()
   const windowViews = new Set<() => (StartView | null)[]>()
   const windowTabs = new Set<() => MemoryTabFacts[]>()
@@ -264,6 +269,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       return () => set.delete(l)
     })
   const bridge = {
+    automation: { onRequest: vi.fn((listener: (request: RendererCommand) => void) => { automationRequests.add(listener); return () => automationRequests.delete(listener) }), ready: vi.fn(async () => {}), reply: vi.fn(async () => {}) },
     tree: vi.fn(async (root: string): Promise<TreeResponse> => ({ root, tree: [], generatedAt: 1 })),
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
     index: vi.fn(async (root: string): Promise<IndexResponse> => ({ root, records: [], folders: [], generatedAt: 1, ids: true })),
@@ -567,6 +573,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
     bridge,
+    emitAutomation: (request: RendererCommand) => automationRequests.forEach((listener) => listener(request)),
     emitStateChanged: (next: AppState) => stateChanged.forEach((listener) => listener(next)),
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitOpenFolder: () => menuOpenFolder.forEach((l) => l()),
@@ -7069,5 +7076,66 @@ describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
     await act(async () => sidebar.onAddVaultFor?.('zz', 'q.md'))
     expect(el.querySelector('#confirm-add-vault-for-link-text')).toBeNull()
     expect(el.querySelector('.link-notice')?.textContent).toContain('This item is in the vault "zz", which this Mac does not know. Open that folder first.')
+  })
+})
+
+describe('App CLI navigation acknowledgement (YAZ-4502)', () => {
+  it('opens the requested page and sidebar before replying', async () => {
+    const path = '/v/Mochi.md'
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Mochi', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-1', action: 'navigate', target: { path, sidebar: 'favorites', reveal: false } }))
+    expect(captured.sidebar?.lens).toBe('favorites')
+    expect(captured.sidebar?.activeFile).toBe(path)
+    expect(bridge.automation.reply).toHaveBeenCalledExactlyOnceWith({ id: 'nav-1', ok: true, value: expect.objectContaining({ path, sidebar: 'favorites', sidebarCollapsed: false, acknowledged: true }) })
+  })
+  it('waits for a view the saved file holds until the page has indexed it, then selects it (YAZ-4518)', async () => {
+    // The Editor mock renders a real FolderView at this one path.
+    const path = '/v/Automation Folder'
+    const folderRecord = (views: unknown[]): IndexRecord => ({ path: `${path}/.folder.md`, name: '.folder.md', basename: '.folder', title: 'Automation Folder', folder: 'Automation Folder', ext: 'md', size: 7, ctime: 1, mtime: 2, properties: { folder_settings: { views } }, aliases: [], tags: [], links: [], embeds: [] })
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], sidebarCollapsed: true }, {}, (b) => {
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: [{ type: 'dir', path, name: 'Automation Folder', children: [] }], generatedAt: 1 })
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    await act(async () => {})
+    expect([...el.querySelectorAll('.view-tab__btn')].map((node) => node.textContent)).toEqual(['Table', 'Board'])
+    await act(async () => { emitAutomation({ id: 'nav-later', action: 'navigate', target: { path, view: 'Later' } }) })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+    await act(async () => {})
+    expect(JSON.stringify(bridge.automation.reply.mock.calls)).not.toContain('nav-later')
+    // The saved view reaches the page through the index, as any outside edit does.
+    bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [folderRecord([{ type: 'table', name: 'Table' }, { type: 'list', name: 'Later' }])], generatedAt: 2, ids: true })
+    const listeners = bridge.watch.mock.calls.flatMap(([root, listener]) => (root === '/v' && typeof listener === 'function' ? [listener as (event: unknown) => void] : []))
+    await act(async () => { listeners.forEach((listener) => listener({ type: 'change', path: `${path}/.folder.md` })); await new Promise((resolve) => setTimeout(resolve, 400)) })
+    await act(async () => {})
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-later', ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+    expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe('Later')
+  })
+  it('picks a folder view by the one shared rule: of "Table" and "table", each name selects its own view (YAZ-4527 P9)', async () => {
+    const path = '/v/Automation Folder'
+    const views = [{ type: 'table', name: 'Table' }, { type: 'list', name: 'table' }]
+    const folder: IndexRecord = { path: `${path}/.folder.md`, name: '.folder.md', basename: '.folder', title: 'Automation Folder', folder: 'Automation Folder', ext: 'md', size: 7, ctime: 1, mtime: 2, properties: { folder_settings: { views } }, aliases: [], tags: [], links: [], embeds: [] }
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], sidebarCollapsed: true }, {}, (b) => {
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: [{ type: 'dir', path, name: 'Automation Folder', children: [] }], generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [folder], generatedAt: 1, ids: true })
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    await act(async () => {})
+    expect([...el.querySelectorAll('.view-tab__btn')].map((node) => node.textContent)).toEqual(['Table', 'table'])
+    for (const name of ['table', 'Table']) {
+      await act(async () => { emitAutomation({ id: `nav-${name}`, action: 'navigate', target: { path, view: name } }); await new Promise((resolve) => setTimeout(resolve, 50)) })
+      expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: `nav-${name}`, ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+      expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe(name)
+    }
+  })
+  it('preserves the hidden sidebar when only a page was requested', async () => {
+    const path = '/v/Journal.md'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Journal', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-2', action: 'navigate', target: { path } }))
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-2', ok: true, value: expect.objectContaining({ path, sidebarCollapsed: true }) })
+  })
+  it('tells main the window is ready for navigation once it mounts', async () => {
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(bridge.automation.ready).toHaveBeenCalledWith(true)
   })
 })

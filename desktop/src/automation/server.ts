@@ -1,0 +1,98 @@
+import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { chmod, lstat, rename, unlink, writeFile } from 'node:fs/promises'
+import { connect, createServer, type Socket } from 'node:net'
+import { dirname } from 'node:path'
+import { AUTOMATION_LIMITS, AUTOMATION_VERSION, AutomationFailure, automationError, type AutomationRequest, type AutomationResult } from '@shared/automation'
+import { commandDefinition, validateInput } from '@shared/automationCommands'
+import { descriptorPath, endpointFor, privateDirectory, type Connection } from './connection'
+import { RequestQueue, type Operation } from './requests'
+import { encodePacket, readPacket } from './wire'
+
+export interface AutomationServer { close(): Promise<void>; connection: Connection }
+
+async function removeStaleSocket(endpoint: string): Promise<void> {
+  if (process.platform === 'win32') return
+  const info = await lstat(endpoint).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error })
+  if (!info) return
+  if (!info.isSocket() || (process.getuid && info.uid !== process.getuid())) throw new AutomationFailure('UNSAFE_PROFILE', 'The CLI socket path is occupied.')
+  const live = await new Promise<boolean>((resolve, reject) => {
+    const socket = connect(endpoint)
+    socket.once('connect', () => { socket.destroy(); resolve(true) })
+    socket.once('error', (error: NodeJS.ErrnoException) => {
+      socket.destroy()
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOENT') resolve(false)
+      else reject(error)
+    })
+    socket.setTimeout(1000, () => { socket.destroy(); resolve(true) })
+  })
+  if (live) throw new AutomationFailure('ALREADY_RUNNING', 'A CLI connection already serves this profile.')
+  await unlink(endpoint).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
+}
+
+function validate(value: unknown, connection: Connection): AutomationRequest {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new AutomationFailure('BAD_REQUEST', 'Expected a request object.')
+  const request = value as AutomationRequest
+  const expected = Buffer.from(connection.token)
+  const actual = Buffer.from(typeof request.token === 'string' ? request.token : '')
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new AutomationFailure('UNAUTHORIZED', 'The profile token is invalid.')
+  if (request.version !== AUTOMATION_VERSION) throw new AutomationFailure('PROTOCOL_VERSION', 'This CLI protocol version is unsupported.')
+  if (request.session !== connection.session) throw new AutomationFailure('UNKNOWN_REQUEST', 'Docs restarted. Inspect state before another mutation.')
+  if (Object.keys(request).some(key => !['version', 'session', 'token', 'id', 'issuedAt', 'command', 'args'].includes(key)) ||
+      typeof request.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(request.id) ||
+      typeof request.command !== 'string' || request.command.length > 100 || !Number.isFinite(request.issuedAt) ||
+      !request.args || typeof request.args !== 'object' || Array.isArray(request.args)) throw new AutomationFailure('BAD_REQUEST', 'Invalid request fields.')
+  return request
+}
+
+/** Same-user connection owned by the app, with no TCP listener and no service after app exit. */
+export async function startAutomationServer(profile: string, prepare: (request: AutomationRequest) => Operation): Promise<AutomationServer> {
+  const descriptor = descriptorPath(profile)
+  await privateDirectory(dirname(descriptor))
+  const endpoint = await endpointFor(profile)
+  await removeStaleSocket(endpoint)
+  const connection: Connection = { version: AUTOMATION_VERSION, endpoint, session: randomBytes(16).toString('hex'), token: randomBytes(32).toString('hex'), startedAt: Date.now() }
+  const queue = new RequestQueue()
+  const sockets = new Set<Socket>()
+  const server = createServer(socket => {
+    sockets.add(socket)
+    socket.once('close', () => sockets.delete(socket))
+    socket.on('error', () => {})
+    socket.setTimeout(AUTOMATION_LIMITS.waitMs, () => socket.destroy())
+    void (async () => {
+      let reply: AutomationResult
+      try {
+        const request = validate(await readPacket(socket), connection)
+        if (request.command === 'request.status') validateInput(commandDefinition('request.status').input, request.args)
+        socket.setTimeout(0) // Accepted work can outlive the caller's wait. It is never cancelled by disconnect.
+        reply = request.command === 'request.status' ? { ok: true, value: queue.receipt(String(request.args.id)) } : await queue.submit(request, () => prepare(request))
+      } catch (error) { reply = automationError(error) }
+      if (socket.destroyed) return
+      try { socket.end(encodePacket(reply)) } catch (error) { socket.end(encodePacket(automationError(error))) }
+    })()
+  })
+  server.maxConnections = AUTOMATION_LIMITS.active + AUTOMATION_LIMITS.queued + 8
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(endpoint, () => { server.off('error', reject); resolve() })
+  })
+  if (process.platform !== 'win32') await chmod(endpoint, 0o600)
+  const temp = `${descriptor}.${connection.session}.tmp`
+  try {
+    await writeFile(temp, JSON.stringify(connection), { mode: 0o600, flag: 'wx' })
+    await rename(temp, descriptor)
+  } catch (error) {
+    server.close(); await unlink(temp).catch(() => {}); throw error
+  }
+  return {
+    connection,
+    async close() {
+      const closed = new Promise<void>(resolve => server.close(() => resolve()))
+      // Refuse new work, then wait for the rest at most CLOSE_WAIT_MS (YAZ-4527 P1).
+      await queue.close()
+      for (const socket of sockets) socket.destroy()
+      await closed
+      await unlink(descriptor).catch(() => {})
+      if (process.platform !== 'win32') await unlink(endpoint).catch(() => {})
+    },
+  }
+}

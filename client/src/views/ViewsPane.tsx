@@ -1,3 +1,5 @@
+import { viewIndex } from '@shared/automationNavigation'
+import { useAutomationSurface } from '../automation/surfaces'
 import { boardOptionGroups } from './boardOptionGroups'
 import { columnTyping } from './editorType'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -202,6 +204,15 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
    * `folderViewSet` both fall back to `DEFAULT_VIEWS` — and `index` is clamped into that list.
    */
   const view = views[index]!
+  // CLI navigation (YAZ-4502): the folder page of a tab says its views, and picks one by main's rule.
+  useAutomationSurface(() => {
+    const tab = paneRef.current?.closest<HTMLElement>('[data-tab]')?.dataset.tab
+    return tab === undefined ? null : `view:${tab}`
+  }, {
+    ready: true,
+    inspect: () => ({ view: view.name, views: views.map((item) => item.name) }),
+    selectView: (name) => setActive(viewIndex(views, name)),
+  })
   // Re-parse after every edit: `doc.setIn` stores plain JS values, so a second edit inside a
   // collection a previous edit created would throw ("Expected YAML collection"). The round trip
   // through text keeps comments and rebuilds proper nodes.
