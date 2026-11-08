@@ -29,6 +29,103 @@ The app keeps up to 256 small receipts for five minutes. Large results go to wai
 
 Four operations can run at once, with up to 64 queued. Resource writes serialize. The control frame is limited to 64 KiB; a separate content frame is limited to 64 MiB. Accepted content has a combined 128 MiB bound. Existing file formats retain their stricter limits. Paged commands default to 50 items and allow at most 200.
 
+## Command guide
+
+`docs/CLI-COVERAGE.md` maps each app capability to its command family. This section shows how the families fit together. Paths are absolute. Quote each path; the CLI passes it as data.
+
+### Discover
+
+```sh
+yaseendocs capabilities --json          # every command: input and output schemas, effect, limits
+yaseendocs navigation open --help       # one command, with its schema
+yaseendocs app status --json            # running?, profile, protocol version (automation), packaged
+```
+
+Check `automation` from `app status` or `version` from `capabilities` before you rely on a command. A command that is not in `capabilities` fails with `UNKNOWN_COMMAND` and exit 2.
+
+### Name a target
+
+- A vault: `--root <path>`, several with `--roots '["/a","/b"]'`, or a saved workspace with `--workspace <id or unique name>`.
+- A page or folder: `--path <absolute path>`, `--id <existing ID>`, or `--name <unique title, alias, or file name>`.
+- A live window or tab: `--window <id>` and `--tab <id>` from `window list` and `window inspect`. These IDs last only while the window is open.
+
+A name that matches more than one item fails with `AMBIGUOUS_TARGET`. The error lists the candidates. Use one of their paths. Reads never assign IDs.
+
+### Navigate
+
+```sh
+# A new window on one vault: Favorites shown, the folder revealed and expanded, its page open.
+yaseendocs navigation open --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi" --sidebar favorites --reveal true --mode new
+# Reuse (the default): the most recent window on exactly these vaults; otherwise a new one.
+yaseendocs navigation open --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi" --view "Board"
+# A saved multi-vault workspace keeps all its vaults.
+yaseendocs navigation open --workspace "All Folders" --mode new
+# The right panel, and a reusable link to a view.
+yaseendocs navigation open --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi/Cards.md" --panel right
+yaseendocs navigation link --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi" --sidebar favorites --reveal true
+```
+
+Navigation replies after the window shows the result (`acknowledged: true`). It starts Docs when needed. A folder that is not in Favorites fails with `NOT_IN_COLLECTION` when you ask for `--sidebar favorites`; nothing else opens. A missing vault fails with `MISSING_VAULT` unless you pass `--allow-partial true`. A link carries navigation only. It holds paths of this Mac, never window IDs, edits, or secrets.
+
+### Search and read
+
+```sh
+yaseendocs search query --root "/Vaults/Skills" --collection favorites --scope vault --query mochi
+yaseendocs search query --workspace "All Folders" --query "" --limit 50 --offset 50   # page through a scope
+yaseendocs file read --path "/Vaults/Skills/Mochi/Cards.md"                              # saved text + revision
+yaseendocs document live --window <id> --tab <id>                                        # an open editor's buffer
+yaseendocs link incoming --path "/Vaults/Skills/Mochi/Cards.md"
+yaseendocs window inspect --window <id>
+```
+
+Search matches titles, aliases, file names, and IDs, with the app's own rules. It does not search full text. Pages hold 50 items by default and 200 at most. `nextOffset` is `null` on the last page.
+
+### Change content safely
+
+Every write names the revision it read. A changed file fails with `CONFLICT`, and nothing is written. Read again, merge, and retry.
+
+```sh
+yaseendocs file write   --path "<note>" --revision <revision> --body @new.md
+yaseendocs file append  --path "<note>" --revision <revision> --body "One more line"
+yaseendocs property set --path "<note>" --revision <revision> --keys '["status"]' --value '"done"'
+yaseendocs comment add  --path "<note>" --revision <revision> --body "Checked by the agent"
+yaseendocs note create  --root "<vault>" --folder "<folder>" --title "New page"
+yaseendocs daily create --root "<vault>"
+```
+
+A board write fails with `UNSAVED_LIVE_EDITS` while an open editor holds unsaved edits of it. The error names the window and tab. Save it with `editor save`, then read again. Read only is a switch for people; it does not block these commands.
+
+### Organize
+
+`file rename`, `file retitle`, `file trash`, `file copy`, `folder create`, `tab move`, and `file undo` / `file redo` run the same complete actions as the app. They save open editors first, repair links, and use the window's Undo history. A command that changes several items reports each failure. It never reports a partial result as success.
+
+### Settings, collections, and folder pages
+
+`settings get/patch`, `collection add/remove/reorder`, `group …`, `workspace …`, `folder read`, `folderView …`, `shortcut …`, and `ids …` change stored state against the latest copy. A command that clears data, or turns a feature off, needs an explicit confirmation input in place of the app's dialog. Settings output never shows a stored secret. `provider status` reports only whether a key is present. `provider set` reads the key from stdin or a private file.
+
+### Errors and exit codes
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | `ok: true`. The operation finished. |
+| 1 | `ok: false`. The operation failed, or its outcome is unknown. |
+| 2 | Invalid usage: an unknown command, flag, or field, or a value of the wrong type. Nothing was sent. |
+
+Common error codes:
+
+| Code | What to do |
+| --- | --- |
+| `NOT_RUNNING` | Start Docs, or pass `--start`. |
+| `NOT_FOUND`, `MISSING_VAULT`, `WINDOW_NOT_FOUND`, `TAB_NOT_FOUND` | The target is gone. Read current state and choose again. |
+| `AMBIGUOUS_TARGET` | Pick a path from `details.candidates`. |
+| `NOT_IN_COLLECTION` | The target is not in that Favorites or Focus list. |
+| `CONFLICT` | The file changed after you read it. Read again before you write. |
+| `UNSAVED_LIVE_EDITS`, `UNSAVED_CHANGES` | An open editor holds unsaved edits. Save it, then retry. |
+| `PARTIAL_FAILURE` | Some items changed. `details` lists which. Read state before you retry. |
+| `BUSY`, `LIMIT_EXCEEDED` | The queue is full. Wait and retry. |
+| `WAIT_TIMEOUT`, `RENDERER_TIMEOUT` | The outcome is unknown. Run `request status --id <id>` or read state. Do not repeat a write blindly. |
+| `TOO_LARGE` | Use the command's file input or output (`--source-file`, `--output-file`). |
+
 ## Development checks
 
 Use temporary profiles and fixtures. The focused checks are `desktop/src/automation/*.test.ts`, `desktop/src/cli/automation.test.ts`, and the legacy `desktop/src/cli/cli.test.ts`. The process test builds and runs the real CLI against a real local socket. No test needs a visible app window.

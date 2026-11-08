@@ -25,6 +25,19 @@ Complex fields take JSON. Unknown fields and flags fail before execution.
 A timeout is an unknown outcome. Inspect the receipt or current state before another mutation.
 The response includes its request reference. Large results are not kept in receipts.
 Existing edit and delete commands still operate on comments.
+
+Examples:
+  # Open a vault in a new window on Favorites, with a folder revealed and expanded.
+  yaseendocs navigation open --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi" --sidebar favorites --reveal true --mode new
+  # Open a saved multi-vault workspace.
+  yaseendocs navigation open --workspace "All Folders" --mode new
+  # Search one collection and get paths back, without looking at the screen.
+  yaseendocs search query --root "/Vaults/Skills" --collection favorites --scope vault --query mochi
+  # Read a note with its revision, then replace it only if nobody changed it since.
+  yaseendocs file read --path "/Vaults/Skills/Mochi/Cards.md"
+  yaseendocs file write --path "/Vaults/Skills/Mochi/Cards.md" --revision <revision> --body @new.md
+  # Make a reusable link to the same view.
+  yaseendocs navigation link --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi" --sidebar favorites --reveal true
 `
 
 export const isAutomationCommand = (argv: readonly string[]): boolean => argv[0] === 'capabilities' || AUTOMATION_COMMANDS.some(command => command.name.split('.')[0] === argv[0] && (!['comment', 'daily'].includes(argv[0]) || command.name === `${argv[0]}.${argv[1]}`))
