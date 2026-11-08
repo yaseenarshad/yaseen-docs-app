@@ -508,3 +508,117 @@ describe('the group header row (YAZ-4604)', () => {
     expect(shown).toBe(false)
   })
 })
+
+describe('the fill handle (YAZ-4609 D61)', () => {
+  const COLS = ['num', 'due', 'day', 'week', 'tag']
+  const FILL_TABLE = `views:
+  - type: table
+    name: T
+    order:
+      - file.name
+${COLS.map((k) => `      - note.${k}`).join('\n')}
+    sort:
+      - property: file.name
+        direction: ASC
+`
+  const note = (i: number, properties: Record<string, unknown> = {}): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/f/a${i}.md`, basename: `a${i}`, name: `a${i}.md`, title: `a${i}`, folder: 'f', properties })
+  const NOTES = [note(0, { num: 1, due: '2026-01-30', day: 'Monday', week: 'Week 1', tag: 'x' }), note(1, { num: 3 }), note(2), note(3), note(4)]
+  const handle = (el: ParentNode) => el.querySelector<HTMLElement>('.view-table__fill-handle')
+  /** Press the handle, move over `to`, release there. */
+  function fillTo(el: HTMLElement, to: [number, number]) {
+    down(handle(el)!)
+    move(cell(el, ...to))
+    up(cell(el, ...to))
+  }
+  const writesOf = (writeValues: ReturnType<typeof vi.fn>, path: string) => (writeValues.mock.calls as unknown as [string, unknown][]).filter(([p]) => p === path).map(([, w]) => w)
+
+  it('the handle sits in the corner of the focused cell, then of the selection; placing it renders nothing', () => {
+    const { el } = mount(FILL_TABLE, { records: NOTES })
+    act(() => cell(el, 1, 2).focus())
+    expect(handle(el)?.parentElement).toBe(cell(el, 1, 2))
+    drag(el, [0, 1], [2, 3])
+    expect(handle(el)?.parentElement).toBe(cell(el, 2, 3))
+    expect(cell(el, 2, 3).hasAttribute('data-fill-corner')).toBe(true)
+    expect(commits).toBe(0)
+  })
+
+  it('a drag down marks the target with its outer edges, and continues a number step; ONE write per note, no render', async () => {
+    const { el, writeValues } = mount(FILL_TABLE, { records: NOTES })
+    drag(el, [0, 1], [1, 1])
+    down(handle(el)!)
+    move(cell(el, 3, 1))
+    expect(cell(el, 0, 1).getAttribute('data-fill-target')).toBe('top left right')
+    expect(cell(el, 3, 1).getAttribute('data-fill-target')).toBe('bottom left right')
+    up(cell(el, 3, 1))
+    expect(el.querySelectorAll('[data-fill-target]')).toHaveLength(0)
+    expect(commits).toBe(0)
+    await flush()
+    expect(writeValues).toHaveBeenCalledTimes(2)
+    expect(writesOf(writeValues, NOTES[2].path)).toEqual([[{ key: 'num', value: 5 }]])
+    expect(writesOf(writeValues, NOTES[3].path)).toEqual([[{ key: 'num', value: 7 }]])
+  })
+
+  it('one source row down: a date steps by a day, a weekday and a trailing number by 1, other text repeats', async () => {
+    const { el, writeValues } = mount(FILL_TABLE, { records: NOTES })
+    drag(el, [0, 2], [0, 5])
+    fillTo(el, [2, 2])
+    await flush()
+    expect(writeValues).toHaveBeenCalledTimes(2)
+    expect(writesOf(writeValues, NOTES[1].path)).toEqual([
+      [
+        { key: 'due', value: '2026-01-31' },
+        { key: 'day', value: 'Tuesday' },
+        { key: 'week', value: 'Week 2' },
+        { key: 'tag', value: 'x' },
+      ],
+    ])
+    expect(writesOf(writeValues, NOTES[2].path)[0]).toEqual([
+      { key: 'due', value: '2026-02-01' },
+      { key: 'day', value: 'Wednesday' },
+      { key: 'week', value: 'Week 3' },
+      { key: 'tag', value: 'x' },
+    ])
+  })
+
+  it('a drag right continues each row across the columns', async () => {
+    const records = [note(0, { num: 1, due: 2 }), note(1)]
+    const { el, writeValues } = mount(FILL_TABLE, { records })
+    drag(el, [0, 1], [0, 2])
+    fillTo(el, [0, 4])
+    await flush()
+    // Day and Week hold no numbers, so they are text columns: each new value is typed as its cell's kind.
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(records[0].path, [
+      { key: 'day', value: '3' },
+      { key: 'week', value: '4' },
+    ])
+  })
+
+  it('read-only notes and the Name column are skipped; Undo writes the old values back, one write per note', async () => {
+    const onNotice = vi.fn()
+    const records = NOTES.map((r, i) => (i === 2 ? { ...r, properties: { ...r.properties, readonly: true } } : r))
+    const { el, writeValues, retitle } = mount(FILL_TABLE, { records }, { onNotice })
+    // Name a0, a1 would go on as a2, a3: the Name column is never written.
+    drag(el, [0, 0], [1, 1])
+    fillTo(el, [3, 1])
+    await flush()
+    expect(retitle).not.toHaveBeenCalled()
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(records[3].path, [{ key: 'num', value: 7 }])
+    expect(onNotice).toHaveBeenCalledTimes(1)
+    const [message, , type, action] = onNotice.mock.lastCall as [string, string, string, { run: () => void }]
+    expect([message, type]).toEqual(['Filled 1 cell', 'undo'])
+    writeValues.mockClear()
+    act(() => action.run())
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(records[3].path, [{ key: 'num', value: undefined }])
+  })
+
+  it('a windowed table (600 notes) fills the rows a drag passes', async () => {
+    const many = Array.from({ length: 600 }, (_, i): IndexRecord => ({ ...note(i, i === 0 ? { num: 4 } : {}), title: `n${String(i).padStart(3, '0')}` }))
+    const { el, writeValues } = mount(FILL_TABLE, { records: many })
+    act(() => cell(el, 0, 1).focus())
+    fillTo(el, [20, 1])
+    expect(commits).toBe(0)
+    await flush()
+    expect(writeValues).toHaveBeenCalledTimes(20)
+    for (const [, writes] of writeValues.mock.calls as unknown as [string, unknown][]) expect(writes).toEqual([{ key: 'num', value: 4 }])
+  })
+})

@@ -862,6 +862,46 @@
   background-image: linear-gradient(var(--view-selection-wash), var(--view-selection-wash)), linear-gradient(var(--view-cell-fill, transparent), var(--view-cell-fill, transparent));
 }
 
+/* The fill handle (YAZ-4609 D61), the table block's look (`editor/table/table.css`): a square in the corner of the
+   selection or of the focused cell, and a dashed line on the outer edges of the cells a drag fills. A frozen cell is
+   sticky, so it holds the absolute handle already; any other cell takes `position: relative` while it has one. */
+.view-table tbody td[data-fill-corner]:not(.view-table__frozen),
+.view-table tbody td[data-fill-target]:not(.view-table__frozen) {
+  position: relative;
+}
+
+.view-table__fill-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border: 1px solid var(--bg);
+  background-color: var(--accent);
+  cursor: crosshair;
+}
+
+/* No handle while a cell is being edited (D61). */
+.view-table:has([data-editing]) .view-table__fill-handle {
+  display: none;
+}
+
+.view-table tbody td[data-fill-target]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border: 0 dashed var(--accent);
+  pointer-events: none;
+}
+
+.view-table tbody td[data-fill-target~='top']::before { border-top-width: 2px; }
+.view-table tbody td[data-fill-target~='bottom']::before { border-bottom-width: 2px; }
+.view-table tbody td[data-fill-target~='left']::before { border-left-width: 2px; }
+.view-table tbody td[data-fill-target~='right']::before { border-right-width: 2px; }
+
 /* "Set value ›" on a selection (YAZ-4593): the field a text value is typed in. */
 .view-selection-menu__input {
   width: 180px;

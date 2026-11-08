@@ -7,6 +7,7 @@ import { type Resolver, type Value, render, typeOf } from '../expr'
 import type { ColumnDecl, FolderSettings } from '../folderSettings'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
+import { fillSeries } from '../../editor/table/fillSeries'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, rowCell, rowTitle, summaryKindOf } from './GroupHeader'
@@ -68,7 +69,7 @@ export interface TableViewProps {
   /** The card's link (YAZ-4547 D16): the table hands it its rows in display order, and marks the card's row. */
   windowLink?: NoteWindowLink
   /** Passive reporting for a stale or failed OS action. */
-  onNotice?: (message: string) => void
+  onNotice?: FolderHost['onNotice']
   /** A drop on another section: `groupBy.property = value` (undefined deletes) via ViewsPane (5C, GRO-2143); `drop` says which LEVEL, and carries the outer's write on a cross-outer inner drop (YAZ-1101). */
   onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
   /** The last failed move, flagged inline on its row. */
@@ -553,6 +554,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const setSelection = (next: TableSelection | null): void => {
     selRef.current = next
     paintSelection()
+    placeHandle()
     if (next !== null && pageKeys.current === null) {
       pageKeys.current = (e) => {
         if (!e.defaultPrevented && e.target === document.body && selectionKeyRef.current(e)) e.preventDefault()
@@ -640,18 +642,165 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * The bulk write (YAZ-4593): the cells' values grouped into ONE guarded write per note. A read-only note, the Name
    * column and a column no view writes are skipped, and so is a value the note already has.
    */
-  const writeCells = (cells: Iterable<{ r: number; c: number; value: unknown }>): void => {
+  const writeCells = (cells: Iterable<{ r: number; c: number; value: unknown }>, undo?: (count: number) => string): void => {
     const byPath = new Map<string, PropertyWrite[]>()
+    /** Each note's values before the write, for Undo: one write per note back (undefined deletes the key). */
+    const before = new Map<string, PropertyWrite[]>()
+    let count = 0
     for (const { r, c, value } of cells) {
       const row = flat[r]
       const bare = bares[c]
       if (row === undefined || bare == null || readOnly.has(row.record.path)) continue
       if (JSON.stringify(row.record.properties[bare] ?? null) === JSON.stringify(value)) continue
+      count++
       const writes = byPath.get(row.record.path)
       if (writes === undefined) byPath.set(row.record.path, [{ key: bare, value }])
       else writes.push({ key: bare, value })
+      before.set(row.record.path, [...(before.get(row.record.path) ?? []), { key: bare, value: row.record.properties[bare] }])
     }
-    for (const [path, writes] of byPath) onWriteValues(path, writes).catch((error: unknown) => onNotice?.(`Can't write: ${error instanceof Error ? error.message : String(error)}`))
+    const failed = (error: unknown) => onNotice?.(`Can't write: ${error instanceof Error ? error.message : String(error)}`)
+    const done = [...byPath].map(([path, writes]) => onWriteValues(path, writes))
+    for (const write of done) write.catch(failed)
+    // One S29 Undo for the whole gesture, once every write landed (YAZ-4609 D61).
+    if (undo === undefined || count === 0) return
+    const restore = () => {
+      for (const [path, writes] of before) onWriteValues(path, writes).catch(failed)
+    }
+    Promise.all(done).then(
+      () => onNotice?.(undo(count), 'info', 'undo', { label: 'Undo', run: restore, fades: true }),
+      () => {},
+    )
+  }
+  /**
+   * The fill handle (YAZ-4609 D61, the table block's `editor/table/tableFill.ts`): a square in the bottom-right corner
+   * of the selection, or of the focused cell. One element, moved on the DOM like the selection marks, so placing it
+   * renders nothing. A drag down or right marks the cells it would fill (`data-fill-target`, dashed in views.css); on
+   * mouseup each column (down) or row (right) continues with `fillSeries`, ONE write per note with one Undo.
+   */
+  const handleRef = useRef<HTMLSpanElement | null>(null)
+  const fillRef = useRef<{ rows: number[]; cols: number[]; axis: 'down' | 'right'; count: number } | null>(null)
+  /** The handle's drag start, read when the handle is pressed: the newest render's closure. */
+  const fillStartRef = useRef<(e: MouseEvent) => void>(() => {})
+  const fillArea = (): { rows: number[]; cols: number[] } | null => areaOf(selRef.current, cellAt(document.activeElement) ?? undefined)
+  const placeHandle = (): void => {
+    const wrap = wrapRef.current
+    if (wrap === null) return
+    wrap.querySelector('td[data-fill-corner]')?.removeAttribute('data-fill-corner')
+    const area = fillArea()
+    const corner = area === null || area.rows.length === 0 || area.cols.length === 0 ? null : wrap.querySelector<HTMLElement>(`td[data-cell="${area.rows.at(-1)}:${area.cols.at(-1)}"]`)
+    if (corner == null) {
+      handleRef.current?.remove()
+      return
+    }
+    if (handleRef.current === null) {
+      const handle = document.createElement('span')
+      handle.className = 'view-table__fill-handle'
+      handle.setAttribute('aria-hidden', 'true')
+      // A native listener: its stopPropagation keeps the press from the body's select drag (React listens at the root).
+      handle.addEventListener('mousedown', (e) => fillStartRef.current(e))
+      handleRef.current = handle
+    }
+    corner.setAttribute('data-fill-corner', '')
+    if (handleRef.current.parentElement !== corner) corner.appendChild(handleRef.current)
+  }
+  /** The dashed outline of the cells a running fill drag covers, on the mounted cells: their outer edges. */
+  const paintFillTarget = (): void => {
+    const wrap = wrapRef.current
+    if (wrap === null) return
+    for (const td of wrap.querySelectorAll('td[data-fill-target]')) td.removeAttribute('data-fill-target')
+    const fill = fillRef.current
+    if (fill === null || fill.count === 0) return
+    const [top, left, bottom, right] = [fill.rows[0], fill.cols[0], fill.rows.at(-1)!, fill.cols.at(-1)!]
+    const last = fill.axis === 'down' ? Math.min(bottom + fill.count, flat.length - 1) : bottom
+    const end = fill.axis === 'right' ? Math.min(right + fill.count, keys.length - 1) : right
+    for (const td of wrap.querySelectorAll<HTMLElement>('tbody td[data-cell]')) {
+      const [r, c] = td.dataset.cell!.split(':').map(Number)
+      if (r < top || r > last || c < left || c > end) continue
+      const edges = [r === top && 'top', r === last && 'bottom', c === left && 'left', c === end && 'right'].filter(Boolean).join(' ')
+      td.setAttribute('data-fill-target', edges)
+    }
+  }
+  useLayoutEffect(() => {
+    placeHandle()
+    if (fillRef.current !== null) paintFillTarget()
+  })
+  /** A cell's source text for `fillSeries`: a note value as written (an ISO date, a number), else what the cell shows. */
+  const sourceText = (r: number, c: number): string => {
+    const bare = bares[c]
+    if (bare == null) return cellText(flat[r], c)
+    const raw = flat[r].record.properties[bare]
+    return raw == null ? '' : Array.isArray(raw) ? raw.join(', ') : String(raw)
+  }
+  /** A source cell's own value, for a fill that repeats it: the raw value keeps its type (a list, a boolean). */
+  const sourceValue = (r: number, c: number): unknown => {
+    const bare = bares[c]
+    return bare == null ? cellText(flat[r], c) : flat[r].record.properties[bare] ?? null
+  }
+  /** The value a fill writes in cell `r`:`c`: a repeated source keeps its value, a new one is typed by the cell's kind. */
+  const filledValue = (r: number, c: number, text: string, from: { r: number; c: number }, repeated: boolean): unknown => {
+    if (repeated) return sourceValue(from.r, from.c)
+    const bare = bares[c]
+    return bare == null ? undefined : valueFromText(text, cellEditor(flat[r].record.properties[bare], typings[c]) ?? 'text')
+  }
+  /** The fill on mouseup (D61): it stops at the last shown row and column, and never makes a note. */
+  const runFill = ({ rows: src, cols, axis, count }: NonNullable<typeof fillRef.current>): void => {
+    const cells: { r: number; c: number; value: unknown }[] = []
+    if (axis === 'down') {
+      const n = Math.min(count, flat.length - 1 - src.at(-1)!)
+      for (const c of cols) {
+        const texts = src.map((r) => sourceText(r, c))
+        const kind = typings[c]?.assigned ?? typings[c]?.dominant
+        // A Select or Multi-select column repeats its values, as an option is no series.
+        const series = kind === 'select' || kind === 'multi-select' ? Array.from({ length: n }, (_, i) => texts[i % texts.length]) : fillSeries(texts, n)
+        series.forEach((text, i) => {
+          const r = src.at(-1)! + 1 + i
+          const from = { r: src[i % src.length], c }
+          const value = filledValue(r, c, text, from, text === texts[i % texts.length])
+          if (value !== undefined) cells.push({ r, c, value })
+        })
+      }
+    } else {
+      const n = Math.min(count, keys.length - 1 - cols.at(-1)!)
+      for (const r of src) {
+        const texts = cols.map((c) => sourceText(r, c))
+        fillSeries(texts, n).forEach((text, i) => {
+          const c = cols.at(-1)! + 1 + i
+          const from = { r, c: cols[i % cols.length] }
+          const value = filledValue(r, c, text, from, text === texts[i % texts.length])
+          if (value !== undefined) cells.push({ r, c, value })
+        })
+      }
+    }
+    writeCells(cells, (written) => `Filled ${written} ${written === 1 ? 'cell' : 'cells'}`)
+  }
+  fillStartRef.current = (e: MouseEvent): void => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const area = fillArea()
+    if (area === null) return
+    const [lastRow, lastCol] = [area.rows.at(-1)!, area.cols.at(-1)!]
+    const move = (ev: MouseEvent) => {
+      const over = cellAt(ev.target)
+      if (over === null) return
+      const down = over.r - lastRow
+      const right = over.c - lastCol
+      const next = down >= right ? { axis: 'down' as const, count: Math.max(down, 0) } : { axis: 'right' as const, count: right }
+      if (fillRef.current?.axis === next.axis && fillRef.current.count === next.count) return
+      fillRef.current = { ...area, ...next }
+      paintFillTarget()
+    }
+    const up = (ev: MouseEvent) => {
+      move(ev)
+      document.removeEventListener('mousemove', move)
+      document.removeEventListener('mouseup', up)
+      const fill = fillRef.current
+      fillRef.current = null
+      paintFillTarget()
+      if (fill !== null && fill.count > 0) runFill(fill)
+    }
+    document.addEventListener('mousemove', move)
+    document.addEventListener('mouseup', up)
   }
   /** ⌘V (YAZ-4593): the clipboard's tab-separated text, from the area's top-left cell, each text as a value of its cell's kind. */
   const pasteInto = (area: { rows: number[]; cols: number[] }): void => {
@@ -1035,6 +1184,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           className="view-table"
           style={{ width: gutterWidth + keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px`, '--view-group-indent': `${groupIndentOf(view)}px` } as CSSProperties}
           onKeyDown={onKeyDown}
+          // The fill handle follows the focused cell when there is no selection (D61): placed on the DOM, no render.
+          onFocus={placeHandle}
+          onBlur={placeHandle}
         >
           <thead>
             <tr>
