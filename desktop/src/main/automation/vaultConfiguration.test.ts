@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultAppState } from '@shared/types'
 import { vaultConfiguration } from './vaultConfiguration'
+import { checked } from './contract'
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-vault-config-')); await mkdir(join(root, '.yaseendocs')) })
 afterEach(() => rm(root, { recursive: true, force: true }))
-const run = (command: string, args: Record<string, unknown> = {}) => vaultConfiguration(defaultAppState(), command, { root, ...args })
+const run = (command: string, args: Record<string, unknown> = {}) => checked(command, vaultConfiguration(defaultAppState(), command, { root, ...args }))
 describe('public vault configuration adapters', () => {
   it('patches one New note shortcut against current slots and refuses files or malformed config', async () => {
     const a = join(root, 'A'), b = join(root, 'B'); await mkdir(a); await mkdir(b)

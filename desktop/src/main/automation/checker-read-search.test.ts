@@ -6,6 +6,7 @@ import { defaultAppState } from '@shared/types'
 import { searchRows } from '@shared/searchCandidates'
 import { _evictAll } from '../vaultIndex/live'
 import { resolveTarget, scopedCandidates, search } from './resources'
+import { checked } from './contract'
 
 let root: string
 beforeEach(async () => {
@@ -22,7 +23,7 @@ it('keeps the UI pinned ordering when the same search runs through the CLI', asy
   const state = defaultAppState()
   const { rows } = await scopedCandidates(state, { root })
   const expected = [...new Set(searchRows(rows, 'Match', new Set([join(root, 'z.md')])).map(row => row.path))]
-  const actual = (await search(state, { root, query: 'Match' })).items.map(row => row.path)
+  const actual = (await checked('search.query', search(state, { root, query: 'Match' }))).items.map(row => row.path)
   console.log(JSON.stringify({ expected, actual }))
   expect(actual).toEqual(expected)
 })

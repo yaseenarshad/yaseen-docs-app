@@ -27,7 +27,7 @@ import { BridgeFailure } from './fs/fsUtils'
 import { FrontmatterWriteError } from '@shared/frontmatter'
 import { CommentsShapeError } from '@shared/comments'
 import { AutomationFailure, type AutomationRequest, AUTOMATION_VERSION } from '@shared/automation'
-import { commandDefinition, validateInput } from '@shared/automationCommands'
+import { commandDefinition, validateInput, validateOutput } from '@shared/automationCommands'
 import type { Operation } from '../automation/requests'
 import type { AppState } from '@shared/types'
 import { readSaved, resolveTarget, scopeRoots, search, type ResourceScope, type TargetInput } from './automation/resources'
@@ -145,10 +145,21 @@ function prepare(context: { profile: string; version: string; packaged?: boolean
 }
 
 
+/**
+ * Tests prove each result against the command's declared output (YAZ-4506). A packaged or dev app does not: a landed
+ * write must never report failure over a schema slip, and board reads carry up to 64 MiB of text to walk.
+ */
+const checkOutputs = process.env.VITEST !== undefined
+
 export function prepareAutomation(...args: Parameters<typeof prepare>): Operation {
   const operation = prepare(...args)
+  const command = args[1].command
   return { ...operation, run: async () => {
-    try { return await operation.run() }
+    try {
+      const value = await operation.run()
+      if (checkOutputs) validateOutput(command, value)
+      return value
+    }
     catch (error) {
       if (error instanceof BridgeFailure) throw new AutomationFailure(error.code, error.message)
       if (error instanceof FrontmatterWriteError || error instanceof CommentsShapeError || error instanceof ReviewsShapeError) throw new AutomationFailure('INVALID_INPUT', error.message)

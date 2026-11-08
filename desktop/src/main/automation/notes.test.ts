@@ -6,10 +6,10 @@ import { defaultAppState } from '@shared/types'
 import { noteCommand } from './notes'
 import { documentCommand } from './documents'
 import { linkCommand } from './links'
-import { commandDefinition, validateInput } from '@shared/automationCommands'
 import { readSaved } from './resources'
 import { _actAs, _resetMint } from '../vaultIndex/mint'
 import { _evictAll } from '../vaultIndex/live'
+import { checked } from './contract'
 let root: string
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'docs-cli-notes-'))
@@ -19,7 +19,7 @@ beforeEach(async () => {
 })
 afterEach(async () => { _evictAll(); _resetMint(); await rm(root, { recursive: true, force: true }) })
 const state = () => defaultAppState()
-const run = (command: string, args: Record<string, unknown> = {}, body = '') => noteCommand(state(), command, { root, folder: root, ...args }, Buffer.from(body))
+const run = (command: string, args: Record<string, unknown> = {}, body = '') => checked(command, noteCommand(state(), command, { root, folder: root, ...args }, Buffer.from(body)))
 describe('note capability adapters', () => {
   it('keeps absent templates absent on read and requires a fresh revision to change them', async () => {
     expect(await run('template.read')).toMatchObject({ exists: false, revision: null })
@@ -31,8 +31,8 @@ describe('note capability adapters', () => {
   })
   it('distinguishes an empty note body from an omitted template override', async () => {
     await run('template.write', { revision: null }, 'Template body\n')
-    const empty = await documentCommand(state(), 'note.create', { root, folder: root, title: 'Empty' }, Buffer.alloc(0), true) as { path: string }
-    const normal = await documentCommand(state(), 'note.create', { root, folder: root, title: 'Normal' }, Buffer.alloc(0), false) as { path: string }
+    const empty = await checked('note.create', documentCommand(state(), 'note.create', { root, folder: root, title: 'Empty' }, Buffer.alloc(0), true)) as { path: string }
+    const normal = await checked('note.create', documentCommand(state(), 'note.create', { root, folder: root, title: 'Normal' }, Buffer.alloc(0), false)) as { path: string }
     expect(await readFile(empty.path, 'utf8')).toBe('')
     expect(await readFile(normal.path, 'utf8')).toBe('Template body\n')
   })
@@ -41,8 +41,8 @@ describe('note capability adapters', () => {
     await writeFile(join(root, 'Daily/.template.md'), 'Daily plan\n')
     const app = state(); Object.assign(app.settings, { dailyNotes: true, dailyNoteFolder: 'Daily', dailyNoteFormat: 'YYYY-MM-DD', dailyNoteDayFolder: false })
     const args = { root, date: '2026-11-07' }
-    expect(await noteCommand(app, 'daily.find', args, Buffer.alloc(0))).toEqual({ note: null })
-    const results = await Promise.all([1, 2].map(() => noteCommand(app, 'daily.create', args, Buffer.alloc(0)))) as { note: { path: string; created: boolean } }[]
+    expect(await checked('daily.find', noteCommand(app, 'daily.find', args, Buffer.alloc(0)))).toEqual({ note: null })
+    const results = await Promise.all([1, 2].map(() => checked('daily.create', noteCommand(app, 'daily.create', args, Buffer.alloc(0))))) as { note: { path: string; created: boolean } }[]
     expect(results.filter(result => result.note.created)).toHaveLength(1)
     expect(new Set(results.map(result => result.note.path)).size).toBe(1)
     expect(await readFile(results[0].note.path, 'utf8')).toBe('Daily plan\n')
@@ -51,11 +51,11 @@ describe('note capability adapters', () => {
   it('uses review log helpers and refuses to clobber an intervening edit', async () => {
     const path = join(root, 'Review.md'); await writeFile(path, 'Body\n')
     const before = await readSaved(path)
-    await documentCommand(state(), 'review.keep', { root, path, revision: before.revision }, Buffer.alloc(0))
-    const list = await documentCommand(state(), 'review.list', { root, path }, Buffer.alloc(0)) as { revision: string; items: { at: string; rating: string }[] }
+    await checked('review.keep', documentCommand(state(), 'review.keep', { root, path, revision: before.revision }, Buffer.alloc(0)))
+    const list = await checked('review.list', documentCommand(state(), 'review.list', { root, path }, Buffer.alloc(0))) as { revision: string; items: { at: string; rating: string }[] }
     expect(list.items).toMatchObject([{ rating: 'keep' }])
-    await expect(documentCommand(state(), 'review.reset', { root, path, revision: before.revision }, Buffer.alloc(0))).rejects.toMatchObject({ code: 'CONFLICT' })
-    await documentCommand(state(), 'review.remove', { root, path, revision: list.revision, at: list.items[0].at }, Buffer.alloc(0))
+    await expect(checked('review.reset', documentCommand(state(), 'review.reset', { root, path, revision: before.revision }, Buffer.alloc(0)))).rejects.toMatchObject({ code: 'CONFLICT' })
+    await checked('review.remove', documentCommand(state(), 'review.remove', { root, path, revision: list.revision, at: list.items[0].at }, Buffer.alloc(0)))
     expect(await readFile(path, 'utf8')).not.toContain('reviews:')
   })
   it('uses the shared alias and folder resolver without writing IDs', async () => {
@@ -63,9 +63,9 @@ describe('note capability adapters', () => {
     await mkdir(join(root, 'Mochi'))
     await writeFile(source, '[[Alias]] and [[Mochi]] and [[Missing]]\n')
     await writeFile(target, '---\naliases: [Alias]\n---\nTarget\n')
-    expect(await linkCommand(state(), 'link.resolve', { root, target: '[[Alias]]' })).toMatchObject({ path: target })
-    expect(await linkCommand(state(), 'link.outgoing', { root, path: source })).toMatchObject({ items: [{ target: 'Alias', path: target }, { target: 'Mochi', path: join(root, 'Mochi') }, { target: 'Missing', path: null }] })
-    expect(await linkCommand(state(), 'link.incoming', { root, path: target })).toMatchObject({ items: [{ path: source }] })
+    expect(await checked('link.resolve', linkCommand(state(), 'link.resolve', { root, target: '[[Alias]]' }))).toMatchObject({ path: target })
+    expect(await checked('link.outgoing', linkCommand(state(), 'link.outgoing', { root, path: source }))).toMatchObject({ items: [{ target: 'Alias', path: target }, { target: 'Mochi', path: join(root, 'Mochi') }, { target: 'Missing', path: null }] })
+    expect(await checked('link.incoming', linkCommand(state(), 'link.incoming', { root, path: target }))).toMatchObject({ items: [{ path: source }] })
     expect(await readFile(target, 'utf8')).not.toContain('id:')
   })
   it('returns the UI’s Linked mentions, including folder outlines, view order and column targets', async () => {
@@ -81,18 +81,16 @@ describe('note capability adapters', () => {
     await settings('Columned', '  columns:\n    owner:\n      type: link\n      target: "[[Target]]"\n')
     await settings('Coded', '  views:\n    - type: outline\n      name: Plan\n      outline: "- `[[Target]]`"\n')
     await settings('Self', '  views:\n    - type: outline\n      name: Plan\n      outline: "- [[Self]]"\n')
-    const incoming = await linkCommand(state(), 'link.incoming', { root, path: target }) as { items: unknown[]; total: number }
+    const incoming = await checked('link.incoming', linkCommand(state(), 'link.incoming', { root, path: target })) as { items: unknown[]; total: number }
     expect(incoming.items).toEqual([
       { kind: 'folder', path: join(root, 'Columned'), settings: join(root, 'Columned/.folder.md'), title: expect.any(String) },
       { kind: 'note', path: note, title: 'Note' },
       { kind: 'folder', path: join(root, 'Ordered'), settings: join(root, 'Ordered/.folder.md'), title: expect.any(String) },
       { kind: 'folder', path: join(root, 'Outlined'), settings: join(root, 'Outlined/.folder.md'), title: expect.any(String) },
     ])
-    validateInput(commandDefinition('link.incoming').output, incoming)
-    expect(await linkCommand(state(), 'link.incoming', { root, path: join(root, 'Self') })).toMatchObject({ items: [], total: 0 })
-    const outgoing = await linkCommand(state(), 'link.outgoing', { root, path: join(root, 'Outlined') })
-    validateInput(commandDefinition('link.outgoing').output, outgoing)
+    expect(await checked('link.incoming', linkCommand(state(), 'link.incoming', { root, path: join(root, 'Self') }))).toMatchObject({ items: [], total: 0 })
+    const outgoing = await checked('link.outgoing', linkCommand(state(), 'link.outgoing', { root, path: join(root, 'Outlined') }))
     expect(outgoing).toMatchObject({ items: [{ target: 'Target', path: target, embedded: false }] })
-    expect(await linkCommand(state(), 'link.outgoing', { root, path: join(root, 'Ordered') })).toMatchObject({ items: [{ target: 'Target', path: target }] })
+    expect(await checked('link.outgoing', linkCommand(state(), 'link.outgoing', { root, path: join(root, 'Ordered') }))).toMatchObject({ items: [{ target: 'Target', path: target }] })
   })
 })

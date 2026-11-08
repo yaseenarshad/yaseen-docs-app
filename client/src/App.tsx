@@ -29,7 +29,7 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
 import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
-import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type StepOutcome } from './lib/moveHistory'
+import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type StepOutcome, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
 import { dropIndex } from './lib/dragSlot'
@@ -1925,7 +1925,11 @@ export function App() {
     }
     return { ...app.inspect(), acknowledged: true }
   }, target => {
-    if (target.kind === 'history') return { ...moveHistory.current.inspect(), source: 'live', window: storage.getWindowId() }
+    if (target.kind === 'history') {
+      // A move gesture carries no `step` of its own; the public history names it, as `file undo` does.
+      const { undo, redo } = moveHistory.current.inspect(), named = (entry: UndoStep) => isMoveStep(entry) ? { step: 'move', ...entry } : entry
+      return { undo: undo.map(named), redo: redo.map(named), source: 'live', window: storage.getWindowId() }
+    }
     if (target.kind === 'document') {
       if (!now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
       return readLiveDocument(target.tab)

@@ -6,11 +6,12 @@ import { defaultAppState, MAX_FILE_BYTES } from '@shared/types'
 import { assetCommand } from './assets'
 import type { LiveEdits } from './liveEdits'
 import { readAssetFile, writeAsset } from '../fs/assets'
+import { checked } from './contract'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-cli-assets-')) })
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
-const run = (command: string, path: string, extra: Record<string, unknown> = {}, body = Buffer.alloc(0), liveEdits?: LiveEdits) => assetCommand(defaultAppState(), command, { root, path, ...extra }, body, liveEdits)
+const run = (command: string, path: string, extra: Record<string, unknown> = {}, body = Buffer.alloc(0), liveEdits?: LiveEdits) => checked(command, assetCommand(defaultAppState(), command, { root, path, ...extra }, body, liveEdits))
 
 it('creates binary assets exclusively, reads exact special-character paths, and exports byte-for-byte', async () => {
   const path = join(root, 'assets/Picture#1.png'), bytes = Buffer.from([0, 255, 42, 128])

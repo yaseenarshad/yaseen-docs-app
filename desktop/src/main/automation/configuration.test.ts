@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { createStore } from '../store'
 import { configurationCommand } from './configuration'
 import { _resetMint, _actAs } from '../vaultIndex/mint'
+import { checked } from './contract'
 
 let base: string, root: string, other: string, store: ReturnType<typeof createStore>
 beforeEach(async () => {
@@ -15,7 +16,7 @@ beforeEach(async () => {
   _actAs(root, join(base, 'profile')); _actAs(other, join(base, 'profile'))
 })
 afterEach(async () => { await store.flush(); _resetMint(); await rm(base, { recursive: true, force: true }) })
-const run = (command: string, args: Record<string, unknown>) => configurationCommand(store, command, args)
+const run = (command: string, args: Record<string, unknown>) => checked(command, configurationCommand(store, command, args))
 
 describe('configuration commands', () => {
   it('patches vault names and unique number keys and persists picture-folder changes', async () => {

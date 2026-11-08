@@ -9,6 +9,7 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 | App capability | Public command families | Shared behavior and limits |
 | --- | --- | --- |
 | Connection, readiness, receipts | `app status`, `request status`, `capabilities` | Same-user local connection; bounded queue and receipts; timeout does not cancel. |
+| Command discovery and result schemas | `capabilities --json`, `<resource> <action> --help` | Every command declares its input and output fields, enums and nulls. An open object appears only for content with open keys (frontmatter, stored view options, settings groups), and says so. Tests check each result against its declared output. |
 | Saved workspaces | `workspace list/create/update/rename/remove` | Existing workspace IDs, exact roots, durable store. |
 | Open a workspace, vault, page, collection, group, or folder view | `navigation open` | Exact window or most-recent exact-root reuse; explicit partial opening; renderer acknowledgement. |
 | Reusable navigation link | `navigation link` | Navigation only; machine-local roots; no live window or tab IDs. |

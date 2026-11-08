@@ -10,6 +10,7 @@ import { removeVault, vaultFiles } from '../fs/testFixture'
 import { _evictAll } from '../vaultIndex/live'
 import { folderCommand } from './folders'
 import { readSaved } from './resources'
+import { checked } from './contract'
 
 let root: string, dir: string, state: AppState, saved: string[]
 const store = { get: () => state, setBaseGroups: (r: string, key: string, groups: readonly string[]) => {
@@ -18,7 +19,7 @@ const store = { get: () => state, setBaseGroups: (r: string, key: string, groups
   state = { ...state, folders: { ...state.folders, [r]: { ...state.folders[r], baseGroups } } }
 } }
 const record = async (_roots: readonly string[], path: string) => { saved.push(path) }
-const run = (command: string, args: Record<string, unknown> = {}) => folderCommand(state, store, command, { root, path: dir, ...args }, record) as Promise<any>
+const run = (command: string, args: Record<string, unknown> = {}) => checked(command, folderCommand(state, store, command, { root, path: dir, ...args }, record)) as Promise<any>
 const settingsOf = async () => parseFrontmatter(splitFrontmatter(await readFile(join(dir, '.folder.md'), 'utf8')).frontmatter).properties.folder_settings as any
 
 beforeEach(async () => {

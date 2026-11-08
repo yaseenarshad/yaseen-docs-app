@@ -8,10 +8,11 @@ import { isAutomationCommand } from '../../cli/automation'
 import { removeVault } from '../fs/testFixture'
 import { _evictAll, changeLettersPass, giveOldIdsNumbersPass } from '../vaultIndex'
 import { idsCommand } from './ids'
+import { checked } from './contract'
 
 let root: string
 const changes = { reletter: (r: string, letters: string) => changeLettersPass(r, letters), backfill: (r: string) => giveOldIdsNumbersPass(r) }
-const run = (command: string, args: Record<string, unknown> = {}) => idsCommand(defaultAppState(), changes, command, { root, ...args }) as Promise<any>
+const run = (command: string, args: Record<string, unknown> = {}) => checked(command, idsCommand(defaultAppState(), changes, command, { root, ...args })) as Promise<any>
 const config = async () => JSON.parse(await readFile(join(root, '.yaseendocs/ids.json'), 'utf8'))
 
 beforeEach(async () => {

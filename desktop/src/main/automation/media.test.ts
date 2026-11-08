@@ -7,6 +7,7 @@ import { createComponentStore } from '../library/componentStore'
 import { createMediaStore } from '../library/mediaStore'
 import { mediaCommand } from './media'
 import type { AutomationServices } from './services'
+import { checked } from './contract'
 
 let root: string, services: AutomationServices
 const item = { itemKey: 'pixabay:1', provider: 'pixabay', providerId: '1', kind: 'photo', title: 'Tree' }
@@ -18,15 +19,15 @@ beforeEach(async () => {
     media: createMediaStore(root, { macId: async () => 'aaaaaaaaaaaa' }),
     copies: { remove: vi.fn(async () => {}) },
     studio: { providers: {
-      search: vi.fn(async () => ({ items: [item], cursor: null })),
+      search: vi.fn(async () => ({ items: [item], nextCursor: null, pixabayAvailable: true, warnings: [] })),
       import: vi.fn(async () => ({ item, mimeType: 'image/png', dataURL: 'data:image/png;base64,AP+A' })),
-    }, packs: { stop: vi.fn(async () => ({ state: 'stopped' })) } },
+    }, packs: { stop: vi.fn(async () => ({ state: 'partial', folder: '/packs', version: null, packs: 1, total: 2, bytes: 1, totalBytes: 2, checkedAt: null, message: 'Stopped.', failed: false })) } },
   } as unknown as AutomationServices
 })
 afterEach(async () => { await services.components.close(); await services.media.close(); await rm(root, { recursive: true, force: true }) })
 const run = (command: string, args: Record<string, unknown> = {}, body = '') => {
   validateInput(commandDefinition(command).input, args)
-  return mediaCommand(services, command, args, Buffer.from(body))
+  return checked(command, mediaCommand(services, command, args, Buffer.from(body)))
 }
 it('saves, renames, exports and removes a component through the app store', async () => {
   expect(await run('component.save', { name: 'Mochi card' }, JSON.stringify({ fragmentJson, previewPng: 'data:image/png;base64,iVBORw0KGgo=' }))).toMatchObject({ component: { slug: 'mochi-card' }, diskSaved: true })
