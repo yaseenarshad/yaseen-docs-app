@@ -138,7 +138,7 @@ export async function search(state: AppState, input: ResourceScope & { query: st
     }
     return []
   }))
-  const matched = input.query.trim() === '' ? [] : searchRows(rows, input.query, first, rows.length)
+  const matched = searchRows(rows, input.query, first, rows.length)
   const byPath = new Map<string, SearchCandidate>()
   for (const row of matched) if (!byPath.has(row.path)) byPath.set(row.path, row)
   const uniqueRows = [...byPath.values()]
