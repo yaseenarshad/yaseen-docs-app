@@ -3,6 +3,7 @@ import type { FolderPagesSettings, IndexRecord, PropertiesResponse } from '@shar
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { defaultLabel, propertyLabel } from '../engine'
 import { undeletableReason } from '../deleteColumn'
+import type { ColumnTyping } from '../editorType'
 import type { ColumnDecl } from '../folderSettings'
 import { type Mutate, type ViewDef, type ViewSet, MAX_GROUP_LEVELS } from '../viewSchema'
 import { useViewDefaults } from '../viewDefaults'
@@ -32,6 +33,8 @@ export interface TableHeaderMenuProps {
   reserved: ReadonlySet<string>
   /** The folder's rows: the type line infers an undeclared column's kind from them (YAZ-4533). */
   records: readonly IndexRecord[]
+  /** The kind the table's cells wrap by (`wrapKind`), so the Text › ✓ and the cells read ONE source (YAZ-4544 4E). */
+  wrapKind: string | null | undefined
   /** The vault's property declarations, the type line's and the editor's fallback. */
   properties: PropertiesResponse | null
   /** The host's AHEAD declarations — spread under a new one — and the doors "Edit column…" writes through (YAZ-4533). */
@@ -52,6 +55,9 @@ export function insertAfter(keys: readonly string[], after: string, next: string
 
 /** The kinds whose cells are chips (YAZ-4582 D29): what wrapped on `main`, so with no choice they wrap and the rest clip. */
 const CHIP_KINDS: ReadonlySet<string> = new Set(['list', 'link', 'multi-link', 'select', 'multi-select'])
+
+/** The kind a column wraps by (YAZ-4544 4E): its typing over the table's shown rows — the cells' and the menu's one source. */
+export const wrapKind = (typing: ColumnTyping): string | null | undefined => typing?.assigned ?? typing?.dominant
 
 /**
  * Does the column wrap (YAZ-4582 D29)? `columnWrap` under its key, in any spelling: `true` Wrap, `false` Clip.
@@ -80,7 +86,7 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
  * `columnWrap[<canonical key>]` (`true` Wrap, `false` Clip); the choice its kind (or Settings › Folder pages, YAZ-4585) makes anyway deletes the
  * entry in any spelling, and an empty map.
  */
-export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, reserved, records, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
+export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, reserved, records, wrapKind, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
   const flyout = useFlyout<'sort' | 'group' | 'text'>()
   const { textInCells } = useViewDefaults()
@@ -143,11 +149,11 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
   const levelKeys = levels.map((l) => canonicalKey(l.property))
   /** This column's level; Folder may be two, and "Remove" takes the deeper (YAZ-2541). */
   const ownLevel = levelKeys.lastIndexOf(c)
-  const wrapped = wrapsColumn(def.views[viewIndex], key, kind, textInCells)
+  const wrapped = wrapsColumn(def.views[viewIndex], key, wrapKind, textInCells)
   const setWrap = (wrap: boolean) =>
     write((v) => {
       const next = Object.fromEntries(Object.entries(v.columnWrap ?? {}).filter(([k]) => canonicalKey(k) !== c))
-      if (wrap !== wrapsColumn({ ...v, columnWrap: undefined }, key, kind, textInCells)) next[c] = wrap
+      if (wrap !== wrapsColumn({ ...v, columnWrap: undefined }, key, wrapKind, textInCells)) next[c] = wrap
       if (Object.keys(next).length) v.columnWrap = next
       else delete v.columnWrap
     })

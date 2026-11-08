@@ -139,6 +139,23 @@ describe('"Wrap text" and "Clip text" in the column header menu (YAZ-4582, D29)'
   })
 })
 
+describe('the ✓ and the cells read the kind from ONE source (YAZ-4544 4E)', () => {
+  it('a column that is a list in the shown rows and text in the hidden ones: the menu ✓ and the cells agree', () => {
+    const records = [rec('A', { mixed: ['x', 'y'], status: 'keep' }), rec('B', { mixed: 't', status: 'drop' }), rec('C', { mixed: 'u', status: 'drop' })]
+    const { el } = mount(`views:
+  - type: table
+    name: T
+    order:
+      - file.name
+      - note.mixed
+    filters: status == "keep"
+`, { records })
+    expect(column(el, 1)).toHaveLength(1)
+    const clipped = column(el, 1).some((td) => td.classList.contains(CLIP))
+    expect(textMenu(th(el, 1))).toEqual(clipped ? ['Wrap text', '✓ Clip text'] : ['✓ Wrap text', 'Clip text'])
+  })
+})
+
 describe('the cells of a Wrap or a Clip column (YAZ-4582)', () => {
   it('with no choice: the chip column wraps, with no clip class and no title; the text column clips, its full value in title', () => {
     const { el } = mount(table())

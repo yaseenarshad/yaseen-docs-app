@@ -29,7 +29,7 @@ import { cellFillOf, fillIndex, fillPaint, setViewFill, setViewFills } from './f
 import { SelectionMenu } from './SelectionMenu'
 import { type Pick, type TableSelection, cellRange, indicesOf, inSelection, parseTsv, pickLine, toTsv, valueFromText } from './tableSelection'
 import type { PropertyWrite } from '../writeProperty'
-import { TableHeaderMenu, wrapsColumn } from './TableHeaderMenu'
+import { TableHeaderMenu, wrapKind, wrapsColumn } from './TableHeaderMenu'
 import { useViewDefaults } from '../viewDefaults'
 import { orderOf } from './DirectionPicker'
 import { TextField } from './TextField'
@@ -418,7 +418,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // Wrap or Clip per column (YAZ-4582 D29): a Wrap column's row grows, a Clip column is one line. With no choice, a
   // chip column wraps and the rest clip, as on `main`. A windowed table clips every cell, so each line is exactly the
   // row height its spacer maths counts.
-  const clipped = keys.map((key, c) => windowed || !wrapsColumn(view, key, typings[c]?.assigned ?? typings[c]?.dominant, textInCells))
+  const clipped = keys.map((key, c) => windowed || !wrapsColumn(view, key, wrapKind(typings[c]), textInCells))
   const viewH = wrapRef.current?.clientHeight || FALLBACK_VIEWPORT
   const first = windowed ? Math.max(pinned, Math.min(lines.length - 1, Math.floor(scrollTop / rowH) - OVERSCAN)) : pinned
   const count = windowed ? Math.min(lines.length - first, Math.ceil(viewH / rowH) + 2 * OVERSCAN) : lines.length - first
@@ -1150,6 +1150,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             takenKeys={() => allPropertyKeys(def, view, records, settings.columns)}
             reserved={reservedKeys}
             records={records}
+            wrapKind={headerMenu.key === null ? null : wrapKind(typings[keys.indexOf(headerMenu.key)])}
             properties={properties}
             folder={{ settings, setColumn, deleteColumn, valueCount }}
             onUpdate={onUpdate}
