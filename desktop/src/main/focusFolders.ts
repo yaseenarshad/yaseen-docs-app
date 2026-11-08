@@ -90,7 +90,7 @@ async function save(root: string, scope: ListScope, kind: FolderKind, folders: F
  * name, so each becomes the new name, with a new `at` so the healed folders win over the other vaults' copies, and
  * the healed file is written.
  */
-export async function getFocusFolders(root: string, scope: ListScope, kind: FolderKind = 'focus'): Promise<FocusFolder[]> {
+export async function getFocusFolders(root: string, scope: ListScope, kind: FolderKind = 'focus', options: { readOnly?: boolean } = {}): Promise<FocusFolder[]> {
   const r = requireAbsPath(root, 'root')
   const held = await readNewest(r, scope, kind)
   if (held === null) return []
@@ -99,7 +99,8 @@ export async function getFocusFolders(root: string, scope: ListScope, kind: Fold
   const was = held.self
   const now = Date.now()
   const healed = held.folders.map((f) => (f.items.some((i) => i.vault === was) ? { ...f, items: f.items.map((i) => (i.vault === was ? { ...i, vault: name } : i)), at: now } : f))
-  await chained(r, async () => save(r, scope, kind, healed, await readNewest(r, scope, kind)))
+  // A CLI read (YAZ-4502) heals in memory only: a navigation that is refused writes nothing.
+  if (!options.readOnly) await chained(r, async () => save(r, scope, kind, healed, await readNewest(r, scope, kind)))
   return healed
 }
 
