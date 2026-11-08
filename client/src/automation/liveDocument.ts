@@ -1,4 +1,4 @@
-import type { BoardExportOperation, BoardImage, BoardImageData, EditorAction, EditorOperation } from '@shared/automationEditor'
+import type { BoardExportOperation, BoardImage, EditorAction, EditorOperation } from '@shared/automationEditor'
 import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
 
 export interface LiveDocument {
@@ -10,8 +10,8 @@ export interface LiveDocument {
   selection?: { anchor: number; head: number; text: string; coordinate: 'prosemirror' | 'utf16' }
 }
 interface EditorControl { version(): string | number; run(action: EditorAction): void | Promise<void>; readonly actions: EditorAction['action'][] }
-/** A board's export (YAZ-4515): the bytes its GUI export makes, with no sheet. */
-type BoardExporter = (target: BoardExportOperation) => Promise<BoardImageData>
+/** A board's export (YAZ-4515): the bytes its GUI export makes, with no sheet, and the board's path and unsaved state. */
+interface BoardExporter { kind: 'drawing' | 'diagram'; run(target: BoardExportOperation): Promise<BoardImage> }
 interface Registration { id: number; read(): LiveDocument; control?: EditorControl; exportImage?: BoardExporter }
 const readers = new WeakMap<Element, Registration>()
 let nextId = 0
@@ -62,9 +62,9 @@ export async function runEditorAction(target: EditorOperation) {
 
 /** A live board's GUI export as bytes (YAZ-4515). Main writes the file; this never opens a sheet or touches the board file. */
 export async function exportLiveImage(target: BoardExportOperation): Promise<BoardImage> {
-  const entry = registration(target.tab), { path, kind, dirty } = entry.read()
-  if (!entry.exportImage || kind !== target.kind) throw new AutomationFailure('UNSUPPORTED_ACTION', `This tab is not a live ${target.kind}.`)
-  const image = await entry.exportImage(target)
+  const exporter = registration(target.tab).exportImage
+  if (exporter?.kind !== target.kind) throw new AutomationFailure('UNSUPPORTED_ACTION', `This tab is not a live ${target.kind}.`)
+  const image = await exporter.run(target)
   if ((image.format === 'pdf' ? image.svg.length * 2 : image.data.byteLength) > AUTOMATION_LIMITS.contentBytes) throw new AutomationFailure('TOO_LARGE', 'This export exceeds the connection limit. Choose a smaller scale or a selection.')
-  return { ...image, path, dirty }
+  return image
 }

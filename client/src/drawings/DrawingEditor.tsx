@@ -410,12 +410,12 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
         if (name === null) throw new AutomationFailure('UNSUPPORTED_ACTION', 'A drawing does not support this action.')
         if (!s.runAction(name)) throw new AutomationFailure('NOT_APPLICABLE', 'This action does not apply to the current selection.')
       },
-    }, async ({ format, options }) => {
+    }, { kind: 'drawing', run: async ({ format, options }) => {
       const s = surface.current
       if (s === null || board.retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The drawing is not ready.')
-      try { return await s.exportImage(format, options) }
+      try { return { ...await s.exportImage(format, options), path, dirty: autosave.current?.dirty === true } }
       catch (error) { throw new AutomationFailure('EXPORT_FAILED', error instanceof Error ? error.message : 'The drawing could not be exported.') }
-    })
+    } })
   }, [path, board.hostRef, board.retired, autosave])
 
   // The hover preview: the app's "Links in drawings" AND this board's own switch (YAZ-3943 demo 2); clicks stay.
