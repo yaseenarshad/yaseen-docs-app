@@ -280,7 +280,7 @@ describe('the view tab right-click (YAZ-4585, D41)', () => {
   it('the menu is Rename, Duplicate, Open on this view, View settings…, Delete', () => {
     const { el } = mount(TWO)
     rightClick(tab(el, 'Second'))
-    expect([...document.querySelectorAll('.ctx-menu [role^="menuitem"]')].map((b) => b.textContent)).toEqual(['Rename', 'Duplicate', 'Open on this view', 'View settings…', 'Delete'])
+    expect([...document.querySelectorAll('.ctx-menu [role^="menuitem"]')].map((b) => b.textContent)).toEqual(['Rename', 'Duplicate', 'Open on this view', 'View settings…', 'Export as CSV…', 'Copy as table', 'Delete'])
   })
 
   it('"Open on this view" writes defaultView, shows ✓, and clears it; the page opens on it', () => {

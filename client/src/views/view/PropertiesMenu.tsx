@@ -14,7 +14,7 @@ import { DragHandleIcon, FileFieldIcon, FormulaIcon } from './icons'
 import { markerStyleOf } from './ListView'
 import { allPropertyKeys } from './properties'
 import { TextField } from './TextField'
-import { frozenColumnCount } from './frozenColumns'
+import { UNFROZE_COLUMNS, frozenColumnCount } from './frozenColumns'
 import { cardWidth } from './cardWidth'
 import { CalendarShowBy } from './CalendarView'
 import { hideWeekendsDefault, hidesWeekends } from '../calendar'
@@ -74,8 +74,10 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
 
   const openDetail = (key: string) => setDetail(key)
   /** ONE order write, `frozenColumns` following positionally — the shared rule (`columnOrder.ts`). */
-  const writeOrder = (order: string[]) => onUpdate((d) => setViewOrder(d, viewIndex, order))
-  const toggle = (key: string) => writeOrder(isShown(key) ? shown.filter((k) => canonicalKey(k) !== canonicalKey(key)) : [...shown, key])
+  const writeOrder = (order: string[], undo?: string) => onUpdate((d) => setViewOrder(d, viewIndex, order), undo)
+  // A hide offers Undo (YAZ-4594 S29); a show does not.
+  const toggle = (key: string) =>
+    isShown(key) ? writeOrder(shown.filter((k) => canonicalKey(k) !== canonicalKey(key)), `Hid ${propertyLabel(def, key)}`) : writeOrder([...shown, key])
   /** The slot a pointer at `clientY` over shown row `i` means: before (i) or after (i+1) it. */
   const insertionAt = (e: DragEvent<HTMLElement>, i: number): number => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -259,7 +261,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
                   const count = Number(e.target.value)
                   if (count === 0) delete d.views[viewIndex].frozenColumns
                   else d.views[viewIndex].frozenColumns = count
-                })
+                }, Number(e.target.value) === 0 ? UNFROZE_COLUMNS : undefined)
               }
             >
               <option value={0}>None</option>

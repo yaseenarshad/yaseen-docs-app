@@ -32,6 +32,8 @@ export interface ViewTabsProps {
   onSetDefault?: (index: number) => void
   /** "View settings…" (YAZ-4585, D34): opens the view's Properties menu. Absent = no item. */
   onSettings?: (index: number) => void
+  /** "Export as CSV…" / "Copy as table" (YAZ-4594 S30): the view's shown rows and columns as text. Absent = no items. */
+  onExport?: (index: number, as: 'csv' | 'copy') => void
 }
 
 /** In-flight drag: the grabbed tab + the hovered insertion slot (0…views.length). */
@@ -44,10 +46,11 @@ interface DragState {
  * View switcher (GRO-2135), editable again since YAZ-1471 re-ruled 🔒 rule 4 (YAZ-819): tabs
  * reorder by HTML5 drag — the insertion-slot arithmetic is TabBar's, now SHARED with it as
  * `lib/dragSlot` so the two strips cannot drift apart, with `dataTransfer` guarded for jsdom —
- * right-click opens Rename / Duplicate / ✓ Open on this view / View settings… / Delete (YAZ-4585, D41), "+" picks a
+ * right-click opens Rename / Duplicate / ✓ Open on this view / View settings… / Export as CSV… / Copy as table / Delete
+ * (YAZ-4585 D41, YAZ-4594 S30), "+" picks a
  * type. Every change is ONE `update` in ViewsPane; which view is active stays session state.
  */
-export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onDuplicate, onDelete, defaultView, onSetDefault, onSettings }: ViewTabsProps) {
+export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onDuplicate, onDelete, defaultView, onSetDefault, onSettings, onExport }: ViewTabsProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; i: number } | null>(null)
   const [renaming, setRenaming] = useState<number | null>(null)
@@ -225,6 +228,23 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
               View settings…
             </button>
           )}
+          {onExport !== undefined &&
+            ([['csv', 'Export as CSV…'], ['copy', 'Copy as table']] as const).map(([as, label]) => (
+              <button
+                key={as}
+                type="button"
+                role="menuitem"
+                className="ctx-menu__item"
+                // The Page is a document: it has no rows to export (YAZ-4594 S30).
+                disabled={menuView.type === PAGE_VIEW_TYPE}
+                onClick={() => {
+                  onExport(menu.i, as)
+                  setMenu(null)
+                }}
+              >
+                {label}
+              </button>
+            ))}
           <button
             type="button"
             role="menuitem"

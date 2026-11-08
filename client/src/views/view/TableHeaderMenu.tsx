@@ -11,7 +11,7 @@ import { AddColumn } from './AddColumn'
 import { ColumnDetail, columnKind, columnTypeLabel } from './ColumnDetail'
 import { displayNameOf, setDisplayName } from './columnLabel'
 import { setViewOrder, withOrder } from './columnOrder'
-import { frozenColumnCount } from './frozenColumns'
+import { UNFROZE_COLUMNS, frozenColumnCount } from './frozenColumns'
 import { groupAppend, groupLevels, groupOnly, groupRemoveLevel } from './groupLevels'
 import { FlyoutItem, FlyoutParent, useFlyout } from './HeaderFlyout'
 import { canonicalKey } from './keys'
@@ -115,12 +115,13 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
   const label = propertyLabel(def, key)
   const reason = undeletableReason(key)
   const c = canonicalKey(key)
-  const hide = () => onUpdate((d) => setViewOrder(d, viewIndex, keys.filter((k) => canonicalKey(k) !== c)))
+  // A hide, an unfreeze and a level removed each offer Undo (YAZ-4594 S29).
+  const hide = () => onUpdate((d) => setViewOrder(d, viewIndex, keys.filter((k) => canonicalKey(k) !== c)), `Hid ${label}`)
   const index = keys.findIndex((k) => canonicalKey(k) === c)
   const frozen = frozenColumnCount(def.views[viewIndex].frozenColumns, keys.length)
-  /** One write, then the menu closes. */
-  const write = (edit: (v: ViewDef) => void) => () => {
-    onUpdate((d) => edit(d.views[viewIndex]))
+  /** One write, then the menu closes; `undo`, the toast of a gesture that takes something away (S29). */
+  const write = (edit: (v: ViewDef) => void, undo?: string) => () => {
+    onUpdate((d) => edit(d.views[viewIndex]), undo)
     onClose()
   }
   /**
@@ -276,7 +277,7 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
                 )}
                 {ownLevel !== -1 && (
                   <div className="ctx-menu__group" role="group">
-                    <FlyoutItem label="Remove this group level" onSelect={write((v) => groupRemoveLevel(v, ownLevel))} />
+                    <FlyoutItem label="Remove this group level" onSelect={write((v) => groupRemoveLevel(v, ownLevel), `Removed group level ${label}`)} />
                   </div>
                 )}
               </FlyoutParent>
@@ -295,7 +296,7 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
                 onClick={write((v) => {
                   if (frozenHere) delete v.frozenColumns
                   else v.frozenColumns = index + 1
-                })}
+                }, frozenHere ? UNFROZE_COLUMNS : undefined)}
               >
                 {frozenHere ? '✓ Frozen up to this column' : 'Freeze up to this column'}
               </button>
@@ -306,7 +307,7 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
                 disabled={frozen === 0}
                 onClick={write((v) => {
                   delete v.frozenColumns
-                })}
+                }, UNFROZE_COLUMNS)}
               >
                 Unfreeze columns
               </button>

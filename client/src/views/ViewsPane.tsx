@@ -34,6 +34,8 @@ import { directlyIn, isFolderRow, rowPage, rowsByFolder } from '../links/shortcu
 import { onPageTabAsk, takePageTab } from './pageTabRequest'
 import { pageViewIndex } from './pageView'
 import { ViewDefaults, chooseOwn, withDefaults } from './viewDefaults'
+import { csvName, downloadText, shownRows, toCsv, toTsv, viewTable } from './exportView'
+import { copyText } from '../editor/linkMenu'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -300,7 +302,33 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // Re-parse after every edit: `doc.setIn` stores plain JS values, so a second edit inside a
   // collection a previous edit created would throw ("Expected YAML collection"). The round trip
   // through text keeps comments and rebuilds proper nodes.
-  const update = (mutate: (def: ViewSet) => void) => onChange(parseViews(serializeViews(updateViews(parsed, mutate))))
+  // An Undo runs after later renders (YAZ-4594 S29): it writes through the def and the door that are current then.
+  const latest = useRef({ parsed, onChange })
+  latest.current = { parsed, onChange }
+  const write = (mutate: (def: ViewSet) => void): ViewSet => {
+    const now = latest.current
+    const next = parseViews(serializeViews(updateViews(now.parsed, mutate)))
+    now.onChange(next)
+    return next.def
+  }
+  /**
+   * A gesture that takes something away says so with `undo` (S29): a toast with Undo (`fades`, the S6 pattern), which
+   * puts back the whole def as it stood before — ONE settings write — then runs `after`. A gesture that changed
+   * nothing (No fill on a cell with none) says nothing.
+   */
+  const update = (mutate: (def: ViewSet) => void, undo?: string, after?: () => void) => {
+    const before = latest.current.parsed.def
+    const next = write(mutate)
+    if (undo === undefined || JSON.stringify(next) === JSON.stringify(before)) return
+    const restore = () => {
+      write((d) => {
+        for (const k of Object.keys(d)) if (!Object.hasOwn(before, k)) delete d[k]
+        Object.assign(d, structuredClone(before))
+      })
+      after?.()
+    }
+    folder.onNotice?.(undo, 'info', 'undo', { label: 'Undo', run: restore, fades: true })
+  }
 
   // 5B's clearing discipline: a pending move holds until the index refetch moves that key off the
   // raw it had at commit time (our write landing, or a concurrent writer winning) — never before.
@@ -533,6 +561,24 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   /** The `filters` half of that channel ALSO surfaces inside the Filter menu, where it is edited (YAZ-1229). */
   const filterErrors = result.errors.filter((e) => e.where.includes('filters'))
 
+  /**
+   * "Export as CSV…" / "Copy as table" (YAZ-4594 S30): view `i` as its tab shows it — its records (the Subfolders
+   * switch), filters, sort and groups, then the search box — Name first, then its shown columns, each cell as drawn.
+   * Run once per click, for any tab; a pending move is not in it. Null for the Page tab, which has no rows.
+   */
+  const viewText = (i: number): string[][] | null => {
+    const v = withDefaults(views[i], defaults)
+    if (v.type === PAGE_VIEW_TYPE) return null
+    const all = showsFolderRows(v) && folderRows.length > 0 ? [...noteRecords, ...folderRows] : noteRecords
+    const input = hidesSubfolderNotes(v) ? all.filter((r) => directlyIn(r, pageFolder)) : all
+    const declared = Object.keys(settings.columns)
+    const out = runView(def, v, input, { resolve, declared, page, optionOrder })
+    const grouped = boardOptionGroups(out.groups, v, (key) => columnTyping(key, input, properties, settings))
+    const list = shownRows(out.rows, grouped)
+    const ctx = { resolve, decls: settings.columns, pageFolder, folderTitle: folderPages.title }
+    return viewTable(def, propertyKeys(def, v, input, declared), needle ? list.filter(matches) : list, ctx)
+  }
+
   // View CRUD lives here since YAZ-1471 (re-ruling 🔒 rule 4, YAZ-819): every gesture is ONE
   // `update` — the same door as sort and columns — and which view is ACTIVE stays session state.
   const taken = () => new Set(views.map((v) => v.name))
@@ -572,13 +618,25 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     onDelete: (i) => {
       if (views.length <= 1) return
       moveCollapsed(views[i].name, null)
-      update((d) => {
-        const [gone] = d.views.splice(i, 1)
-        if (d.defaultView === gone.name) delete d.defaultView // a deleted START clears itself (D4)
-      })
+      // Undo (YAZ-4594 S29) brings the view back in its place, and the tab that was active then is active again.
+      const was = index
+      update(
+        (d) => {
+          const [gone] = d.views.splice(i, 1)
+          if (d.defaultView === gone.name) delete d.defaultView // a deleted START clears itself (D4)
+        },
+        `Deleted view ${views[i].name}`,
+        () => setActive(was),
+      )
       // The active view stays put unless it WAS the deleted one — then its right neighbour takes over
       // (the left one when it was the last tab); a view before it in the list shifts one index down.
       setActive(index === i ? Math.min(i, views.length - 2) : index > i ? index - 1 : index)
+    },
+    onExport: (i, as) => {
+      const table = viewText(i)
+      if (table === null) return
+      if (as === 'copy') copyText(toTsv(table), 'table', (message) => folder.onNotice?.(message))
+      else downloadText(csvName(folderPages.title(pageFolder), views[i].name), toCsv(table), 'text/csv;charset=utf-8')
     },
   }
 

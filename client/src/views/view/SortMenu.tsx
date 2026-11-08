@@ -169,7 +169,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
   // make the ordered list. The same property twice is not a grouping — the earlier level wins —
   // except Folder (YAZ-2541): Folder then Folder IS one, the second being the next folder down.
   // Callers spread each level, so its `by`, `highlight` and `large` survive every edit.
-  const writeGroup = (next: readonly GroupBySpec[], nextIds: readonly number[] = groupRows.ids) => {
+  const writeGroup = (next: readonly GroupBySpec[], nextIds: readonly number[] = groupRows.ids, undo?: string) => {
     const kept: GroupBySpec[] = []
     const keptIds: number[] = []
     const seen = new Set<string>()
@@ -185,7 +185,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
     onUpdate((d) => {
       if (written.length === 0) delete d.views[viewIndex].groupBy
       else d.views[viewIndex].groupBy = written.length === 1 && unusable.length === 0 ? kept[0] : written
-    })
+    }, undo)
   }
   const setLevel = (i: number, level: GroupBySpec) => writeGroup(levels.map((l, j) => (j === i ? level : l)))
   const moveLevel = (from: number, insertion: number) => {
@@ -240,7 +240,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
             <DirectionPicker label={GROUP_DIRECTION_LABELS[i]} spec={level} hasOptions={hasOptions(level.property)} onChange={(patch) => setLevel(i, withOrder({ ...level, property: canonicalKey(level.property) }, patch))} onEditOptions={editOptions(level.property)} />
             <GroupStylePicker label={`Style of group level ${i + 1}`} spec={level} onChange={(next) => setLevel(i, next)} />
             <button type="button" className="view-rule__remove" aria-label={`Remove group level ${i + 1}: ${propertyLabel(def, level.property)}`} title="Remove group level"
-              onClick={() => writeGroup(levels.filter((_, j) => j !== i), groupRows.ids.filter((_, j) => j !== i))}>
+              onClick={() => writeGroup(levels.filter((_, j) => j !== i), groupRows.ids.filter((_, j) => j !== i), `Removed group level ${propertyLabel(def, level.property)}`)}>
               ×
             </button>
           </>, 'sort-menu__level'))}

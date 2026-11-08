@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
-import { type EngineError, propertyKeys } from '../engine'
+import { type EngineError, propertyKeys, propertyLabel } from '../engine'
 import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
 import { CalendarShowBy } from './CalendarView'
@@ -136,7 +136,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
           <ColumnDetail key={editing} columnKey={editing} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder}
             shown={shownKeys().some((k) => canonicalKey(k) === editing)}
             canHide={canHideColumn(view, editing)}
-            onHide={() => onUpdate((d) => setViewOrder(d, viewIndex, shownKeys().filter((k) => canonicalKey(k) !== editing)))}
+            onHide={() => onUpdate((d) => setViewOrder(d, viewIndex, shownKeys().filter((k) => canonicalKey(k) !== editing)), `Hid ${propertyLabel(def, editing)}`)}
             onBack={() => setEditing(null)} onLeave={() => setEditing(null)} />
         ))}
         {!documentView &&

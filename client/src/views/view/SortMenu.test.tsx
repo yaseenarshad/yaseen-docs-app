@@ -233,6 +233,15 @@ describe('Group levels: handles, remove, third level, indent (YAZ-4532)', () => 
     expect(view().groupBy).toBeUndefined()
   })
 
+  it('× asks for the Undo toast with the level it removed (YAZ-4594 S29); a level added asks for none', () => {
+    const { el, onUpdate } = mount({ name: 'Table', type: 'table', groupBy: [THREE[0], THREE[1]] })
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Remove group level 1: Status"]')!.click())
+    expect(onUpdate.mock.lastCall?.[1]).toBe('Removed group level Status')
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Then group by"]')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.pillar"]')!.click())
+    expect(onUpdate.mock.lastCall?.[1]).toBeUndefined()
+  })
+
   it('a handle is disabled while there is one level only', () => {
     const { el } = mount({ name: 'Table', type: 'table', groupBy: THREE[0] })
     expect(levelGrip(el, 1, 'Status').disabled).toBe(true)

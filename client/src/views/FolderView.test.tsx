@@ -601,7 +601,7 @@ describe('the chrome is the views chrome', () => {
     expect(el.querySelector('[aria-label="Add view"]')).not.toBeNull()
     rightClick(tab(el, 'Page'))
     // YAZ-4585 (D41): "Open on this view" and "View settings…" sit between Duplicate and Delete.
-    expect(texts(el, '.ctx-menu[role="menu"] [role^="menuitem"]')).toEqual(['Rename', 'Duplicate', 'Open on this view', 'View settings…', 'Delete'])
+    expect(texts(el, '.ctx-menu[role="menu"] [role^="menuitem"]')).toEqual(['Rename', 'Duplicate', 'Open on this view', 'View settings…', 'Export as CSV…', 'Copy as table', 'Delete'])
     // The Page is a document (YAZ-4584 D38): no copy, and no Properties menu for "View settings…" to open.
     const item = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu[role="menu"] [role^="menuitem"]')].find((b) => b.textContent === label)
     expect(item('Duplicate')?.disabled).toBe(true)

@@ -124,9 +124,11 @@ export interface ViewSet {
 /**
  * The ONE config-write door every menu is handed: `ViewsPane`'s `update`, which re-parses and
  * calls `onChange` (the folder host turns it into exactly one `folder_settings`
- * write). It lived in `view/FilterMenu.tsx` until YAZ-846 deleted that menu.
+ * write). It lived in `view/FilterMenu.tsx` until YAZ-846 deleted that menu. `undo` (YAZ-4594 S29): the toast's
+ * text when the gesture takes something away — a hidden column, an unfreeze, a cleared fill — whose Undo writes the
+ * settings back as they were, in one write.
  */
-export type Mutate = (mutate: (def: ViewSet) => void) => void
+export type Mutate = (mutate: (def: ViewSet) => void, undo?: string) => void
 
 export class ViewParseError extends Error {
   constructor(

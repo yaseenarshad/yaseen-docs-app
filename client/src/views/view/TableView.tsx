@@ -20,7 +20,7 @@ import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader
 import { openByGesture } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
 import { rowPage } from '../../links/shortcuts'
-import { frozenColumnCount } from './frozenColumns'
+import { UNFROZE_ROWS, frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 import { FillMenu } from './FillMenu'
 import { cellFillOf, fillIndex, fillPaint, setViewFill } from './fills'
@@ -859,7 +859,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               <FillMenu
                 key="fill"
                 start={cellFillOf(fills, rowMenu.record.path, rowMenu.column)}
-                onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, records, resolveLink))}
+                // No fill offers Undo (YAZ-4594 S29).
+                onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, records, resolveLink), fill === null ? 'Cleared fill' : undefined)}
                 onClose={() => setRowMenu(null)}
               />,
               // Row freeze (YAZ-4537), the column menu's pair: on the row where the freeze ends the item reads ✓ and a click unfreezes.
@@ -872,7 +873,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   onUpdate((d) => {
                     if (count === 0) delete d.views[viewIndex].frozenRows
                     else d.views[viewIndex].frozenRows = count
-                  })
+                  }, count === 0 ? UNFROZE_ROWS : undefined)
                 }}
               />,
             ]}
