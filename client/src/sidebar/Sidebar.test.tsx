@@ -11660,7 +11660,7 @@ describe('the folder page file row (YAZ-4587, D37)', () => {
     { type: 'dir', name: 'Projects', path: '/v/Projects', children: [{ type: 'dir', name: 'Alpha', path: '/v/Projects/Alpha', children: [file('/v/Projects/Alpha/c.md')] }, file('/v/Projects/b.md')] },
   ]
   const folder = (dir: string, title: string, properties: Record<string, unknown> = {}): IndexRecord => ({ ...indexRecord(`${dir}/.folder.md`), title, folder: dir.slice('/v/'.length), properties })
-  const ON = { ...TEST_SETTINGS, folderPages: { showFolderPageFiles: true } } as SettingsState
+  const ON: SettingsState = { ...TEST_SETTINGS, folderPages: { ...TEST_SETTINGS.folderPages, showFolderPageFiles: true } }
   const pageRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.tree__row--page')]
   const mountPages = async (folders: IndexRecord[], settings: SettingsState = TEST_SETTINGS) => {
     vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Areas', '/v/Projects', '/v/Projects/Alpha'])

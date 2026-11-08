@@ -420,6 +420,22 @@
   cursor: default;
 }
 
+/* "from Settings" and its Reset (YAZ-4585, D34): grey and small, after the row's control. */
+.view-from-settings {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.view-from-settings--reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .view-menu__toggle {
   display: inline-flex;
   align-items: center;
@@ -830,9 +846,10 @@
 
 /* The row hover band (YAZ-4538, D9): the table block's band (`table.css`, YAZ-4167) on each data row, in its
    colour and strength (`--table-band-colour`, `--table-band-strength` on `.app`). An inset shadow paints over the
-   cell's background, so the band shows over a fill and over a frozen cell's opaque `--bg`. None when Settings ›
-   Editor › Tables › Row band is Off, and none when the band marks only the caret's row, as in the table block. */
-.app:not([data-table-row-band='off']):not([data-table-band-rows='caret']) .view-table tbody tr:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td {
+   cell's background, so the band shows over a fill and over a frozen cell's opaque `--bg`. Only while Settings ›
+   Folder pages › Row band on hover is on (YAZ-4585: `data-folder-row-band`, which follows the table block's Row band
+   until set), and none when the band marks only the caret's row, as in the table block. */
+.app[data-folder-row-band='on']:not([data-table-band-rows='caret']) .view-table tbody tr:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td {
   box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
 }
 
@@ -1097,6 +1114,39 @@
 .view-table__resize:hover,
 .view-table__resize--active {
   background: linear-gradient(var(--accent), var(--accent)) right / 2px 100% no-repeat;
+}
+
+/* The sort arrow (YAZ-4590 S19): ▲ or ▼ after the label, and the rule's place when the view has several sorts. The
+   glyph is CSS, so the header's text stays its label. A click flips the rule. */
+.view-table__sort {
+  margin-left: 4px;
+  padding: 0 2px;
+  font: inherit;
+  font-size: 10px;
+  color: var(--accent);
+  vertical-align: 1px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 3px;
+}
+
+.view-table__sort:hover {
+  background: var(--bg-side);
+}
+
+.view-table__sort[data-dir='ASC']::before {
+  content: '▲';
+}
+
+.view-table__sort[data-dir='DESC']::before {
+  content: '▼';
+}
+
+.view-table__sort[data-pos]::after {
+  margin-left: 1px;
+  font-size: 9px;
+  content: attr(data-pos);
 }
 
 .view-table__chip {
@@ -1607,7 +1657,7 @@
 }
 
 /* Under the hover band, whose shadow replaces the one above, the edge goes first in the band's own list (YAZ-4544). */
-.app:not([data-table-row-band='off']):not([data-table-band-rows='caret']) .view-table tbody tr.view-table__row--current:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td:first-child {
+.app[data-folder-row-band='on']:not([data-table-band-rows='caret']) .view-table tbody tr.view-table__row--current:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td:first-child {
   box-shadow: inset 2px 0 0 var(--accent), inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
 }
 
@@ -1778,6 +1828,11 @@
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
+/* Hide weekends (YAZ-4595 S33): Monday to Friday. */
+.view-cal__grid--weekdays .view-cal__week {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .view-cal__week + .view-cal__week {
   border-top: 1px solid var(--border);
 }
@@ -1933,6 +1988,17 @@
   font-size: 11px;
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* A weekend card on its Friday (YAZ-4595 S33): a small "Sat" or "Sun" before the title. */
+.view-cal__weekend {
+  flex: none;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--fg-muted);
+  background: var(--bg-side);
+  border-radius: 3px;
 }
 
 .view-cal__more {

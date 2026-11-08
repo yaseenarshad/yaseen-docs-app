@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { IndexRecord } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, type IndexRecord } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
-import { addDays, bucketByDay, calendarDateKey, dateColumns, dayOf, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekLabel } from './calendar'
+import { addDays, bucketByDay, calendarDateKey, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendAfter, weekendOf, weekLabel, withoutWeekends } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -123,6 +123,20 @@ describe('monthWeeks (YAZ-4540 D11): Monday first', () => {
   })
 })
 
+describe('Week starts on Sunday (YAZ-4585, Settings › Folder pages)', () => {
+  it('monthWeeks: the grid opens on the Sunday before the 1st, and a month that starts on Sunday opens on it', () => {
+    expect(monthWeeks(2026, 11, true)[0][0]).toBe('2026-11-29')
+    expect(monthWeeks(2026, 11, true).at(-1)?.at(-1)).toBe('2027-01-02')
+    expect(monthWeeks(2026, 2, true)[0][0]).toBe('2026-03-01')
+    expect(monthWeeks(2026, 2, true)).toHaveLength(5)
+  })
+  it('weekDays: Sunday to Saturday of the week that holds the day; a Sunday starts its own week', () => {
+    expect(weekDays('2026-12-10', true)).toEqual(['2026-12-06', '2026-12-07', '2026-12-08', '2026-12-09', '2026-12-10', '2026-12-11', '2026-12-12'])
+    expect(weekDays('2026-12-06', true)[0]).toBe('2026-12-06')
+    expect(weekDays('2026-12-05', true)[0]).toBe('2026-11-29')
+  })
+})
+
 describe('the week view (YAZ-4558 D22)', () => {
   it('weekDays: Monday to Sunday of the week that holds the day', () => {
     expect(weekDays('2026-12-10')).toEqual(['2026-12-07', '2026-12-08', '2026-12-09', '2026-12-10', '2026-12-11', '2026-12-12', '2026-12-13'])
@@ -176,5 +190,34 @@ describe('dateColumns and calendarDateKey (YAZ-4540 D4)', () => {
     expect(calendarDateKey(view, ['note.due', 'note.start'])).toBe('due')
     expect(calendarDateKey({ ...view, dateProperty: 'note.start' }, ['note.due', 'note.start'])).toBe('start')
     expect(calendarDateKey(view, [])).toBeNull()
+  })
+})
+
+describe('hide weekends (YAZ-4595 S33)', () => {
+  it('weekendOf names a Saturday and a Sunday, and nothing else', () => {
+    expect(weekendOf('2026-12-05')).toBe('Sat')
+    expect(weekendOf('2026-12-06')).toBe('Sun')
+    expect(weekendOf('2026-12-04')).toBeNull()
+    expect(weekendOf('2026-12-07')).toBeNull()
+  })
+
+  it('withoutWeekends keeps Monday to Friday of a week, in order', () => {
+    expect(withoutWeekends(weekDays('2026-12-10'))).toEqual(['2026-12-07', '2026-12-08', '2026-12-09', '2026-12-10', '2026-12-11'])
+  })
+
+  it('weekendAfter: a Friday takes the Saturday and the Sunday after it, across a year; another day takes none', () => {
+    expect(weekendAfter('2026-12-04')).toEqual(['2026-12-05', '2026-12-06'])
+    expect(weekendAfter('2027-01-01')).toEqual(['2027-01-02', '2027-01-03'])
+    expect(weekendAfter('2026-12-03')).toEqual([])
+  })
+
+  it('the Settings default is off; a view key wins over it either way', () => {
+    expect(hideWeekendsDefault(DEFAULT_FOLDER_PAGES)).toBe(false)
+    expect(hideWeekendsDefault({ ...DEFAULT_FOLDER_PAGES, hideWeekends: true })).toBe(true)
+    const view = (extra: Partial<ViewDef> = {}): ViewDef => ({ type: 'calendar', name: 'C', ...extra })
+    expect(hidesWeekends(view(), false)).toBe(false)
+    expect(hidesWeekends(view(), true)).toBe(true)
+    expect(hidesWeekends(view({ hideWeekends: true }), false)).toBe(true)
+    expect(hidesWeekends(view({ hideWeekends: false }), true)).toBe(false)
   })
 })

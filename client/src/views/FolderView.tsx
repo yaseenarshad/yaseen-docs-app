@@ -30,7 +30,7 @@ import { memo, type CSSProperties, type ReactNode, useEffect, useMemo, useRef, u
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
-import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
+import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
 import { HOVER_PREVIEW_KEY, SHOW_PAGE_FILE_KEY, hoverPreviewOf, showPageFileOf } from '@shared/folderPage'
 import { isReadOnlyProperties, READ_ONLY_KEY } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
@@ -53,6 +53,7 @@ import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './view
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
+import { renameInPaths, renameNotice, renameOptionInNotes, type ValueHome } from './renameOption'
 import { createNote } from './scaffold'
 import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
 import { writeFolderValues, writeProperties, writeProperty } from './writeProperty'
@@ -101,6 +102,8 @@ export interface FolderViewProps {
   /** The vault's sync status and the chip's click (`Editor`'s `sync`, `onSyncNow`): the toolbar's sync chip (YAZ-3746 D35). */
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
+  /** Settings › Folder pages (YAZ-4585, D34). Handed to `ViewsPane`. */
+  folderPages?: FolderPagesSettings
 }
 
 /**
@@ -175,6 +178,7 @@ export function FolderView({
   diagramDarkColors,
   sync,
   onSyncNow,
+  folderPages,
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
   const titles = usePathTitles(source)
@@ -279,6 +283,8 @@ export function FolderView({
    */
   const [ahead, setAheadState] = useState<Record<string, ColumnDecl> | null>(null)
   const aheadRef = useRef<Record<string, ColumnDecl> | null>(null)
+  /** This render's host (YAZ-4591): a rename's Undo runs later, and writes through the host that is current then. */
+  const latestHost = useRef<FolderHost | null>(null)
   const setAhead = (next: Record<string, ColumnDecl> | null): void => {
     aheadRef.current = next
     setAheadState(next)
@@ -385,6 +391,27 @@ export function FolderView({
     )
   }
 
+  /**
+   * S24 (YAZ-4591): the renamed option in every note that holds it — this folder's block of each indexed note
+   * where the vault uses IDs (the notes `deleteColumn` reaches), the rows' own key where it does not — one
+   * guarded write per note, read-only notes kept. Then the toast, whose Undo puts the declaration back through
+   * the LATEST host (its ahead copy is current) and renames back in the notes this rename changed.
+   */
+  const renameInNotes = async (key: string, next: ColumnDecl, base: ColumnDecl | undefined, { from, to }: { from: string; to: string }): Promise<void> => {
+    if (ids && id === undefined) return // a folder with no id holds no values
+    const home: ValueHome = ids ? { block: id! } : null
+    const result = await track(renameOptionInNotes(ids ? [...feed.records, ...feed.folders] : [...rows, ...subfolders], home, key, from, to, locked))
+    const undo = () => {
+      const now = latestHost.current
+      if (base === undefined || now === null) return
+      void now.setColumn(key, base, next).then(
+        () => track(renameInPaths(result.changed, home, key, to, from)),
+        (err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error'),
+      )
+    }
+    onNotice?.(renameNotice(from, to, result), 'info', 'undo', { label: 'Undo', run: undo, fades: true })
+  }
+
   const host: FolderHost = {
     settings: liveSettings,
     vaultRecords: feed.records,
@@ -426,14 +453,16 @@ export function FolderView({
     writeValues: guardReadOnly(locked, ids ? async (note, writes) => writeFolderValues(note, id ?? (await folderId(path)), writes, dropStaleFolderValues(root, note, feed.folders)) : writeProperties),
     // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
     // stood before and rejects to the caller, whose inline text is the report.
-    setColumn: (key, next, base) => {
+    // An option rename (YAZ-4591 S24) goes on to the notes once the declaration has landed: a refused declaration touches none.
+    setColumn: (key, next, base, rename) => {
       if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
       const before = aheadRef.current
       setAhead({ ...liveSettings.columns, [key]: next })
-      return track(writeFolderColumn(file, key, next, base, ids)).catch((err: unknown) => {
+      const written = track(writeFolderColumn(file, key, next, base, ids)).catch((err: unknown) => {
         setAhead(before)
         throw err
       })
+      return rename === undefined ? written : written.then(() => renameInNotes(key, next, base, rename))
     },
     // `settings` is the index SNAPSHOT, so it can be behind: `parsed` is rebuilt from it and is
     // otherwise ahead by unechoed local writes. Reading the def instead keeps an in-flight
@@ -478,6 +507,7 @@ export function FolderView({
     // The Page's editor reads the file, so it waits for the index to know one (YAZ-4584): a "+ Page" on a folder with none creates it.
     renderPage: record === undefined ? undefined : renderPage,
   }
+  latestHost.current = host
   const visibleError = settingsError ?? columnError
 
   return (
@@ -538,6 +568,7 @@ export function FolderView({
                 hoverPreview={ownHover ?? hoverPreview}
                 previewScope={previewScope}
                 diagramDarkColors={diagramDarkColors}
+                folderPages={folderPages}
               />
             </ViewFolder.Provider>
           </FolderPageChips.Provider>

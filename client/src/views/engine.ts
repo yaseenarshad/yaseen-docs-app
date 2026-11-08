@@ -59,6 +59,8 @@ export interface ViewResult {
   errors: EngineError[]
   /** Rows passing the filters, before `limit`. */
   total: number
+  /** The subfolder rows among `total` (YAZ-4595 S36): the toolbar's "N folders". */
+  folders: number
 }
 
 export interface RunOptions {
@@ -493,7 +495,8 @@ export function propertyLabel(def: ViewSet, key: string): string {
 
 export function runView(def: ViewSet, view: ViewDef, records: readonly IndexRecord[], opts: RunOptions = {}): ViewResult {
   const errors: EngineError[] = []
-  const viewIndex = def.views.indexOf(view)
+  // By name too (YAZ-4585): ViewsPane hands the view with Settings filled in, a copy of the one in `def`.
+  const viewIndex = def.views.findIndex((v) => v === view || v.name === view.name)
   const viewWhere = viewIndex >= 0 ? `views[${viewIndex}]` : 'view'
   const files = fileValuesFor(records)
   const resolve = opts.resolve ?? resolverFor(records, opts.root)
@@ -563,6 +566,8 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
 
   // limit
   const total = entries.length
+  let folders = 0
+  for (const e of entries) if (isFolderEntry(e)) folders++
   const limit = typeof view.limit === 'number' && view.limit > 0 ? Math.floor(view.limit) : null
   const kept = limit === null ? entries : entries.slice(0, limit)
 
@@ -677,5 +682,5 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     for (let i = 0; i < levels.length; i++) if (fanned[i]) for (const g of built[i]) g.fannedOut = true
   }
 
-  return { rows: kept.map(e => e.row), groups, summaries: summaryOf(kept), errors, total }
+  return { rows: kept.map(e => e.row), groups, summaries: summaryOf(kept), errors, total, folders }
 }

@@ -66,12 +66,15 @@ export interface ViewDef {
   calendarScale?: 'month' | 'week'
   /** A calendar's card titles (YAZ-4558 D23): `wrap` = the full title on more lines. Absent = clip, one line with "…". */
   cardTitles?: 'clip' | 'wrap'
+  /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. Absent = the Settings › Folder pages default. */
+  hideWeekends?: boolean
   /**
    * "Subfolders" (YAZ-4579 D30, replacing YAZ-4564 D25's boolean): `rows` = a row per direct subfolder plus the
    * folder's own notes and shortcuts; `both` = the subfolder rows plus every note below; `hide` = the own notes
    * and shortcuts alone. Absent = "Their notes", every note below and no subfolder row. A stored `false` reads as `hide`.
+   * `notes` is written only where Settings › Folder pages says otherwise (YAZ-4585): absent then follows Settings.
    */
-  subfolders?: 'rows' | 'both' | 'hide' | false
+  subfolders?: 'notes' | 'rows' | 'both' | 'hide' | false
   /** "Folders first" (YAZ-4579 D33): `false` = the subfolder rows sort among the notes. Absent = folder rows first. */
   foldersFirst?: boolean
   [extra: string]: unknown

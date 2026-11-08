@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, type IndexRecord } from '@shared/types'
 import { parseViews, serializeViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
@@ -455,5 +455,93 @@ describe('calendar card titles: Clip or Wrap (YAZ-4558 D23)', () => {
     expect(q(cardOf(el, LONG), '.view-cal__card-title').getAttribute('title')).toBeNull()
     click(q(el, '[aria-label="Calendar scale"] [data-scale="week"]'))
     expect(cardOf(el, LONG).classList.contains('view-cal__card--wrap')).toBe(true)
+  })
+})
+
+describe('hide weekends (YAZ-4595 S33)', () => {
+  const HIDE = `${CALENDAR}    hideWeekends: true\n`
+  const records = [...RECORDS, rec('Sunday', { due: '2026-12-06 09:00' })]
+  const shownDays = (el: ParentNode) => [...el.querySelectorAll('.view-cal__day')].map((d) => d.getAttribute('data-day'))
+  const weekdays = (el: ParentNode) => [...el.querySelectorAll('.view-cal__weekday')].map((d) => d.textContent)
+  const mark = (el: ParentNode, title: string) => cardOf(el, title).querySelector('.view-cal__weekend')?.textContent ?? null
+  const hideBox = (el: ParentNode) => q<HTMLInputElement>(el, '.view-popover--properties [aria-label="Hide weekends"]')
+  function toggle(box: HTMLInputElement): void {
+    act(() => box.click())
+    draw()
+  }
+
+  it('Month shows Monday to Friday only; a weekend note sits on the Friday before, marked Sat or Sun', () => {
+    const { el } = mount(HIDE, { records })
+    expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+    expect(shownDays(el)).toHaveLength(25)
+    expect(el.querySelector('[data-day="2026-12-05"]')).toBeNull()
+    expect(el.querySelector('[data-day="2026-12-06"]')).toBeNull()
+    expect(q(el, '.view-cal__grid').classList.contains('view-cal__grid--weekdays')).toBe(true)
+    // Friday Dec 4: its own card first, then Saturday's, then Sunday's.
+    expect(titlesIn(day(el, '2026-12-04'))).toEqual(['Timed', 'Locked', 'Sunday'])
+    expect(mark(el, 'Locked')).toBe('Sat')
+    expect(mark(el, 'Sunday')).toBe('Sun')
+    expect(mark(el, 'Timed')).toBeNull()
+  })
+
+  it('a Sunday week start (YAZ-4585) still shows Monday to Friday, in Month and in Week', () => {
+    const { el } = mount(HIDE, { records, folderPages: { ...DEFAULT_FOLDER_PAGES, weekStartsOn: 'sunday' } })
+    expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+    expect(el.querySelector('[data-day="2026-12-06"]')).toBeNull()
+    expect(titlesIn(day(el, '2026-12-04'))).toEqual(['Timed', 'Locked', 'Sunday'])
+    click(q(el, '[aria-label="Calendar scale"] [data-scale="week"]'))
+    expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+  })
+
+  it('Week shows Monday to Friday of the week', () => {
+    const { el } = mount(`${HIDE}    calendarScale: week\n`, { records })
+    expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+    expect(shownDays(el)).toEqual(['2026-12-07', '2026-12-08', '2026-12-09', '2026-12-10', '2026-12-11'])
+    click(q(el, '[aria-label="Previous week"]'))
+    expect(titlesIn(day(el, '2026-12-04'))).toEqual(['Timed', 'Locked', 'Sunday'])
+    expect(mark(el, 'Sunday')).toBe('Sun')
+  })
+
+  it('a weekend card dropped on its Friday keeps its date; dropped on another day it moves there and keeps its time', () => {
+    const { el } = mount(HIDE, { records })
+    drag(cardOf(el, 'Sunday'), day(el, '2026-12-04'))
+    expect(write).not.toHaveBeenCalled()
+    drag(cardOf(el, 'Sunday'), day(el, '2026-12-02'))
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Sunday.md', 'due', '2026-12-02 09:00')
+    expect(mark(el, 'Sunday')).toBeNull()
+  })
+
+  it('off by default: the full week shows and no card wears a mark', () => {
+    const { el } = mount(CALENDAR, { records })
+    expect(weekdays(el)).toHaveLength(7)
+    expect(titlesIn(day(el, '2026-12-05'))).toEqual(['Locked'])
+    expect(el.querySelector('.view-cal__weekend')).toBeNull()
+  })
+
+  it('Properties › Calendar "Hide weekends" writes hideWeekends: true; off removes the key (the default is off)', () => {
+    const { el, yaml } = mount(CALENDAR, { records })
+    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    expect(hideBox(el).checked).toBe(false)
+    toggle(hideBox(el))
+    expect(yaml()).toContain('hideWeekends: true')
+    expect(weekdays(el)).toHaveLength(5)
+    toggle(hideBox(el))
+    expect(yaml()).not.toContain('hideWeekends')
+    expect(weekdays(el)).toHaveLength(7)
+  })
+
+  it('the Settings default hides them on a view with no key; the view turns it off with hideWeekends: false', () => {
+    // Settings › Folder pages reaches the pane as its `folderPages` prop (YAZ-4585), live.
+    const { el, yaml } = mount(CALENDAR, { records, folderPages: { ...DEFAULT_FOLDER_PAGES, hideWeekends: true } })
+    expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    expect(hideBox(el).checked).toBe(true)
+    toggle(hideBox(el))
+    expect(yaml()).toContain('hideWeekends: false')
+    expect(weekdays(el)).toHaveLength(7)
+    // Back to the default: the key goes.
+    toggle(hideBox(el))
+    expect(yaml()).not.toContain('hideWeekends')
+    expect(weekdays(el)).toHaveLength(5)
   })
 })

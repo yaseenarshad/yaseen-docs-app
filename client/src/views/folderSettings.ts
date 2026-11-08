@@ -17,6 +17,7 @@ import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import type { ViewDef } from './viewSchema'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { transformFile, writeProperty } from './writeProperty'
+import { readFormat } from './columnFormat'
 
 /** A column the folder declares — this module's own vocabulary, shaped like `PropertyDecl`. */
 export type ColumnDecl = PropertyDecl
@@ -63,7 +64,7 @@ const KINDS = new Set<string>(PROPERTY_KINDS)
 /** A fresh copy per read: the defaults are handed out to be edited and written back. The Table alone where the vault does not use IDs (YAZ-2523 🔒 V11). */
 const defaultViews = (ids: boolean): ViewDef[] => (ids ? DEFAULT_VIEWS : DEFAULT_VIEWS.filter((view) => view.type === 'table')).map((view) => ({ ...view }))
 
-/** Keys → `{ kind, target?, required? }`. An unknown kind means the column is ABSENT (typing falls to lower rungs). */
+/** Keys → `{ kind, target?, required?, options?, optionSort?, format? }`. An unknown kind means the column is ABSENT (typing falls to lower rungs). */
 function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDecl> {
   const columns: Record<string, ColumnDecl> = {}
   if (raw === undefined) return columns
@@ -86,6 +87,10 @@ function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDec
     if (typeof value.required === 'boolean') column.required = value.required
     else if (value.required !== undefined)
       problems.push(`${FOLDER_SETTINGS_KEY}.columns.${name}.required must be true or false — ignoring it`)
+    // The column's description (YAZ-4590 S23): blank text is no description.
+    if (typeof value.description === 'string') {
+      if (value.description.trim()) column.description = value.description
+    } else if (value.description !== undefined) problems.push(`${FOLDER_SETTINGS_KEY}.columns.${name}.description must be text — ignoring it`)
     if (value.options !== undefined) {
       const options = readPropertyOptions(value.options)
       if (options !== undefined) column.options = options
@@ -94,6 +99,11 @@ function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDec
     if (value.optionSort !== undefined) {
       if (validPropertyOptionSort(value.optionSort)) column.optionSort = value.optionSort
       else problems.push(`${FOLDER_SETTINGS_KEY}.columns.${name}.optionSort must be manual, ascending, or descending — using manual order`)
+    }
+    // A Number or Date column's display format (YAZ-4591 S21/S22); a bad one costs only the format.
+    if (value.format !== undefined) {
+      const format = readFormat(column.kind, value.format, problems, `${FOLDER_SETTINGS_KEY}.columns.${name}.format`)
+      if (format !== undefined) column.format = format
     }
     columns[name] = column
   }
@@ -271,7 +281,7 @@ export function writeFolderColumn(path: string, key: string, next: PropertyDecl,
     if (currentKnown === desired) return content
     const declaration = { ...current }
     // Removing a known optional setting is intentional; unknown extension metadata survives.
-    for (const field of ['kind', 'target', 'required', 'options', 'optionSort']) delete declaration[field]
+    for (const field of ['kind', 'target', 'required', 'options', 'optionSort', 'description', 'format']) delete declaration[field]
     Object.assign(declaration, replacement)
     return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, { ...raw, columns: { ...columns, [key]: declaration } })
   })

@@ -78,7 +78,7 @@ const row = (el: HTMLElement, id: string) => el.querySelector<HTMLElement>(`[dat
 describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
   it('is a standalone page under the divider, after Memory and before Hotkeys — and absent with no vault', () => {
     const { el } = mount(STATS)
-    expect(navTitles(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', 'Sync', 'Memory', 'Storage', 'Hotkeys'])
+    expect(navTitles(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', 'Folder pages', 'Sync', 'Memory', 'Storage', 'Hotkeys'])
     // Under the divider with Memory (YAZ-3737 D9) and Hotkeys, a reference page like them.
     expect(el.querySelector('.settings-nav__divider + .settings-nav__item + .settings-nav__item')?.textContent).toBe('Storage')
     expect(row(el, 'storageGithub')).toBeNull()

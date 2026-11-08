@@ -3,7 +3,9 @@ import { isFolderRow, isShortcut } from '../../links/shortcuts'
 import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
 import { type ViewSet, type ViewDef, type GroupBySpec, shownGroupLevels } from '../viewSchema'
 import { type Row, propertyLabel } from '../engine'
-import { ErrorValue, FileValue, LinkValue, type Resolver, type Value, fromYaml, linkText, render } from '../expr'
+import type { PropertyDecl } from '@shared/types'
+import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value, fromYaml, linkText, render } from '../expr'
+import { formatDateValue, formatNumber } from '../columnFormat'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import '../../editor/wikilink/wikilink.css'
 import { summarize } from '../summaries'
@@ -129,9 +131,25 @@ export interface FolderPagesValue {
 }
 export const FolderPages = createContext<FolderPagesValue | null>(null)
 
-/** The `file.folder` column (YAZ-4564 D26): every view draws its cell here, the rest through `cellContent`. */
-export const rowCell = (row: Row, key: string, resolve?: Resolver): ReactNode =>
-  canonicalKey(key) === 'file.folder' ? <FolderCell row={row} value={row.values[key]} resolve={resolve} /> : cellContent(row.values[key], resolve)
+/**
+ * The folder's column declarations, by bare name (YAZ-4591): a Number or Date cell reads its column's
+ * `format` here. Provided around the views alone (`ViewsPane`), so a note's own properties panel —
+ * the note window's included — shows its values as stored.
+ */
+export const ColumnDecls = createContext<Readonly<Record<string, PropertyDecl>>>({})
+
+/** The `file.folder` column (YAZ-4564 D26): every view draws its cell here; a note key's through its column's format (YAZ-4591), the rest through `cellContent`. */
+export const rowCell = (row: Row, key: string, resolve?: Resolver): ReactNode => {
+  const c = canonicalKey(key)
+  if (c === 'file.folder') return <FolderCell row={row} value={row.values[key]} resolve={resolve} />
+  if (c.startsWith('note.')) return <NoteCell value={row.values[key]} name={c.slice('note.'.length)} resolve={resolve} />
+  return cellContent(row.values[key], resolve)
+}
+
+function NoteCell({ value, name, resolve }: { value: Value; name: string; resolve?: Resolver }) {
+  const decl = useContext(ColumnDecls)[name]
+  return <>{cellContent(value, resolve, decl)}</>
+}
 
 /**
  * Empty for a note directly in the page's folder; else the chip of the folder the note lives in, by the title
@@ -189,8 +207,11 @@ const folderOfRow = ({ path, folder }: Row['record']): string => {
   return folder === '' ? name : `${folder}/${name}`
 }
 
-/** Typed cell body (shared by table cells and board cards): error chip, read-only checkbox (editing is 5B), chips for lists/links, `render()` for the rest. */
-export function cellContent(v: Value, resolve?: Resolver) {
+/**
+ * Typed cell body (shared by table cells and board cards): error chip, read-only checkbox (editing is 5B), chips for lists/links,
+ * `render()` for the rest. `decl`, the cell's column: a Number or Date column's `format` shapes a number or a date (YAZ-4591).
+ */
+export function cellContent(v: Value, resolve?: Resolver, decl?: PropertyDecl) {
   if (v instanceof ErrorValue)
     return (
       <span className="view-table__chip view-table__chip--error" title={v.message}>
@@ -200,6 +221,10 @@ export function cellContent(v: Value, resolve?: Resolver) {
   if (typeof v === 'boolean') return <input type="checkbox" checked={v} disabled readOnly />
   if (Array.isArray(v)) return v.map((item, i) => chip(item, i, resolve))
   if (v instanceof LinkValue || v instanceof FileValue) return chip(v, undefined, resolve)
+  if (decl?.format !== undefined) {
+    if (decl.kind === 'number' && typeof v === 'number') return formatNumber(v, decl.format)
+    if (decl.kind === 'date' && v instanceof DateValue) return formatDateValue(v.ms, v.hasTime, decl.format) ?? render(v, resolve)
+  }
   if (typeof v === 'string' && v.includes('[[')) return <InlineLinks text={v} resolve={resolve} />
   return render(v, resolve)
 }

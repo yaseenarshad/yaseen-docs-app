@@ -2,7 +2,7 @@ import { useContext, useEffect, useRef, useState } from 'react'
 import { type LinkCandidate, matchLinkCandidates, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
-import { LinkPills, cellContent } from './GroupHeader'
+import { ColumnDecls, LinkPills, cellContent } from './GroupHeader'
 import { TextField } from './TextField'
 import { createPortal } from 'react-dom'
 import { Popover } from './Popover'
@@ -65,6 +65,8 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
   const echoes = useRef<{ revision: number; value: string }[]>([])
   /** A folder page's text cell completes `[[` (YAZ-4601 D48), as its inline links show as pills; the properties panel's does not. */
   const textLinks = useContext(LinkPills)
+  /** The column's declaration (YAZ-4591): a Number or Date column's format shapes the display; the editor keeps the raw value. */
+  const decl = useContext(ColumnDecls)[propKey]
 
   // The index can echo an intermediate save after the final write has already resolved.
   // Keep the latest optimistic choice until its echo arrives; unrelated later edits still win.
@@ -95,7 +97,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
     ;(el?.closest<HTMLElement>('[data-cell]') ?? el?.querySelector<HTMLElement>('[data-edit]'))?.focus()
   }, [editing])
 
-  if (editor === null) return <>{cellContent(value, resolve)}</>
+  if (editor === null) return <>{cellContent(value, resolve, decl)}</>
   if (readOnly) {
     return editor === 'checkbox' ? (
       <span className="view-cell-edit">
@@ -103,7 +105,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
       </span>
     ) : (
       <span className="view-cell-edit view-cell-edit--read-only" title={READ_ONLY_TIP}>
-        {cellContent(value, resolve)}
+        {cellContent(value, resolve, decl)}
       </span>
     )
   }
@@ -175,7 +177,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
               setEditing(true)
             }}
           >
-            {isEmpty ? <span className="property-empty">Empty</span> : isChoice ? <span className="property-choice-chips">{choices.map((choice, i) => <span className="property-choice-chip" key={`${choice}:${i}`}>{choice}</span>)}</span> : pending !== null ? cellContent(fromYaml(pending.v), resolve) : cellContent(value, resolve)}
+            {isEmpty ? <span className="property-empty">Empty</span> : isChoice ? <span className="property-choice-chips">{choices.map((choice, i) => <span className="property-choice-chip" key={`${choice}:${i}`}>{choice}</span>)}</span> : pending !== null ? cellContent(fromYaml(pending.v), resolve, decl) : cellContent(value, resolve, decl)}
           </button>
           {failure}
         </>

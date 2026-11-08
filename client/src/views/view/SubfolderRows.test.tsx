@@ -326,3 +326,54 @@ describe('folder rows in every view type (D32)', () => {
     }
   })
 })
+
+describe('the count and the search with folder rows (YAZ-4595 S36)', () => {
+  const count = (el: ParentNode): string => q(el, '.view-toolbar__count').textContent ?? ''
+  function search(el: ParentNode, text: string): void {
+    if (el.querySelector('.view-toolbar__search-input') === null) click(q(el, '.view-toolbar [aria-label="Search"]'))
+    const input = q<HTMLInputElement>(el, '.view-toolbar__search-input')
+    act(() => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      set.call(input, text)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+
+  it('the toolbar says "N items · N folders" while folder rows show, and "N items" while they do not', () => {
+    expect(count(mount(table('    subfolders: rows\n')).el)).toBe('1 item · 2 folders')
+    act(() => root?.unmount())
+    container?.remove()
+    expect(count(mount(table('    subfolders: both\n')).el)).toBe('3 items · 2 folders')
+    act(() => root?.unmount())
+    container?.remove()
+    expect(count(mount(table()).el)).toBe('3 items')
+  })
+
+  it('search finds a folder row by its title, and the count says what the search keeps of each', () => {
+    const { el } = mount(table('    subfolders: both\n'))
+    search(el, 'user')
+    expect(names(el)).toEqual(['Users'])
+    expect(count(el)).toBe('0 / 3 items · 1 / 2 folders')
+    search(el, 'ORDERS')
+    expect(names(el)).toEqual(['Orders'])
+    // A note is still found by its values.
+    search(el, 'email')
+    expect(names(el)).toEqual(['email'])
+    expect(count(el)).toBe('1 / 3 items · 0 / 2 folders')
+  })
+
+  it('a folder row is found by its title with the Name column hidden, in a board too', () => {
+    const { el } = mount(`views:
+  - type: board
+    name: B
+    subfolders: rows
+    groupBy:
+      property: note.status
+    order:
+      - note.domain
+`)
+    search(el, 'users')
+    expect([...el.querySelectorAll('.view-board__card')]).toHaveLength(1)
+    expect(count(el)).toBe('0 / 1 items · 1 / 2 folders')
+  })
+})

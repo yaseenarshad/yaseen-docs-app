@@ -1,7 +1,7 @@
 import { boardOptionGroups } from './boardOptionGroups'
 import { columnTyping, optionOrderFor } from './editorType'
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type IndexRecord, type PropertiesResponse } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type FolderPagesSettings, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
@@ -15,7 +15,7 @@ import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CalendarView } from './view/CalendarView'
-import { type DayKey, calendarDateKey, dateColumns, dayLabel, movedDate } from './calendar'
+import { type DayKey, calendarDateKey, dateColumns, dayLabel, hideWeekendsDefault, hidesWeekends, movedDate } from './calendar'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
 import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
@@ -29,11 +29,12 @@ import { NO_READ_ONLY } from './readOnlyRows'
 import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
-import { FolderPages, type FolderPagesValue, LinkPills } from './view/GroupHeader'
+import { ColumnDecls, FolderPages, type FolderPagesValue, LinkPills } from './view/GroupHeader'
 import { openByGesture } from '../lib/openGesture'
-import { directlyIn, rowPage, rowsByFolder } from '../links/shortcuts'
+import { directlyIn, isFolderRow, rowPage, rowsByFolder } from '../links/shortcuts'
 import { onPageTabAsk, takePageTab } from './pageTabRequest'
 import { pageViewIndex } from './pageView'
+import { ViewDefaults, chooseOwn, withDefaults } from './viewDefaults'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -56,8 +57,12 @@ export interface FolderHost {
    * what the card is called, and that typed title rides the optional argument.
    */
   create: (seed: NewNoteSeed, name?: string) => Promise<string>
-  /** Save one definition against the captured base; reject concurrent changes to that property. */
-  setColumn: (key: string, next: ColumnDecl, base: ColumnDecl | undefined) => Promise<unknown>
+  /**
+   * Save one definition against the captured base; reject concurrent changes to that property. `rename`
+   * (YAZ-4591 S24): an option renamed in the column editor — once the declaration lands, every note
+   * holding `from` is rewritten to `to` (`views/renameOption.ts`), and a toast offers Undo.
+   */
+  setColumn: (key: string, next: ColumnDecl, base: ColumnDecl | undefined, rename?: { from: string; to: string }) => Promise<unknown>
   /**
    * Write the declarations (YAZ-895): ONE settings write, fire-and-forget — a failure shows in the
    * host's banner. `views` lets a caller move the columns AND `view.order` in that same write;
@@ -153,6 +158,8 @@ export interface ViewsPaneProps {
   /** What the hover panel needs of a page's vault: App's `boardPreviewScope`. No scope, no hover panel. */
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
+  /** Settings › Folder pages (YAZ-4585, D34): what a view with no key of its own reads, the week start and the note window's pin. */
+  folderPages?: FolderPagesSettings
 }
 
 /**
@@ -208,7 +215,7 @@ const PILL_HOVER = '\u0000pill'
 /** A folder row has no note to preview (YAZ-4579 D32): the hover panel is the notes', so its dwell never starts. */
 const noHover = (): void => undefined
 
-export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: ViewsPaneProps) {
+export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', folderPages: defaults = DEFAULT_FOLDER_PAGES }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -278,7 +285,10 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * NEVER undefined (YAZ-861): `views` cannot be empty — `folderSettings` and the one mount's
    * `folderViewSet` both fall back to `DEFAULT_VIEWS` — and `index` is clamped into that list.
    */
-  const view = views[index]!
+  const own = views[index]!
+  // Settings › Folder pages (YAZ-4585, D34): every reader below sees the view's own keys, then Settings'. The menus
+  // read `def.views[viewIndex]` for the view as written ("from Settings").
+  const view = useMemo(() => withDefaults(own, defaults), [own, defaults])
   // "Subfolders: As rows / Both" (YAZ-4579 D30/D31): this view's records are the notes and a row per direct subfolder.
   // Every use below reads these — the engine, the menus' columns, a move's raw — so a folder row is a row like a note.
   const withFolders = showsFolderRows(view) && folderRows.length > 0
@@ -306,7 +316,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     folder.renderNoteEditor === undefined
       ? undefined
       : (path: string) => {
-          const { placed, width, height, pinned } = openNoteWindow(windowKey) ?? lastWindow.current ?? noteWindowMemory(path)
+          const { placed, width, height, pinned } = openNoteWindow(windowKey) ?? lastWindow.current ?? noteWindowMemory(path, defaults.keepWindowPinned)
           keepNoteWindow(windowKey, { path, placed, width, height, pinned })
           setOpens((n) => n + 1)
         }
@@ -404,7 +414,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const keepEmpty = (view.type === 'board' || view.type === 'table') && view.showEmptyColumns === true
   const needle = (search ?? '').trim().toLowerCase()
   // Search reads what the eye reads (YAZ-2293 D8): a row is found by the TITLE of a note it links to by id.
-  const matches = (r: Row) => Object.values(r.values).some((v) => render(v, resolve).toLowerCase().includes(needle))
+  // A folder row (YAZ-4595 S36) is found by its title too: its `file.name` is `.folder.md`, and a view may hide Name.
+  const matches = (r: Row) =>
+    (isFolderRow(r.record) && r.record.title.toLowerCase().includes(needle)) || Object.values(r.values).some((v) => render(v, resolve).toLowerCase().includes(needle))
   const rows = needle ? result.rows.filter(matches) : result.rows
   // Search filters WITHIN each group; a group with no matching rows disappears (4C, GRO-2137). A
   // nested group (YAZ-745, every level since YAZ-4531) narrows each branch the same way — emptied
@@ -592,6 +604,13 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       update((d) => d.views.splice(i + 1, 0, { ...structuredClone(d.views[i]), name: freeName(`${d.views[i].name} copy`, taken()) }))
       setActive(i + 1)
     },
+    // "Open on this view" (YAZ-4585, D41): the saved START, set or cleared from the tab's right-click.
+    defaultView: def.defaultView,
+    onSetDefault: (i) =>
+      update((d) => {
+        if (d.defaultView === d.views[i].name) delete d.defaultView
+        else d.defaultView = d.views[i].name
+      }),
     onDelete: (i) => {
       if (views.length <= 1) return
       moveCollapsed(views[i].name, null)
@@ -615,6 +634,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         filterErrors={filterErrors}
         shown={rows.length}
         total={result.total}
+        folders={withFolders ? { shown: rows.filter((r) => isFolderRow(r.record)).length, total: result.folders } : undefined}
         search={search}
         onSearch={setSearch}
         onUpdate={update}
@@ -638,6 +658,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           Could not load the vault's property declarations: {properties.error}
         </p>
       )}
+      {/* A Number or Date cell's format (YAZ-4591): the views alone read the declarations, never the note window's own panel. */}
+      <ColumnDecls.Provider value={folder.settings.columns}>
       {isPage ? (
         // The note editor replaces the view body (YAZ-4584 D38): it saves the `.folder.md` body itself, never a settings write.
         <div className="view-page">{folder.renderPage?.()}</div>
@@ -722,12 +744,13 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           scale={view.calendarScale === 'week' ? 'week' : 'month'}
           onScale={(scale) =>
             update((d) => {
-              // Month is the default: it removes the key (YAZ-4558 D22).
-              if (scale === 'week') d.views[index].calendarScale = 'week'
-              else delete d.views[index].calendarScale
+              // Settings' scale removes the key (YAZ-4558 D22, YAZ-4585): Month, unless Settings › Folder pages says Week.
+              chooseOwn(d.views[index], 'calendarScale', scale, defaults)
             })
           }
+          sundayFirst={defaults.weekStartsOn === 'sunday'}
           wrap={view.cardTitles === 'wrap'}
+          hideWeekends={hidesWeekends(view, hideWeekendsDefault(defaults))}
         />
       ) : view.type === 'cards' ? (
         <CardsView
@@ -795,6 +818,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           ))}
         </ul>
       )}
+      </ColumnDecls.Provider>
       {notes.length > 0 && (
         <p className="views-pane__notes" role="note">
           {notes.join(' · ')}
@@ -819,8 +843,10 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   )
   // The Folder column's chips and the Folder group headers' ↗ read the page's folders (YAZ-4564); the cells show links as pills (YAZ-4601).
   return (
-    <FolderPages.Provider value={folderPages}>
-      <LinkPills.Provider value={true}>{pane}</LinkPills.Provider>
-    </FolderPages.Provider>
+    <ViewDefaults.Provider value={defaults}>
+      <FolderPages.Provider value={folderPages}>
+        <LinkPills.Provider value={true}>{pane}</LinkPills.Provider>
+      </FolderPages.Provider>
+    </ViewDefaults.Provider>
   )
 }
