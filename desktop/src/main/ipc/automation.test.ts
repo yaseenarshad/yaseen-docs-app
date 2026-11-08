@@ -16,8 +16,8 @@ it('awaits durable window names, refuses missing windows, and acknowledges close
   let saved = false
   const entry = { id: 'w1', name: 'Before' as string | null }
   const store = { get: () => ({ windows: [entry] }), flush: vi.fn(async () => { saved = true }) } as unknown as Store
-  const closeWindow = vi.fn(), showWindow = vi.fn()
-  const windows = { idFor: (sender: unknown) => sender === page ? 'w1' : undefined, closeWindow, showWindow, setName: (_id: string, name: string | null) => { entry.name = name; return true } } as unknown as WindowManager
+  const closeWindow = vi.fn(), showWindow = vi.fn(), flushWindow = vi.fn(async (): Promise<'clean' | 'dirty' | 'timeout' | null> => 'clean')
+  const windows = { idFor: (sender: unknown) => sender === page ? 'w1' : undefined, closeWindow, showWindow, flushWindow, setName: (_id: string, name: string | null) => { entry.name = name; return true } } as unknown as WindowManager
   const host = registerAutomationIpc(store, windows)
   expect(await checked('window.rename', host.manage!('w1', 'rename', 'Agent'))).toEqual({ window: 'w1', name: 'Agent', diskSaved: true })
   expect(saved).toBe(true)
@@ -28,6 +28,11 @@ it('awaits durable window names, refuses missing windows, and acknowledges close
   expect(closeWindow).not.toHaveBeenCalled()
   await vi.advanceTimersByTimeAsync(100)
   expect(closeWindow).toHaveBeenCalledExactlyOnceWith('w1')
+  // Edits that could not save (a conflict bar) refuse the close, and the window stays (YAZ-4502).
+  closeWindow.mockClear(); flushWindow.mockResolvedValueOnce('dirty')
+  await expect(host.manage!('w1', 'close')).rejects.toMatchObject({ code: 'UNSAVED_CHANGES', details: { window: 'w1' } })
+  await vi.advanceTimersByTimeAsync(200)
+  expect(closeWindow).not.toHaveBeenCalled()
 })
 it('keeps ready across subframe and in-place loading; a new main document must handshake again', async () => {
   vi.useFakeTimers()

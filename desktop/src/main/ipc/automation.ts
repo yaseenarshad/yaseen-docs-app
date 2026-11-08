@@ -55,6 +55,8 @@ export function registerAutomationIpc(store: Store, windows: WindowManager): Nav
         await store.flush()
         return { window: id, name: store.get().windows.find(item => item.id === id)?.name ?? null, diskSaved: true }
       }
+      // Unsaved edits that cannot save (a conflict bar, a failed write) refuse the close, as ⌘R does. Nothing closes.
+      if (await windows.flushWindow(id) === 'dirty') throw new AutomationFailure('UNSAVED_CHANGES', 'The window holds edits that could not be saved, such as a conflict. Resolve them, then close it again.', { window: id })
       // Closing the final window also stops this socket. Acknowledge before the normal close/flush path starts.
       setTimeout(() => windows.closeWindow(id), 100).unref()
       return { window: id, accepted: true, outcome: 'close-requested' }
