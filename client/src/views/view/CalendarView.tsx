@@ -248,7 +248,8 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
                   {shown.length > 0 && <ul className="view-cal__cards">{shown.map((row) => card(row, day))}</ul>}
                   {!isWeek && list.length > DAY_CARDS && (
                     <button type="button" className="view-cal__more" onClick={() => setExpanded(all ? null : day)}>
-                      {all ? 'Show less' : `+${list.length - DAY_CARDS} more`}
+                      {/* A narrow day shows "+3" (YAZ-4544): views.css hides the word. */}
+                      {all ? 'Show less' : <>+{list.length - DAY_CARDS}<span className="view-cal__more-word"> more</span></>}
                     </button>
                   )}
                 </div>

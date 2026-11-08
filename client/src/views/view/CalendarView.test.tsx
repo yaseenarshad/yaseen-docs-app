@@ -152,6 +152,8 @@ describe('calendar grid (YAZ-4540 D11)', () => {
     expect(titlesIn(busy)).toEqual(['Busy A', 'Busy B', 'Busy C'])
     const more = q(busy, '.view-cal__more')
     expect(more.textContent).toBe('+2 more')
+    // A narrow day hides the word (YAZ-4544): views.css hides this span, so the button reads "+2".
+    expect(q(more, '.view-cal__more-word').textContent).toBe(' more')
     click(more)
     expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D', 'Busy E'])
   })

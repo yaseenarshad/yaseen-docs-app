@@ -4,9 +4,10 @@
 
 .view-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 4px 12px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
@@ -104,11 +105,17 @@
   padding: 4px;
 }
 
+/* A narrow page (YAZ-4544): the actions wrap to their own line, at the right, and then wrap inside it. So the view tabs
+   keep the first line and never shrink to nothing, and the toolbar never runs past the page. */
 .view-toolbar__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 2px;
   flex: none;
+  max-width: 100%;
+  margin-left: auto;
 }
 
 .view-toolbar__menu,
@@ -1633,7 +1640,8 @@
 
 .view-cal__nav {
   display: flex;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: 4px 2px;
   align-items: center;
 }
 
@@ -1665,6 +1673,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+  container-type: inline-size;
 }
 
 .view-cal__week {
@@ -1831,15 +1840,50 @@
 
 .view-cal__more {
   align-self: flex-start;
+  max-width: 100%;
   padding: 0 6px;
+  overflow: hidden;
   font-size: 11px;
   color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border-radius: 4px;
 }
 
 .view-cal__more:hover {
   color: var(--fg);
   background: var(--bg-side);
+}
+
+/* Narrow days (YAZ-4544): at a 340px window a day is 37px. A card's time stays whole: the day and the card give up
+   their side padding (after their own rules, so these win), and a timed card puts its title on a second line, cut
+   with an ellipsis. "+3 more" reads "+3". */
+@container (width < 460px) {
+  .view-cal__more-word {
+    display: none;
+  }
+}
+
+@container (width < 400px) {
+  .view-cal__day {
+    padding-right: 1px;
+    padding-left: 1px;
+  }
+
+  .view-cal__card {
+    flex-wrap: wrap;
+    gap: 0;
+    padding-right: 1px;
+    padding-left: 1px;
+  }
+
+  .view-cal__time {
+    font-size: 10px;
+  }
+
+  .view-cal__more {
+    padding: 0 2px;
+  }
 }
 
 /* "No date" (D4): below the grid, its cards in a wrapping row. */
