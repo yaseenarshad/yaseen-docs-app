@@ -30,7 +30,7 @@ import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'reac
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
-import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type PropertiesResponse } from '@shared/types'
+import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type PropertiesResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
@@ -96,6 +96,8 @@ export interface FolderViewProps {
   diagramDarkColors?: DiagramDarkColors
   /** Settings › "Folding default" (YAZ-4094 F1): a folder's outline has no page cog, so it follows this. Handed to `ViewsPane`. */
   foldingOnByDefault?: boolean
+  /** Settings › Folder pages (YAZ-4585, D34). Handed to `ViewsPane`. */
+  folderPages?: FolderPagesSettings
 }
 
 /**
@@ -153,6 +155,7 @@ export function FolderView({
   previewScope,
   diagramDarkColors,
   foldingOnByDefault,
+  folderPages,
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
   const titles = usePathTitles(source)
@@ -447,6 +450,7 @@ export function FolderView({
             previewScope={previewScope}
             diagramDarkColors={diagramDarkColors}
             foldingOnByDefault={foldingOnByDefault}
+            folderPages={folderPages}
           />
         </ViewFolder.Provider>
       </section>

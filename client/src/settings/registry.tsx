@@ -35,6 +35,7 @@ import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
+import { FOLDER_PAGES_SECTION } from './folderPagesSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented, Stepper } from './controls'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
@@ -282,7 +283,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'code' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'code' | 'files' | 'folderPages' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -477,7 +478,7 @@ const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string; hint?: stri
   { place: 'tabBoard', label: 'Tab board', hint: 'Mission Control: each open tab as a card.', keywords: ['tab board', 'mission control', 'cards', 'overview'] },
   { place: 'tabs', label: 'Tabs', hint: "A tab you're not on.", keywords: ['tabs', 'tab strip', 'tab bar'] },
   { place: 'backlinks', label: 'Linked mentions', hint: 'The list under a note.', keywords: ['backlinks', 'linked mentions', 'references'] },
-  { place: 'folderViews', label: 'Folder views', hint: 'Table, board, cards and list.', keywords: ['folder', 'views', 'table', 'board', 'cards', 'list', 'kanban'] },
+  // Folder views' row lives in Settings › Folder pages since YAZ-4585 (D34), on the same key.
   { place: 'links', label: 'Links in notes', hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
   // YAZ-3943 demo round 2: a board's link pills have their own row.
   { place: 'drawings', label: 'Links in drawings', hint: 'Link pills on a board.', keywords: ['links', 'pills', 'drawing', 'board', 'excalidraw'] },
@@ -1450,6 +1451,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
+  // YAZ-4585 (D34): the folder pages' own settings and the defaults their views read, after Files & Links.
+  FOLDER_PAGES_SECTION,
   {
     id: 'review',
     title: 'Review',

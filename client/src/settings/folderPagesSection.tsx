@@ -1,0 +1,119 @@
+/**
+ * SETTINGS › FOLDER PAGES (YAZ-4585, D34 of YAZ-4501): the global side of a folder page. Each setting has one home
+ * besides Settings, and no setting lives on both the page and a view.
+ *
+ * - Personal, here only: the week start, the folder views' "Preview on hover" (moved from Files & Links, the same
+ *   `hoverPreviewIn.folderViews`), the table row band and the note window's pin. The last two follow the table block's
+ *   settings (`folderRowBandOn`, `folderWindowPinned`) until they are set.
+ * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`); its menus say "from Settings".
+ * - Page default: the sidebar's folder page file rows (D37); a folder's ⚙ beats it.
+ *
+ * Every row writes one part of `settings.folderPages`. Every default is the look before the page existed.
+ */
+import { folderRowBandOn, folderWindowPinned, type FolderPagesSettings } from '@shared/types'
+import { Segmented } from './controls'
+import { ON_OFF_OPTIONS, type Option } from './options'
+import type { SettingDef, SettingsCtx, SettingsSection } from './registry'
+
+const WEEK_START_OPTIONS: readonly Option<FolderPagesSettings['weekStartsOn']>[] = [
+  { label: 'Monday', value: 'monday' },
+  { label: 'Sunday', value: 'sunday' },
+]
+const ROW_HEIGHT_OPTIONS: readonly Option<FolderPagesSettings['rowHeight']>[] = [
+  { label: 'Short', value: 'short' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'Tall', value: 'tall' },
+]
+const TEXT_IN_CELLS_OPTIONS: readonly Option<FolderPagesSettings['textInCells']>[] = [
+  { label: 'By kind', value: 'kind' },
+  { label: 'Wrap', value: 'wrap' },
+  { label: 'Clip', value: 'clip' },
+]
+const GROUP_INDENT_OPTIONS: readonly Option<FolderPagesSettings['groupIndent']>[] = [
+  { label: 'Small', value: 'small' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'Large', value: 'large' },
+]
+const SUBFOLDERS_OPTIONS: readonly Option<FolderPagesSettings['subfolders']>[] = [
+  { label: 'Their notes', value: 'notes' },
+  { label: 'As rows', value: 'rows' },
+  { label: 'Both', value: 'both' },
+  { label: 'Hide', value: 'hide' },
+]
+const CALENDAR_SCALE_OPTIONS: readonly Option<FolderPagesSettings['calendarScale']>[] = [
+  { label: 'Month', value: 'month' },
+  { label: 'Week', value: 'week' },
+]
+const CARD_TITLES_OPTIONS: readonly Option<FolderPagesSettings['cardTitles']>[] = [
+  { label: 'Clip', value: 'clip' },
+  { label: 'Wrap', value: 'wrap' },
+]
+
+const WORDS = ['folder', 'folder page', 'views', 'table', 'board', 'calendar', 'cards', 'list']
+
+/** One row that writes `folderPages[part]`; `shown` reads what the control shows, for the two that follow another setting. */
+function row<K extends keyof FolderPagesSettings>(
+  part: K,
+  label: string,
+  options: readonly Option<NonNullable<FolderPagesSettings[K]>>[],
+  more: { hint?: string; keywords?: string[]; shown?: (ctx: SettingsCtx) => NonNullable<FolderPagesSettings[K]> } = {},
+): SettingDef {
+  return {
+    id: `folderPages.${part}`,
+    label,
+    hint: more.hint,
+    keywords: [...WORDS, ...(more.keywords ?? [])],
+    render: (ctx) => {
+      const { settings, onChange } = ctx
+      const value = more.shown?.(ctx) ?? (settings.folderPages[part] as NonNullable<FolderPagesSettings[K]>)
+      return <Segmented options={options} value={value} onChange={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [part]: next } })} ariaLabel={label} />
+    },
+  }
+}
+
+export const FOLDER_PAGES_SECTION: SettingsSection = {
+  id: 'folderPages',
+  title: 'Folder pages',
+  keywords: WORDS,
+  groups: [
+    {
+      title: 'Personal',
+      items: [
+        row('weekStartsOn', 'Week starts on', WEEK_START_OPTIONS, { hint: 'The first day of the calendar view.', keywords: ['week', 'monday', 'sunday'] }),
+        {
+          // Moved from Files & Links › Preview on hover (D34), the same key: that page's master switch still turns every place off.
+          id: 'hoverPreviewIn.folderViews',
+          label: 'Preview on hover',
+          hint: 'Rest the mouse on a row or a card to see the note. The main Preview on hover switch turns every place off.',
+          keywords: [...WORDS, 'hover', 'preview', 'mouse'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreviewIn.folderViews} onChange={(on) => onChange({ ...settings, hoverPreviewIn: { ...settings.hoverPreviewIn, folderViews: on } })} ariaLabel="Preview on hover: Folder views" />
+          ),
+        },
+        row('rowBand', 'Row band on hover', ON_OFF_OPTIONS, { hint: 'A band on the table row under the mouse. Until you set it, it follows Editor › Tables › Row band.', keywords: ['band', 'highlight', 'hover', 'row'], shown: ({ settings }) => folderRowBandOn(settings) }),
+        row('keepWindowPinned', 'Keep the window pinned', ON_OFF_OPTIONS, { hint: 'The note window of a table row stays open on a click outside it. Until you set it, it follows Editor › Cell notes › Keep cell notes open.', keywords: ['note window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
+      ],
+    },
+    {
+      title: 'View defaults',
+      hint: 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them.',
+      items: [
+        row('rowHeight', 'Row height', ROW_HEIGHT_OPTIONS, { keywords: ['row', 'height', 'short', 'tall'] }),
+        row('rowNumbers', 'Row numbers', ON_OFF_OPTIONS, { keywords: ['row numbers', 'gutter', '#'] }),
+        row('textInCells', 'Text in cells', TEXT_IN_CELLS_OPTIONS, { hint: 'By kind: lists, links and selects wrap; text, numbers and dates are one line. A column can say otherwise.', keywords: ['wrap', 'clip', 'cells', 'text'] }),
+        row('groupIndent', 'Group indent', GROUP_INDENT_OPTIONS, { keywords: ['group', 'indent', 'nested'] }),
+        row('showEmptyGroups', 'Show empty groups', ON_OFF_OPTIONS, { hint: 'The options of the grouping column that no note has yet.', keywords: ['empty', 'groups', 'columns'] }),
+        row('subfolders', 'Subfolders', SUBFOLDERS_OPTIONS, { keywords: ['subfolders', 'rows', 'hide'] }),
+        row('foldersFirst', 'Folders first', ON_OFF_OPTIONS, { hint: 'Subfolder rows before the notes.', keywords: ['folders', 'first', 'sort'] }),
+        row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week'] }),
+        row('cardTitles', 'Calendar card titles', CARD_TITLES_OPTIONS, { keywords: ['calendar', 'card', 'titles', 'wrap', 'clip'] }),
+      ],
+    },
+    {
+      title: 'Page',
+      items: [
+        row('showFolderPageFiles', 'Show folder page files', ON_OFF_OPTIONS, { hint: "Each folder's page file in the sidebar, first under its folder. A folder's ⚙ can say otherwise.", keywords: ['sidebar', 'page file', '.folder.md'] }),
+      ],
+    },
+  ],
+}

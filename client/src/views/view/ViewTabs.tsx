@@ -25,6 +25,12 @@ export interface ViewTabsProps {
   onDuplicate: (index: number) => void
   /** After the sheet confirms; never offered for the last view. */
   onDelete: (index: number) => void
+  /** The saved START (`defaultView`, D4 of YAZ-818): the view a folder page opens on. Absent = the first. */
+  defaultView?: string
+  /** "Open on this view" (YAZ-4585, D41): makes the view the START, or clears it when it is. Absent = no item. */
+  onSetDefault?: (index: number) => void
+  /** "View settings…" (YAZ-4585, D34): opens the view's Properties menu. Absent = no item. */
+  onSettings?: (index: number) => void
 }
 
 /** In-flight drag: the grabbed tab + the hovered insertion slot (0…views.length). */
@@ -37,10 +43,10 @@ interface DragState {
  * View switcher (GRO-2135), editable again since YAZ-1471 re-ruled 🔒 rule 4 (YAZ-819): tabs
  * reorder by HTML5 drag — the insertion-slot arithmetic is TabBar's, now SHARED with it as
  * `lib/dragSlot` so the two strips cannot drift apart, with `dataTransfer` guarded for jsdom —
- * right-click opens Rename / Duplicate / Delete, "+" picks a type. Every change is ONE
- * `update` in ViewsPane; which view is active stays session state.
+ * right-click opens Rename / Duplicate / ✓ Open on this view / View settings… / Delete (YAZ-4585, D41), "+" picks a
+ * type. Every change is ONE `update` in ViewsPane; which view is active stays session state.
  */
-export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onDuplicate, onDelete }: ViewTabsProps) {
+export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onDuplicate, onDelete, defaultView, onSetDefault, onSettings }: ViewTabsProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; i: number } | null>(null)
   const [renaming, setRenaming] = useState<number | null>(null)
@@ -189,6 +195,35 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
           >
             Duplicate
           </button>
+          {onSetDefault !== undefined && (
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={menuView.name === defaultView}
+              className="ctx-menu__item"
+              onClick={() => {
+                onSetDefault(menu.i)
+                setMenu(null)
+              }}
+            >
+              {menuView.name === defaultView ? '✓ Open on this view' : 'Open on this view'}
+            </button>
+          )}
+          {onSettings !== undefined && (
+            <button
+              type="button"
+              role="menuitem"
+              className="ctx-menu__item"
+              // An outline is a document: it has no Properties menu (YAZ-903).
+              disabled={menuView.type === 'outline'}
+              onClick={() => {
+                onSettings(menu.i)
+                setMenu(null)
+              }}
+            >
+              View settings…
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"

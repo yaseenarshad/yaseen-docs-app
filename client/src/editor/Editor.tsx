@@ -66,7 +66,7 @@ import { goToNow } from './table/tableCalendar'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
-import type { ZoomStep } from '@shared/types'
+import type { FolderPagesSettings, ZoomStep } from '@shared/types'
 import type { ZoomFrom } from '../workspace/useWorkspace'
 import type { CodeSettingsPatch } from '../code/codeSettings'
 import { useAutosave } from '../hooks/useAutosave'
@@ -263,6 +263,8 @@ interface EditorProps {
   hoverBacklinks?: boolean
   /** Settings › Preview on hover › Folder views (YAZ-3403): resting on a row or a card of a folder's view shows it beside the item. */
   hoverFolderViews?: boolean
+  /** Settings › Folder pages (YAZ-4585, D34): handed to a folder page's `ViewsPane`. */
+  folderPages?: FolderPagesSettings
   /** What a hover panel needs of a page's vault (YAZ-3403): App's `boardPreviewScope`. Absent → no hover panel here. */
   previewScope?: (path: string) => PreviewScope
   /** `settings.hotkeys` (YAZ-3564): the keys the user changed, for the editors that follow them. Absent → the defaults. */
@@ -277,7 +279,7 @@ interface EditorProps {
   onChangeOutsideListPinned?: (pinned: boolean) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, renderNoteEditor, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, renderNoteEditor, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -291,7 +293,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     if (inTree === 'dir') {
       return (
         <section className="editor">
-          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenFolderPage={onOpenFolderPage} renderNoteEditor={renderNoteEditor} tabId={tabId} viewKey={viewKey} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} previewScope={previewScope} diagramDarkColors={diagramDarkColors} foldingOnByDefault={foldingOnByDefault} />
+          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenFolderPage={onOpenFolderPage} renderNoteEditor={renderNoteEditor} tabId={tabId} viewKey={viewKey} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} folderPages={folderPages} previewScope={previewScope} diagramDarkColors={diagramDarkColors} foldingOnByDefault={foldingOnByDefault} />
         </section>
       )
     }

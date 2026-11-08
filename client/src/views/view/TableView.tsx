@@ -25,6 +25,7 @@ import { PageContextMenu } from './PageContextMenu'
 import { FillMenu } from './FillMenu'
 import { cellFillOf, fillIndex, fillPaint, setViewFill } from './fills'
 import { TableHeaderMenu, wrapsColumn } from './TableHeaderMenu'
+import { useViewDefaults } from '../viewDefaults'
 import { TextField } from './TextField'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
 import { dropIndex, insertionSlot } from '../../lib/dragSlot'
@@ -263,6 +264,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     [typings, vaultRecords, vaultFolders, resolveLink, root],
   )
   const rowH = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short
+  // Settings › Folder pages › Text in cells (YAZ-4585): a column with no Wrap or Clip of its own. Row height and row
+  // numbers come in `view` already, with Settings filled in (`withDefaults`).
+  const { textInCells } = useViewDefaults()
   const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
   const frozen = frozenColumnCount(view.frozenColumns, keys.length)
   /** The `#` gutter is shown unless the view says `rowNumbers: false` (YAZ-1513). */
@@ -371,7 +375,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // Wrap or Clip per column (YAZ-4582 D29): a Wrap column's row grows, a Clip column is one line. With no choice, a
   // chip column wraps and the rest clip, as on `main`. A windowed table clips every cell, so each line is exactly the
   // row height its spacer maths counts.
-  const clipped = keys.map((key, c) => windowed || !wrapsColumn(view, key, typings[c]?.assigned ?? typings[c]?.dominant))
+  const clipped = keys.map((key, c) => windowed || !wrapsColumn(view, key, typings[c]?.assigned ?? typings[c]?.dominant, textInCells))
   const viewH = wrapRef.current?.clientHeight || FALLBACK_VIEWPORT
   const first = windowed ? Math.max(pinned, Math.min(lines.length - 1, Math.floor(scrollTop / rowH) - OVERSCAN)) : pinned
   const count = windowed ? Math.min(lines.length - first, Math.ceil(viewH / rowH) + 2 * OVERSCAN) : lines.length - first

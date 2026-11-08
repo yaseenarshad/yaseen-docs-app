@@ -16,6 +16,9 @@ import {
   DEFAULT_TOOLBAR,
   HEADING_KEYS,
   HOVER_PLACES,
+  DEFAULT_FOLDER_PAGES,
+  FOLDER_PAGE_CHOICES,
+  type FolderPagesSettings,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
   MAX_FOLD_KEYS_PER_FILE,
@@ -454,6 +457,32 @@ export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean
   return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : true])) as Record<HoverPlace, boolean>
 }
 
+/** Settings › Folder pages (YAZ-4585): each part's guard. A choice row is one of its `FOLDER_PAGE_CHOICES`; the two "as …" switches may be null. */
+const isBool = (v: unknown): v is boolean => typeof v === 'boolean'
+const oneOf = (choices: readonly unknown[]) => (v: unknown): boolean => choices.includes(v)
+const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => boolean } = {
+  weekStartsOn: oneOf(FOLDER_PAGE_CHOICES.weekStartsOn),
+  rowBand: (v) => v === null || isBool(v),
+  keepWindowPinned: (v) => v === null || isBool(v),
+  rowHeight: oneOf(FOLDER_PAGE_CHOICES.rowHeight),
+  rowNumbers: isBool,
+  textInCells: oneOf(FOLDER_PAGE_CHOICES.textInCells),
+  groupIndent: oneOf(FOLDER_PAGE_CHOICES.groupIndent),
+  showEmptyGroups: isBool,
+  subfolders: oneOf(FOLDER_PAGE_CHOICES.subfolders),
+  foldersFirst: isBool,
+  calendarScale: oneOf(FOLDER_PAGE_CHOICES.calendarScale),
+  cardTitles: oneOf(FOLDER_PAGE_CHOICES.cardTitles),
+  showFolderPageFiles: isBool,
+}
+const FOLDER_PAGES_PARTS = Object.keys(FOLDER_PAGES_PART_OK) as (keyof FolderPagesSettings)[]
+const isFolderPages = (v: unknown): v is FolderPagesSettings => isRecord(v) && FOLDER_PAGES_PARTS.every((part) => FOLDER_PAGES_PART_OK[part](v[part]))
+/** The Folder pages settings on load: each valid part is kept, a missing or broken one is its default (a file from before a part existed). */
+export function sanitizeFolderPages(raw: unknown): FolderPagesSettings {
+  const src = isRecord(raw) ? raw : {}
+  return Object.fromEntries(FOLDER_PAGES_PARTS.map((part) => [part, FOLDER_PAGES_PART_OK[part](src[part]) ? src[part] : DEFAULT_FOLDER_PAGES[part]])) as unknown as FolderPagesSettings
+}
+
 /**
  * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
  * (YAZ-3410): one this build reads, with ⌘ or ⌃ (or an F-key), and not an App-standard key (⌘Q is Quit) nor a
@@ -675,6 +704,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   dailyNoteOpens: (v): v is DailyNoteOpens => typeof v === 'string' && (DAILY_NOTE_OPENS as readonly string[]).includes(v),
   tabSleepAfter: (v): v is TabSleepAfter => typeof v === 'string' && (TAB_SLEEP_AFTER as readonly string[]).includes(v),
   memoryReload: (v): v is boolean => typeof v === 'boolean',
+  folderPages: isFolderPages,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -697,6 +727,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.selectionToolbar = sanitizeToolbarPrefs(src.selectionToolbar)
   out.highlightCustomColors = sanitizeHighlightCustomColors(src.highlightCustomColors)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
+  out.folderPages = sanitizeFolderPages(src.folderPages)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)
   out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)

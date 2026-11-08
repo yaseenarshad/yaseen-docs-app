@@ -12,6 +12,7 @@ import { ViewsPane } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import viewsCss from '../views.css?inline'
+import { DEFAULT_FOLDER_PAGES, folderRowBandOn, type TableRowBand } from '@shared/types'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -23,10 +24,12 @@ const BAND = /([^{}]*\.view-table tbody tr[^{}]*:hover > td)\s*\{([^}]*)\}/.exec
 let root: Root | null = null
 let app: HTMLElement | null = null
 
-function mount(band: string, rows = 'both'): HTMLElement {
+/** `.app` as App draws it: the folder band follows the table block's Row band unless Settings › Folder pages sets its own (YAZ-4585). */
+function mount(band: TableRowBand, rows = 'both', own: boolean | null = null): HTMLElement {
   app = document.createElement('div')
   app.className = 'app'
   app.dataset.tableRowBand = band
+  app.dataset.folderRowBand = folderRowBandOn({ tableRowBand: band, folderPages: { ...DEFAULT_FOLDER_PAGES, rowBand: own } }) ? 'on' : 'off'
   app.dataset.tableBandRows = rows
   document.body.appendChild(app)
   root = createRoot(app)
@@ -53,7 +56,7 @@ describe('the row hover band (YAZ-4538)', () => {
   it('reaches every cell of the data rows, never a group header, and nothing when Row band is Off', () => {
     // The text before the rule holds its comment: the selector is what follows the comment.
     const selector = BAND![1].split('*/').pop()!.replace(':hover', '').trim()
-    for (const band of ['all', 'calendar']) {
+    for (const band of ['all', 'calendar'] as const) {
       const el = mount(band)
       const dataCells = el.querySelectorAll('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer):not(.view-table__new) > td')
       expect(dataCells.length).toBeGreaterThan(0)
@@ -69,6 +72,15 @@ describe('the row hover band (YAZ-4538)', () => {
     app?.remove()
     // "Rows the band marks: the caret's row" leaves out the mouse's row, as in the table block.
     mount('all', 'caret')
+    expect(document.querySelectorAll(selector)).toHaveLength(0)
+    act(() => root?.unmount())
+    app?.remove()
+    // Settings › Folder pages › Row band on hover (YAZ-4585): its own switch beats the table block's either way.
+    mount('off', 'both', true)
+    expect(document.querySelectorAll(selector).length).toBeGreaterThan(0)
+    act(() => root?.unmount())
+    app?.remove()
+    mount('all', 'both', false)
     expect(document.querySelectorAll(selector)).toHaveLength(0)
   })
 })

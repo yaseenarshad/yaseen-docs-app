@@ -1851,6 +1851,62 @@ export interface SecretHasRequest {
 /** The name the Pixabay API key is stored under (🔒 YAZ-1775 D4); YAZ-1818 reads it in main, never here. */
 export const PIXABAY_SECRET = 'pixabayApiKey'
 
+/** The choices of each Settings › Folder pages row that is not a switch (YAZ-4585). The first is the default. */
+export const FOLDER_PAGE_CHOICES = {
+  weekStartsOn: ['monday', 'sunday'],
+  rowHeight: ['short', 'medium', 'tall'],
+  textInCells: ['kind', 'wrap', 'clip'],
+  groupIndent: ['medium', 'small', 'large'],
+  subfolders: ['notes', 'rows', 'both', 'hide'],
+  calendarScale: ['month', 'week'],
+  cardTitles: ['clip', 'wrap'],
+} as const
+
+/**
+ * Settings › Folder pages (YAZ-4585, D34 of YAZ-4501). Every default is the look before the page existed.
+ * - Personal, in Settings only: `weekStartsOn`, `rowBand`, `keepWindowPinned` (and "Preview on hover", which stays
+ *   `hoverPreviewIn.folderViews`).
+ * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`).
+ * - Page default: `showFolderPageFiles`, the sidebar's folder page file rows (D37); a folder's `show_page_file` beats it.
+ */
+export interface FolderPagesSettings {
+  /** The calendar view's first day. */
+  weekStartsOn: (typeof FOLDER_PAGE_CHOICES.weekStartsOn)[number]
+  /** A folder table's row band on hover. null = as Settings › Editor › Tables › Row band: on unless that is Off. */
+  rowBand: boolean | null
+  /** The note window opens pinned. null = as Settings › Editor › Cell notes › Keep cell notes open. */
+  keepWindowPinned: boolean | null
+  rowHeight: (typeof FOLDER_PAGE_CHOICES.rowHeight)[number]
+  rowNumbers: boolean
+  /** A table column with no Wrap or Clip of its own (D29): `kind` wraps the chip kinds and clips the rest. */
+  textInCells: (typeof FOLDER_PAGE_CHOICES.textInCells)[number]
+  groupIndent: (typeof FOLDER_PAGE_CHOICES.groupIndent)[number]
+  /** A view's "Show empty groups" (its `showEmptyColumns`). */
+  showEmptyGroups: boolean
+  subfolders: (typeof FOLDER_PAGE_CHOICES.subfolders)[number]
+  foldersFirst: boolean
+  /** "Calendar opens in": Month or Week. */
+  calendarScale: (typeof FOLDER_PAGE_CHOICES.calendarScale)[number]
+  cardTitles: (typeof FOLDER_PAGE_CHOICES.cardTitles)[number]
+  showFolderPageFiles: boolean
+}
+
+export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
+  weekStartsOn: 'monday',
+  rowBand: null,
+  keepWindowPinned: null,
+  rowHeight: 'short',
+  rowNumbers: true,
+  textInCells: 'kind',
+  groupIndent: 'medium',
+  showEmptyGroups: false,
+  subfolders: 'notes',
+  foldersFirst: true,
+  calendarScale: 'month',
+  cardTitles: 'clip',
+  showFolderPageFiles: false,
+}
+
 export interface SettingsState {
   /** Line height within a block (Google-Docs-style presets). */
   lineSpacing: number
@@ -2154,6 +2210,8 @@ export interface SettingsState {
   tabSleepAfter: TabSleepAfter
   /** Settings › Memory (YAZ-3737 D6, D10): a window that holds too much memory reloads by itself (6). On by default; travels. */
   memoryReload: boolean
+  /** Settings › Folder pages (YAZ-4585, D34 of YAZ-4501): one object, `FolderPagesSettings`. Travels. */
+  folderPages: FolderPagesSettings
 }
 
 /** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily note (YAZ-3607 D1). */
@@ -2175,6 +2233,12 @@ export const HOVER_PLACES: readonly HoverPlace[] = ['sidebar', 'search', 'newTab
 export function hoverOn(settings: Pick<SettingsState, 'hoverPreview' | 'hoverPreviewIn'>, place: HoverPlace): boolean {
   return settings.hoverPreview && settings.hoverPreviewIn[place]
 }
+
+/** Settings › Folder pages › Row band on hover (YAZ-4585): its own switch, else as the table block's Row band (on unless Off). `data-folder-row-band` on `.app`. */
+export const folderRowBandOn = (settings: Pick<SettingsState, 'folderPages' | 'tableRowBand'>): boolean => settings.folderPages.rowBand ?? settings.tableRowBand !== 'off'
+
+/** Settings › Folder pages › Keep the window pinned (YAZ-4585): its own switch, else as "Keep cell notes open". */
+export const folderWindowPinned = (settings: Pick<SettingsState, 'folderPages' | 'tableCellNotePinned'>): boolean => settings.folderPages.keepWindowPinned ?? settings.tableCellNotePinned ?? true
 
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
@@ -2501,6 +2565,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   dailyNoteOpens: 'now',
   tabSleepAfter: '30m',
   memoryReload: true,
+  folderPages: DEFAULT_FOLDER_PAGES,
 }
 
 export interface WindowBounds {

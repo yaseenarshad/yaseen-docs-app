@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import type { IndexRecord, PropertiesResponse } from '@shared/types'
+import type { FolderPagesSettings, IndexRecord, PropertiesResponse } from '@shared/types'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { defaultLabel, propertyLabel } from '../engine'
 import { undeletableReason } from '../deleteColumn'
 import type { ColumnDecl } from '../folderSettings'
 import { type Mutate, type ViewDef, type ViewSet, groupByLevels } from '../viewSchema'
+import { useViewDefaults } from '../viewDefaults'
 import type { FolderHost } from '../ViewsPane'
 import { AddColumn } from './AddColumn'
 import { ColumnDetail, columnKind, columnTypeLabel } from './ColumnDetail'
@@ -52,12 +53,13 @@ const CHIP_KINDS: ReadonlySet<string> = new Set(['list', 'link', 'multi-link', '
 
 /**
  * Does the column wrap (YAZ-4582 D29)? `columnWrap` under its key, in any spelling: `true` Wrap, `false` Clip.
- * With no entry, by its kind: a chip column wraps and a text, number or date column is one line, as on `main`.
+ * With no entry, Settings › Folder pages › Text in cells (YAZ-4585): Wrap, Clip, or by its kind, the default: a chip
+ * column wraps and a text, number or date column is one line, as on `main`.
  */
-export function wrapsColumn(view: ViewDef, key: string, kind: string | null | undefined): boolean {
+export function wrapsColumn(view: ViewDef, key: string, kind: string | null | undefined, textInCells: FolderPagesSettings['textInCells'] = 'kind'): boolean {
   const c = canonicalKey(key)
   const chosen = Object.entries(view.columnWrap ?? {}).find(([k, wrap]) => typeof wrap === 'boolean' && canonicalKey(k) === c)?.[1]
-  return chosen ?? (kind != null && CHIP_KINDS.has(kind))
+  return chosen ?? (textInCells === 'kind' ? kind != null && CHIP_KINDS.has(kind) : textInCells === 'wrap')
 }
 
 /**
@@ -72,11 +74,12 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
  * Properties menu's own column editor — inside it (YAZ-4533). Sort A to Z / Z to A, "Group by this
  * column" and Freeze / ✓ Frozen / Unfreeze write the same `sort`, `groupBy` and `frozenColumns` the
  * Sort and Properties menus write (YAZ-4534). "Wrap text" / "Clip text" (YAZ-4582 D29), ✓ on the column's effective
- * choice, write `columnWrap[<canonical key>]` (`true` Wrap, `false` Clip); the choice its kind makes anyway deletes the
+ * choice, write `columnWrap[<canonical key>]` (`true` Wrap, `false` Clip); the choice its kind (or Settings › Folder pages, YAZ-4585) makes anyway deletes the
  * entry in any spelling, and an empty map.
  */
 export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, reserved, records, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
+  const { textInCells } = useViewDefaults()
   /** Once per menu, not per keystroke in its fields: the kind may walk the rows. */
   const typeLabel = useMemo(() => (columnKey === null ? '' : columnTypeLabel(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
   const kind = useMemo(() => (columnKey === null ? null : columnKind(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
@@ -130,11 +133,11 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
     const levels = [{ ...first, property: c, direction: 'ASC' as const }, ...rest.filter((l) => typeof l?.property !== 'string' || canonicalKey(l.property) !== c)]
     v.groupBy = levels.length === 1 ? levels[0] : levels
   })
-  const wrapped = wrapsColumn(def.views[viewIndex], key, kind)
+  const wrapped = wrapsColumn(def.views[viewIndex], key, kind, textInCells)
   const setWrap = (wrap: boolean) =>
     write((v) => {
       const next = Object.fromEntries(Object.entries(v.columnWrap ?? {}).filter(([k]) => canonicalKey(k) !== c))
-      if (wrap !== wrapsColumn({ ...v, columnWrap: undefined }, key, kind)) next[c] = wrap
+      if (wrap !== wrapsColumn({ ...v, columnWrap: undefined }, key, kind, textInCells)) next[c] = wrap
       if (Object.keys(next).length) v.columnWrap = next
       else delete v.columnWrap
     })

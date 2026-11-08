@@ -92,8 +92,11 @@ export interface NoteWindowMemory {
   pinned: boolean
 }
 
-/** A new memory on `path`: the pin starts as Settings › "Keep cell notes open (pinned)" says (5E, no new setting). */
-export const noteWindowMemory = (path: string): NoteWindowMemory => ({ path, placed: null, width: null, height: null, pinned: cellNotePinnedAtStart() })
+/**
+ * A new memory on `path`: the pin starts as Settings › Folder pages › "Keep the window pinned" says (YAZ-4585, D34);
+ * null there, as Settings › "Keep cell notes open (pinned)" says (5E).
+ */
+export const noteWindowMemory = (path: string, pinned: boolean | null = null): NoteWindowMemory => ({ path, placed: null, width: null, height: null, pinned: pinned ?? cellNotePinnedAtStart() })
 
 /**
  * The open cards, by app tab, folder page and view tab (YAZ-4547 D17, YAZ-4544). A tab that sleeps unmounts its

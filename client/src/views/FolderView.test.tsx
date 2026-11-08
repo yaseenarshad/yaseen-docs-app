@@ -575,7 +575,8 @@ describe('the chrome is the views chrome', () => {
     const el = await mount()
     expect(el.querySelector('[aria-label="Add view"]')).not.toBeNull()
     rightClick(tab(el, 'Outline'))
-    expect(texts(el, '.ctx-menu[role="menu"] [role="menuitem"]')).toEqual(['Rename', 'Duplicate', 'Delete'])
+    // YAZ-4585 (D41): "Open on this view" and "View settings…" sit between Duplicate and Delete.
+    expect(texts(el, '.ctx-menu[role="menu"] [role^="menuitem"]')).toEqual(['Rename', 'Duplicate', 'Open on this view', 'View settings…', 'Delete'])
     expect(el.querySelector('[aria-label="Filter"]')).toBeNull() // documentView — rows-bearing views offer it
     expect(el.querySelector('[aria-label="Sort"]')).not.toBeNull() // the rest of the toolbar is untouched
     expect(el.querySelector('[aria-label="New note"]')).not.toBeNull()

@@ -493,7 +493,8 @@ export function propertyLabel(def: ViewSet, key: string): string {
 
 export function runView(def: ViewSet, view: ViewDef, records: readonly IndexRecord[], opts: RunOptions = {}): ViewResult {
   const errors: EngineError[] = []
-  const viewIndex = def.views.indexOf(view)
+  // By name too (YAZ-4585): ViewsPane hands the view with Settings filled in, a copy of the one in `def`.
+  const viewIndex = def.views.findIndex((v) => v === view || v.name === view.name)
   const viewWhere = viewIndex >= 0 ? `views[${viewIndex}]` : 'view'
   const files = fileValuesFor(records)
   const resolve = opts.resolve ?? resolverFor(records, opts.root)

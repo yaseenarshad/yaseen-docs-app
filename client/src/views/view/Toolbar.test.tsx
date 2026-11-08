@@ -345,7 +345,8 @@ describe('view tabs — right-click menu (YAZ-1471)', () => {
   it('right-clicking a tab opens Rename · Duplicate · Delete, and opening writes nothing', () => {
     const { el, onChange } = mount()
     const menu = openOn(el, 'Table')
-    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual(['Rename', 'Duplicate', 'Delete'])
+    // YAZ-4585 (D41): "Open on this view" and "View settings…" sit between Duplicate and Delete.
+    expect([...menu.querySelectorAll('[role^="menuitem"]')].map((b) => b.textContent)).toEqual(['Rename', 'Duplicate', 'Open on this view', 'View settings…', 'Delete'])
     expect(onChange).not.toHaveBeenCalled()
   })
 
