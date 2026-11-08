@@ -1,16 +1,16 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { type Modifiers, openByGesture, openTarget } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
 import type { FolderSettings } from '../folderSettings'
-import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import type { Resolver } from '../expr'
 import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, rowTitle } from './GroupHeader'
+import { GroupHeader, cellContent, rowTitle } from './GroupHeader'
 import { useFlip } from './flip'
-import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, groupTakesNew, useGroupDrag } from './groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
 import { NO_READ_ONLY } from '../readOnlyRows'
@@ -104,9 +104,10 @@ export function BoardView({
   readOnly = NO_READ_ONLY,
   hover,
 }: BoardViewProps) {
-  const levelKeys = [groupByKey(view), groupByKey(view, 1)]
+  const levels = shownGroupLevels(view)
+  const levelKeys = levels.map((_, level) => groupByKey(view, level))
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
-  const adds = [0, 1].map((level) => groupTakesNew(view, level))
+  const adds = levels.map((_, level) => groupTakesNew(view, level))
   /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES. */
   const flipRoot = useFlip()
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */
@@ -308,14 +309,63 @@ export function BoardView({
     )
   }
 
+  /**
+   * The nested sections under `parent` (YAZ-745): level 2 and, since YAZ-4531, level 3 inside it.
+   * Each section shows the merge rule's direct cards, then its own subgroups.
+   */
+  const subgroups = (parent: Group, parentAt: GroupSpot): ReactNode => {
+    if (parent.children === undefined || parent.children.length === 0) return null
+    const at = childSpot(parent, parentAt)
+    return (
+      <div className="view-board__subgroups">
+        {parent.children.map((child) => {
+          const ck = spotKey(child, at)
+          const childCollapsed = collapsed.includes(ck)
+          const childOver = dnd.over === ck
+          // A section with sections inside takes drops on its header only, as a column does: a drop
+          // bubbles, and the outer section would move the card a second time.
+          const nested = child.children !== undefined
+          const header = (
+            <GroupHeader
+              def={def}
+              view={view}
+              columns={keys}
+              groupKey={child.key}
+              label={child.label}
+              rows={child.rows}
+              collapsed={childCollapsed}
+              onToggle={() => onToggleGroup(ck)}
+              onNew={onNewInGroup === undefined || !adds[at.level] ? undefined : () => onNewInGroup(child, undefined, at)}
+              resolve={resolve}
+            />
+          )
+          return (
+            <section key={ck} className={`view-board__subgroup${childOver ? ' view-board__subgroup--drop' : ''}`} {...(nested ? {} : dnd.target(child, at))}>
+              {nested ? (
+                <div className="view-board__subgroup-header" {...dnd.target(child, at)}>
+                  {header}
+                </div>
+              ) : (
+                header
+              )}
+              {!childCollapsed && (child.children === undefined ? cardList(child.rows, child, at, childOver) : (child.direct?.length ?? 0) > 0 && cardList(child.direct ?? [], child, at, childOver))}
+              {!childCollapsed && subgroups(child, at)}
+              {!childCollapsed && child.children === undefined && adds[at.level] && inlineAdd(child, ck, at)}
+            </section>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="view-board" ref={flipRoot} onKeyDown={onCardKeyDown} style={{ '--view-board-col-w': `${width}px` } as CSSProperties}>
         {groups.map((g) => {
-          const gk = groupKeyOf(g.key)
+          const outerAt = TOP_SPOT
+          const gk = spotKey(g, outerAt)
           const isCollapsed = collapsed.includes(gk)
           const isOver = dnd.over === gk
-          const outerAt: GroupSpot = { level: 0, outer: g }
           const header = (
             <GroupHeader
               def={def}
@@ -350,42 +400,7 @@ export function BoardView({
                   ) : (
                     <>
                       {(g.direct?.length ?? 0) > 0 && cardList(g.direct ?? [], g, outerAt, isOver)}
-                      {g.children.length > 0 && (
-                        <div className="view-board__subgroups">
-                          {g.children.map((child) => {
-                            const ck = nestedGroupKeyOf(g.key, child.key)
-                            const childCollapsed = collapsed.includes(ck)
-                            const childOver = dnd.over === ck
-                            const innerAt: GroupSpot = { level: 1, outer: g }
-                            return (
-                              <section
-                                key={ck}
-                                className={`view-board__subgroup${childOver ? ' view-board__subgroup--drop' : ''}`}
-                                {...dnd.target(child, innerAt)}
-                              >
-                                <GroupHeader
-                                  def={def}
-                                  view={view}
-                                  columns={keys}
-                                  groupKey={child.key}
-                                  label={child.label}
-                                  rows={child.rows}
-                                  collapsed={childCollapsed}
-                                  onToggle={() => onToggleGroup(ck)}
-                                  onNew={
-                                    onNewInGroup === undefined || !adds[1]
-                                      ? undefined
-                                      : () => onNewInGroup(child, undefined, innerAt)
-                                  }
-                                  resolve={resolve}
-                                />
-                                {!childCollapsed && cardList(child.rows, child, innerAt, childOver)}
-                                {!childCollapsed && adds[1] && inlineAdd(child, ck, innerAt)}
-                              </section>
-                            )
-                          })}
-                        </div>
-                      )}
+                      {subgroups(g, outerAt)}
                     </>
                   )}
                 </>

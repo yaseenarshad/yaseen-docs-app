@@ -1,4 +1,4 @@
-import { type CSSProperties, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { api } from '../../api'
 import { createPreviewCache } from '../../lib/previewCache'
@@ -13,7 +13,8 @@ import type { FolderSettings } from '../folderSettings'
 import { cardWidth } from './cardWidth'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
+import { GroupHeader, cellContent, rowTitle } from './GroupHeader'
+import { type GroupSpot, TOP_SPOT, childSpot, spotKey } from './groupDrag'
 import { PageContextMenu } from './PageContextMenu'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
@@ -40,7 +41,7 @@ export interface CardsViewProps {
   onOpenFileBackground?: (path: string) => void
   onNotice?: (message: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
-  onNewInGroup?: (group: Group) => void
+  onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
   properties?: PropertiesResponse | null
   /** The settings of the folder whose rows these are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
@@ -219,31 +220,38 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     </ul>
   )
 
+  /**
+   * One group's section. A nested group (YAZ-4531) shows the merge rule's direct rows, then each
+   * child's section INSIDE its own, so a collapsed group folds its whole branch.
+   */
+  const section = (g: Group, at: GroupSpot): ReactNode => {
+    const gk = spotKey(g, at)
+    const isCollapsed = collapsed.includes(gk)
+    return (
+      <section key={gk} className="view-cards__group">
+        <GroupHeader
+          def={def}
+          view={view}
+          columns={keys}
+          groupKey={g.key}
+          label={g.label}
+          rows={g.rows}
+          collapsed={isCollapsed}
+          onToggle={() => onToggleGroup(gk)}
+          onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g, undefined, at)}
+          resolve={resolve}
+        />
+        {!isCollapsed && (g.children === undefined ? grid(g.rows) : (g.direct?.length ?? 0) > 0 && grid(g.direct ?? []))}
+        {!isCollapsed && g.children?.map((child) => section(child, childSpot(g, at)))}
+      </section>
+    )
+  }
+
   return (
     <div className="view-cards" style={style}>
       {groups === null
         ? grid(rows)
-        : groups.map((g) => {
-            const gk = groupKeyOf(g.key)
-            const isCollapsed = collapsed.includes(gk)
-            return (
-              <section key={gk} className="view-cards__group">
-                <GroupHeader
-                  def={def}
-                  view={view}
-                  columns={keys}
-                  groupKey={g.key}
-                  label={g.label}
-                  rows={g.rows}
-                  collapsed={isCollapsed}
-                  onToggle={() => onToggleGroup(gk)}
-                  onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g)}
-                  resolve={resolve}
-                />
-                {!isCollapsed && grid(g.rows)}
-              </section>
-            )
-          })}
+        : groups.map((g) => section(g, TOP_SPOT))}
       {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onNotice={onNotice} onClose={() => setMenu(null)} />}
     </div>
   )

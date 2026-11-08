@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ViewParseError, parseViews, serializeViews, updateViews } from './viewSchema'
+import { MAX_GROUP_LEVELS, ViewParseError, parseViews, serializeViews, shownGroupLevels, updateViews } from './viewSchema'
 
 /** Yasin's real file, verbatim (trailing newline included). */
 const YASIN_BASE = `views:
@@ -165,6 +165,14 @@ describe('parseViews def', () => {
   it('a two-level groupBy parses as an ordered list (YAZ-745)', () => {
     const { def } = parseViews(NESTED_SINK)
     expect(def.views[0].groupBy).toEqual([{ property: 'departments', direction: 'ASC' }, { property: 'process' }])
+  })
+
+  it('the shown group levels are those with a property, the first three (YAZ-4531)', () => {
+    expect(MAX_GROUP_LEVELS).toBe(3)
+    const levels = [{ property: 'a' }, { direction: 'ASC' }, { property: 'b' }, { property: 'c' }, { property: 'd' }] as never
+    expect(shownGroupLevels({ type: 'table', name: 'T', groupBy: levels }).map((l) => l.property)).toEqual(['a', 'b', 'c'])
+    expect(shownGroupLevels({ type: 'table', name: 'T', groupBy: { property: 'a' } })).toEqual([{ property: 'a' }])
+    expect(shownGroupLevels({ type: 'table', name: 'T' })).toEqual([])
   })
 
   it('keeps unknown keys at the top level and inside views', () => {

@@ -982,6 +982,16 @@ describe('sort menu', () => {
     expect(def().views[0].groupBy).toBeUndefined()
   })
 
+  it('the Sort badge counts only the group levels that show: at most three, none without a property (S2, YAZ-4531)', () => {
+    const text = (levels: string) => `views:\n  - type: table\n    name: T\n    order:\n      - file.name\n    groupBy:\n${levels}`
+    const badge = (el: ParentNode) => el.querySelector('[aria-label="Sort"] .view-toolbar__badge')?.textContent
+    const four = text(['note.a', 'note.b', 'note.c', 'note.d'].map((p) => `      - property: ${p}\n`).join(''))
+    expect(badge(mount(four).el)).toBe('3')
+    act(() => root?.unmount())
+    container?.remove()
+    expect(badge(mount(text('      - property: note.a\n      - direction: ASC\n')).el)).toBe('1')
+  })
+
   it('a Then-by level writes the LIST form, omits the outer property, and clears back to the object form (YAZ-745)', () => {
     const { el, def, yaml } = mount()
     const pop = openMenu(el, 'Sort')

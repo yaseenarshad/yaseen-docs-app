@@ -84,6 +84,34 @@ describe('perf (GRO-2133)', () => {
     expect(ms).toBeLessThan(budgetMs(50))
   })
 
+  it('1000 records × 3-clause filter + sort + three-level groupBy under 50 ms (YAZ-4531)', () => {
+    const records = Array.from({ length: 1000 }, (_, i) => record(i))
+    const def: ViewSet = {
+      views: [
+        {
+          type: 'table',
+          name: 'T',
+          filters: { and: ['file.ext == "md"', 'status != "done"', 'price > 10'] },
+          order: ['file.name', 'status', 'price'],
+          sort: [{ property: 'price', direction: 'DESC' }, { property: 'file.name', direction: 'ASC' }],
+          groupBy: [{ property: 'file.folder' }, { property: 'price' }, { property: 'status' }],
+          summaries: { price: 'Sum' },
+        },
+      ],
+    }
+    const go = () => runView(def, def.views[0], records, { root: '/vault' })
+    go() // warm-up (JIT)
+    const { result: r, median: ms, worst } = timeMedian(7, go)
+    expect(r.errors).toEqual([])
+    expect(r.groups).toHaveLength(7)
+    // Every kept row is `todo`, so each price group holds one status group with all its rows.
+    const second = r.groups!.flatMap(g => g.children!)
+    expect(second.every(c => c.children!.length === 1 && c.children![0].rows.length === c.rows.length)).toBe(true)
+    // eslint-disable-next-line no-console
+    console.log(`engine perf: 1000 records, three levels, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7 (${r.rows.length} kept)`)
+    expect(ms).toBeLessThan(budgetMs(50))
+  })
+
   it('1000 records × sort + two-level groupBy on Select columns with optionOrder under 50 ms (YAZ-3940)', () => {
     const records = Array.from({ length: 1000 }, (_, i) => record(i))
     // 50 options for price (one per value, in a shuffled order) and 2 for status: the option rank is a Map lookup.

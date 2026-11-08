@@ -138,6 +138,7 @@ function setValue(el: HTMLInputElement, value: string): void {
 const links = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__name')].map((b) => b.textContent ?? '')
 const headers = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorAll<HTMLTableRowElement>('.view-table__group')]
 const headerTexts = (el: ParentNode): string[] => headers(el).map((h) => q(h, '.view-group__value').textContent ?? '')
+const depths = (el: ParentNode): string[] => headers(el).map((h) => q<HTMLTableCellElement>(h, 'td.view-table__group-cell').style.getPropertyValue('--depth'))
 const toggles = (el: ParentNode, label: string): HTMLElement[] => [...el.querySelectorAll<HTMLElement>(`[aria-label="Toggle group ${label}"]`)]
 
 describe('nested sections (YAZ-745)', () => {
@@ -145,9 +146,8 @@ describe('nested sections (YAZ-745)', () => {
     const { el } = mount(NESTED_BASE)
     expect(headerTexts(el)).toEqual(['A', 'p1', 'p2', 'B', 'p1', 'C'])
     expect(links(el)).toEqual(['alphaDirect', 'alpha1', 'alpha2', 'beta1', 'loner'])
-    // depth: outer header cells carry only the base class, inner cells add the nested modifier
-    const cells = headers(el).map((h) => q<HTMLTableCellElement>(h, 'td.view-table__group-cell'))
-    expect(cells.map((c) => c.classList.contains('view-table__group-cell--nested'))).toEqual([false, true, true, false, true, false])
+    // depth: each header cell carries its level as `--depth` (YAZ-4531; was a `--nested` class), the indent's input
+    expect(depths(el)).toEqual(['0', '1', '1', '0', '1', '0'])
     // counts: an outer counts every row beneath it, an inner counts its own
     expect(headers(el).map((h) => q(h, '.view-group__count').textContent)).toEqual(['3', '1', '1', '1', '1', '1'])
     // per-level Sum of note.n: A=1+2+4, its p1=2, its p2=4, B=8, its p1=8, C=16
@@ -215,7 +215,7 @@ describe('nested sections (YAZ-745)', () => {
     const flat = NESTED_BASE.replace('    groupBy:\n      - property: note.dept\n      - property: note.proc\n', '    groupBy:\n      property: note.dept\n')
     const { el } = mount(flat)
     expect(headerTexts(el)).toEqual(['A', 'B', 'C'])
-    expect(el.querySelector('.view-table__group-cell--nested')).toBeNull()
+    expect(depths(el)).toEqual(['0', '0', '0'])
   })
 
   it('windowing keeps working with nested header lines', () => {
@@ -225,5 +225,77 @@ describe('nested sections (YAZ-745)', () => {
     const { el } = mount(NESTED_BASE, { records: many })
     expect([...el.querySelectorAll('tbody tr')].length).toBeLessThan(200) // slice + spacers, not 600
     expect(headerTexts(el)[0]).toBe('even')
+  })
+})
+
+const THREE_BASE = NESTED_BASE.replace('      - property: note.proc\n', '      - property: note.proc\n      - property: note.step\n')
+
+/** A → p1 → (direct s-merge row, s1, s2), A → p2 → s1; B → p1 → s1. */
+const THREE_RECORDS: IndexRecord[] = [
+  rec('a11', { dept: 'A', proc: 'p1', step: 's1', n: 1 }),
+  rec('a12', { dept: 'A', proc: 'p1', step: 's2', n: 2 }),
+  rec('a1d', { dept: 'A', proc: 'p1', step: 'p1', n: 4 }),
+  rec('a21', { dept: 'A', proc: 'p2', step: 's1', n: 8 }),
+  rec('b11', { dept: 'B', proc: 'p1', step: 's1', n: 16 }),
+]
+
+describe('three levels (YAZ-4531)', () => {
+  it('renders each level indented one step more; direct rows under their group; summaries per level', () => {
+    const { el } = mount(THREE_BASE, { records: THREE_RECORDS })
+    expect(headerTexts(el)).toEqual(['A', 'p1', 's1', 's2', 'p2', 's1', 'B', 'p1', 's1'])
+    expect(depths(el)).toEqual(['0', '1', '2', '2', '1', '2', '0', '1', '2'])
+    expect(links(el)).toEqual(['a1d', 'a11', 'a12', 'a21', 'b11'])
+    expect(headers(el).map((h) => h.querySelector('.view-group__summary')?.textContent)).toEqual(['Sum15', 'Sum7', 'Sum1', 'Sum2', 'Sum8', 'Sum8', 'Sum16', 'Sum16', 'Sum16'])
+  })
+
+  it('collapse works at each level, each under its path key', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el } = mount(THREE_BASE, { records: THREE_RECORDS })
+    click(toggles(el, 's1')[0]) // A / p1 / s1
+    expect(links(el)).toEqual(['a1d', 'a12', 'a21', 'b11'])
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [`v:A${SEP}v:p1${SEP}v:s1`])
+    click(toggles(el, 'p1')[0]) // A / p1: its direct row and both level-3 sections fold
+    expect(headerTexts(el)).toEqual(['A', 'p1', 'p2', 's1', 'B', 'p1', 's1'])
+    expect(links(el)).toEqual(['a21', 'b11'])
+    click(toggles(el, 'A')[0])
+    expect(headerTexts(el)).toEqual(['A', 'B', 'p1', 's1'])
+    expect(links(el)).toEqual(['b11'])
+  })
+
+  it('a two-level key stored before three levels still collapses its group', () => {
+    groupStore.set('/vault|/vault/pillars.md::T', [`v:A${SEP}v:p1`])
+    const { el } = mount(THREE_BASE, { records: THREE_RECORDS })
+    expect(toggles(el, 'p1')[0].getAttribute('aria-expanded')).toBe('false')
+    expect(links(el)).toEqual(['a21', 'b11'])
+  })
+
+  it('collapse-all lists every level in document order', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el } = mount(THREE_BASE, { records: THREE_RECORDS })
+    click(byLabel(el, 'Collapse all groups'))
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [
+      'v:A', `v:A${SEP}v:p1`, `v:A${SEP}v:p1${SEP}v:s1`, `v:A${SEP}v:p1${SEP}v:s2`, `v:A${SEP}v:p2`, `v:A${SEP}v:p2${SEP}v:s1`,
+      'v:B', `v:B${SEP}v:p1`, `v:B${SEP}v:p1${SEP}v:s1`,
+    ])
+  })
+
+  it('search narrows at level 3 and drops every emptied ancestor', () => {
+    const { el } = mount(THREE_BASE, { records: THREE_RECORDS })
+    click(byLabel(el, 'Search'))
+    setValue(byLabel(el, 'Search rows'), 'a12')
+    expect(headerTexts(el)).toEqual(['A', 'p1', 's2'])
+    expect(links(el)).toEqual(['a12'])
+  })
+
+  it('windowing keeps working with 600 notes over three levels; every line is one row height', () => {
+    const many: IndexRecord[] = Array.from({ length: 600 }, (_, i) =>
+      rec(`n${String(i).padStart(3, '0')}`, { dept: i % 2 ? 'odd' : 'even', proc: `p${i % 3}`, step: `s${i % 5}` }),
+    )
+    const { el } = mount(THREE_BASE, { records: many })
+    expect([...el.querySelectorAll('tbody tr')].length).toBeLessThan(200) // slice + spacers, not 600 + 38 headers
+    expect(headerTexts(el).slice(0, 3)).toEqual(['even', 'p0', 's0'])
+    // the bottom spacer covers the unmounted lines at one row height each: 600 rows + 2 + 6 + 30 headers
+    const mounted = [...el.querySelectorAll('tbody tr')].filter((tr) => !tr.classList.contains('view-table__spacer')).length
+    expect(parseFloat(q<HTMLElement>(el, 'tr.view-table__spacer').style.height)).toBe((638 - mounted) * 28)
   })
 })

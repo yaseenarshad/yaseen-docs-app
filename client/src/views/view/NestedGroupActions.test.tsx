@@ -162,17 +162,18 @@ const headersOf = (el: ParentNode, label: string): HTMLElement[] =>
     (x) => x.querySelector('.view-group__value')?.textContent === label,
   )
 
-/** Nested table as `{ 'Outer': [direct rows], 'Outer/Inner': [rows] }`, in document order. */
+/** Nested table as `{ 'Outer': [direct rows], 'Outer/Inner': [rows], 'Outer/Inner/Third': [rows] }`, in document order. */
 function nestedSections(el: ParentNode): Record<string, string[]> {
   const out: Record<string, string[]> = {}
-  let outer = ''
+  const path: string[] = []
   let current = ''
   for (const tr of el.querySelectorAll('tbody tr')) {
     if (tr.classList.contains('view-table__group')) {
       const label = q(tr, '.view-group__value').textContent ?? ''
-      const nested = q(tr, 'td').classList.contains('view-table__group-cell--nested')
-      if (nested) current = `${outer}/${label}`
-      else outer = current = label
+      const depth = Number(q<HTMLElement>(tr, 'td').style.getPropertyValue('--depth'))
+      path.length = depth
+      path.push(label)
+      current = path.join('/')
       out[current] = []
     } else if (!tr.classList.contains('view-table__spacer')) {
       out[current]?.push(q(tr, '.view-table__name').textContent ?? '')
@@ -314,5 +315,66 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
     act(() => q<HTMLElement>(el, '[aria-label="New note in group p2"]').click())
     draw()
     expect(seed()).toEqual({ proc: 'p2' })
+  })
+})
+
+const THREE_TABLE = NESTED_TABLE.replace('      - property: note.proc\n', '      - property: note.proc\n      - property: note.step\n')
+const THREE_BOARD = THREE_TABLE.replace('type: table', 'type: board').replace('name: T', 'name: B')
+const THREE_RECORDS: IndexRecord[] = [
+  rec('a1', { dept: 'A', proc: 'p1', step: 's1' }),
+  rec('a2', { dept: 'A', proc: 'p2', step: 's2' }),
+  rec('b1', { dept: 'B', proc: 'p1', step: 's1' }),
+  rec('b3', { dept: 'B', proc: 'p3', step: 's3' }),
+]
+
+describe('three levels (YAZ-4531)', () => {
+  it('a Table drop on a level-3 group in another branch writes all three values in ONE move and lands there', () => {
+    const { el } = mount(THREE_TABLE, { records: THREE_RECORDS })
+    fire(rowOf(el, 'a1'), 'dragstart')
+    fire(rowOf(el, 'b3'), 'drop')
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/a1.md', [
+      { key: 'step', value: 's3', prevRaw: 's1' },
+      { key: 'proc', value: 'p3', prevRaw: 'p1' },
+      { key: 'dept', value: 'B', prevRaw: 'A' },
+    ])
+    expect(write).not.toHaveBeenCalled()
+    expect(nestedSections(el)['B/p3/s3']).toContain('a1')
+  })
+
+  it('a drop writes only the levels that differ from the row\'s own branch', () => {
+    const records = [...THREE_RECORDS, rec('a1b', { dept: 'A', proc: 'p1', step: 's9' })]
+    const { el } = mount(THREE_TABLE, { records })
+    fire(rowOf(el, 'a1'), 'dragstart')
+    fire(rowOf(el, 'a1b'), 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/a1.md', 'step', 's9')
+    fire(rowOf(el, 'a2'), 'dragstart')
+    fire(rowOf(el, 'a1b'), 'drop') // A/p2/s2 → A/p1/s9: level 1 matches, so it writes levels 3 and 2 only
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/a2.md', [
+      { key: 'step', value: 's9', prevRaw: 's2' },
+      { key: 'proc', value: 'p1', prevRaw: 'p2' },
+    ])
+  })
+
+  it('a Board drop on a level-3 section writes all three values once, without bubbling into its parents', () => {
+    const { el } = mount(THREE_BOARD, { records: THREE_RECORDS })
+    fire(cardOf(el, 'a1'), 'dragstart')
+    fire(cardOf(el, 'b3'), 'drop')
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/a1.md', [
+      { key: 'step', value: 's3', prevRaw: 's1' },
+      { key: 'proc', value: 'p3', prevRaw: 'p1' },
+      { key: 'dept', value: 'B', prevRaw: 'A' },
+    ])
+  })
+
+  it('a level-3 "+" seeds every ancestor, in Table and Board', () => {
+    for (const text of [THREE_TABLE, THREE_BOARD]) {
+      create.mockClear()
+      const { el } = mount(text, { records: THREE_RECORDS })
+      act(() => q<HTMLElement>(el, '[aria-label="New note in group s3"]').click())
+      draw()
+      expect(seed()).toEqual({ dept: 'B', proc: 'p3', step: 's3' })
+      act(() => root?.unmount())
+      container?.remove()
+    }
   })
 })

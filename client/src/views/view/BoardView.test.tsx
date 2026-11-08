@@ -1115,3 +1115,37 @@ ${cardStyle}
   })
 })
 
+const THREE_BOARD = NESTED_BOARD.replace('      - property: note.proc\n', '      - property: note.proc\n      - property: note.step\n')
+
+describe('three group levels (YAZ-4531)', () => {
+  const records = [
+    rec('a11', { dept: 'A', proc: 'p1', step: 's1' }),
+    rec('a1d', { dept: 'A', proc: 'p1', step: 'p1' }),
+    rec('a12', { dept: 'A', proc: 'p1', step: 's2' }),
+    rec('b21', { dept: 'B', proc: 'p2', step: 's1' }),
+  ]
+  /** Each subgroup as `label@depth`, depth = how many subgroups hold it. */
+  const tree = (el: ParentNode): string[] =>
+    [...el.querySelectorAll<HTMLElement>('.view-board__subgroup')].map((s) => {
+      let depth = 0
+      for (let p = s.parentElement?.closest('.view-board__subgroup'); p; p = p.parentElement?.closest('.view-board__subgroup')) depth++
+      return `${q(s, '.view-group__value').textContent}@${depth}`
+    })
+
+  it('level 1 is the columns; levels 2 and 3 are subgroup sections, level 3 inside level 2, direct cards first', () => {
+    const { el } = mount(THREE_BOARD, { records })
+    expect(headerTexts(el)).toEqual(['A', 'B'])
+    expect(tree(el)).toEqual(['p1@0', 's1@1', 's2@1', 'p2@0', 's1@1'])
+    expect(titles(el)).toEqual(['a1d', 'a11', 'a12', 'b21'])
+    // the inline add sits in the last level's sections only
+    expect([...el.querySelectorAll('.view-board__subgroup')].map((s) => s.querySelector(':scope > .view-board__add') !== null)).toEqual([false, true, true, false, true])
+  })
+
+  it('a level-3 chevron hides only that section and persists under its path key', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el } = mount(THREE_BOARD, { records })
+    click(byLabel(el, 'Toggle group s2'))
+    expect(titles(el)).toEqual(['a1d', 'a11', 'b21'])
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::B', ['v:A\u001fv:p1\u001fv:s2'])
+  })
+})

@@ -33,7 +33,7 @@ export interface ViewDef {
   /** 🔒 D2 (YAZ-867): an outline view's whole document — ONE markdown bullet list (`views/outlineDoc.ts`). */
   outline?: string
   sort?: SortSpec[]
-  /** Ordered levels, outer first; only the first two are honoured in v1 (YAZ-745). The single-object form stays valid. */
+  /** Ordered levels, outer first; only the first three are honoured (YAZ-745, `MAX_GROUP_LEVELS` since YAZ-4531). The single-object form stays valid. */
   groupBy?: GroupBySpec | GroupBySpec[]
   showEmptyColumns?: boolean
   limit?: number
@@ -58,6 +58,13 @@ export interface ViewDef {
 /** A view's grouping levels, outer first, whichever form `groupBy` is written in. */
 export const groupByLevels = (view: ViewDef): GroupBySpec[] =>
   Array.isArray(view.groupBy) ? view.groupBy : view.groupBy ? [view.groupBy] : []
+
+/** The most group levels a view honours (YAZ-4531); `groupBy` entries past it are ignored. */
+export const MAX_GROUP_LEVELS = 3
+
+/** The levels the engine groups by: those with a property name, the first `MAX_GROUP_LEVELS` of them. */
+export const shownGroupLevels = (view: ViewDef): GroupBySpec[] =>
+  groupByLevels(view).filter(g => g && typeof g.property === 'string').slice(0, MAX_GROUP_LEVELS)
 
 export interface ViewSet {
   filters?: FilterNode

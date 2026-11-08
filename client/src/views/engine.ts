@@ -1,7 +1,7 @@
 import { vaultNoteId } from '@shared/noteId'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { type IndexRecord, inFolder } from '@shared/types'
-import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, type SortSpec, groupByLevels } from './viewSchema'
+import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, type SortSpec, shownGroupLevels } from './viewSchema'
 import {
   DateValue, DurationValue, ErrorValue, type Expr, FileValue, LinkValue, type Resolver, type Scope, type Value,
   compile, equals, evaluate, fromYaml, isTruthy, linkText, render, stripBrackets,
@@ -27,7 +27,7 @@ export interface Group {
   /** null for the trailing "No value" group. */
   key: Value | null
   label: string
-  /** EVERY row under the group — with two levels that is `direct` plus every child's rows. */
+  /** EVERY row under the group — with nested levels that is `direct` plus every child's rows. */
   rows: Row[]
   summaries: Record<string, Value>
   /**
@@ -37,8 +37,8 @@ export interface Group {
    */
   fannedOut: boolean
   /**
-   * The inner groups (YAZ-745): present — possibly empty — on every group when the view groups on
-   * two levels, absent in single-level mode. A child never has children of its own.
+   * The inner groups (YAZ-745, up to three levels since YAZ-4531): present — possibly empty — on
+   * every group above the view's last level, absent on the last level (so a single level has none).
    */
   children?: Group[]
   /** The rows the merge rule keeps directly under this group; same presence rule as `children`. */
@@ -620,37 +620,49 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     titles ??= new Map([...opts.page!.folders.map(f => [f.folder, f.title] as const), ['', opts.page!.vault]])
     return titles.get(key) ?? key.slice(key.lastIndexOf('/') + 1)
   }
-  const groupOf = (key: Value | null, entries: Entry[], fannedOut: boolean, depth: number): Group =>
-    ({ key, label: key === null ? NO_VALUE : labelOf(key, depth), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut })
+  const groupOf = (key: Value | null, entries: Entry[], depth: number): Group =>
+    ({ key, label: key === null ? NO_VALUE : labelOf(key, depth), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut: false })
 
   let groups: Group[] | null = null
-  // Levels past the second are ignored in v1 (YAZ-745); a level without a property name is not one.
-  const levels = groupByLevels(view).filter(g => g && typeof g.property === 'string').slice(0, 2)
-  // How far below the page each Folder level groups (YAZ-2541): the first one step, a second two; 0 = not a Folder level.
+  // Levels past the third are ignored (YAZ-4531); a level without a property name is not one.
+  const levels = shownGroupLevels(view)
+  // How far below the page each Folder level groups (YAZ-2541): the first one step, a second two, a third three; 0 = not a Folder level.
   const byFolder = (l: GroupBySpec): boolean => opts.page !== undefined && l.property === 'file.folder'
   const depths = levels.map((l, i) => (byFolder(l) ? levels.slice(0, i + 1).filter(byFolder).length : 0))
-  if (levels.length) {
-    const outer = bucket(kept, levels[0], depths[0])
-    const branches: { key: Value | null; entries: Entry[] }[] = [...outer.valued]
-    if (outer.noValue.length) branches.push({ key: null, entries: outer.noValue })
-    if (levels.length === 1) {
-      groups = branches.map(b => groupOf(b.key, b.entries, outer.fannedOut, depths[0]))
-    } else {
-      const nested = branches.map(b => ({ ...b, inner: bucket(b.entries, levels[1], depths[1]) }))
-      // Fan-out is a flag per LEVEL, not per branch: one list anywhere inside marks every inner group.
-      const innerFanned = nested.some(b => b.inner.fannedOut)
-      groups = nested.map(b => {
-        // MERGE RULE (YAZ-745): an inner key equal to its outer's is no child — its rows sit
-        // DIRECTLY under the outer, as do the value-less rows of a "No value" outer, which
-        // therefore never carries a "No value" child. Folder then Folder (YAZ-2541) rides on it:
-        // a subfolder's own notes resolve to the subfolder at both depths, so they sit directly under it.
-        const merges = (key: Value): boolean => b.key !== null && equals(key, b.key)
-        const children = b.inner.valued.filter(x => !merges(x.key)).map(x => groupOf(x.key, x.entries, innerFanned, depths[1]))
-        if (b.key !== null && b.inner.noValue.length) children.push(groupOf(null, b.inner.noValue, innerFanned, depths[1]))
-        const direct = b.key === null ? b.inner.noValue : b.inner.valued.filter(x => merges(x.key)).flatMap(x => x.entries)
-        return { ...groupOf(b.key, b.entries, outer.fannedOut, depths[0]), children, direct: direct.map(e => e.row) }
-      })
+  // Fan-out is a flag per LEVEL, not per branch (YAZ-745): one list anywhere in a level marks every group of it.
+  const fanned = levels.map(() => false)
+  const built: Group[][] = levels.map(() => [])
+  /**
+   * The groups of level `at` over `list`, under a parent keyed `parent` (`undefined` at the top).
+   * MERGE RULE (YAZ-745, per parent since YAZ-4531): a key equal to the parent's is no group — its
+   * entries sit DIRECTLY under the parent, as do the value-less entries of a "No value" parent, which
+   * therefore never carries a "No value" child. Folder then Folder (YAZ-2541) rides on it: a
+   * subfolder's own notes resolve to the subfolder at every deeper level, so they sit directly under it.
+   * Direct entries are not split further.
+   */
+  const split = (list: Entry[], at: number, parent?: Value | null): { children: Group[]; direct: Entry[] } => {
+    const level = bucket(list, levels[at], depths[at])
+    if (level.fannedOut) fanned[at] = true
+    const merges = (key: Value): boolean => parent !== undefined && parent !== null && equals(key, parent)
+    const children = level.valued.filter(x => !merges(x.key)).map(x => toGroup(x.key, x.entries, at))
+    if (parent !== null && level.noValue.length) children.push(toGroup(null, level.noValue, at))
+    const direct = parent === null ? level.noValue : level.valued.filter(x => merges(x.key)).flatMap(x => x.entries)
+    return { children, direct }
+  }
+  /** One group of level `at`; above the last level it carries `children` and `direct`, possibly empty. */
+  const toGroup = (key: Value | null, list: Entry[], at: number): Group => {
+    const group = groupOf(key, list, depths[at])
+    built[at].push(group)
+    if (at + 1 < levels.length) {
+      const inner = split(list, at + 1, key)
+      group.children = inner.children
+      group.direct = inner.direct.map(e => e.row)
     }
+    return group
+  }
+  if (levels.length) {
+    groups = split(kept, 0).children
+    for (let i = 0; i < levels.length; i++) if (fanned[i]) for (const g of built[i]) g.fannedOut = true
   }
 
   return { rows: kept.map(e => e.row), groups, summaries: summaryOf(kept), errors, total }

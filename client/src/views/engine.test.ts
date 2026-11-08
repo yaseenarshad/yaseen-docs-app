@@ -354,7 +354,7 @@ describe('runView: nested group by (YAZ-745)', () => {
     expect(lead.direct).toEqual([])
     expect(lead.children!.map(c => c.label)).toEqual(['1 Cross', '2 Paid'])
     expect(lead.children![1].rows.map(x => x.record.basename)).toEqual(['a1', 'a3'])
-    expect(lead.children![0].children).toBeUndefined() // two levels only
+    expect(lead.children![0].children).toBeUndefined() // the last level has no children
     expect(r.groups![1].children!.map(c => c.label)).toEqual(['3 Email'])
   })
 
@@ -446,11 +446,85 @@ describe('runView: nested group by (YAZ-745)', () => {
     expect(r.groups![0].children!.map(c => c.summaries['file.name'])).toEqual([1, 1, 1])
   })
 
-  it('entries beyond two are ignored in v1', () => {
-    const recs = [rec('a', { dept: 'A', proc: 'p', extra: 'x' })]
-    const r = T([{ property: 'dept' }, { property: 'proc' }, { property: 'extra' }], recs)
-    expect(r.groups![0].children![0].label).toBe('p')
-    expect(r.groups![0].children![0].children).toBeUndefined()
+  it('entries beyond three are ignored (YAZ-4531)', () => {
+    const recs = [rec('a', { dept: 'A', proc: 'p', step: 's', extra: 'x' })]
+    const r = T([{ property: 'dept' }, { property: 'proc' }, { property: 'step' }, { property: 'extra' }], recs)
+    expect(r.groups![0].children![0].children![0].label).toBe('s')
+    expect(r.groups![0].children![0].children![0].children).toBeUndefined()
+  })
+})
+
+describe('runView: three group levels (YAZ-4531)', () => {
+  const rec = (name: string, properties: Record<string, unknown>) =>
+    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties }) as IndexRecord
+  const T = (recs: IndexRecord[], extra: Partial<ViewDef> = {}) =>
+    runView({ views: [] }, { type: 'table', name: 'T', groupBy: [{ property: 'a' }, { property: 'b' }, { property: 'c' }], ...extra }, recs, {})
+  const names = (rows: readonly { record: IndexRecord }[] | undefined) => rows!.map(x => x.record.basename)
+
+  it('rows sit under the innermost group; each group spans its branch; only the last level has no children', () => {
+    const recs = [rec('x1', { a: 'A', b: 'B1', c: 'C1' }), rec('x2', { a: 'A', b: 'B1', c: 'C2' }), rec('x3', { a: 'A', b: 'B2', c: 'C1' })]
+    const r = T(recs, { summaries: { 'file.name': 'Count' } })
+    const [a] = r.groups!
+    expect(names(a.rows)).toEqual(['x1', 'x2', 'x3'])
+    expect(a.children!.map(g => g.label)).toEqual(['B1', 'B2'])
+    const b1 = a.children![0]
+    expect(names(b1.rows)).toEqual(['x1', 'x2'])
+    expect(b1.direct).toEqual([])
+    expect(b1.children!.map(g => [g.label, names(g.rows)])).toEqual([['C1', ['x1']], ['C2', ['x2']]])
+    expect(b1.children![0].children).toBeUndefined()
+    expect(b1.children![0].direct).toBeUndefined()
+    expect(b1.summaries['file.name']).toBe(2)
+  })
+
+  it('the merge rule applies against each parent: at depth 2 the row is direct under level 1, at depth 3 under level 2', () => {
+    const recs = [rec('d2', { a: 'S', b: 'S', c: 'z' }), rec('d3', { a: 'S', b: 'T', c: 'T' }), rec('deep', { a: 'S', b: 'T', c: 'U' })]
+    const [s] = T(recs).groups!
+    expect(names(s.direct)).toEqual(['d2'])
+    expect(s.children!.map(g => g.label)).toEqual(['T'])
+    const t = s.children![0]
+    expect(names(t.direct)).toEqual(['d3'])
+    expect(t.children!.map(g => [g.label, names(g.rows)])).toEqual([['U', ['deep']]])
+  })
+
+  it('No value at level 3: a valued parent gets a "No value" child; a "No value" parent keeps those rows direct', () => {
+    const recs = [rec('v', { a: 'A', b: 'B' }), rec('n', { a: 'A' }), rec('nc', { a: 'A', c: 'C' })]
+    const [a] = T(recs).groups!
+    expect(a.children!.map(g => g.label)).toEqual(['B', 'No value'])
+    const [b, nv] = a.children!
+    expect(b.children!.map(g => [g.key, names(g.rows)])).toEqual([[null, ['v']]])
+    expect(nv.key).toBe(null)
+    expect(names(nv.direct)).toEqual(['n'])
+    expect(nv.children!.map(g => [g.label, names(g.rows)])).toEqual([['C', ['nc']]])
+  })
+
+  it('a branch with no inner keys keeps children: []; fan-out is one flag per level across all its groups', () => {
+    const recs = [rec('m', { a: 'A', b: 'B', c: ['c1', 'c2'] }), rec('o', { a: 'A', b: 'D', c: 'c1' }), rec('m2', { a: 'E', b: 'E' })]
+    const r = T(recs)
+    expect(r.groups!.every(g => !g.fannedOut)).toBe(true)
+    expect(r.groups!.flatMap(g => g.children!).every(g => !g.fannedOut)).toBe(true)
+    const third = r.groups!.flatMap(g => g.children!).flatMap(g => g.children!)
+    expect(third.map(g => g.label)).toEqual(['c1', 'c2', 'c1'])
+    expect(third.every(g => g.fannedOut)).toBe(true)
+    const e = r.groups![1]
+    expect(names(e.direct)).toEqual(['m2'])
+    expect(e.children).toEqual([])
+  })
+
+  it('Folder then Folder then Folder under a page: each level one step further down; a folder\'s own notes sit directly under it', () => {
+    const at = (path: string) => {
+      const basename = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
+      return { ...TEST_RECORDS[0], path: `/vault/${path}`, basename, title: basename, folder: path.slice(0, path.lastIndexOf('/')), properties: {} } as IndexRecord
+    }
+    const recs = [at('p/a/Top.md'), at('p/a/b/Mid.md'), at('p/a/b/c/Low.md'), at('p/a/b/c/d/Lower.md')]
+    const r = runView({ views: [] }, { type: 'table', name: 'T', groupBy: [{ property: 'file.folder' }, { property: 'file.folder' }, { property: 'file.folder' }] }, recs,
+      { page: { folder: 'p', folders: [], vault: 'V' } })
+    const [a] = r.groups!
+    expect(a.key).toBe('p/a')
+    expect(names(a.direct)).toEqual(['Top'])
+    const b = a.children![0]
+    expect(b.key).toBe('p/a/b')
+    expect(names(b.direct)).toEqual(['Mid'])
+    expect(b.children!.map(g => [g.key, g.label, names(g.rows)])).toEqual([['p/a/b/c', 'c', ['Low', 'Lower']]])
   })
 })
 

@@ -23,12 +23,13 @@ import { canonicalKey } from './keys'
 export const groupKeyOf = (key: Value | null): string => (key === null ? '∅' : `v:${render(key)}`)
 
 /**
- * The same identity for an INNER group (YAZ-745), scoped by its outer's so the same inner value
- * under two outers collapses independently. It is persisted in `baseGroups` like `groupKeyOf`,
- * so the unit-separator encoding is a contract.
+ * The same identity at ANY level (YAZ-745, YAZ-4531): the `groupKeyOf` of each ancestor, outer
+ * first, then the group's own, joined by U+001F — so the same value under two parents collapses
+ * independently, a top-level key is plain `groupKeyOf`, and an inner key stored when there were
+ * two levels (outer, U+001F, inner) still names its group. It is persisted in `baseGroups`, so the
+ * encoding is a contract.
  */
-export const nestedGroupKeyOf = (outerKey: Value | null, innerKey: Value | null): string =>
-  `${groupKeyOf(outerKey)}\u001f${groupKeyOf(innerKey)}`
+export const groupPathKeyOf = (keys: readonly (Value | null)[]): string => keys.map(groupKeyOf).join('\u001f')
 
 /** The stored summary kind for a column, whichever key form (`priority` / `note.priority`) the file uses. */
 export function summaryKindOf(view: ViewDef, key: string): string | undefined {

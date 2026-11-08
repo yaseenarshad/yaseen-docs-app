@@ -17,8 +17,7 @@ import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
-import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, applyMoves, groupByKey, groupsByFolder } from './view/groupDrag'
-import { groupKeyOf, nestedGroupKeyOf } from './view/GroupHeader'
+import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
 import { ListView } from './view/ListView'
 import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
@@ -256,11 +255,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   const matches = (r: Row) => Object.values(r.values).some((v) => render(v, resolve).toLowerCase().includes(needle))
   const rows = needle ? result.rows.filter(matches) : result.rows
   // Search filters WITHIN each group; a group with no matching rows disappears (4C, GRO-2137). A
-  // two-level group (YAZ-745) narrows each branch the same way — emptied children go, and `rows`
-  // stays the union of what is left beneath, so an outer whose whole branch missed drops too.
+  // nested group (YAZ-745, every level since YAZ-4531) narrows each branch the same way — emptied
+  // children go, and `rows` stays the union of what is left beneath, so a group whose whole branch missed drops too.
   const narrow = (g: Group): Group => {
     if (g.children === undefined) return { ...g, rows: g.rows.filter(matches) }
-    const children = g.children.map((c) => ({ ...c, rows: c.rows.filter(matches) })).filter((c) => keepEmpty || c.rows.length > 0)
+    const children = g.children.map(narrow).filter((c) => keepEmpty || c.rows.length > 0)
     const direct = (g.direct ?? []).filter(matches)
     return { ...g, rows: [...direct, ...children.flatMap((c) => c.rows)], children, direct }
   }
@@ -296,18 +295,20 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
     writeCollapsed(collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key])
   }
   // Collapse / expand all (YAZ-744): every group the VIEW has, not the search-narrowed `groups` —
-  // a group hidden behind an active search must collapse with the rest. Two levels (YAZ-745) go in
-  // document order, each outer before its children, and it is the KEY count that meets the store's
-  // cap: above it the toggle hides rather than writing a list `setViewGroups` would truncate.
-  const groupKeys =
-    configuredGroups === null ? [] : configuredGroups.flatMap((g) => [groupKeyOf(g.key), ...(g.children ?? []).map((c) => nestedGroupKeyOf(g.key, c.key))])
+  // a group hidden behind an active search must collapse with the rest. Nested levels (YAZ-745,
+  // YAZ-4531) go in document order, each group before its children, and it is the KEY count that meets
+  // the store's cap: above it the toggle hides rather than writing a list `setViewGroups` would truncate.
+  const keysOf = (list: readonly Group[], at: GroupSpot): string[] =>
+    list.flatMap((g) => [spotKey(g, at), ...keysOf(g.children ?? [], childSpot(g, at))])
+  const groupKeys = configuredGroups === null ? [] : keysOf(configuredGroups, TOP_SPOT)
   const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
 
   // A drop on a board column / table section (5C, GRO-2143): optimistic move now, then the host writes
   // every changed key in one guarded transformation (`FolderHost.writeValues`); a failure drops the move (the card snaps back)
   // and flags the card instead. `drop` names
-  // the LEVEL the row landed on (YAZ-1101) and may carry the outer's write — inner first, then the
-  // outer, both optimistic as ONE unit so either failing snaps the whole move back (🔒 YAZ-745).
+  // the LEVEL the row landed on (YAZ-1101) and may carry each differing ancestor's write — the level's
+  // own first, then the ancestors nearest first, all optimistic as ONE unit so any one failing snaps
+  // the whole move back (🔒 YAZ-745, YAZ-4531).
   const onMoveToGroup = (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => {
     const key = groupByKey(view, drop?.level ?? 0)
     // A read-only note never moves, not even optimistically: the move writes a property (YAZ-3076 S53).
@@ -325,7 +326,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
       value = next
     }
     const writes: PendingMove = [{ key, value, prevRaw }]
-    if (drop?.outer !== undefined) writes.push({ ...drop.outer, prevRaw: props?.[drop.outer.key] })
+    for (const write of drop?.ancestors ?? []) writes.push({ ...write, prevRaw: props?.[write.key] })
     setMoveError(null)
     setMoves((m) => ({ ...m, [path]: writes }))
     folder.writeValues(path, writes).catch((err: unknown) => {
@@ -343,10 +344,10 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   const onNewNote = (group: Group | null, name?: string, at?: GroupSpot) => {
     const seed = deriveSeed(def, view)
     if (group !== null) {
-      // 🔒 YAZ-745: an INNER "+" seeds the outer too, so the note lands in the very section clicked.
-      // The outer goes FIRST (YAZ-2541): under Folder then Folder both levels set `seed.folder`, and
-      // the inner folder, the one clicked, is where the note must be born — so it writes last.
-      if (at !== undefined && at.level > 0) seedGroup(seed, at.outer, view, 0)
+      // 🔒 YAZ-745: an INNER "+" seeds every ancestor too (YAZ-4531), so the note lands in the very
+      // section clicked. The ancestors go FIRST, outer first (YAZ-2541): under Folder then Folder each
+      // level sets `seed.folder`, and the folder clicked is where the note must be born — so it writes last.
+      at?.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level))
       seedGroup(seed, group, view, at?.level ?? 0)
     }
     setCreateError(null)

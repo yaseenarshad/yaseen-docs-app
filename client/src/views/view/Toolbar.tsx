@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import { type ViewSet, type ViewDef, type Mutate, groupByLevels } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
 import type { EngineError } from '../engine'
 import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
@@ -54,8 +54,9 @@ export const countLabel = (shown: number, total: number): string =>
 export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
-  // Each grouping LEVEL is one rule in the badge (YAZ-745) — and an empty `groupBy: []` is none.
-  const sorts = (view.sort?.length ?? 0) + groupByLevels(view).length
+  // Each grouping LEVEL that shows is one rule in the badge (YAZ-745, S2 YAZ-4531): an empty
+  // `groupBy: []`, a level with no property and a level past the third count none.
+  const sorts = (view.sort?.length ?? 0) + shownGroupLevels(view).length
   const allCollapsed = allGroupKeys.every((k) => collapsed.includes(k))
   const groupsLabel = allCollapsed ? 'Expand all groups' : 'Collapse all groups'
 

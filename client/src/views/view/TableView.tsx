@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
 import { titleCandidates } from '../../links/completion'
 import { belongsToTitles } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -10,8 +10,8 @@ import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, rowTitle, summaryKindOf } from './GroupHeader'
-import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, groupTakesNew, useGroupDrag } from './groupDrag'
+import { GroupHeader, cellContent, rowTitle, summaryKindOf } from './GroupHeader'
+import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { cssZoom } from '../../lib/cssZoom'
@@ -101,8 +101,8 @@ const GUTTER_WIDTH = 44
 /** The header drag's own payload (YAZ-1548) — `ViewTabs`' `VIEW_TAB_MIME` idiom; never `text/plain`, so a stray text drop is not a reorder. */
 const COLUMN_MIME = 'application/x-yaseen-table-column'
 
-/** One display line: a group header row (`nested` = an inner section, YAZ-745), or a data row with its `data-cell` row index (data rows only), its `#` gutter number `n` (YAZ-1513) and its group (null when ungrouped). `at` places that group for the level-aware drag / "+" (YAZ-1101). */
-type Line = { header: Group; gk: string; nested?: true; at: GroupSpot } | { row: Row; r: number; n: number; g: Group | null; gk: string | null; at: GroupSpot | null }
+/** One display line: a group header row (`depth` = its level, 0 at the top: YAZ-745, YAZ-4531), or a data row with its `data-cell` row index (data rows only), its `#` gutter number `n` (YAZ-1513) and its group (null when ungrouped). `at` places that group for the level-aware drag / "+" (YAZ-1101). */
+type Line = { header: Group; gk: string; depth: number; at: GroupSpot } | { row: Row; r: number; n: number; g: Group | null; gk: string | null; at: GroupSpot | null }
 
 /**
  * A data row's sibling key. Fan-out (YAZ-671): the same record can sit in several groups, and the
@@ -145,7 +145,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const [titleEdit, setTitleEdit] = useState<string | null>(null)
   // Row drag between sections (5C, GRO-2143); disabled without groups. One write key PER level
   // (YAZ-1101): a level that is not a note property takes no drops and shows no "+".
-  const levelKeys = [groupByKey(view), groupByKey(view, 1)]
+  const levelKeys = shownGroupLevels(view).map((_, level) => groupByKey(view, level))
   const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -251,27 +251,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   if (groups === null) {
     for (const row of rows) lines.push({ row, r: flat.push(row) - 1, n: ++n, g: null, gk: null, at: null })
   } else {
-    for (const g of groups) {
-      const gk = groupKeyOf(g.key)
-      const at: GroupSpot = { level: 0, outer: g }
-      lines.push({ header: g, gk, at })
-      n = 0
-      if (collapsedSet.has(gk)) continue
-      if (g.children === undefined) {
-        for (const row of g.rows) lines.push({ row, r: flat.push(row) - 1, n: ++n, g, gk, at })
-        continue
-      }
-      // Two levels (YAZ-745): the merge rule's direct rows sit right under the outer, then one
-      // indented section per child — still ONE flat list, so windowing and nav are untouched.
-      for (const row of g.direct ?? []) lines.push({ row, r: flat.push(row) - 1, n: ++n, g, gk, at })
-      for (const child of g.children) {
-        const ck = nestedGroupKeyOf(g.key, child.key)
-        const inner: GroupSpot = { level: 1, outer: g }
-        lines.push({ header: child, gk: ck, nested: true, at: inner })
+    // Nested levels (YAZ-745, three since YAZ-4531): the merge rule's direct rows sit right under
+    // their group, then one indented section per child — still ONE flat list, so windowing and nav are untouched.
+    const walk = (list: readonly Group[], at: GroupSpot) => {
+      for (const g of list) {
+        const gk = spotKey(g, at)
+        lines.push({ header: g, gk, depth: at.level, at })
         n = 0
-        if (!collapsedSet.has(ck)) for (const row of child.rows) lines.push({ row, r: flat.push(row) - 1, n: ++n, g: child, gk: ck, at: inner })
+        if (collapsedSet.has(gk)) continue
+        for (const row of g.children === undefined ? g.rows : g.direct ?? []) lines.push({ row, r: flat.push(row) - 1, n: ++n, g, gk, at })
+        if (g.children !== undefined) walk(g.children, childSpot(g, at))
       }
     }
+    walk(groups, TOP_SPOT)
   }
 
   // windowing: mount only the slice around the scroll position, spacer rows keep the scrollbar honest
@@ -464,7 +456,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   className={`view-table__group${dnd.over === line.gk ? ' view-table__group--drop' : ''}`}
                   {...dnd.target(line.header, line.at)}
                 >
-                  <td className={`view-table__group-cell${line.nested === true ? ' view-table__group-cell--nested' : ''}`} colSpan={span}>
+                  <td className="view-table__group-cell" colSpan={span} style={{ '--depth': line.depth } as CSSProperties}>
                     <GroupHeader
                       def={def}
                       view={view}

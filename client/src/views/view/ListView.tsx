@@ -1,4 +1,4 @@
-import { type MouseEvent as ReactMouseEvent, useMemo, useState } from 'react'
+import { type MouseEvent as ReactMouseEvent, type ReactNode, useMemo, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef } from '../viewSchema'
 import { titleCandidates, type LinkCandidate } from '../../links/completion'
@@ -10,7 +10,8 @@ import { cellEditor, columnTyping } from '../editorType'
 import type { FolderSettings } from '../folderSettings'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
+import { GroupHeader, cellContent, rowTitle } from './GroupHeader'
+import { type GroupSpot, TOP_SPOT, childSpot, spotKey } from './groupDrag'
 import { PageContextMenu } from './PageContextMenu'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
@@ -35,7 +36,7 @@ export interface ListViewProps {
   onOpenFileBackground?: (path: string) => void
   onNotice?: (message: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
-  onNewInGroup?: (group: Group) => void
+  onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
   /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846). */
   root: string
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
@@ -170,31 +171,38 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
     </ul>
   )
 
+  /**
+   * One group's section. A nested group (YAZ-4531) shows the merge rule's direct rows, then each
+   * child's section INSIDE its own, so a collapsed group folds its whole branch.
+   */
+  const section = (g: Group, at: GroupSpot): ReactNode => {
+    const gk = spotKey(g, at)
+    const isCollapsed = collapsed.includes(gk)
+    return (
+      <section key={gk} className="view-list__group">
+        <GroupHeader
+          def={def}
+          view={view}
+          columns={keys}
+          groupKey={g.key}
+          label={g.label}
+          rows={g.rows}
+          collapsed={isCollapsed}
+          onToggle={() => onToggleGroup(gk)}
+          onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g, undefined, at)}
+          resolve={resolve}
+        />
+        {!isCollapsed && (g.children === undefined ? items(g.rows) : (g.direct?.length ?? 0) > 0 && items(g.direct ?? []))}
+        {!isCollapsed && g.children?.map((child) => section(child, childSpot(g, at)))}
+      </section>
+    )
+  }
+
   return (
     <div className="view-list">
       {groups === null
         ? items(rows)
-        : groups.map((g) => {
-            const gk = groupKeyOf(g.key)
-            const isCollapsed = collapsed.includes(gk)
-            return (
-              <section key={gk} className="view-list__group">
-                <GroupHeader
-                  def={def}
-                  view={view}
-                  columns={keys}
-                  groupKey={g.key}
-                  label={g.label}
-                  rows={g.rows}
-                  collapsed={isCollapsed}
-                  onToggle={() => onToggleGroup(gk)}
-                  onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g)}
-                  resolve={resolve}
-                />
-                {!isCollapsed && items(g.rows)}
-              </section>
-            )
-          })}
+        : groups.map((g) => section(g, TOP_SPOT))}
       {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onNotice={onNotice} onClose={() => setMenu(null)} />}
     </div>
   )
