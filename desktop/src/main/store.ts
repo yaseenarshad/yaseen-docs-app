@@ -374,9 +374,9 @@ const sanitizeCanvasPanel = (raw: unknown): CanvasPanelState => {
 export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
   isRecord(v) && Object.entries(v).every(([key, style]) => (HEADING_KEYS as readonly string[]).includes(key) && isHeadingStyle(style))
 
-/** One tab's sort (YAZ-3227 D1): Files has no manual order. */
+/** One tab's sort (YAZ-3227 D1): Files has no manual order. `kinds` (YAZ-4614 D66) is a boolean or absent; anything else fails the sort. */
 const isTabSort = (v: unknown, manual: boolean, best = false): v is TabSort =>
-  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best'))
+  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best')) && (v.kinds === undefined || typeof v.kinds === 'boolean')
 const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, false) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
 
 /** A list of known names, each once (YAZ-3273 D8). */

@@ -1236,10 +1236,15 @@ export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
   Number.isInteger((v as HighlightCustomColor).uses) && (v as HighlightCustomColor).uses >= 1
 /** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. `best` is Search's alone (YAZ-3511 D12). */
 export type SortBy = 'manual' | 'name' | 'updated' | 'best'
-/** One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first. */
+/**
+ * One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first.
+ * `kinds` is the menu's "Kind first" (YAZ-4614 D66): the rows of a level go by kind (folders, notes, drawings, diagrams,
+ * PDFs, images, text files, other files), then by the sort inside each kind. Absent = off, so a file from before reads as before.
+ */
 export interface TabSort {
   by: SortBy
   reverse: boolean
+  kinds?: boolean
 }
 /** The tabs that sort (YAZ-3227 D5). Search has its own `searchSort` (YAZ-3511); Sessions and Recents (YAZ-3235) have none. */
 export type SortedTab = 'files' | 'focus' | 'favorites'

@@ -5796,7 +5796,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     const fold = items(el)[1]
     expect([items(el)[0], ['Expand all', 'Collapse all'].includes(fold)]).toEqual(['Sort…', true]) // the fold button's own label
     act(() => itemByLabel(el, 'Sort…')?.click())
-    expect(menuItems(el).map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated'])
+    expect(menuItems(el).map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated', 'Kind first'])
     act(() => itemByLabel(el, 'Last updated')?.click())
     expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...withTabs({ hiddenButtons: ['sort', 'fold'] }).settings, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } })
     mouseClick(more(el))
@@ -7402,7 +7402,7 @@ describe('favorites (YAZ-1766)', () => {
       const { el, props, rerender } = await mountVault({ lens: 'files' })
       expect(sortButton(el)?.nextElementSibling?.classList.contains('sidebar__expand-all')).toBe(true)
       openSort(el)
-      expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated'])
+      expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated', 'Kind first'])
       await act(async () => itemByLabel(el, 'Last updated')?.click())
       expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...TEST_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } })
       expect(items(el)).toEqual([]) // a pick closes the menu
@@ -7410,6 +7410,34 @@ describe('favorites (YAZ-1766)', () => {
       expect(sortButton(el)).not.toBeNull()
       await rerender({ lens: 'sessions' })
       expect(sortButton(el)).toBeNull()
+    })
+
+    it('YAZ-4614 D66: "Kind first" follows "Show last updated" on Files, not Search; off, the rows keep today\'s order; a click writes the tab\'s sort once; on, the rows go folders, notes, drawings, images, other files, then by name, and ✓ marks it', async () => {
+      const mixed = (v: string): TreeNode[] => [
+        { type: 'file', name: 'b.md', path: `${v}/b.md`, size: 1, mtime: 1, kind: 'markdown' },
+        { type: 'file', name: 'a.png', path: `${v}/a.png`, size: 1, mtime: 1, kind: 'image' },
+        { type: 'file', name: 'a.excalidraw', path: `${v}/a.excalidraw`, size: 1, mtime: 1, kind: 'drawing' },
+        { type: 'dir', name: 'z', path: `${v}/z`, children: [] },
+        { type: 'file', name: 'a.zip', path: `${v}/a.zip`, size: 1, mtime: 1, kind: null },
+        { type: 'file', name: 'a.md', path: `${v}/a.md`, size: 1, mtime: 1, kind: 'markdown' },
+      ]
+      const topNames = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('ul.tree[role="tree"] > li > .tree__row')].map((r) => r.dataset.path?.split('/').pop())
+      const { el, props, rerender } = await mountVault({ lens: 'files' }, { nodes: mixed })
+      expect(topNames(el)).toEqual(['z', 'a.excalidraw', 'a.md', 'a.png', 'a.zip', 'b.md']) // off: folders, then every file by name
+      openSort(el)
+      expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated', 'Kind first'])
+      await act(async () => itemByLabel(el, 'Kind first')?.click())
+      const on = { ...TEST_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'name' as const, reverse: false, kinds: true } } }
+      expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith(on)
+      await rerender({ settings: on })
+      expect(topNames(el)).toEqual(['z', 'a.md', 'b.md', 'a.excalidraw', 'a.png', 'a.zip'])
+      openSort(el)
+      expect(items(el).at(-1)).toBe('Kind first✓')
+      await act(async () => itemByLabel(el, 'Kind first')?.click())
+      expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...on, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'name', reverse: false, kinds: false } } })
+      await rerender({ lens: 'search' })
+      openSort(el)
+      expect(items(el)).not.toContain('Kind first')
     })
 
     it('D5: a second click on the button closes its menu', async () => {
@@ -7425,7 +7453,7 @@ describe('favorites (YAZ-1766)', () => {
       const { el, v, bridge, rerender } = await mountVault({ lens: 'favorites' }, { favorites: ['/top.md', '/Projects', '/Notes'] })
       expect(topLabels(el)).toEqual(['top', 'Projects', 'Notes'])
       openSort(el)
-      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated', 'Show last updated']) // no way group under Manual, but the date row (YAZ-3511 D10)
+      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated', 'Show last updated', 'Kind first']) // no way group under Manual, but the date row (YAZ-3511 D10)
       closeMenu(el)
       await rerender(withSort('favorites', 'name'))
       expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top']) // folders first, then files
@@ -7444,7 +7472,7 @@ describe('favorites (YAZ-1766)', () => {
       const { el, rerender } = await mountVault({ lens: 'focus' }, { focus: ['/top.md', '/Notes'] })
       expect(topLabels(el)).toEqual(['top', 'Notes'])
       openSort(el)
-      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated', 'Show last updated'])
+      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated', 'Show last updated', 'Kind first'])
       closeMenu(el)
       await rerender(withSort('favorites', 'name')) // another tab's sort leaves Focus as it is
       expect(topLabels(el)).toEqual(['top', 'Notes'])
@@ -11164,7 +11192,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
       const one = await mountVaults([vault(pair().a, 'Solo')], { lens: 'focus', ...ON })
       act(() => sortButton(one.el)?.click())
       expect(menuRows(one.el)).not.toContain('Separate list for workspaces✓')
-      expect(menuRows(one.el).at(-1)).toBe('Show last updated')
+      expect(menuRows(one.el).at(-1)).toBe('Kind first') // YAZ-4614 D66: the row after "Show last updated"
     })
 
     it('D2, D3: with the switch on, the tabs show each vault\'s workspace list, never its own; an empty one names the workspace; an add writes the workspace file', async () => {
@@ -11637,7 +11665,7 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     await rerender({ lens: 'files' })
     expect(el.querySelector('.tree__date')).toBeNull()
     act(() => sortButton(el)?.click())
-    expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated'])
+    expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated', 'Kind first'])
     await act(async () => itemByLabel(el, 'Show last updated')?.click())
     expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, files: true } })
     await rerender({ settings: { ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, files: true } } })

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { TabSort, TreeNode, TreeResponse } from '@shared/types'
+import type { FileKind, TabSort, TreeNode, TreeResponse } from '@shared/types'
 import type { MenuAction, MenuSection } from './menuSections'
 import { sortLevel, sortSections, timeOf, withMtime } from './treeSort'
 
@@ -54,6 +54,54 @@ describe('sortLevel (YAZ-3227)', () => {
   })
 })
 
+describe('sortLevel under Kind first (YAZ-4614 D66)', () => {
+  const of = (path: string, kind: FileKind | null, mtime: number): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 1, mtime, kind })
+  const byName = (node: TreeNode) => node.name
+  const paths = (nodes: TreeNode[]) => nodes.map(byName)
+  // One level with every kind, in no order: two folders, two notes, a drawing, a diagram, a PDF, an image, a text file, a file with no viewer.
+  const mixed = (): TreeNode[] => [
+    of('/v/b.md', 'markdown', 40),
+    of('/v/a.png', 'image', 60),
+    of('/v/a.excalidraw', 'drawing', 70),
+    dir('/v/z', [of('/v/z/n.md', 'markdown', 10)]),
+    of('/v/a.zip', null, 20),
+    of('/v/a.drawio', 'diagram', 80),
+    of('/v/a.md', 'markdown', 30),
+    dir('/v/y', [of('/v/y/n.md', 'markdown', 100)]),
+    of('/v/a.txt', 'text', 50),
+    of('/v/a.pdf', 'pdf', 90),
+  ]
+  const KINDS: TabSort = { by: 'name', reverse: false, kinds: true }
+  const BY_KIND = ['y', 'z', 'a.md', 'b.md', 'a.excalidraw', 'a.drawio', 'a.pdf', 'a.png', 'a.txt', 'a.zip']
+
+  it('off, or kinds false: folders first, then every file by the sort, as before', () => {
+    const before = ['y', 'z', 'a.drawio', 'a.excalidraw', 'a.md', 'a.pdf', 'a.png', 'a.txt', 'a.zip', 'b.md']
+    expect(paths(sortLevel(mixed(), NAME, byName))).toEqual(before)
+    expect(paths(sortLevel(mixed(), { ...NAME, kinds: false }, byName))).toEqual(before)
+  })
+
+  it('on: folders, notes, drawings, diagrams, PDFs, images, text files, other files; Name A to Z inside each kind, and Z to A flips the rows of a kind, not the kinds', () => {
+    expect(paths(sortLevel(mixed(), KINDS, byName))).toEqual(BY_KIND)
+    expect(paths(sortLevel(mixed(), { ...KINDS, reverse: true }, byName))).toEqual(['z', 'y', 'b.md', 'a.md', 'a.excalidraw', 'a.drawio', 'a.pdf', 'a.png', 'a.txt', 'a.zip'])
+  })
+
+  it('on with Last updated: the kinds first, the newer row first inside each; Oldest first flips the rows of a kind alone', () => {
+    expect(paths(sortLevel(mixed(), { ...UPDATED, kinds: true }, byName))).toEqual(['y', 'z', 'b.md', 'a.md', 'a.excalidraw', 'a.drawio', 'a.pdf', 'a.png', 'a.txt', 'a.zip'])
+    expect(paths(sortLevel(mixed(), { ...UPDATED, reverse: true, kinds: true }, byName))).toEqual(['z', 'y', 'a.md', 'b.md', 'a.excalidraw', 'a.drawio', 'a.pdf', 'a.png', 'a.txt', 'a.zip'])
+  })
+
+  it('Manual below the top rows reads as Name, A to Z, inside each kind', () => {
+    expect(paths(sortLevel(mixed(), { by: 'manual', reverse: false, kinds: true }, byName))).toEqual(BY_KIND)
+  })
+
+  it('Best match ignores it: the best row first, a file before a folder', () => {
+    const scores = new Map([['/v/a.zip', 0], ['/v/z', 1]])
+    const best = sortLevel(mixed(), { by: 'best', reverse: false }, byName, scores)
+    expect(paths(best).slice(0, 2)).toEqual(['a.zip', 'z'])
+    expect(sortLevel(mixed(), { by: 'best', reverse: false, kinds: true }, byName, scores)).toEqual(best)
+  })
+})
+
 describe('withMtime (YAZ-3227 D2)', () => {
   const landed = (): ReadonlyMap<string, TreeResponse> => new Map([['/v', { root: '/v', tree: level() } as TreeResponse]])
 
@@ -83,13 +131,27 @@ describe('sortSections (YAZ-3227 D4)', () => {
   const OFF = { on: false, set: vi.fn() }
 
   it('Files: Name and Last updated, then the way, then "Show last updated" (YAZ-3511 D10); no Manual', () => {
-    expect(labels(sortSections('files', NAME, vi.fn(), OFF))).toEqual([['Name✓', 'Last updated'], ['A to Z✓', 'Z to A'], ['Show last updated']])
-    expect(labels(sortSections('files', { by: 'updated', reverse: true }, vi.fn(), OFF))).toEqual([['Name', 'Last updated✓'], ['Newest first', 'Oldest first✓'], ['Show last updated']])
+    expect(labels(sortSections('files', NAME, vi.fn(), OFF))).toEqual([['Name✓', 'Last updated'], ['A to Z✓', 'Z to A'], ['Show last updated', 'Kind first']])
+    expect(labels(sortSections('files', { by: 'updated', reverse: true }, vi.fn(), OFF))).toEqual([['Name', 'Last updated✓'], ['Newest first', 'Oldest first✓'], ['Show last updated', 'Kind first']])
   })
 
   it('Focus and Favorites: Manual first, and under Manual no way group, but the date row (YAZ-3511 D10, edge case 23)', () => {
-    expect(labels(sortSections('focus', { by: 'manual', reverse: false }, vi.fn(), OFF))).toEqual([['Manual✓', 'Name', 'Last updated'], ['Show last updated']])
-    expect(labels(sortSections('favorites', NAME, vi.fn(), { on: true, set: vi.fn() }))).toEqual([['Manual', 'Name✓', 'Last updated'], ['A to Z✓', 'Z to A'], ['Show last updated✓']])
+    expect(labels(sortSections('focus', { by: 'manual', reverse: false }, vi.fn(), OFF))).toEqual([['Manual✓', 'Name', 'Last updated'], ['Show last updated', 'Kind first']])
+    expect(labels(sortSections('favorites', NAME, vi.fn(), { on: true, set: vi.fn() }))).toEqual([['Manual', 'Name✓', 'Last updated'], ['A to Z✓', 'Z to A'], ['Show last updated✓', 'Kind first']])
+  })
+
+  it('"Kind first" (YAZ-4614 D66): after "Show last updated" on Files, Focus and Favorites, not Search; ✓ when on; a click writes the tab\'s sort once, flipped; a new sort keeps it', () => {
+    const set = vi.fn()
+    expect(labels(sortSections('favorites', { by: 'manual', reverse: false, kinds: true }, set, OFF))).toEqual([['Manual✓', 'Name', 'Last updated'], ['Show last updated', 'Kind first✓']])
+    item(sortSections('files', NAME, set, OFF), 'Kind first').onSelect()
+    expect(set).toHaveBeenCalledExactlyOnceWith({ ...NAME, kinds: true })
+    set.mockClear()
+    const on = sortSections('files', { ...NAME, kinds: true }, set, OFF)
+    item(on, 'Kind first').onSelect()
+    expect(set).toHaveBeenCalledExactlyOnceWith({ ...NAME, kinds: false })
+    item(on, 'Last updated').onSelect()
+    expect(set).toHaveBeenLastCalledWith({ ...UPDATED, kinds: true })
+    expect(labels(sortSections('search', NAME, set, OFF)).flat()).not.toContain('Kind first')
   })
 
   it('a new sort starts its natural way, a way keeps its sort, and a pick that changes nothing writes nothing', () => {
