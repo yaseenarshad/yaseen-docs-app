@@ -8,7 +8,7 @@ import { absolute, resolveTarget } from './resources'
 export async function fileOperation(host: NavigationHost, command: string, args: Record<string, unknown>) {
   const window = host.windows().find(window => window.id === args.window)
   if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window is not live.')
-  if (command === 'file.restore') return host.operate(window.id, { command })
+  if (command === 'file.restore' || command === 'file.undo' || command === 'file.redo') return host.operate(window.id, { command })
   const target = async (raw: string) => {
     const path = await resolveTarget(window.roots, { path: raw })
     if (window.roots.includes(path)) throw new AutomationFailure('INVALID_INPUT', 'This operation requires an item inside a vault, not the vault root.')

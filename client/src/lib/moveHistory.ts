@@ -50,6 +50,13 @@ export interface DeleteStep {
 /** One entry of the undo list (D17): a move gesture (as YAZ-3255 built it), a rename or a delete. */
 export type UndoStep = MovedGesture | RenameStep | DeleteStep
 
+/** What one undo or redo did (YAZ-4502): the items it changed, a reason for each item it could not, and the links a rename or a move updated. */
+export interface StepOutcome {
+  done: number
+  failed: string[]
+  links?: { updated: number; skipped: number }
+}
+
 /** A move gesture: the entry has `moves` (a rename and a delete name their `step`). */
 export const isMoveStep = (entry: UndoStep): entry is MovedGesture => !('step' in entry)
 

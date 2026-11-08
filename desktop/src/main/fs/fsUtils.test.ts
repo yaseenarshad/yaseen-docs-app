@@ -153,3 +153,27 @@ describe('tmp names (YAZ-2179)', () => {
       expect(tmps.map((t) => path.basename(t)).every(isAtomicTmp)).toBe(true)
     }))
 })
+
+describe('createRootChain', () => {
+  it('runs one root in order and releases each root once its last call settles', async () => {
+    const { createRootChain } = await import('./fsUtils')
+    const chained = createRootChain()
+    const order: string[] = []
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const first = chained('/a', async () => { await held; order.push('a1') })
+    const second = chained('/a', async () => { order.push('a2'); throw new Error('fails') })
+    const other = chained('/b', async () => { order.push('b1') })
+    expect(chained.size).toBe(2)
+    await other
+    release()
+    await first
+    await expect(second).rejects.toThrow('fails')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(order).toEqual(['b1', 'a1', 'a2'])
+    expect(chained.size).toBe(0)
+    for (let i = 0; i < 500; i++) await chained(`/root-${i}`, async () => i)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(chained.size).toBe(0)
+  })
+})

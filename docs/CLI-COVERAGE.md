@@ -14,7 +14,9 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 | Reusable navigation link | `navigation link` | Navigation only; machine-local roots; no live window or tab IDs. |
 | Windows | `window list/inspect/show/rename/close` | Current live IDs; close acknowledges before the normal flush path. |
 | Tabs | `tab open/blank/close/duplicate/keep/sleep/wake/rename/reorder` | Existing workspace actions; dirty-source guards; copies and display names persist. |
+| Cross-window tab moves | `tab move` | The GUI's send-tab path: save first, refuse unresolved dirty state, `window:move-to` or `window:pop-out`, emptied windows close. Replies after the source and target renderers acknowledge; closed windows return `SOURCE_CLOSED`, `TARGET_UNAVAILABLE`, or `TARGET_UNACKNOWLEDGED`. |
 | Sidebar state | `navigation open`, `sidebar setCollapsed` | Existing lenses, collection scopes, reveal and expansion; unspecified state stays. |
+| Right panel | `navigation open --panel right`, `rightPanel setOpen`, `window inspect` | The GUI's Open to the right and show/hide actions; one owner per page; acknowledged when the page shows expanded; inspection returns its pages. |
 | Sessions | `session list/save/capture/restore/rename/remove` | Saved strips retain copies and names; restore keeps unrelated windows and tabs. |
 | Metadata search | `search query` | Shared title, alias, filename, and ID matcher; workspace/vault/folder/collection/group scopes; bounded pages. |
 | Saved text and live buffers | `file read`, `document live` | Saved revision by default; live reads require a window and ready tab. |
@@ -23,11 +25,12 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 | Properties | `property set/remove` | Nested key paths; preserve unrelated YAML and comments; protect human comment ownership. |
 | Comments | `comment list/add/update/remove` | Existing comment format, reply rules, author field, and human ownership checks. |
 | Review and upkeep | `review queue/list/keep/remove/reset/setEnabled` | Existing schedule and review-log format; required revision for edits. |
-| Link resolution and note references | `link resolve/outgoing/incoming` | Existing metadata index and resolvers; no full-text index or ID minting on reads. |
+| Link resolution and note references | `link resolve/outgoing/incoming` | Existing metadata index and resolvers; no full-text index or ID minting on reads. Incoming uses the UI's Linked mentions rule (`shared/backlinks.ts`): folder outlines, view order and link-column targets count. |
 | Create folders | `folder create` | Existing ID-aware folder service; never overwrite. |
 | Rename, move, retitle | `file rename/retitle` | Complete renderer action: flush, link repair, folder values, state repair, and Undo. A new parent in `newPath` is a move. |
 | Copy and import | `file copy/importCopy` | Explicit sources and destination; no clipboard changes; existing copy services and free-name rules; report partial results. |
 | Trash and restore | `file trash/history/restore` | System Trash; existing organization history; restore only the latest delete; no permanent delete command. |
+| Organization Undo and Redo | `file undo/redo` | The ⌘Z/⌘⇧Z step function and the window's 20-step session history, shared with the GUI; partial and empty steps are reported. |
 | Favorites and Focus | `collection list/add/remove/reorder` | Explicit vault/workspace list scope; patch latest state under the shared lock. |
 | Collection groups | `group list/create/rename/remove/position/addItems/removeItems/reorderItems` | Existing group IDs, per-Mac files, clocks and tombstones; report partial writes. |
 | Global settings | `settings get/patch` | Existing settings validator; patch latest state and flush. |

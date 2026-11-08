@@ -12,6 +12,7 @@ export interface NavigationInput {
   window?: string
   tab?: string
   mode?: 'reuse' | 'new'
+  panel?: 'right'
   sidebar?: SidebarTab
   scope?: ListScope
   group?: string
@@ -24,6 +25,8 @@ export interface NavigationInput {
 export interface NavigationTarget {
   tab?: string
   path?: string
+  /** Open `path` in the right panel instead of a main tab. */
+  panel?: 'right'
   sidebar?: SidebarTab
   scope?: ListScope
   group?: string
@@ -34,7 +37,7 @@ export interface NavigationTarget {
 export type InspectTarget = { kind: 'history' } | { kind: 'window' } | { kind: 'document'; tab: string } | { kind: 'dirty'; path: string }
 export type FileOperationTarget = TabOperation | EditorOperation | BoardExportOperation
   | { command: 'file.copy'; paths: string[]; targetDir: string; external: boolean }
-  | { command: 'file.restore' }
+  | { command: 'file.restore' } | { command: 'file.undo' } | { command: 'file.redo' }
   | { command: 'file.rename'; path: string; newPath: string; kind: 'file' | 'dir' }
   | { command: 'file.retitle'; path: string; title: string; kind: 'file' | 'dir' }
   | { command: 'file.trash'; paths: string[] }

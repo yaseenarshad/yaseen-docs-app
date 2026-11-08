@@ -6,6 +6,7 @@ import { defaultAppState } from '@shared/types'
 import { noteCommand } from './notes'
 import { documentCommand } from './documents'
 import { linkCommand } from './links'
+import { commandDefinition, validateInput } from '@shared/automationCommands'
 import { readSaved } from './resources'
 import { _actAs, _resetMint } from '../vaultIndex/mint'
 import { _evictAll } from '../vaultIndex/live'
@@ -66,5 +67,32 @@ describe('note capability adapters', () => {
     expect(await linkCommand(state(), 'link.outgoing', { root, path: source })).toMatchObject({ items: [{ target: 'Alias', path: target }, { target: 'Mochi', path: join(root, 'Mochi') }, { target: 'Missing', path: null }] })
     expect(await linkCommand(state(), 'link.incoming', { root, path: target })).toMatchObject({ items: [{ path: source }] })
     expect(await readFile(target, 'utf8')).not.toContain('id:')
+  })
+  it('returns the UI’s Linked mentions, including folder outlines, view order and column targets', async () => {
+    const target = join(root, 'Target.md'), note = join(root, 'Note.md')
+    await writeFile(target, 'Target\n')
+    await writeFile(note, 'See [[Target]]\n')
+    const settings = async (folder: string, yaml: string) => {
+      await mkdir(join(root, folder))
+      await writeFile(join(root, folder, '.folder.md'), `---\nfolder_settings:\n${yaml}---\n`)
+    }
+    await settings('Ordered', '  views:\n    - type: table\n      name: Table\n      order: ["[[Target]]"]\n')
+    await settings('Outlined', '  views:\n    - type: outline\n      name: Plan\n      outline: |\n        - first\n        - read [[Target|the target]] soon\n')
+    await settings('Columned', '  columns:\n    owner:\n      type: link\n      target: "[[Target]]"\n')
+    await settings('Coded', '  views:\n    - type: outline\n      name: Plan\n      outline: "- `[[Target]]`"\n')
+    await settings('Self', '  views:\n    - type: outline\n      name: Plan\n      outline: "- [[Self]]"\n')
+    const incoming = await linkCommand(state(), 'link.incoming', { root, path: target }) as { items: unknown[]; total: number }
+    expect(incoming.items).toEqual([
+      { kind: 'folder', path: join(root, 'Columned'), settings: join(root, 'Columned/.folder.md'), title: expect.any(String) },
+      { kind: 'note', path: note, title: 'Note' },
+      { kind: 'folder', path: join(root, 'Ordered'), settings: join(root, 'Ordered/.folder.md'), title: expect.any(String) },
+      { kind: 'folder', path: join(root, 'Outlined'), settings: join(root, 'Outlined/.folder.md'), title: expect.any(String) },
+    ])
+    validateInput(commandDefinition('link.incoming').output, incoming)
+    expect(await linkCommand(state(), 'link.incoming', { root, path: join(root, 'Self') })).toMatchObject({ items: [], total: 0 })
+    const outgoing = await linkCommand(state(), 'link.outgoing', { root, path: join(root, 'Outlined') })
+    validateInput(commandDefinition('link.outgoing').output, outgoing)
+    expect(outgoing).toMatchObject({ items: [{ target: 'Target', path: target, embedded: false }] })
+    expect(await linkCommand(state(), 'link.outgoing', { root, path: join(root, 'Ordered') })).toMatchObject({ items: [{ target: 'Target', path: target }] })
   })
 })
