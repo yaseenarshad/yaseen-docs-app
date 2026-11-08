@@ -280,6 +280,8 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       },
       capture: () => null,
       dirty: () => autosave.current?.dirty === true,
+      // Not a pane owner: a pane move of a tab of this file leaves the modal open and saving.
+      modal: true,
       retire: () => {
         retired.current = true
         autosave.current?.dispose()
