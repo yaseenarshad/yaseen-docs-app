@@ -1028,10 +1028,30 @@ describe('FrontmatterPanel — "Properties from"', () => {
     expect(writeFile.mock.calls.map(([write]) => write.path)).toEqual([FOLDER])
   })
 
-  it('a folder’s own panel: no "Properties from", and its rows are not the folder’s columns', () => {
-    const el = mountAt('/vault/A/B/.folder.md', '---\nowner: Yasin\n---\n')
+  // Changed by YAZ-3746 2D: a subfolder's own page shows its values for its PARENT (D31), as a note does.
+  it('a folder’s own panel: "Folder fields" with its own rows (not its own columns), then "Properties from <parent>" with the parent’s columns', () => {
+    const el = mountAt('/vault/A/B/.folder.md', `---\nowner: Yasin\nin:\n  ${A_ID}:\n    effort: high\n---\n`)
+    expect(from(el)?.textContent).toBe('Properties from A')
+    expect(el.querySelector('.frontmatter-panel__own')?.textContent).toBe('Folder fields')
+    expect(keysOf(el)).toEqual(['owner', 'effort', 'priority'])
+    expect(rowOf(el, 'effort').querySelector('.frontmatter-panel__value')?.textContent).toBe('high')
+  })
+
+  it('a subfolder’s value for its parent is written in its own `.folder.md`, in the parent’s block (YAZ-3746 2D)', async () => {
+    const own = '/vault/A/B/.folder.md'
+    const bytes = `---\nid: ${B_ID}\nowner: Yasin\n---\n`
+    readFile.mockResolvedValue({ path: own, content: bytes, mtime: 100, size: bytes.length })
+    const el = mountAt(own, bytes)
+    click(rowOf(el, 'priority').querySelector('[data-edit]'))
+    setValue(byLabel<HTMLInputElement>(el, 'Edit priority'), 'P1')
+    press(byLabel(el, 'Edit priority'), 'Enter')
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: own, content: `---\nid: ${B_ID}\nowner: Yasin\nin:\n  ${A_ID}:\n    priority: P1\n---\n`, expectedMtime: 100 })
+  })
+
+  it('the vault root’s own panel has no parent: no "Properties from"', () => {
+    const el = mountAt('/vault/.folder.md', '---\nowner: Yasin\n---\n')
     expect(from(el)).toBeNull()
-    expect(el.textContent).not.toContain('Properties from')
     expect(keysOf(el)).toEqual(['owner'])
   })
 
@@ -1497,12 +1517,13 @@ Body
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: `---\ntitle: Deep Work\nin:\n  ${FOLDER_ID}:\n    effort: 3\n---\nBody\n`, expectedMtime: 100 })
   })
 
-  it('A folder’s own panel (the panel on a folder’s page): unchanged — the folder’s own properties are the top level of its `.folder.md`', async () => {
+  it('A folder’s own panel (the panel on a folder’s page): the folder’s own properties are the top level of its `.folder.md`; Add stays there', async () => {
     const own = '/vault/Hiring/.folder.md'
     const bytes = `---\nid: ${HIRING_ID}\nowner: Yasin\nfolder_settings:\n  columns:\n    score:\n      kind: number\n---\n`
     const el = mountNote(bytes, own)
-    expect(from(el)).toBeNull()
-    expect(keysOf(el)).toEqual(['id', 'owner'])
+    // Changed by YAZ-3746 2D: its values for its parent (the vault root) follow under "Properties from".
+    expect(from(el)?.textContent).toBe('Properties from vault')
+    expect(names(ownRows(el))).toEqual(['id', 'owner'])
     click(rowOf(el, 'owner').querySelector('[data-edit]'))
     setValue(byLabel<HTMLInputElement>(el, 'Edit owner'), 'Noor')
     press(byLabel(el, 'Edit owner'), 'Enter')

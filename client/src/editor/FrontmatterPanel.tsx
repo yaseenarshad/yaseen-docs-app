@@ -241,7 +241,9 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   // never reads an id for — is no folder: the note's own rows alone.
   const vault = root?.replace(/\/+$/, '')
   const dirs = useMemo(() => {
-    if (!ids || own || vault === undefined || !inFolder(dir, vault)) return []
+    if (!ids || vault === undefined || !inFolder(dir, vault)) return []
+    // A folder's own page shows its values for its PARENT, the one folder that has it as a row (YAZ-3746 2D, D31); the root has none.
+    if (own) return dir === vault ? [] : [dirname(dir)]
     return foldersShowing(dir === vault ? '' : relTo(vault, dir), parsed, byId).map((folder) => (folder === '' ? vault : absFrom(vault, folder)))
   }, [ids, own, vault, dir, parsed, byId])
   // ONE folder is in force: the one picked, else the first that saved settings, else the one the note lives in.
@@ -323,8 +325,9 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const addKey = (): void => {
     if (adding === null) return
     const name = adding.name.trim()
-    // With a folder chosen the new field is that folder's (D19); with none it is the note's own.
-    const folder = folderDefinition !== null
+    // With a folder chosen the new field is that folder's (D19); with none it is the note's own. On a folder's own
+    // page it is the folder's own field, as before (YAZ-3746 2D): the parent's columns are its rows already.
+    const folder = folderDefinition !== null && !own
     const refusal = nameRefusal(name, folder)
     if (refusal !== null) {
       setError(refusal)
@@ -491,7 +494,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
               {(shown.length > 0 || chosen !== undefined) && (
                 // ONE list, two groups, each under its heading (D23): the note's own fields, then the chosen folder's.
                 <ul className="frontmatter-panel__rows">
-                  {chosen !== undefined && shown.some((row) => !row.folder) && <li className="frontmatter-panel__own">Note fields</li>}
+                  {chosen !== undefined && shown.some((row) => !row.folder) && <li className="frontmatter-panel__own">{own ? 'Folder fields' : 'Note fields'}</li>}
                   {shown.filter((row) => !row.folder).map(rowItem)}
                   {chosen !== undefined && (
                     <li className="frontmatter-property-context">
@@ -520,7 +523,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
                     }}
                   />
                   {/* The type (YAZ-4551 D20): it starts on the type the name has already, else Text. */}
-                  {typeable(folderDefinition !== null) && (
+                  {typeable(folderDefinition !== null && !own) && (
                     <select
                       className="view-select"
                       aria-label="New property type"
