@@ -28,7 +28,6 @@ export interface NavigationTarget {
   /** Open `path` in the right panel instead of a main tab. */
   panel?: 'right'
   sidebar?: SidebarTab
-  scope?: ListScope
   group?: string
   view?: string
   reveal?: boolean

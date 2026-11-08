@@ -1269,6 +1269,11 @@ export const LIST_SCOPES: readonly ListScope[] = ['vault', 'workspace']
 /** "Separate list for workspaces" (YAZ-4450 D4): one switch for Focus, one for Favorites. On by default: a workspace shows its own lists. */
 export type WorkspaceLists = Record<'focus' | 'favorites', boolean>
 export const DEFAULT_WORKSPACE_LISTS: WorkspaceLists = { focus: true, favorites: true }
+/**
+ * The Favorites or Focus list a window shows (YAZ-4450 D2, D4): the workspace list only with two or more vaults and that
+ * tab's switch on; a vault alone always shows its own. The sidebar and the CLI share this rule (YAZ-4527 P3).
+ */
+export const shownListScope = (roots: readonly string[], separate: WorkspaceLists, kind: keyof WorkspaceLists): ListScope => (roots.length > 1 && separate[kind] ? 'workspace' : 'vault')
 
 /**
  * `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. The max is only a

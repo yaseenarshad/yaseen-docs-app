@@ -6,7 +6,7 @@ import { exportLiveImage, readLiveDocument, runEditorAction, unsavedUnder } from
 import { flushSync } from 'react-dom'
 import { useAutomation } from './automation/useAutomation'
 import { inspectSurface, useAutomationSurface, waitForSurface } from './automation/surfaces'
-import type { ListScope, RightPanelIdentity } from '@shared/types'
+import type { RightPanelIdentity } from '@shared/types'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
@@ -407,8 +407,7 @@ export function App() {
   const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType, action?: Notice['action']) => showNotice({ text, icon, type, ...(action !== undefined && { action }) }), [showNotice])
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
-  const [automationScopes, setAutomationScopes] = useState<Partial<Record<'favorites' | 'focus', ListScope>>>({})
-  const lists = useVaultListsHere(roots, notify, settings.workspaceLists, automationScopes)
+  const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
   // The new tab page's Favorites column (YAZ-4450): the tab's own list, kept by value so the page cuts its columns only on a change.
   // Its favorite folders too (YAZ-4470, 11): each folder's items that this window shows.
   const favoriteFolders = lists.favoritesTab.folders
@@ -1896,9 +1895,6 @@ export function App() {
   useAutomation(async target => {
     if (target.tab !== undefined && !now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
     flushSync(() => {
-      if (target.scope && (target.sidebar === 'favorites' || target.sidebar === 'focus')) {
-        setAutomationScopes(previous => ({ ...previous, [target.sidebar!]: target.scope }))
-      }
       if (target.sidebar !== undefined) {
         if (sidebarCollapsedRef.current) toggleSidebar()
         changeLens(target.sidebar)
