@@ -3,6 +3,7 @@
  * (YAZ-4518) make the same change: `ViewsPane` calls these inside its one `update`, main inside its one
  * `.folder.md` write. Types are the Obsidian Bases view schema the folder's `views` block round-trips.
  */
+import { AutomationFailure } from './automation'
 import { isRecord } from './guards'
 
 export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } | { not: FilterNode[] }
@@ -71,6 +72,18 @@ export const viewTypeLabel = (type: string): string => type.charAt(0).toUpperCas
 export const BUILTIN_SUMMARIES = [
   'Count', 'Empty', 'Filled', 'Unique', 'Average', 'Max', 'Median', 'Min', 'Range', 'Stddev', 'Sum', 'Earliest', 'Latest', 'Checked', 'Unchecked',
 ] as const
+
+/**
+ * The view a caller names (YAZ-4527 P9): its exact name, else the ONE view whose name matches without case. Navigation,
+ * the CLI's folder view commands and a live tab's `selectView` share it, so "Table" and "table" pick alike everywhere.
+ */
+export function viewIndex(views: readonly { name: string }[], name: string): number {
+  const exact = views.findIndex((view) => view.name === name)
+  if (exact !== -1) return exact
+  const loose = views.flatMap((view, i) => (view.name.toLowerCase() === name.toLowerCase() ? [i] : []))
+  if (loose.length !== 1) throw new AutomationFailure(loose.length ? 'AMBIGUOUS_TARGET' : 'NOT_FOUND', 'Choose a unique folder view name.', { views: views.map((view) => view.name) })
+  return loose[0]!
+}
 
 /** The first free name for a new view: `base`, `base 2`, `base 3`… (`taken` = the views' names). */
 export function freeName(base: string, taken: ReadonlySet<string>): string {

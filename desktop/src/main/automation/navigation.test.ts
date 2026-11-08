@@ -93,6 +93,15 @@ describe('exact context navigation', () => {
     await expect(generateNavigationLink(defaultAppState(), { root, path, view: 'Missing' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
     expect(app.raise).not.toHaveBeenCalled()
   })
+  it('picks a view by the rule the live tab uses: an exact name first, else one match without case (YAZ-4527 P9)', async () => {
+    const app = host([entry('w1', [root])]), path = join(root, 'Mochi')
+    await writeFile(join(path, '.folder.md'), '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n    - type: list\n      name: table\n---\n')
+    for (const name of ['Table', 'table']) {
+      await checked('navigation.open', navigate(app, { window: 'w1', path, view: name }))
+      expect(app.apply).toHaveBeenLastCalledWith('w1', { path, view: name })
+    }
+    await expect(navigate(app, { window: 'w1', path, view: 'TABLE' })).rejects.toMatchObject({ code: 'AMBIGUOUS_TARGET', details: { views: ['Table', 'table'] } })
+  })
   it('resolves workspace identities and requires explicit partial opening', async () => {
     const state = defaultAppState(), app = host()
     state.vaultSets = [{ id: 'skills', name: 'Skills', roots: [root, join(root, 'missing')], lastUsed: 0 }]

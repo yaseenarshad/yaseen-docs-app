@@ -4,7 +4,7 @@ import { AutomationFailure } from '@shared/automation'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import { columnChange, folderSettingsOf, folderSettingsValue } from '@shared/folderSettings'
 import { canonicalKey, declarationForKind, notesHolding, pruneColumnFromViews, pruneColumnLabel, setDisplayName, undeletableReason } from '@shared/folderColumns'
-import { addView, deleteView, duplicateView, moveView, renameView, setViewOptions, uniqueViewName, ViewOptionError, type ViewSet } from '@shared/folderViews'
+import { addView, deleteView, duplicateView, moveView, renameView, setViewOptions, uniqueViewName, viewIndex, ViewOptionError, type ViewSet } from '@shared/folderViews'
 import { FOLDER_VALUES_KEY, setFolderValue } from '@shared/folderValues'
 import { foldersById } from '@shared/folderRecords'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
@@ -65,15 +65,6 @@ async function writePage(page: Page, revision: unknown, change: ContentTransform
   }
   const saved = await exists(page.file) ? await readSaved(page.file) : null
   return { ...describe({ ...page, content: saved?.content ?? '', revision: saved?.revision ?? null }), changed: content !== page.content, created, diskSaved: true }
-}
-
-/** The view a caller names: its exact name, else the one name that matches without case (the live tab's `selectView` rule). */
-function viewIndex(views: readonly { name: string }[], name: string): number {
-  const exact = views.findIndex(view => view.name === name)
-  if (exact !== -1) return exact
-  const loose = views.flatMap((view, i) => view.name.toLowerCase() === name.toLowerCase() ? [i] : [])
-  if (loose.length !== 1) throw new AutomationFailure(loose.length ? 'AMBIGUOUS_TARGET' : 'NOT_FOUND', 'Choose a unique folder view name.', { views: views.map(view => view.name) })
-  return loose[0]
 }
 
 /** The page's views as the view tabs edit them (`FolderView`'s def): one change of the def, written as the ONE settings key. */
