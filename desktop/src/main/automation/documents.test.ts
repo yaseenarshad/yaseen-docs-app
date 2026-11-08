@@ -47,9 +47,10 @@ describe('revision-checked document commands', () => {
       sharedWrite({ path, content: 'UI save', expectedMtime: before.mtime }),
       sharedWrite({ path, content: 'CLI save', expectedRevision: before.revision }),
     ])
+    // Either write may take the lock first. Exactly one lands; the other is refused, and disk holds the winner.
     expect(results.filter(item => item.status === 'fulfilled')).toHaveLength(1)
     expect(results.find(item => item.status === 'rejected')).toMatchObject({ reason: { code: 'CONFLICT' } })
-    expect(await readFile(path, 'utf8')).toBe('UI save')
+    expect(await readFile(path, 'utf8')).toBe(results[0].status === 'fulfilled' ? 'UI save' : 'CLI save')
   })
   it('protects human comments, edits agent comments, and refuses orphan replies', async () => {
     const before = await readFile(path, 'utf8')
