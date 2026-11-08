@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useState } from 'react'
+import { type ReactNode, type RefObject, useCallback, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
 import { type EngineError, propertyKeys, propertyLabel } from '../engine'
@@ -21,6 +21,8 @@ type Menu = 'filter' | 'sort' | 'properties'
 const NO_COLUMNS: readonly string[] = []
 
 export interface ToolbarProps {
+  /** The table's Count / Sum / Average chip (YAZ-4612 S46): an empty span the table fills on the DOM. Absent: none. */
+  selectionChip?: RefObject<HTMLSpanElement | null>
   /** A calendar's date columns for "Show by" (`dateColumns`, once in `ViewsPane`, YAZ-4544). */
   dateColumns?: readonly string[]
   def: ViewSet
@@ -68,7 +70,7 @@ export const rowsLabel = (shown: number, total: number, folders?: { shown: numbe
     : `${countLabel(shown - folders.shown, total - folders.total)} · ${countLabel(folders.shown, folders.total, 'folder')}`
 
 /** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
-export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS }: ToolbarProps) {
+export function Toolbar({ selectionChip, def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   /** "Edit option order…" (YAZ-3940): the column the Sort popover shows its column editor on, or null for the menu. */
   const [editing, setEditing] = useState<string | null>(null)
@@ -204,6 +206,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
           )}
         </div>
         )}
+        {selectionChip !== undefined && <span ref={selectionChip} className="view-toolbar__selection" aria-live="polite" hidden />}
         <span className="view-toolbar__count" aria-live="polite">
           {rowsLabel(shown, total, folders)}
         </span>

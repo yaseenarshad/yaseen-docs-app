@@ -26,6 +26,7 @@ import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY, writableKey } from './readOnlyRows'
+import { valueHistory } from './view/valueHistory'
 import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
@@ -323,6 +324,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // The open card of this app tab, folder page and view tab is in a module map (`NoteWindow.tsx`, D17, YAZ-4544), so a
   // tab that sleeps and mounts again shows it again on the same note, and another tab on this folder has its own.
   const windowKey = noteWindowKey(tabId, folderPath, view.name)
+  // The page's ⌘Z history of value changes (YAZ-4612 S41), and the toolbar's selection chip the table writes (S46).
+  const history = useMemo(() => valueHistory(folderPath), [folderPath])
+  const selectionChip = useRef<HTMLSpanElement>(null)
   const noteWindow = openNoteWindow(windowKey)
   const openWindow =
     folder.renderNoteEditor === undefined
@@ -615,7 +619,12 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     return folder.create(seed).then(
       (path) => {
         const trash = folder.trash
-        if (trash !== undefined) folder.onNotice?.('Added a row', 'info', 'undo', { label: 'Undo', run: () => void trash([path]).catch((err: unknown) => folder.onNotice?.(`Can't undo: ${err instanceof Error ? err.message : String(err)}`)), fades: true })
+        if (trash !== undefined) {
+          const undo = () => void trash([path]).catch((err: unknown) => folder.onNotice?.(`Can't undo: ${err instanceof Error ? err.message : String(err)}`))
+          // One step of the page's history too (S41); its undo trashes the note, so it has no redo.
+          history.push({ undo })
+          folder.onNotice?.('Added a row', 'info', 'undo', { label: 'Undo', run: undo, fades: true })
+        }
         return path
       },
       (err: unknown) => {
@@ -725,6 +734,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const pane = (
     <div ref={paneRef} className="views-pane" onMouseOver={onPillOver} onMouseOut={onPillOut} onClickCapture={onPillClick} onDoubleClickCapture={onPillClick}>
       <Toolbar
+        selectionChip={view.type === 'table' ? selectionChip : undefined}
         def={def}
         view={view}
         viewIndex={index}
@@ -801,6 +811,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onDuplicateNote={folder.duplicate}
           onDeleteNotes={confirmDeleteNotes}
           onNewRowBelow={newRowBelow}
+          history={history}
+          selectionChip={selectionChip}
         />
       ) : view.type === 'board' ? (
         <BoardView

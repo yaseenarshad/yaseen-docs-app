@@ -1,4 +1,4 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf, MAX_GROUP_LEVELS } from '../viewSchema'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
@@ -8,6 +8,10 @@ import type { ColumnDecl, FolderSettings } from '../folderSettings'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { fillSeries } from '../../editor/table/fillSeries'
+import { type ValueHistory, inBatches } from './valueHistory'
+import { ConfirmSheet } from '../../components/ConfirmSheet'
+import { edgeScroller } from '../../lib/edgeScroll'
+import { flushSync } from 'react-dom'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, rowCell, rowTitle, summaryKindOf } from './GroupHeader'
@@ -112,6 +116,10 @@ export interface TableViewProps {
   onDuplicateNote?: (path: string) => void
   /** "Delete note…" (YAZ-4592 S26): ViewsPane's `confirmDeleteNotes`, which asks first unless the setting is off; the selection menu's "Delete notes…" too (YAZ-4593). Absent: no such item, and that one is off. */
   onDeleteNotes?: (paths: readonly string[]) => void
+  /** The folder page's ⌘Z / ⇧⌘Z history of value changes (YAZ-4612 S41, `valueHistory.ts`). Absent: no history. */
+  history?: ValueHistory
+  /** The toolbar's selection chip (S46): the table writes Count, Sum and Average into it on the DOM, so it renders nothing. */
+  selectionChip?: { current: HTMLElement | null }
   /** "New row below" (YAZ-4611 D63): ViewsPane's seeded create; resolves the new note's path. Absent: no such item. */
   onNewRowBelow?: (row: Row, group: Group | null, at: GroupSpot | null) => Promise<string>
 }
@@ -146,6 +154,18 @@ const MAX_FROZEN_ROWS = 10
 const MAX_FROZEN_LINES = MAX_FROZEN_ROWS * (MAX_GROUP_LEVELS + 2)
 /** A selected cell, row number or header (YAZ-4593): an attribute React does not own, so a render never drops it. */
 const SELECTED = 'data-selected'
+/** A bulk write, planned (YAZ-4593): each note's writes, its values before them, and the number of cells that change. */
+interface WritePlan {
+  byPath: Map<string, PropertyWrite[]>
+  before: Map<string, PropertyWrite[]>
+  count: number
+}
+/** More notes than this in one bulk write show a progress note (YAZ-4612 S48). */
+const PROGRESS_AT = 20
+/** Clearing more cells than this asks first (S49). */
+const CONFIRM_CLEAR_AT = 50
+/** The editors a typed letter opens with that letter in them (YAZ-4612 S42): a field. A box, a choice or a date picker opens by Enter. */
+const TYPE_KINDS = new Set(['text', 'number', 'link', 'list', 'multi-link'])
 /** The step of each arrow key for ⇧+arrow (YAZ-4603 D53): rows, then columns. */
 const STEPS: Record<string, [number, number] | undefined> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }
 
@@ -216,7 +236,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, reservedKeys, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
@@ -588,6 +608,36 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     for (const th of wrap.querySelectorAll<HTMLElement>('thead th[data-col]')) th.toggleAttribute(SELECTED, sel?.kind === 'cols' && sel.cols!.has(Number(th.dataset.col)))
   }
   useLayoutEffect(paintSelection)
+  /**
+   * The toolbar chip (YAZ-4612 S46): with two or more cells selected, Count (the cells with a value), and Sum and
+   * Average when some are numbers. Written on the DOM, so a change of selection still renders nothing.
+   */
+  const showStats = (): void => {
+    const chip = selectionChip?.current
+    if (chip == null) return
+    const sel = selRef.current
+    const area = sel === null ? null : areaOf(sel)
+    if (area === null || area.rows.length * area.cols.length < 2) {
+      chip.hidden = true
+      return
+    }
+    let count = 0
+    let sum = 0
+    let numbers = 0
+    for (const r of area.rows)
+      for (const c of area.cols) {
+        const v = flat[r].values[keys[c]]
+        if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) continue
+        count++
+        if (typeof v === 'number') {
+          sum += v
+          numbers++
+        }
+      }
+    const round = (n: number) => String(Math.round(n * 100) / 100)
+    chip.textContent = numbers === 0 ? `Count ${count}` : `Count ${count} · Sum ${round(sum)} · Average ${round(sum / numbers)}`
+    chip.hidden = false
+  }
   /** ⌘C, ⌘V and Esc while the focus fell to the page (a windowed scroll unmounted the focused cell). Set only while there is a selection. */
   const pageKeys = useRef<((e: KeyboardEvent) => void) | null>(null)
   const selectionKeyRef = useRef<(e: KeyboardEvent) => boolean>(() => false)
@@ -595,6 +645,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     selRef.current = next
     paintSelection()
     placeHandle()
+    showStats()
     if (next !== null && pageKeys.current === null) {
       pageKeys.current = (e) => {
         if (!e.defaultPrevented && e.target === document.body && selectionKeyRef.current(e)) e.preventDefault()
@@ -650,14 +701,27 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     }
     setSelection(null)
     let last = at
-    const move = (ev: MouseEvent) => {
-      const over = cellAt(ev.target)
+    let pointer = { x: e.clientX, y: e.clientY }
+    const extend = (target: EventTarget | null) => {
+      const over = cellAt(target)
       if (over === null || (over.r === last.r && over.c === last.c)) return
       last = over
       setSelection(cellRange(at, over))
       window.getSelection()?.removeAllRanges()
     }
+    // Near an edge the table scrolls by itself (YAZ-4612 S47), and the range follows the cell now under the pointer.
+    const follow = () => extend(document.elementFromPoint?.(pointer.x, pointer.y) ?? null)
+    const across = edgeScroller(() => wrapRef.current, follow)
+    const down = edgeScroller(() => (wrapRef.current === null ? null : verticalScrollParent(wrapRef.current)), follow, 'y')
+    const move = (ev: MouseEvent) => {
+      pointer = { x: ev.clientX, y: ev.clientY }
+      across.at(ev.clientX)
+      down.at(ev.clientY)
+      extend(ev.target)
+    }
     const up = () => {
+      across.stop()
+      down.stop()
       document.removeEventListener('mousemove', move)
       document.removeEventListener('mouseup', up)
     }
@@ -699,7 +763,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * The bulk write (YAZ-4593): the cells' values grouped into ONE guarded write per note. A read-only note, the Name
    * column and a column no view writes are skipped, and so is a value the note already has.
    */
-  const writeCells = (cells: Iterable<{ r: number; c: number; value: unknown }>, undo?: (count: number) => string): void => {
+  const planWrites = (cells: Iterable<{ r: number; c: number; value: unknown }>): WritePlan => {
     const byPath = new Map<string, PropertyWrite[]>()
     /** Each note's values before the write, for Undo: one write per note back (undefined deletes the key). */
     const before = new Map<string, PropertyWrite[]>()
@@ -715,18 +779,49 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       else writes.push({ key: bare, value })
       before.set(row.record.path, [...(before.get(row.record.path) ?? []), { key: bare, value: row.record.properties[bare] }])
     }
-    const failed = (error: unknown) => onNotice?.(`Can't write: ${error instanceof Error ? error.message : String(error)}`)
-    const done = [...byPath].map(([path, writes]) => onWriteValues(path, writes))
-    for (const write of done) write.catch(failed)
-    // One S29 Undo for the whole gesture, once every write landed (YAZ-4609 D61).
-    if (undo === undefined || count === 0) return
-    const restore = () => {
-      for (const [path, writes] of before) onWriteValues(path, writes).catch(failed)
-    }
-    Promise.all(done).then(
-      () => onNotice?.(undo(count), 'info', 'undo', { label: 'Undo', run: restore, fades: true }),
+    return { byPath, before, count }
+  }
+  const failed = (error: unknown) => onNotice?.(`Can't write: ${error instanceof Error ? error.message : String(error)}`)
+  /** Each note's writes, one write per note, at most 8 at a time (YAZ-4612 S48); more than 20 notes say so first. */
+  const writeNotes = (writes: ReadonlyMap<string, PropertyWrite[]>): Promise<void> => {
+    if (writes.size > PROGRESS_AT) onNotice?.(`Writing ${writes.size} notes…`)
+    return inBatches(
+      [...writes].map(([path, w]) => () =>
+        onWriteValues(path, w).catch((error: unknown) => {
+          failed(error)
+          throw error
+        }),
+      ),
+    )
+  }
+  /**
+   * A planned bulk write: ONE step of the page's ⌘Z history (S41), then the writes. With `undo`, one S29 toast for the
+   * whole gesture once every write landed (YAZ-4609 D61).
+   */
+  const commitWrites = (plan: WritePlan, undo?: (count: number) => string): void => {
+    if (plan.count === 0) return
+    const back = () => void writeNotes(plan.before).catch(() => {})
+    history?.push({ undo: back, redo: () => void writeNotes(plan.byPath).catch(() => {}) })
+    writeNotes(plan.byPath).then(
+      () => {
+        if (undo !== undefined) onNotice?.(undo(plan.count), 'info', 'undo', { label: 'Undo', run: back, fades: true })
+      },
       () => {},
     )
+  }
+  const writeCells = (cells: Iterable<{ r: number; c: number; value: unknown }>, undo?: (count: number) => string): void => commitWrites(planWrites(cells), undo)
+  /** A clear awaiting its confirm (S49): more than 50 cells. */
+  const [confirmClear, setConfirmClear] = useState<WritePlan | null>(null)
+  /** Clear cells (YAZ-4593) and Delete / Backspace (S44): the empty value in each cell; more than 50 cells ask first. */
+  const clearArea = (area: { rows: number[]; cols: number[] }): void => {
+    const plan = planWrites(area.rows.flatMap((r) => area.cols.map((c) => ({ r, c, value: null }))))
+    if (plan.count > CONFIRM_CLEAR_AT) setConfirmClear(plan)
+    else commitWrites(plan)
+  }
+  /** One typed cell's commit, one step of the history (S41): undo writes the value it had. */
+  const commitCell = (path: string, bare: string, before: unknown, next: unknown): Promise<unknown> => {
+    history?.push({ undo: () => void onWriteValues(path, [{ key: bare, value: before }]).catch(failed), redo: () => void onWriteValues(path, [{ key: bare, value: next }]).catch(failed) })
+    return onWriteValue(path, bare, next)
   }
   /**
    * The fill handle (YAZ-4609 D61, the table block's `editor/table/tableFill.ts`): a square in the bottom-right corner
@@ -864,16 +959,27 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     navigator.clipboard.readText().then(
       (text) => {
         const cells: { r: number; c: number; value: unknown }[] = []
+        let notOption = 0
         parseTsv(text).forEach((line, i) =>
           line.forEach((t, j) => {
+            // Only the shown columns, and of those the writable ones: never a hidden column or the Name (YAZ-4612 S51).
             const [r, c] = [area.rows[0] + i, area.cols[0] + j]
             const bare = bares[c]
             if (flat[r] === undefined || bare == null) return
-            const value = valueFromText(t, cellEditor(flat[r].record.properties[bare], typings[c]) ?? 'text')
-            if (value !== undefined) cells.push({ r, c, value })
+            const kind = cellEditor(flat[r].record.properties[bare], typings[c]) ?? 'text'
+            const value = valueFromText(t, kind)
+            if (value === undefined) return
+            // A Select or Multi-select value that is no option skips its cell; no option is made (S50).
+            const options = typings[c]?.options
+            if ((kind === 'select' || kind === 'multi-select') && options !== undefined && value !== null && !(Array.isArray(value) ? value : [value]).every((v) => options.includes(String(v)))) {
+              notOption++
+              return
+            }
+            cells.push({ r, c, value })
           }),
         )
         writeCells(cells)
+        if (notOption > 0) onNotice?.(`${notOption} ${notOption === 1 ? 'cell' : 'cells'} skipped: not an option`)
       },
       (error: unknown) => onNotice?.(`Can't paste: ${error instanceof Error ? error.message : String(error)}`),
     )
@@ -924,6 +1030,15 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       return true
     }
     const k = e.key.toLowerCase()
+    // ⌘Z / ⇧⌘Z (YAZ-4612 S41): the page's value history. An open cell editor keeps its own: its keys never come here.
+    if (k === 'z' && e.metaKey && !e.altKey && !e.ctrlKey) return (e.shiftKey ? history?.redo() : history?.undo()) ?? false
+    // Delete or Backspace clears the values (S44), not the formatting (⌘\, D54).
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey) {
+      const area = areaOf(selRef.current, at)
+      if (area === null) return false
+      clearArea(area)
+      return true
+    }
     if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || (k !== 'c' && k !== 'v' && k !== 'a' && k !== '\\')) return false
     if (k === 'a') return selectAll()
     const area = areaOf(selRef.current, at)
@@ -1032,6 +1147,31 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       e.preventDefault()
       return
     }
+    // Tab and ⇧Tab move right and left (YAZ-4612 S43); at the table's edge Tab leaves it, as on a page.
+    if (e.key === 'Tab' && !e.metaKey && !e.altKey && !e.ctrlKey) {
+      const nc = c + (e.shiftKey ? -1 : 1)
+      if (nc < 0 || nc >= keys.length) return
+      e.preventDefault()
+      setSelection(null)
+      wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${r}:${nc}"]`)?.focus()
+      return
+    }
+    // A typed letter starts editing with it (S42), but not on the Name cell, whose title edit keeps double-click.
+    if (e.key.length === 1 && !e.metaKey && !e.altKey && !e.ctrlKey && c !== nameCol) {
+      const bare = bares[c]
+      const kind = bare == null || flat[r] === undefined ? null : cellEditor(flat[r].record.properties[bare], typings[c])
+      const open = (e.target as HTMLElement).querySelector<HTMLElement>('[data-edit]')
+      if (open === null || kind === null || !TYPE_KINDS.has(kind)) return
+      e.preventDefault()
+      // The click mounts the field now, so the letter goes into it.
+      flushSync(() => open.click())
+      const input = (e.target as HTMLElement).querySelector<HTMLInputElement>('input')
+      if (input !== null) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, e.key)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      return
+    }
     if (e.key === 'Enter') {
       // A modifier always opens, from any cell (YAZ-4605 D56): ⌘ a background tab, ⌥ the right panel, ⇧ the mini
       // window. Plain Enter opens from the Name cell and edits any other; ⌃ opens nothing, as before.
@@ -1052,6 +1192,25 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${nr}:${nc}"]`)?.focus()
   }
 
+  /**
+   * Enter that commits a cell's edit moves the focus down one row (YAZ-4612 S43): the editor hands the focus back to
+   * its cell, and that focus moves on. Any other key in the editor (Esc, a picked suggestion's next letter) forgets it.
+   */
+  const downAfter = useRef<string | null>(null)
+  const onEditorKey = (e: ReactKeyboardEvent): void => {
+    const cell = e.target instanceof Element ? e.target.closest<HTMLElement>('td[data-cell]') : null
+    if (cell === null || cell === e.target) return
+    downAfter.current = e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.altKey && !e.ctrlKey ? cell.dataset.cell! : null
+  }
+  const onTableFocus = (e: ReactFocusEvent): void => {
+    placeHandle()
+    const at = e.target instanceof HTMLElement ? e.target.dataset.cell : undefined
+    if (at === undefined || at !== downAfter.current) return
+    downAfter.current = null
+    const [r, c] = at.split(':').map(Number)
+    wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${r + 1}:${c}"]`)?.focus()
+  }
+
   /** The selection's right-click (YAZ-4593): every action works on the selection it was opened on. */
   const selectionMenu = ({ x, y, sel }: { x: number; y: number; sel: TableSelection }) => {
     const area = areaOf(sel)!
@@ -1067,7 +1226,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         setValue={typing === undefined ? null : { kind: typing?.assigned ?? typing?.dominant ?? 'text', options: typing?.options }}
         onCopy={() => copyArea(area)}
         onPaste={() => pasteInto(area)}
-        onClear={() => writeCells(area.rows.flatMap((r) => area.cols.map((c) => ({ r, c, value: null }))))}
+        onClear={() => clearArea(area)}
         onFill={(target, fill) => {
           const targets = area.rows.flatMap((r) => (target === 'row' ? [{ record: flat[r].record }] : area.cols.map((c) => ({ record: flat[r].record, column: keys[c] }))))
           // No fill offers Undo, as the row menu's (YAZ-4594 S29).
@@ -1218,7 +1377,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     titles={linkNames[c] ?? titles}
                     resolve={resolve}
                     readOnly={locked}
-                    onCommit={(next) => onWriteValue(line.row.record.path, bares[c]!, next)}
+                    onCommit={(next) => commitCell(line.row.record.path, bares[c]!, line.row.record.properties[bares[c]!], next)}
                   />
                 ) : (
                   rowCell(line.row, key, resolve)
@@ -1239,8 +1398,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           style={{ width: gutterWidth + keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px`, '--view-group-indent': `${groupIndentOf(view)}px` } as CSSProperties}
           onKeyDown={onKeyDown}
           // The fill handle follows the focused cell when there is no selection (D61): placed on the DOM, no render.
-          onFocus={placeHandle}
+          onFocus={onTableFocus}
           onBlur={placeHandle}
+          onKeyDownCapture={onEditorKey}
         >
           <thead>
             <tr>
@@ -1455,6 +1615,21 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             declareColumn={declareColumn}
             onDeleteColumn={deleteColumn && setConfirmDelete}
             onClose={() => setHeaderMenu(null)}
+          />
+        )}
+        {confirmClear !== null && (
+          <ConfirmSheet
+            labelId="confirm-clear-cells-text"
+            text={`Clear ${confirmClear.count} cells? ⌘Z puts them back.`}
+            confirmLabel="Clear"
+            danger
+            keys="sheet"
+            onConfirm={() => {
+              const plan = confirmClear
+              setConfirmClear(null)
+              commitWrites(plan)
+            }}
+            onCancel={() => setConfirmClear(null)}
           />
         )}
         {confirmDelete !== null && deleteColumn && (

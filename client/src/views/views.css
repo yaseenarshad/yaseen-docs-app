@@ -180,6 +180,21 @@
   white-space: nowrap;
 }
 
+/* The selection's Count / Sum / Average (YAZ-4612 S46): a small chip before the count, written by the table. */
+.view-toolbar__selection {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.view-toolbar__selection[hidden] {
+  display: none;
+}
+
 /* ---------- popovers (anchored under their trigger; ctx-menu look) ---------- */
 
 .view-popover {

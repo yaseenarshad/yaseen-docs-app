@@ -3,7 +3,7 @@
  * with a host whose `create` records the seed and resolves a path; the test then hands the pane the new note, as the
  * index would. The new row's Name cell goes into title edit, the note does not open, and the toast's Undo trashes it.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
@@ -12,6 +12,7 @@ import { ViewsPane } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import type { NewNoteSeed } from '../newNote'
+import { dropAllHistories } from './valueHistory'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -37,6 +38,7 @@ const TABLE = `views:
 `
 
 let root: Root | null = null
+beforeEach(() => dropAllHistories())
 let container: HTMLElement | null = null
 
 afterEach(() => {
@@ -158,6 +160,14 @@ describe('New row below (YAZ-4611 D63)', () => {
     const [message, , type, action] = onNotice.mock.lastCall as [string, string, string, { run: () => void }]
     expect([message, type]).toEqual(['Added a row', 'undo'])
     act(() => action.run())
+    expect(trash).toHaveBeenCalledExactlyOnceWith([NEW])
+  })
+
+  it('⌘Z on the table trashes it too: one step of the page\'s history (YAZ-4612 S41)', async () => {
+    const { el, trash } = mount(TABLE)
+    await newBelow(el, 'B')
+    const td = nameCell(el, 'A')
+    act(() => void td.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true, cancelable: true })))
     expect(trash).toHaveBeenCalledExactlyOnceWith([NEW])
   })
 

@@ -391,7 +391,7 @@ describe('the Name cell (YAZ-2420 D26, table F)', () => {
     expect(openRight).toHaveBeenCalledOnce()
   })
 
-  it('F: a double-click on a Name cell edits the title in place; committing runs the one title edit, and the cell takes the focus back', () => {
+  it('F: a double-click on a Name cell edits the title in place; committing runs the one title edit, and Enter moves the focus down a row (YAZ-4612 S43)', () => {
     const retitle = vi.fn()
     const { el, onOpenFile } = mount(TYPED_BASE, { folder: testFolderHost({ retitle }) })
     doubleClick(nameCell(el))
@@ -399,7 +399,8 @@ describe('the Name cell (YAZ-2420 D26, table F)', () => {
     typeTitle(nameCell(el), '  Agentic: the "agency"/2026  ')
     expect(retitle).toHaveBeenCalledExactlyOnceWith(agentic, 'Agentic: the "agency"/2026')
     expect(nameCell(el).querySelector('input')).toBeNull()
-    expect(document.activeElement).toBe(nameCell(el))
+    // It was the Name cell itself; Enter now moves on, as after any cell's edit (S43).
+    expect(document.activeElement).toBe(el.querySelector('td[data-cell="1:0"]'))
     expect(onOpenFile).not.toHaveBeenCalled()
   })
 
