@@ -125,7 +125,7 @@ describe('group header right-click (YAZ-4604, D55)', () => {
     const event = rightClick(headersOf(el, 'A')[0].querySelector('.view-group__value')!)
     expect(event.defaultPrevented).toBe(true)
     expect(menu()).not.toBeNull()
-    expect(items()).toEqual(['Collapse this group', 'New note in this group'])
+    expect(items()).toEqual(['New note in this group', 'Collapse this group']) // the edit first (YAZ-4608 C8)
   })
 
   it('a right-click on the empty part of a table group row opens the same menu (not the system one)', () => {
@@ -133,7 +133,7 @@ describe('group header right-click (YAZ-4604, D55)', () => {
     const cell = headersOf(el, 'A')[0].closest<HTMLElement>('td.view-table__group-cell')!
     const event = rightClick(cell)
     expect(event.defaultPrevented).toBe(true)
-    expect(items()).toEqual(['Collapse this group', 'New note in this group'])
+    expect(items()).toEqual(['New note in this group', 'Collapse this group']) // the edit first (YAZ-4608 C8)
     pick('Collapse this group')
     expect(expanded(headersOf(el, 'A')[0])).toBe('false')
   })
@@ -150,7 +150,7 @@ describe('group header right-click (YAZ-4604, D55)', () => {
     expect(expanded(headersOf(el, 'B')[0])).toBe('true')
 
     rightClick(headersOf(el, 'p1')[1])
-    expect(items()[0]).toBe('Expand this group')
+    expect(items().at(-1)).toBe('Expand this group')
     pick('Expand this group')
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::V', [])
     expect(expanded(headersOf(el, 'p1')[1])).toBe('true')

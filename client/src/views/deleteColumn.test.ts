@@ -189,6 +189,28 @@ describe('deleteColumn', () => {
     expect(vi.mocked(transformFile).mock.calls.every(([, , quiet]) => quiet === true)).toBe(true)
   })
 
+  it('the settings half offers Undo (YAZ-4608 C6): "Deleted column <label>", and its restore writes the declaration, the views and the label back in ONE write', async () => {
+    const notice = vi.fn<NonNullable<DeleteColumnHost['notice']>>()
+    const h = host({ notice })
+    const columnsBefore = structuredClone(h.columns)
+    const viewsBefore = structuredClone(h.def.views)
+    const labelsBefore = structuredClone(h.def.properties)
+    await deleteColumn('note.status', h)
+    expect(notice).toHaveBeenCalledExactlyOnceWith('Deleted column Stage', expect.any(Function))
+    expect(h.writeSettings).toHaveBeenCalledTimes(1)
+    await notice.mock.calls[0][1]()
+    expect(h.writeSettings).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(h.writeSettings).mock.calls[1]).toEqual([columnsBefore, viewsBefore, labelsBefore])
+    // The notes' values stay stripped: the confirm said they go.
+    expect(disk.get(A)).toBe(`---\n# a comment\ntitle: A\nin:\n  ${FOLDER_ID}:\n    owner: "[[Sam]]"\n---\n\nbody a\n`)
+  })
+
+  it('a refused settings write says nothing: no toast for a delete that did not happen (C6)', async () => {
+    const notice = vi.fn()
+    await expect(deleteColumn('note.status', host({ notice, writeSettings: vi.fn(async () => { throw new Error('locked') }) }))).rejects.toThrow('locked')
+    expect(notice).not.toHaveBeenCalled()
+  })
+
   it('S55 (YAZ-3076 D6): a read-only note loses the column too — a folder-wide action keeps the folder consistent, as a link rewrite does', async () => {
     disk.set(C, `---\nreadonly: true\nin:\n  ${FOLDER_ID}:\n    status: 1-Backlog\n---\nbody c\n`)
     const h = host({ records: [rec(A, held({ status: '2-Todo', owner: '[[Sam]]' }, { title: 'A' })), rec(B, held({ owner: '[[Kim]]' }, { title: 'B' })), rec(C, held({ status: '1-Backlog' }, { readonly: true }))] })

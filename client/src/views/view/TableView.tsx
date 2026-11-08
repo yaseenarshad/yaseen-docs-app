@@ -28,7 +28,7 @@ import { MAX_FROZEN_ROWS, UNFROZE_ROWS, frozenColumnCount } from './frozenColumn
 import { PageContextMenu } from './PageContextMenu'
 import { OtherFilesMove, trayRowDrag } from './otherFilesMove'
 import { FillMenu } from './FillMenu'
-import { filterValueItems, noteItems } from './rowMenuItems'
+import { deleteNoteItem, duplicateNoteItem, filterValueItems } from './rowMenuItems'
 import { withFilter } from './filterRows'
 import { cellFillOf, fillIndex, fillPaint, setViewFill, setViewFills } from './fills'
 import { ClearFormattingItem, SelectionMenu } from './SelectionMenu'
@@ -1131,15 +1131,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     onDrop: live.drop,
     onDragEnd: live.end,
   })
-  /** The grabbed header and where the gap opens — before a header, or after the last for the end slot (YAZ-1548): they draw nothing, the gap is the marker (YAZ-4606). */
-  const headerDragClass = (index: number): string[] => {
-    if (live.drag === null) return []
-    const cls: string[] = []
-    if (live.drag.from === index) cls.push('view-table__th--drag-source')
-    if (live.gap === index) cls.push('view-table__th--insert-before')
-    if (live.gap === keys.length && index === keys.length - 1) cls.push('view-table__th--insert-after')
-    return cls
-  }
   // Each column's slide and the grabbed column's lift, as ONE rule per moved column for this table (YAZ-4606): a slot
   // change re-renders no cell's style, and the cells a scroll mounts mid-drag take the rule too.
   const tableId = useId()
@@ -1460,7 +1451,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   <th
                     key={key}
                     scope="col"
-                    className={[frozenClass(index), ...headerDragClass(index)].filter(Boolean).join(' ') || undefined}
+                    className={frozenClass(index) || undefined}
                     style={{ width: widthOf(key), ...frozenStyle(index) }}
                     // The column's description on hover (YAZ-4590 S23).
                     title={c.startsWith('note.') ? settings.columns[c.slice('note.'.length)]?.description : undefined}
@@ -1562,14 +1553,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             onOpenWindow={onOpenWindow}
             onNotice={onNotice}
             onClose={() => setRowMenu(null)}
+            // One order in every folder-page menu (YAZ-4608 C8): open, then edit, then view, then destructive last.
             extra={[
-              // "Filter by this value" / "Hide this value" (YAZ-4592 S25): one more rule in the view's filters.
-              filterValueItems(rowMenu.column, rowMenu.value, (rule) => {
-                setRowMenu(null)
-                onUpdate((d) => {
-                  d.views[viewIndex].filters = withFilter(d.views[viewIndex].filters, rule)
-                })
-              }),
               <Fragment key="fill">
                 <FillMenu
                   start={cellFillOf(fills, rowMenu.record.path, rowMenu.column)}
@@ -1585,6 +1570,39 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   }}
                 />
               </Fragment>,
+              // The row-making edits (YAZ-4611 D63, YAZ-4592 S26): every row offers New row below, a folder row too; a folder row is no note, so it has no Duplicate.
+              (newRowBelow || (onDuplicateNote && !isFolderRow(rowMenu.record))) && (
+                <Fragment key="rows">
+                  {newRowBelow && (
+                    <button
+                      type="button"
+                      className="ctx-menu__item"
+                      role="menuitem"
+                      onClick={() => {
+                        setRowMenu(null)
+                        newRowBelow(rowMenu.r)
+                      }}
+                    >
+                      New row below
+                    </button>
+                  )}
+                  {!isFolderRow(rowMenu.record) &&
+                    duplicateNoteItem(
+                      onDuplicateNote &&
+                        (() => {
+                          setRowMenu(null)
+                          onDuplicateNote(rowMenu.record.path)
+                        }),
+                    )}
+                </Fragment>
+              ),
+              // "Filter by this value" / "Hide this value" (YAZ-4592 S25): one more rule in the view's filters.
+              filterValueItems(rowMenu.column, rowMenu.value, (rule) => {
+                setRowMenu(null)
+                onUpdate((d) => {
+                  d.views[viewIndex].filters = withFilter(d.views[viewIndex].filters, rule)
+                })
+              }),
               // Row freeze (YAZ-4537), the column menu's pair: on the row where the freeze ends the item reads ✓ and a click unfreezes.
               <FreezeRowItems
                 key="freeze"
@@ -1598,37 +1616,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   }, count === 0 ? UNFROZE_ROWS : undefined)
                 }}
               />,
-              // Every row offers it, a folder row and a read-only one too (YAZ-4611 D63).
-              newRowBelow && (
-                <button
-                  key="new-below"
-                  type="button"
-                  className="ctx-menu__item"
-                  role="menuitem"
-                  onClick={() => {
-                    setRowMenu(null)
-                    newRowBelow(rowMenu.r)
-                  }}
-                >
-                  New row below
-                </button>
-              ),
-              // A folder row is no note (YAZ-4592 S26): it has neither.
+            ].filter((group) => group !== null && group !== undefined && group !== false)}
+            // Destructive, last (C8): a folder row is no note (YAZ-4592 S26), so it has no Delete.
+            danger={
               isFolderRow(rowMenu.record)
                 ? null
-                : noteItems(
-                    onDuplicateNote &&
-                      (() => {
-                        setRowMenu(null)
-                        onDuplicateNote(rowMenu.record.path)
-                      }),
+                : deleteNoteItem(
                     onDeleteNotes &&
                       (() => {
                         setRowMenu(null)
                         onDeleteNotes([rowMenu.record.path])
                       }),
-                  ),
-            ].filter((group) => group !== null && group !== undefined)}
+                  )
+            }
           />
         )}
         {selMenu !== null && selectionMenu(selMenu)}
@@ -1645,7 +1645,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             records={records}
             wrapKind={headerMenu.key === null ? null : wrapKind(typings[keys.indexOf(headerMenu.key)])}
             properties={properties}
-            folder={{ settings, setColumn, deleteColumn, valueCount }}
+            folder={{ settings, setColumn, setColumns: declareColumn, deleteColumn, valueCount, onNotice }}
             rowNumbers={numbered}
             onUpdate={onUpdate}
             declareColumn={declareColumn}

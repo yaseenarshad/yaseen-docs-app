@@ -275,7 +275,7 @@ describe('calendar "+" on a day (YAZ-4540 S10) and "Show by"', () => {
 
   it('Properties has a "Calendar" section with the same "Show by"', () => {
     const { el } = mount(CALENDAR)
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // the View tab (YAZ-4607 D59)
     const pop = q(el, '.view-popover--properties')
     expect([...pop.querySelectorAll('.view-menu__label')].map((l) => l.textContent)).toContain('Calendar')
@@ -333,7 +333,7 @@ describe('the "No date" tray is bounded (YAZ-4544, finding 5)', () => {
 describe('"Show by" works out the date columns once (YAZ-4544, finding 9)', () => {
   it('one dateColumns run for a render, with "Show by" on the toolbar and in Properties', () => {
     const { el } = mount(CALENDAR)
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // the View tab (YAZ-4607 D59)
     expect(document.querySelectorAll('[aria-label="Show by"]')).toHaveLength(2)
     vi.mocked(dateColumns).mockClear()
@@ -445,7 +445,7 @@ describe('calendar card titles: Clip or Wrap (YAZ-4558 D23)', () => {
 
   it('Properties › Calendar "Card titles" writes cardTitles: wrap; Clip deletes it (absent = clip)', () => {
     const { el, yaml } = mount(CALENDAR, { records })
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
     expect(cardTitles(el).value).toBe('clip')
     expect([...cardTitles(el).options].map((o) => o.textContent)).toEqual(['Clip …', 'Wrap'])
@@ -571,7 +571,7 @@ describe('hide weekends (YAZ-4595 S33)', () => {
 
   it('Properties › Calendar "Hide weekends" writes hideWeekends: true; off removes the key (the default is off)', () => {
     const { el, yaml } = mount(CALENDAR, { records })
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
     expect(hideBox(el).checked).toBe(false)
     toggle(hideBox(el))
@@ -586,7 +586,7 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     // Settings › Folder pages reaches the pane as its `folderPages` prop (YAZ-4585), live.
     const { el, yaml } = mount(CALENDAR, { records, folderPages: { ...DEFAULT_FOLDER_PAGES, hideWeekends: true } })
     expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
     expect(hideBox(el).checked).toBe(true)
     toggle(hideBox(el))

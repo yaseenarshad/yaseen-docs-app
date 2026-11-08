@@ -821,9 +821,9 @@ describe('createStore: loading', () => {
 
   it('folderPages (YAZ-4585, D34): every row is valid, each default is the look before, and a broken part costs that part only', async () => {
     const fp = DEFAULT_SETTINGS.folderPages
-    expect(fp).toEqual({ weekStartsOn: 'monday', rowBand: null, keepWindowPinned: null, rowHeight: 'short', rowNumbers: true, textInCells: 'kind', groupIndent: 'medium', showEmptyGroups: false, subfolders: 'notes', foldersFirst: true, calendarScale: 'month', cardTitles: 'clip', hideWeekends: false, showFolderPageFiles: false, askBeforeDelete: true, showOtherFiles: true })
+    expect(fp).toEqual({ weekStartsOn: 'monday', rowBand: null, keepWindowPinned: null, rowHeight: 'short', rowNumbers: true, textInCells: 'kind', groupIndent: 'medium', showEmptyGroups: false, showEmptyColumns: false, subfolders: 'notes', foldersFirst: true, calendarScale: 'month', cardTitles: 'clip', hideWeekends: false, showFolderPageFiles: false, askBeforeDelete: true, showOtherFiles: true })
     // Each value a Settings row writes is accepted by the channel.
-    const written = { weekStartsOn: 'sunday', rowBand: false, keepWindowPinned: true, rowHeight: 'tall', rowNumbers: false, textInCells: 'clip', groupIndent: 'large', showEmptyGroups: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true, showFolderPageFiles: true, askBeforeDelete: false, showOtherFiles: false }
+    const written = { weekStartsOn: 'sunday', rowBand: false, keepWindowPinned: true, rowHeight: 'tall', rowNumbers: false, textInCells: 'clip', groupIndent: 'large', showEmptyGroups: true, showEmptyColumns: false, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true, showFolderPageFiles: true, askBeforeDelete: false, showOtherFiles: false }
     expect(isSettings({ ...DEFAULT_SETTINGS, folderPages: written })).toBe(true)
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: written }).folderPages).toEqual(written)
     for (const bad of [{ ...fp, weekStartsOn: 'friday' }, { ...fp, rowBand: 'on' }, { ...fp, subfolders: false }, { ...fp, hideWeekends: 'yes' }, { ...fp, askBeforeDelete: null }, { ...fp, showOtherFiles: 'on' }, (({ showFolderPageFiles: _gone, ...rest }) => rest)(fp), 'on', undefined]) {
@@ -837,6 +837,17 @@ describe('createStore: loading', () => {
     const some = createStore(file).get().settings
     expect(some.folderPages).toEqual({ ...written, rowHeight: 'short' })
     expect(some.theme).toBe('dark')
+  })
+
+  it('folderPages: a file from before the split (YAZ-4608 C2) starts "Show empty columns" from its "Show empty groups"; nothing stored is lost', async () => {
+    const { showEmptyColumns: _split, ...before } = { ...DEFAULT_SETTINGS.folderPages, showEmptyGroups: true, rowHeight: 'tall' as const }
+    expect(isSettings({ ...DEFAULT_SETTINGS, folderPages: before })).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: before }).folderPages).toEqual({ ...before, showEmptyColumns: true })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, folderPages: before } }))
+    expect(createStore(file).get().settings.folderPages).toEqual({ ...before, showEmptyColumns: true })
+    // Both stored: each keeps its own value.
+    const both = { ...before, showEmptyGroups: true, showEmptyColumns: false }
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: both }).folderPages).toEqual(both)
   })
 
   it('hoverOn (YAZ-3403 D7, S36, S37): a place shows the panel only while the master and its own switch are both on', () => {

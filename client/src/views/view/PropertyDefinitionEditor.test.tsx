@@ -35,39 +35,40 @@ function hover(index: number, half: 'top' | 'bottom') {
 }
 
 describe('option reorder feedback', () => {
-  it('shows the insertion boundary before a row and drops down into that exact slot', () => {
+  // The gap is the marker (YAZ-4606): the options' slides say where it opens, no attribute does.
+  it('opens the gap before a row and drops down into that exact slot', () => {
     const change = mount()
     drag(handle(0), 'dragstart')
     const target = hover(2, 'top')
-    expect(target.dataset.insert).toBe('before')
+    expect(rows()[1].style.transform).toBe('translateY(-100px)') // Second slides up into First's room
     expect(change).not.toHaveBeenCalled()
     drag(target, 'drop', 105)
     expect(change).toHaveBeenCalledExactlyOnceWith(['Second', 'First', 'Third', 'Fourth'])
-    expect(host.querySelector('[data-insert]')).toBeNull()
+    expect(host.querySelector('[data-live-parting]')).toBeNull()
   })
-  it('shows the end boundary and can drop after the last option', () => {
+  it('opens the gap at the end and can drop after the last option', () => {
     const change = mount()
     drag(handle(0), 'dragstart')
     const target = hover(3, 'bottom')
-    expect(target.dataset.insert).toBe('after')
+    expect(rows()[3].style.transform).toBe('translateY(-100px)')
     drag(target, 'drop', 130)
     expect(change).toHaveBeenCalledExactlyOnceWith(['Second', 'Third', 'Fourth', 'First'])
   })
-  it('moves upward below the hovered row, matching the indicator', () => {
+  it('moves upward below the hovered row, matching the gap', () => {
     const change = mount()
     drag(handle(3), 'dragstart')
     const target = hover(0, 'bottom')
-    expect(rows()[1].dataset.insert).toBe('before')
+    expect(rows()[1].style.transform).toBe('translateY(100px)') // Second slides down: the gap opens before it
     drag(target, 'drop', 130)
     expect(change).toHaveBeenCalledExactlyOnceWith(['First', 'Fourth', 'Second', 'Third'])
   })
-  it('cancels without changing the order or leaving an insertion line', () => {
+  it('cancels without changing the order or leaving a gap', () => {
     const change = mount()
     drag(handle(0), 'dragstart'); hover(3, 'top')
     drag(handle(0), 'dragend')
     expect(change).not.toHaveBeenCalled()
-    expect(host.querySelector('[data-insert]')).toBeNull()
-    expect(host.querySelector('[data-dragging]')).toBeNull()
+    expect(host.querySelector('[data-live-parting]')).toBeNull()
+    expect(rows().map(row => row.style.transform)).toEqual(['', '', '', ''])
   })
   it('LIVE GAP (YAZ-4606): the options part down the list, and Esc cancels', () => {
     const change = mount()

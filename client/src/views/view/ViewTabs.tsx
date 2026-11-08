@@ -80,12 +80,9 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
           {...live.listProps}
         >
           {views.map((v, i) => {
+            // The gap is the marker (YAZ-4606): the live gap's own attributes and transforms say where it opens, no class does.
             const cls = ['view-tab']
             if (i === active) cls.push('view-tab--active')
-            if (live.drag?.from === i) cls.push('view-tab--dragging')
-            // Where the gap opens: they draw nothing, the gap is the marker (YAZ-4606).
-            if (live.gap === i) cls.push('view-tab--insert-before')
-            if (live.gap === views.length && i === views.length - 1) cls.push('view-tab--insert-after')
             return (
               <div
                 key={i}

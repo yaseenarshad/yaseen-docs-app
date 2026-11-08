@@ -82,14 +82,7 @@ function moved<T>(list: readonly T[], ids: readonly number[], from: number, inse
 /** One reorderable rule row: an item of its list's live gap, its ⋮⋮ handle (drag, or ↑/↓ when focused) and `body`. */
 function ruleRow(ids: readonly number[], live: RuleDrag, i: number, count: number, move: (from: number, insertion: number) => void, gripLabel: string, body: ReactNode, mainClass?: string) {
   return (
-    <li key={ids[i]} {...live.itemProps(i)} className={[
-      'view-rule',
-      // The grabbed row and where the gap opens: they draw nothing, the gap is the marker (YAZ-4606).
-      live.drag?.from === i ? 'view-prop--dragging' : '',
-      live.gap === i ? 'view-prop--insert-before' : '',
-      live.gap === count && i === count - 1 ? 'view-prop--insert-after' : '',
-    ].filter(Boolean).join(' ')}
-    >
+    <li key={ids[i]} {...live.itemProps(i)} className="view-rule">
       <div className={mainClass ? `view-rule__main ${mainClass}` : 'view-rule__main'}>
         <button type="button" className="view-rule__nav view-prop__handle"
           aria-label={gripLabel}

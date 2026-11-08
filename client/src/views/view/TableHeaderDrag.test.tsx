@@ -110,22 +110,23 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
   it('moves a column RIGHT: dropping on the right half of a later header lands after it, in ONE write', () => {
     const { el, onChange, def, yaml } = mount()
     fire(ths(el)[0], 'dragstart')
-    expect(ths(el)[0].classList.contains('view-table__th--drag-source')).toBe(true)
+    expect(q(el, '.view-table').hasAttribute('data-live-parting')).toBe(true) // the gap is the marker: no marker class (YAZ-4606)
     fire(ths(el)[2], 'dragover', RIGHT)
-    expect(ths(el)[2].classList.contains('view-table__th--insert-after')).toBe(true) // the end slot
+    expect(rules(el)).toMatch(/th\[data-col="2"\][^{]*\{transform:translateX\(-/) // the end slot: the columns after the grab slide left
     fire(ths(el)[2], 'drop', RIGHT)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
     expect(headers(el)).toEqual(['Status', 'Priority', 'Name'])
     expect(yaml()).toContain('- note.status\n      - note.priority\n      - file.name')
-    expect(el.querySelector('[class*="view-table__th--"]')).toBeNull() // indicators cleared
+    expect(rules(el)).toBe('') // the slides cleared
+    expect(q(el, '.view-table').hasAttribute('data-live-parting')).toBe(false)
   })
 
   it('moves a column LEFT: dropping on the left half of an earlier header lands before it', () => {
     const { el, onChange, def } = mount()
     fire(ths(el)[2], 'dragstart')
     fire(ths(el)[0], 'dragover', LEFT)
-    expect(ths(el)[0].classList.contains('view-table__th--insert-before')).toBe(true)
+    expect(rules(el)).toMatch(/th\[data-col="0"\][^{]*\{transform:translateX\(\d/) // Name slides right: the gap opens before it
     fire(ths(el)[0], 'drop', LEFT)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
@@ -135,7 +136,8 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     const { el, def } = mount()
     fire(ths(el)[2], 'dragstart')
     fire(ths(el)[0], 'dragover', RIGHT)
-    expect(ths(el)[1].classList.contains('view-table__th--insert-before')).toBe(true)
+    expect(rules(el)).toMatch(/th\[data-col="1"\][^{]*\{transform:translateX\(\d/) // Status slides right, Name stays
+    expect(rules(el)).not.toContain('th[data-col="0"]')
     fire(ths(el)[0], 'drop', RIGHT)
     expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status'])
   })
@@ -194,7 +196,7 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     const grip = q<HTMLElement>(ths(el)[0], '.view-table__resize')
     const start = fire(grip, 'dragstart')
     expect(start.defaultPrevented).toBe(true)
-    expect(el.querySelector('.view-table__th--drag-source')).toBeNull()
+    expect(q(el, '.view-table').hasAttribute('data-live-parting')).toBe(false)
     const over = fire(ths(el)[2], 'dragover', RIGHT)
     expect(over.defaultPrevented).toBe(false)
     fire(ths(el)[2], 'drop', RIGHT)
@@ -205,9 +207,10 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     const { el, onChange } = mount()
     fire(ths(el)[0], 'dragstart')
     fire(ths(el)[2], 'dragover', RIGHT)
-    expect(el.querySelector('.view-table__th--insert-after')).not.toBeNull()
+    expect(rules(el)).toContain('transform:translateX(-')
     pressEscape()
-    expect(el.querySelector('[class*="view-table__th--"]')).toBeNull()
+    expect(rules(el)).toBe('')
+    expect(q(el, '.view-table').hasAttribute('data-live-parting')).toBe(false)
     fire(ths(el)[2], 'drop', RIGHT)
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -266,10 +269,10 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     const { el } = mount()
     fire(ths(el)[2], 'dragstart')
     fire(ths(el)[0], 'dragover', LEFT) // the first slot: Name and Status slide right
-    expect(ths(el)[0].classList.contains('view-table__th--insert-before')).toBe(true)
+    expect(rules(el)).toMatch(/th\[data-col="0"\][^{]*\{transform:translateX\(\d/)
     // Name is drawn one room on now; a pointer on its drawn left half is on Status's right half in the layout.
     fire(ths(el)[1], 'dragover', RIGHT)
-    expect(el.querySelector('.view-table__th--insert-before, .view-table__th--insert-after')).toBeNull() // the slot next to Priority: no gap
+    expect(rules(el)).not.toContain('transform') // the slot next to Priority: no gap
   })
 
   it('COUNT (YAZ-4606): a dragover reads the header row\'s place and the scroller\'s, and no cell', () => {

@@ -4,9 +4,9 @@ import type { ViewSet } from '../viewSchema'
 import { canonicalKey } from './keys'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 
-/** The sheet's copy (YAZ-1513) — pure and separately tested, like `deleteConfirmMessage` next door: the notes that lose the folder's value. */
+/** The sheet's copy (YAZ-1513), the app's one delete pattern `Delete <thing>? <what happens>.` (YAZ-4608 C7): the notes that lose the folder's value. */
 export function deleteColumnMessage(label: string, key: string, count: number): string {
-  return `Delete "${label}"? This removes the column from this folder and the "${key}" value from ${count} ${count === 1 ? 'note' : 'notes'}.`
+  return `Delete the column "${label}"? It goes from this folder, and the "${key}" value from ${count} ${count === 1 ? 'note' : 'notes'}.`
 }
 
 interface ConfirmDeleteColumnProps {

@@ -120,8 +120,8 @@ describe('opening', () => {
   })
 })
 
-describe('claim rule with a note editor and an outline view mounted together', () => {
-  it('routes CMD+F to the outline bar only while focus is inside the outline host', async () => {
+describe('claim rule with a note editor and the folder\'s Page tab (once the outline view) mounted together', () => {
+  it('routes CMD+F to the page bar only while focus is inside the page host', async () => {
     const noteChannel = createFindChannel()
     const note = await mountEditor('note apple', { find: noteChannel })
     // The production DOM detail the claim reads: CrepeHost mounts the note editor inside

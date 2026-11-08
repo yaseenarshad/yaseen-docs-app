@@ -74,6 +74,27 @@ it('"Open" leads the menu of a surface that hands one: it opens the page in the 
   host.remove()
 })
 
+it('`danger` is the LAST group, after the surface\'s own groups (YAZ-4608 C8)', () => {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const danger = (
+    <button type="button" role="menuitem" className="ctx-menu__item ctx-menu__item--danger">
+      Delete note…
+    </button>
+  )
+  const extra = [
+    <button key="a" type="button" role="menuitem" className="ctx-menu__item">
+      Fill cell
+    </button>,
+  ]
+  act(() => root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" title="note" onOpenBackground={vi.fn()} onClose={vi.fn()} extra={extra} danger={danger} />))
+  const groups = [...host.querySelectorAll('.ctx-menu__group')].map((g) => [...g.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent))
+  expect(groups).toEqual([['Open in new tab', 'Copy path', 'Reveal in Finder'], ['Fill cell'], ['Delete note…']])
+  act(() => root.unmount())
+  host.remove()
+})
+
 it('reports a clipboard rejection passively without leaving an unhandled promise', async () => {
   const descriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
   const writeText = vi.fn().mockRejectedValue(new Error('clipboard permission denied'))

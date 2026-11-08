@@ -105,9 +105,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
     </div> : <>
       <div className="property-def__option-list" {...live.listProps}
         onDragEnter={event => own(live.over(event), event)} onDragOver={event => own(live.over(event), event)} onDrop={event => own(live.drop(event), event)}>
-        {displayOptions.map((option, index) => <div key={option} className="property-def__option" {...live.itemProps(index)}
-          data-dragging={live.drag?.from === index || undefined}
-          data-insert={live.gap === index ? 'before' : live.gap === options.length && index === options.length - 1 ? 'after' : undefined}>
+        {displayOptions.map((option, index) => <div key={option} className="property-def__option" {...live.itemProps(index)}>
           {manual && <button type="button" draggable className="property-def__grip" aria-label={`Reorder ${option}`} title="Drag or use arrow keys to reorder" onDragStart={event => {
             event.stopPropagation()
             live.start(event, index)

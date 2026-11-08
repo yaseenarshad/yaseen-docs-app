@@ -23,21 +23,22 @@ export function filterValueItems(property: string, value: Value, onFilter: (rule
   )
 }
 
-/** "Duplicate note" and "Delete note…" (YAZ-4592 S26), each only when the table has its door. Null when it has neither. */
-export function noteItems(onDuplicate: (() => void) | undefined, onDelete: (() => void) | undefined): ReactNode {
-  if (onDuplicate === undefined && onDelete === undefined) return null
+/** "Duplicate note" (YAZ-4592 S26), only when the table has its door; an edit item (YAZ-4608 C8). Null without the door. */
+export function duplicateNoteItem(onDuplicate: (() => void) | undefined): ReactNode {
+  if (onDuplicate === undefined) return null
   return (
-    <>
-      {onDuplicate !== undefined && (
-        <button type="button" className="ctx-menu__item" role="menuitem" onClick={onDuplicate}>
-          Duplicate note
-        </button>
-      )}
-      {onDelete !== undefined && (
-        <button type="button" className="ctx-menu__item ctx-menu__item--danger" role="menuitem" onClick={onDelete}>
-          Delete note…
-        </button>
-      )}
-    </>
+    <button type="button" className="ctx-menu__item" role="menuitem" onClick={onDuplicate}>
+      Duplicate note
+    </button>
+  )
+}
+
+/** "Delete note…" (YAZ-4592 S26), only when the table has its door: the menu's LAST group, the destructive one (YAZ-4608 C8). */
+export function deleteNoteItem(onDelete: (() => void) | undefined): ReactNode {
+  if (onDelete === undefined) return null
+  return (
+    <button type="button" className="ctx-menu__item ctx-menu__item--danger" role="menuitem" onClick={onDelete}>
+      Delete note…
+    </button>
   )
 }

@@ -215,7 +215,7 @@ const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `To
 const colWidth = (el: ParentNode): string => q<HTMLElement>(el, '.view-board').style.getPropertyValue('--view-board-col-w')
 /** The Properties popover on its View tab (YAZ-4607 D59), where Column width lives. */
 const openProperties = (el: ParentNode): HTMLElement => {
-  click(byLabel(el, 'Properties'))
+  click(byLabel(el, 'Columns and view'))
   click(q(el, '.view-popover .view-menu__tab[data-tab="view"]'))
   return q(el, '.view-popover')
 }
@@ -652,7 +652,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(document.querySelector('.ctx-menu')).toBeNull()
     // A group header's right-click opens the group menu (YAZ-4604, D55), never the card menu.
     expect(rightClick(q(el, '.view-group')).defaultPrevented).toBe(true)
-    expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).toEqual(['Collapse this group', 'New note in this group'])
+    expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).toEqual(['New note in this group', 'Collapse this group'])
     act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     click(byLabel(el, 'New card'))
     expect(rightClick(byLabel(el, 'New card name')).defaultPrevented).toBe(false)
@@ -666,7 +666,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     unmount()
     const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folder: testFolderHost({ openBackground }) })
     expect(rightClick(q(nested.el, '.view-board__subgroup > .view-group')).defaultPrevented).toBe(true)
-    expect(document.querySelector('.ctx-menu [role="menuitem"]')?.textContent).toBe('Collapse this group')
+    expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].at(-1)?.textContent).toBe('Collapse this group')
 
     unmount()
     const hint = mount(NO_GROUP_BASE, { folder: testFolderHost({ openBackground }) })

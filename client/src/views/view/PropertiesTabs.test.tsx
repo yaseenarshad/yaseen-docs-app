@@ -70,7 +70,7 @@ function choose(select: HTMLSelectElement, value: string): void {
 }
 const popover = (el: ParentNode): HTMLElement => q(el, '.view-popover--properties')
 const openProperties = (el: ParentNode): HTMLElement => {
-  click(q(el, '.view-toolbar [aria-label="Properties"]'))
+  click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
   return popover(el)
 }
 /** The pressed tab's name. */
@@ -104,6 +104,8 @@ describe('the two tabs (D59)', () => {
     expect(has(pop, 'Default view')).toBe(true)
     toTab(pop, 'Columns')
     expect(has(pop, 'Search columns')).toBe(true)
+    // The old Properties select for the frozen prefix is gone (YAZ-4608 C3): Frozen columns lives on the View tab and in the header menu.
+    expect(has(pop, 'Frozen columns')).toBe(false)
   })
 
   it('a column opened from Columns shows its editor in place, and ‹ returns to the Columns tab', () => {
@@ -179,7 +181,7 @@ describe('the last tab is remembered per app tab (D59)', () => {
     const { el } = mount(view('table'), { tabId: 'tab-a' })
     let pop = openProperties(el)
     toTab(pop, 'View')
-    click(q(el, '.view-toolbar [aria-label="Properties"]')) // close
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]')) // close
     expect(el.querySelector('.view-popover--properties')).toBeNull()
     pop = openProperties(el)
     expect(pressed(pop)).toBe('View')
@@ -195,7 +197,7 @@ describe('the last tab is remembered per app tab (D59)', () => {
   it('without an app tab (the right panel) the popover opens on Columns each time', () => {
     const { el } = mount(view('table'))
     toTab(openProperties(el), 'View')
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     expect(pressed(openProperties(el))).toBe('Columns')
   })
 })
@@ -216,7 +218,7 @@ describe('"View settings…" (YAZ-4585 D34, D59)', () => {
     const pop = popover(el)
     expect(pressed(pop)).toBe('View')
     expect(has(pop, 'Column width in pixels')).toBe(true) // the Board's
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     expect(pressed(openProperties(el))).toBe('View')
   })
 

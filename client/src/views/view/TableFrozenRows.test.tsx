@@ -194,15 +194,14 @@ describe('frozen lines under windowing (YAZ-4537)', () => {
 })
 
 describe('"Freeze up to this row" in the row right-click (YAZ-4537)', () => {
-  it('a group after the Fill group: Freeze up to this row, then Unfreeze rows, disabled with nothing frozen', () => {
+  it('the last view group: Freeze up to this row, then Unfreeze rows, disabled with nothing frozen', () => {
     const { el } = mount(table(''))
     rightClickRow(el, 'Attribution')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Open', 'Copy path', 'Reveal in Finder', 'Filter by this value', 'Hide this value', 'Fill cell', 'Fill row', 'Clear formatting', 'Freeze up to this row', 'Unfreeze rows', 'New row below'])
+    expect(items(el).map((b) => b.textContent)).toEqual(['Open', 'Copy path', 'Reveal in Finder', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below', 'Filter by this value', 'Hide this value', 'Freeze up to this row', 'Unfreeze rows'])
     const groups = [...el.querySelectorAll('.ctx-menu .ctx-menu__group')]
-    // The cell's filter group (YAZ-4592 S25) sits before Fill.
-    // "New row below" (YAZ-4611 D63) is a group of its own after it.
+    // The C8 order (YAZ-4608): the opens, the edits (Fill, then New row below), the view groups (the cell's filter, YAZ-4592 S25, then the freeze).
     expect(groups).toHaveLength(5)
-    expect([...groups[3].querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual(['Freeze up to this row', 'Unfreeze rows'])
+    expect([...groups[4].querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual(['Freeze up to this row', 'Unfreeze rows'])
     expect(item(el, 'Unfreeze rows').disabled).toBe(true)
   })
 

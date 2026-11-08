@@ -54,6 +54,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
       ['textInCells', 'Clip', { textInCells: 'clip' }],
       ['groupIndent', 'Large', { groupIndent: 'large' }],
       ['showEmptyGroups', 'On', { showEmptyGroups: true }],
+      ['showEmptyColumns', 'On', { showEmptyColumns: true }], // its own switch (YAZ-4608 C2)
       ['subfolders', 'Both', { subfolders: 'both' }],
       ['foldersFirst', 'Off', { foldersFirst: false }],
       ['calendarScale', 'Week', { calendarScale: 'week' }],
@@ -78,6 +79,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     expect(pressed('folderPages.textInCells')).toBe('By kind')
     expect(pressed('folderPages.groupIndent')).toBe('Medium')
     expect(pressed('folderPages.showEmptyGroups')).toBe('Off')
+    expect(pressed('folderPages.showEmptyColumns')).toBe('Off')
     expect(pressed('folderPages.subfolders')).toBe('Their notes')
     expect(pressed('folderPages.foldersFirst')).toBe('On')
     expect(pressed('folderPages.calendarScale')).toBe('Month')
@@ -98,6 +100,15 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     await open('Folder pages', { ...DEFAULT_SETTINGS, tableRowBand: 'off', tableCellNotePinned: false, folderPages: { ...DEFAULT_SETTINGS.folderPages, rowBand: true, keepWindowPinned: true } })
     expect(pressed('folderPages.rowBand')).toBe('On')
     expect(pressed('folderPages.keepWindowPinned')).toBe('On')
+  })
+
+  it('the two row band rows point at each other (YAZ-4608 C5)', async () => {
+    const items = SETTINGS_SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.items))
+    const hint = (id: string) => String(items.find((item) => item.id === id)!.hint)
+    expect(hint('tableRowBand')).toContain('Folder pages › Row band on hover')
+    expect(hint('folderPages.rowBand')).toContain('Editor › Tables › Row band')
+    await open('Folder pages')
+    expect(row('folderPages.rowBand')?.querySelector('.setting__hint')?.textContent).toContain('Editor › Tables › Row band')
   })
 
   it('Preview on hover for folder views lives here now, on the same key; Files & Links keeps the other places', async () => {

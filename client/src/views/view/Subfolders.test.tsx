@@ -121,7 +121,7 @@ describe('"Notes in subfolders: Show / Hide", per view (D25)', () => {
   // YAZ-4579 D30 replaced the Show / Hide select with the "Subfolders" switch: Hide is now written `hide`.
   it('Properties › "Subfolders" › Hide writes `subfolders: hide`; Their notes deletes the key', () => {
     const { el, yaml } = mount(TABLE)
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // View › Rows (YAZ-4607 D59)
     const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]')
     expect(select().value).toBe('notes')
@@ -145,7 +145,7 @@ describe('the Folder column (D26)', () => {
 
   it('Properties lists Folder, and checking it shows the column', () => {
     const { el, yaml } = mount(TABLE)
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     const show = q<HTMLInputElement>(el, '.view-popover--properties [aria-label="Show Folder"]')
     expect(show.checked).toBe(false)
     click(show)

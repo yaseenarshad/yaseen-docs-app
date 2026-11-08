@@ -2,11 +2,11 @@ import type { ViewDef } from '../viewSchema'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { PAGE_VIEW_TYPE } from '../pageView'
 
-/** PURE copy (tested apart): what goes, then what stays. */
+/** PURE copy (tested apart): the app's one delete pattern, `Delete <thing>? <what happens>.` (YAZ-4608 C7). */
 export function deleteViewMessage(view: ViewDef): string {
   // The Page tab takes nothing with it (YAZ-4584 D38): its text is the `.folder.md` body, which stays.
-  if (view.type === PAGE_VIEW_TYPE) return `Delete the view '${view.name}'? The page's text stays in the folder — a new Page tab shows it again.`
-  return `Delete the view '${view.name}'? Its columns, sort, filters and grouping go with it — the pages themselves stay put.`
+  if (view.type === PAGE_VIEW_TYPE) return `Delete the view "${view.name}"? The page's text stays in the folder. A new Page tab shows it again.`
+  return `Delete the view "${view.name}"? Its columns, sort, filters and grouping go with it. The notes stay.`
 }
 
 interface ConfirmDeleteViewProps {

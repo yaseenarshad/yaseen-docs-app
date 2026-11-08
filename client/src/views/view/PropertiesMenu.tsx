@@ -164,7 +164,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   // ---------- the two tabs (D59) ----------
   return (
     <div className="view-menu view-menu--tabbed">
-      <div className="view-menu__tabs" role="group" aria-label="Properties tabs">
+      <div className="view-menu__tabs" role="group" aria-label="Columns and view tabs">
         {TABS.map(([id, text]) => (
           <button key={id} type="button" className="view-menu__tab" data-tab={id} aria-pressed={tab === id} onClick={() => pickTab(id)}>
             {text}
@@ -196,19 +196,9 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
               const on = isShown(key)
               const i = shown.indexOf(key)
               const label = propertyLabel(def, key)
-              const cls = ['view-prop']
-              if (live.drag !== null && i >= 0) {
-                // The grabbed row and where the gap opens — or after the LAST row for the end slot: they draw nothing, the gap is the marker (YAZ-4606).
-                if (live.drag.from === i) cls.push('view-prop--dragging')
-                if (live.gap === i) cls.push('view-prop--insert-before')
-                if (live.gap === shown.length && i === shown.length - 1) cls.push('view-prop--insert-after')
-              }
+              // The gap is the marker (YAZ-4606): the live gap's own attributes and transforms say where it opens, no class does.
               return (
-                <li
-                  key={key}
-                  {...(i >= 0 && !filtering ? live.itemProps(i) : {})}
-                  className={cls.join(' ')}
-                >
+                <li key={key} {...(i >= 0 && !filtering ? live.itemProps(i) : {})} className="view-prop">
                   <div className="view-prop__identity">
                     {on && !filtering && (
                       <button
