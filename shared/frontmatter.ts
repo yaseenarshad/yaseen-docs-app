@@ -1,4 +1,4 @@
-import { type Document, isMap, parse, parseDocument } from 'yaml'
+import { type Document, isMap, isScalar, parse, parseDocument } from 'yaml'
 
 /**
  * Frontmatter handling rule (locked in GRO-1961):
@@ -130,6 +130,32 @@ export function setFrontmatterIn(content: string, path: readonly string[], value
     doc.setIn(path.slice(0, at + 1), set)
   }
 
+  const yaml = serializeInner(doc)
+  return `---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
+}
+
+/**
+ * Rename ONE key in place (YAZ-4551, the Properties panel's Rename…): its value, its comments and
+ * its place in the block stay, and nothing else is laid out again. `parent` names the map the key
+ * sits in — `[]` for the top level, `['in', <folder id>]` for a folder's block. A missing key, or a
+ * name that map holds already, is refused.
+ */
+export function renameFrontmatterKey(content: string, parent: readonly string[], from: string, to: string): string {
+  const { frontmatter, body } = splitFrontmatter(content)
+  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
+  const terminator = TERMINATOR_RE.exec(frontmatter)?.[1] ?? '---'
+  const trailingEol = /\r?\n$/.test(frontmatter) ? eol : ''
+  const doc = parseDocument(frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, ''))
+  const err = doc.errors[0]
+  if (err) throw new FrontmatterWriteError(`frontmatter is not valid YAML: ${err.message}`)
+  const map = parent.length === 0 ? doc.contents : doc.getIn(parent, true)
+  const keyOf = (pair: { key: unknown }): unknown => (isScalar(pair.key) ? pair.key.value : pair.key)
+  const pair = isMap(map) ? map.items.find((p) => keyOf(p) === from) : undefined
+  if (frontmatter === '' || !isMap(map) || pair === undefined) throw new FrontmatterWriteError(`"${from}" is not a property`)
+  if (map.items.some((p) => keyOf(p) === to)) throw new FrontmatterWriteError(`"${to}" is already a property`)
+  // The key's own scalar keeps its comment (a comment above a key rides on it).
+  if (isScalar(pair.key)) pair.key.value = to
+  else pair.key = doc.createNode(to)
   const yaml = serializeInner(doc)
   return `---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
 }

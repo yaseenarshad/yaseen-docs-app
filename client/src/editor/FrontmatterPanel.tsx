@@ -5,11 +5,11 @@
  */
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { frontmatterInterior, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, folderValues, setFolderValue } from '@shared/folderValues'
 import { TITLE_KEY } from '@shared/noteName'
-import { PROPERTY_NAME, folderSettingsPath, inFolder, isFolderSettingsPath, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl } from '@shared/types'
+import { PROPERTY_KINDS, folderSettingsPath, inFolder, isFolderSettingsPath, isPropertyName, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 import { titleCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
@@ -20,7 +20,11 @@ import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import { folderSettings, hasFolderSettings, writeFolderColumn, type FolderSettings } from '../views/folderSettings'
-import { PropertyDefinitionEditor, PropertyTypeIcon } from '../views/view/PropertyDefinitionEditor'
+import { PROPERTY_LABELS, PropertyDefinitionEditor, PropertyTypeIcon } from '../views/view/PropertyDefinitionEditor'
+import { declarationForKind } from '../views/view/declarationForKind'
+import { TextField } from '../views/view/TextField'
+import { properties as vaultProperties } from '../views/useProperties'
+import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { Popover } from '../views/view/Popover'
 import { EditableCell } from '../views/view/EditableCell'
 import { ColumnSearch } from '../views/view/ColumnSearch'
@@ -98,8 +102,8 @@ function rowsOf(properties: Record<string, unknown>, reserved: ReadonlySet<strin
     // The app's keys are the NOTE's; an `id` that is no note id is the app's too, which writes its own over it (YAZ-2420 🔒 D30).
     if (!inFolder && reserved.has(key)) return { key, folder: inFolder, raw, editor: null, chip: 'reserved' }
     if (isOpaque(raw)) return { key, folder: inFolder, raw, editor: null, chip: 'yaml' }
-    // Existing human-readable keys can have a folder-local declaration.
-    return { key, folder: inFolder, raw, editor: folder?.columns[key] || PROPERTY_NAME.test(key) ? editorFor(key, raw, decls, folder) : 'text', chip: null }
+    // Any name is typed by the ladder (YAZ-4551 D19): "Due Date" holding a date gets the date editor.
+    return { key, folder: inFolder, raw, editor: editorFor(key, raw, decls, folder), chip: null }
   })
   // The folder's columns this note holds no value for (YAZ-2290 E1): empty rows, and a key reaches
   // the note only when one is filled in — a column is never stamped into a note.
@@ -107,17 +111,15 @@ function rowsOf(properties: Record<string, unknown>, reserved: ReadonlySet<strin
   return [...held, ...missing.map((key): Row => ({ key, folder: inFolder, raw: undefined, editor: editorFor(key, undefined, decls, folder), chip: null }))]
 }
 
-/** A new key's FIRST value, shaped by the kind it will be read back at — the registry is the authority. */
-function seedValue(text: string, editor: EditorKind | null): unknown {
-  const t = text.trim()
-  if (editor === 'number') {
-    const n = Number(t)
-    return t !== '' && Number.isFinite(n) ? n : text
-  }
-  if (editor === 'checkbox') return t.toLowerCase() === 'true'
-  if (editor === 'list' || editor === 'multi-link' || editor === 'multi-select') return t === '' ? [] : [t]
-  return text
+/** A new key's FIRST value (YAZ-4551 D20): the empty value of the kind it will be read back at. */
+function seedValue(editor: EditorKind | null): unknown {
+  if (editor === 'checkbox') return false
+  if (editor === 'list' || editor === 'multi-link' || editor === 'multi-select') return []
+  return ''
 }
+
+/** A value as the clipboard takes it (YAZ-4551 D21): a list as "a, b", an empty value as ''. */
+const copyText = (raw: unknown): string => (Array.isArray(raw) ? raw.map(String).join(', ') : raw == null ? '' : String(raw))
 
 /** A write's own change over the panel's OWN copy, never throwing: the disk write already succeeded. */
 function applied(content: string, change: ContentTransform): string {
@@ -160,7 +162,10 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const [yamlMode, setYamlMode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [adding, setAdding] = useState<{ name: string; value: string } | null>(null)
+  /** The Add form (YAZ-4551 D20): a name and a type, no value; `kind` null = not chosen, so the list follows the name's own type. */
+  const [adding, setAdding] = useState<{ name: string; kind: PropertyKind | null } | null>(null)
+  /** The right-click menu (YAZ-4551 D21) at the pointer, on one row; `renaming` = its Rename… field is open. */
+  const [rowMenu, setRowMenu] = useState<{ row: Row; x: number; y: number; anchor: HTMLElement; renaming: boolean } | null>(null)
   const [query, setQuery] = useState('')
   const [snap, setSnap] = useState<Snapshot>(() => ({ seen: file.content, content: file.content, draft: null }))
 
@@ -215,9 +220,10 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
    * block of `in` (D19); a folder with no id is given one first, the path its first shortcut uses.
    * Either row's save also drops the note's values for the folders that no longer show it (D20).
    */
+  const tidyOf = (): ContentTransform => (vault === undefined ? (content) => content : dropStaleFolderValues(vault, file.path, folders))
   const commit = async (key: string, value: unknown, folder: boolean): Promise<void> => {
     if (readOnly) return
-    const tidy: ContentTransform = vault === undefined ? (content) => content : dropStaleFolderValues(vault, file.path, folders)
+    const tidy = tidyOf()
     let change: ContentTransform = (content) => tidy(setFrontmatterProperty(content, key, value))
     if (folder && chosen !== undefined) {
       const id = chosenId ?? (await folderId(chosen))
@@ -271,32 +277,70 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const needle = query.trim().toLocaleLowerCase()
   const shown = rows.filter((row) => row.key.toLocaleLowerCase().includes(needle))
 
+  /**
+   * Rename… (YAZ-4551 D21): THIS note only — one write that moves the key and keeps its value, its
+   * comment and its place (`renameFrontmatterKey`); a folder's row moves inside that folder's block.
+   */
+  const renameKey = (from: string, typed: string, folder: boolean): void => {
+    const to = typed.trim()
+    if (readOnly || to === from) return
+    const refusal = nameRefusal(to, folder)
+    if (refusal !== null) {
+      setError(refusal)
+      return
+    }
+    const tidy = tidyOf()
+    const at = folder && chosenId !== undefined ? [FOLDER_VALUES_KEY, chosenId] : []
+    const change: ContentTransform = (content) => tidy(renameFrontmatterKey(content, at, from, to))
+    void transformFile(file.path, change)
+      .then(() => {
+        setSnap((s) => ({ seen: s.seen, content: applied(s.content, change), draft: null }))
+        setError(null)
+      })
+      .catch((err: unknown) => setError(`Could not rename "${from}": ${messageOf(err)}`))
+  }
+
   const remove = (key: string, folder: boolean): void => {
     void commit(key, undefined, folder).catch((err: unknown) => setError(`Could not delete "${key}": ${messageOf(err)}`))
   }
 
+  /** Why a new name cannot be a key here, or null: the one name rule (YAZ-4551 D19), a key the page holds, an app key. */
+  const nameRefusal = (name: string, folder: boolean): string | null => {
+    if (!isPropertyName(name)) return 'Type a property name'
+    if (Object.prototype.hasOwnProperty.call(folder ? block : parsed, name)) return `"${name}" is already a property of this page`
+    // The app's own keys have their own doors: a row added here would be read-only on a note and
+    // hidden on a folder, and its value would stand where the app's belongs.
+    if (reserved.has(name) || (own && name === FOLDER_SETTINGS_KEY)) return reservedText(name)
+    return null
+  }
+
+  /** The type a name already has here: the folder's column, else the vault's declaration (the ladder's top rungs). */
+  const assignedKind = (name: string): PropertyKind | null => columnTyping(name, NO_RECORDS, decls, folderDefinition)?.assigned ?? null
+  /** A type can be saved for a folder's row (its column) or, with a vault root, for a note field (`properties.json`). */
+  const typeable = (folder: boolean): boolean => (folder ? chosen !== undefined : typeof root === 'string' && root !== '')
+
   const addKey = (): void => {
     if (adding === null) return
     const name = adding.name.trim()
-    // The registry's own message, in its own shape — the panel enforces nothing it invented.
-    if (!PROPERTY_NAME.test(name)) {
-      setError(`property names are snake_case (${String(PROPERTY_NAME)})`)
-      return
-    }
     // With a folder chosen the new field is that folder's (D19); with none it is the note's own.
     const folder = folderDefinition !== null
-    if (Object.prototype.hasOwnProperty.call(folder ? block : parsed, name)) {
-      setError(`"${name}" is already a property of this page`)
+    const refusal = nameRefusal(name, folder)
+    if (refusal !== null) {
+      setError(refusal)
       return
     }
-    // The app's own keys have their own doors: a row added here would be read-only on a note and
-    // hidden on a folder, and its value would stand where the app's belongs.
-    if (reserved.has(name) || (own && name === FOLDER_SETTINGS_KEY)) {
-      setError(reservedText(name))
-      return
+    // The type is saved where the property belongs (YAZ-4551 D20) — only when it changes what the
+    // row would read anyway, so a plain Text add declares nothing and the value still types it.
+    const assigned = assignedKind(name)
+    const kind = adding.kind ?? assigned ?? 'text'
+    const declare = async (): Promise<void> => {
+      if (kind === (assigned ?? 'text') || !typeable(folder)) return
+      if (folder) await writeFolderColumn(folderSettingsPath(chosen), name, declarationForKind(folderDefinition.columns[name], kind), folderDefinition.columns[name], ids)
+      else await vaultProperties.setProperty(root as string, name, declarationForKind(decls?.properties[name], kind))
     }
     setSaving(true)
-    void commit(name, seedValue(adding.value, editorFor(name, undefined, decls, folderDefinition)), folder)
+    void declare()
+      .then(() => commit(name, seedValue(kind), folder))
       .then(() => setAdding(null))
       .catch((err: unknown) => setError(`Could not add "${name}": ${messageOf(err)}`))
       .finally(() => setSaving(false))
@@ -306,8 +350,10 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
     if (!propertyMenu) return
     setSaving(true)
     try {
-      const { key, definition, base } = propertyMenu
-      await writeFolderColumn(folderSettingsPath(chosen), key, definition, base, ids)
+      const { key, definition, base, folder } = propertyMenu
+      // A note field's type is vault-wide (YAZ-4551 D21): `.yaseendocs/properties.json`.
+      if (folder) await writeFolderColumn(folderSettingsPath(chosen), key, definition, base, ids)
+      else await vaultProperties.setProperty(root as string, key, definition)
       setPropertyMenu(null)
       setError(null)
     } catch (err) { setError(`Could not save the property: ${messageOf(err)}`) }
@@ -317,13 +363,24 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   /** What the menu's row holds, as a definition's observed options. */
   const menuValue = propertyMenu === null ? undefined : (propertyMenu.folder ? block : parsed)[propertyMenu.key]
 
+  /** The popover's state for a row: its definition — the folder's column, else the vault's declaration, else its editor's kind. */
+  const menuFor = (row: Row, anchor: HTMLElement, editing: boolean) => {
+    const definition = row.folder ? folderDefinition : null
+    return { key: row.key, folder: row.folder, anchor, base: definition?.columns[row.key], definition: definition?.columns[row.key] ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing }
+  }
+
   const rowItem = (row: Row) => {
     // A folder's row is typed by that folder; one of the note's own never is.
     const definition = row.folder ? folderDefinition : null
     return (
       // Keyed by the folder too: another folder's row of the same name is another value, with its own editor state.
       <li key={`${row.folder ? chosen : ''}:${row.key}`} className="frontmatter-panel__row" data-key={row.key}>
-        {row.editor === null ? <span className="frontmatter-panel__key">{row.key}</span> : <button type="button" className="frontmatter-panel__key frontmatter-property-name" aria-label={`Configure ${row.key}`} onClick={event => setPropertyMenu({ key: row.key, folder: row.folder, anchor: event.currentTarget, base: definition?.columns[row.key], definition: definition?.columns[row.key] ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing: false })}>
+        {row.editor === null ? <span className="frontmatter-panel__key">{row.key}</span> : <button type="button" className="frontmatter-panel__key frontmatter-property-name" aria-label={`Configure ${row.key}`} onClick={event => setPropertyMenu(menuFor(row, event.currentTarget, false))} onContextMenu={event => {
+          // A real menu, not the greyed system one over the popover (YAZ-4551 D21).
+          event.preventDefault()
+          setPropertyMenu(null)
+          setRowMenu({ row, x: event.clientX, y: event.clientY, anchor: event.currentTarget, renaming: false })
+        }}>
           <PropertyTypeIcon kind={row.editor} /><span>{row.key}</span>
         </button>}
         <span className="frontmatter-panel__value">
@@ -369,18 +426,40 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
       {propertyMenu && createPortal(<Popover label={`Property ${propertyMenu.key}`} anchor={propertyMenu.anchor} onClose={() => { if (!saving) setPropertyMenu(null) }} className="frontmatter-property-menu">
         <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{propertyMenu.key}</strong></div>
         {propertyMenu.editing ? <>
-          <p className="frontmatter-property-menu__scope">In {folderName(chosen)}</p>
+          <p className="frontmatter-property-menu__scope">{propertyMenu.folder ? `In ${folderName(chosen)}` : 'In every note of this vault'}</p>
           <fieldset disabled={saving} className="property-settings-fields">
           <PropertyDefinitionEditor value={propertyMenu.definition} onChange={definition => setPropertyMenu({ ...propertyMenu, definition })} observed={Array.isArray(menuValue) ? menuValue.map(String) : menuValue == null ? [] : [String(menuValue)]} />
           {error && <p role="alert" className="frontmatter-panel__error">{error}</p>}
           <div className="frontmatter-property-menu__actions"><button type="button" disabled={saving} onClick={() => setPropertyMenu(null)}>Cancel</button><button type="button" disabled={saving} onClick={() => void saveDefinition()}>{saving ? 'Saving…' : 'Save'}</button></div>
           </fieldset>
         </> : <>
-          {/* A definition is a folder's column: only a folder's row has one to edit. */}
-          {propertyMenu.folder && <button className="view-popover__item" type="button" onClick={() => setPropertyMenu({ ...propertyMenu, editing: true })}>Edit property <span>›</span></button>}
+          {/* A folder's row edits that folder's column; a note field, with a vault root, the vault's declaration (YAZ-4551 D21). */}
+          {typeable(propertyMenu.folder) && <button className="view-popover__item" type="button" onClick={() => setPropertyMenu({ ...propertyMenu, editing: true })}>Edit property <span>›</span></button>}
           <button className="view-popover__item" type="button" onClick={() => { remove(propertyMenu.key, propertyMenu.folder); setPropertyMenu(null) }}>Remove from this {own ? 'folder' : 'note'}</button>
         </>}
       </Popover>, document.body)}
+      {rowMenu && createPortal(<ContextMenuSurface x={rowMenu.x} y={rowMenu.y} onClose={() => setRowMenu(null)}>
+        {rowMenu.renaming ? (
+          <TextField
+            className="view-input"
+            aria-label={`Rename ${rowMenu.row.key}`}
+            autoFocus
+            selectOnMount
+            value={rowMenu.row.key}
+            onCommit={(next) => renameKey(rowMenu.row.key, next, rowMenu.row.folder)}
+            onDone={() => setRowMenu(null)}
+          />
+        ) : <>
+          <div className="ctx-menu__heading" role="presentation">{PROPERTY_LABELS[menuFor(rowMenu.row, rowMenu.anchor, false).definition.kind]} · {rowMenu.row.key}</div>
+          {typeable(rowMenu.row.folder) && <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => { setPropertyMenu(menuFor(rowMenu.row, rowMenu.anchor, true)); setRowMenu(null) }}>Change type ›</button>}
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setRowMenu({ ...rowMenu, renaming: true })}>Rename…</button>
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => {
+            void navigator.clipboard.writeText(copyText(rowMenu.row.raw)).catch((err: unknown) => setError(`Could not copy "${rowMenu.row.key}": ${messageOf(err)}`))
+            setRowMenu(null)
+          }}>Copy value</button>
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => { remove(rowMenu.row.key, rowMenu.row.folder); setRowMenu(null) }}>Remove from this {own ? 'folder' : 'note'}</button>
+        </>}
+      </ContextMenuSurface>, document.body)}
       {expanded && (
         <div className="frontmatter-panel__body">
           {rawMode ? (
@@ -432,20 +511,28 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
                     className="view-input frontmatter-panel__name"
                     aria-label="New property name"
                     autoFocus
-                    placeholder="name"
+                    placeholder="Property name"
                     value={adding.name}
                     onChange={(e) => setAdding({ ...adding, name: e.currentTarget.value })}
-                  />
-                  <input
-                    className="view-input"
-                    aria-label="New property value"
-                    placeholder="value"
-                    value={adding.value}
-                    onChange={(e) => setAdding({ ...adding, value: e.currentTarget.value })}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') addKey()
                     }}
                   />
+                  {/* The type (YAZ-4551 D20): it starts on the type the name has already, else Text. */}
+                  {typeable(folderDefinition !== null) && (
+                    <select
+                      className="view-select"
+                      aria-label="New property type"
+                      value={adding.kind ?? assignedKind(adding.name.trim()) ?? 'text'}
+                      onChange={(e) => setAdding({ ...adding, kind: e.currentTarget.value as PropertyKind })}
+                    >
+                      {PROPERTY_KINDS.map((k) => (
+                        <option key={k} value={k}>
+                          {PROPERTY_LABELS[k]}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <button type="button" className="frontmatter-panel__btn" disabled={saving} onClick={addKey}>
                     Add
                   </button>
@@ -486,7 +573,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
                 type="button"
                 className="frontmatter-panel__btn"
                 onClick={() => {
-                  setAdding({ name: '', value: '' })
+                  setAdding({ name: '', kind: null })
                   setQuery('')
                   setError(null)
                 }}
