@@ -1,4 +1,5 @@
 import { markdownAction } from './automationActions'
+import { TEXT_READ_ONLY_ACTIONS, type EditorAction } from '@shared/automationEditor'
 import { registerLiveDocument, editorStateVersion } from '../automation/liveDocument'
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
@@ -649,6 +650,9 @@ function CrepeHost({
    * Parsed once per `disk`, never per keystroke or per save.
    */
   const readOnly = useMemo(() => isNoteReadOnly(disk), [disk])
+  /** For the CLI's live actions (YAZ-4560), read only when it asks. */
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
   /**
    * The page cog's on/off rows (YAZ-4094 G4, G1): IN the note's frontmatter too, read off `disk` the same
    * way, so a toggle in another tab or window, or an agent's edit, shows here at once. A key that is absent
@@ -941,7 +945,8 @@ function CrepeHost({
           return { path: file.path, kind: 'markdown', content: parts.frontmatter + bodyNow, baselineMtime: controller!.mtime, dirty: bodyNow !== parts.body, selection: { anchor: selection.anchor, head: selection.head, text: doc.textBetween(selection.from, selection.to, '\n'), coordinate: 'prosemirror' } }
         }, {
           version: () => `${editorStateVersion(editorViewOf(crepe).state)}:${controller!.mtime}`,
-          actions: ['select', 'replace', 'format', 'undo', 'redo', 'save'],
+          // Read only blocks a person's edits and Undo (YAZ-3076 D2), so the CLI gets none either (YAZ-4560).
+          get actions(): EditorAction['action'][] { return readOnlyRef.current ? [...TEXT_READ_ONLY_ACTIONS] : ['select', 'replace', 'format', 'undo', 'redo', 'save'] },
           run: async action => {
             if (action.action !== 'save') markdownAction(crepe, action)
             controller!.update(getMarkdownForSave(crepe))

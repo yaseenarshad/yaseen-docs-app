@@ -1,4 +1,4 @@
-import { readLiveDocument } from '../automation/liveDocument'
+import { readLiveDocument, runEditorAction } from '../automation/liveDocument'
 /**
  * CrepeHost external-change handling (GRO-2186): a property write from a base (GRO-2141)
  * rewrites only the frontmatter block on disk; the open editor must absorb it silently —
@@ -2732,6 +2732,21 @@ describe('automation live Markdown read', () => {
       expect(readLiveDocument('live-markdown')).toMatchObject({ source: 'live', path: PATH, kind: 'markdown', content: '---\ntitle: Original\n---\nUnsaved body\n', baselineMtime: 1, dirty: true, selection: { text: 'Unsaved', coordinate: 'prosemirror' } })
       expect(writeFile).not.toHaveBeenCalled()
       expect(() => readLiveDocument('missing')).toThrow('no ready live document')
+    } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
+  })
+
+  it('YAZ-4515: a Read only note offers only select and save, refuses a replace, and offers the edits again at "Allow edits"', async () => {
+    const el = await mount('---\nreadonly: true\n---\nLocked body\n')
+    el.classList.add('tabstack__layer'); el.dataset.tab = 'live-locked'
+    vi.mocked(editorViewOf).mockReturnValue({ ...emptyView(), state: { selection: { anchor: 1, head: 1, from: 1, to: 1 }, doc: { textBetween: () => '' } } } as never)
+    try {
+      const locked = readLiveDocument('live-locked')
+      expect(locked.actions).toEqual(['select', 'save'])
+      await expect(runEditorAction({ command: 'editor.action', tab: 'live-locked', revision: locked.revision, edit: { action: 'replace', text: 'X' } })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
+      expect(crepe().md).toBe('Locked body\n')
+      diskHas('---\n---\nLocked body\n', 2)
+      await emit({ type: 'change', path: PATH, mtime: 2 })
+      expect(readLiveDocument('live-locked').actions).toEqual(['select', 'replace', 'format', 'undo', 'redo', 'save'])
     } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
   })
 })

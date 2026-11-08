@@ -13,6 +13,8 @@ export const DRAWING_ACTIONS = {
 } as const
 export type DrawingAction = keyof typeof DRAWING_ACTIONS
 export const DRAWING_VIEW_ACTIONS: readonly DrawingAction[] = ['zoomIn', 'zoomOut', 'resetZoom', 'zoomToFit', 'zoomToFitSelection']
+/** A Read only Markdown or code tab (YAZ-4560): what its person can do there. Selection, and a save that changes no content. */
+export const TEXT_READ_ONLY_ACTIONS = ['select', 'save'] as const
 
 export type EditorAction =
   | { action: 'select'; anchor: number; head: number }

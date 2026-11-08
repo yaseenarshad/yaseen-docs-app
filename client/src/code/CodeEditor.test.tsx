@@ -1,4 +1,4 @@
-import { readLiveDocument } from '../automation/liveDocument'
+import { readLiveDocument, runEditorAction } from '../automation/liveDocument'
 /**
  * The code tab on the REAL document host (YAZ-3448) with a fake Monaco (`monacoTestKit.ts`): the
  * scenarios S1–S4 and S9 of YAZ-3448, the bytes of YAZ-3445 (line break, BOM) through the host, the
@@ -1036,5 +1036,19 @@ describe('automation live code read', () => {
     editor().setSelection({ selectionStartLineNumber: 1, selectionStartColumn: 1, positionLineNumber: 1, positionColumn: 8 })
     expect(readLiveDocument('live-code')).toMatchObject({ source: 'live', path: PATH, kind: 'text', content: 'unsaved\r\ncode\r\n', baselineMtime: 100, dirty: true, selection: { anchor: 0, head: 7, text: 'unsaved', coordinate: 'utf16' } })
     expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4515: a Read only code tab offers only select and save and refuses a replace; "Allow edits" offers the edits again', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-code'
+    readFile.mockResolvedValueOnce(disk('saved\n'))
+    act(() => root?.render(<CodeEditor root={ROOT} path={PATH} watch={watch} codeReadOnly />))
+    await settle()
+    const locked = readLiveDocument('live-code')
+    expect(locked.actions).toEqual(['select', 'save'])
+    await expect(runEditorAction({ command: 'editor.action', tab: 'live-code', revision: locked.revision, edit: { action: 'replace', text: 'X' } })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
+    expect(model().getValue()).toBe('saved\n')
+    act(() => container.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
+    act(() => container.querySelector<HTMLButtonElement>('.read-only-chip__allow')!.click())
+    expect(readLiveDocument('live-code').actions).toEqual(['select', 'replace', 'undo', 'redo', 'save'])
   })
 })
