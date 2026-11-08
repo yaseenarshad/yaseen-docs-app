@@ -84,3 +84,15 @@ export function folderDeletion(folder: FocusFolder, roots: readonly string[], ke
   const back = keep ? folder.items.flatMap((item) => { const found = resolveItem(item, roots); return 'path' in found ? [found.path] : [] }) : []
   return { gone: { ...folder, deleted: true, items: [], at }, here: back.filter((p) => !inHere(p)), there: inThere === null ? [] : back.filter((p) => !inThere(p)) }
 }
+
+/**
+ * "Show it in ▸ Workspace / Vault" on a folder (YAZ-4460 demo): on, the folder's copy for the `to` scope comes alive;
+ * off, a tombstone goes there. The last place it shows stays (null): a folder goes away by Delete. The sidebar and the
+ * CLI's `group setScope` share this rule (YAZ-4599).
+ */
+export function folderScopeChange(folder: FocusFolder, on: boolean, at: number, showsElsewhere: boolean): FocusFolder | null {
+  if (!on && !showsElsewhere) return null
+  if (!on) return { ...folder, deleted: true, at }
+  const { deleted: _deleted, ...alive } = folder
+  return { ...alive, at }
+}

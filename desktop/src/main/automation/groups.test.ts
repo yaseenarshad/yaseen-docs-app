@@ -79,4 +79,15 @@ describe('collection group commands', () => {
     expect(await getFocusFolders(roots[0], 'workspace', 'favorites')).toHaveLength(1)
   })
 
+
+  it('shows a group in the other list and back, as the sidebar’s Show it in ▸ does, and keeps the last place (YAZ-4599)', async () => {
+    const group = await create()
+    const shownIn = async (scope: 'vault' | 'workspace') => (await Promise.all(roots.map(root => getFocusFolders(root, scope, 'favorites')))).flat().filter(folder => folder.id === group.id && !folder.deleted).length
+    expect(await run('group.setScope', { group: group.id, scope: 'vault', on: true })).toMatchObject({ scope: 'vault', shown: true, group: { id: group.id, name: 'Mochi' } })
+    expect([await shownIn('vault'), await shownIn('workspace')]).toEqual([2, 2])
+    expect(await run('group.setScope', { group: 'Mochi', scope: 'workspace', on: false })).toMatchObject({ scope: 'workspace', shown: false })
+    expect([await shownIn('vault'), await shownIn('workspace')]).toEqual([2, 0])
+    await expect(run('group.setScope', { group: group.id, scope: 'vault', on: false })).rejects.toMatchObject({ code: 'LAST_PLACE' })
+    expect(await shownIn('vault')).toBe(2)
+  })
 })

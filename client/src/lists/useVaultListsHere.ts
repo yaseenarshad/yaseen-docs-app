@@ -10,7 +10,7 @@ import { api } from '../api'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { storage } from '../lib/storage'
 import { favoriteOrder } from '../lib/treeState'
-import { folderDeletion, itemOf, mergeFolders, sameItem, upsert, type FolderItem } from './focusFolders'
+import { folderDeletion, folderScopeChange, itemOf, mergeFolders, sameItem, upsert, type FolderItem } from './focusFolders'
 
 export const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -360,11 +360,10 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
     const setFolderScope = (id: string, to: ListScope, on: boolean): void => {
       const f = now.current.find((x) => x.id === id) ?? otherNow.current.find((x) => x.id === id)
       if (f === undefined) return
-      const places = scopesOfFolder(id)
-      if (!on && places[otherScope(to)] === false) return notice.current('A folder shows in one place at least. To remove it, use Delete.', 'error')
+      const next = folderScopeChange(f, on, Date.now(), scopesOfFolder(id)[otherScope(to)])
+      if (next === null) return notice.current('A folder shows in one place at least. To remove it, use Delete.', 'error')
       const target = to === scope ? store : other
       const alive = (({ deleted: _d, ...rest }: FocusFolder): FocusFolder => rest)
-      const next: FocusFolder = on ? alive({ ...f, at: Date.now() }) : { ...f, deleted: true, at: Date.now() }
       if (!target.save(next)) return loading()
       // Off, with Undo (YAZ-4470, 8): the shown list's off moves the folder to the other; the other's off just leaves it.
       if (!on)
