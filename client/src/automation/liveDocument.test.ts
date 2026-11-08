@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { registerLiveDocument, readLiveDocument, runEditorAction, editorStateVersion } from './liveDocument'
+import { registerLiveDocument, readLiveDocument, runEditorAction, editorStateVersion, unsavedUnder } from './liveDocument'
+import { registerRenameContinuity } from '../lib/renameContinuity'
 import { mount, md, posOf, endOf, unmountAll } from '../editor/marks/markTestKit'
 import { editorViewOf } from '../editor/createCrepe'
 import { markdownAction } from '../editor/automationActions'
@@ -43,5 +44,13 @@ describe('explicit live editor actions', () => {
     await expect(runEditorAction({ command: 'editor.action', tab: 'save', revision, edit: { action: 'save' } })).rejects.toMatchObject({ code: 'SAVE_INCOMPLETE' })
     off(); registerLiveDocument(host, read, { version: () => 1, actions: ['save'], run: async () => {} })
     await expect(runEditorAction({ command: 'editor.action', tab: 'save', revision, edit: { action: 'save' } })).rejects.toMatchObject({ code: 'CONFLICT' })
+  })
+  it('YAZ-4515: lists the unsaved editors at or under a path, with their tabs', () => {
+    const handle = (dirty: boolean) => ({ flush: async () => {}, capture: () => null, retire: () => {}, dirty: () => dirty })
+    const offs = [registerRenameContinuity('/v/A.excalidraw', handle(true)), registerRenameContinuity('/v/sub/B.excalidraw', handle(true)), registerRenameContinuity('/v/C.excalidraw', handle(false)), registerRenameContinuity('/vault2/D.excalidraw', handle(true))]
+    const tabs = [{ id: 't1', path: '/v/A.excalidraw' }, { id: 't2', path: '/v/A.excalidraw' }, { id: 't3', path: '/v/C.excalidraw' }]
+    expect(unsavedUnder('/v', tabs)).toEqual([{ path: '/v/A.excalidraw', tabs: ['t1', 't2'] }, { path: '/v/sub/B.excalidraw', tabs: [] }])
+    expect(unsavedUnder('/v/A.excalidraw', tabs)).toEqual([{ path: '/v/A.excalidraw', tabs: ['t1', 't2'] }])
+    offs.forEach(off => off())
   })
 })

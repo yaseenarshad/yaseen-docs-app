@@ -46,15 +46,15 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 | Drawing editor actions | `editor selectElements/selectAll/deleteSelection/duplicate/group/ungroup`, layer order, align, distribute, flip, `toggleLock`, zoom, `undo/redo/save` | The engine's own actions and Undo history on an exact live drawing tab and live revision; a refused predicate fails. Read only drawings offer only the zoom actions. Excluded: drawing tools and other pointer gestures, clipboard, copy/paste styles, text-box formatting, pop-up editors, canvas preferences (inventory on YAZ-4515). |
 | Diagram editor actions | `editor save` | draw.io's own actions get no reply over the embed protocol, so none is offered; content changes use `diagram save`. |
 | Image and PDF bytes | `image read/export`, `pdf read/export` | Existing viewer limits; base64 reads; exclusive output files for large results. |
-| Embedded drawing/image assets | `asset read/write/export` | Existing 10 MiB asset limit; required revision or exclusive creation; exact paths. |
+| Embedded drawing/image assets | `asset read/write/export` | Existing 10 MiB asset limit; required revision or exclusive creation; exact paths. Writes refuse while an open editor holds unsaved edits (`UNSAVED_LIVE_EDITS`). |
 | Components | `component list/read/save/rename/remove/export` | Existing component store, validation and Trash behavior. |
 | Media search and import | `media search/preview/import/drawingIndex/drawing` | Existing providers, filters, cache and library; no keys in results. |
 | Media library and favorite copies | `media library/favorite/unfavorite/recordUse/addWord/removeWord/favoriteCopies/favoriteElements/saveFavoriteElements/favoritesForPanel` | Existing library and durable copies; saved elements retain the first-copy rule. |
 | Icon packs | `media packList/packStatus/downloadPacks/stopPacks/checkPacks/removePacks` | Existing pack service; explicit download/check actions; stop can run during a download. |
 | Picture-folder permissions | `pictureFolder list/allow/remove` | Existing real-path and system-folder checks; removing permission never deletes files. |
-| Storage | `storage stats/shrink` | Existing background workers; paged large-file rows; report moved and skipped counts. |
+| Storage | `storage stats/shrink` | Existing background workers; paged large-file rows; report moved and skipped counts. Shrink skips boards with unsaved live edits, as Settings does, and lists them in `unsavedSkipped`. |
 | Provider credential | `provider status/set/clear` | Presence only; protected input; no secret export. |
-| Git sync and board history | `sync status/now/setEnabled`, `history list/read/export/restore` | Existing services; explicit vault; guarded restore. |
+| Git sync and board history | `sync status/now/setEnabled`, `history list/read/export/restore` | Existing services; explicit vault; guarded restore. Restore refuses while an open editor holds unsaved edits of the board. |
 | Sharing | `share status/accounts/setup/list/check/get/publish/setPermission/stop/setDomain/disconnect` | Explicit effects; protected credentials; saved share paths remain usable after source deletion; validate publish content. |
 | Diagnostics, updates, restart | `app diagnostics/restart`, `update state/notes/check/restart` | Existing services; plain restart skips staged installation; acknowledgement before shutdown. |
 | Code language helpers | `languageHelper state/install/cancel` | Existing pinned installer; no supplied code, URLs, or package versions; cancellation can run during a download. |

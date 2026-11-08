@@ -12,7 +12,8 @@ import { linkCommand } from './automation/links'
 import { noteCommand } from './automation/notes'
 import { ReviewsShapeError } from '@shared/reviews'
 import { editorCommand } from './automation/editor'
-import { boardCommand, liveEditsOf } from './automation/boards'
+import { boardCommand } from './automation/boards'
+import { liveEditsOf } from './automation/liveEdits'
 import { boardImageCommand } from './automation/boardImages'
 import { printSvgToPdf } from './drawings/printPdf'
 import { fileOperation } from './automation/fileOperations'
@@ -46,6 +47,8 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
       throw new AutomationFailure('SAVE_LOG_FAILED', 'The document was saved, but its Recents entry could not be persisted.', { path, diskSaved: true, rendererMerged: false })
     }
   }
+  // Board and asset writes ask the live windows for unsaved edits of their files first (YAZ-4515).
+  const liveEdits = context.navigation && liveEditsOf(context.navigation)
   // Every editor.* command is one live editor action (the registry lists them, YAZ-4515).
   if (request.command.startsWith('editor.')) return { writes: ['navigation', 'documents'], run: () => editorCommand(context.navigation!, request.command, request.args, content) }
   switch (request.command) {
@@ -59,9 +62,9 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
     case 'settingsFolder.get': case 'settingsFolder.set':
       return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => settingsFolderCommand(context.store!, context.services!, request.command, request.args) }
     case 'storage.stats': case 'storage.shrink':
-      return { writes: ['storage', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => storageCommand(context.services!, context.state!(), request.command, request.args) }
+      return { writes: ['storage', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => storageCommand(context.services!, context.state!(), request.command, request.args, liveEdits) }
     case 'asset.read': case 'asset.write': case 'asset.export': case 'image.read': case 'image.export': case 'pdf.read': case 'pdf.export':
-      return { writes: ['large-content', ...(definition.effect === 'write' ? ['documents'] : [])], run: () => assetCommand(context.state!(), request.command, request.args, content) }
+      return { writes: ['large-content', ...(definition.effect === 'write' ? ['documents'] : [])], run: () => assetCommand(context.state!(), request.command, request.args, content, liveEdits) }
     case 'window.show': case 'window.close': case 'window.rename':
       return { writes: ['navigation', 'configuration'], run: () => {
         if (!context.navigation?.manage) throw new AutomationFailure('UNAVAILABLE', 'Window management is unavailable in this app instance.')
@@ -74,7 +77,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
     case 'provider.status': case 'provider.set': case 'provider.clear': case 'sync.status': case 'sync.now': case 'sync.setEnabled':
     case 'history.list': case 'history.read': case 'history.export': case 'history.restore':
     case 'share.status': case 'share.accounts': case 'share.setup': case 'share.list': case 'share.check': case 'share.get': case 'share.publish': case 'share.setPermission': case 'share.stop': case 'share.setDomain': case 'share.disconnect':
-      return { writes: definition.effect === 'read' ? ['large-content'] : ['large-content', 'connected', 'documents'], run: () => connectedCommand(context.services!, context.state!(), request.command, request.args, content) }
+      return { writes: definition.effect === 'read' ? ['large-content'] : ['large-content', 'connected', 'documents'], run: () => connectedCommand(context.services!, context.state!(), request.command, request.args, content, liveEdits) }
     case 'media.favoriteCopies': case 'media.favoriteElements': case 'media.favoritesForPanel': case 'media.saveFavoriteElements':
     case 'component.list': case 'component.read': case 'component.save': case 'component.rename': case 'component.remove': case 'component.export':
     case 'media.search': case 'media.import': case 'media.preview': case 'media.library': case 'media.favorite': case 'media.unfavorite': case 'media.recordUse': case 'media.addWord': case 'media.removeWord':
@@ -91,7 +94,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
       return { writes: ['large-content', 'navigation'], run: () => boardImageCommand(context.navigation!, request.command, request.args, printSvgToPdf) }
     case 'drawing.create': case 'diagram.create': case 'drawing.setReadOnly': case 'diagram.setReadOnly': case 'drawing.setHoverLinks': case 'drawing.setHoverOutline': case 'drawing.setFoldArrows': case 'drawing.setPictures':
     case 'drawing.read': case 'drawing.save': case 'drawing.export': case 'diagram.read': case 'diagram.save': case 'diagram.export':
-      return { writes: ['large-content', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => boardCommand(context.state!(), request.command, request.args, content, record, context.navigation && liveEditsOf(context.navigation)) }
+      return { writes: ['large-content', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => boardCommand(context.state!(), request.command, request.args, content, record, liveEdits) }
     case 'file.copy': case 'file.importCopy':
     case 'file.rename': case 'file.retitle': case 'file.trash': case 'file.restore': case 'file.undo': case 'file.redo':
       return { writes: ['documents', 'navigation'], run: () => fileOperation(context.navigation!, request.command, request.args) }

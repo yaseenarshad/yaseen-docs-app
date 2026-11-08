@@ -10,12 +10,13 @@ import { decodeViewOnlyText } from '../fs/file'
 import { createDurable, fsCall } from '../fs/fsUtils'
 import { absolute, resolveTarget, scopeRoots } from './resources'
 import type { AutomationServices } from './services'
+import { refuseLiveEdits, type LiveEdits } from './liveEdits'
 
 const page = <T>(items: T[], args: Record<string, unknown>) => {
   const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
   return { items: items.slice(offset, offset + limit), total: items.length, nextOffset: offset + limit < items.length ? offset + limit : null }
 }
-export async function connectedCommand(services: AutomationServices, state: AppState, command: string, args: Record<string, unknown>, body: Buffer): Promise<unknown> {
+export async function connectedCommand(services: AutomationServices, state: AppState, command: string, args: Record<string, unknown>, body: Buffer, liveEdits?: LiveEdits): Promise<unknown> {
   if (command === 'provider.status') return { provider: 'pixabay', configured: await services.credentials.hasPixabay() }
   if (command === 'provider.clear') { await services.credentials.setPixabay(null); return { provider: 'pixabay', configured: false, diskSaved: true } }
   if (command === 'provider.set' || command === 'share.accounts' || command === 'share.setup') {
@@ -49,6 +50,7 @@ export async function connectedCommand(services: AutomationServices, state: AppS
   if (command.startsWith('share.') && !isDrawing(path) && !isDiagram(path)) throw new AutomationFailure('UNSUPPORTED_EXTENSION', 'Sharing requires an Excalidraw drawing or draw.io diagram.')
   if (command === 'history.list') return { path, ...page(await boardHistory(root, path), args) }
   if (command === 'history.restore') {
+    await refuseLiveEdits(liveEdits, path)
     await restoreBoardVersion(root, path, args.ref, args.revision as string)
     return { path, diskSaved: true, rendererMerged: false }
   }

@@ -1,5 +1,6 @@
 import type { BoardExportOperation, BoardImage, EditorAction, EditorOperation } from '@shared/automationEditor'
 import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
+import { dirtyPaths } from '../lib/renameContinuity'
 
 export interface LiveDocument {
   path: string
@@ -67,4 +68,9 @@ export async function exportLiveImage(target: BoardExportOperation): Promise<Boa
   const image = await exporter.run(target)
   if ((image.format === 'pdf' ? image.svg.length * 2 : image.data.byteLength) > AUTOMATION_LIMITS.contentBytes) throw new AutomationFailure('TOO_LARGE', 'This export exceeds the connection limit. Choose a smaller scale or a selection.')
   return image
+}
+
+/** YAZ-4515: the paths at or under `path` whose editors here hold unsaved edits, with their tabs. A CLI board write refuses them; a shrink skips them. */
+export function unsavedUnder(path: string, tabs: readonly { id: string; path: string }[]): { path: string; tabs: string[] }[] {
+  return dirtyPaths().filter(dirty => dirty === path || dirty.startsWith(`${path}/`)).map(dirty => ({ path: dirty, tabs: tabs.filter(tab => tab.path === dirty).map(tab => tab.id) }))
 }

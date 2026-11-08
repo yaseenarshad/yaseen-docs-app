@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultAppState } from '@shared/types'
 import { connectedCommand } from './connected'
 import type { AutomationServices } from './services'
+import type { LiveEdits } from './liveEdits'
+import { boardCommand } from './boards'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-cli-connected-')) })
@@ -14,7 +17,7 @@ const services = () => ({
   sync: { status: vi.fn(async () => ({ state: 'off' })), syncNow: vi.fn(async () => ({ state: 'idle' })), setEnabled: vi.fn(async () => ({ state: 'off' })) },
   sharing: { list: vi.fn(async () => [{ id: 'one' }, { id: 'two' }]), accounts: vi.fn(async () => [{ id: 'account', name: 'Test' }]), publish: vi.fn(async () => ({ id: 'published' })), disconnect: vi.fn(async () => ({ configured: false })) },
 })
-const run = (service: ReturnType<typeof services>, command: string, args: Record<string, unknown> = {}, body = '') => connectedCommand(service as unknown as AutomationServices, defaultAppState(), command, args, Buffer.from(body))
+const run = (service: ReturnType<typeof services>, command: string, args: Record<string, unknown> = {}, body = '', liveEdits?: LiveEdits) => connectedCommand(service as unknown as AutomationServices, defaultAppState(), command, args, Buffer.from(body), liveEdits)
 it('uses the shared sync manager and distinguishes offline share listing from remote checking', async () => {
   const service = services()
   await run(service, 'sync.setEnabled', { root, enabled: false })
@@ -55,4 +58,18 @@ it('refuses a non-standalone drawing and preserves valid embedded bytes unchange
   const content = JSON.stringify({ ...scene, files: { picture: { dataURL: 'data:image/png;base64,AA==' } } })
   await run(service, 'share.publish', { root, path }, content)
   expect(service.sharing.publish).toHaveBeenCalledExactlyOnceWith(root, path, content, undefined)
+})
+it('YAZ-4515: history.restore refuses while a live editor holds unsaved edits of the board, then restores through git', async () => {
+  const path = join(root, 'Board.excalidraw'), scene = (source: string) => JSON.stringify({ type: 'excalidraw', version: 2, source, elements: [], appState: {}, files: {} })
+  const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd: root })
+  git('init', '-q'); await writeFile(path, scene('first')); git('add', '.'); git('commit', '-qm', 'first')
+  await writeFile(path, scene('second')); git('commit', '-qam', 'second')
+  const service = services()
+  const { items } = await run(service, 'history.list', { root, path }) as { items: { ref: string }[] }
+  const { revision } = await boardCommand(defaultAppState(), 'drawing.read', { root, path }, Buffer.alloc(0)) as { revision: string }
+  const open = [{ window: 'w1', path, tabs: ['t1'] }]
+  await expect(run(service, 'history.restore', { root, path, ref: items.at(-1)!.ref, revision }, '', async target => target === path ? open : [])).rejects.toMatchObject({ code: 'UNSAVED_LIVE_EDITS', details: { path, open } })
+  expect(await readFile(path, 'utf8')).toBe(scene('second'))
+  expect(await run(service, 'history.restore', { root, path, ref: items.at(-1)!.ref, revision }, '', async () => [])).toMatchObject({ path, diskSaved: true })
+  expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ source: 'first' })
 })
