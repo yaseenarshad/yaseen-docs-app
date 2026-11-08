@@ -1,8 +1,10 @@
 import { addReview, deleteReview, resetReviews, reviewsOf, setInReview, sanitizeReviewSettings, REVIEW_SETTINGS_FILE } from '@shared/reviews'
-import { rootOfPath } from '@shared/types'
+import { isFolderSettingsPath, rootOfPath } from '@shared/types'
+import { reservedKeys } from '@shared/reservedKeys'
+import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import { dirname } from 'node:path'
 import { createDir } from '../fs/create'
-import { doorOf } from '../vaultIndex/mint'
+import { doorOf, vaultIds } from '../vaultIndex/mint'
 import { readConfig } from '../vaultConfig'
 import { AutomationFailure } from '@shared/automation'
 import { addComment, deleteComment, editComment, newCommentId, nowIso, readComments } from '@shared/comments'
@@ -14,6 +16,23 @@ import { decodeViewOnlyText, writeFile } from '../fs/file'
 import { revisionOf } from '../fs/revision'
 import { newNote } from '../notes/note'
 import type { SavedCallback } from '../documentSaves'
+
+/** Where each of the app's own keys is changed instead (the properties panel's reserved keys, `reservedKeys`). */
+const RESERVED_DOORS: Record<string, string> = {
+  comments: 'Use comment add/update/remove: they keep comment ownership rules.',
+  reviews: 'Use review keep/remove/reset/setEnabled.',
+  title: 'Use file retitle: a title edit also renames the file.',
+  also_in: 'Use shortcut add/remove.',
+  id: 'IDs are given by the app: use the ids commands, or the legacy id command for a note without one.',
+  in: 'It holds folder values, which the folder’s views write.',
+  [FOLDER_SETTINGS_KEY]: 'Use the folderView, folderColumn and folderFormula commands.',
+}
+
+/** The properties panel's rule (YAZ-1513, YAZ-2523 🔒 V12): the app's own keys have their own doors, per the vault's ID answer; a folder page's settings too. */
+async function refuseReserved(key: string, path: string, root: string): Promise<void> {
+  const reserved = reservedKeys((await vaultIds(root)).answer === true).has(key) || (key === FOLDER_SETTINGS_KEY && isFolderSettingsPath(path))
+  if (reserved) throw new AutomationFailure('RESERVED_PROPERTY', `${key} is the app’s own property. ${RESERVED_DOORS[key] ?? 'Change it in the app’s page settings.'}`, { key })
+}
 
 export async function documentCommand(state: AppState, command: string, args: Record<string, unknown>, body: Buffer, hasContent = body.length > 0, record?: SavedCallback): Promise<unknown> {
   const { roots } = await scopeRoots(state, args as ResourceScope)
@@ -53,7 +72,7 @@ export async function documentCommand(state: AppState, command: string, args: Re
     case 'property.set': case 'property.remove': {
       const keys = args.keys as string[]
       if (!keys.length || keys.some(key => !key || ['__proto__', 'constructor', 'prototype'].includes(key))) throw new AutomationFailure('INVALID_INPUT', 'Supply a non-empty property key path.')
-      if (keys[0] === 'comments') throw new AutomationFailure('INVALID_INPUT', 'Use the comment commands to preserve comment ownership rules.')
+      await refuseReserved(keys[0], path, rootOfPath(roots, path)!)
       content = setFrontmatterIn(content, keys, command === 'property.remove' ? undefined : args.value)
       break
     }
