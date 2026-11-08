@@ -21,7 +21,7 @@ const rec = (title: string, folder: string, properties: Record<string, unknown>)
 
 const RECORDS = [
   rec('Alpha', 'Tasks', { price: 1234.5, due: '2026-11-07', owner: '[[Bravo]]', tags: ['a', 'b'], done: true }),
-  rec('Bravo', 'Tasks/Sub', { price: 2, note: 'says "hi", then\nleaves' }),
+  rec('Bravo', 'Tasks/Sub', { price: 2, note: 'says "hi", then\nleaves', see: 'ask [[Alpha]] and ![[pic.png]]' }),
 ]
 const resolve = resolverFor(RECORDS, '/vault')
 const ctx: CellTextContext = {
@@ -52,6 +52,12 @@ properties:
       ['Alpha', '1,234.50', 'Nov 7, 2026', 'Bravo', 'a, b', 'true', ''],
       ['Bravo', '2.00', '', '', '', '', 'Title of Tasks/Sub'],
     ])
+  })
+
+  it('a text with inline [[links]] reads them by the titles their pills show; an embed stays as written (4G)', () => {
+    const { result } = run('views:\n  - type: table\n    name: T\n    order: [note.see]\n')
+    const bravo = result.rows.find((r) => r.record.title === 'Bravo')!
+    expect(cellText(bravo, 'note.see', ctx)).toBe('ask Alpha and ![[pic.png]]')
   })
 
   it('a view that hides Name still leads with it', () => {

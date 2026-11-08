@@ -1,7 +1,8 @@
 import type { PropertyDecl } from '@shared/types'
 import type { Group, Row } from './engine'
 import { propertyLabel } from './engine'
-import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value, linkText, render } from './expr'
+import { WIKILINK_RE } from '@shared/linkRewrite'
+import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value, fromYaml, linkText, render } from './expr'
 import { formatDateValue, formatNumber } from './columnFormat'
 import type { ViewSet } from './viewSchema'
 import { canonicalKey } from './view/keys'
@@ -22,6 +23,13 @@ export interface CellTextContext {
   folderTitle: (dir: string) => string
 }
 
+/** A text's inline `[[links]]` by the titles their pills show (YAZ-4601 D48, `InlineLinks`); an embed stays as written. */
+const inlineLinkText = (text: string, resolve: Resolver | undefined): string =>
+  text.replace(WIKILINK_RE, (whole: string, embed: string) => {
+    const link = embed === '' ? fromYaml(whole) : null
+    return link instanceof LinkValue ? linkText(link, resolve) : whole
+  })
+
 /** One value as a cell shows it: a link by its note's title, a list joined by ", ", a formatted Number or Date. */
 function valueText(v: Value | undefined, resolve: Resolver | undefined, decl?: PropertyDecl): string {
   if (v === undefined || v === null) return ''
@@ -33,6 +41,7 @@ function valueText(v: Value | undefined, resolve: Resolver | undefined, decl?: P
     if (decl.kind === 'number' && typeof v === 'number') return formatNumber(v, decl.format)
     if (decl.kind === 'date' && v instanceof DateValue) return formatDateValue(v.ms, v.hasTime, decl.format) ?? render(v, resolve)
   }
+  if (typeof v === 'string' && v.includes('[[')) return inlineLinkText(v, resolve)
   return render(v, resolve)
 }
 
