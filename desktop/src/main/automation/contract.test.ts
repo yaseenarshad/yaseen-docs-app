@@ -89,7 +89,10 @@ it('declares notes, reviews, comments, and binary reads', async () => {
 it('declares the media, component, and icon-pack results', async () => {
   const { component } = await run('component.save', { name: 'Card' }, JSON.stringify({ fragmentJson: JSON.stringify({ type: 'excalidraw', elements: [{ id: 'a', type: 'rectangle' }], files: {} }), previewPng: 'data:image/png;base64,iVBORw0KGgo=' })) as { component: { slug: string } }
   expect(await run('component.read', { slug: component.slug })).toMatchObject({ slug: component.slug })
-  for (const command of ['media.favoriteCopies', 'media.packStatus', 'media.downloadPacks', 'media.stopPacks', 'media.checkPacks', 'media.removePacks', 'media.drawingIndex', 'media.packList', 'media.favoritesForPanel']) await run(command)
+  for (const command of ['media.favoriteCopies', 'media.packStatus', 'media.downloadPacks', 'media.stopPacks', 'media.checkPacks', 'media.drawingIndex', 'media.packList', 'media.favoritesForPanel']) await run(command)
+  // YAZ-4572: confirm: true answers the app's "Remove the icon packs?" sheet; without it nothing is removed.
+  expect(() => run('media.removePacks')).toThrow(expect.objectContaining({ code: 'INVALID_INPUT', message: 'input: missing confirm' }))
+  expect(await run('media.removePacks', { confirm: true })).toMatchObject({ state: 'none' })
   await run('media.search', { query: 'home', source: 'iconify' })
   await run('media.preview', { provider: 'iconify', id: 'mdi:home' })
   await run('media.drawing', { id: 'drawing:1' })

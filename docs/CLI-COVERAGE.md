@@ -56,7 +56,7 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 | Components | `component list/read/save/rename/remove/export` | Existing component store, validation and Trash behavior. |
 | Media search and import | `media search/preview/import/drawingIndex/drawing` | Existing providers, filters, cache and library; no keys in results. |
 | Media library and favorite copies | `media library/favorite/unfavorite/recordUse/addWord/removeWord/favoriteCopies/favoriteElements/saveFavoriteElements/favoritesForPanel` | Existing library and durable copies; saved elements retain the first-copy rule. |
-| Icon packs | `media packList/packStatus/downloadPacks/stopPacks/checkPacks/removePacks` | Existing pack service; explicit download/check actions; stop can run during a download. |
+| Icon packs | `media packList/packStatus/downloadPacks/stopPacks/checkPacks/removePacks` | Existing pack service; explicit download/check actions; stop can run during a download. `removePacks` needs `confirm: true` in place of the app's “Remove the icon packs?” sheet. |
 | Picture-folder permissions | `pictureFolder list/allow/remove` | Existing real-path and system-folder checks; removing permission never deletes files. |
 | Storage | `storage stats/shrink` | Existing background workers; paged large-file rows; report moved and skipped counts. Shrink skips boards with unsaved live edits, as Settings does, and lists them in `unsavedSkipped`. |
 | Provider credential | `provider status/set/clear` | Presence only; protected input; no secret export. |
