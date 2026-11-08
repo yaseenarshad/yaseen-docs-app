@@ -1120,6 +1120,28 @@
   background: var(--accent-soft);
 }
 
+/* A link value in a folder page's cell (YAZ-4601 D47): the note editor's wikilink pill (`wikilink.css`). A click opens
+   it, so it has the hand. The editor joins side-by-side pieces of ONE link into one box; a Multi-link cell's pills are
+   separate links, so each keeps its own box. */
+.view-link-pill {
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wikilink.view-link-pill:not(.wikilink--unresolved) {
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.wikilink--unresolved.view-link-pill {
+  cursor: inherit;
+}
+.view-link-pill + .view-link-pill {
+  margin-left: 4px;
+}
+/* The table cell owns the mouse (`pointer-events: none` on its editable value): a pill takes its own clicks and hovers. */
+.view-table tbody td .view-link-pill {
+  pointer-events: auto;
+}
+
 .view-table__chip--error {
   color: #fff;
   background: var(--danger);

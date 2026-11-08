@@ -258,7 +258,7 @@ describe('the title (YAZ-2420 D14)', () => {
     const ID = 'k3m9x2pq7abc'
     const records = TEST_RECORDS.map((r, i) => ({ ...r, ...(i === 0 ? { id: ID, title: 'UP-001 - Abdul' } : {}), properties: { ...r.properties, related: `[[${ID}]]` } }))
     const { el } = mount(`formulas:\n  me: file\nviews:\n  - type: table\n    name: T\n    order: [note.related, formula.me]\n`, { records, folder: testFolderHost({ vaultRecords: records }) })
-    const chips = [...el.querySelectorAll('.view-table__chip--link')].map((chip) => chip.textContent)
+    const chips = [...el.querySelectorAll('.view-link-pill')].map((chip) => chip.textContent)
     expect(chips.slice(0, 2)).toEqual(['UP-001 - Abdul', 'UP-001 - Abdul'])
     expect(chips).toContain('Attribution')
   })
@@ -289,8 +289,8 @@ describe('cells by type', () => {
     const chips = [...cells(agentic)[3].querySelectorAll('.view-table__chip')].map((c) => c.textContent)
     expect(chips).toEqual(['agentic', 'pillar'])
 
-    // link ([[Agentic Agency]]) as a link chip
-    const link = q(cells(levels)[4], '.view-table__chip--link')
+    // link ([[Agentic Agency]]) as a link pill (YAZ-4601 D47: the folder page's cells show the wikilink pill)
+    const link = q(cells(levels)[4], '.view-link-pill')
     expect(link.textContent).toBe('Agentic Agency')
 
     // error (unknown formula) as a red #ERROR chip with the message in title
@@ -313,7 +313,7 @@ describe('cells by type', () => {
       ...TEST_RECORDS.slice(4),
     ]
     const { el } = mount(TYPED_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
-    const shown = bodyRows(el).slice(0, 4).map((row) => [...cells(row)[4].querySelectorAll('.view-table__chip--link')].map((c) => c.textContent))
+    const shown = bodyRows(el).slice(0, 4).map((row) => [...cells(row)[4].querySelectorAll('.view-link-pill')].map((c) => c.textContent))
     expect(shown).toEqual([['Creator Economy'], ['My label'], ['7tq2m8vd4xhn'], ['Creator Economy', 'Attribution']])
   })
 })

@@ -3,7 +3,9 @@ import { isFolderRow, isShortcut } from '../../links/shortcuts'
 import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
 import { type ViewSet, type ViewDef, type GroupBySpec, shownGroupLevels } from '../viewSchema'
 import { type Row, propertyLabel } from '../engine'
-import { ErrorValue, FileValue, LinkValue, type Resolver, type Value, linkText, render } from '../expr'
+import { ErrorValue, FileValue, LinkValue, type Resolver, type Value, fromYaml, linkText, render } from '../expr'
+import { WIKILINK_RE } from '@shared/linkRewrite'
+import '../../editor/wikilink/wikilink.css'
 import { summarize } from '../summaries'
 import { FolderIcon, ShortcutIcon } from './icons'
 import { canonicalKey } from './keys'
@@ -42,13 +44,63 @@ export function summaryKindOf(view: ViewDef, key: string): string | undefined {
 
 /** One value inside a list / link cell (shared with TableView's cells); through `resolve`, an id link reads as its note's title (`linkText`, YAZ-2293 D8). */
 export function chip(v: Value, key?: number, resolve?: Resolver) {
-  const link = v instanceof LinkValue || v instanceof FileValue
-  const text = v instanceof LinkValue ? linkText(v, resolve) : v instanceof FileValue ? v.record.title : render(v, resolve)
+  if (v instanceof LinkValue || v instanceof FileValue) return <LinkChip key={key} link={v} resolve={resolve} />
+  const text = render(v, resolve)
   return (
-    <span key={key} className={`view-table__chip${link ? ' view-table__chip--link' : ''}`} title={text}>
+    <span key={key} className="view-table__chip" title={text}>
       {text}
     </span>
   )
+}
+
+/**
+ * A folder page's cells show links as pills (YAZ-4601 D47): `ViewsPane` turns this on, and its delegated handlers
+ * open and preview a pill by its `data-link-path`. Off (the properties panel) a link keeps its plain chip.
+ */
+export const LinkPills = createContext(false)
+
+/**
+ * A link value (YAZ-4601 D47): the note editor's wikilink pill on the page it resolves to, by its title. A link that
+ * resolves to nothing has no pill and no path: it reads as the editor's unresolved link. Off a folder page: the chip.
+ */
+function LinkChip({ link, resolve }: { link: LinkValue | FileValue; resolve?: Resolver }) {
+  const pills = useContext(LinkPills)
+  const text = link instanceof LinkValue ? linkText(link, resolve) : link.record.title
+  if (!pills)
+    return (
+      <span className="view-table__chip view-table__chip--link" title={text}>
+        {text}
+      </span>
+    )
+  const path = link instanceof FileValue ? link.record.path : resolve?.(link.target)?.record.path
+  return path === undefined ? (
+    <span className="wikilink wikilink--unresolved view-link-pill" title={text}>
+      {text}
+    </span>
+  ) : (
+    <span className="wikilink view-link-pill" data-link-path={path} title={text}>
+      {text}
+    </span>
+  )
+}
+
+/**
+ * A text value with inline `[[links]]` (YAZ-4601 D48): its text, each link a pill (`LinkChip`). No editor mounts; an
+ * embed (`![[…]]`) stays text. Off a folder page, the text as it is.
+ */
+function InlineLinks({ text, resolve }: { text: string; resolve?: Resolver }) {
+  const pills = useContext(LinkPills)
+  if (!pills) return <>{text}</>
+  const parts: ReactNode[] = []
+  let last = 0
+  for (const m of text.matchAll(WIKILINK_RE)) {
+    const link = m[1] === '' ? fromYaml(m[0]) : null
+    if (!(link instanceof LinkValue)) continue
+    parts.push(text.slice(last, m.index), <LinkChip key={m.index} link={link} resolve={resolve} />)
+    last = m.index + m[0].length
+  }
+  parts.push(text.slice(last))
+  return <>{parts}</>
 }
 
 /**
@@ -148,6 +200,7 @@ export function cellContent(v: Value, resolve?: Resolver) {
   if (typeof v === 'boolean') return <input type="checkbox" checked={v} disabled readOnly />
   if (Array.isArray(v)) return v.map((item, i) => chip(item, i, resolve))
   if (v instanceof LinkValue || v instanceof FileValue) return chip(v, undefined, resolve)
+  if (typeof v === 'string' && v.includes('[[')) return <InlineLinks text={v} resolve={resolve} />
   return render(v, resolve)
 }
 

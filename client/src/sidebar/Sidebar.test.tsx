@@ -11670,23 +11670,23 @@ describe('the folder page file row (YAZ-4587, D37)', () => {
   }
   const ALL = [folder('/v/Areas', 'Areas'), folder('/v/Projects', 'Projects'), folder('/v/Projects/Alpha', 'Alpha')]
 
-  it('global off: no rows; global on: a row first under each folder that has a page file, labelled "📄 <title> (page)"', async () => {
+  it('global off: no rows; global on: a row first under each folder that has a page file, labelled "📄 <title> (folder page)"', async () => {
     const off = await mountPages(ALL)
     expect(pageRows(off.el)).toEqual([])
     act(() => root?.unmount())
     const { el } = await mountPages(ALL, ON)
-    expect(pageRows(el).map((r) => r.textContent)).toEqual(['📄 Areas (page)', '📄 Projects (page)', '📄 Alpha (page)'])
+    expect(pageRows(el).map((r) => r.textContent)).toEqual(['📄 Areas (folder page)', '📄 Projects (folder page)', '📄 Alpha (folder page)'])
     // First under its folder: the first row of the folder's own level.
     const projects = el.querySelector('.tree__row[data-path="/v/Projects"]')?.closest('li')
-    expect(projects?.querySelector(':scope > ul.tree > li > .tree__row')?.textContent).toBe('📄 Projects (page)')
+    expect(projects?.querySelector(':scope > ul.tree > li > .tree__row')?.textContent).toBe('📄 Projects (folder page)')
   })
 
   it("a folder's override on covers it and its subfolders; a nested override off wins inside it", async () => {
     const { el } = await mountPages([folder('/v/Areas', 'Areas'), folder('/v/Projects', 'Projects', { show_page_file: true }), folder('/v/Projects/Alpha', 'Alpha')])
-    expect(pageRows(el).map((r) => r.textContent)).toEqual(['📄 Projects (page)', '📄 Alpha (page)'])
+    expect(pageRows(el).map((r) => r.textContent)).toEqual(['📄 Projects (folder page)', '📄 Alpha (folder page)'])
     act(() => root?.unmount())
     const nested = await mountPages([folder('/v/Areas', 'Areas'), folder('/v/Projects', 'Projects', { show_page_file: true }), folder('/v/Projects/Alpha', 'Alpha', { show_page_file: false })])
-    expect(pageRows(nested.el).map((r) => r.textContent)).toEqual(['📄 Projects (page)'])
+    expect(pageRows(nested.el).map((r) => r.textContent)).toEqual(['📄 Projects (folder page)'])
   })
 
   it('a click opens the folder page as "Open folder page" does, asking for its Page tab; the row never drags or joins the selection', async () => {

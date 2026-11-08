@@ -1,6 +1,6 @@
 import { boardOptionGroups } from './boardOptionGroups'
 import { columnTyping, optionOrderFor } from './editorType'
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -29,7 +29,8 @@ import { NO_READ_ONLY } from './readOnlyRows'
 import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
-import { FolderPages, type FolderPagesValue } from './view/GroupHeader'
+import { FolderPages, type FolderPagesValue, LinkPills } from './view/GroupHeader'
+import { openByGesture } from '../lib/openGesture'
 import { directlyIn, rowPage, rowsByFolder } from '../links/shortcuts'
 import { onPageTabAsk, takePageTab } from './pageTabRequest'
 import { pageViewIndex } from './pageView'
@@ -202,6 +203,8 @@ function keepBackView(key: string, name: string): void {
 }
 
 const NO_FOLDER_ROWS: IndexRecord[] = []
+/** The hover panel's id for the link pill under the pointer (YAZ-4601 D47): no path is it. */
+const PILL_HOVER = '\u0000pill'
 /** A folder row has no note to preview (YAZ-4579 D32): the hover panel is the notes', so its dwell never starts. */
 const noHover = (): void => undefined
 
@@ -229,10 +232,35 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const paneRef = useRef<HTMLDivElement>(null)
   const itemHover = useCardPreview(hoverPreview, (path) => {
     if (paneRef.current?.querySelector('[data-editing]') != null) return null
+    if (path === PILL_HOVER) return pillAt.current?.isConnected === true ? pillAt.current : null
     const items = [...(paneRef.current?.querySelectorAll<HTMLElement>(`[data-hover-item="${CSS.escape(path)}"]`) ?? [])]
     return items.find((el) => el.matches(':hover')) ?? items[0] ?? null
   })
   const { hoverCard, leaveCard, close: closeItemHover } = itemHover
+  /**
+   * A link pill in a cell (YAZ-4601 D47) shows the LINKED page through the same dwell and panel: the pointer on a pill
+   * takes the panel from its row, and off the pill, back on the row, the row's dwell starts again. Delegated: the pane's
+   * own mouseover and mouseout, nothing per cell, nothing on scroll.
+   */
+  const pillAt = useRef<HTMLElement | null>(null)
+  const pillOf = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? target.closest<HTMLElement>('[data-link-path]') : null)
+  const onPillOver = (e: ReactMouseEvent) => {
+    const pill = pillOf(e.target)
+    if (pill === null || pill === pillAt.current) return
+    pillAt.current = pill
+    hoverCard(PILL_HOVER, pill.dataset.linkPath!)
+  }
+  const onPillOut = (e: ReactMouseEvent) => {
+    const pill = pillAt.current
+    const to = e.relatedTarget instanceof Node ? e.relatedTarget : null
+    if (pill === null || !pill.contains(e.target as Node) || (to !== null && pill.contains(to))) return
+    pillAt.current = null
+    leaveCard(PILL_HOVER)
+    if (pillOf(to) !== null) return
+    const item = to instanceof Element ? to.closest<HTMLElement>('[data-hover-item]') : null
+    const path = item?.dataset.hoverItem
+    if (path !== undefined && paneRef.current?.contains(item!) === true && rowPage(path) === path) hoverCard(path, path)
+  }
   // The note window (YAZ-4547): `opens` mounts a new card per open and renders each open and close; the link to the
   // table; the place, size and pin of the last card closed here, for the next open while this folder page is mounted.
   const [opens, setOpens] = useState(0)
@@ -347,6 +375,20 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const openRowBackground = openBackground === undefined ? undefined : (path: string) => openBackground(rowPage(path))
   const openRight = folder.openRight
   const openRowRight = openRight === undefined ? undefined : (path: string) => openRight(rowPage(path))
+  /**
+   * A click on a link pill (YAZ-4601 D47) opens the LINKED page by the note links' rule (⌘ a background tab, ⌥ the right
+   * panel) and nothing else: in the capture phase, so the cell under it neither selects nor edits and its card does not
+   * open. A double-click on it edits nothing either; one on the cell's empty space still does.
+   */
+  const onPillClick = (e: ReactMouseEvent) => {
+    const path = pillOf(e.target)?.dataset.linkPath
+    if (path === undefined) return
+    e.stopPropagation()
+    e.preventDefault()
+    if (e.type !== 'click') return
+    closeItemHover()
+    openByGesture(e, path, { onOpenFile, onOpenFileBackground: openBackground, onOpenFileRight: openRight })
+  }
   const renderNoteEditor = folder.renderNoteEditor
   // A Select column's options in the column editor's order (YAZ-3940): its sorts and groups follow them. One typing
   // per key for these records (YAZ-4544): a run that the view's def starts reads no record for it again.
@@ -564,7 +606,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   }
 
   const pane = (
-    <div ref={paneRef} className="views-pane">
+    <div ref={paneRef} className="views-pane" onMouseOver={onPillOver} onMouseOut={onPillOut} onClickCapture={onPillClick} onDoubleClickCapture={onPillClick}>
       <Toolbar
         def={def}
         view={view}
@@ -771,9 +813,14 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onClose={closeWindow}
         />
       )}
-      <CardPreviewHost store={itemHover.store} cardOf={(_, path) => ({ root: null, name: records.find((r) => r.path === path)?.title ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
+      {/* A pill's page (YAZ-4601 D47) may be outside the folder: its title is the vault's. */}
+      <CardPreviewHost store={itemHover.store} cardOf={(_, path) => ({ root: null, name: (records.find((r) => r.path === path) ?? vaultRecords.find((r) => r.path === path))?.title ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
     </div>
   )
-  // The Folder column's chips and the Folder group headers' ↗ read the page's folders (YAZ-4564).
-  return <FolderPages.Provider value={folderPages}>{pane}</FolderPages.Provider>
+  // The Folder column's chips and the Folder group headers' ↗ read the page's folders (YAZ-4564); the cells show links as pills (YAZ-4601).
+  return (
+    <FolderPages.Provider value={folderPages}>
+      <LinkPills.Provider value={true}>{pane}</LinkPills.Provider>
+    </FolderPages.Provider>
+  )
 }
