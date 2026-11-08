@@ -68,17 +68,9 @@
 }
 
 /* Drag-to-reorder (YAZ-1471), TabBar's indicator: an accent edge marks where the drop lands. */
-.view-tab--dragging {
-  opacity: 0.5;
-}
-
-.view-tab--insert-before {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.view-tab--insert-after {
-  box-shadow: inset -2px 0 0 var(--accent);
-}
+/* A view tab drag is the tab bar's live gap (YAZ-4606 D58, lib/liveGap.css): the grabbed tab leaves the strip and the
+   others part. `--dragging`, `--insert-before` and `--insert-after` name the grabbed tab and where the gap opens; they
+   draw nothing, the gap is the marker. */
 
 .view-tab__add {
   flex: none;
@@ -530,17 +522,8 @@
   cursor: grab;
 }
 
-.view-prop--dragging {
-  opacity: 0.4;
-}
-
-.view-prop--insert-before {
-  box-shadow: 0 -2px 0 0 var(--accent);
-}
-
-.view-prop--insert-after {
-  box-shadow: 0 2px 0 0 var(--accent);
-}
+/* A Properties or Sort menu row drag is the tab bar's live gap, down the list (YAZ-4606 D58, lib/liveGap.css).
+   `--dragging`, `--insert-before` and `--insert-after` name the grabbed row and where the gap opens; they draw nothing. */
 
 /* Card-style toggles (YAZ-1206): pressed = accent chip, like an active filter. */
 /* The two-level Properties menu (YAZ-1513): a LIST row is grip · checkbox · kind glyph · label · ›,

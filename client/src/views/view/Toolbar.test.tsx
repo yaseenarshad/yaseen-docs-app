@@ -17,6 +17,7 @@ import { ViewsPane, freeName, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import type { ColumnDecl } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
+import { liveGapPoint } from '../../test-liveGap'
 import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 
 /** No store behind this mount: collapse state stays in the pane. */
@@ -211,19 +212,22 @@ describe('view switcher', () => {
 })
 
 /**
- * Drag to reorder (YAZ-1471, re-ruling 🔒 rule 4): TabBar's insertion-slot idiom, so these are
- * TabBar.test's assertions on this strip — jsdom rects are all-zero, which reduces the
- * before/after midpoint test to the SIGN of `clientX` (negative = before the tab, else after),
- * and the handlers guard `dataTransfer` because jsdom has no `DragEvent`. A reorder is ONE
- * `update` (the same door as sort and columns); which view is ACTIVE stays session state and
- * simply follows its tab.
+ * Drag to reorder (YAZ-1471, re-ruling 🔒 rule 4): the tab bar's own drag since YAZ-4606 — the slot is read from where
+ * the LAYOUT puts each tab, so jsdom (no layout) is given one: tabs of 100 px side by side. `clientX` is relative to the
+ * target tab's midpoint (negative = its left half, else its right half); on the strip itself it is past the last tab
+ * (the tail). The handlers guard `dataTransfer` because jsdom has no `DragEvent`. A reorder is ONE `update` (the same
+ * door as sort and columns); which view is ACTIVE stays session state and simply follows its tab.
  */
 describe('view tabs — drag to reorder (YAZ-1471)', () => {
   const strip = (el: ParentNode): HTMLElement => q<HTMLElement>(el, '[role="tablist"]')
   /** The serialized view ORDER, read off the YAML the file would get. */
   const names = (text: string): string[] => [...text.matchAll(/^\s*name: (.+)$/gm)].map((m) => m[1])
   const fire = (target: Element, type: string, clientX = 0): void => {
-    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
+    const tabsOf = [...(target.closest('[role="tablist"]') ?? target).querySelectorAll<HTMLElement>('.view-tab')]
+    tabsOf.forEach((tab, i) => Object.defineProperties(tab, { offsetLeft: { value: i * 100, configurable: true }, offsetWidth: { value: 100, configurable: true } }))
+    const i = tabsOf.indexOf(target as HTMLElement)
+    const x = i === -1 ? tabsOf.length * 100 + clientX : i * 100 + 50 + clientX
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x })))
     draw()
   }
 
@@ -238,6 +242,23 @@ describe('view tabs — drag to reorder (YAZ-1471)', () => {
     expect(names(yaml())).toEqual(['View', 'Table', 'View 2'])
     expect(tabs(el)).toEqual(['View', 'Table', 'View 2'])
     expect(el.querySelector('.view-tab--dragging')).toBeNull() // drag state cleared
+  })
+
+  it('LIVE GAP (YAZ-4606): the tabs part along the strip, a drop in the middle is ONE write, and Esc cancels', () => {
+    const { el, onChange, yaml } = mount()
+    fire(wrap(el, 0), 'dragstart') // grab "Table"
+    fire(wrap(el, 1), 'dragover', 5) // the slot after "View"
+    expect(wrap(el, 1).style.transform).toBe('translateX(-100px)')
+    expect(wrap(el, 2).style.transform).toBe('')
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    draw()
+    expect(wrap(el, 1).style.transform).toBe('')
+    fire(wrap(el, 1), 'drop', 5)
+    expect(onChange).not.toHaveBeenCalled()
+    fire(wrap(el, 0), 'dragstart')
+    fire(wrap(el, 1), 'drop', 5)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(names(yaml())).toEqual(['View', 'Table', 'View 2'])
   })
 
   it('dropping on the strip\'s empty tail lands the tab LAST (the last tab marks --insert-after)', () => {
@@ -1883,9 +1904,9 @@ describe('the default view', () => {
 
 describe('properties drag-to-reorder (YAZ-1207)', () => {
   const THREE = 'views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n      - note.priority\n'
-  /** TabBar's jsdom reduction, vertical: all-zero rects mean the midpoint test is the SIGN of clientY. */
+  /** The slot is read from the layout (YAZ-4606): `clientY` is px from the target row's midpoint, in a layout jsdom is given. */
   const fire = (target: Element, type: string, clientY = 0) =>
-    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY: liveGapPoint(target, 'y', clientY) })))
   const grip = (pop: ParentNode, label: string) => byLabel<HTMLButtonElement>(pop, `Reorder ${label}`)
   const rowOf = (pop: ParentNode, label: string): HTMLElement => {
     const row = grip(pop, label).closest<HTMLElement>('.view-prop')
@@ -1939,6 +1960,23 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
     fire(grip(pop, 'Status'), 'dragstart')
     fire(grip(pop, 'Status'), 'dragend')
     expect(pop.querySelector('.view-prop--dragging')).toBeNull()
+  })
+
+  it('LIVE GAP (YAZ-4606): the rows part down the list, a drop in the middle is ONE write, and Esc cancels', () => {
+    const { el, def, onChange } = mount(THREE)
+    const pop = openMenu(el, 'Properties')
+    fire(grip(pop, 'Name'), 'dragstart')
+    fire(rowOf(pop, 'Status'), 'dragover', 5) // the slot after Status
+    expect(rowOf(pop, 'Status').style.transform).toBe('translateY(-100px)')
+    expect(rowOf(pop, 'Priority').style.transform).toBe('')
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(rowOf(pop, 'Status').style.transform).toBe('')
+    fire(rowOf(pop, 'Status'), 'drop', 5)
+    expect(onChange).not.toHaveBeenCalled()
+    fire(grip(pop, 'Name'), 'dragstart')
+    fire(rowOf(pop, 'Status'), 'drop', 5)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].order).toEqual(['note.status', 'file.name', 'note.priority'])
   })
 
   it('ArrowDown/ArrowUp on the grip nudge one step; the ends are no-ops', () => {
@@ -2217,8 +2255,9 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
       - { property: file.name, direction: ASC }
       - { property: note.priority, direction: DESC }
 `
+  /** The slot is read from the layout (YAZ-4606): `clientY` is px from the target row's midpoint, in a layout jsdom is given. */
   const fire = (target: Element, type: string, clientY = 0) => {
-    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY: liveGapPoint(target, 'y', clientY) })))
     draw()
   }
   const grip = (pop: ParentNode, index: number, label: string) => byLabel<HTMLButtonElement>(pop, `Reorder sort ${index}: ${label}`)
@@ -2258,6 +2297,23 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
     press(grip(pop, 3, 'Priority'), 'ArrowDown')
     expect(def().views[0].sort).toEqual(original)
     expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it('LIVE GAP (YAZ-4606): Esc cancels a rule drag, and a drop in the middle is ONE write', () => {
+    const { el, def, onChange } = mount(SORTS)
+    const pop = openMenu(el, 'Sort')
+    fire(grip(pop, 1, 'Status'), 'dragstart')
+    fire(row(pop, 2, 'Name'), 'dragover', 5)
+    expect(row(pop, 2, 'Name').style.transform).toBe('translateY(-100px)')
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    draw()
+    expect(row(pop, 2, 'Name').style.transform).toBe('')
+    fire(row(pop, 2, 'Name'), 'drop', 5)
+    expect(onChange).not.toHaveBeenCalled()
+    fire(grip(pop, 1, 'Status'), 'dragstart')
+    fire(row(pop, 2, 'Name'), 'drop', 5)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].sort!.map((r) => r.property)).toEqual(['file.name', 'note.status', 'note.priority'])
   })
 
   it('same-slot drops and abandoned drags do not save or leak into later drags', () => {

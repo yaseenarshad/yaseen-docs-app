@@ -1,4 +1,5 @@
-import { useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
+import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import { DragHandleIcon } from './icons'
 import { ColumnPicker } from './ColumnPicker'
 import { DirectionPicker, withOrder } from './DirectionPicker'
@@ -38,10 +39,8 @@ const GROUP_LABELS = ['Group by', 'Then group by', 'Then group by (level 3)'] as
 const GROUP_DIRECTION_LABELS = ['Group direction', 'Then group direction', 'Then group direction (level 3)'] as const
 const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']] as const
 
-type Drag = { id: number; to: number; signature: string }
-
 /**
- * Stable row identities and the drag state of one reorderable rule list: the sorts (GRO-2135) and
+ * Stable row identities of one reorderable rule list: the sorts (GRO-2135) and
  * the group levels (YAZ-4532). ViewsPane reparses YAML after each write. Keep local rule identities
  * through our own edits, including duplicate properties; an external replacement gets fresh identities.
  */
@@ -57,18 +56,17 @@ function useRuleRows<T>(list: readonly T[]) {
     source.current = list
     pending.current = null
   }
-  const [drag, setDrag] = useState<Drag | null>(null)
   return {
     ids: ids.current,
-    signature,
-    dragging: drag?.signature === signature ? drag : null,
-    setDrag,
     newId: () => nextId.current++,
     /** Call before a write: the rows that write makes keep these identities. */
     expect: (next: readonly T[], nextIds: number[]) => { pending.current = { signature: JSON.stringify(next), ids: nextIds } },
   }
 }
-type RuleRows = Pick<ReturnType<typeof useRuleRows>, 'ids' | 'signature' | 'dragging' | 'setDrag'>
+/** A rule list's drag (YAZ-4606 D58): the tab bar's live gap, down the list. A list replaced under a drag drops it. */
+type RuleDrag = ReturnType<typeof useLiveGapReorder<HTMLUListElement>>
+/** The live gap's final index, as `moved`'s insertion point: past the grab point one more. */
+const insertionOf = (from: number, to: number): number => (to > from ? to + 1 : to)
 
 /** Reorder `list` (and its `ids` beside it): the item at `from` goes to the insertion point `insertion`. Null = no move. */
 function moved<T>(list: readonly T[], ids: readonly number[], from: number, insertion: number): [T[], number[]] | null {
@@ -83,35 +81,16 @@ function moved<T>(list: readonly T[], ids: readonly number[], from: number, inse
   return [next, nextIds]
 }
 
-const insertionAt = (event: DragEvent<HTMLElement>, index: number) => {
-  const rect = event.currentTarget.getBoundingClientRect()
-  return event.clientY < rect.top + rect.height / 2 ? index : index + 1
-}
-
-/** One reorderable rule row: the drop target, its ⋮⋮ handle (drag, or ↑/↓ when focused) and `body`. */
-function ruleRow(rows: RuleRows, i: number, count: number, move: (from: number, insertion: number) => void, gripLabel: string, body: ReactNode, mainClass?: string) {
-  const { ids, dragging, setDrag, signature } = rows
+/** One reorderable rule row: an item of its list's live gap, its ⋮⋮ handle (drag, or ↑/↓ when focused) and `body`. */
+function ruleRow(ids: readonly number[], live: RuleDrag, i: number, count: number, move: (from: number, insertion: number) => void, gripLabel: string, body: ReactNode, mainClass?: string) {
   return (
-    <li key={ids[i]} className={[
+    <li key={ids[i]} {...live.itemProps(i)} className={[
       'view-rule',
-      dragging?.id === ids[i] ? 'view-prop--dragging' : '',
-      dragging?.to === i ? 'view-prop--insert-before' : '',
-      dragging?.to === count && i === count - 1 ? 'view-prop--insert-after' : '',
+      // The grabbed row and where the gap opens: they draw nothing, the gap is the marker (YAZ-4606).
+      live.drag?.from === i ? 'view-prop--dragging' : '',
+      live.gap === i ? 'view-prop--insert-before' : '',
+      live.gap === count && i === count - 1 ? 'view-prop--insert-after' : '',
     ].filter(Boolean).join(' ')}
-      onDragOver={event => {
-        if (!dragging) return
-        event.preventDefault()
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-        const to = insertionAt(event, i)
-        if (to !== dragging.to) setDrag({ ...dragging, to })
-      }}
-      onDrop={event => {
-        if (!dragging) return
-        event.preventDefault()
-        const from = ids.indexOf(dragging.id)
-        if (from >= 0) move(from, insertionAt(event, i))
-        setDrag(null)
-      }}
     >
       <div className={mainClass ? `view-rule__main ${mainClass}` : 'view-rule__main'}>
         <button type="button" className="view-rule__nav view-prop__handle"
@@ -123,9 +102,9 @@ function ruleRow(rows: RuleRows, i: number, count: number, move: (from: number, 
             if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
             const row = event.currentTarget.closest('li')
             if (row) event.dataTransfer?.setDragImage?.(row, 12, 16)
-            setDrag({ id: ids[i], to: i, signature })
+            live.start(event, i)
           }}
-          onDragEnd={() => setDrag(null)}
+          onDragEnd={live.end}
           onKeyDown={event => {
             if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
             event.preventDefault()
@@ -165,6 +144,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
     const next = moved(sort, sortRows.ids, from, insertion)
     if (next) writeSort(...next)
   }
+  const sortLive = useLiveGapReorder<HTMLUListElement>({ axis: 'y', keys: sortRows.ids.map(String), onMove: (from, to) => moveSort(from, insertionOf(from, to)) })
   // Every level in one write (YAZ-745, YAZ-4532): one level keeps today's single-object form, more
   // make the ordered list. The same property twice is not a grouping — the earlier level wins —
   // except Folder (YAZ-2541): Folder then Folder IS one, the second being the next folder down.
@@ -192,6 +172,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
     const next = moved(levels, groupRows.ids, from, insertion)
     if (next) writeGroup(...next)
   }
+  const groupLive = useLiveGapReorder<HTMLUListElement>({ axis: 'y', keys: groupRows.ids.map(String), onMove: (from, to) => moveLevel(from, insertionOf(from, to)) })
   /** The properties the levels above `i` group by: level `i` may not repeat one, Folder aside. */
   const above = (i: number) => new Set(levels.slice(0, i).map((l) => canonicalKey(l.property)).filter((k) => k !== FOLDER))
 
@@ -212,8 +193,8 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
       {sort.length === 0 ? (
         <p className="view-menu__empty">No sort</p>
       ) : (
-        <ul className="view-menu__list">
-          {sort.map((s, i) => ruleRow(sortRows, i, sort.length, moveSort, `Reorder sort ${i + 1}: ${propertyLabel(def, s.property)}`, <>
+        <ul className="view-menu__list" {...sortLive.listProps}>
+          {sort.map((s, i) => ruleRow(sortRows.ids, sortLive, i, sort.length, moveSort, `Reorder sort ${i + 1}: ${propertyLabel(def, s.property)}`, <>
             <ColumnPicker label="Sort property" value={canonicalKey(s.property)} onChange={(value) => setSort(i, { property: value })} options={options(s.property)} />
             <DirectionPicker label="Direction" spec={s} hasOptions={hasOptions(s.property)} onChange={(patch) => writeSort(sort.map((r, j) => (j === i ? withOrder(r, patch) : r)))} onEditOptions={editOptions(s.property)} />
             <button type="button" className="view-rule__remove" aria-label="Remove sort" title="Remove sort" onClick={() => writeSort(sort.filter((_, j) => j !== i), sortRows.ids.filter((_, j) => j !== i))}>
@@ -229,8 +210,8 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
       </div>
       {grouping && <p className="view-menu__label">Group by</p>}
       {grouping && levels.length > 0 && (
-        <ul className="view-menu__list">
-          {levels.map((level, i) => ruleRow(groupRows, i, levels.length, moveLevel, `Reorder group level ${i + 1}: ${propertyLabel(def, level.property)}`, <>
+        <ul className="view-menu__list" {...groupLive.listProps}>
+          {levels.map((level, i) => ruleRow(groupRows.ids, groupLive, i, levels.length, moveLevel, `Reorder group level ${i + 1}: ${propertyLabel(def, level.property)}`, <>
             <ColumnPicker
               label={GROUP_LABELS[i]}
               value={canonicalKey(level.property)}

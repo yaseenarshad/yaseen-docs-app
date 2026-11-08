@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
-import { dropIndex, insertionSlot } from '../../lib/dragSlot'
+import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import type { ViewDef } from '../viewSchema'
 import { ConfirmDeleteView } from './ConfirmDeleteView'
 import { ViewTypeIcon } from './icons'
@@ -36,22 +36,17 @@ export interface ViewTabsProps {
   onExport?: (index: number, as: 'csv' | 'copy') => void
 }
 
-/** In-flight drag: the grabbed tab + the hovered insertion slot (0…views.length). */
-interface DragState {
-  from: number
-  over: number | null
-}
-
 /**
  * View switcher (GRO-2135), editable again since YAZ-1471 re-ruled 🔒 rule 4 (YAZ-819): tabs
- * reorder by HTML5 drag — the insertion-slot arithmetic is TabBar's, now SHARED with it as
- * `lib/dragSlot` so the two strips cannot drift apart, with `dataTransfer` guarded for jsdom —
+ * reorder by HTML5 drag — the tab bar's own live gap and glide since YAZ-4606 (`useLiveGapReorder`), so the two
+ * strips cannot drift apart, with `dataTransfer` guarded for jsdom —
  * right-click opens Rename / Duplicate / ✓ Open on this view / View settings… / Export as CSV… / Copy as table / Delete
  * (YAZ-4585 D41, YAZ-4594 S30), "+" picks a
  * type. Every change is ONE `update` in ViewsPane; which view is active stays session state.
  */
 export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onDuplicate, onDelete, defaultView, onSetDefault, onSettings, onExport }: ViewTabsProps) {
-  const [drag, setDrag] = useState<DragState | null>(null)
+  // The tab bar's drag (YAZ-4606 D58): the tabs part live, the slot is read from the layout, and the strip scrolls at its ends.
+  const live = useLiveGapReorder<HTMLDivElement>({ axis: 'x', keys: views.map((v) => v.name), onMove })
   const [menu, setMenu] = useState<{ x: number; y: number; i: number } | null>(null)
   const [renaming, setRenaming] = useState<number | null>(null)
   const [adding, setAdding] = useState<HTMLElement | null>(null)
@@ -69,12 +64,6 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
     activeRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
   }, [active])
 
-  const drop = (insertion: number): void => {
-    if (drag === null) return
-    setDrag(null)
-    const to = dropIndex(drag.from, insertion)
-    if (to !== drag.from) onMove(drag.from, to)
-  }
   /** Names key `defaultView` and the collapse store: a rename commits only a non-empty name no OTHER view has. */
   const uniqueName = (i: number) => (draft: string): string | null => {
     const name = draft.trim()
@@ -87,26 +76,20 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
         <div
           className="view-tabs scroll-strip"
           role="tablist"
-          onDragOver={(e) => {
-            if (drag === null || e.target !== e.currentTarget) return // the strip's empty tail = the end slot
-            e.preventDefault()
-            if (drag.over !== views.length) setDrag({ ...drag, over: views.length })
-          }}
-          onDrop={(e) => {
-            if (drag === null || e.target !== e.currentTarget) return
-            e.preventDefault()
-            drop(views.length)
-          }}
+          // The whole strip takes the drag, its empty tail too (the end slot): the slot is the pointer's place in the layout.
+          {...live.listProps}
         >
           {views.map((v, i) => {
             const cls = ['view-tab']
             if (i === active) cls.push('view-tab--active')
-            if (drag?.from === i) cls.push('view-tab--dragging')
-            if (drag?.over === i) cls.push('view-tab--insert-before')
-            if (drag?.over === views.length && i === views.length - 1) cls.push('view-tab--insert-after')
+            if (live.drag?.from === i) cls.push('view-tab--dragging')
+            // Where the gap opens: they draw nothing, the gap is the marker (YAZ-4606).
+            if (live.gap === i) cls.push('view-tab--insert-before')
+            if (live.gap === views.length && i === views.length - 1) cls.push('view-tab--insert-after')
             return (
               <div
                 key={i}
+                {...live.itemProps(i)}
                 ref={i === active ? activeRef : undefined}
                 className={cls.join(' ')}
                 draggable={renaming !== i}
@@ -115,21 +98,9 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
                   // mis-dropped on the note body above insert its name into the markdown.
                   e.dataTransfer?.setData(VIEW_TAB_MIME, v.name)
                   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-                  setDrag({ from: i, over: null })
+                  live.start(e, i)
                 }}
-                onDragEnd={() => setDrag(null)}
-                onDragOver={(e) => {
-                  if (drag === null) return
-                  e.preventDefault()
-                  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                  const over = insertionSlot(e, i)
-                  if (drag.over !== over) setDrag({ ...drag, over })
-                }}
-                onDrop={(e) => {
-                  if (drag === null) return
-                  e.preventDefault()
-                  drop(insertionSlot(e, i))
-                }}
+                onDragEnd={live.end}
                 onContextMenu={(e) => {
                   e.preventDefault()
                   setMenu({ x: e.clientX, y: e.clientY, i })

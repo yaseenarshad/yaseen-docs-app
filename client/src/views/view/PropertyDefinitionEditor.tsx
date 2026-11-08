@@ -1,5 +1,6 @@
 import './propertyDefinitionEditor.css'
 import { useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import { PROPERTY_KINDS, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { orderedPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { TextField } from './TextField'
@@ -48,7 +49,6 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
   const [draft, setDraft] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
   const panel = useRef<HTMLElement>(null)
   const options = value.options ?? []
   const displayOptions = orderedPropertyOptions(value) ?? []
@@ -63,11 +63,6 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
       ;(buttons.find(button => button.getAttribute('aria-label') === label) ?? buttons.find(button => button.getAttribute('aria-label') === 'Add option'))?.focus()
     })
   }
-  // Match the column menu: the top/bottom half targets the slot before/after a row.
-  const insertionAt = (event: DragEvent<HTMLElement>, index: number) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    return event.clientY < rect.top + rect.height / 2 ? index : index + 1
-  }
   const move = (from: number, to: number) => {
     if (from === to || to < 0 || to >= options.length) return
     const next = [...options]
@@ -75,6 +70,10 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
     next.splice(to, 0, item)
     setOptions(next)
   }
+  // The tab bar's drag, down the list (YAZ-4606 D58): the options part live, and the list scrolls at its ends.
+  const live = useLiveGapReorder<HTMLDivElement>({ axis: 'y', keys: displayOptions, onMove: move })
+  /** This list's drag stops here: the editor may sit inside another drag's surface (a table header). */
+  const own = (handled: boolean, event: DragEvent) => { if (handled) event.stopPropagation() }
   const saveOption = () => {
     const next = draft.trim()
     if (!next) { setError('Enter an option name.'); return }
@@ -92,7 +91,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
     <div className="property-def__section-title"><span>Options</span><select className="property-def__order" aria-label="Option order" value={value.optionSort ?? 'manual'} onChange={event => {
       const optionSort = event.target.value
       if (!validPropertyOptionSort(optionSort)) return
-      setDrag(null)
+      live.end()
       onChange({ ...value, optionSort })
     }}><option value="manual">Manual order</option><option value="ascending">A–Z</option><option value="descending">Z–A</option></select></div>
     {editing !== null ? <div className="property-def__detail">
@@ -104,29 +103,14 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
       <button type="button" className="property-def__delete" onClick={() => { setOptions(options.filter(option => option !== editing)); closeDetail() }}>Remove option</button>
       <p className="property-def__hint">{onRename ? 'Renaming this option changes it in every note that holds it. Removing it keeps existing note values.' : 'Renaming or removing this option keeps existing note values.'}</p>
     </div> : <>
-      <div className="property-def__option-list">
-        {displayOptions.map((option, index) => <div key={option} className="property-def__option"
-          data-dragging={drag?.from === index || undefined}
-          data-insert={drag?.to === index ? 'before' : drag?.to === options.length && index === options.length - 1 ? 'after' : undefined}
-          onDragOver={event => {
-            if (drag === null) return
-            event.preventDefault()
-            event.stopPropagation()
-            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-            const to = insertionAt(event, index)
-            if (drag.to !== to) setDrag({ ...drag, to })
-          }}
-          onDrop={event => {
-            if (drag === null) return
-            event.preventDefault()
-            event.stopPropagation()
-            const slot = insertionAt(event, index)
-            move(drag.from, slot > drag.from ? slot - 1 : slot)
-            setDrag(null)
-          }}>
+      <div className="property-def__option-list" {...live.listProps}
+        onDragEnter={event => own(live.over(event), event)} onDragOver={event => own(live.over(event), event)} onDrop={event => own(live.drop(event), event)}>
+        {displayOptions.map((option, index) => <div key={option} className="property-def__option" {...live.itemProps(index)}
+          data-dragging={live.drag?.from === index || undefined}
+          data-insert={live.gap === index ? 'before' : live.gap === options.length && index === options.length - 1 ? 'after' : undefined}>
           {manual && <button type="button" draggable className="property-def__grip" aria-label={`Reorder ${option}`} title="Drag or use arrow keys to reorder" onDragStart={event => {
             event.stopPropagation()
-            setDrag({ from: index, to: index })
+            live.start(event, index)
             if (event.dataTransfer) {
               event.dataTransfer.setData('text/plain', option)
               event.dataTransfer.effectAllowed = 'move'
@@ -134,7 +118,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
               const rect = row.getBoundingClientRect()
               event.dataTransfer.setDragImage(row, event.clientX - rect.left, event.clientY - rect.top)
             }
-          }} onDragEnd={() => setDrag(null)} onKeyDown={event => {
+          }} onDragEnd={live.end} onKeyDown={event => {
             if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); event.stopPropagation(); move(index, index + (event.key === 'ArrowUp' ? -1 : 1)) }
           }}><DragHandleIcon /></button>}
           <button type="button" className="property-def__option-button" aria-label={`Edit option ${option}`} onClick={() => { setEditing(option); setDraft(option); setError('') ; setAdding(false) }}><span className="property-def__chip">{option}</span><span className="property-def__more" aria-hidden="true">•••</span></button>
