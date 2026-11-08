@@ -31,7 +31,7 @@ import { NO_READ_ONLY } from './readOnlyRows'
 import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
-import { FolderPages, type FolderPagesValue } from './view/GroupHeader'
+import { ColumnDecls, FolderPages, type FolderPagesValue } from './view/GroupHeader'
 import { directlyIn, rowPage, rowsByFolder } from '../links/shortcuts'
 import { onPageTabAsk, takePageTab } from './pageTabRequest'
 import { pageViewIndex } from './pageView'
@@ -57,8 +57,12 @@ export interface FolderHost {
    * what the card is called, and that typed title rides the optional argument.
    */
   create: (seed: NewNoteSeed, name?: string) => Promise<string>
-  /** Save one definition against the captured base; reject concurrent changes to that property. */
-  setColumn: (key: string, next: ColumnDecl, base: ColumnDecl | undefined) => Promise<unknown>
+  /**
+   * Save one definition against the captured base; reject concurrent changes to that property. `rename`
+   * (YAZ-4591 S24): an option renamed in the column editor — once the declaration lands, every note
+   * holding `from` is rewritten to `to` (`views/renameOption.ts`), and a toast offers Undo.
+   */
+  setColumn: (key: string, next: ColumnDecl, base: ColumnDecl | undefined, rename?: { from: string; to: string }) => Promise<unknown>
   /**
    * Write the declarations (YAZ-895): ONE settings write, fire-and-forget — a failure shows in the
    * host's banner. `views` lets a caller move the columns AND `view.order` in that same write;
@@ -608,6 +612,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           Could not load the vault's property declarations: {properties.error}
         </p>
       )}
+      {/* A Number or Date cell's format (YAZ-4591): the views alone read the declarations, never the note window's own panel. */}
+      <ColumnDecls.Provider value={folder.settings.columns}>
       {isOutline ? (
         <OutlineView
           outline={views[outlineIndex].outline}
@@ -777,6 +783,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           ))}
         </ul>
       )}
+      </ColumnDecls.Provider>
       {notes.length > 0 && (
         <p className="views-pane__notes" role="note">
           {notes.join(' · ')}
