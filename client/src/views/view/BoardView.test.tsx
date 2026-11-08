@@ -639,17 +639,19 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(openRight).toHaveBeenCalledExactlyOnceWith(levelsPath)
   })
 
-  it('leaves headers, add controls, placeholders and the no-group hint on their native menu', () => {
+  it('leaves add controls, placeholders and the no-group hint on their native menu; a header opens its group menu (YAZ-4604)', () => {
     const openBackground = vi.fn()
     const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openBackground }) })
     const firstCard = cardNamed(el, 'Agentic Agency')
     const drafting = cols(el)[0]
     const idea = cols(el)[1]
 
-    for (const target of [q(el, '.view-group'), byLabel(el, 'New card')]) {
-      expect(rightClick(target).defaultPrevented).toBe(false)
-      expect(el.querySelector('.ctx-menu')).toBeNull()
-    }
+    expect(rightClick(byLabel(el, 'New card')).defaultPrevented).toBe(false)
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    // A group header's right-click opens the group menu (YAZ-4604, D55), never the card menu.
+    expect(rightClick(q(el, '.view-group')).defaultPrevented).toBe(true)
+    expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).toEqual(['Collapse this group', 'New note in this group'])
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     click(byLabel(el, 'New card'))
     expect(rightClick(byLabel(el, 'New card name')).defaultPrevented).toBe(false)
     expect(el.querySelector('.ctx-menu')).toBeNull()
@@ -661,8 +663,8 @@ describe('Board-card page context menu (YAZ-1243)', () => {
 
     unmount()
     const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folder: testFolderHost({ openBackground }) })
-    expect(rightClick(q(nested.el, '.view-board__subgroup > .view-group')).defaultPrevented).toBe(false)
-    expect(nested.el.querySelector('.ctx-menu')).toBeNull()
+    expect(rightClick(q(nested.el, '.view-board__subgroup > .view-group')).defaultPrevented).toBe(true)
+    expect(document.querySelector('.ctx-menu [role="menuitem"]')?.textContent).toBe('Collapse this group')
 
     unmount()
     const hint = mount(NO_GROUP_BASE, { folder: testFolderHost({ openBackground }) })
