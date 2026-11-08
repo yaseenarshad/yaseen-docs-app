@@ -27,6 +27,14 @@ const VALUE_ORDERS: readonly Order[] = [
   { label: 'Z → A', direction: 'DESC' },
 ]
 
+/** The order a spec is in, with its label: this picker's choice, and the header's sort arrow (YAZ-4590 S19). */
+export function orderOf(spec: { direction?: 'ASC' | 'DESC'; by?: 'value' }, hasOptions: boolean): Order {
+  const orders = hasOptions ? OPTION_ORDERS : VALUE_ORDERS
+  const direction = spec.direction === 'DESC' ? 'DESC' : 'ASC'
+  const by = hasOptions ? spec.by : undefined
+  return orders.find(o => o.direction === direction && o.by === by) ?? orders[0]
+}
+
 export interface DirectionPickerProps {
   /** The button's accessible name: "Direction", "Group direction", … */
   label: string
@@ -48,9 +56,7 @@ export function DirectionPicker({ label, spec, hasOptions, onChange, onEditOptio
   const trigger = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
   const orders = hasOptions ? OPTION_ORDERS : VALUE_ORDERS
-  const direction = spec.direction === 'DESC' ? 'DESC' : 'ASC'
-  const by = hasOptions ? spec.by : undefined
-  const current = orders.find(o => o.direction === direction && o.by === by) ?? orders[0]
+  const current = orderOf(spec, hasOptions)
   const close = () => { setOpen(false); trigger.current?.focus() }
 
   useEffect(() => {

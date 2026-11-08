@@ -26,6 +26,7 @@ import { FillMenu } from './FillMenu'
 import { cellFillOf, fillIndex, fillPaint, setViewFill } from './fills'
 import { TableHeaderMenu, wrapsColumn } from './TableHeaderMenu'
 import { useViewDefaults } from '../viewDefaults'
+import { orderOf } from './DirectionPicker'
 import { TextField } from './TextField'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
 import { dropIndex, insertionSlot } from '../../lib/dragSlot'
@@ -103,6 +104,8 @@ export interface TableViewProps {
 
 const DEFAULT_WIDTH = 150
 const MIN_WIDTH = 60
+/** Auto-fit's ceiling (YAZ-4590 S20): a long value does not make a column wider than this. */
+const MAX_FIT_WIDTH = 600
 /** The Name cell's room for the title that its group indent leaves (YAZ-4544): 60px of title and the cell's two 8px paddings. */
 const NAME_TITLE_ROOM = 60 + 2 * 8
 /** `view.rowHeight` presets (Obsidian's names); the value feeds `--view-table-row-h` AND the windowing maths. */
@@ -153,6 +156,26 @@ function activateEditorFromCell(event: ReactMouseEvent<HTMLTableCellElement>): v
 const clipTitle = (v: Value, resolve: Resolver | undefined): string | undefined => (typeof v === 'boolean' ? undefined : render(v, resolve) || undefined)
 
 /** A single click selects the cell without entering edit mode. */
+/**
+ * A cell's content width in CSS px (YAZ-4590 S20): its side paddings plus each child's natural width. A text node is
+ * measured by a Range; an element by its scroll width, which a `max-width: 100%` box keeps past its clip. The resize
+ * edge is absolutely placed, so it does not count.
+ */
+function contentWidth(cell: HTMLElement, zoom: number): number {
+  const style = getComputedStyle(cell)
+  let width = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
+  for (const node of cell.childNodes) {
+    if (node instanceof HTMLElement) {
+      if (!node.classList.contains('view-table__resize')) width += Math.max(node.scrollWidth, node.getBoundingClientRect().width / zoom)
+    } else if (node.nodeType === Node.TEXT_NODE) {
+      const range = document.createRange()
+      range.selectNodeContents(node)
+      width += range.getBoundingClientRect().width / zoom
+    }
+  }
+  return width
+}
+
 function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
   if (event.target !== event.currentTarget) return
   event.currentTarget.focus()
@@ -269,6 +292,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const { textInCells } = useViewDefaults()
   const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
   const frozen = frozenColumnCount(view.frozenColumns, keys.length)
+  const sorts = view.sort ?? []
   /** The `#` gutter is shown unless the view says `rowNumbers: false` (YAZ-1513). */
   const numbered = view.rowNumbers !== false
   /** The gutter's bookkeeping, spelled once (YAZ-1549): its width, and the cells a full-width row spans. */
@@ -443,6 +467,31 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     window.addEventListener('mouseup', up)
     holdColResize(true)
   }
+
+  /**
+   * Auto-fit (YAZ-4590 S20): a double-click on the resize edge sets the column's width to its widest shown content,
+   * the header and the MOUNTED rows' cells, measured once here (no observer), clamped to 60–600. ONE write.
+   */
+  const autoFit = (key: string, c: number) => (e: ReactMouseEvent<HTMLElement>) => {
+    const th = e.currentTarget.closest('th')
+    const wrap = wrapRef.current
+    if (th === null || wrap === null) return
+    const zoom = cssZoom(th)
+    const cells = [th, ...wrap.querySelectorAll<HTMLElement>(`tbody td[data-cell$=":${c}"]`)]
+    const widest = Math.max(...cells.map((cell) => contentWidth(cell, zoom)))
+    const width = Math.round(Math.min(MAX_FIT_WIDTH, Math.max(MIN_WIDTH, widest)))
+    if (width !== widthOf(key))
+      onUpdate((d) => {
+        d.views[viewIndex].columnSize = { ...d.views[viewIndex].columnSize, [key]: width }
+      })
+  }
+
+  /** The sort arrow's click (YAZ-4590 S19): that rule's direction flips; its `by` stays. */
+  const flipSort = (at: number) =>
+    onUpdate((d) => {
+      const sort = d.views[viewIndex].sort!
+      sort[at] = { ...sort[at], direction: sort[at].direction === 'DESC' ? 'ASC' : 'DESC' }
+    })
 
   const setSummary = (key: string, kind: string | null) =>
     onUpdate((d) => {
@@ -697,23 +746,45 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   #
                 </th>
               )}
-              {keys.map((key, index) => (
-                <th
-                  key={key}
-                  scope="col"
-                  className={[frozenClass(index), ...headerDragClass(index)].filter(Boolean).join(' ') || undefined}
-                  style={{ width: widthOf(key), ...frozenStyle(index) }}
-                  onContextMenu={openHeaderMenu(key)}
-                  {...headerDrag(index)}
-                >
-                  {propertyLabel(def, key)}
-                  <span
-                    className={`view-table__resize${drag?.key === key ? ' view-table__resize--active' : ''}`}
-                    aria-hidden
-                    onMouseDown={startResize(key)}
-                  />
-                </th>
-              ))}
+              {keys.map((key, index) => {
+                const c = canonicalKey(key)
+                // This column's sort rule (YAZ-4590 S19): ▲ or ▼ (views.css draws it), and its place when there are several.
+                const at = sorts.findIndex((s) => canonicalKey(s.property) === c)
+                const rule = sorts[at]
+                const assigned = typings[index]?.assigned
+                const order = rule === undefined ? '' : orderOf(rule, assigned === 'select' || assigned === 'multi-select').label
+                return (
+                  <th
+                    key={key}
+                    scope="col"
+                    className={[frozenClass(index), ...headerDragClass(index)].filter(Boolean).join(' ') || undefined}
+                    style={{ width: widthOf(key), ...frozenStyle(index) }}
+                    // The column's description on hover (YAZ-4590 S23).
+                    title={c.startsWith('note.') ? settings.columns[c.slice('note.'.length)]?.description : undefined}
+                    onContextMenu={openHeaderMenu(key)}
+                    {...headerDrag(index)}
+                  >
+                    {propertyLabel(def, key)}
+                    {rule !== undefined && (
+                      <button
+                        type="button"
+                        className="view-table__sort"
+                        data-dir={rule.direction === 'DESC' ? 'DESC' : 'ASC'}
+                        data-pos={sorts.length > 1 ? at + 1 : undefined}
+                        aria-label={`${sorts.length > 1 ? `Sort ${at + 1}: ` : 'Sorted '}${order}. Click to flip`}
+                        title={`${sorts.length > 1 ? `Sort ${at + 1}: ` : 'Sorted '}${order}. Click to flip`}
+                        onClick={() => flipSort(at)}
+                      />
+                    )}
+                    <span
+                      className={`view-table__resize${drag?.key === key ? ' view-table__resize--active' : ''}`}
+                      aria-hidden
+                      onMouseDown={startResize(key)}
+                      onDoubleClick={autoFit(key, index)}
+                    />
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
