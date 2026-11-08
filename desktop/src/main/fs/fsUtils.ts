@@ -222,7 +222,7 @@ export function tmpSibling(file: string): string {
  * can write during the tmp write and its full fsync, which take milliseconds. So `file` is checked
  * again right before the rename: a file there with another mtime is `CONFLICT`, and nothing is
  * replaced. A file that is gone is no conflict. On a quick drive that check and the rename are one
- * blocking pair (`renameIfUnchanged`). The mtime returned is still a stat after the rename:
+ * blocking pair, and a hard link catches a write in place up to the rename (`renameIfUnchanged`). The mtime returned is still a stat after the rename:
  * exFAT changes a file's mtime on close or rename, so the tmp file's own mtime would not match disk.
  */
 export async function atomicWrite(file: string, content: string | Uint8Array, mode?: number, ifMtime?: number): Promise<{ mtime: number; size: number }> {
@@ -241,7 +241,7 @@ export async function atomicWrite(file: string, content: string | Uint8Array, mo
 
 /**
  * The drives (`st.dev`) whose last guarded rename took under `QUICK_RENAME_MS` (YAZ-4576). Exported for tests only.
- * On one of them the last check, the rename and the stat after it run back to back, with no event-loop turn: busy JS
+ * On one of them the last check, the rename and the stats after it run back to back, with no event-loop turn: busy JS
  * on main cannot widen the gap, which is then one rename (about 0.1 ms on APFS). On exFAT, FAT or a network drive a
  * rename takes milliseconds, and a blocking call there would hold main, and so the keyboard: those keep the async
  * rename, which is timed too. A drive with no time yet starts async. Numbers: YAZ-4576 "Decision (agent)".
@@ -249,31 +249,53 @@ export async function atomicWrite(file: string, content: string | Uint8Array, mo
 export const _quickDevices = new Set<number>()
 const QUICK_RENAME_MS = 1
 
+/**
+ * The rename of a guarded save (YAZ-4576). Before it, `guard` becomes a second name of the file as checked. A program
+ * that writes in place (an agent's `writeFileSync`, most editors) writes that inode at any time up to the rename, and
+ * the write shows on `guard` after it: the save puts their file back under the name and answers `CONFLICT`. A program
+ * that renames its own file in is caught only by the check, so the gap between the check and the rename stays for it.
+ * A drive with no hard links (exFAT, FAT) has no guard: the check alone.
+ */
 async function renameIfUnchanged(tmp: string, file: string, ifMtime: number): Promise<{ mtime: number; size: number }> {
+  const conflict = (mtime: number) => new BridgeFailure('CONFLICT', 'file changed on disk since last read', { path: file, mtime })
   const unchanged = (now: { mtimeMs: number } | undefined): void => {
-    if (now !== undefined && now.mtimeMs !== ifMtime) throw new BridgeFailure('CONFLICT', 'file changed on disk since last read', { path: file, mtime: now.mtimeMs })
+    if (now !== undefined && now.mtimeMs !== ifMtime) throw conflict(now.mtimeMs)
   }
   const before = await stat(file).catch((err: NodeJS.ErrnoException) => (err.code === 'ENOENT' ? undefined : Promise.reject(err)))
   unchanged(before)
-  const dev = before?.dev
-  const t0 = performance.now()
-  let took: number
-  let st: { mtimeMs: number; size: number }
-  if (dev !== undefined && _quickDevices.has(dev)) {
-    unchanged(statSync(file, { throwIfNoEntry: false }))
-    renameSync(tmp, file)
-    st = statSync(file)
-    took = performance.now() - t0 // main was blocked this long
-  } else {
-    await rename(tmp, file)
-    took = performance.now() - t0 // the rename and the wait for main: never less than the rename
-    st = await stat(file)
+  const guard = tmpSibling(file)
+  let linked = before !== undefined && (await link(file, guard).then(() => true, () => false))
+  try {
+    const dev = before?.dev
+    const t0 = performance.now()
+    let took: number
+    let st: { mtimeMs: number; size: number }
+    let old: { mtimeMs: number } | undefined
+    if (dev !== undefined && _quickDevices.has(dev)) {
+      unchanged(statSync(file, { throwIfNoEntry: false }))
+      renameSync(tmp, file)
+      old = linked ? statSync(guard, { throwIfNoEntry: false }) : undefined
+      st = statSync(file)
+      took = performance.now() - t0 // main was blocked this long
+    } else {
+      await rename(tmp, file)
+      took = performance.now() - t0 // the rename and the wait for main: never less than the rename
+      old = linked ? await stat(guard).catch(() => undefined) : undefined
+      st = await stat(file)
+    }
+    if (dev !== undefined) {
+      if (took < QUICK_RENAME_MS) _quickDevices.add(dev)
+      else _quickDevices.delete(dev)
+    }
+    if (old !== undefined && old.mtimeMs !== ifMtime) {
+      linked = false // their bytes are never unlinked, even when the rename back fails
+      await rename(guard, file)
+      throw conflict(old.mtimeMs)
+    }
+    return { mtime: st.mtimeMs, size: st.size }
+  } finally {
+    if (linked) await unlink(guard).catch(() => undefined)
   }
-  if (dev !== undefined) {
-    if (took < QUICK_RENAME_MS) _quickDevices.add(dev)
-    else _quickDevices.delete(dev)
-  }
-  return { mtime: st.mtimeMs, size: st.size }
 }
 
 /**
