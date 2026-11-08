@@ -61,9 +61,9 @@ describe('setViewFill', () => {
 
   it('adds a cell fill, then a row fill, then replaces the cell fill in place', () => {
     const d = def()
-    setViewFill(d, 0, AGENCY, 'note.priority', 'yellow', TEST_RECORDS, resolveLink)
-    setViewFill(d, 0, AGENCY, undefined, 'green', TEST_RECORDS, resolveLink)
-    setViewFill(d, 0, AGENCY, 'note.priority', '#ABCDEF', TEST_RECORDS, resolveLink)
+    setViewFill(d, 0, AGENCY, 'note.priority', 'yellow', resolveLink)
+    setViewFill(d, 0, AGENCY, undefined, 'green', resolveLink)
+    setViewFill(d, 0, AGENCY, 'note.priority', '#ABCDEF', resolveLink)
     expect(d.views[0].fills).toEqual([
       { note: '[[Agentic Agency]]', column: 'note.priority', fill: '#abcdef' },
       { note: '[[Agentic Agency]]', fill: 'green' },
@@ -75,22 +75,24 @@ describe('setViewFill', () => {
       { note: '[[Agentic Agency]]', fill: 'red' },
       { note: '[[Agentic Agency]]', column: 'priority', fill: 'blue' },
     ])
-    setViewFill(d, 0, AGENCY, 'note.priority', null, TEST_RECORDS, resolveLink) // the other spelling of the same column
+    setViewFill(d, 0, AGENCY, 'note.priority', null, resolveLink) // the other spelling of the same column
     expect(d.views[0].fills).toEqual([{ note: '[[Agentic Agency]]', fill: 'red' }])
-    setViewFill(d, 0, AGENCY, undefined, null, TEST_RECORDS, resolveLink)
+    setViewFill(d, 0, AGENCY, undefined, null, resolveLink)
     expect('fills' in d.views[0]).toBe(false)
   })
 
-  it('each write drops the fills whose note is no longer in the folder', () => {
+  // Until YAZ-4636 T9b a write dropped the fills of notes outside the folder's shown records and of links that did not
+  // resolve: Subfolders: Hide narrows the shown records, so a fill of a hidden note went with the next write.
+  it('a write changes only the cells it is for: a fill of a note the view does not show, or a link to nothing, stays (YAZ-4636 T9b)', () => {
     const d = def([
       { note: '[[The Levels of an Agency]]', fill: 'red' },
       { note: '[[Gone Note]]', fill: 'blue' },
       { note: '[[Agentic Agency]]', column: 'status', fill: 'pink' },
     ])
-    // The Levels note left the folder: it is still in the vault, but not among the folder's records.
-    const folder = TEST_RECORDS.filter((r) => r !== LEVELS)
-    setViewFill(d, 0, AGENCY, undefined, 'grey', folder, resolveLink)
+    setViewFill(d, 0, AGENCY, undefined, 'grey', resolveLink)
     expect(d.views[0].fills).toEqual([
+      { note: '[[The Levels of an Agency]]', fill: 'red' },
+      { note: '[[Gone Note]]', fill: 'blue' },
       { note: '[[Agentic Agency]]', column: 'status', fill: 'pink' },
       { note: '[[Agentic Agency]]', fill: 'grey' },
     ])
