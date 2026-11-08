@@ -390,7 +390,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       const current = snapshot.current, save = autosave.current
       if (!current || !save || board.retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The drawing is not ready.')
       const { json, files } = current.serialize()
-      return { path, kind: 'drawing', content: JSON.stringify({ ...JSON.parse(json), files }), baselineMtime: save.mtime, dirty: save.dirty }
+      return { path, kind: 'drawing', content: JSON.stringify({ ...JSON.parse(json), files }), baselineMtime: save.mtime, dirty: save.dirty, conflict: board.conflicted.current }
     }, {
       // YAZ-4515: the engine's own actions and history. Read only leaves the view actions; content edits then use drawing.save.
       version: () => `${snapshot.current?.version}:${surface.current === null ? 0 : editorStateVersion(surface.current.selection())}`,
@@ -416,7 +416,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       try { return { ...await s.exportImage(format, options), path, dirty: autosave.current?.dirty === true } }
       catch (error) { throw new AutomationFailure('EXPORT_FAILED', error instanceof Error ? error.message : 'The drawing could not be exported.') }
     } })
-  }, [path, board.hostRef, board.retired, autosave])
+  }, [path, board.hostRef, board.retired, board.conflicted, autosave])
 
   // The hover preview: the app's "Links in drawings" AND this board's own switch (YAZ-3943 demo 2); clicks stay.
   const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: { ...linkProps, hoverLinks: linkProps.hoverLinks === true && !hoverLinksOff } })

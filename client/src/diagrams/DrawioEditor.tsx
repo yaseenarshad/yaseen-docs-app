@@ -198,7 +198,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     return registerLiveDocument(host, () => {
       const save = autosave.current
       if (!save || retired.current || pendingLoad.current !== null) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The diagram is not ready.')
-      return { path, kind: 'diagram', content: wantedReadOnly.current ? setDiagramReadOnly(latestXml.current, true) : latestXml.current, baselineMtime: save.mtime, dirty: save.dirty }
+      return { path, kind: 'diagram', content: wantedReadOnly.current ? setDiagramReadOnly(latestXml.current, true) : latestXml.current, baselineMtime: save.mtime, dirty: save.dirty, conflict: board.conflicted.current }
     }, {
       // YAZ-4515: Save now only. draw.io's own actions get no reply over the embed protocol.
       version: () => `${autosave.current?.mtime}:${textVersion(latestXml.current)}`,
@@ -211,7 +211,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       if (url === '') throw new AutomationFailure('EXPORT_FAILED', 'The diagram has nothing to export.')
       return { format, data: Uint8Array.from(atob(url.slice(url.indexOf(',') + 1)), (c) => c.charCodeAt(0)), path, dirty }
     } })
-  }, [path, board.hostRef, retired, autosave])
+  }, [path, board.hostRef, board.conflicted, retired, autosave])
 
 
   // The one message listener: the protocol, in the order drawioProtocol.ts documents.

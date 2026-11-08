@@ -1,5 +1,6 @@
 import { AutomationFailure } from '@shared/automation'
 import { registerLiveDocument } from '../automation/liveDocument'
+import { TEXT_READ_ONLY_ACTIONS, type EditorAction } from '@shared/automationEditor'
 /**
  * A code file open in a tab (YAZ-3448, D1/D2): Monaco, VS Code's editor, on the document host — save
  * and sync chips, conflict bar, 500 ms autosave, quit flush, rename continuity, all from
@@ -217,6 +218,9 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
   const [unlocked, setUnlocked] = useState(false)
   const [askingUnlock, setAskingUnlock] = useState(false)
   const locked = codeReadOnly && !unlocked
+  /** For the CLI's live actions (YAZ-4560), read only when it asks. */
+  const lockedRef = useRef(locked)
+  lockedRef.current = locked
   /** This tab's wrap: the setting, or ⌥Z's flip of it until the setting changes (S4). */
   const wrap = useRef(codeWrap)
   /** The text size, per tab (YAZ-3451): a copy starts at its source's (S5); never stored. */
@@ -383,10 +387,12 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
     const offLiveDocument = host === null ? null : registerLiveDocument(host, () => {
       const selection = caretOf(editor, model)
       const text = model.getValue().slice(Math.min(selection.anchor, selection.head), Math.max(selection.anchor, selection.head))
-      return { path, kind: 'text', content: textNow(), baselineMtime: doc.autosave.current?.mtime ?? loaded.mtime, dirty: doc.autosave.current?.dirty ?? false, selection: { ...selection, text, coordinate: 'utf16' } }
+      return { path, kind: 'text', content: textNow(), baselineMtime: doc.autosave.current?.mtime ?? loaded.mtime, dirty: doc.autosave.current?.dirty ?? false, conflict: doc.conflicted.current, selection: { ...selection, text, coordinate: 'utf16' } }
     }, {
-      version: () => `${model.getAlternativeVersionId()}:${JSON.stringify(caretOf(editor, model))}:${doc.autosave.current?.mtime}`,
-      actions: ['select', 'replace', 'undo', 'redo', 'save'],
+      // Not the save's mtime: an autosave between two agent calls changes nothing an action reads (YAZ-4563).
+      version: () => `${model.getAlternativeVersionId()}:${JSON.stringify(caretOf(editor, model))}`,
+      // A locked tab takes no edits from a person, so none from the CLI either (YAZ-4560).
+      get actions(): EditorAction['action'][] { return lockedRef.current ? [...TEXT_READ_ONLY_ACTIONS] : ['select', 'replace', 'undo', 'redo', 'save'] },
       run: async action => {
         if (retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'This editor has retired.')
         if (action.action === 'select') {

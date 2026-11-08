@@ -8,6 +8,8 @@ export interface LiveDocument {
   content: string
   baselineMtime: number
   dirty: boolean
+  /** The conflict bar shows (YAZ-4515): the file changed on disk under unsaved edits, and a person chooses Reload or Keep mine. */
+  conflict?: boolean
   selection?: { anchor: number; head: number; text: string; coordinate: 'prosemirror' | 'utf16' }
 }
 interface EditorControl { version(): string | number; run(action: EditorAction): void | Promise<void>; readonly actions: EditorAction['action'][] }
@@ -43,11 +45,11 @@ function registration(tab: string): Registration {
   if (!entry) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'This tab has no ready live document. A sleeping or loading editor is not read from disk as a substitute.')
   return entry
 }
-export function readLiveDocument(tab: string): LiveDocument & { source: 'live'; tab: string; revision: string; actions: EditorAction['action'][] } {
+export function readLiveDocument(tab: string): LiveDocument & { conflict: boolean; source: 'live'; tab: string; revision: string; actions: EditorAction['action'][] } {
   const entry = registration(tab), value = entry.read()
   // Keep the renderer reply below the same bound as the local connection.
   if (new TextEncoder().encode(JSON.stringify(value)).byteLength > AUTOMATION_LIMITS.contentBytes - 4096) throw new AutomationFailure('TOO_LARGE', 'This live document exceeds the connection limit. Use a saved board export for large content.')
-  return { ...value, source: 'live', tab, revision: revision(entry), actions: entry.control?.actions ?? [] }
+  return { ...value, conflict: value.conflict === true, source: 'live', tab, revision: revision(entry), actions: entry.control?.actions ?? [] }
 }
 
 export async function runEditorAction(target: EditorOperation) {
@@ -57,7 +59,7 @@ export async function runEditorAction(target: EditorOperation) {
   // No await between the revision check and the synchronous edit transaction.
   await control.run(target.edit)
   const { content: _content, ...state } = readLiveDocument(target.tab)
-  if (target.edit.action === 'save' && state.dirty) throw new AutomationFailure('SAVE_INCOMPLETE', 'The editor remains unsaved. Inspect its conflict or save error before retrying.', state)
+  if (target.edit.action === 'save' && state.dirty) throw new AutomationFailure('SAVE_INCOMPLETE', state.conflict ? 'The file changed on disk under unsaved edits (conflict: true). A person chooses Reload or Keep mine in the conflict bar.' : 'The editor remains unsaved. Inspect its save error before retrying.', state)
   return { ...state, rendererApplied: true, diskSaved: target.edit.action === 'save' && !state.dirty }
 }
 
