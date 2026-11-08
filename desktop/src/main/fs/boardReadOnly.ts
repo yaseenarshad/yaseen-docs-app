@@ -63,6 +63,6 @@ async function setBoardReadOnlyUnlocked(req: unknown): Promise<BoardReadOnlyResp
   }
   if (next === text) return { path: file, mtime: snap.mtime, size: snap.size }
   if (Buffer.byteLength(next, 'utf8') > BOARDS[kind].max) throw new BridgeFailure('TOO_LARGE', BOARDS[kind].tooLarge, { path: file })
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next))
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next, undefined, snap.mtime))
   return { path: file, mtime, size }
 }

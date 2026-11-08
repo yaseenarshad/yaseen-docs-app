@@ -64,7 +64,9 @@ export async function writeFile(req: FileWriteRequest): Promise<FileWriteRespons
       if (revisionOf(before.content, before.mtime) !== expectedRevision) throw new BridgeFailure('CONFLICT', 'file changed since the supplied revision', { path: p, mtime: before.mtime })
       if (before.content === content) return { path: p, mtime: before.mtime, size: before.size }
     }
-    const { mtime, size } = await fsCall(p, () => atomicWrite(p, content))
+    // Checked again right before the rename: another program can write during the fsync (YAZ-4576).
+    const accepted = expectedMtime ?? (expectedRevision !== undefined ? st?.mtimeMs : undefined)
+    const { mtime, size } = await fsCall(p, () => atomicWrite(p, content, undefined, accepted))
     return { path: p, mtime, size }
   })
 }

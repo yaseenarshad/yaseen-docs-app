@@ -265,9 +265,11 @@ async function saveDrawingUnlocked(req: unknown, approved: readonly string[]): P
     pending.push(...lifted)
     const stamped = await guardedStamp(file, 'drawing', expectedMtime, (at, prior) => serializeBoard(stampBoardMetaScene(lean, at, withId(prior))), known)
     // Assets first (see the module doc), and only once the conflict guard has passed — a refused
-    // save must leave the vault exactly as it found it. A save with no new picture asks no `realpath` (YAZ-4071 nit).
+    // save must leave the vault exactly as it found it. Only the check right before the rename
+    // (YAZ-4576) comes after them: its `CONFLICT` can leave the new pictures in the store, unnamed
+    // until a later save of the scene names them. A save with no new picture asks no `realpath` (YAZ-4071 nit).
     const persisted = pending.length === 0 ? [] : await landAssets(dir, pending, await landingFolder(dir, picturesFolderOf(known?.block), approved))
-    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
+    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
     return { path: file, mtime, size, persisted, ...given, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
   }
 
@@ -299,10 +301,10 @@ async function saveDrawingUnlocked(req: unknown, approved: readonly string[]): P
     known,
   )
   if (!movedOut) {
-    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
+    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
     return { path: file, mtime, size, persisted: Object.keys(pictures), inside: true, ...given, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
   }
   const persisted = await landAssets(dir, liftEmbedded(inside, elements).lifted)
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
   return { path: file, mtime, size, persisted, movedOut: true, ...given, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
 }

@@ -66,6 +66,6 @@ async function setBoardPicturesUnlocked(req: unknown, approved: readonly string[
   // Assets first, then the file that names them (`drawing.ts`); into the folder the file is about to name.
   if (out) await landAssets(dir, liftEmbedded({ ...scene, files }, elements).lifted, folder ?? null)
   else if (Buffer.byteLength(next, 'utf8') >= PICTURES_INSIDE_MAX_BYTES) throw new BridgeFailure('TOO_LARGE', TOO_BIG_INSIDE, { path: file })
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next))
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next, undefined, snap.mtime))
   return { path: file, mtime, size }
 }

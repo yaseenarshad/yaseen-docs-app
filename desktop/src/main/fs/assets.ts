@@ -175,10 +175,13 @@ async function writeAssetUnlocked(req: AssetWriteRequest & { expectedRevision?: 
   }
   if (create !== undefined && typeof create !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'create' must be a boolean", { path: file })
   await requireDir(dir)
+  // The mtime the checks accept, checked again right before the rename (YAZ-4576).
+  let accepted = expectedMtime
   if (expectedRevision !== undefined) {
     if (typeof expectedRevision !== 'string' || create === true) throw new BridgeFailure('BAD_REQUEST', 'a saved revision requires a replacement')
     const snapshot = await readBoundedRegularFile(file, MAX_FILE_BYTES, `file exceeds ${MAX_FILE_BYTES} bytes`)
     if (revisionOf(snapshot.data, snapshot.mtime) !== expectedRevision) throw new BridgeFailure('CONFLICT', 'asset changed on disk since last read', { path: file, mtime: snapshot.mtime })
+    accepted ??= snapshot.mtime
   }
   if (expectedMtime !== undefined) {
     const st = await stat(file).catch(() => undefined)
@@ -196,6 +199,6 @@ async function writeAssetUnlocked(req: AssetWriteRequest & { expectedRevision?: 
       const st = await stat(file)
       return { path: file, mtime: st.mtimeMs, size: st.size }
     }
-    return { path: file, ...(await atomicWrite(file, body)) }
+    return { path: file, ...(await atomicWrite(file, body, undefined, accepted)) }
   })
 }
