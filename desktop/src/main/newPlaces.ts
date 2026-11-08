@@ -51,6 +51,21 @@ export async function setNewPlaces(root: string, places: unknown): Promise<void>
   })
 }
 
+/** Patch one shortcut against the latest shared state, under the same lock as the UI's replacement. */
+export async function patchNewPlace(root: string, slot: number, folder: string | null): Promise<Array<string | null>> {
+  const r = requireAbsPath(root, 'root')
+  if (!Number.isInteger(slot) || slot < 0 || slot >= NEW_PLACE_SLOTS) throw new BridgeFailure('BAD_REQUEST', 'unknown new-place slot')
+  if (folder !== null && (typeof folder !== 'string' || !path.isAbsolute(folder) || !under(r, folder))) throw new BridgeFailure('BAD_REQUEST', 'a new place must be inside the vault')
+  return chained(r, async () => {
+    const raw = await readRaw(r)
+    if (raw.state === 'bad') throw new BridgeFailure('INVALID_CONFIG', 'new-places.json is malformed; fix or delete it', { path: raw.file })
+    const places = raw.state === 'ok' ? [...raw.places] : EMPTY()
+    places[slot] = folder === null ? null : toRel(r, folder)
+    await writeConfig(r, NEW_PLACES_FILE, { version: 1, places } satisfies NewPlacesConfig)
+    return places.map(p => p === null ? null : toAbs(r, p))
+  })
+}
+
 /** Fires after any change to new-places.json, an own write or an external edit. Returns an unsubscribe. */
 export function subscribeNewPlaces(root: string, listener: (change: { root: string }) => void): () => void {
   const r = requireAbsPath(root, 'root')

@@ -7193,3 +7193,38 @@ describe('App automation restore', () => {
     expect(bridge.file.putBack).not.toHaveBeenCalled()
   })
 })
+
+
+describe('App automation tab actions', () => {
+  it('duplicates, names, reorders and closes an exact tab while preserving the source copy', async () => {
+    const path = '/v/a.md'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path] })
+    const source = el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab!
+    const run = async (target: import('@shared/automationTabs').TabOperation) => { await act(async () => emitAutomation({ id: target.command, action: 'operate', target })) }
+    await run({ command: 'tab.duplicate', tab: source })
+    const copies = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map(tab => tab.dataset.tab!)
+    expect(copies).toHaveLength(2)
+    const copy = copies[1]
+    await run({ command: 'tab.rename', tab: copy, name: 'Agent copy' })
+    await run({ command: 'tab.reorder', tab: copy, index: 0 })
+    expect(el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab).toBe(copy)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabStrip: [{ path, name: 'Agent copy', active: true }, { path }] }))
+    await run({ command: 'tab.close', tab: copy })
+    expect([...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map(tab => tab.dataset.tab)).toEqual([source])
+    expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'tab.close', ok: true, value: expect.objectContaining({ tabs: [{ id: source, path }], rendererApplied: true }) })
+  })
+  it.each(['tab.close', 'tab.open'] as const)('refuses %s when its source flush leaves unsaved content', async command => {
+    const path = '/v/a.md'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path] })
+    const tab = el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab!
+    const flush = vi.fn(async () => {})
+    const off = continuity.registerRenameContinuity(path, { flush, capture: () => ({ frontmatter: '', body: 'unsaved' }), retire: () => {} })
+    try {
+      await act(async () => emitAutomation({ id: 'close-dirty', action: 'operate', target: command === 'tab.close' ? { command, tab } : { command, path, copy: true, background: false } }))
+      expect(flush).toHaveBeenCalledOnce()
+      expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'close-dirty', ok: false, error: expect.objectContaining({ code: 'UNSAVED_CHANGES' }) })
+      expect(el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab).toBe(tab)
+      expect(el.querySelectorAll('.tabbar__tab')).toHaveLength(1)
+    } finally { off() }
+  })
+})

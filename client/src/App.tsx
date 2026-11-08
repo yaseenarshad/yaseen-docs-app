@@ -1,3 +1,5 @@
+import { isTabOperation } from '@shared/automationTabs'
+import { operateTabs } from './automation/tabs'
 import { AutomationFailure } from '@shared/automation'
 import { readLiveDocument, runEditorAction } from './automation/liveDocument'
 import { flushSync } from 'react-dom'
@@ -1303,8 +1305,8 @@ export function App() {
   const [overview, setOverview] = useState<{ phase: 'closed' | 'open' | 'leaving'; from: string | null }>(OVERVIEW_CLOSED)
   const overviewOpen = overview.phase === 'open'
   /** What the doors below read at the moment they are used; they keep their identity under the board. */
-  const now = useRef({ file, active: activeTab, tabs, preview, blank, phase: overview.phase, right: rightPanel.items.length })
-  now.current = { file, active: activeTab, tabs, preview, blank, phase: overview.phase, right: rightPanel.items.length }
+  const now = useRef({ file, active: activeTab, tabs, mounted, preview, blank, phase: overview.phase, right: rightPanel.items.length })
+  now.current = { file, active: activeTab, tabs, mounted, preview, blank, phase: overview.phase, right: rightPanel.items.length }
   // The note's first edit keeps the preview tab that shows it (YAZ-2648 D2). An editor says its path;
   // `keep` takes the tab's id (YAZ-2940 D1). Through `now`, because a new `onUserEdit` identity would rebuild every mounted editor.
   const keepEdited = useCallback((path: string) => {
@@ -1923,6 +1925,18 @@ export function App() {
     }
     return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, tabViews: now.current.tabs.map(tab => ({ tab: tab.id, ...inspectSurface(`view:${tab.id}`) })), sidebar: sidebarLens, sidebarCollapsed }
   }, async target => {
+    if (isTabOperation(target)) {
+      const result = await operateTabs(target, {
+        current: () => ({ tabs: now.current.tabs, active: now.current.active, mounted: now.current.mounted, blank: now.current.blank }),
+        open: openKept, background: openBackground, blank: openBlank, duplicate: duplicateTab, close: closeTab,
+        keep, rename: setTabName, move: moveTab, sleep: sleepTabs, wake: wakeTab, restore: openStored,
+        collapse: value => { if (sidebarCollapsedRef.current !== value) toggleSidebar() },
+      })
+      // Await the same identity door the workspace mirrors, before main flushes its durable store.
+      const strip = storage.getTabStrip()
+      await api.window.setIdentity({ tabs: [...new Set(strip.map(tab => tab.path))], tabStrip: strip, file: storage.getFile(), rightPanel: storage.getRightPanel(), sidebarCollapsed: storage.getSidebarCollapsed() })
+      return result
+    }
     if (target.command === 'editor.action') return runEditorAction(target)
     if (target.command === 'file.restore') {
       if (replaying.current) throw new AutomationFailure('BUSY', 'An organization history action is still running.')

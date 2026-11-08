@@ -1,3 +1,10 @@
+import { setBoardReadOnly } from '../fs/boardReadOnly'
+import { setBoardHoverLinks } from '../fs/boardHoverLinks'
+import { setBoardHoverOutline } from '../fs/boardHoverOutline'
+import { setBoardFoldArrows } from '../fs/boardFoldArrows'
+import { setBoardPictures } from '../fs/boardPictures'
+import { createBoard } from '../fs/createBoard'
+import { dirname } from 'node:path'
 import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
 import { serializeBoard, withPicturesOut } from '@shared/drawingAssets'
 import { rootOfPath, type AppState, type BoardKind } from '@shared/types'
@@ -13,7 +20,25 @@ export async function boardCommand(state: AppState, command: string, args: Recor
   const [resource, action] = command.split('.')
   const kind = resource as BoardKind
   const { roots } = await scopeRoots(state, args)
+  if (action === 'create') {
+    const path = absolute(args.path as string)
+    await resolveTarget(roots, { path: dirname(path) })
+    const root = rootOfPath(roots, path)
+    if (!root || !BOARDS[kind].is(path)) throw new AutomationFailure('INVALID_INPUT', 'Choose a new board path of the requested kind inside the vault.')
+    return { ...await createBoard({ root, path }, state.settings.newBoardPictures, state.settings.newBoardPicturesFolder), diskSaved: true }
+  }
   const path = await resolveTarget(roots, args), root = rootOfPath(roots, path)!
+  if (['setReadOnly', 'setHoverLinks', 'setHoverOutline', 'setFoldArrows', 'setPictures'].includes(action)) {
+    const expectedRevision = args.revision as string
+    const request = { root, path, expectedRevision, expectedMtime: Number(expectedRevision.split(':')[0]), on: args.on, value: args.value, out: args.out, folder: args.folder }
+    if (!BOARDS[kind].is(path)) throw new AutomationFailure('INVALID_INPUT', 'The target is not the requested board kind.')
+    const result = action === 'setReadOnly' ? await setBoardReadOnly(request)
+      : action === 'setHoverLinks' ? await setBoardHoverLinks(request)
+      : action === 'setHoverOutline' ? await setBoardHoverOutline(request)
+      : action === 'setFoldArrows' ? await setBoardFoldArrows(request)
+      : await setBoardPictures(request, state.approvedPictureFolders)
+    return { ...result, diskSaved: true, rendererMerged: false }
+  }
   if (action === 'save') {
     if (args.sourceFile !== undefined && body.length) throw new AutomationFailure('INVALID_INPUT', 'Choose a source file or a body, not both.')
     const content = args.sourceFile === undefined ? body : (await readBoundedRegularFile(absolute(args.sourceFile as string), BOARDS[kind].max, BOARDS[kind].tooLarge)).data

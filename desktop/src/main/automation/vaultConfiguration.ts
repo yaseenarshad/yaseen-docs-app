@@ -1,4 +1,6 @@
 import { AutomationFailure } from '@shared/automation'
+import { stat } from 'node:fs/promises'
+import { getNewPlaces, patchNewPlace } from '../newPlaces'
 import { isRecord } from '@shared/guards'
 import { sanitizeReviewSettings } from '@shared/reviews'
 import { isHeadingStyle, isTextStyle } from '@shared/textFormatting'
@@ -41,6 +43,12 @@ function patchPublic(name: string, current: unknown, changes: Record<string, unk
 }
 export async function vaultConfiguration(state: AppState, command: string, args: Record<string, unknown>) {
   const { roots: [root] } = await scopeRoots(state, { root: args.root as string })
+  if (command === 'newPlace.list') return { root, places: await getNewPlaces(root) }
+  if (command === 'newPlace.set') {
+    const folder = args.folder === null ? null : await resolveTarget([root], { path: args.folder as string })
+    if (folder !== null && !(await stat(folder)).isDirectory()) throw new AutomationFailure('INVALID_INPUT', 'A new place must be a folder.')
+    return { root, places: await patchNewPlace(root, args.slot as number, folder), diskSaved: true }
+  }
   if (command.startsWith('declaration.')) {
     if (command === 'declaration.patch') await patchProperty(root, args.name as string, args.changes as Record<string, unknown>)
     else if (command === 'declaration.remove') await removeProperty(root, args.name as string)

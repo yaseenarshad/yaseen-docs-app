@@ -14,6 +14,25 @@ const scene = JSON.stringify({ type: 'excalidraw', version: 2, source: 'test', e
 const run = (kind: string, action: string, path: string, extra: Record<string, unknown> = {}, body = '') => boardCommand(defaultAppState(), `${kind}.${action}`, { root, path, ...extra }, Buffer.from(body))
 
 describe('board CLI adapters', () => {
+  it.each([['drawing', 'excalidraw'], ['diagram', 'drawio']])('creates a valid %s without replacing an existing board', async (kind, extension) => {
+    const path = join(root, `New.${extension}`)
+    expect(await run(kind, 'create', path)).toMatchObject({ path, diskSaved: true })
+    expect(await run(kind, 'read', path)).toMatchObject({ revision: expect.any(String), source: 'disk' })
+    await expect(run(kind, 'create', path)).rejects.toMatchObject({ code: 'ALREADY_EXISTS' })
+  })
+  it.each([
+    ['setReadOnly', { on: true }], ['setHoverLinks', { on: false }],
+    ['setHoverOutline', { value: false }], ['setFoldArrows', { value: 'off' }], ['setPictures', { out: true }],
+  ])('guards %s against same-mtime outside changes', async (action, option) => {
+    const path = join(root, 'Board.excalidraw')
+    await writeFile(path, scene); await utimes(path, 1_700_000_000, 1_700_000_000)
+    const before = await run('drawing', 'read', path)
+    await writeFile(path, scene.replace('test', 'outside')); await utimes(path, 1_700_000_000, 1_700_000_000)
+    await expect(run('drawing', action, path, { revision: before.revision, ...option })).rejects.toMatchObject({ code: 'CONFLICT' })
+    const latest = await run('drawing', 'read', path)
+    expect(await run('drawing', action, path, { revision: latest.revision, ...option })).toMatchObject({ path, diskSaved: true, rendererMerged: false })
+  })
+
   it.each([['drawing', 'excalidraw', scene], ['diagram', 'drawio', EMPTY_DIAGRAM_XML]])('reads and revision-guards %s saves through the format service', async (kind, extension, content) => {
     const path = join(root, `Board.${extension}`)
     await writeFile(path, content)

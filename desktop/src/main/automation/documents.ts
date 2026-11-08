@@ -1,18 +1,28 @@
 import { addReview, deleteReview, resetReviews, reviewsOf, setInReview, sanitizeReviewSettings, REVIEW_SETTINGS_FILE } from '@shared/reviews'
 import { rootOfPath } from '@shared/types'
+import { dirname } from 'node:path'
+import { createDir } from '../fs/create'
+import { doorOf } from '../vaultIndex/mint'
 import { readConfig } from '../vaultConfig'
 import { AutomationFailure } from '@shared/automation'
 import { addComment, deleteComment, editComment, newCommentId, nowIso, readComments } from '@shared/comments'
 import { setFrontmatterIn } from '@shared/frontmatter'
 import { isMarkdown } from '@shared/fileKind'
 import type { AppState } from '@shared/types'
-import { readSaved, resolveTarget, scopeRoots, type ResourceScope, type TargetInput } from './resources'
+import { absolute, readSaved, resolveTarget, scopeRoots, type ResourceScope, type TargetInput } from './resources'
 import { decodeViewOnlyText, writeFile } from '../fs/file'
 import { revisionOf } from '../fs/revision'
 import { newNote } from '../notes/note'
 
 export async function documentCommand(state: AppState, command: string, args: Record<string, unknown>, body: Buffer, hasContent = body.length > 0): Promise<unknown> {
   const { roots } = await scopeRoots(state, args as ResourceScope)
+  if (command === 'folder.create') {
+    const path = absolute(args.path as string)
+    await resolveTarget(roots, { path: dirname(path) })
+    const root = rootOfPath(roots, path)
+    if (!root || roots.includes(path)) throw new AutomationFailure('OUTSIDE_SCOPE', 'Create a folder inside the selected vault.')
+    return { ...await createDir({ path, ...(args.title === undefined ? {} : { title: args.title as string }) }, await doorOf(root)), diskSaved: true }
+  }
   if (command === 'note.create') {
     const folder = await resolveTarget(roots, { path: args.folder as string })
     return newNote(folder, args.title as string, hasContent ? decodeViewOnlyText(body, folder) : undefined)

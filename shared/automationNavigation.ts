@@ -1,3 +1,4 @@
+import type { TabOperation } from './automationTabs'
 import type { EditorOperation } from './automationEditor'
 import type { ListScope, SidebarTab } from './types'
 
@@ -30,7 +31,7 @@ export interface NavigationTarget {
   reveal?: boolean
 }
 export type InspectTarget = { kind: 'history' } | { kind: 'window' } | { kind: 'document'; tab: string }
-export type FileOperationTarget = EditorOperation
+export type FileOperationTarget = TabOperation | EditorOperation
   | { command: 'file.restore' }
   | { command: 'file.rename'; path: string; newPath: string; kind: 'file' | 'dir' }
   | { command: 'file.retitle'; path: string; title: string; kind: 'file' | 'dir' }

@@ -1,10 +1,12 @@
-import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { AssetResponse, AssetWriteRequest, AssetWriteResponse } from '@shared/types'
 import { DRAWING_EXTENSIONS, IMAGE_EXTENSIONS, MAX_FILE_BYTES } from '@shared/types'
 import { linkTarget } from '../vaultIndex/scan'
 import { atomicWrite, BridgeFailure, byNameCi, createDurable, fsCall, isSkipped, requireAbsPath, requireDir, resolveUnderRoot } from './fsUtils'
 import { requireRequest } from './validate'
+import { readBoundedRegularFile } from './boundedRead'
+import { revisionOf, serializeFile } from './revision'
 
 /**
  * `window.yaseenDocs.readAsset(root, ref)` / `.writeAsset(req)` (Bases 4E, GRO-2139 — Desktop
@@ -92,7 +94,7 @@ export async function resolveAsset(root: string, target: string, from?: string):
   return (await existingUnderRoot(root, target)) ?? findByBasename(root, path.basename(target))
 }
 
-export async function readAsset(root: string, ref: string): Promise<AssetResponse> {
+export async function readAsset(root: string, ref: string, includeRevision = false): Promise<AssetResponse & { revision?: string }> {
   const dir = requireAbsPath(root, 'root')
   if (typeof ref !== 'string') throw new BridgeFailure('BAD_REQUEST', "missing 'ref'")
   const target = linkTarget(ref)
@@ -105,13 +107,19 @@ export async function readAsset(root: string, ref: string): Promise<AssetRespons
   await requireDir(dir)
   const file = await resolveAsset(dir, target)
   if (file === null) throw new BridgeFailure('NOT_FOUND', 'no asset with this name under the root', { path: target })
-  const found = file
+  return readAssetFile(file, includeRevision)
+}
+
+/** Exact paths from automation must not be parsed as wikilinks or fall back to another basename. */
+export async function readAssetFile(file: string, includeRevision = false): Promise<AssetResponse & { revision?: string }> {
+  const found = requireAbsPath(file, 'path'), ext = path.extname(found).slice(1).toLowerCase()
+  const mime = MIME[ext]
+  if (mime === undefined || !READABLE.includes(ext)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only image and drawing files are served as assets', { path: found })
   return fsCall(found, async () => {
-    const st = await stat(found)
-    if (st.size > MAX_FILE_BYTES) throw new BridgeFailure('TOO_LARGE', `file exceeds ${MAX_FILE_BYTES} bytes`, { path: found })
+    const snapshot = await readBoundedRegularFile(found, MAX_FILE_BYTES, `file exceeds ${MAX_FILE_BYTES} bytes`)
     // `mtime` rides along for `writeAsset`'s `expectedMtime` (YAZ-879): the read that produced
     // the bytes is the only honest place to take the guard from.
-    return { path: found, mime, data: (await readFile(found)).toString('base64'), size: st.size, mtime: st.mtimeMs }
+    return { path: found, mime, data: snapshot.data.toString('base64'), size: snapshot.size, mtime: snapshot.mtime, ...(includeRevision ? { revision: revisionOf(snapshot.data, snapshot.mtime) } : {}) }
   })
 }
 
@@ -128,8 +136,16 @@ export async function readAsset(root: string, ref: string): Promise<AssetRespons
  * request crosses IPC from a sandboxed renderer, so its shape is checked like a request body,
  * not trusted from the type.
  */
-export async function writeAsset(req: AssetWriteRequest): Promise<AssetWriteResponse> {
-  const { root, path: rel, content, expectedMtime, create } = requireRequest(req)
+export async function writeAsset(req: AssetWriteRequest & { expectedRevision?: string }): Promise<AssetWriteResponse> {
+  const body = requireRequest(req)
+  const root = requireAbsPath(body.root, 'root')
+  if (typeof body.path !== 'string' || body.path.trim() === '' || body.path.includes('\0')) throw new BridgeFailure('BAD_REQUEST', "missing 'path'")
+  const file = resolveUnderRoot(root, body.path)
+  return serializeFile(file, () => writeAssetUnlocked(req))
+}
+
+async function writeAssetUnlocked(req: AssetWriteRequest & { expectedRevision?: string }): Promise<AssetWriteResponse> {
+  const { root, path: rel, content, expectedMtime, expectedRevision, create } = requireRequest(req)
   const dir = requireAbsPath(root, 'root')
   if (typeof rel !== 'string' || rel.trim() === '' || rel.includes('\0')) throw new BridgeFailure('BAD_REQUEST', "missing 'path'")
   const file = resolveUnderRoot(dir, rel)
@@ -159,6 +175,11 @@ export async function writeAsset(req: AssetWriteRequest): Promise<AssetWriteResp
   }
   if (create !== undefined && typeof create !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'create' must be a boolean", { path: file })
   await requireDir(dir)
+  if (expectedRevision !== undefined) {
+    if (typeof expectedRevision !== 'string' || create === true) throw new BridgeFailure('BAD_REQUEST', 'a saved revision requires a replacement')
+    const snapshot = await readBoundedRegularFile(file, MAX_FILE_BYTES, `file exceeds ${MAX_FILE_BYTES} bytes`)
+    if (revisionOf(snapshot.data, snapshot.mtime) !== expectedRevision) throw new BridgeFailure('CONFLICT', 'asset changed on disk since last read', { path: file, mtime: snapshot.mtime })
+  }
   if (expectedMtime !== undefined) {
     const st = await stat(file).catch(() => undefined)
     if (st !== undefined && st.mtimeMs !== expectedMtime) {

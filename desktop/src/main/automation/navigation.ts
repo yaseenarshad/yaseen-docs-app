@@ -15,6 +15,7 @@ export interface NavigationHost {
   inspect(id: string, target: InspectTarget): Promise<unknown>
   operate(id: string, target: FileOperationTarget): Promise<unknown>
   usedWorkspace(id: string): Promise<void>
+  manage?(id: string, action: 'show' | 'close' | 'rename', name?: string | null): Promise<unknown>
 }
 
 const navigationChains = new WeakMap<NavigationHost, Promise<unknown>>()

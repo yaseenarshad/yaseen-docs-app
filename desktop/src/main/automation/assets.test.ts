@@ -1,0 +1,53 @@
+import { afterEach, beforeEach, expect, it } from 'vitest'
+import { mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { defaultAppState, MAX_FILE_BYTES } from '@shared/types'
+import { assetCommand } from './assets'
+import { readAssetFile, writeAsset } from '../fs/assets'
+
+let root: string
+beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-cli-assets-')) })
+afterEach(async () => { await rm(root, { recursive: true, force: true }) })
+const run = (command: string, path: string, extra: Record<string, unknown> = {}, body = Buffer.alloc(0)) => assetCommand(defaultAppState(), command, { root, path, ...extra }, body)
+
+it('creates binary assets exclusively, reads exact special-character paths, and exports byte-for-byte', async () => {
+  const path = join(root, 'assets/Picture#1.png'), bytes = Buffer.from([0, 255, 42, 128])
+  expect(await run('asset.write', path, { revision: null }, bytes)).toMatchObject({ diskSaved: true, revision: expect.any(String) })
+  expect(await run('asset.read', path)).toMatchObject({ path, data: bytes.toString('base64'), source: 'disk', encoding: 'base64' })
+  await expect(run('asset.write', path, { revision: null }, Buffer.from('replace'))).rejects.toMatchObject({ code: 'ALREADY_EXISTS' })
+  const outputFile = join(root, 'Export.png')
+  await run('asset.export', path, { outputFile })
+  expect((await readFile(outputFile)).equals(bytes)).toBe(true)
+  await expect(run('asset.export', path, { outputFile })).rejects.toMatchObject({ code: 'ALREADY_EXISTS' })
+})
+it('rejects stale same-mtime content and serializes UI and CLI writes at the shared asset boundary', async () => {
+  const path = join(root, 'Image.png')
+  await writeFile(path, 'before'); await utimes(path, 1_700_000_000, 1_700_000_000)
+  const old = await readAssetFile(path, true)
+  await writeFile(path, 'human!'); await utimes(path, 1_700_000_000, 1_700_000_000)
+  await expect(run('asset.write', path, { revision: old.revision }, Buffer.from('agent'))).rejects.toMatchObject({ code: 'CONFLICT' })
+  const current = await readAssetFile(path, true)
+  const results = await Promise.allSettled([
+    writeAsset({ root, path, content: Buffer.from('UI'), expectedMtime: current.mtime }),
+    run('asset.write', path, { revision: current.revision }, Buffer.from('CLI')),
+  ])
+  expect(results.map(result => result.status)).toEqual(['fulfilled', 'rejected'])
+  expect(results[1]).toMatchObject({ reason: { code: 'CONFLICT' } })
+  expect(await readFile(path, 'utf8')).toBe('UI')
+})
+it('retains binary viewer limits separately from the smaller asset limit', async () => {
+  const path = join(root, 'Large.png'), bytes = Buffer.alloc(MAX_FILE_BYTES + 1)
+  await writeFile(path, bytes)
+  await expect(run('asset.read', path)).rejects.toMatchObject({ code: 'TOO_LARGE' })
+  const outputFile = join(root, 'Copy.png')
+  expect(await run('image.export', path, { outputFile })).toMatchObject({ size: bytes.length, diskSaved: true })
+  expect((await readFile(outputFile)).equals(bytes)).toBe(true)
+})
+it('keeps drawing sidecars textual and rejects other file kinds and out-of-scope writes', async () => {
+  const path = join(root, 'Sidecar.excalidraw'), bytes = Buffer.from('{"type":"excalidraw","elements":[]}')
+  await run('asset.write', path, { revision: null }, bytes)
+  expect(await readFile(path)).toEqual(bytes)
+  await expect(run('asset.write', join(root, 'Bad.md'), { revision: null }, bytes)).rejects.toMatchObject({ code: 'UNSUPPORTED_EXTENSION' })
+  await expect(run('asset.write', join(root, '../Outside.png'), { revision: null }, bytes)).rejects.toMatchObject({ code: 'OUTSIDE_SCOPE' })
+})

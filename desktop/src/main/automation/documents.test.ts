@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultAppState } from '@shared/types'
@@ -14,6 +14,13 @@ afterEach(() => rm(root, { recursive: true, force: true }))
 const run = async (command: string, extra: Record<string, unknown> = {}, body = '') => documentCommand(defaultAppState(), command, { root, path, revision: (await readSaved(path)).revision, ...extra }, Buffer.from(body))
 
 describe('revision-checked document commands', () => {
+  it('creates a folder only inside the vault and never replaces an existing one', async () => {
+    const folder = join(root, 'New folder')
+    expect(await run('folder.create', { path: folder })).toEqual({ path: folder, diskSaved: true })
+    expect((await stat(folder)).isDirectory()).toBe(true)
+    await expect(run('folder.create', { path: folder })).rejects.toMatchObject({ code: 'ALREADY_EXISTS' })
+    await expect(run('folder.create', { path: join(root, '../Outside') })).rejects.toMatchObject({ code: 'OUTSIDE_SCOPE' })
+  })
   it('preserves unrelated frontmatter and text and makes an unchanged write a no-op', async () => {
     const before = await readSaved(path)
     expect(await run('file.write', {}, before.content)).toMatchObject({ changed: false, mtime: before.mtime, revision: before.revision, diskSaved: true, rendererMerged: false })

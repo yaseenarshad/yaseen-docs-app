@@ -46,6 +46,19 @@ export function registerAutomationIpc(store: Store, windows: WindowManager): Nav
       if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window closed.')
       return requests.operate(window.webContents, target)
     },
+    manage: async (id, action, name) => {
+      const window = BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && windows.idFor(win.webContents) === id)
+      if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window is not live.')
+      if (action === 'show') { windows.showWindow(id); return { window: id, shown: true } }
+      if (action === 'rename') {
+        if (!windows.setName(id, name ?? null)) throw new AutomationFailure('INVALID_INPUT', 'The window name could not be set.')
+        await store.flush()
+        return { window: id, name: store.get().windows.find(item => item.id === id)?.name ?? null, diskSaved: true }
+      }
+      // Closing the final window also stops this socket. Acknowledge before the normal close/flush path starts.
+      setTimeout(() => windows.closeWindow(id), 100).unref()
+      return { window: id, accepted: true, outcome: 'close-requested' }
+    },
     usedWorkspace: async id => { store.touchVaultSet(id); await store.flush() },
   }
 }

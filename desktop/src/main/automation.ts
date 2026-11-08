@@ -1,3 +1,5 @@
+import { assetCommand } from './automation/assets'
+import { tabsCommand } from './automation/tabs'
 import { appCommand, type AutomationApp } from './automation/app'
 import { connectedCommand } from './automation/connected'
 import { mediaCommand } from './automation/media'
@@ -32,6 +34,15 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
   if (definition.contentRequired && !hasContent) throw new AutomationFailure('INVALID_INPUT', 'This command requires a body, including an empty body when intended.')
   if (!definition.content && hasContent) throw new AutomationFailure('INVALID_INPUT', 'This command accepts no content.')
   switch (request.command) {
+    case 'asset.read': case 'asset.write': case 'asset.export': case 'image.read': case 'image.export': case 'pdf.read': case 'pdf.export':
+      return { writes: ['large-content', ...(definition.effect === 'write' ? ['documents'] : [])], run: () => assetCommand(context.state!(), request.command, request.args, content) }
+    case 'window.show': case 'window.close': case 'window.rename':
+      return { writes: ['navigation', 'configuration'], run: () => {
+        if (!context.navigation?.manage) throw new AutomationFailure('UNAVAILABLE', 'Window management is unavailable in this app instance.')
+        return context.navigation.manage(request.args.window as string, request.command.slice(7) as 'show' | 'close' | 'rename', request.args.name as string | null | undefined)
+      } }
+    case 'tab.open': case 'tab.blank': case 'tab.close': case 'tab.duplicate': case 'tab.keep': case 'tab.sleep': case 'tab.wake': case 'tab.rename': case 'tab.reorder': case 'sidebar.setCollapsed': case 'session.restore':
+      return { writes: ['navigation', 'documents', 'configuration'], run: () => tabsCommand(context.navigation!, context.store!, request.command, request.args) }
     case 'app.diagnostics': case 'app.restart': case 'update.state': case 'update.notes': case 'update.check': case 'update.restart':
       return { writes: definition.effect === 'read' ? [] : ['app-management'], run: () => appCommand(context.app!, request.command) }
     case 'provider.status': case 'provider.set': case 'provider.clear': case 'sync.status': case 'sync.now': case 'sync.setEnabled':
@@ -42,6 +53,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
     case 'media.search': case 'media.import': case 'media.preview': case 'media.library': case 'media.favorite': case 'media.unfavorite': case 'media.recordUse': case 'media.addWord': case 'media.removeWord':
     case 'media.drawingIndex': case 'media.drawing': case 'media.packList': case 'media.packStatus': case 'media.downloadPacks': case 'media.stopPacks': case 'media.checkPacks': case 'media.removePacks':
       return { writes: request.command === 'media.stopPacks' ? [] : definition.effect === 'read' ? ['large-content'] : ['large-content', 'media'], run: () => mediaCommand(context.services!, request.command, request.args, content) }
+    case 'newPlace.list': case 'newPlace.set':
     case 'declaration.list': case 'declaration.patch': case 'declaration.remove': case 'icon.list': case 'icon.set': case 'icon.remove': case 'vaultConfig.read': case 'vaultConfig.patch':
       return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => vaultConfiguration(context.state!(), request.command, request.args) }
     case 'link.resolve': case 'link.outgoing': case 'link.incoming':
@@ -50,6 +62,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
       return { writes: definition.effect === 'read' ? [] : ['documents'], run: () => noteCommand(context.state!(), request.command, request.args, content) }
     case 'editor.select': case 'editor.replace': case 'editor.format': case 'editor.undo': case 'editor.redo': case 'editor.save':
       return { writes: ['navigation', 'documents'], run: () => editorCommand(context.navigation!, request.command, request.args, content) }
+    case 'drawing.create': case 'diagram.create': case 'drawing.setReadOnly': case 'diagram.setReadOnly': case 'drawing.setHoverLinks': case 'drawing.setHoverOutline': case 'drawing.setFoldArrows': case 'drawing.setPictures':
     case 'drawing.read': case 'drawing.save': case 'drawing.export': case 'diagram.read': case 'diagram.save': case 'diagram.export':
       return { writes: ['large-content', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => boardCommand(context.state!(), request.command, request.args, content) }
     case 'file.rename': case 'file.retitle': case 'file.trash': case 'file.restore':
@@ -71,7 +84,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
     case 'window.list': return { writes: [], run: async () => {
       const all = context.navigation!.windows()
       const offset = request.args.offset as number ?? 0, limit = request.args.limit as number ?? 50
-      return { items: all.slice(offset, offset + limit).map(window => ({ id: window.id, roots: window.roots, source: 'live' })), total: all.length, nextOffset: offset + limit < all.length ? offset + limit : null }
+      return { items: all.slice(offset, offset + limit).map(window => ({ id: window.id, roots: window.roots, name: window.name ?? null, source: 'live' })), total: all.length, nextOffset: offset + limit < all.length ? offset + limit : null }
     } }
     case 'workspace.list': return { writes: [], run: async () => {
       const all = context.state!().vaultSets
@@ -85,7 +98,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
     } }
     case 'review.list': case 'review.keep': case 'review.remove': case 'review.reset': case 'review.setEnabled':
     case 'file.write': case 'file.append': case 'property.set': case 'property.remove':
-    case 'comment.list': case 'comment.add': case 'comment.update': case 'comment.remove': case 'note.create':
+    case 'comment.list': case 'comment.add': case 'comment.update': case 'comment.remove': case 'note.create': case 'folder.create':
       return { writes: definition.effect === 'read' ? [] : ['documents'], run: () => documentCommand(context.state!(), request.command, request.args, content, hasContent) }
     default: throw new AutomationFailure('UNKNOWN_COMMAND', 'This command has no adapter.')
   }

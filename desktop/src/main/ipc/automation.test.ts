@@ -8,6 +8,26 @@ import { registerAutomationIpc } from './automation'
 
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: vi.fn() }, ipcMain: { handle: vi.fn() } }))
 afterEach(() => { vi.clearAllMocks(); vi.useRealTimers() })
+it('awaits durable window names, refuses missing windows, and acknowledges close before the normal flush path', async () => {
+  vi.useFakeTimers()
+  const page = { id: 17 }
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, webContents: page }] as never)
+  let saved = false
+  const entry = { id: 'w1', name: 'Before' as string | null }
+  const store = { get: () => ({ windows: [entry] }), flush: vi.fn(async () => { saved = true }) } as unknown as Store
+  const closeWindow = vi.fn(), showWindow = vi.fn()
+  const windows = { idFor: (sender: unknown) => sender === page ? 'w1' : undefined, closeWindow, showWindow, setName: (_id: string, name: string | null) => { entry.name = name; return true } } as unknown as WindowManager
+  const host = registerAutomationIpc(store, windows)
+  expect(await host.manage!('w1', 'rename', 'Agent')).toEqual({ window: 'w1', name: 'Agent', diskSaved: true })
+  expect(saved).toBe(true)
+  expect(await host.manage!('w1', 'show')).toEqual({ window: 'w1', shown: true })
+  expect(showWindow).toHaveBeenCalledWith('w1')
+  await expect(host.manage!('missing', 'close')).rejects.toMatchObject({ code: 'WINDOW_NOT_FOUND' })
+  expect(await host.manage!('w1', 'close')).toEqual({ window: 'w1', accepted: true, outcome: 'close-requested' })
+  expect(closeWindow).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(100)
+  expect(closeWindow).toHaveBeenCalledExactlyOnceWith('w1')
+})
 it('keeps ready across subframe and in-place loading; a new main document must handshake again', async () => {
   vi.useFakeTimers()
   const page = Object.assign(new EventEmitter(), { id: 7, send: vi.fn() })
