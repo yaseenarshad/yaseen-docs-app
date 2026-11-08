@@ -417,6 +417,15 @@ describe('group indent (YAZ-4532 D10)', () => {
     const { el } = mount(withIndent(step))
     expect(q<HTMLElement>(el, '.view-table').style.getPropertyValue('--view-group-indent')).toBe(px)
   })
+  it('a row\'s Name cell carries --depth, the number of group levels above it; an ungrouped row has none', () => {
+    const depths = (el: HTMLElement) => [...new Set([...el.querySelectorAll<HTMLElement>('td.view-table__name')].map(td => td.style.getPropertyValue('--depth')))]
+    expect(depths(mount(GROUP_BASE).el)).toEqual(['1'])
+    unmount()
+    const nested = mount(GROUP_BASE.replace('    groupBy:\n      property: note.status\n', '    groupBy:\n      - property: note.status\n      - property: note.pillar\n')).el
+    expect(depths(nested).sort()).toEqual(['1', '2']) // a direct row of the outer is at 1, a row in an inner group at 2
+    unmount()
+    expect(depths(mount(GROUP_BASE.replace('    groupBy:\n      property: note.status\n', '')).el)).toEqual([''])
+  })
   it('the CSS contract: a header and a row\'s Name cell step in by the indent × --depth, and stay at 8px at depth 0', () => {
     expect(viewsCss).toMatch(/\.view-table__group-cell > \.view-group \{[^}]*left: calc\(8px \+ var\(--view-group-indent, 28px\) \* var\(--depth, 0\)\)/s)
     expect(viewsCss).toMatch(/\.view-table tbody td\.view-table__name \{[^}]*padding-left: calc\(var\(--view-table-cell-pad-x\) \+ var\(--view-group-indent, 28px\) \* var\(--depth, 0\)\)/s)

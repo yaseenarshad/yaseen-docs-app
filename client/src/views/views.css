@@ -1063,6 +1063,11 @@
   padding-left: calc(var(--view-table-cell-pad-x) + var(--view-group-indent, 28px) * var(--depth, 0));
 }
 
+/* The title field of a nested row starts where its title stood. */
+.view-table tbody td.view-table__name > .view-cell-edit[data-editing] .view-cell-edit__input {
+  padding-left: calc(var(--view-table-cell-pad-x) + var(--view-group-indent, 28px) * var(--depth, 0));
+}
+
 .view-group {
   display: flex;
   gap: 8px;
