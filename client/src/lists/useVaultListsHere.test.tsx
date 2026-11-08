@@ -322,6 +322,27 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     expect(onNotice).toHaveBeenLastCalledWith(`Deleted f. Favorites limit reached: ${MAX_FAVORITES} items, so some of its items left favorites.`, 'error', undefined, UNDO)
     expect(bridge.favorites.set).not.toHaveBeenCalledWith('/x/Notes', expect.anything(), 'workspace')
   })
+  it(`YAZ-4503: the favorite toggle on a full Favorites adds nothing and says the limit, as the focus toggle does`, async () => {
+    const full = Array.from({ length: MAX_FAVORITES }, (_, i) => `/a/${i}.md`)
+    const bridge = installBridge({}, { '/a': full })
+    await storage.init()
+    await mount(['/a'])
+    act(() => here().toggleFavorite(['/a/new.md'], false))
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
+    expect(onNotice.mock.calls).toEqual([[`Favorites limit reached: ${MAX_FAVORITES} items`, 'error']])
+  })
+  for (const [kind, max] of [['favorites', MAX_FAVORITES], ['focus', MAX_FOCUS]] as const) {
+    it(`YAZ-4503: the "Vault" check on a full ${kind} list adds nothing and says the limit`, async () => {
+      const full = Array.from({ length: max }, (_, i) => `/x/Notes/top${i}.md`)
+      const bridge = installBridge()
+      bridge[kind].get.mockImplementation(async (r: string, scope: ListScope) => (r === '/x/Notes' && scope === 'vault' ? full : []))
+      await storage.init()
+      await mount(roots, ON)
+      await act(async () => here().setScope(kind, ['/x/Notes/new.md'], 'vault', true))
+      expect(bridge[kind].set).not.toHaveBeenCalled()
+      expect(onNotice.mock.calls).toEqual([[`${kind === 'focus' ? 'Focus' : 'Favorites'} limit reached: ${max} items`, 'error']])
+    })
+  }
   it('YAZ-4477 (M13, M15): Undo of an add and of a remove in Focus and in Favorites; a folder add names the folder and its kind, a new folder says "a new … folder"', async () => {
     const { bridge, list } = folderBridge([folder('f', [])], ['workspace'])
     const favs = new Map<string, string[]>()

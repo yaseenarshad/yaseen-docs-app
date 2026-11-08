@@ -10,7 +10,7 @@ import { api } from '../api'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { storage } from '../lib/storage'
 import { favoriteOrder } from '../lib/treeState'
-import { folderDeletion, folderScopeChange, itemOf, mergeFolders, onTopLevel, sameItem, upsert, type FolderItem } from './focusFolders'
+import { TOP_LEVEL_MAX, folderDeletion, folderScopeChange, itemOf, mergeFolders, onTopLevel, sameItem, upsert, type FolderItem } from './focusFolders'
 
 export const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -27,6 +27,8 @@ type Notice = (message: string, kind?: NoticeKind, type?: NoticeType, action?: N
 type NoticeAction = { label: string; run: () => void; fades?: true }
 /** The "Undo" of a toast (YAZ-4460 demo): it fades with the toast, as a move's Undo does. */
 const undoAction = (run: () => void): NoticeAction => ({ label: 'Undo', run, fades: true })
+/** The toast of a full top level (YAZ-4479), the same for each way in: a toggle, a scope check, a move out, "Keep items" (YAZ-4503). */
+const limitReached = (kind: ListKind) => `${kind === 'focus' ? 'Focus' : 'Favorites'} limit reached: ${TOP_LEVEL_MAX[kind]} items`
 /** Each kind's order ACROSS the vaults of a window, in the store (YAZ-2631 D1; focus: YAZ-2702 Decision 3). */
 const ORDER: Record<ListKind, { get: () => string[]; set: (roots: readonly string[], paths: readonly string[]) => void }> = {
   favorites: { get: () => storage.getFavoritesOrder(), set: (roots, paths) => storage.setFavoritesOrder(roots, paths) },
@@ -202,7 +204,6 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
     /** A copy there, live or not yet merged: by each vault's raw copy too, so a copy written a moment ago (another window's) still counts. */
     const inOther = (id: string): boolean => otherNow.current.some((f) => f.id === id) || Object.values(other.held.current).some((list) => list.some((f) => f.id === id && !f.deleted))
     const loading = () => notice.current(kind === 'focus' ? 'Focus is still loading. Try again.' : 'Favorites are still loading. Try again.', 'error')
-    const limitReached = `${kind === 'focus' ? 'Focus' : 'Favorites'} limit reached:`
     const itemsOf = (paths: readonly string[]) => paths.map((p) => itemOf(p, live.current.roots)).filter((i): i is FolderItem => i !== null)
     /** The folder that holds `path`, an absolute path of the window. */
     const folderOf = (path: string): FocusFolder | undefined => {
@@ -313,7 +314,7 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
       const full = putHere === true || putThere === true
       // Undo (YAZ-4470, 7): the folder again where it showed, with its items; the items it put at the top level leave it.
       notice.current(
-        full ? `Deleted ${f.name}. ${limitReached} ${max} items, so some of its items left ${kind}.` : `Deleted ${f.name} (${kind === 'focus' ? 'focus' : 'favorite'} folder)`,
+        full ? `Deleted ${f.name}. ${limitReached(kind)}, so some of its items left ${kind}.` : `Deleted ${f.name} (${kind === 'focus' ? 'focus' : 'favorite'} folder)`,
         full ? 'error' : kind === 'focus' ? 'focus' : 'favorite',
         full ? undefined : 'lists', // an error always shows (YAZ-3303 D2)
         undoAction(() => {
@@ -328,7 +329,7 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
     /** F5: out of its folder to the top level, last. A full top level keeps it in its folder and says so (YAZ-4479). */
     const moveOut = (path: string): void => {
       const root = rootOfPath(live.current.roots, path)
-      if (!top.current.includes(path) && root !== null && (lists.held.current[root] ?? []).length >= max) return notice.current(`${limitReached} ${max} items. It stays in its folder.`, 'error')
+      if (!top.current.includes(path) && root !== null && (lists.held.current[root] ?? []).length >= max) return notice.current(`${limitReached(kind)}. It stays in its folder.`, 'error')
       strip([path])
       if (!top.current.includes(path)) toggleIn(lists, [path], false, max)
     }
@@ -557,7 +558,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
       const added = before.filter((b) => !b.top && b.folder === null).map((b) => b.p)
       if (quiet) return true
       if (isOn) onNotice(`Removed ${n}from focus`, 'focus', 'lists', undoRemove)
-      else if (full) onNotice(`Focus limit reached: ${MAX_FOCUS} items`, 'error')
+      else if (full) onNotice(limitReached('focus'), 'error')
       else {
         // With two or more vaults the new items go LAST on the tab, "the order added" (YAZ-2619 D1), as
         // before the lists were the vaults': the order across vaults takes them. Favorites writes no order
@@ -602,9 +603,12 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
   const toggleFavorite = useCallback(
     (paths: string[], isOn: boolean, quiet = false) => {
       const before = paths.map((p) => ({ p, folder: favoritesTab.folderOf(p)?.id ?? null, top: favoritePaths.includes(p) }))
-      if (toggleIn(favorites, paths, isOn) === null) return onNotice('Favorites are still loading. Try again.', 'error')
+      const full = toggleIn(favorites, paths, isOn, MAX_FAVORITES)
+      if (full === null) return onNotice('Favorites are still loading. Try again.', 'error')
       if (isOn) favoritesTab.strip(paths) // out of its favorite folder too (YAZ-4460 demo)
       if (quiet) return
+      // A full list keeps its first `MAX_FAVORITES` and says so, as the focus toggle does (YAZ-4503).
+      if (!isOn && full) return onNotice(limitReached('favorites'), 'error')
       const n = paths.length > 1 ? `${paths.length} ` : ''
       // The toast's Undo (YAZ-4460 demo): a remove puts each favorite back in its folder or at the top; an add takes the new ones out.
       const undo = isOn
@@ -653,8 +657,9 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
       const moving = on ? paths.filter((p) => tab.otherFolderOf(p) === undefined) : paths
       if (moving.length === 0) return
       const atTop = moving.filter((p) => (other.held.current[rootOf(p)] ?? []).includes(p))
-      const done = toggleIn(other, moving, !on, kind === 'focus' ? MAX_FOCUS : Infinity)
+      const done = toggleIn(other, moving, !on, TOP_LEVEL_MAX[kind])
       if (done === null) return onNotice(kind === 'focus' ? 'Focus is still loading. Try again.' : 'Favorites are still loading. Try again.', 'error')
+      if (on && done) return onNotice(limitReached(kind), 'error') // as the toggles do (YAZ-4503)
       // Off takes it out of that list's folders too; the Undo puts each folder back as it was.
       const folders = on ? [] : tab.stripOther(moving)
       const where = scope === 'workspace' ? 'workspace' : 'vault'
@@ -665,7 +670,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
         undoAction(() => {
           // An add goes out again; a remove comes back where it was: the top level, or its folder.
           if (on) toggleIn(other, moving, true)
-          else if (atTop.length > 0) toggleIn(other, atTop, false, kind === 'focus' ? MAX_FOCUS : Infinity)
+          else if (atTop.length > 0) toggleIn(other, atTop, false, TOP_LEVEL_MAX[kind])
           for (const f of folders) tab.other.save({ ...f, at: Date.now() })
         }),
       )
