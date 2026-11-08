@@ -593,6 +593,8 @@ async function idsVault(root: unknown): Promise<{ r: string; entry: Entry; lette
  * the same a moment later, and Settings must not show the counts of before meanwhile.
  */
 async function stateAfter(root: string, entry: Entry, pass: Pass): Promise<{ state: IdsState; pass: Pass }> {
+  // A scan the watcher started during the pass read a file before the pass renamed it: it lands first, so it cannot put back a path this takes away (as `indexMoved`).
+  await Promise.all([...entry.inFlight])
   for (const file of pass.gone) entry.records.delete(file)
   for (const file of pass.changed) await scanFile(root, file).then((record) => entry.records.set(file, record), () => undefined)
   if (pass.changed.length > 0 || pass.gone.length > 0) schedulePersist(root, entry.records)
