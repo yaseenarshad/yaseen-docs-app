@@ -32,6 +32,8 @@ export interface ToolbarProps {
   /** Rows in the body after search / limit, and the pre-limit total. */
   shown: number
   total: number
+  /** The subfolder rows among `shown` and `total` (YAZ-4595 S36), while the view shows folder rows; absent = none show. */
+  folders?: { shown: number; total: number }
   /** null while the search box is closed. */
   search: string | null
   onSearch: (next: string | null) => void
@@ -56,11 +58,17 @@ export interface ToolbarProps {
 }
 
 /** `8 items`, or `1 / 8 items` when search or limit reduce what the body shows. */
-export const countLabel = (shown: number, total: number): string =>
-  shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
+export const countLabel = (shown: number, total: number, noun = 'item'): string =>
+  shown === total ? `${total} ${noun}${total === 1 ? '' : 's'}` : `${shown} / ${total} ${noun}s`
+
+/** The toolbar count: with folder rows (YAZ-4595 S36) the notes as items, then the folders, as `3 items · 2 folders`. */
+export const rowsLabel = (shown: number, total: number, folders?: { shown: number; total: number }): string =>
+  folders === undefined
+    ? countLabel(shown, total)
+    : `${countLabel(shown - folders.shown, total - folders.total)} · ${countLabel(folders.shown, folders.total, 'folder')}`
 
 /** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
-export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   /** "Edit option order…" (YAZ-3940): the column the Sort popover shows its column editor on, or null for the menu. */
   const [editing, setEditing] = useState<string | null>(null)
@@ -197,7 +205,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
         </div>
         )}
         <span className="view-toolbar__count" aria-live="polite">
-          {countLabel(shown, total)}
+          {rowsLabel(shown, total, folders)}
         </span>
       </div>
     </div>

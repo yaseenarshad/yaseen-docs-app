@@ -1,6 +1,6 @@
 import { type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { openTarget } from '../../lib/openGesture'
-import { type DayKey, bucketByDay, addDays, monthStart, monthWeeks, timeFirst, timeOf, todayKey, weekDays, weekLabel } from '../calendar'
+import { type DayKey, bucketByDay, addDays, dayLabel, dayOf, monthStart, monthWeeks, timeFirst, timeOf, todayKey, weekDays, weekendAfter, weekendOf, weekLabel, withoutWeekends } from '../calendar'
 import { type Row, propertyLabel } from '../engine'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
@@ -42,11 +42,15 @@ export interface CalendarViewProps {
   wrap?: boolean
   /** Settings › Folder pages › Week starts on Sunday (YAZ-4585); else Monday (D11). */
   sundayFirst?: boolean
+  /** "Hide weekends" (YAZ-4595 S33): Monday to Friday only; a weekend note shows on the Friday before, marked Sat or Sun. */
+  hideWeekends?: boolean
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const SUNDAY_FIRST = ['Sun', ...WEEKDAYS.slice(0, 6)]
+/** The column heads while weekends hide (YAZ-4595 S33). */
+const WORKDAYS = WEEKDAYS.filter((d) => d !== 'Sat' && d !== 'Sun')
 /** Cards a day shows before "+N more" (D11). */
 const DAY_CARDS = 3
 /** Cards the "No date" tray shows before "+N more" (YAZ-4544): a folder with no dates yet renders 20, not 1000, on each drag over. */
@@ -70,7 +74,7 @@ const SCALES = [
  * order; ‹ › step a week. Both scales show the month or the week that holds `anchor`, so the switch
  * keeps the place.
  */
-export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, scale, onScale, wrap = false, sundayFirst = false }: CalendarViewProps) {
+export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
@@ -81,13 +85,17 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   /** The card's right-click menu (YAZ-4547 D24), as the board's. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   const { days, undated } = useMemo(() => bucketByDay(rows, dateKey), [rows, dateKey])
-  const weeks = useMemo(() => (scale === 'week' ? [weekDays(anchor, sundayFirst)] : monthWeeks(month.y, month.m, sundayFirst)), [scale, anchor, month.y, month.m, sundayFirst])
+  const weeks = useMemo(() => {
+    const all = scale === 'week' ? [weekDays(anchor, sundayFirst)] : monthWeeks(month.y, month.m, sundayFirst)
+    return hideWeekends ? all.map(withoutWeekends) : all
+  }, [scale, anchor, month.y, month.m, sundayFirst, hideWeekends])
   // Each day on screen in its order, the timed cards first in time order (D22), in Month and in Week alike, so the
-  // note window steps exactly as the days show. Once per rows or page change, not on each dragover.
-  const dayCards = useMemo(
-    () => new Map(weeks.flat().map((day) => [day, dateKey === null ? [] : timeFirst(days.get(day) ?? [], dateKey)])),
-    [weeks, days, dateKey],
-  )
+  // note window steps exactly as the days show. While weekends hide (YAZ-4595 S33) a Friday also takes its Saturday's
+  // cards, then its Sunday's, each day in that order. Once per rows or page change, not on each dragover.
+  const dayCards = useMemo(() => {
+    const of = (day: DayKey) => (dateKey === null ? [] : timeFirst(days.get(day) ?? [], dateKey))
+    return new Map(weeks.flat().map((day) => [day, hideWeekends ? [...of(day), ...weekendAfter(day).flatMap(of)] : of(day)]))
+  }, [weeks, days, dateKey, hideWeekends])
   // The note window (YAZ-4547 D24): day by day across the days on screen, the timed cards first within a day (every
   // card, also those behind "+N more"), then "No date". Once per rows or page change, not on each dragover.
   const windowOrder = useMemo(
@@ -158,6 +166,9 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
     const path = row.record.path
     const locked = readOnly.has(path)
     const time = from === null ? null : timeOf(row.record.properties[dateKey])
+    // A weekend note on its Friday (YAZ-4595 S33) says its day. A drop on that Friday is a drop on its own day: no write.
+    const real = from === null ? null : dayOf(row.record.properties[dateKey])
+    const weekend = real === null || real === from ? null : weekendOf(real)
     return (
       <li
         key={path}
@@ -185,6 +196,11 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
         }}
       >
         {time !== null && <span className="view-cal__time">{time}</span>}
+        {weekend !== null && (
+          <span className="view-cal__weekend" title={dayLabel(real!)}>
+            {weekend}
+          </span>
+        )}
         {/* Clip shows the full title on a hover (D23); a wrapped title is all there. */}
         <span className="view-cal__card-title" title={wrap ? undefined : row.record.title}>
           {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too. */}
@@ -221,9 +237,10 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
         </div>
         <h3 className="view-cal__month">{title}</h3>
       </div>
-      <div className={`view-cal__grid${isWeek ? ' view-cal__grid--week' : ''}`} role="grid" aria-label={title}>
+      <div className={`view-cal__grid${isWeek ? ' view-cal__grid--week' : ''}${hideWeekends ? ' view-cal__grid--weekdays' : ''}`} role="grid" aria-label={title}>
         <div className="view-cal__week" role="row">
-          {(sundayFirst ? SUNDAY_FIRST : WEEKDAYS).map((d) => (
+          {/* Hide weekends drops Sat and Sun whichever day starts the week (YAZ-4595 S33, YAZ-4585). */}
+          {(hideWeekends ? WORKDAYS : sundayFirst ? SUNDAY_FIRST : WEEKDAYS).map((d) => (
             <span key={d} className="view-cal__weekday" role="columnheader">
               {d}
             </span>

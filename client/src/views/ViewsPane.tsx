@@ -15,7 +15,7 @@ import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CalendarView } from './view/CalendarView'
-import { type DayKey, calendarDateKey, dateColumns, dayLabel, movedDate } from './calendar'
+import { type DayKey, calendarDateKey, dateColumns, dayLabel, hideWeekendsDefault, hidesWeekends, movedDate } from './calendar'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
 import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
@@ -30,7 +30,7 @@ import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
 import { FolderPages, type FolderPagesValue } from './view/GroupHeader'
-import { directlyIn, rowPage, rowsByFolder } from '../links/shortcuts'
+import { directlyIn, isFolderRow, rowPage, rowsByFolder } from '../links/shortcuts'
 import { onPageTabAsk, takePageTab } from './pageTabRequest'
 import { pageViewIndex } from './pageView'
 import { ViewDefaults, chooseOwn, withDefaults } from './viewDefaults'
@@ -368,7 +368,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const keepEmpty = (view.type === 'board' || view.type === 'table') && view.showEmptyColumns === true
   const needle = (search ?? '').trim().toLowerCase()
   // Search reads what the eye reads (YAZ-2293 D8): a row is found by the TITLE of a note it links to by id.
-  const matches = (r: Row) => Object.values(r.values).some((v) => render(v, resolve).toLowerCase().includes(needle))
+  // A folder row (YAZ-4595 S36) is found by its title too: its `file.name` is `.folder.md`, and a view may hide Name.
+  const matches = (r: Row) =>
+    (isFolderRow(r.record) && r.record.title.toLowerCase().includes(needle)) || Object.values(r.values).some((v) => render(v, resolve).toLowerCase().includes(needle))
   const rows = needle ? result.rows.filter(matches) : result.rows
   // Search filters WITHIN each group; a group with no matching rows disappears (4C, GRO-2137). A
   // nested group (YAZ-745, every level since YAZ-4531) narrows each branch the same way — emptied
@@ -586,6 +588,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         filterErrors={filterErrors}
         shown={rows.length}
         total={result.total}
+        folders={withFolders ? { shown: rows.filter((r) => isFolderRow(r.record)).length, total: result.folders } : undefined}
         search={search}
         onSearch={setSearch}
         onUpdate={update}
@@ -699,6 +702,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           }
           sundayFirst={defaults.weekStartsOn === 'sunday'}
           wrap={view.cardTitles === 'wrap'}
+          hideWeekends={hidesWeekends(view, hideWeekendsDefault(storage.getSettings()))}
         />
       ) : view.type === 'cards' ? (
         <CardsView

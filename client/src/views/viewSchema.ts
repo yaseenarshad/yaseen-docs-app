@@ -66,6 +66,8 @@ export interface ViewDef {
   calendarScale?: 'month' | 'week'
   /** A calendar's card titles (YAZ-4558 D23): `wrap` = the full title on more lines. Absent = clip, one line with "…". */
   cardTitles?: 'clip' | 'wrap'
+  /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. Absent = the Settings › Folder pages default. */
+  hideWeekends?: boolean
   /**
    * "Subfolders" (YAZ-4579 D30, replacing YAZ-4564 D25's boolean): `rows` = a row per direct subfolder plus the
    * folder's own notes and shortcuts; `both` = the subfolder rows plus every note below; `hide` = the own notes

@@ -59,6 +59,8 @@ export interface ViewResult {
   errors: EngineError[]
   /** Rows passing the filters, before `limit`. */
   total: number
+  /** The subfolder rows among `total` (YAZ-4595 S36): the toolbar's "N folders". */
+  folders: number
 }
 
 export interface RunOptions {
@@ -564,6 +566,8 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
 
   // limit
   const total = entries.length
+  let folders = 0
+  for (const e of entries) if (isFolderEntry(e)) folders++
   const limit = typeof view.limit === 'number' && view.limit > 0 ? Math.floor(view.limit) : null
   const kept = limit === null ? entries : entries.slice(0, limit)
 
@@ -678,5 +682,5 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     for (let i = 0; i < levels.length; i++) if (fanned[i]) for (const g of built[i]) g.fannedOut = true
   }
 
-  return { rows: kept.map(e => e.row), groups, summaries: summaryOf(kept), errors, total }
+  return { rows: kept.map(e => e.row), groups, summaries: summaryOf(kept), errors, total, folders }
 }

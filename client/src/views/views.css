@@ -1773,6 +1773,11 @@
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
+/* Hide weekends (YAZ-4595 S33): Monday to Friday. */
+.view-cal__grid--weekdays .view-cal__week {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .view-cal__week + .view-cal__week {
   border-top: 1px solid var(--border);
 }
@@ -1928,6 +1933,17 @@
   font-size: 11px;
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* A weekend card on its Friday (YAZ-4595 S33): a small "Sat" or "Sun" before the title. */
+.view-cal__weekend {
+  flex: none;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--fg-muted);
+  background: var(--bg-side);
+  border-radius: 3px;
 }
 
 .view-cal__more {
