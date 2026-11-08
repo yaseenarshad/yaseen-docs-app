@@ -33,7 +33,7 @@ export interface NavigationTarget {
 export type InspectTarget = { kind: 'history' } | { kind: 'window' } | { kind: 'document'; tab: string }
 export type FileOperationTarget = TabOperation | EditorOperation
   | { command: 'file.copy'; paths: string[]; targetDir: string; external: boolean }
-  | { command: 'file.restore' }
+  | { command: 'file.restore' } | { command: 'file.undo' } | { command: 'file.redo' }
   | { command: 'file.rename'; path: string; newPath: string; kind: 'file' | 'dir' }
   | { command: 'file.retitle'; path: string; title: string; kind: 'file' | 'dir' }
   | { command: 'file.trash'; paths: string[] }

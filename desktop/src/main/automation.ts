@@ -89,7 +89,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
     case 'drawing.read': case 'drawing.save': case 'drawing.export': case 'diagram.read': case 'diagram.save': case 'diagram.export':
       return { writes: ['large-content', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => boardCommand(context.state!(), request.command, request.args, content, record) }
     case 'file.copy': case 'file.importCopy':
-    case 'file.rename': case 'file.retitle': case 'file.trash': case 'file.restore':
+    case 'file.rename': case 'file.retitle': case 'file.trash': case 'file.restore': case 'file.undo': case 'file.redo':
       return { writes: ['documents', 'navigation'], run: () => fileOperation(context.navigation!, request.command, request.args) }
     case 'group.list': case 'group.create': case 'group.rename': case 'group.remove': case 'group.position':
     case 'group.addItems': case 'group.removeItems': case 'group.reorderItems':

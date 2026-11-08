@@ -3739,6 +3739,40 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'rename-1', ok: true, value: expect.objectContaining({ move: expect.objectContaining({ newPath: '/v/B2.md' }), links: { updated: 1, skipped: 0 }, diskSaved: true }) })
   })
 
+  it('automation Undo and Redo replay a CLI rename through the window history the GUI uses', async () => {
+    const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), identity(), files, feed)
+    const reply = (id: string) => (bridge.automation.reply.mock.calls as unknown as [{ id: string }][]).map(([r]) => r).find((r) => r.id === id)
+    await act(async () => emitAutomation({ id: 'undo-empty', action: 'operate', target: { command: 'file.undo' } }))
+    expect(reply('undo-empty')).toMatchObject({ ok: false, error: { code: 'NOTHING_TO_UNDO' } })
+    await act(async () => emitAutomation({ id: 'rename-u', action: 'operate', target: { command: 'file.rename', path: '/v/B.md', newPath: '/v/B2.md', kind: 'file' } }))
+    await act(async () => emitAutomation({ id: 'undo-1', action: 'operate', target: { command: 'file.undo' } }))
+    expect(bridge.file.rename).toHaveBeenLastCalledWith({ oldPath: '/v/B2.md', newPath: '/v/B.md' })
+    expect(reply('undo-1')).toEqual({ id: 'undo-1', ok: true, value: expect.objectContaining({ step: 'rename', done: 1, failed: [], history: { undo: 0, redo: 1 }, diskSaved: true }) })
+    // The GUI's toast now offers the Redo of the CLI's Undo.
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Redo')
+    await act(async () => emitAutomation({ id: 'redo-1', action: 'operate', target: { command: 'file.redo' } }))
+    expect(bridge.file.rename).toHaveBeenLastCalledWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
+    expect(reply('redo-1')).toMatchObject({ ok: true, value: { step: 'rename', done: 1, history: { undo: 1, redo: 0 } } })
+    await act(async () => emitAutomation({ id: 'redo-empty', action: 'operate', target: { command: 'file.redo' } }))
+    expect(reply('redo-empty')).toMatchObject({ ok: false, error: { code: 'NOTHING_TO_REDO' } })
+    // The GUI's own Undo takes the same step back: one history for both doors.
+    await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+    expect(bridge.file.rename).toHaveBeenLastCalledWith({ oldPath: '/v/B2.md', newPath: '/v/B.md' })
+    await act(async () => emitAutomation({ id: 'history-u', action: 'inspect', target: { kind: 'history' } }))
+    expect(reply('history-u')).toMatchObject({ ok: true, value: { undo: [], redo: [expect.objectContaining({ step: 'rename', path: '/v/B.md' })] } })
+  })
+
+  it('automation Undo reports a step that changed nothing and keeps the GUI history rules', async () => {
+    const { bridge, emitAutomation } = await mount(defaultAppState(), identity(), {}, feed)
+    const reply = (id: string) => (bridge.automation.reply.mock.calls as unknown as [{ id: string }][]).map(([r]) => r).find((r) => r.id === id)
+    bridge.file.delete.mockImplementation(async ({ path }) => ({ path, kind: 'file', trashed: `/scratch-trash/${path.split('/').at(-1)}` }))
+    await act(async () => emitAutomation({ id: 'trash-u', action: 'operate', target: { command: 'file.trash', paths: ['/v/A.md'] } }))
+    bridge.file.putBack.mockRejectedValueOnce(new Error('disk refused'))
+    await act(async () => emitAutomation({ id: 'undo-fail', action: 'operate', target: { command: 'file.undo' } }))
+    expect(reply('undo-fail')).toMatchObject({ ok: false, error: { code: 'HISTORY_STEP_FAILED', details: { step: 'delete', done: 0, failed: [expect.any(String)], history: { undo: 1, redo: 0 } } } })
+  })
+
   it('automation rename reports a partial result when a referencing note cannot be read', async () => {
     const { bridge, emitAutomation } = await mount(defaultAppState(), identity(), {}, feed)
     await act(async () => emitAutomation({ id: 'rename-2', action: 'operate', target: { command: 'file.rename', path: '/v/B.md', newPath: '/v/B2.md', kind: 'file' } }))
