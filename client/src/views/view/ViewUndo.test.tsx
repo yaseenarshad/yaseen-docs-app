@@ -178,7 +178,7 @@ describe('the Undo toast for view changes (YAZ-4594 S29)', () => {
     expect(onNotice).toHaveBeenCalledTimes(1)
   })
 
-  it('a later Undo writes over the def that is current then: the settings exactly as they were before the hide', () => {
+  it('a later Undo inverts only its own gesture on the def that is current then (YAZ-4637 M3): the column is back, the later unfreeze stays', () => {
     const { el, onNotice, onChange, yaml, def } = mount()
     rightClick(header(el, 'Priority'))
     click(item(el, 'Hide column'))
@@ -189,7 +189,22 @@ describe('the Undo toast for view changes (YAZ-4594 S29)', () => {
     const writes = onChange.mock.calls.length
     act(() => action!.run())
     expect(onChange).toHaveBeenCalledTimes(writes + 1)
-    expect(def()).toEqual(parseViews(TABLE).def)
+    const { frozenColumns: _gone, ...unfrozen } = parseViews(TABLE).def.views[0]
+    expect(def()).toEqual({ ...parseViews(TABLE).def, views: [unfrozen, parseViews(TABLE).def.views[1]] })
+  })
+
+  it('Undo of a view delete after a view was added (M3): the deleted view is back in its place, and the new view stays', () => {
+    const { el, onNotice, def } = mount()
+    rightClick(q(el, '[role="tab"]').closest('.view-tab')!)
+    click(item(el, 'Delete'))
+    click([...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete')!)
+    click(q(el, '[aria-label="Add view"]'))
+    click([...el.querySelectorAll<HTMLElement>('.view-popover--menu [role="menuitem"]')].find((b) => b.textContent === 'Cards')!)
+    expect(def().views.map((v) => v.name)).toEqual(['B', 'Cards'])
+    const [, , , action] = onNotice.mock.calls[0] as [string, string, string, Notice['action']]
+    act(() => action!.run())
+    expect(def().views.map((v) => v.name)).toEqual(['T', 'B', 'Cards'])
+    expect(def().views[0]).toEqual(parseViews(TABLE).def.views[0])
   })
 })
 
@@ -247,8 +262,13 @@ describe('the Undo toast also covers rename column, change column type and delet
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('priority', { kind: 'number' }, undefined)
     const [message, , , action] = onNotice.mock.lastCall as [string, string, string, Notice['action']]
     expect(message).toBe('Changed Priority to Number')
+    // A later view change (M3): the Undo names no views, so the host writes the def that is current then, not the one the panel saw.
+    press(q(el, '.ctx-menu'), 'Escape')
+    rightClick(header(el, 'Status'))
+    click(item(el, 'Unfreeze columns'))
+    expect(def().views[0].frozenColumns).toBeUndefined()
     act(() => action!.run())
-    expect(setColumns).toHaveBeenCalledExactlyOnceWith({}, def().views)
+    expect(setColumns).toHaveBeenCalledExactlyOnceWith({})
   })
 
   it('a refused declaration write says nothing: the inline error is the report', async () => {

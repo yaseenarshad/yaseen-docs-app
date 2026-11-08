@@ -100,7 +100,7 @@ export interface TableViewProps {
   /** `FolderHost.setColumn`: the header menu's "Edit column…" writes one declaration through it (YAZ-4533). */
   setColumn: FolderHost['setColumn']
   /** `FolderHost.setColumns` (YAZ-1513): the header menu's "Add column to the right…" declares through it. */
-  declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
+  declareColumn: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
   /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. Absent → the menu has no such item. */
   deleteColumn?: (key: string) => Promise<void>
   /** `FolderHost.valueCount`: the number that confirm states. */

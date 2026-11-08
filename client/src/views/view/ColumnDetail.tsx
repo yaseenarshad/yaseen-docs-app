@@ -118,7 +118,8 @@ export function columnTypeLabel(key: string, records: readonly IndexRecord[], pr
  * Undo of a first declaration (the table hands its `declareColumn`).
  */
 export type ColumnDoors = Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount' | 'onNotice'> & {
-  setColumns?: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
+  /** As `FolderHost.setColumns`: no `views` means the host's live def (YAZ-4637 M3). */
+  setColumns?: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
 }
 
 export interface ColumnDetailProps {
@@ -208,8 +209,9 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
       const doors = latest.current
       if (before !== undefined) void doors.setColumn(name, before, written).catch(() => undefined)
       else {
+        // No views (YAZ-4637 M3): the host writes its live def, not the one this panel saw — a later view change stays.
         const { [name]: _gone, ...rest } = doors.settings.columns
-        doors.setColumns?.(rest, def.views)
+        doors.setColumns?.(rest)
       }
     }
     folder.onNotice?.(`Changed ${propertyLabel(def, key)} to ${PROPERTY_LABELS[kind]}`, 'info', 'undo', { label: 'Undo', run: restore, fades: true })

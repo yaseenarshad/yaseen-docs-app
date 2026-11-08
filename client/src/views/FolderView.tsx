@@ -363,6 +363,7 @@ export function FolderView({
   const aheadRef = useRef<Record<string, ColumnDecl> | null>(null)
   /** This render's host (YAZ-4591): a rename's Undo runs later, and writes through the host that is current then. */
   const latestHost = useRef<FolderHost | null>(null)
+  const latestParsed = useRef<ParsedViews>(null as unknown as ParsedViews)
   const setAhead = (next: Record<string, ColumnDecl> | null): void => {
     aheadRef.current = next
     setAheadState(next)
@@ -427,6 +428,8 @@ export function FolderView({
 
   const resolveLink = feed.resolve
   if (resolveLink === null || settings === null || liveSettings === null || parsed === null) return null
+  /** This render's def, for an Undo that runs later (YAZ-4637 M3). */
+  latestParsed.current = parsed
 
   /** One of the folder's own writes (D35): the save chip says "Saving…" while any is in flight, then "Saved" or "Save failed". */
   const track = <T,>(write: Promise<T>): Promise<T> => {
@@ -645,6 +648,8 @@ export function FolderView({
           writeSettings: commitSettings,
           // The settings half offers Undo (YAZ-4608 C6): one settings write puts the column back; a refusal shows the banner as any settings write does.
           notice: (message, restore) => onNotice?.(message, 'info', 'undo', { label: 'Undo', run: () => void restore().catch(() => undefined), fades: true }),
+          // The Undo runs later (YAZ-4637 M3): it inverts the delete on the live declarations and def current then.
+          current: () => ({ columns: latestHost.current?.settings.columns ?? liveSettings.columns, def: latestParsed.current.def }),
         }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     }),
     valueCount: (key: string) => notesHolding(feed.records, id, key).length + notesHolding(feed.folders, id, key).length,

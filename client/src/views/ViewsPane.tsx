@@ -10,7 +10,7 @@ import { storage } from '../lib/storage'
 import { type ViewSet, type ViewDef, type ParsedViews, hidesSubfolderNotes, parseViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
 import { type Group, type Row, propertyKeys, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
-import type { ColumnDecl, FolderSettings } from './folderSettings'
+import { type ColumnDecl, type FolderSettings, rebaseSettings } from './folderSettings'
 import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
@@ -358,8 +358,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   }
   /**
    * A gesture that takes something away says so with `undo` (S29): a toast with Undo (`fades`, the S6 pattern), which
-   * puts back the whole def as it stood before — ONE settings write — then runs `after`. A gesture that changed
-   * nothing (No fill on a cell with none) says nothing.
+   * inverts THAT gesture alone on the def current then (YAZ-4637 M3) — its change from `next` back to `before`, laid
+   * on by the one rebase (`rebaseSettings`), so a later sort, another window's change or a view added since stays —
+   * ONE settings write — then runs `after`. A gesture that changed nothing (No fill on a cell with none) says nothing.
    */
   const update = (mutate: (def: ViewSet) => void, undo?: string, after?: () => void) => {
     const before = latest.current.parsed.def
@@ -367,8 +368,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     if (undo === undefined || JSON.stringify(next) === JSON.stringify(before)) return
     const restore = () => {
       write((d) => {
-        for (const k of Object.keys(d)) if (!Object.hasOwn(before, k)) delete d[k]
-        Object.assign(d, structuredClone(before))
+        const put = structuredClone(rebaseSettings(next, before, d)) as ViewSet
+        for (const k of Object.keys(d)) if (!Object.hasOwn(put, k)) delete d[k]
+        Object.assign(d, put)
       })
       after?.()
     }

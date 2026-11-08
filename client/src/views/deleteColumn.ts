@@ -27,7 +27,7 @@ import { isRecord } from '@shared/guards'
 import type { IndexRecord } from '@shared/types'
 import { reservedKeys } from '../links/reservedKeys'
 import { propertyLabel } from './engine'
-import type { ColumnDecl } from './folderSettings'
+import { type ColumnDecl, rebaseSettings } from './folderSettings'
 import { withOrder } from './view/columnOrder'
 import { frozenColumnCount } from './view/frozenColumns'
 import { canonicalKey } from './view/keys'
@@ -172,9 +172,11 @@ export interface DeleteColumnHost {
   writeSettings: (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>
   /**
    * The S29 Undo toast for the settings half (YAZ-4608 C6): `restore` writes the declaration, the views' references
-   * and the label back as they stood, in ONE settings write. The notes' values stay stripped — the confirm said so.
+   * and the label back, in ONE settings write. The notes' values stay stripped — the confirm said so.
    */
   notice?: (message: string, restore: () => Promise<void>) => void
+  /** The declarations and def CURRENT when the Undo runs (YAZ-4637 M3): the restore inverts only the delete on them. Absent: this host's. */
+  current?: () => Pick<DeleteColumnHost, 'columns' | 'def'>
 }
 
 /**
@@ -190,8 +192,21 @@ export async function deleteColumn(key: string, host: DeleteColumnHost): Promise
   const before = { columns: { ...host.columns }, views: structuredClone(host.def.views), properties: structuredClone(host.def.properties) }
   const columns: Record<string, ColumnDecl> = { ...host.columns }
   delete columns[bare]
-  await host.writeSettings(columns, pruneColumnFromViews(host.def.views, key), pruneColumnLabel(host.def.properties, key))
-  host.notice?.(`Deleted column ${propertyLabel(host.def, key)}`, () => host.writeSettings(before.columns, before.views, before.properties))
+  const pruned = { views: pruneColumnFromViews(host.def.views, key), properties: pruneColumnLabel(host.def.properties, key) }
+  await host.writeSettings(columns, pruned.views, pruned.properties)
+  // The Undo inverts the delete alone (YAZ-4637 M3): the declaration back among the declarations current then, and the
+  // views' references and the label laid back onto the def current then by the one rebase — a later sort or view stays.
+  host.notice?.(`Deleted column ${propertyLabel(host.def, key)}`, () => {
+    const now = (host.current ?? (() => host))()
+    const declaration = before.columns[bare]
+    const { [bare]: _gone, ...others } = now.columns
+    const labels = rebaseSettings(pruned.properties ?? {}, before.properties ?? {}, now.def.properties ?? {}) as Record<string, { displayName?: string }>
+    return host.writeSettings(
+      declaration === undefined ? others : { ...others, [bare]: declaration },
+      rebaseSettings(pruned.views, before.views, now.def.views) as ViewDef[],
+      Object.keys(labels).length === 0 ? undefined : labels,
+    )
+  })
 
   const { folderId } = host
   if (folderId === undefined) return // no id, no values

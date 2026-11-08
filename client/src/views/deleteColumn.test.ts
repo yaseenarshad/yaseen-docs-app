@@ -205,6 +205,30 @@ describe('deleteColumn', () => {
     expect(disk.get(A)).toBe(`---\n# a comment\ntitle: A\nin:\n  ${FOLDER_ID}:\n    owner: "[[Sam]]"\n---\n\nbody a\n`)
   })
 
+  it('its restore inverts only the delete, on the declarations and def current then (YAZ-4637 M3): a later column, sort and view stay', async () => {
+    const notice = vi.fn<NonNullable<DeleteColumnHost['notice']>>()
+    const h = host({ notice })
+    const columnsBefore = structuredClone(h.columns)
+    await deleteColumn('note.status', h)
+    const [prunedColumns, prunedViews, prunedLabels] = vi.mocked(h.writeSettings).mock.calls[0]
+    // Since the delete: another column declared, a row height on T, a label, and a new view.
+    const later = {
+      columns: { ...prunedColumns, due: { kind: 'date' as const } },
+      def: {
+        views: [{ ...prunedViews[0], rowHeight: 'tall' }, prunedViews[1], prunedViews[2], { type: 'cards', name: 'New' }],
+        properties: { ...prunedLabels, 'note.owner': { displayName: 'Owner' } },
+      } as ViewSet,
+    }
+    h.current = () => later
+    await notice.mock.calls[0][1]()
+    const [columns, views, labels] = vi.mocked(h.writeSettings).mock.calls[1]
+    expect(columns).toEqual({ ...later.columns, status: columnsBefore.status })
+    expect(views.map((v) => v.name)).toEqual(['T', 'B', 'O', 'New'])
+    expect(views[0]).toEqual({ ...TABLE, rowHeight: 'tall' }) // its references back, the later row height kept
+    expect(views[1]).toEqual(BOARD)
+    expect(labels).toEqual({ status: { displayName: 'Stage' }, 'note.owner': { displayName: 'Owner' } })
+  })
+
   it('a refused settings write says nothing: no toast for a delete that did not happen (C6)', async () => {
     const notice = vi.fn()
     await expect(deleteColumn('note.status', host({ notice, writeSettings: vi.fn(async () => { throw new Error('locked') }) }))).rejects.toThrow('locked')

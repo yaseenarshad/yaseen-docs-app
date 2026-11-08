@@ -44,7 +44,7 @@ export interface TableHeaderMenuProps {
   folder: ColumnDoors
   onUpdate: Mutate
   /** `FolderHost.setColumns`: declare on the folder AND show, one write. */
-  declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
+  declareColumn: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
   /** "Delete column…" (YAZ-1513): hands the key to the table, which asks first (`ConfirmDeleteColumn`). Absent → no such item. */
   onDeleteColumn?: (key: string) => void
   onClose: () => void
