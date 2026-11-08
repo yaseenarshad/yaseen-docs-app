@@ -1,3 +1,6 @@
+import { flushSync } from 'react-dom'
+import type { NavigationTarget } from '@shared/automationNavigation'
+import { useAutomationSurface, waitForSurface } from '../automation/surfaces'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
@@ -1160,6 +1163,50 @@ export function Sidebar({
     }
     return flashed
   }, [filesRevealReady, pendingReveal])
+  // CLI navigation (YAZ-4502): reveal and expand a target, or a Favorites/Focus group, in the list on show; only on request.
+  const automationFlash = useRef<(() => void) | null>(null)
+  useEffect(() => () => { automationFlash.current?.() }, [])
+  const [automationReveal, setAutomationReveal] = useState<NavigationTarget | null>(null)
+  const revealedByAutomation = () => {
+    if (automationReveal === null || bodyRef.current === null) return null
+    const { path, group } = automationReveal
+    const pathShows = path === undefined || bodyRef.current.querySelector(`.tree__row[data-path="${CSS.escape(path)}"]`) !== null
+    const groupShows = group === undefined || bodyRef.current.querySelector(`[data-focus-folder="${CSS.escape(group)}"][aria-expanded="true"]`) !== null
+    return pathShows && groupShows ? group ?? path ?? null : null
+  }
+  useAutomationSurface('sidebar', {
+    ready: loaded,
+    inspect: () => ({ lens, revealed: revealedByAutomation() }),
+    reveal: async (target) => {
+      flushSync(() => {
+        setAutomationReveal(target)
+        if (onlyFolder !== undefined) onFocusOnly?.(null)
+        if (target.path !== undefined) {
+          const path = target.path
+          // A folder opens itself too, as a reveal in Files does.
+          const reveal = dirs.includes(path) || vaultRows.has(path) ? `${path}/x` : path
+          openTo(reveal)
+          if (lens === 'favorites' || lens === 'focus') {
+            const paths = lens === 'favorites' ? favoritePaths : focusList
+            const groupPaths = shownTab.folders.flatMap((folder) => folder.items.flatMap((item) => {
+              const resolved = resolveItem(item, roots)
+              return 'path' in resolved ? [resolved.path] : []
+            }))
+            for (const top of [...paths, ...groupPaths]) if (path === top || path.startsWith(`${top}/`)) openTo(reveal, top)
+          }
+        }
+      })
+      if ((lens === 'favorites' || lens === 'focus') && shownTab.folders.length > 0) {
+        const groups = await waitForSurface(`groups:${lens}`)
+        flushSync(() => { void groups.reveal?.(target) })
+      }
+      await waitForSurface('sidebar', (surface) => surface.inspect().revealed === (target.group ?? target.path))
+      automationFlash.current?.()
+      automationFlash.current = null
+      if (bodyRef.current && target.path) automationFlash.current = flashTreeRows(bodyRef.current, target.path, false) ?? null
+      else if (target.group) bodyRef.current?.querySelector(`[data-focus-folder="${CSS.escape(target.group)}"]`)?.scrollIntoView({ block: 'nearest' })
+    },
+  })
   /** A rename that a tab's menu started (YAZ-4248): its field flashes as the row did (below, once `renaming` is known). */
   const renameFlash = useRef(false)
 

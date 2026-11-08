@@ -1,3 +1,7 @@
+import { flushSync } from 'react-dom'
+import type { NavigationTarget } from '@shared/automationNavigation'
+import { useAutomation } from './automation/useAutomation'
+import { useAutomationSurface, waitForSurface } from './automation/surfaces'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
@@ -1878,6 +1882,34 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
+  // CLI navigation (YAZ-4502): show the page and the sidebar list, reveal the target there, pick the folder view, and
+  // reply only once the window shows it. Nothing here runs unless main sends a request.
+  useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
+  useAutomation(async (target: NavigationTarget) => {
+    flushSync(() => {
+      if (target.sidebar !== undefined) {
+        if (sidebarCollapsedRef.current) toggleSidebar()
+        changeLens(target.sidebar)
+      }
+      if (target.path !== undefined) openPage(target.path)
+    })
+    const app = await waitForSurface('app', (surface) => {
+      const shown = surface.inspect() as { path: string | null; sidebar: SidebarTab; sidebarCollapsed: boolean }
+      return (target.path === undefined || shown.path === target.path) && (target.sidebar === undefined || (shown.sidebar === target.sidebar && !shown.sidebarCollapsed))
+    })
+    if ((target.path !== undefined || target.group !== undefined) && target.reveal !== false && target.sidebar !== undefined) {
+      const sidebar = await waitForSurface('sidebar')
+      await sidebar.reveal?.(target)
+    }
+    if (target.view !== undefined) {
+      const key = `view:${String(app.inspect().tab)}`
+      // Main named a view the saved file holds; a page whose index has not caught up with that file yet waits for it.
+      const view = await waitForSurface(key, (surface) => (surface.inspect().views as string[] | undefined)?.includes(target.view!) === true)
+      flushSync(() => view.selectView?.(target.view!))
+      await waitForSurface(key, (surface) => surface.inspect().view === target.view)
+    }
+    return { ...app.inspect(), acknowledged: true }
+  })
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
   const moveBoardCardToSlot = useCallback((id: string, slot: number) => {

@@ -13,6 +13,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
+import { waitForSurface } from '../automation/surfaces'
 import { noteFileName } from '@shared/noteName'
 import type { CreateFileRequest, IndexRecord, TreeNode } from '@shared/types'
 import { DEFAULT_COLUMNS } from './folderSettings'
@@ -1646,5 +1647,22 @@ describe('a read-only note in a folder that uses IDs (YAZ-3076 D6)', () => {
     feed({ ...SETTINGS, views: [TABLE] }, vault())
     await flush()
     expect(cellOf(el, 'Old', 1).querySelector('[data-edit]')).not.toBeNull()
+  })
+})
+
+
+describe('CLI folder view selection (YAZ-4502)', () => {
+  it('selects a named view through the existing view state without writing settings', async () => {
+    const el = renderFolderView({ path: STAGES, source, onOpenFile })
+    el.dataset.tab = 'automation-tab'
+    feed({ ...SETTINGS, views: [TABLE, BOARD] })
+    await flush()
+    const surface = await waitForSurface('view:automation-tab')
+    act(() => surface.selectView?.('board'))
+    const applied = await waitForSurface('view:automation-tab', (next) => next.inspect().view === 'Board')
+    expect(applied.inspect().view).toBe('Board')
+    expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe('Board')
+    expect(write).not.toHaveBeenCalled()
+    expect(() => applied.selectView?.('Missing')).toThrow('unique folder view name')
   })
 })
