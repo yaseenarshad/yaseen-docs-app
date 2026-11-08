@@ -36,6 +36,10 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 | Vault declarations and icons | `declaration list/patch/remove`, `icon list/set/remove` | Shared stores; preserve unrelated stored fields and reject malformed files. |
 | New note shortcuts | `newPlace list/set` | Patch one of three slots against latest state; require a folder inside the vault. |
 | Review and formatting settings | `vaultConfig read/patch` | Named public files only; validate patches; preserve unrelated fields. |
+| Folder pages | `folder read/setProperty/removeProperty` | Shared folder-settings parse; a read creates nothing; required revision, or null to create `.folder.md`; the app's reserved keys are refused. |
+| Folder views | `folderView add/rename/duplicate/remove/move/setOptions/setDefault` | Shared view-tab rules: free names, one outline, the last view stays, the starting view and collapsed groups follow; options limited to what each view type reads. The live current view is `navigation open --view`. |
+| Folder shortcuts | `shortcut list/add/remove` | Shared `also_in` rules; a folder ID is minted only on add; `dropValues` confirms clearing other folders' values. |
+| Vault IDs | `ids state/enable/disable/reletter/backfill/check` | State reads a read-only index entry and never adopts, sweeps, or mints; Settings' actions with typed letters as explicit input; changed, renamed, and left counts; partial failure reported. Legacy `id <page>` is unchanged. |
 | Drawing and diagram files | `drawing create/read/save/export`, `diagram create/read/save/export` | Existing formats, revision guards, stamps, image storage and size limits; large bodies use explicit files. |
 | Board options | `drawing setReadOnly/setPictures/setHoverLinks/setHoverOutline/setFoldArrows`, `diagram setReadOnly` | Shared writers and revision guards; Read only remains the human UI switch. |
 | Text editor actions | `editor select/replace/format/undo/redo/save` | Exact live tab and live revision; advertised actions only; use editor transactions and local history. |

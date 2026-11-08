@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { VIEW_OPTIONS } from '@shared/folderViews'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { commandDefinition, validateInput } from '@shared/automationCommands'
+import { AUTOMATION_COMMANDS, commandDefinition, validateInput } from '@shared/automationCommands'
 import { defaultAppState, defaultFolderState, type AppState } from '@shared/types'
 import { removeVault, vaultFiles } from '../fs/testFixture'
 import { _evictAll } from '../vaultIndex/live'
@@ -31,6 +31,16 @@ beforeEach(async () => {
   saved = []
 })
 afterEach(async () => { _evictAll(); await removeVault(root) })
+
+it('declares closed input and output schemas for every folder and ID command', () => {
+  const unit = AUTOMATION_COMMANDS.filter(command => /^(folder|folderView|shortcut|ids)\./.test(command.name) && command.name !== 'folder.create')
+  expect(unit.map(command => command.name)).toHaveLength(19)
+  for (const command of unit) {
+    expect(command.input.additionalProperties, command.name).toBe(false)
+    expect(command.output.additionalProperties, command.name).toBe(false)
+    expect(Object.keys(command.output.properties!).length, command.name).toBeGreaterThan(3)
+  }
+})
 
 describe('folder pages', () => {
   it('reads a folder without .folder.md as the defaults and creates nothing', async () => {
