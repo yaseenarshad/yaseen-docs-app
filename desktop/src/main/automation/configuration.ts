@@ -19,7 +19,9 @@ export async function configurationCommand(store: Store, command: string, args: 
     const { roots: [root] } = await scopeRoots(store.get(), { root: args.root as string })
     store.setFolder(root, args.changes as { name?: string | null; key?: number | null })
     await store.flush()
-    return { root, folder: store.get().folders[root], diskSaved: true }
+    // Only the label and the number key: the vault's bucket also holds this Mac's private open and save history.
+    const { name, key } = store.get().folders[root]
+    return { root, name, key, diskSaved: true }
   }
   if (command.startsWith('pictureFolder.')) {
     if (command === 'pictureFolder.allow') await allowPictureFolder(store, absolute(args.folder as string))
