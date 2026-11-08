@@ -925,9 +925,11 @@
   min-width: 200px;
 }
 
-/* "Edit column…" (YAZ-4533): the Properties popover's column editor, at that popover's size. */
+/* "Edit column…" (YAZ-4533): the Properties popover's column editor, at that popover's size. Never wider than the
+   window less a margin (YAZ-4544); ContextMenuSurface places the grown menu inside the window again. */
 .view-header-menu .column-detail {
   width: 260px;
+  max-width: calc(100vw - 32px);
   max-height: 60vh;
   overflow-y: auto;
   padding: 6px;

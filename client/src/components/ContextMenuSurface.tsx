@@ -52,12 +52,21 @@ export function ContextMenuSurface({ x, y, onClose, children, minWidth, classNam
   }, [])
 
   useLayoutEffect(() => {
-    const bounds = menuRef.current?.getBoundingClientRect()
-    if (bounds === undefined) return
-    setPosition({
-      left: Math.max(0, Math.min(x, window.innerWidth - bounds.width)),
-      top: Math.max(0, Math.min(y, window.innerHeight - bounds.height)),
-    })
+    const menu = menuRef.current
+    if (menu === null) return
+    const place = () => {
+      const bounds = menu.getBoundingClientRect()
+      const left = Math.max(0, Math.min(x, window.innerWidth - bounds.width))
+      const top = Math.max(0, Math.min(y, window.innerHeight - bounds.height))
+      setPosition((at) => (at.left === left && at.top === top ? at : { left, top }))
+    }
+    place()
+    // A menu whose content grows after it opens (the header menu's "Edit column…", YAZ-4544) is placed again, so it
+    // stays inside the window. The observer fires only on a change of the menu's own size.
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(place)
+    observer.observe(menu)
+    return () => observer.disconnect()
   }, [x, y])
 
   return (
