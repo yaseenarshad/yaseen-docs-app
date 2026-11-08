@@ -406,3 +406,43 @@ describe('freeze, sort and group from the header (YAZ-4534)', () => {
     expect(el.querySelector('.view-table__frozen-end')).toBeNull()
   })
 })
+
+describe('"Add column to the right…" takes any name (YAZ-4535)', () => {
+  const DUE = { ...TEST_RECORDS[0], path: '/vault/Due.md', name: 'Due.md', basename: 'Due', title: 'Due', properties: { 'Due Date': '2026-12-01' } }
+
+  it.each(['Due Date', 'Yaseen', 'AI or App'])('"%s" is the key, as typed, declared and shown in ONE write', (typed) => {
+    const { el, onChange, setColumns } = mount()
+    rightClick(th(el, 0))
+    click(item(el, 'Add column to the right…'))
+    setValue(q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Column name"]'), typed)
+    click(q(el, '.ctx-menu [aria-label="Save column"]'))
+    expect(setColumns).toHaveBeenCalledExactlyOnceWith(
+      { status: { kind: 'text' }, [typed]: { kind: 'text' } },
+      [{ type: 'table', name: 'T', frozenColumns: 2, order: ['file.name', `note.${typed}`, 'note.status', 'note.priority'] }],
+    )
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('S1: a note property of the same name is shown right of this column — no twin, no declaration', () => {
+    const { el, onChange, setColumns, def } = mount(BASE, { records: [...TEST_RECORDS, DUE] })
+    rightClick(th(el, 0))
+    click(item(el, 'Add column to the right…'))
+    setValue(q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Column name"]'), 'Due Date')
+    click(q(el, '.ctx-menu [aria-label="Save column"]'))
+    expect(setColumns).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].order).toEqual(['file.name', 'note.Due Date', 'note.status', 'note.priority'])
+    expect(headers(el)).toEqual(['Name', 'Due Date', 'Status', 'Priority'])
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('an empty name is refused: "Type a name"', () => {
+    const { el, setColumns } = mount()
+    rightClick(th(el, 0))
+    click(item(el, 'Add column to the right…'))
+    click(q(el, '.ctx-menu [aria-label="Save column"]'))
+    expect(q(el, '.ctx-menu [role="alert"]').textContent).toBe('Type a name')
+    expect(setColumns).not.toHaveBeenCalled()
+  })
+})
+

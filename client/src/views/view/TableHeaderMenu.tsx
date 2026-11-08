@@ -145,7 +145,12 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
           <AddColumn
             autoOpen
             taken={takenKeys()}
+            shown={keys}
             onCancel={onClose}
+            onShow={(existing) => {
+              onUpdate((d) => setViewOrder(d, viewIndex, insertAfter(keys, key, existing)))
+              onClose()
+            }}
             onSave={(name, column) => {
               declareColumn(
                 { ...columns, [name]: column },

@@ -3337,15 +3337,9 @@ export const PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'li
 export type PropertyKind = (typeof PROPERTY_KINDS)[number]
 
 /**
- * Property-name grammar (GRO-2200 R4): snake_case. Only "+ Add column" still holds it, until
- * YAZ-4535 moves it to `isPropertyName` too.
- */
-export const PROPERTY_NAME = /^[a-z][a-z0-9_]*$/
-
-/**
  * The ONE property-name rule (YAZ-4551 D19): any name, as typed — "Due Date", "Yaseen". A name is
  * a string, not empty, with no space at either end and no line break. The properties write
- * boundary (`desktop/src/main/properties/`) and the note's Properties panel both hold it.
+ * boundary (`desktop/src/main/properties/`), the note's Properties panel and "+ Add column" hold it.
  */
 export function isPropertyName(name: unknown): name is string {
   return typeof name === 'string' && name !== '' && name === name.trim() && !/[\r\n]/.test(name)

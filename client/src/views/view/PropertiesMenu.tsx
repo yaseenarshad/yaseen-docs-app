@@ -221,6 +221,8 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
       </ul>
       <AddColumn
         taken={keys}
+        shown={shown}
+        onShow={(existing) => writeOrder([...shown, existing])}
         onSave={(name, column) =>
           folder.setColumns(
             { ...folder.settings.columns, [name]: column },
