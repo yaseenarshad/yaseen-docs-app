@@ -208,6 +208,15 @@ async function shortcutCommand(page: Page, command: string, args: Record<string,
   return { root: page.root, folder: page.dir, note, revision: after.revision, changed, ...(folderId ? { folderId: folderId.id, folderIdCreated: folderId.created } : {}), diskSaved: true }
 }
 
+/** The exact saved name of a folder page's view, from its `.folder.md` (or the defaults): navigation checks it before any window moves. */
+export async function savedViewName(roots: readonly string[], dir: string, name: string): Promise<string> {
+  const root = rootOfPath(roots, dir)!
+  const file = folderSettingsPath(dir)
+  const page = { roots: [...roots], root, dir, file, ids: (await vaultIds(root)).answer === true, content: await exists(file) ? (await readSaved(file)).content : '', revision: null }
+  const views = describe(page).views
+  return views[viewIndex(views, name)].name
+}
+
 export async function folderCommand(state: AppState, store: Pick<Store, 'get' | 'setBaseGroups'>, command: string, args: Record<string, unknown>, record: SavedCallback): Promise<unknown> {
   // The folder is named by path or folder ID: `name` is the view's or the property's here.
   const page = await pageOf(state, { workspace: args.workspace, root: args.root, roots: args.roots, path: args.path, id: args.id } as ResourceScope & TargetInput)

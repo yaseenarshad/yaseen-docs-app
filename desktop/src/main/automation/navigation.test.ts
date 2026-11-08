@@ -57,6 +57,16 @@ describe('exact context navigation', () => {
     expect(app.raise).not.toHaveBeenCalled()
     expect(app.open).not.toHaveBeenCalled()
   })
+  it('checks a requested view against the saved folder page and passes its exact name (YAZ-4518)', async () => {
+    const app = host([entry('w1', [root])]), path = join(root, 'Mochi')
+    await writeFile(join(path, '.folder.md'), '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n    - type: board\n      name: CLI Board\n---\n')
+    await navigate(app, { window: 'w1', path, view: 'cli board' })
+    expect(app.apply).toHaveBeenLastCalledWith('w1', { path, view: 'CLI Board' })
+    vi.mocked(app.raise).mockClear()
+    await expect(navigate(app, { window: 'w1', path, view: 'Missing' })).rejects.toMatchObject({ code: 'NOT_FOUND', details: { views: ['Table', 'CLI Board'] } })
+    await expect(generateNavigationLink(defaultAppState(), { root, path, view: 'Missing' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect(app.raise).not.toHaveBeenCalled()
+  })
   it('resolves workspace identities and requires explicit partial opening', async () => {
     const state = defaultAppState(), app = host()
     state.vaultSets = [{ id: 'skills', name: 'Skills', roots: [root, join(root, 'missing')], lastUsed: 0 }]

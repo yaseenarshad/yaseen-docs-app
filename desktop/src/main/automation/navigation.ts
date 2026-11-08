@@ -4,6 +4,7 @@ import type { FileOperationTarget, InspectTarget, NavigationInput, NavigationTar
 import { sameVaults, type AppState, type OpenWindowOptions, type WindowEntry } from '@shared/types'
 import { atOrBelow, collectionPaths, resolveTarget, scopeRoots } from './resources'
 import { navigationLink } from '@shared/navigationLinks'
+import { savedViewName } from './folders'
 
 export interface NavigationHost {
   state(): AppState
@@ -46,6 +47,8 @@ export async function resolveNavigation(state: AppState, input: NavigationInput,
   if (input.group && input.sidebar !== 'favorites' && input.sidebar !== 'focus') throw new AutomationFailure('INVALID_INPUT', 'A group needs the Favorites or Focus sidebar.')
   if (input.scope !== undefined && input.sidebar !== 'favorites' && input.sidebar !== 'focus') throw new AutomationFailure('INVALID_INPUT', 'A collection scope needs the Favorites or Focus sidebar.')
   if (input.view && (!path || !(await stat(path)).isDirectory())) throw new AutomationFailure('INVALID_INPUT', 'A view needs a target folder.')
+  // The saved file decides: a view it lacks fails before any window moves, and the renderer waits for one it holds.
+  if (input.view && path) target.view = await savedViewName(resolved.roots, path, input.view)
   if (input.sidebar === 'favorites' || input.sidebar === 'focus') {
     const scope = input.scope ?? (resolved.roots.length > 1 && state.settings.workspaceLists[input.sidebar] ? 'workspace' : 'vault')
     const collection = await collectionPaths(resolved.roots, input.sidebar, scope, input.group)
