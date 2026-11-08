@@ -44,14 +44,15 @@ describe('exact context navigation', () => {
   })
 
   it('closes an empty start window once a created window applies, and leaves vault windows alone', async () => {
-    const app = host([entry('start', []), entry('other', ['/other'])])
-    app.manage = vi.fn(async () => ({}))
+    const app = host([entry('start', []), entry('gone', []), entry('other', ['/other'])])
+    app.closeStartWindow = vi.fn(async (id: string) => id === 'start')
+    // A start window that a concurrent call already closed is skipped, not an error (YAZ-4565).
     expect(await checked('navigation.open', navigate(app, { root, path: join(root, 'Mochi'), mode: 'new' }))).toMatchObject({ window: 'new', created: true, closedStartWindows: ['start'] })
-    expect(app.manage).toHaveBeenCalledExactlyOnceWith('start', 'close')
-    vi.mocked(app.manage).mockClear()
+    expect(app.closeStartWindow).toHaveBeenCalledTimes(2)
+    vi.mocked(app.closeStartWindow).mockClear()
     app.apply = vi.fn(async () => { throw Object.assign(new Error('no'), { code: 'RENDERER_TIMEOUT' }) })
     await expect(navigate(app, { root, mode: 'new' })).rejects.toBeTruthy()
-    expect(app.manage).not.toHaveBeenCalled()
+    expect(app.closeStartWindow).not.toHaveBeenCalled()
   })
 
   it('reuses only the most recent exact window and preserves unspecified state', async () => {

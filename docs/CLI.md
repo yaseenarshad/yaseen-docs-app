@@ -41,7 +41,7 @@ yaseendocs navigation open --help       # one command, with its schema
 yaseendocs app status --json            # running?, profile, protocol version (automation), packaged
 ```
 
-Check `automation` from `app status` or `version` from `capabilities` before you rely on a command. A command that is not in `capabilities` fails with `UNKNOWN_COMMAND` and exit 2.
+Check `automation` from `app status` or `version` from `capabilities` before you rely on a command. An action that a resource does not have fails with `UNKNOWN_COMMAND` and exit 2. A word that is not a resource at all goes to the legacy commands, which print their own usage error.
 
 ### Name a target
 
@@ -67,7 +67,7 @@ yaseendocs navigation open --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi/
 yaseendocs navigation link --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi" --sidebar favorites --reveal true
 ```
 
-Navigation replies after the window shows the result (`acknowledged: true`). It starts Docs when needed. A folder that is not in Favorites fails with `NOT_IN_COLLECTION` when you ask for `--sidebar favorites`; nothing else opens. A missing vault fails with `MISSING_VAULT` unless you pass `--allow-partial true`. A link carries navigation only. It holds paths of this Mac, never window IDs, edits, or secrets.
+Navigation replies after the window shows the result (`acknowledged: true`). A new window replaces any empty start window (one with no vault, such as the one a cold start opens), as opening a folder from it does in the app; `closedStartWindows` lists them. It starts Docs when needed. A folder that is not in Favorites fails with `NOT_IN_COLLECTION` when you ask for `--sidebar favorites`; nothing else opens. A missing vault fails with `MISSING_VAULT` unless you pass `--allow-partial true`. A link carries navigation only. It holds paths of this Mac, never window IDs, edits, or secrets.
 
 ### Search and read
 
@@ -118,6 +118,7 @@ Common error codes:
 | Code | What to do |
 | --- | --- |
 | `NOT_RUNNING` | Start Docs, or pass `--start`. |
+| `START_FAILED`, `START_UNAVAILABLE`, `START_TIMEOUT` | Docs could not start from this CLI. Start the app yourself, or set `YASEEN_DOCS_EXECUTABLE`. |
 | `NOT_FOUND`, `MISSING_VAULT`, `WINDOW_NOT_FOUND`, `TAB_NOT_FOUND` | The target is gone. Read current state and choose again. |
 | `AMBIGUOUS_TARGET` | Pick a path from `details.candidates`. |
 | `NOT_IN_COLLECTION` | The target is not in that Favorites or Focus list. |

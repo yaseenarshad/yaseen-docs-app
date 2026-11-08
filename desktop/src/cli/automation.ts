@@ -42,9 +42,22 @@ Examples:
 
 export const isAutomationCommand = (argv: readonly string[]): boolean => argv[0] === 'capabilities' || AUTOMATION_COMMANDS.some(command => command.name.split('.')[0] === argv[0] && (!['comment', 'daily'].includes(argv[0]) || command.name === `${argv[0]}.${argv[1]}`))
 
-function parsedValue(schema: CommandSchema, value: string): unknown {
-  if (schema.type === 'string') return value
-  try { return JSON.parse(value) } catch { throw new AutomationFailure('INVALID_INPUT', 'Expected JSON for this input field.') }
+/**
+ * A flag's text as its field's value. Text fields take the text as it is. A text-or-null field takes `null` as null and
+ * any other text as it is (a quoted JSON string also works). Other fields take JSON, and a field that also allows text
+ * falls back to the text.
+ */
+export function parsedValue(schema: CommandSchema, value: string, flag: string): unknown {
+  const types = typeof schema.type === 'string' ? [schema.type] : schema.type
+  if (types.length === 1 && types[0] === 'string') return value
+  const textOrNull = types.every(type => type === 'string' || type === 'null')
+  if (textOrNull && value === 'null' && types.includes('null')) return null
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!textOrNull || typeof parsed === 'string') return parsed
+  } catch { /* Not JSON: text below, where the field allows it. */ }
+  if (types.includes('string')) return value
+  throw new AutomationFailure('INVALID_INPUT', `${flag} expects JSON (${types.join(' or ')}).`)
 }
 
 /** Launch this CLI's owning executable, never an app found by name or a user's shell command. */
@@ -124,7 +137,7 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
           const key = flag.slice(2).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase())
           const schema = definition.input.properties?.[key]
           if (!schema) throw new AutomationFailure('INVALID_INPUT', `Unknown flag: ${flag}`)
-          args[key] = parsedValue(schema, value)
+          args[key] = parsedValue(schema, value, flag)
         }
       }
     }
