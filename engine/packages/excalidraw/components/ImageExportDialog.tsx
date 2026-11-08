@@ -1,4 +1,4 @@
-import { exportToCanvas, exportToSvg } from "@excalidraw/utils/export";
+import { exportToCanvas } from "@excalidraw/utils/export";
 import React, { useEffect, useRef, useState } from "react";
 
 import {
@@ -20,6 +20,7 @@ import {
 } from "../actions/actionExport";
 import { probablySupportsClipboardBlob } from "../clipboard";
 import { prepareElementsForExport } from "../data";
+import { exportPdfSvg } from "../data/exportPdf";
 import { canvasToBlob } from "../data/blob";
 import { nativeFileSystemSupported } from "../data/filesystem";
 import { useCopyStatus } from "../hooks/useCopiedIndicator";
@@ -344,24 +345,17 @@ const ImageExportModal = ({
                 pdfRunning.current = true;
                 setPdfBusy(true);
                 try {
-                  // Background, Dark mode and Only selected apply; Scale and Embed scene do not (one page the size of the drawing).
-                  const svg = await exportToSvg({
-                    elements: exportedElements,
-                    appState: {
+                  const { svg, width, height } = await exportPdfSvg(
+                    exportedElements,
+                    {
                       ...appStateSnapshot,
                       exportBackground: exportWithBackground,
                       exportWithDarkMode,
-                      exportScale: 1,
-                      exportEmbedScene: false,
                     },
                     files,
-                    exportPadding: DEFAULT_EXPORT_PADDING,
                     exportingFrame,
-                  });
-                  await onExportPdf(svg.outerHTML, {
-                    width: Number(svg.getAttribute("width")),
-                    height: Number(svg.getAttribute("height")),
-                  });
+                  );
+                  await onExportPdf(svg, { width, height });
                 } catch (error) {
                   console.error(error);
                   setAppState({ errorMessage: t("errors.pdfExportFailed") });

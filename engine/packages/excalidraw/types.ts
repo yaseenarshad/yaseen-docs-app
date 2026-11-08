@@ -1558,7 +1558,27 @@ export interface ExcalidrawImperativeAPI {
   ) => UnsubscribeCallback;
   onStateChange: InstanceType<typeof App>["onStateChange"];
   onEvent: InstanceType<typeof App>["onEvent"];
+  /** Yaseen Docs (YAZ-4515): run one registered action by name; false when it does not apply. */
+  runAction: (name: string) => boolean;
+  /** Yaseen Docs (YAZ-4515): the export box's PNG or SVG file, or the PDF's SVG and size, with no sheet. */
+  exportImage: {
+    (type: "png" | "svg", options?: ExportImageOptions): Promise<Blob>;
+    (type: "pdf", options?: ExportImageOptions): Promise<{
+      svg: string;
+      width: number;
+      height: number;
+    }>;
+  };
 }
+
+/** Yaseen Docs (YAZ-4515): the export box's settings. Omitted = the box's current value. */
+export type ExportImageOptions = {
+  background?: boolean;
+  darkMode?: boolean;
+  scale?: number;
+  embedScene?: boolean;
+  selectionOnly?: boolean;
+};
 
 export type FrameNameBounds = {
   x: number;

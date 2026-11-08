@@ -426,7 +426,13 @@ import {
   type ParsedDataTransferFile,
 } from "../clipboard";
 
-import { exportCanvas, loadFromBlob } from "../data";
+import {
+  exportCanvas,
+  exportCanvasBlob,
+  loadFromBlob,
+  prepareElementsForExport,
+} from "../data";
+import { exportPdfSvg } from "../data/exportPdf";
 import { resolveViewportInsertion } from "../data/viewportInsertion";
 import Library, { distributeLibraryItemsOnSquareGrid } from "../data/library";
 import { restoreAppState, restoreElements } from "../data/restore";
@@ -558,6 +564,7 @@ import type {
   AppState,
   BinaryFileData,
   ExcalidrawImperativeAPI,
+  ExportImageOptions,
   BinaryFiles,
   Gesture,
   GestureEvent,
@@ -582,7 +589,7 @@ import type {
   UIConfig,
 } from "../types";
 import type { RoughCanvas } from "roughjs/bin/canvas";
-import type { Action, ActionResult } from "../actions/types";
+import type { Action, ActionName, ActionResult } from "../actions/types";
 
 const AppContext = React.createContext<AppClassProperties>(null!);
 const AppPropsContext = React.createContext<AppProps>(null!);
@@ -1004,9 +1011,70 @@ class App extends React.Component<AppProps, AppState> {
       onUserFollow: (cb) => this.onUserFollowEmitter.on(cb),
       onStateChange: this.onStateChange,
       onEvent: this.onEvent,
+      runAction: this.runAction,
+      exportImage: this.exportImage as ExcalidrawImperativeAPI["exportImage"],
     };
     return api;
   }
+
+  /**
+   * Yaseen Docs (YAZ-4515): one registered action by name, for the host's automation.
+   * It is the same perform, history and predicate that the menus and keys use. False
+   * when the action is unknown or its predicate refuses the current state.
+   */
+  private runAction = (name: string): boolean => {
+    const action = this.actionManager.actions[name as ActionName];
+    if (
+      !action ||
+      (action.predicate &&
+        !action.predicate(
+          this.scene.getElementsIncludingDeleted(),
+          this.state,
+          this.props,
+          this,
+        ))
+    ) {
+      return false;
+    }
+    this.actionManager.executeAction(action, "api");
+    return true;
+  };
+
+  /**
+   * Yaseen Docs (YAZ-4515): the export box's PNG, SVG or PDF output with no file
+   * sheet. The box's current settings are the defaults. Nothing in appState changes.
+   */
+  private exportImage = async (
+    type: "png" | "svg" | "pdf",
+    options: ExportImageOptions = {},
+  ): Promise<Blob | { svg: string; width: number; height: number }> => {
+    const appState: AppState = {
+      ...this.state,
+      exportBackground: options.background ?? this.state.exportBackground,
+      exportWithDarkMode: options.darkMode ?? this.state.exportWithDarkMode,
+      exportScale: options.scale ?? this.state.exportScale,
+      exportEmbedScene: options.embedScene ?? this.state.exportEmbedScene,
+    };
+    const elements = this.scene.getNonDeletedElements();
+    const { exportedElements, exportingFrame } = prepareElementsForExport(
+      elements,
+      appState,
+      options.selectionOnly ?? isSomeElementSelected(elements, appState),
+    );
+    if (type === "pdf") {
+      return exportPdfSvg(
+        exportedElements,
+        appState,
+        this.files,
+        exportingFrame,
+      );
+    }
+    return exportCanvasBlob(type, exportedElements, appState, this.files, {
+      exportBackground: appState.exportBackground,
+      viewBackgroundColor: appState.viewBackgroundColor,
+      exportingFrame,
+    });
+  };
 
   constructor(props: AppProps) {
     super(props);
