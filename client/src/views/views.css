@@ -842,6 +842,33 @@
   border-right-color: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
 }
 
+/* Frozen rows (YAZ-4537, D9b / S4): the lines from the top through the Nth data row stay under the header. For the
+   outer scroller they take the header's own translate; inside the wrap each cell sticks at the header's height
+   (`--view-table-head-h`, measured once) plus its line's place (`--view-frozen-i`) times the row height. z-index 2:
+   over the frozen columns (1), under the header (3 and 4). */
+.view-table tbody tr.view-table__row--frozen {
+  position: relative;
+  z-index: 2;
+  transform: translateY(var(--view-table-header-y, 0px));
+}
+
+.view-table tbody tr.view-table__row--frozen > td {
+  position: sticky;
+  top: calc(var(--view-table-head-h, 0px) + var(--view-frozen-i, 0) * var(--view-table-row-h, 28px));
+}
+
+/* Opaque, so the rows scroll under them; a fill paints as an image over it. Low specificity on purpose: the
+   current row's and a drop's own background still win. */
+.view-table__row--frozen > td {
+  background-color: var(--bg);
+}
+
+/* The freeze line under the last frozen line: the column freeze line's 3px and colour (YAZ-4534). */
+.view-table tbody tr.view-table__row--frozen-end > td {
+  border-bottom-width: 3px;
+  border-bottom-color: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+}
+
 /* The `#` gutter (YAZ-1513): the always-first, always-sticky column, pinned like a frozen cell at
    left 0 — display position only, so it is muted, right-aligned and never selectable. */
 .view-table .view-table__gutter {

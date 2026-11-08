@@ -112,6 +112,10 @@ const GUTTER_WIDTH = 44
 const COLUMN_MIME = 'application/x-yaseen-table-column'
 /** The row of the note the note window shows (YAZ-4547). */
 const CURRENT_ROW = 'view-table__row--current'
+/** Frozen rows (YAZ-4537): at most this many data rows freeze. */
+const MAX_FROZEN_ROWS = 10
+/** ...and the frozen lines stop here, group headers included: 10 rows under up to three headers each. */
+const MAX_FROZEN_LINES = 40
 
 /** One display line: a group header row (`depth` = its level, 0 at the top: YAZ-745, YAZ-4531), or a data row with its `data-cell` row index (data rows only), its `#` gutter number `n` (YAZ-1513) and its group (null when ungrouped). `at` places that group for the level-aware drag / "+" (YAZ-1101). */
 type Line = { header: Group; gk: string; depth: number; at: GroupSpot } | { row: Row; r: number; n: number; g: Group | null; gk: string | null; at: GroupSpot | null }
@@ -161,8 +165,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
-  /** The row right-click's menu: its record, and the column key of the cell it was opened on (the fill target, YAZ-4536). */
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; record: IndexRecord; column: string } | null>(null)
+  /** The row right-click's menu: its record, the column key of the cell it was opened on (the fill target, YAZ-4536), and its data row index (the freeze target, YAZ-4537). */
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; record: IndexRecord; column: string; r: number } | null>(null)
   /** The header's own menu (YAZ-1513): `key` null = the `#` gutter header. */
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; key: string | null } | null>(null)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
@@ -220,6 +224,23 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       wrap.style.removeProperty('--view-table-header-y')
     }
   }, [])
+
+  // The frozen rows stick under the header (YAZ-4537), whose height can differ from a row's: measured at mount
+  // and when the header resizes, into `--view-table-head-h`; never on scroll.
+  const hasFrozenRows = (view.frozenRows ?? 0) !== 0
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current
+    const header = wrap?.querySelector<HTMLElement>('.view-table thead')
+    if (!hasFrozenRows || wrap == null || header == null) return
+    const measure = () => wrap.style.setProperty('--view-table-head-h', `${header.getBoundingClientRect().height / cssZoom(wrap)}px`)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(header)
+    return () => {
+      observer.disconnect()
+      wrap.style.removeProperty('--view-table-head-h')
+    }
+  }, [hasFrozenRows])
 
   const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
   const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
@@ -283,14 +304,27 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     walk(groups, TOP_SPOT)
   }
 
-  // windowing: mount only the slice around the scroll position, spacer rows keep the scrollbar honest
+  // Frozen rows (YAZ-4537, D9b / S4): `frozenRows` counts DATA rows; the frozen lines are every line from the top
+  // through the Nth shown one, so the headers above it freeze too, and a collapsed group's count goes on below it.
+  const frozenRows = frozenColumnCount(view.frozenRows, MAX_FROZEN_ROWS)
+  let pinned = 0
+  for (let i = 0, seen = 0; seen < frozenRows && i < Math.min(lines.length, MAX_FROZEN_LINES); i++) {
+    if ('row' in lines[i]) {
+      seen++
+      pinned = i + 1
+    }
+  }
+  const head = lines.slice(0, pinned)
+
+  // windowing: mount only the slice around the scroll position, spacer rows keep the scrollbar honest.
+  // The frozen lines always mount; the window starts below them (YAZ-4537).
   const windowed = lines.length > WINDOW_AT
   const viewH = wrapRef.current?.clientHeight || FALLBACK_VIEWPORT
-  const first = windowed ? Math.max(0, Math.min(lines.length - 1, Math.floor(scrollTop / rowH) - OVERSCAN)) : 0
-  const count = windowed ? Math.min(lines.length - first, Math.ceil(viewH / rowH) + 2 * OVERSCAN) : lines.length
+  const first = windowed ? Math.max(pinned, Math.min(lines.length - 1, Math.floor(scrollTop / rowH) - OVERSCAN)) : pinned
+  const count = windowed ? Math.min(lines.length - first, Math.ceil(viewH / rowH) + 2 * OVERSCAN) : lines.length - first
   const visible = lines.slice(first, first + count)
-  /** The roving-tabindex entry: the first data row in the mounted slice. */
-  const firstDataRow = visible.find((l): l is Extract<Line, { row: Row }> => 'row' in l)?.r
+  /** The roving-tabindex entry: the first data row in the mounted lines. */
+  const firstDataRow = [...head, ...visible].find((l): l is Extract<Line, { row: Row }> => 'row' in l)?.r
   // The note window (YAZ-4547 D16): the rows it steps through, read at its step, and the mark of its row. A step writes
   // the mark on the DOM, so the table does not render for it; a render of the table draws the same mark from `current`.
   if (windowLink !== undefined) {
@@ -368,8 +402,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (cell === null) return
     event.preventDefault()
     cell.focus()
-    // `data-cell` is `row:column`; the column index names the key the fill is for (YAZ-4536).
-    setRowMenu({ x: event.clientX, y: event.clientY, record, column: keys[Number(cell.dataset.cell?.split(':')[1])] })
+    // `data-cell` is `row:column`: the column index names the key the fill is for (YAZ-4536), the row index the freeze (YAZ-4537).
+    const [r, c] = (cell.dataset.cell ?? '').split(':').map(Number)
+    setRowMenu({ x: event.clientX, y: event.clientY, record, column: keys[c], r })
   }
 
   /**
@@ -462,6 +497,117 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     </tr>
   )
 
+  /**
+   * One body line. `frozenAt` is a frozen line's place from the top (YAZ-4537): its sticky index (`--view-frozen-i`,
+   * views.css), and the last one draws the 3px freeze line.
+   */
+  const renderLine = (line: Line, frozenAt?: number) => {
+    const frozenRow = frozenAt === undefined ? undefined : ['view-table__row--frozen', frozenAt === pinned - 1 && 'view-table__row--frozen-end']
+    const frozenRowStyle = frozenAt === undefined ? undefined : ({ '--view-frozen-i': frozenAt } as CSSProperties)
+    return (
+      'header' in line ? (
+        <tr
+          key={`group:${line.gk}`}
+          className={['view-table__group', dnd.over === line.gk && 'view-table__group--drop', ...(frozenRow ?? [])].filter(Boolean).join(' ')}
+          style={frozenRowStyle}
+          {...dnd.target(line.header, line.at)}
+        >
+          <td className="view-table__group-cell" colSpan={span} style={{ '--depth': line.depth } as CSSProperties}>
+            <GroupHeader
+              def={def}
+              view={view}
+              columns={keys}
+              groupKey={line.header.key}
+              label={line.header.label}
+              rows={line.header.rows}
+              collapsed={collapsedSet.has(line.gk)}
+              onToggle={() => onToggleGroup(line.gk)}
+              onNew={onNewInGroup === undefined || !groupTakesNew(view, line.at.level) ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
+              resolve={resolve}
+            />
+          </td>
+        </tr>
+      ) : (
+        <tr
+          key={rowKey(line)}
+          className={[line.gk !== null && dnd.over === line.gk && 'view-table__row--drop', windowLink?.current === line.row.record.path && CURRENT_ROW, ...(frozenRow ?? [])].filter(Boolean).join(' ') || undefined}
+          style={frozenRowStyle}
+          {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)), ...dnd.target(line.g, line.at) })}
+          {...hover.itemProps(line.row.record.path)}
+          onContextMenu={openRowMenu(line.row.record)}
+        >
+          {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}
+          {numbered && <td className="view-table__gutter">{line.n}</td>}
+          {keys.map((key, c) => {
+            const v = line.row.values[key]
+            const { path, title } = line.row.record
+            const locked = readOnly.has(path)
+            const fill = cellFillOf(fills, path, key)
+            return (
+              <td
+                key={key}
+                // `view-table__name` has no style: the tests and the end-to-end specs find the Name cell by it.
+                className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', frozenClass(c), fill !== undefined && 'view-table__cell--fill'].filter(Boolean).join(' ') || undefined}
+                // A fill (YAZ-4536) is a custom property that views.css paints over the cell's base.
+                style={fill === undefined ? frozenStyle(c) : ({ ...frozenStyle(c), '--view-cell-fill': fillPaint(fill) } as CSSProperties)}
+                tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
+                data-cell={`${line.r}:${c}`}
+                // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
+                // ⇧⌘ opens it in a new window (YAZ-4444 D32), asked first.
+                onClick={c === nameCol ? (e) => (newWindowClick(e, path) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
+                // A read-only note's Name cell opens no title field: a title edit renames the note (YAZ-3076 D6).
+                title={c === nameCol && locked ? READ_ONLY_TIP : undefined}
+                onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
+              >
+                {c === nameCol ? (
+                  <>
+                    {titleEdit === rowKey(line) ? (
+                      <span className="view-cell-edit" data-editing="">
+                        <TextField
+                          className="view-input view-cell-edit__input"
+                          autoFocus
+                          aria-label="Edit title"
+                          value={title}
+                          normalize={(draft) => draft.trim() || null}
+                          onCommit={(next) => onRetitle(path, next)}
+                          onDone={() => {
+                            setTitleEdit(null)
+                            wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${line.r}:${c}"]`)?.focus()
+                          }}
+                        />
+                      </span>
+                    ) : (
+                      locked ? <ReadOnlyName>{rowTitle(line.row)}</ReadOnlyName> : rowTitle(line.row)
+                    )}
+                    {moveError?.path === line.row.record.path && (
+                      <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
+                        Move failed
+                      </span>
+                    )}
+                  </>
+                ) : bares[c] !== null ? (
+                  <EditableCell
+                    propKey={bares[c]}
+                    raw={line.row.record.properties[bares[c]]}
+                    value={v}
+                    editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
+                    options={typings[c]?.options}
+                    titles={linkNames[c] ?? titles}
+                    resolve={resolve}
+                    readOnly={locked}
+                    onCommit={(next) => onWriteValue(line.row.record.path, bares[c]!, next)}
+                  />
+                ) : (
+                  cellContent(v, resolve)
+                )}
+              </td>
+            )
+          })}
+        </tr>
+      )
+    )
+  }
+
   return (
     <>
       <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}>
@@ -497,107 +643,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             </tr>
           </thead>
           <tbody>
-            {first > 0 && spacer('top', first * rowH)}
-            {visible.map((line) =>
-              'header' in line ? (
-                <tr
-                  key={`group:${line.gk}`}
-                  className={`view-table__group${dnd.over === line.gk ? ' view-table__group--drop' : ''}`}
-                  {...dnd.target(line.header, line.at)}
-                >
-                  <td className="view-table__group-cell" colSpan={span} style={{ '--depth': line.depth } as CSSProperties}>
-                    <GroupHeader
-                      def={def}
-                      view={view}
-                      columns={keys}
-                      groupKey={line.header.key}
-                      label={line.header.label}
-                      rows={line.header.rows}
-                      collapsed={collapsedSet.has(line.gk)}
-                      onToggle={() => onToggleGroup(line.gk)}
-                      onNew={onNewInGroup === undefined || !groupTakesNew(view, line.at.level) ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
-                      resolve={resolve}
-                    />
-                  </td>
-                </tr>
-              ) : (
-                <tr
-                  key={rowKey(line)}
-                  className={[line.gk !== null && dnd.over === line.gk && 'view-table__row--drop', windowLink?.current === line.row.record.path && CURRENT_ROW].filter(Boolean).join(' ') || undefined}
-                  {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)), ...dnd.target(line.g, line.at) })}
-                  {...hover.itemProps(line.row.record.path)}
-                  onContextMenu={openRowMenu(line.row.record)}
-                >
-                  {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}
-                  {numbered && <td className="view-table__gutter">{line.n}</td>}
-                  {keys.map((key, c) => {
-                    const v = line.row.values[key]
-                    const { path, title } = line.row.record
-                    const locked = readOnly.has(path)
-                    const fill = cellFillOf(fills, path, key)
-                    return (
-                      <td
-                        key={key}
-                        // `view-table__name` has no style: the tests and the end-to-end specs find the Name cell by it.
-                        className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', frozenClass(c), fill !== undefined && 'view-table__cell--fill'].filter(Boolean).join(' ') || undefined}
-                        // A fill (YAZ-4536) is a custom property that views.css paints over the cell's base.
-                        style={fill === undefined ? frozenStyle(c) : ({ ...frozenStyle(c), '--view-cell-fill': fillPaint(fill) } as CSSProperties)}
-                        tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
-                        data-cell={`${line.r}:${c}`}
-                        // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
-                        // ⇧⌘ opens it in a new window (YAZ-4444 D32), asked first.
-                        onClick={c === nameCol ? (e) => (newWindowClick(e, path) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
-                        // A read-only note's Name cell opens no title field: a title edit renames the note (YAZ-3076 D6).
-                        title={c === nameCol && locked ? READ_ONLY_TIP : undefined}
-                        onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
-                      >
-                        {c === nameCol ? (
-                          <>
-                            {titleEdit === rowKey(line) ? (
-                              <span className="view-cell-edit" data-editing="">
-                                <TextField
-                                  className="view-input view-cell-edit__input"
-                                  autoFocus
-                                  aria-label="Edit title"
-                                  value={title}
-                                  normalize={(draft) => draft.trim() || null}
-                                  onCommit={(next) => onRetitle(path, next)}
-                                  onDone={() => {
-                                    setTitleEdit(null)
-                                    wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${line.r}:${c}"]`)?.focus()
-                                  }}
-                                />
-                              </span>
-                            ) : (
-                              locked ? <ReadOnlyName>{rowTitle(line.row)}</ReadOnlyName> : rowTitle(line.row)
-                            )}
-                            {moveError?.path === line.row.record.path && (
-                              <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
-                                Move failed
-                              </span>
-                            )}
-                          </>
-                        ) : bares[c] !== null ? (
-                          <EditableCell
-                            propKey={bares[c]}
-                            raw={line.row.record.properties[bares[c]]}
-                            value={v}
-                            editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
-                            options={typings[c]?.options}
-                            titles={linkNames[c] ?? titles}
-                            resolve={resolve}
-                            readOnly={locked}
-                            onCommit={(next) => onWriteValue(line.row.record.path, bares[c]!, next)}
-                          />
-                        ) : (
-                          cellContent(v, resolve)
-                        )}
-                      </td>
-                    )
-                  })}
-                </tr>
-              ),
-            )}
+            {head.map((line, i) => renderLine(line, i))}
+            {first > pinned && spacer('top', (first - pinned) * rowH)}
+            {visible.map((line) => renderLine(line))}
             {windowed && lines.length - first - count > 0 && spacer('bottom', (lines.length - first - count) * rowH)}
           </tbody>
           {groups === null && (
@@ -662,13 +710,27 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             onOpenWindow={onOpenWindow}
             onNotice={onNotice}
             onClose={() => setRowMenu(null)}
-            extra={
+            extra={[
               <FillMenu
+                key="fill"
                 start={cellFillOf(fills, rowMenu.record.path, rowMenu.column)}
                 onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, records, resolveLink))}
                 onClose={() => setRowMenu(null)}
-              />
-            }
+              />,
+              // Row freeze (YAZ-4537), the column menu's pair: on the row where the freeze ends the item reads ✓ and a click unfreezes.
+              <FreezeRowItems
+                key="freeze"
+                row={rowMenu.r}
+                frozen={frozenRows}
+                onFreeze={(count) => {
+                  setRowMenu(null)
+                  onUpdate((d) => {
+                    if (count === 0) delete d.views[viewIndex].frozenRows
+                    else d.views[viewIndex].frozenRows = count
+                  })
+                }}
+              />,
+            ]}
           />
         )}
         {headerMenu !== null && (
@@ -703,6 +765,21 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           />
         )}
       </div>
+    </>
+  )
+}
+
+/** "Freeze up to this row" / "✓ Frozen up to this row" and "Unfreeze rows" (YAZ-4537): `row` is the data row index, `frozen` the saved count. */
+function FreezeRowItems({ row, frozen, onFreeze }: { row: number; frozen: number; onFreeze: (count: number) => void }) {
+  const here = frozen === row + 1
+  return (
+    <>
+      <button type="button" className="ctx-menu__item" role="menuitem" disabled={!here && row >= MAX_FROZEN_ROWS} title={!here && row >= MAX_FROZEN_ROWS ? `At most ${MAX_FROZEN_ROWS} rows freeze` : undefined} onClick={() => onFreeze(here ? 0 : row + 1)}>
+        {here ? '✓ Frozen up to this row' : 'Freeze up to this row'}
+      </button>
+      <button type="button" className="ctx-menu__item" role="menuitem" disabled={frozen === 0} onClick={() => onFreeze(0)}>
+        Unfreeze rows
+      </button>
     </>
   )
 }

@@ -16,8 +16,8 @@ interface PageContextMenuProps {
   onOpenWindow?: (path: string) => void
   onNotice?: (message: string) => void
   onClose: () => void
-  /** A surface's own items, in a group after the page actions: the folder table's "Fill cell ›" and "Fill row ›" (YAZ-4536 D12). */
-  extra?: ReactNode
+  /** A surface's own items, each entry a group after the page actions: the folder table's "Fill cell ›" and "Fill row ›" (YAZ-4536 D12), then its row freeze (YAZ-4537). */
+  extra?: ReactNode[]
 }
 
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
@@ -117,9 +117,11 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
           <div className="ctx-menu__group" role="group">
             {actions}
           </div>
-          <div className="ctx-menu__group" role="group">
-            {extra}
-          </div>
+          {extra.map((group, i) => (
+            <div key={i} className="ctx-menu__group" role="group">
+              {group}
+            </div>
+          ))}
         </>
       )}
     </ContextMenuSurface>
