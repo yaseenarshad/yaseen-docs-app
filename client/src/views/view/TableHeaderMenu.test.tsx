@@ -102,6 +102,17 @@ const item = (el: ParentNode, text: string): HTMLElement => {
   if (n === undefined) throw new Error(`missing menu item ${text}`)
   return n
 }
+/** The open flyout's rows (YAZ-4588): its menuitems, and its ✓, drawn from `data-hint`. */
+const flyout = (el: ParentNode): HTMLElement[] => [...el.querySelectorAll<HTMLElement>('.ctx-menu__sub [role="menuitem"]')]
+const flyoutItems = (el: ParentNode): string[] => flyout(el).map((b) => b.textContent ?? '')
+const checked = (el: ParentNode): string[] => [...el.querySelectorAll<HTMLElement>('.ctx-menu__sub [data-hint="✓"]')].map((b) => b.textContent ?? '')
+/** Open a flyout by a click, then pick a row in it. */
+function pick(el: ParentNode, parent: string, row: string): void {
+  click(item(el, parent))
+  const n = flyout(el).find((b) => b.textContent === row)
+  if (n === undefined) throw new Error(`missing ${parent} › ${row}: ${flyoutItems(el).join(', ')}`)
+  click(n)
+}
 
 // ---------- tests ----------
 
@@ -115,11 +126,9 @@ describe('the header menu (YAZ-1513)', () => {
       'Rename column…',
       'Hide column',
       'Add column to the right…',
-      'Sort A to Z',
-      'Sort Z to A',
-      'Group by this column',
-      'Wrap text', // YAZ-4582: Status is a text column, one line by its kind
-      '✓ Clip text',
+      'Sort', // YAZ-4588 D42: three flyouts replace the flat sort, group and wrap items
+      'Group',
+      'Text',
       '✓ Frozen up to this column', // BASE freezes two: Status is the last frozen column
       'Unfreeze columns',
       'Delete column…',
@@ -345,12 +354,12 @@ describe('freeze, sort and group from the header (YAZ-4534)', () => {
   it('Sort A to Z / Z to A replace the sort with ONE rule on this column', () => {
     const { el, onChange, def, yaml } = mount(`${BASE}    sort:\n      - property: note.priority\n        direction: DESC\n`)
     rightClick(th(el, 1))
-    click(item(el, 'Sort A to Z'))
+    pick(el, 'Sort', 'A to Z')
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(view(def).sort).toEqual([{ property: 'note.status', direction: 'ASC' }])
     expect(el.querySelector('.ctx-menu')).toBeNull()
     rightClick(th(el, 0))
-    click(item(el, 'Sort Z to A'))
+    pick(el, 'Sort', 'Z to A')
     expect(view(def).sort).toEqual([{ property: 'file.name', direction: 'DESC' }])
     expect(yaml()).toContain('property: file.name\n        direction: DESC')
   })
@@ -359,45 +368,43 @@ describe('freeze, sort and group from the header (YAZ-4534)', () => {
     for (const kind of ['select', 'multi-select'] as const) {
       const { el, def } = mount(BASE, {}, { settings: { columns: { status: { kind, options: ['zeta', 'alpha'] } }, views: [], problems: [] } })
       rightClick(th(el, 1))
-      click(item(el, 'Sort A to Z'))
+      pick(el, 'Sort', 'A to Z')
       expect(view(def).sort).toEqual([{ property: 'note.status', direction: 'ASC', by: 'value' }])
       rightClick(th(el, 1))
-      click(item(el, 'Sort Z to A'))
+      pick(el, 'Sort', 'Z to A')
       expect(view(def).sort).toEqual([{ property: 'note.status', direction: 'DESC', by: 'value' }])
       act(() => root?.unmount())
       container?.remove()
     }
   })
 
-  it('Group by this column sets the FIRST level: no grouping yet → the single-object form', () => {
+  it('Group by this column: no grouping yet → the single-object form', () => {
     const { el, def } = mount()
     rightClick(th(el, 1))
-    click(item(el, 'Group by this column'))
+    pick(el, 'Group', 'Group by this column')
     expect(view(def).groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
   })
 
-  it('Group by this column keeps the other levels and the first level’s style; the column leaves a later level', () => {
-    const levels = `${BASE}    groupBy:\n      - property: note.pillar\n        direction: DESC\n        highlight: blue\n      - property: note.priority\n        direction: ASC\n`
+  // YAZ-4588 D42 changed this rule: the column REPLACES the grouping (it was: the column becomes the first level, the others stay).
+  it('Group by this column replaces the grouping with this column alone; the first level’s look stays, a level keeps its own fields', () => {
+    const levels = `${BASE}    groupBy:\n      - property: note.pillar\n        direction: DESC\n        highlight: blue\n      - property: note.priority\n        direction: DESC\n        large: true\n`
     const first = mount(levels)
     rightClick(th(first.el, 1))
-    click(item(first.el, 'Group by this column'))
-    expect(view(first.def).groupBy).toEqual([
-      { property: 'note.status', direction: 'ASC', highlight: 'blue' },
-      { property: 'note.priority', direction: 'ASC' },
-    ])
+    pick(first.el, 'Group', 'Group by this column')
+    expect(view(first.def).groupBy).toEqual({ property: 'note.status', direction: 'ASC', highlight: 'blue' })
     act(() => root?.unmount())
     container?.remove()
 
     const again = mount(levels)
     rightClick(th(again.el, 2)) // priority, the second level today
-    click(item(again.el, 'Group by this column'))
-    expect(view(again.def).groupBy).toEqual({ property: 'note.priority', direction: 'ASC', highlight: 'blue' })
+    pick(again.el, 'Group', 'Group by this column')
+    expect(view(again.def).groupBy).toEqual({ property: 'note.priority', direction: 'DESC', large: true })
   })
 
   it('Group by this column keeps a later entry with no column as it is (YAZ-4544)', () => {
     const { el, def } = mount(`${BASE}    groupBy:\n      - property: note.pillar\n      - {}\n`)
     rightClick(th(el, 1))
-    click(item(el, 'Group by this column'))
+    pick(el, 'Group', 'Group by this column')
     expect(view(def).groupBy).toEqual([{ property: 'note.status', direction: 'ASC' }, {}])
   })
 
@@ -496,3 +503,161 @@ describe('"Add column to the right…" takes any name (YAZ-4535)', () => {
   })
 })
 
+
+describe('the Sort, Group and Text flyouts (YAZ-4588 D42)', () => {
+  const view = (def: () => ViewSet) => def().views[0]
+  const SELECT: Partial<FolderHost> = { settings: { columns: { status: { kind: 'select', options: ['zeta', 'alpha'] } }, views: [], problems: [] } }
+  const levelRows = (el: ParentNode): string[] => [...el.querySelectorAll('.ctx-menu__sub .view-header-menu__level')].map((r) => `${r.textContent}${r.getAttribute('data-hint') === '✓' ? ' ✓' : ''}`)
+  const flyoutHeading = (el: ParentNode): string | null => el.querySelector('.ctx-menu__sub .ctx-menu__heading')?.textContent ?? null
+  const hover = (target: Element) => {
+    act(() => void target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+  }
+
+  it('Sort › on a text column: A to Z and Z to A, no option order; no rule → no ✓ and no Remove sort', () => {
+    const { el } = mount()
+    rightClick(th(el, 1))
+    click(item(el, 'Sort'))
+    expect(flyoutItems(el)).toEqual(['A to Z', 'Z to A'])
+    expect(checked(el)).toEqual([])
+  })
+
+  it('Sort › ✓ marks this column’s rule; Remove sort deletes only that rule, and the last rule takes the sort key with it', () => {
+    const { el, def, yaml } = mount(`${BASE}    sort:\n      - property: note.priority\n        direction: ASC\n      - property: status\n        direction: DESC\n`)
+    rightClick(th(el, 1))
+    click(item(el, 'Sort'))
+    expect(flyoutItems(el)).toEqual(['A to Z', 'Z to A', 'Remove sort'])
+    expect(checked(el)).toEqual(['Z to A'])
+    click(item(el, 'Remove sort'))
+    expect(view(def).sort).toEqual([{ property: 'note.priority', direction: 'ASC' }])
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+
+    rightClick(th(el, 2))
+    pick(el, 'Sort', 'Remove sort')
+    expect(yaml()).not.toContain('sort:')
+  })
+
+  it('Sort › on a Select or Multi-select column adds Option order and Reversed option order; ✓ reads `by`', () => {
+    for (const kind of ['select', 'multi-select'] as const) {
+      const { el, def } = mount(`${BASE}    sort:\n      - property: note.status\n        direction: DESC\n`, {}, { settings: { columns: { status: { kind, options: ['zeta', 'alpha'] } }, views: [], problems: [] } })
+      rightClick(th(el, 1))
+      click(item(el, 'Sort'))
+      expect(flyoutItems(el)).toEqual(['A to Z', 'Z to A', 'Option order', 'Reversed option order', 'Remove sort'])
+      expect(checked(el)).toEqual(['Reversed option order']) // no `by` = option order
+      click(item(el, 'A to Z'))
+      expect(view(def).sort).toEqual([{ property: 'note.status', direction: 'ASC', by: 'value' }])
+      rightClick(th(el, 1))
+      click(item(el, 'Sort'))
+      expect(checked(el)).toEqual(['A to Z'])
+      click(item(el, 'Option order'))
+      expect(view(def).sort).toEqual([{ property: 'note.status', direction: 'ASC' }])
+      act(() => root?.unmount())
+      container?.remove()
+    }
+  })
+
+  it('Group › not grouped: Group by this column and Add as next group level; no Levels', () => {
+    const { el, def } = mount()
+    rightClick(th(el, 1))
+    click(item(el, 'Group'))
+    expect(flyoutItems(el)).toEqual(['Group by this column', 'Add as next group level'])
+    expect(flyoutHeading(el)).toBeNull()
+    click(item(el, 'Add as next group level'))
+    expect(view(def).groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
+  })
+
+  it('Group › grouped by other columns (1 and 2 levels): the Levels, no ✓; Add appends this column, each level keeps its fields', () => {
+    const { el, def } = mount(`${BASE}    groupBy:\n      property: note.pillar\n      direction: DESC\n      highlight: blue\n`)
+    rightClick(th(el, 1))
+    click(item(el, 'Group'))
+    expect(flyoutItems(el)).toEqual(['Group by this column', 'Add as next group level'])
+    expect(flyoutHeading(el)).toBe('Levels')
+    expect(levelRows(el)).toEqual(['Pillar'])
+    click(item(el, 'Add as next group level'))
+    expect(view(def).groupBy).toEqual([{ property: 'note.pillar', direction: 'DESC', highlight: 'blue' }, { property: 'note.status', direction: 'ASC' }])
+
+    rightClick(th(el, 2))
+    click(item(el, 'Group'))
+    expect(levelRows(el)).toEqual(['Pillar', 'Status'])
+    click(item(el, 'Add as next group level'))
+    expect(view(def).groupBy).toEqual([
+      { property: 'note.pillar', direction: 'DESC', highlight: 'blue' },
+      { property: 'note.status', direction: 'ASC' },
+      { property: 'note.priority', direction: 'ASC' },
+    ])
+  })
+
+  it('Group › at three levels: Add as next group level is disabled, with the tip', () => {
+    const { el, onChange } = mount(`${BASE}    groupBy:\n      - property: note.pillar\n      - property: note.tags\n      - property: note.priority\n`)
+    rightClick(th(el, 1))
+    click(item(el, 'Group'))
+    const add = item(el, 'Add as next group level') as HTMLButtonElement
+    expect(add.disabled).toBe(true)
+    expect(add.title).toBe('Three levels at most')
+    expect(levelRows(el)).toEqual(['Pillar', 'Tags', 'Priority'])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('Group › this column a level: ✓ on its level, no Add, and Remove this group level moves the levels below up', () => {
+    const { el, def } = mount(`${BASE}    groupBy:\n      - property: note.pillar\n      - property: status\n        highlight: green\n      - property: note.priority\n        direction: DESC\n        large: true\n`)
+    rightClick(th(el, 1))
+    click(item(el, 'Group'))
+    expect(flyoutItems(el)).toEqual(['Group by this column', 'Remove this group level'])
+    expect(levelRows(el)).toEqual(['Pillar', 'Status ✓', 'Priority'])
+    click(item(el, 'Remove this group level'))
+    expect(view(def).groupBy).toEqual([{ property: 'note.pillar' }, { property: 'note.priority', direction: 'DESC', large: true }])
+  })
+
+  it('Text › Wrap text and Clip text, ✓ on the effective choice (D29)', () => {
+    const { el } = mount()
+    rightClick(th(el, 1))
+    click(item(el, 'Text'))
+    expect(flyoutItems(el)).toEqual(['Wrap text', 'Clip text'])
+    expect(checked(el)).toEqual(['Clip text'])
+  })
+
+  it('a flyout opens on hover; hovering another row swaps or closes it after the hover wait', () => {
+    vi.useFakeTimers()
+    try {
+      const { el } = mount(BASE, {}, SELECT)
+      rightClick(th(el, 1))
+      hover(item(el, 'Sort'))
+      expect(item(el, 'Sort').getAttribute('aria-expanded')).toBe('true') // the first flyout opens at once
+      hover(item(el, 'Group'))
+      expect(item(el, 'Sort').getAttribute('aria-expanded')).toBe('true') // a switch waits
+      act(() => void vi.advanceTimersByTime(200))
+      expect(item(el, 'Group').getAttribute('aria-expanded')).toBe('true')
+      expect(item(el, 'Sort').getAttribute('aria-expanded')).toBe('false')
+      hover(item(el, 'Hide column'))
+      act(() => void vi.advanceTimersByTime(200))
+      expect(el.querySelector('.ctx-menu__sub')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('by keyboard: ArrowRight or Enter opens a flyout, ArrowLeft steps back to its row', () => {
+    const { el } = mount()
+    rightClick(th(el, 1))
+    press(item(el, 'Group'), 'ArrowRight')
+    expect(item(el, 'Group').getAttribute('aria-expanded')).toBe('true')
+    const first = item(el, 'Group by this column')
+    act(() => first.focus())
+    press(first, 'ArrowLeft')
+    expect(el.querySelector('.ctx-menu__sub')).toBeNull()
+    expect(document.activeElement).toBe(item(el, 'Group'))
+    press(item(el, 'Text'), 'Enter')
+    expect(flyoutItems(el)).toEqual(['Wrap text', 'Clip text'])
+  })
+
+  it('Esc closes the open flyout alone, then the menu; nothing is written', () => {
+    const { el, onChange } = mount()
+    rightClick(th(el, 1))
+    click(item(el, 'Sort'))
+    press(window.document.body, 'Escape')
+    expect(el.querySelector('.ctx-menu__sub')).toBeNull()
+    expect(menuItems(el)).toContain('Sort')
+    press(window.document.body, 'Escape')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})

@@ -4,13 +4,15 @@ import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { defaultLabel, propertyLabel } from '../engine'
 import { undeletableReason } from '../deleteColumn'
 import type { ColumnDecl } from '../folderSettings'
-import { type Mutate, type ViewDef, type ViewSet, groupByLevels } from '../viewSchema'
+import { type Mutate, type ViewDef, type ViewSet, MAX_GROUP_LEVELS } from '../viewSchema'
 import type { FolderHost } from '../ViewsPane'
 import { AddColumn } from './AddColumn'
 import { ColumnDetail, columnKind, columnTypeLabel } from './ColumnDetail'
 import { displayNameOf, setDisplayName } from './columnLabel'
 import { setViewOrder, withOrder } from './columnOrder'
 import { frozenColumnCount } from './frozenColumns'
+import { groupAppend, groupLevels, groupOnly, groupRemoveLevel } from './groupLevels'
+import { FlyoutItem, FlyoutParent, useFlyout } from './HeaderFlyout'
 import { canonicalKey } from './keys'
 import { TextField } from './TextField'
 
@@ -69,14 +71,16 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
  * after this column instead of at the end; "Delete column…" (confirm-first, `views/deleteColumn.ts`)
  * is disabled with a tooltip for built-in keys. The `#` header offers only "Hide row numbers".
  * A grey "<Type> · <key>" line tops the column menu, and "Edit column…" opens `ColumnDetail` — the
- * Properties menu's own column editor — inside it (YAZ-4533). Sort A to Z / Z to A, "Group by this
- * column" and Freeze / ✓ Frozen / Unfreeze write the same `sort`, `groupBy` and `frozenColumns` the
- * Sort and Properties menus write (YAZ-4534). "Wrap text" / "Clip text" (YAZ-4582 D29), ✓ on the column's effective
- * choice, write `columnWrap[<canonical key>]` (`true` Wrap, `false` Clip); the choice its kind makes anyway deletes the
+ * Properties menu's own column editor — inside it (YAZ-4533). Freeze / ✓ Frozen / Unfreeze write the same
+ * `frozenColumns` the Properties menu writes (YAZ-4534). Sort, Group and Text are flyouts (YAZ-4588 D42), each
+ * ✓ on this column's state: Sort › writes `sort` (one rule on this column, or this column's rule removed),
+ * Group › writes `groupBy` (`groupLevels.ts`), and Text › "Wrap text" / "Clip text" (YAZ-4582 D29) write
+ * `columnWrap[<canonical key>]` (`true` Wrap, `false` Clip); the choice its kind makes anyway deletes the
  * entry in any spelling, and an empty map.
  */
 export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, reserved, records, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
+  const flyout = useFlyout<'sort' | 'group' | 'text'>()
   /** Once per menu, not per keystroke in its fields: the kind may walk the rows. */
   const typeLabel = useMemo(() => (columnKey === null ? '' : columnTypeLabel(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
   const kind = useMemo(() => (columnKey === null ? null : columnKind(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
@@ -116,20 +120,25 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
     onUpdate((d) => edit(d.views[viewIndex]))
     onClose()
   }
-  /** One rule on this column replaces the sort (YAZ-4534); on a Select column it sorts by value, as the label says (YAZ-4544). */
-  const sortBy = (direction: 'ASC' | 'DESC') => write((v) => {
-      v.sort = [hasOptions ? { property: c, direction, by: 'value' } : { property: c, direction }]
-    })
   /**
-   * This column becomes the FIRST group level (YAZ-4534). The first level's other fields (its style)
-   * stay; the later levels stay, less this column if it was one; one level keeps the single-object form.
+   * One rule on this column replaces the sort (YAZ-4534). A to Z / Z to A on a Select column sort by value, as the
+   * label says (YAZ-4544); its Option order / Reversed option order are the rule with no `by` (YAZ-4588 D42).
    */
-  const groupHere = write((v) => {
-    const [first, ...rest] = groupByLevels(v)
-    // A later entry with no column (YAZ-4544) stays as it is.
-    const levels = [{ ...first, property: c, direction: 'ASC' as const }, ...rest.filter((l) => typeof l?.property !== 'string' || canonicalKey(l.property) !== c)]
-    v.groupBy = levels.length === 1 ? levels[0] : levels
-  })
+  const sortBy = (direction: 'ASC' | 'DESC', byValue: boolean) => write((v) => {
+      v.sort = [hasOptions && byValue ? { property: c, direction, by: 'value' } : { property: c, direction }]
+    })
+  const view = def.views[viewIndex]
+  /** This column's sort rule, for the ✓: its order, as the Sort menu reads it (`DirectionPicker`). */
+  const rule = view.sort?.find((s) => canonicalKey(s.property) === c)
+  const ruleDirection = rule?.direction === 'DESC' ? 'DESC' : 'ASC'
+  const ruleByValue = !hasOptions || rule?.by === 'value'
+  const sortRow = (label: string, direction: 'ASC' | 'DESC', byValue: boolean) => (
+    <FlyoutItem label={label} checked={rule !== undefined && ruleDirection === direction && ruleByValue === byValue} onSelect={sortBy(direction, byValue)} />
+  )
+  const levels = groupLevels(view)
+  const levelKeys = levels.map((l) => canonicalKey(l.property))
+  /** This column's level; Folder may be two, and "Remove" takes the deeper (YAZ-2541). */
+  const ownLevel = levelKeys.lastIndexOf(c)
   const wrapped = wrapsColumn(def.views[viewIndex], key, kind)
   const setWrap = (wrap: boolean) =>
     write((v) => {
@@ -194,7 +203,7 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
             <div className="ctx-menu__heading" role="presentation">
               {typeLabel} · {canonicalKey(key)}
             </div>
-            <div className="ctx-menu__group">
+            <div className="ctx-menu__group" onMouseEnter={() => flyout.hover(null)}>
               <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('edit')}>
                 Edit column…
               </button>
@@ -217,25 +226,65 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
               </button>
             </div>
             <div className="ctx-menu__group">
-              <button type="button" className="ctx-menu__item" role="menuitem" onClick={sortBy('ASC')}>
-                Sort A to Z
-              </button>
-              <button type="button" className="ctx-menu__item" role="menuitem" onClick={sortBy('DESC')}>
-                Sort Z to A
-              </button>
-              <button type="button" className="ctx-menu__item" role="menuitem" onClick={groupHere}>
-                Group by this column
-              </button>
+              <FlyoutParent label="Sort" open={flyout.open === 'sort'} onHover={() => flyout.hover('sort')} onOpen={() => flyout.openNow('sort')} onCloseFlyout={() => flyout.openNow(null)}>
+                <div className="ctx-menu__group" role="group">
+                  {sortRow('A to Z', 'ASC', true)}
+                  {sortRow('Z to A', 'DESC', true)}
+                  {hasOptions && sortRow('Option order', 'ASC', false)}
+                  {hasOptions && sortRow('Reversed option order', 'DESC', false)}
+                </div>
+                {rule !== undefined && (
+                  <div className="ctx-menu__group" role="group">
+                    <FlyoutItem
+                      label="Remove sort"
+                      onSelect={write((v) => {
+                        const rest = (v.sort ?? []).filter((s) => canonicalKey(s.property) !== c)
+                        if (rest.length) v.sort = rest
+                        else delete v.sort
+                      })}
+                    />
+                  </div>
+                )}
+              </FlyoutParent>
+              <FlyoutParent label="Group" open={flyout.open === 'group'} onHover={() => flyout.hover('group')} onOpen={() => flyout.openNow('group')} onCloseFlyout={() => flyout.openNow(null)}>
+                <div className="ctx-menu__group" role="group">
+                  <FlyoutItem label="Group by this column" onSelect={write((v) => groupOnly(v, key))} />
+                  {/* Hidden when this column is a level; Folder may group twice (YAZ-2541). */}
+                  {(ownLevel === -1 || c === 'file.folder') && (
+                    <FlyoutItem
+                      label="Add as next group level"
+                      disabled={levels.length >= MAX_GROUP_LEVELS}
+                      tip={levels.length >= MAX_GROUP_LEVELS ? 'Three levels at most' : undefined}
+                      onSelect={write((v) => groupAppend(v, key))}
+                    />
+                  )}
+                </div>
+                {levels.length > 0 && (
+                  <div className="ctx-menu__group" role="group">
+                    <div className="ctx-menu__heading" role="presentation">
+                      Levels
+                    </div>
+                    {levels.map((l, i) => (
+                      <div key={i} className="ctx-menu__item view-header-menu__level" role="presentation" data-hint={levelKeys[i] === c ? '✓' : undefined}>
+                        {propertyLabel(def, l.property)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {ownLevel !== -1 && (
+                  <div className="ctx-menu__group" role="group">
+                    <FlyoutItem label="Remove this group level" onSelect={write((v) => groupRemoveLevel(v, ownLevel))} />
+                  </div>
+                )}
+              </FlyoutParent>
+              <FlyoutParent label="Text" open={flyout.open === 'text'} onHover={() => flyout.hover('text')} onOpen={() => flyout.openNow('text')} onCloseFlyout={() => flyout.openNow(null)}>
+                <div className="ctx-menu__group" role="group">
+                  <FlyoutItem label="Wrap text" checked={wrapped} onSelect={setWrap(true)} />
+                  <FlyoutItem label="Clip text" checked={!wrapped} onSelect={setWrap(false)} />
+                </div>
+              </FlyoutParent>
             </div>
-            <div className="ctx-menu__group">
-              <button type="button" className="ctx-menu__item" role="menuitem" onClick={setWrap(true)}>
-                {wrapped ? '✓ Wrap text' : 'Wrap text'}
-              </button>
-              <button type="button" className="ctx-menu__item" role="menuitem" onClick={setWrap(false)}>
-                {wrapped ? 'Clip text' : '✓ Clip text'}
-              </button>
-            </div>
-            <div className="ctx-menu__group">
+            <div className="ctx-menu__group" onMouseEnter={() => flyout.hover(null)}>
               <button
                 type="button"
                 className="ctx-menu__item"
@@ -260,7 +309,7 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
               </button>
             </div>
             {onDeleteColumn && (
-              <div className="ctx-menu__group">
+              <div className="ctx-menu__group" onMouseEnter={() => flyout.hover(null)}>
                 <button
                   type="button"
                   className="ctx-menu__item ctx-menu__item--danger"

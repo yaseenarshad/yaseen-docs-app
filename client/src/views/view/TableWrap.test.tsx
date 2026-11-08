@@ -86,6 +86,12 @@ const item = (el: ParentNode, label: string) => {
 function rightClick(target: Element): void {
   act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 20 })))
 }
+/** Right-click a header and open its Text › flyout (YAZ-4588 D42): its rows, the ✓ read from `data-hint`. */
+function textMenu(target: Element): string[] {
+  rightClick(target)
+  act(() => item(document.body, 'Text').click())
+  return [...document.querySelectorAll<HTMLElement>('.ctx-menu__sub [role="menuitem"]')].map((b) => `${b.getAttribute('data-hint') === '✓' ? '✓ ' : ''}${b.textContent}`)
+}
 /** The body cells of column `c`, in row order. */
 const column = (el: ParentNode, c: number) => [...el.querySelectorAll<HTMLElement>(`.view-table tbody td[data-cell$=":${c}"]`)]
 const CLIP = 'view-table__cell--clip'
@@ -93,28 +99,24 @@ const CLIP = 'view-table__cell--clip'
 describe('"Wrap text" and "Clip text" in the column header menu (YAZ-4582, D29)', () => {
   it('a chip column (Tags, a list) has ✓ Wrap text; Clip text writes columnWrap[canonical key] = false, and Wrap text deletes it and the empty map', () => {
     const { el, yaml } = mount(table())
-    rightClick(th(el, 1))
-    expect(items(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['✓ Wrap text', 'Clip text']))
+    expect(textMenu(th(el, 1))).toEqual(['✓ Wrap text', 'Clip text'])
     act(() => item(el, 'Clip text').click())
     expect(yaml()).toContain('columnWrap:\n      note.tags: false')
     expect(el.querySelector('.ctx-menu')).toBeNull()
 
-    rightClick(th(el, 1))
-    expect(items(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['Wrap text', '✓ Clip text']))
+    expect(textMenu(th(el, 1))).toEqual(['Wrap text', '✓ Clip text'])
     act(() => item(el, 'Wrap text').click())
     expect(yaml()).not.toContain('columnWrap')
   })
 
   it('a text column (Status) has ✓ Clip text; Wrap text writes columnWrap[canonical key] = true, and Clip text deletes it', () => {
     const { el, yaml } = mount(table())
-    rightClick(th(el, 2))
-    expect(items(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['Wrap text', '✓ Clip text']))
+    expect(textMenu(th(el, 2))).toEqual(['Wrap text', '✓ Clip text'])
     act(() => item(el, 'Wrap text').click())
     expect(yaml()).toContain('columnWrap:\n      note.status: true')
     expect(column(el, 2).some((td) => td.classList.contains(CLIP))).toBe(false)
 
-    rightClick(th(el, 2))
-    expect(items(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['✓ Wrap text', 'Clip text']))
+    expect(textMenu(th(el, 2))).toEqual(['✓ Wrap text', 'Clip text'])
     act(() => item(el, 'Clip text').click())
     expect(yaml()).not.toContain('columnWrap')
   })
@@ -123,18 +125,17 @@ describe('"Wrap text" and "Clip text" in the column header menu (YAZ-4582, D29)'
     const { el, yaml } = mount(table('    columnWrap:\n      tags: false\n      note.status: true\n'))
     expect(column(el, 1).every((td) => td.classList.contains(CLIP))).toBe(true)
     expect(column(el, 2).some((td) => td.classList.contains(CLIP))).toBe(false)
-    rightClick(th(el, 1))
+    textMenu(th(el, 1))
     act(() => item(el, 'Wrap text').click())
     expect(yaml()).toContain('columnWrap:\n      note.status: true')
     expect(yaml()).not.toContain('tags:')
   })
 
-  it('the two items are their own group, after Sort and Group', () => {
+  it('the two items are the Text › flyout, after Sort › and Group › (YAZ-4588 D42)', () => {
     const { el } = mount(table())
     rightClick(th(el, 1))
-    const groups = [...el.querySelectorAll('.ctx-menu .ctx-menu__group')].map((g) => [...g.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent))
-    const at = groups.findIndex((g) => g.includes('Sort A to Z'))
-    expect(groups[at + 1]).toEqual(['✓ Wrap text', 'Clip text'])
+    const parents = [...el.querySelectorAll('.ctx-menu [aria-haspopup="menu"]')].map((b) => b.textContent)
+    expect(parents).toEqual(['Sort', 'Group', 'Text'])
   })
 })
 
