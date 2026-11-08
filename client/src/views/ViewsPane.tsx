@@ -537,6 +537,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         properties={properties}
         documentView={isOutline}
         folder={folder}
+        dateColumns={calendarColumns}
       />
       {createError !== null && (
         <p className="views-pane__error" role="alert">

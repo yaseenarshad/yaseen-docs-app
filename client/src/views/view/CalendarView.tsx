@@ -1,9 +1,7 @@
 import { type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from 'react'
-import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { openTarget } from '../../lib/openGesture'
-import { type DayKey, bucketByDay, dateColumns, monthWeeks, timeOf, todayKey } from '../calendar'
+import { type DayKey, bucketByDay, monthWeeks, timeOf, todayKey } from '../calendar'
 import { type Row, propertyLabel } from '../engine'
-import type { FolderSettings } from '../folderSettings'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
 import { ReadOnlyName } from './ReadOnlyMark'
@@ -32,6 +30,8 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 /** Cards a day shows before "+N more" (D11). */
 const DAY_CARDS = 3
+/** Cards the "No date" tray shows before "+N more" (YAZ-4544): a folder with no dates yet renders 20, not 1000, on each drag over. */
+const TRAY_CARDS = 20
 /** The drop id of the "No date" tray; a day's id is its key. */
 const NO_DATE = 'none'
 
@@ -50,6 +50,7 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
     return { y: now.getFullYear(), m: now.getMonth() }
   })
   const [expanded, setExpanded] = useState<DayKey | null>(null)
+  const [trayAll, setTrayAll] = useState(false)
   const [drag, setDrag] = useState<{ path: string; from: DayKey | null } | null>(null)
   const [over, setOver] = useState<string | null>(null)
   const { days, undated } = useMemo(() => bucketByDay(rows, dateKey), [rows, dateKey])
@@ -211,7 +212,12 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
         <h4 className="view-cal__tray-title">
           No date <span className="view-cal__tray-count">{undated.length}</span>
         </h4>
-        {undated.length > 0 && <ul className="view-cal__cards view-cal__tray-cards">{undated.map((row) => card(row, null))}</ul>}
+        {undated.length > 0 && <ul className="view-cal__cards view-cal__tray-cards">{(trayAll ? undated : undated.slice(0, TRAY_CARDS)).map((row) => card(row, null))}</ul>}
+        {undated.length > TRAY_CARDS && (
+          <button type="button" className="view-cal__more" onClick={() => setTrayAll(!trayAll)}>
+            {trayAll ? 'Show less' : `+${undated.length - TRAY_CARDS} more`}
+          </button>
+        )}
       </section>
     </div>
   )
@@ -221,15 +227,13 @@ export interface CalendarShowByProps {
   def: ViewSet
   view: ViewDef
   viewIndex: number
-  records: readonly IndexRecord[]
-  properties: PropertiesResponse | null
-  settings: FolderSettings
+  /** The folder's date columns (`dateColumns`), worked out once per records change by `ViewsPane` (YAZ-4544). */
+  columns: readonly string[]
   onUpdate: Mutate
 }
 
 /** "Show by" (D4): every date column of the folder, one per calendar tab; on the toolbar and in Properties › Calendar. */
-export function CalendarShowBy({ def, view, viewIndex, records, properties, settings, onUpdate }: CalendarShowByProps) {
-  const columns = useMemo(() => dateColumns(def, view, records, properties, settings), [def, view, records, properties, settings])
+export function CalendarShowBy({ def, view, viewIndex, columns, onUpdate }: CalendarShowByProps) {
   const current = typeof view.dateProperty === 'string' ? view.dateProperty : columns[0]
   if (current === undefined) return null
   const options = columns.includes(current) ? columns : [current, ...columns]

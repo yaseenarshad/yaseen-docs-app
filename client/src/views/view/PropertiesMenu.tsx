@@ -28,6 +28,8 @@ export interface PropertiesMenuProps {
   properties?: PropertiesResponse | null
   /** The folder's own declarations (the ladder's TOP rung) and `setColumns`, the door they go back through (YAZ-895). */
   folder: FolderHost
+  /** A calendar's date columns for "Show by" (`dateColumns`, once in `ViewsPane`, YAZ-4544). */
+  dateColumns: readonly string[]
 }
 
 /** Board's width editor accepts finite numbers, then rounds and clamps only its lower bound. */
@@ -50,7 +52,7 @@ export const normalizeBoardWidth = (draft: string): string | null => {
  *  the table header's "Edit column…" opens. Hide in this view (= unchecking) and Delete column…
  *  return here; there is no third level and no Save/Cancel; Esc or `‹` returns to the list.
  */
-export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, properties = null, folder }: PropertiesMenuProps) {
+export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, properties = null, folder, dateColumns }: PropertiesMenuProps) {
   const [query, setQuery] = useState('')
   /** The DETAIL level (YAZ-1513): the open column's key, or null for the list. Its editor is `ColumnDetail` (YAZ-4533). */
   const [detail, setDetail] = useState<string | null>(null)
@@ -315,7 +317,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
           <p className="view-menu__label">Calendar</p>
           <label className="view-settings-row">
             <span>Show by</span>
-            <CalendarShowBy def={def} view={view} viewIndex={viewIndex} records={records} properties={properties} settings={folder.settings} onUpdate={onUpdate} />
+            <CalendarShowBy def={def} view={view} viewIndex={viewIndex} columns={dateColumns} onUpdate={onUpdate} />
           </label>
         </>
       )}

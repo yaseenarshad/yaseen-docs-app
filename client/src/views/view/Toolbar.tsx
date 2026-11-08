@@ -17,7 +17,12 @@ import { ViewTabs, type ViewTabsProps } from './ViewTabs'
 
 type Menu = 'filter' | 'sort' | 'properties'
 
+/** No date columns: a view that is not a calendar. */
+const NO_COLUMNS: readonly string[] = []
+
 export interface ToolbarProps {
+  /** A calendar's date columns for "Show by" (`dateColumns`, once in `ViewsPane`, YAZ-4544). */
+  dateColumns?: readonly string[]
   def: ViewSet
   view: ViewDef
   viewIndex: number
@@ -55,7 +60,7 @@ export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
 /** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
-export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   /** "Edit option order…" (YAZ-3940): the column the Sort popover shows its column editor on, or null for the menu. */
   const [editing, setEditing] = useState<string | null>(null)
@@ -105,7 +110,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
         {view.type === 'calendar' && (
           <label className="view-cal__show-by">
             <span>Show by</span>
-            <CalendarShowBy def={def} view={view} viewIndex={viewIndex} records={records} properties={properties} settings={folder.settings} onUpdate={onUpdate} />
+            <CalendarShowBy def={def} view={view} viewIndex={viewIndex} columns={dateColumns} onUpdate={onUpdate} />
           </label>
         )}
         {button('sort', 'Sort', <SortIcon />, sorts, editing === null ? (
@@ -124,7 +129,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
             'Properties',
             <PropertiesIcon />,
             0,
-            <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder} />,
+            <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder} dateColumns={dateColumns} />,
           )}
         {/* An outline is a DOCUMENT, not rows (YAZ-903): there is nothing there to filter. */}
         {!documentView &&

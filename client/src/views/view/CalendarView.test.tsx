@@ -14,6 +14,12 @@ import { TEST_RECORDS } from '../testRecords'
 
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => ['/vault'] } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
+// The real date rules, with `dateColumns` counted (YAZ-4544).
+vi.mock('../calendar', async (load) => {
+  const real = await load<typeof import('../calendar')>()
+  return { ...real, dateColumns: vi.fn(real.dateColumns) }
+})
+import { dateColumns } from '../calendar'
 import { writeProperty } from '../writeProperty'
 
 const write = vi.mocked(writeProperty)
@@ -296,5 +302,34 @@ describe('Back returns to the view tab it left (YAZ-4544, finding 24)', () => {
     expect(activeTab(remount({ viewKey: 'step-2' }).el)).toBe('Table')
     // With no step (the right panel), nothing is remembered.
     expect(activeTab(remount({}).el)).toBe('Table')
+  })
+})
+
+describe('the "No date" tray is bounded (YAZ-4544, finding 5)', () => {
+  it('shows the first 20 cards and "+N more", which shows all of them', () => {
+    const undated = Array.from({ length: 25 }, (_, i) => rec(`U${String(i).padStart(2, '0')}`, {}))
+    const { el } = mount(CALENDAR, { records: [rec('Dated', { due: '2026-12-03' }), ...undated] })
+    const tray = q<HTMLElement>(el, '[aria-label="No date"]')
+    expect(q(tray, '.view-cal__tray-count').textContent).toBe('25')
+    expect(titlesIn(tray)).toEqual(undated.slice(0, 20).map((r) => r.title))
+    act(() => q<HTMLButtonElement>(tray, '.view-cal__more').click())
+    expect(titlesIn(tray)).toHaveLength(25)
+    expect(q(tray, '.view-cal__more').textContent).toBe('Show less')
+    act(() => q<HTMLButtonElement>(tray, '.view-cal__more').click())
+    expect(titlesIn(tray)).toHaveLength(20)
+    expect(q(tray, '.view-cal__more').textContent).toBe('+5 more')
+  })
+})
+
+describe('"Show by" works out the date columns once (YAZ-4544, finding 9)', () => {
+  it('one dateColumns run for a render, with "Show by" on the toolbar and in Properties', () => {
+    const { el } = mount(CALENDAR)
+    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    expect(document.querySelectorAll('[aria-label="Show by"]')).toHaveLength(2)
+    vi.mocked(dateColumns).mockClear()
+    // New records (an index refetch): one run, not one for each "Show by" too.
+    act(() => root?.render(<ViewsPane parsed={parseViews(CALENDAR)} onChange={vi.fn()} root="/vault" folderPath="/vault/Tasks" records={[...RECORDS]} folder={testFolderHost()} onOpenFile={vi.fn()} />))
+    expect(document.querySelectorAll('[aria-label="Show by"]')).toHaveLength(2)
+    expect(vi.mocked(dateColumns)).toHaveBeenCalledTimes(1)
   })
 })
