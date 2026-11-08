@@ -30,6 +30,7 @@ import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
 import { ColumnDecls, FolderPages, type FolderPagesValue } from './view/GroupHeader'
+import { useDeleteNotes } from './view/deleteNotes'
 import { directlyIn, isFolderRow, rowPage, rowsByFolder } from '../links/shortcuts'
 import { onPageTabAsk, takePageTab } from './pageTabRequest'
 import { pageViewIndex } from './pageView'
@@ -111,6 +112,13 @@ export interface FolderHost {
    * `.folder.md` yet: the Page then shows nothing.
    */
   renderPage?: () => ReactNode
+  /**
+   * The row menu's "Delete note…" (YAZ-4592 S26): App's own delete, the sidebar's (`trashMany`: the Trash, the
+   * sound, the Undo toast). The pane asks first (`useDeleteNotes`). Absent: no such item.
+   */
+  trash?: (paths: readonly string[]) => Promise<void>
+  /** The row menu's "Duplicate note" (YAZ-4592 S26): a copy beside the note (`file.duplicate`). Absent: no such item. */
+  duplicate?: (path: string) => void
 }
 
 export interface ViewsPaneProps {
@@ -265,6 +273,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // Every use below reads these — the engine, the menus' columns, a move's raw — so a folder row is a row like a note.
   const withFolders = showsFolderRows(view) && folderRows.length > 0
   const records = useMemo(() => (withFolders ? [...noteRecords, ...folderRows] : noteRecords), [withFolders, noteRecords, folderRows])
+  // "Delete note…" (YAZ-4592 S26): the confirm sheet, unless Settings › Folder pages › Ask before deleting notes is off.
+  const { confirmDeleteNotes, sheet: deleteSheet } = useDeleteNotes(defaults.askBeforeDelete, folder.trash, (path) => noteRecords.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, ''))
   useEffect(() => {
     if (backKey !== undefined) keepBackView(backKey, view.name)
   }, [backKey, view.name])
@@ -657,6 +667,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onWriteValue={writeValue}
           onRetitle={folder.retitle}
           reservedKeys={reservedKeys(folder.wikilinks.ids)}
+          onDuplicateNote={folder.duplicate}
+          onDeleteNotes={confirmDeleteNotes}
         />
       ) : view.type === 'board' ? (
         <BoardView
@@ -795,6 +807,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onClose={closeWindow}
         />
       )}
+      {deleteSheet}
       <CardPreviewHost store={itemHover.store} cardOf={(_, path) => ({ root: null, name: records.find((r) => r.path === path)?.title ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
     </div>
   )

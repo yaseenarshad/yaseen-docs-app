@@ -1,6 +1,7 @@
 import type { IndexRecord } from '@shared/types'
 import type { ColumnTyping } from '../editorType'
-import { type Expr, type Value, compile, fromYaml, typeOf } from '../expr'
+import { DateValue, type Expr, LinkValue, type Value, compile, fromYaml, isEmpty, typeOf } from '../expr'
+import { renderDate } from '../expr/dates'
 import type { FilterNode } from '../viewSchema'
 import { canonicalKey } from './keys'
 
@@ -338,4 +339,37 @@ export function countRules(node: FilterNode | undefined): number {
     if (Array.isArray(items)) for (const child of items as FilterNode[]) n += countRules(child)
   }
   return n
+}
+
+// ---------- a cell's value as a rule ----------
+
+/** A list item as the string a rule holds: a text, or a link's target. Anything else: null. */
+const itemText = (v: Value): string | null => (typeof v === 'string' ? v : v instanceof LinkValue ? v.target : null)
+
+/**
+ * "Filter by this value" and "Hide this value" (YAZ-4592 S25): the cell's value as one rule in the builder's
+ * grammar, `is` or `is not` by the value's type. An empty cell is "is empty". A date, a checkbox and a list of
+ * several items have no exact "not" operator, so their Hide is a None group over the `is` rule: `{ not: [rule] }`.
+ * Null when no operator names the value (a duration, an object, a list of numbers).
+ */
+export function valueFilter(property: string, value: Value, hide: boolean): FilterNode | null {
+  const rule = (op: OperatorId, v: Rule['value'] = ''): string => ruleToExpr({ property, op, value: v })
+  const none = (expr: string): FilterNode => (hide ? { not: [expr] } : expr)
+  if (isEmpty(value)) return rule(hide ? 'isNotEmpty' : 'isEmpty')
+  if (typeof value === 'number') return rule(hide ? 'ne' : 'eq', String(value))
+  if (typeof value === 'boolean') return none(rule(value ? 'checked' : 'unchecked'))
+  if (value instanceof DateValue) return none(rule('dateIs', renderDate(value.ms, value.hasTime)))
+  const text = itemText(value)
+  if (text !== null) return rule(hide ? 'isNot' : 'is', text)
+  if (!Array.isArray(value)) return null
+  const items = value.map(itemText)
+  if (items.some((item) => item === null)) return null
+  if (items.length === 1) return rule(hide ? 'notContains' : 'contains', items[0]!)
+  return none(rule('hasAllOf', items as string[]))
+}
+
+/** The view's filters with one more rule (YAZ-4592 S25): into an All group, or beside any other group under a new All. */
+export function withFilter(node: FilterNode | undefined, item: FilterNode): FilterNode {
+  const group = toGroup(node)
+  return { and: group.conj === 'and' ? [...group.items, item] : [fromGroup(group)!, item] }
 }

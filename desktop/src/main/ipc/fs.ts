@@ -365,6 +365,14 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     }
     return res
   })
+  // "Duplicate note" (YAZ-4592 S26): the copy a Paste of a Copy makes into the entry's own folder (`copyEntry`,
+  // "Duplicate for free"), with neither clipboard read or written. The path must be in a vault of the CALLING window.
+  // A copy: no store repair and no push, as the paste's copy.
+  handleWithEvent(CONTRACT.file.duplicate, async (e, req: unknown) => {
+    const src = requireAbsPath(requireRequest(req).path, 'path')
+    if (rootOfPath(rootsOfSender(e), src) === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that file', { path: src })
+    return copyEntry(src, path.dirname(src), await doorFor(e, req))
+  })
   /**
    * A drop from Finder (YAZ-3253 D3, D9A): `pasteEntries` with an explicit list — the app clipboard
    * is never read or written. Per item, in order, and one bad item never stops the rest:

@@ -60,6 +60,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
       ['cardTitles', 'Wrap', { cardTitles: 'wrap' }],
       ['hideWeekends', 'On', { hideWeekends: true }],
       ['showFolderPageFiles', 'On', { showFolderPageFiles: true }],
+      ['askBeforeDelete', 'Off', { askBeforeDelete: false }],
     ]
     for (const [part, label, change] of clicks) {
       act(() => button(`folderPages.${part}`, label).click())
@@ -82,6 +83,8 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     expect(pressed('folderPages.cardTitles')).toBe('Clip')
     expect(pressed('folderPages.hideWeekends')).toBe('Off')
     expect(pressed('folderPages.showFolderPageFiles')).toBe('Off')
+    // Delete note… asks first unless this is turned off (YAZ-4592 S26).
+    expect(pressed('folderPages.askBeforeDelete')).toBe('On')
   })
 
   it('Row band and the window pin show the table block’s setting until they are set', async () => {

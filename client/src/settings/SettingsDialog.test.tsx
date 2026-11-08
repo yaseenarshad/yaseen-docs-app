@@ -148,7 +148,7 @@ const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPa
 // New boards keep pictures and Allowed picture folders (YAZ-3943 demo 2, round 3); Links in drawings (demo 2).
 const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`)]
 /** Settings › Folder pages (YAZ-4585): its personal rows, with the folder views' hover row moved from Files & Links, the view defaults, the page default. */
-const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'folderPages.rowBand', 'folderPages.keepWindowPinned', ...['rowHeight', 'rowNumbers', 'textInCells', 'groupIndent', 'showEmptyGroups', 'subfolders', 'foldersFirst', 'calendarScale', 'cardTitles', 'hideWeekends', 'showFolderPageFiles'].map((part) => `folderPages.${part}`)]
+const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', ...['rowHeight', 'rowNumbers', 'textInCells', 'groupIndent', 'showEmptyGroups', 'subfolders', 'foldersFirst', 'calendarScale', 'cardTitles', 'hideWeekends', 'showFolderPageFiles'].map((part) => `folderPages.${part}`)]
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
@@ -1558,7 +1558,7 @@ describe('SettingsDialog search (D6)', () => {
     const { el, onClose } = mount()
     // As it opens: General (YAZ-3276 D7).
     type(searchInput(el), 'trash')
-    expect(rowIds(el)).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkey-app-trash']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20)
+    expect(rowIds(el)).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'folderPages.askBeforeDelete', 'hotkey-app-trash']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20), and so does a folder page's delete (YAZ-4592)
     pressEscape(searchInput(el))
     expect(onClose).not.toHaveBeenCalled()
     expect(searchInput(el).value).toBe('')

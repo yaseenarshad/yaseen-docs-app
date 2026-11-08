@@ -910,6 +910,11 @@ export interface PasteResponse {
   failed: { from: string; code: BridgeErrorCode; message: string }[]
 }
 
+/** "Duplicate note" in a folder page's row menu (YAZ-4592 S26): `path` is copied beside itself. The answer is the one entry that landed. */
+export interface DuplicateRequest {
+  path: string
+}
+
 /**
  * Finder's items dropped on a folder of the sidebar (YAZ-3253 D3, D9A): absolute paths, as the
  * preload's `file.pathFor` reads them, moved INTO `targetDir`, which must be in a vault of the
@@ -1891,6 +1896,8 @@ export interface FolderPagesSettings {
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. */
   hideWeekends: boolean
   showFolderPageFiles: boolean
+  /** A folder page's "Delete note…" asks first (YAZ-4592 S26). Its own switch: Files › Confirm before deleting does not touch it. */
+  askBeforeDelete: boolean
 }
 
 export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
@@ -1908,6 +1915,7 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   cardTitles: 'clip',
   hideWeekends: false,
   showFolderPageFiles: false,
+  askBeforeDelete: true,
 }
 
 export interface SettingsState {
