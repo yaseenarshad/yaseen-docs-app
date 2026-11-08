@@ -116,7 +116,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
 
 import { api, BridgeRequestError } from '../api'
 import { readPageView } from '../lib/pageView'
-import { _resetRenameContinuity } from '../lib/renameContinuity'
+import { _resetRenameContinuity, carryEditorAcrossPane, dirtyPaths } from '../lib/renameContinuity'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { BROKEN_DRAWING_DOCUMENT, DrawingEditor, OUTSIDE_FOLDER_WARNING, picturesMoveAsk, picturesPlaceText } from './DrawingEditor'
@@ -1189,5 +1189,34 @@ describe('automation live drawing', () => {
     expect([...(image as { data: Uint8Array }).data]).toEqual([1, 2, 3])
     await expect(exportLiveImage({ command: 'board.export', tab: 'live-drawing', kind: 'diagram', format: 'png', options: {} })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
     expect(save).not.toHaveBeenCalled()
+  })
+})
+
+describe('a pane move (YAZ-4515)', () => {
+  it('a dirty board moved main → right and back saves its edits before the new owner reads, and the old owner never writes again', async () => {
+    const order: string[] = []
+    load.mockImplementation(async () => { order.push('load'); return loaded({ mtime: 100 + order.length }) })
+    save.mockImplementation(async (req) => { order.push(`save ${JSON.parse(req.json).elements[0]?.id}`); return { path: PATH, mtime: 500 + order.length, size: 1, persisted: [] } })
+    render(); await flush(); emit(1, scene()); emit(2, scene([{ id: 'main-edit' }]))
+    expect(dirtyPaths()).toEqual([PATH])
+    const owners: Root[] = []
+    const move = async (): Promise<void> => {
+      // `useWorkspace` carries in `dispatch`, before React unmounts the old owner and mounts the new one.
+      act(() => carryEditorAcrossPane(PATH))
+      act(() => (owners.at(-1) ?? root)?.unmount())
+      const next = createRoot(document.body.appendChild(document.createElement('div')))
+      owners.push(next)
+      act(() => next.render(<DrawingEditor root={ROOT} path={PATH} watch={watch} />))
+      await flush(); await flush()
+    }
+    await move()
+    expect(order).toEqual(['load', 'save main-edit', 'load'])
+    emit(1, scene()); emit(2, scene([{ id: 'right-edit' }]))
+    await move()
+    expect(order).toEqual(['load', 'save main-edit', 'load', 'save right-edit', 'load'])
+    await act(async () => { vi.advanceTimersByTime(2000) })
+    act(() => owners.at(-1)?.unmount())
+    root = null
+    expect(order.filter(step => step.startsWith('save'))).toEqual(['save main-edit', 'save right-edit'])
   })
 })

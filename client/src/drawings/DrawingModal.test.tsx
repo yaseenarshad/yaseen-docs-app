@@ -20,7 +20,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { api, BridgeRequestError } from '../api'
 import { placeOverTab } from '../keys/keySheetRequest'
 import { createDrawingFeed } from './drawingFeed'
-import { _resetRenameContinuity, carryEditorAcrossRename, dirtyPaths, flushRenamedPath, retireDeletedPath } from '../lib/renameContinuity'
+import { _resetRenameContinuity, carryEditorAcrossPane, carryEditorAcrossRename, dirtyPaths, flushRenamedPath, retireDeletedPath } from '../lib/renameContinuity'
 import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
@@ -873,5 +873,17 @@ describe('rename and delete continuity (YAZ-4515)', () => {
     await act(async () => root?.unmount())
     root = null
     expect(drawingSave).not.toHaveBeenCalled()
+  })
+
+  it('a pane move of a tab of the same file leaves the modal open, dirty, and still saving', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    act(() => carryEditorAcrossPane(PATH))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(dirtyPaths()).toEqual([PATH])
+    expect(drawingSave).not.toHaveBeenCalled()
+    await idle()
+    expect(drawingSave).toHaveBeenCalledTimes(1)
   })
 })

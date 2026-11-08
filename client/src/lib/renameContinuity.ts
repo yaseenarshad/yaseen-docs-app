@@ -50,6 +50,8 @@ export interface RenameContinuityHandle {
   retire(): void
   /** A board's unsaved edits (YAZ-1801 D5, YAZ-3039), which `capture` never reports; absent = ask `capture`. */
   dirty?(): boolean
+  /** An editor outside the tab panes (the note's drawing modal, YAZ-4515): a pane move leaves it alone; a rename or delete retires it. */
+  modal?: true
 }
 
 export interface RenameBuffer {
@@ -93,8 +95,12 @@ const flushing = new Map<string, Promise<void>>()
 
 /** Flush every editor open at `path` — the pre-rename step (a), the pre-rewrite step, and a switch between two copies. */
 export function flushRenamedPath(path: string): Promise<void> {
-  const done = Promise.all(handlesAt(path).map((handle) => handle.flush())).then(() => undefined)
-  // Recorded until it settles, so a copy that opens now reads the text it is saving, not the older file (YAZ-3685 F5).
+  return recordFlush(path, handlesAt(path))
+}
+
+/** Flush `owners` and record it until it settles, so a copy that opens now reads what they are saving, not the older file (YAZ-3685 F5). */
+function recordFlush(path: string, owners: readonly RenameContinuityHandle[]): Promise<void> {
+  const done = Promise.all(owners.map((handle) => handle.flush())).then(() => undefined)
   const all = Promise.all([flushing.get(path), done]).then(noop, noop)
   flushing.set(path, all)
   void all.then(() => {
@@ -150,9 +156,21 @@ export function carryEditorAcrossRename(oldPath: string, newPath: string): void 
   carryEditorBuffer(oldPath, newPath)
 }
 
-/** Same-path handoff before React moves one editable owner between main and right panes (every main copy closes, YAZ-2940 D8). */
+/**
+ * Same-path handoff before React moves one editable owner between main and right panes (every main copy closes, YAZ-2940 D8).
+ * Only the pane owners move: a modal stays. A board stashes no buffer, so its unsaved edits SAVE NOW (YAZ-4515): `flush`
+ * issues the write while the old owner still holds its scene, the retire then stops any later write, and the new owner's
+ * read waits for that save (`savedFirst`, `DocumentShell`), so its baseline is the saved file and nothing can clobber it.
+ */
 export function carryEditorAcrossPane(path: string): void {
-  carryEditorBuffer(path, path)
+  const owners = handlesAt(path).filter((handle) => handle.modal !== true)
+  const boards = owners.filter((handle) => handle.dirty?.() === true)
+  if (boards.length > 0) void recordFlush(path, boards)
+  for (const handle of owners) {
+    const buffer = handle.capture()
+    handle.retire()
+    if (buffer !== null) buffers.set(path, buffer)
+  }
 }
 
 /** Consume the stashed buffer for a freshly mounting editor at `path`; null when none. */
