@@ -1,7 +1,7 @@
 /**
  * The sidebar's folder page row opens the folder page on its Page tab (YAZ-4587, D37): `askPageTab`, then the
- * "Open folder page" door. Mounted through the real host (`FolderView` → `ViewsPane`), `OutlineEditor` stubbed as
- * `OutlineView.test.tsx` does.
+ * "Open folder page" door. Mounted through the real host (`FolderView` → `ViewsPane`); the stored `type: outline` reads
+ * as the Page tab (YAZ-4584 D38).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -11,7 +11,6 @@ import { flush, rec, renderFolderView, unmountFolderView } from './testFolderVie
 import { askPageTab, takePageTab } from './pageTabRequest'
 
 vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
-vi.mock('./view/OutlineEditor', () => ({ OutlineEditor: () => <div className="outline-doc" /> }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 

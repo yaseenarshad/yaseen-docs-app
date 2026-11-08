@@ -51,7 +51,7 @@ export interface FolderSettings {
 
 /**
  * 🔒 Q7 (YAZ-815, amended YAZ-935, YAZ-2290 D5a): the two skins a folder that lists NO usable views
- * falls back to — Table, then Board; an Outline is the "+" menu's to add. That is the whole reach
+ * falls back to — Table, then Board; a Page tab is the "+" menu's to add. That is the whole reach
  * of the rule: a folder that lists some has exactly those.
  */
 export const DEFAULT_VIEWS: readonly ViewDef[] = [
