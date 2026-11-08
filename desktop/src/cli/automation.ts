@@ -115,7 +115,8 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
     const definition = commandDefinition(name)
     const args: Record<string, unknown> = {}
     let profile = userDataDir(process.env, process.platform, homedir())
-    let start = definition.effect === 'navigate', waitMs: number = AUTOMATION_LIMITS.waitMs
+    // Navigation starts Docs (D1). A command that names a live window or tab cannot have one in a closed app, so it does not.
+    let start = definition.effect === 'navigate' && !definition.input.required?.some(field => field === 'window' || field === 'tab'), waitMs: number = AUTOMATION_LIMITS.waitMs
     let input: string | undefined, body: string | undefined, reference: string | undefined
     const seen = new Set<string>()
     for (let i = 2; i < argv.length; i++) {

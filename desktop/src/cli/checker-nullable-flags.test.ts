@@ -19,7 +19,7 @@ async function run(argv: string[]) {
 }
 
 it.each([
-  ['asset write --revision', ['asset', 'write', '--root', '/v', '--path', '/v/a.png', '--revision', '1794105250946.1309:3fd6e6be528']],
+  ['asset write --revision', ['asset', 'write', '--root', '/v', '--path', '/v/a.png', '--revision', '1794105250946.1309:3fd6e6be528', '--body', 'x']],
   ['window rename --name', ['window', 'rename', '--window', 'w1', '--name', 'Plain name']],
   ['tab rename --name', ['tab', 'rename', '--window', 'w1', '--tab', 'tab-1', '--name', 'Mine']],
   ['share setDomain --hostname', ['share', 'setDomain', '--hostname', 'share.example.com']],
