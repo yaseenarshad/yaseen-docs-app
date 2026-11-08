@@ -23,7 +23,7 @@
  */
 import { folderValues, setFolderValue } from '@shared/folderValues'
 import type { IndexRecord } from '@shared/types'
-import { reservedKeys } from '../links/reservedKeys'
+import { reservedKeys } from '@shared/reservedKeys'
 import type { ColumnDecl } from './folderSettings'
 import { withOrder } from './view/columnOrder'
 import { canonicalKey } from './view/keys'

@@ -7158,6 +7158,28 @@ describe('App automation navigation acknowledgement', () => {
     expect(captured.sidebar?.activeFile).toBe(path)
     expect(bridge.automation.reply).toHaveBeenCalledExactlyOnceWith({ id: 'nav-1', ok: true, value: expect.objectContaining({ path, sidebar: 'favorites', sidebarCollapsed: false, acknowledged: true }) })
   })
+  it('waits for a view the saved file holds until the page has indexed it, then selects it (YAZ-4518)', async () => {
+    // The Editor mock renders a real FolderView at this one path.
+    const path = '/v/Automation Folder'
+    const folderRecord = (views: unknown[]): IndexRecord => ({ path: `${path}/.folder.md`, name: '.folder.md', basename: '.folder', title: 'Automation Folder', folder: 'Automation Folder', ext: 'md', size: 7, ctime: 1, mtime: 2, properties: { folder_settings: { views } }, aliases: [], tags: [], links: [], embeds: [] })
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], sidebarCollapsed: true }, {}, b => {
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: [{ type: 'dir', path, name: 'Automation Folder', children: [] }], generatedAt: 1 })
+    })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await act(async () => {})
+    expect([...el.querySelectorAll('.view-tab__btn')].map(node => node.textContent)).toEqual(['Table', 'Board'])
+    await act(async () => { emitAutomation({ id: 'nav-later', action: 'navigate', target: { path, view: 'Later' } }) })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => {})
+    expect(JSON.stringify(bridge.automation.reply.mock.calls)).not.toContain('nav-later')
+    // The CLI's write reaches the page through the index, as any outside edit does.
+    bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [folderRecord([{ type: 'table', name: 'Table' }, { type: 'list', name: 'Later' }])], generatedAt: 2, ids: true })
+    const listeners = bridge.watch.mock.calls.flatMap(([root, listener]) => root === '/v' && typeof listener === 'function' ? [listener as (event: unknown) => void] : [])
+    await act(async () => { listeners.forEach(listener => listener({ type: 'change', path: `${path}/.folder.md` })); await new Promise(resolve => setTimeout(resolve, 400)) })
+    await act(async () => {})
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-later', ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+    expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe('Later')
+  })
   it('preserves the hidden sidebar when only a page was requested', async () => {
     const path = '/v/Journal.md'
     const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Journal', mtime: 1 } })

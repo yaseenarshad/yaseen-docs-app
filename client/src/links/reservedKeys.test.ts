@@ -7,7 +7,7 @@ import { TITLE_KEY } from '@shared/noteName'
 import { OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { REVIEW_KEY, REVIEWS_KEY } from '@shared/reviews'
-import { reservedKeys } from './reservedKeys'
+import { reservedKeys } from '@shared/reservedKeys'
 
 /** The keys the app owns where the vault uses IDs. */
 const RESERVED_KEYS = reservedKeys(true)

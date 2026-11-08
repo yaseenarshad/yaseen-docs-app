@@ -60,7 +60,7 @@ export type IpcPlaces = ShareIpcPlaces & {
 
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves; automationServices: AutomationServices } {
   const { userData } = places
-  registerFsIpc(store, windows)
+  const idChanges = registerFsIpc(store, windows)
   // The folder window's pick of an outside pictures folder is what lets the app write there (YAZ-3943 demo round 3).
   // Settings' pick is approved at once; the cog's waits here until its move is confirmed (YAZ-4074 6A item 3).
   const pickedPictureFolders = new Set<string>()
@@ -116,7 +116,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
   // `libraryMoves.settled()`: the launch's copy and its marker write are done — what a caller waits on before it lets go of `userData`.
   const sync = registerGithubIpc(store)
-  const automationServices: AutomationServices = { components, media: library.media, copies: library.copies, studio, sync, sharing, storage, settingsFolder, languageHelpers,
+  const automationServices: AutomationServices = { components, media: library.media, copies: library.copies, studio, sync, sharing, storage, settingsFolder, languageHelpers, idChanges,
     forgetPicturePick: folder => { pickedPictureFolders.delete(folder) },
     credentials: {
       hasPixabay: () => secrets.has(PIXABAY_SECRET),

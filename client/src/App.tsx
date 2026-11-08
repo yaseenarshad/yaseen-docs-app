@@ -1918,7 +1918,8 @@ export function App() {
     }
     if (target.view !== undefined) {
       const key = `view:${String(app.inspect().tab)}`
-      const view = await waitForSurface(key)
+      // Main named a view the saved file holds; a page whose index has not caught up with that file yet waits for it.
+      const view = await waitForSurface(key, surface => surface.ready && (surface.inspect().views as string[] | undefined)?.includes(target.view!) === true)
       flushSync(() => view.selectView?.(target.view!))
       await waitForSurface(key, surface => String(surface.inspect().view).toLowerCase() === target.view!.toLowerCase() || surface.inspect().viewId === target.view)
     }

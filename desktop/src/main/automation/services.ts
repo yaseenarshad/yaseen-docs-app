@@ -8,6 +8,7 @@ import type { Sharing } from '../share/sharing'
 import type { ShrinkResult, VaultStorageStats } from '@shared/types'
 import type { SettingsFolder } from '../settingsFolder'
 import type { LanguageHelperActions } from '../ipc/lsp'
+import type { IdChanges } from '../ipc/fs'
 
 /** App-owned services, passed explicitly. The public registry never names an IPC channel. */
 export interface AutomationServices {
@@ -23,4 +24,6 @@ export interface AutomationServices {
   storage: { stats(root: string): Promise<VaultStorageStats>; shrink(root: string, skip: readonly string[]): Promise<ShrinkResult> }
   settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>
   languageHelpers: LanguageHelperActions
+  /** Settings' "Change letters" and "Give old IDs numbers", with their rename follow-up and broadcast. */
+  idChanges: IdChanges
 }
