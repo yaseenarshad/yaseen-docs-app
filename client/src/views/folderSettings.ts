@@ -4,13 +4,11 @@
  * edit goes back through `writeFolderSettings()` — no surface re-parses that key itself (locked).
  * The tolerant parse itself is `@shared/folderSettings`, which the CLI's folder commands share (YAZ-4518).
  */
-import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import type { IndexRecord, PropertyDecl } from '@shared/types'
-import { isRecord } from '@shared/guards'
 // The one reserved key this module owns, and where links live inside it (YAZ-864): both are in
 // `@shared/folderSettingsLinks`, so the main process's ID rewrite walks the same leaves (YAZ-2677).
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
-import { folderSettingsOf, folderSettingsValue, readColumns, type FolderSettings } from '@shared/folderSettings'
+import { columnChange, folderSettingsOf, folderSettingsValue, type FolderSettings } from '@shared/folderSettings'
 import { transformFile, writeProperty } from './writeProperty'
 
 export { DEFAULT_COLUMNS, DEFAULT_VIEWS, type ColumnDecl, type FolderSettings } from '@shared/folderSettings'
@@ -37,37 +35,11 @@ export function writeFolderSettings(
 
 
 /**
- * Edit one definition against fresh file bytes. The captured parsed declaration is the conflict
- * boundary: concurrent changes to other columns/views are retained, while a changed definition
- * asks the user to reopen its settings. transformFile repeats this check after an mtime retry.
+ * Edit one definition against fresh file bytes (`columnChange`, shared with the CLI, YAZ-4518). The captured
+ * parsed declaration is the conflict boundary; transformFile repeats the check after an mtime retry.
  */
 export function writeFolderColumn(path: string, key: string, next: PropertyDecl, base: PropertyDecl | undefined, ids: boolean): Promise<{ mtime: number }> {
-  const problems: string[] = []
-  const replacement = readColumns({ column: next }, problems).column
-  if (!replacement || problems.length) return Promise.reject(new Error(problems[0] ?? 'Invalid property definition'))
-  const normalize = (decl: unknown) => decl === undefined ? undefined : readColumns({ column: decl }, []).column
-  const expected = JSON.stringify(normalize(base))
-  const desired = JSON.stringify(replacement)
-  return transformFile(path, content => {
-    const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
-    if (parsed.error) throw new FrontmatterWriteError(parsed.error)
-    const settings = parsed.properties[FOLDER_SETTINGS_KEY]
-    if (settings != null && !isRecord(settings)) throw new Error('Folder settings must be a map before editing properties.')
-    // Nothing saved yet (YAZ-2290 E2): the default columns are what the caller saw, so this first write states them.
-    const raw = settings ?? { columns: folderSettingsOf(undefined, ids).columns }
-    if (raw.columns !== undefined && !isRecord(raw.columns)) throw new Error('Folder columns must be a map before editing properties.')
-    const columns = raw.columns ?? {}
-    const current = Object.prototype.hasOwnProperty.call(columns, key) ? columns[key] : undefined
-    const currentProblems: string[] = []
-    const currentDefinition = current === undefined ? undefined : readColumns({ column: current }, currentProblems).column
-    if (current !== undefined && (!isRecord(current) || !currentDefinition || currentProblems.length)) throw new Error(`Property “${key}” has an invalid definition. Repair its YAML before editing it.`)
-    const currentKnown = JSON.stringify(currentDefinition)
-    if (currentKnown !== expected) throw new Error(`Property “${key}” changed since these settings were opened. Reopen the property and try again.`)
-    if (currentKnown === desired) return content
-    const declaration = { ...current }
-    // Removing a known optional setting is intentional; unknown extension metadata survives.
-    for (const field of ['kind', 'target', 'required', 'options', 'optionSort']) delete declaration[field]
-    Object.assign(declaration, replacement)
-    return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, { ...raw, columns: { ...columns, [key]: declaration } })
-  })
+  let change: (content: string) => string
+  try { change = columnChange(key, next, base, ids) } catch (err) { return Promise.reject(err) }
+  return transformFile(path, change)
 }

@@ -21,122 +21,16 @@
  * Built-in columns are never deletable — `file.*`, `formula.*` and the reserved keys — only
  * hidden. `undeletableReason` is the one rule both menus disable their item by.
  */
-import { folderValues, setFolderValue } from '@shared/folderValues'
+import { setFolderValue } from '@shared/folderValues'
 import type { IndexRecord } from '@shared/types'
-import { reservedKeys } from '@shared/reservedKeys'
+import { canonicalKey, notesHolding, pruneColumnFromViews, pruneColumnLabel, undeletableReason } from '@shared/folderColumns'
 import type { ColumnDecl } from './folderSettings'
-import { withOrder } from './view/columnOrder'
-import { canonicalKey } from './view/keys'
-import { groupByLevels, type FilterNode, type ViewDef, type ViewSet } from './viewSchema'
+import type { ViewDef, ViewSet } from './viewSchema'
 import { transformFile } from './writeProperty'
+// The pure rules live in `@shared/folderColumns`, which the CLI's `folderColumn remove` shares (YAZ-4518).
+export { filterMentions, notesHolding, pruneColumnFromViews, pruneColumnLabel, pruneFilter, undeletableReason } from '@shared/folderColumns'
 
 const bareOf = (key: string): string => canonicalKey(key).slice('note.'.length)
-
-/** The tooltip a disabled "Delete column…" wears, or null when the key may go. */
-export function undeletableReason(key: string): string | null {
-  const c = canonicalKey(key)
-  return !c.startsWith('note.') || reservedKeys(true).has(c.slice('note.'.length)) ? 'Built-in column — hide it instead' : null
-}
-
-/**
- * The indexed notes holding the field in the block of the folder with this id — the notes a
- * delete strips, and the confirm sheet's count. A folder with no id holds no values.
- */
-export function notesHolding(records: readonly IndexRecord[], folderId: string | undefined, key: string): IndexRecord[] {
-  const bare = bareOf(key)
-  return records.filter((record) => Object.prototype.hasOwnProperty.call(folderValues(record.properties, folderId), bare))
-}
-
-/** Every `"…"` / `'…'` literal blanked (escapes honoured), so a key spelled INSIDE a string is not a reference. */
-const withoutStringLiterals = (expr: string): string => expr.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""')
-
-/**
- * Does a filter expression name the column? The identifier `note.<key>` or the bare `<key>` as a
- * whole token, outside string literals — a tokenizer-free check: literals go first, then a
- * word-boundary match (YAZ-1549).
- */
-export function filterMentions(expr: string, key: string): boolean {
-  const bare = bareOf(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(^|[^\\w.])(note\\.)?${bare}(?![\\w])`).test(withoutStringLiterals(expr))
-}
-
-/**
- * The filter minus every leaf that names the key: an emptied `and` / `or` / `not` node goes with
- * its last leaf, and `undefined` means the whole filter went. The same node comes back when
- * nothing under it changed.
- */
-export function pruneFilter(node: FilterNode, key: string): FilterNode | undefined {
-  if (typeof node === 'string') return filterMentions(node, key) ? undefined : node
-  const [op, children] = Object.entries(node)[0] as ['and' | 'or' | 'not', FilterNode[]]
-  const kept = children.map((child) => pruneFilter(child, key)).filter((child): child is FilterNode => child !== undefined)
-  if (kept.length === 0) return undefined
-  if (kept.length === children.length && kept.every((child, i) => child === children[i])) return node
-  return { [op]: kept } as FilterNode
-}
-
-/** Every view minus every reference to the key; untouched views come back as the same object. */
-export function pruneColumnFromViews(views: readonly ViewDef[], key: string): ViewDef[] {
-  const c = canonicalKey(key)
-  const names = (k: unknown): boolean => typeof k === 'string' && canonicalKey(k) === c
-  return views.map((view) => {
-    let changed = false
-    let next: ViewDef = { ...view }
-    if (Array.isArray(view.order)) {
-      const order = view.order.filter((k) => !names(k))
-      if (order.length !== view.order.length) {
-        changed = true
-        next = withOrder(next, order)
-      }
-    }
-    if (Array.isArray(view.sort)) {
-      const sort = view.sort.filter((s) => !names(s.property))
-      if (sort.length !== view.sort.length) {
-        changed = true
-        if (sort.length === 0) delete next.sort
-        else next.sort = sort
-      }
-    }
-    if (view.groupBy !== undefined) {
-      const levels = groupByLevels(view)
-      const kept = levels.filter((g) => !names(g.property))
-      if (kept.length !== levels.length) {
-        changed = true
-        if (kept.length === 0) delete next.groupBy
-        else next.groupBy = Array.isArray(view.groupBy) ? kept : kept[0]
-      }
-    }
-    if (names(view.image)) {
-      changed = true
-      delete next.image
-    }
-    if (view.filters !== undefined) {
-      const filters = pruneFilter(view.filters, key)
-      if (filters !== view.filters) {
-        changed = true
-        if (filters === undefined) delete next.filters
-        else next.filters = filters
-      }
-    }
-    for (const map of ['summaries', 'columnSize', 'cardStyle'] as const) {
-      const entries = view[map]
-      if (entries === undefined || entries === null || typeof entries !== 'object') continue
-      const keptEntries = Object.fromEntries(Object.entries(entries).filter(([k]) => !names(k)))
-      if (Object.keys(keptEntries).length === Object.keys(entries).length) continue
-      changed = true
-      if (Object.keys(keptEntries).length === 0) delete next[map]
-      else (next as Record<string, unknown>)[map] = keptEntries
-    }
-    return changed ? next : view
-  })
-}
-
-/** The labels minus the key's entry (any spelling); undefined once none are left, so the key deletes itself. */
-export function pruneColumnLabel(properties: ViewSet['properties'], key: string): ViewSet['properties'] {
-  if (properties === undefined) return undefined
-  const c = canonicalKey(key)
-  const kept = Object.fromEntries(Object.entries(properties).filter(([k]) => canonicalKey(k) !== c))
-  return Object.keys(kept).length === 0 ? undefined : kept
-}
 
 export interface DeleteColumnHost {
   /** The folder's declarations as the host holds them — its AHEAD copy (YAZ-1549), never a stale snapshot. */

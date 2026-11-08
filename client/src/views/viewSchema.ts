@@ -8,12 +8,9 @@ import { isRecord } from '@shared/guards'
  * survive a parse → update → serialise cycle untouched, comments included.
  */
 
-import type { GroupBySpec, ViewDef, ViewSet } from '@shared/folderViews'
+import type { ViewSet } from '@shared/folderViews'
 export type { FilterNode, GroupBySpec, SortSpec, ViewDef, ViewSet } from '@shared/folderViews'
-
-/** A view's grouping levels, outer first, whichever form `groupBy` is written in. */
-export const groupByLevels = (view: ViewDef): GroupBySpec[] =>
-  Array.isArray(view.groupBy) ? view.groupBy : view.groupBy ? [view.groupBy] : []
+export { groupByLevels } from '@shared/folderViews'
 
 /**
  * The ONE config-write door every menu is handed: `ViewsPane`'s `update`, which re-parses and

@@ -10,6 +10,7 @@
 import { PROPERTY_KINDS, type PropertyDecl, type PropertyKind } from './types'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from './propertyOptions'
 import { isRecord } from './guards'
+import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 import { FOLDER_SETTINGS_KEY } from './folderSettingsLinks'
 import type { ViewDef } from './folderViews'
 
@@ -215,4 +216,40 @@ export function folderSettingsValue(settings: FolderSettings): Record<string, un
   if (settings.properties !== undefined) out.properties = settings.properties
   out.views = settings.views
   return out
+}
+
+/**
+ * One definition's edit as a change of the file's bytes. The captured parsed declaration (`base`) is the conflict
+ * boundary: concurrent changes to other columns/views are retained, while a changed definition asks the user to
+ * reopen its settings. Throws at once for an invalid `next`.
+ */
+export function columnChange(key: string, next: PropertyDecl, base: PropertyDecl | undefined, ids: boolean): (content: string) => string {
+  const problems: string[] = []
+  const replacement = readColumns({ column: next }, problems).column
+  if (!replacement || problems.length) throw new Error(problems[0] ?? 'Invalid property definition')
+  const normalize = (decl: unknown) => decl === undefined ? undefined : readColumns({ column: decl }, []).column
+  const expected = JSON.stringify(normalize(base))
+  const desired = JSON.stringify(replacement)
+  return content => {
+    const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
+    if (parsed.error) throw new FrontmatterWriteError(parsed.error)
+    const settings = parsed.properties[FOLDER_SETTINGS_KEY]
+    if (settings != null && !isRecord(settings)) throw new Error('Folder settings must be a map before editing properties.')
+    // Nothing saved yet (YAZ-2290 E2): the default columns are what the caller saw, so this first write states them.
+    const raw = settings ?? { columns: folderSettingsOf(undefined, ids).columns }
+    if (raw.columns !== undefined && !isRecord(raw.columns)) throw new Error('Folder columns must be a map before editing properties.')
+    const columns = raw.columns ?? {}
+    const current = Object.prototype.hasOwnProperty.call(columns, key) ? columns[key] : undefined
+    const currentProblems: string[] = []
+    const currentDefinition = current === undefined ? undefined : readColumns({ column: current }, currentProblems).column
+    if (current !== undefined && (!isRecord(current) || !currentDefinition || currentProblems.length)) throw new Error(`Property “${key}” has an invalid definition. Repair its YAML before editing it.`)
+    const currentKnown = JSON.stringify(currentDefinition)
+    if (currentKnown !== expected) throw new Error(`Property “${key}” changed since these settings were opened. Reopen the property and try again.`)
+    if (currentKnown === desired) return content
+    const declaration = { ...current }
+    // Removing a known optional setting is intentional; unknown extension metadata survives.
+    for (const field of ['kind', 'target', 'required', 'options', 'optionSort']) delete declaration[field]
+    Object.assign(declaration, replacement)
+    return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, { ...raw, columns: { ...columns, [key]: declaration } })
+  }
 }
