@@ -59,7 +59,7 @@ export function waitForSurface(key: string, condition: (surface: AutomationSurfa
       const surface = surfaces.get(key)
       try { if (surface && condition(surface)) finish(surface) } catch (error) { finish(undefined, error) }
     }
-    const timer = setTimeout(() => finish(undefined, new AutomationFailure('SURFACE_TIMEOUT', `The requested ${key.split(':')[0]} state did not become ready.`)), 60_000)
+    const timer = setTimeout(() => finish(undefined, new AutomationFailure('RENDERER_TIMEOUT', `The requested ${key.split(':')[0]} state did not become ready.`)), 60_000)
     waiting.add(check); check()
   })
 }

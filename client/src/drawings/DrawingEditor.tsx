@@ -407,8 +407,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
           return
         }
         const name = edit.action === 'undo' || edit.action === 'redo' ? edit.action : edit.action in DRAWING_ACTIONS ? DRAWING_ACTIONS[edit.action as keyof typeof DRAWING_ACTIONS] : null
-        if (name === null) throw new AutomationFailure('UNSUPPORTED_ACTION', 'A drawing does not support this action.')
-        if (!s.runAction(name)) throw new AutomationFailure('NOT_APPLICABLE', 'This action does not apply to the current selection.')
+        if (name === null) throw new AutomationFailure('UNSUPPORTED', 'A drawing does not support this action.')
+        if (!s.runAction(name)) throw new AutomationFailure('UNSUPPORTED', 'This action does not apply to the current selection.')
       },
     }, { kind: 'drawing', run: async ({ format, options }) => {
       const s = surface.current

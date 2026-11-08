@@ -122,7 +122,7 @@ async function viewCommand(store: Pick<Store, 'get' | 'setBaseGroups'>, page: Pa
       const changes = args.changes as Record<string, unknown>
       if (!Object.keys(changes).length) throw new AutomationFailure('INVALID_INPUT', 'Supply at least one option.')
       try { return { ...await writePage(page, args.revision, viewChange(page.ids, d => setViewOptions(d, i, changes)), record), view: from } } catch (error) {
-        throw error instanceof ViewOptionError ? new AutomationFailure(error.code, error.message, { view: from, type: views[i].type }) : error
+        throw error instanceof ViewOptionError ? new AutomationFailure('INVALID_INPUT', error.message, { view: from, type: views[i].type, reason: error.code }) : error
       }
     }
     case 'folderView.setDefault':
@@ -186,7 +186,7 @@ async function shortcutCommand(page: Page, command: string, args: Record<string,
     return { root: page.root, path: page.dir, ...shown, items: shown.items.map(row => ({ path: row.path, title: row.title, id: row.id ?? null })) }
   }
   const note = await resolveTarget([page.root], { path: args.note as string })
-  if (!isMarkdown(note)) throw new AutomationFailure('UNSUPPORTED_EXTENSION', 'A shortcut shows a note.')
+  if (!isMarkdown(note)) throw new AutomationFailure('UNSUPPORTED', 'A shortcut shows a note.')
   const before = await readSaved(note)
   if (before.revision !== args.revision) throw new AutomationFailure('CONFLICT', 'The note changed since this revision. Read it again before editing.')
   let content: string, folderId: { id: string; created: boolean } | undefined

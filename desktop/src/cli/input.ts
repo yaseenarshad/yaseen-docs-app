@@ -1,6 +1,6 @@
 import { open } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { AutomationFailure } from '@shared/automation'
+import { AutomationFailure, publicCode } from '@shared/automation'
 import { readBoundedHandle } from '../main/fs/boundedRead'
 import { BridgeFailure } from '../main/fs/fsUtils'
 import type { Io } from './cli'
@@ -28,10 +28,10 @@ export async function commandInput(value: string, io: Io, maxBytes: number, secr
     try {
       const info = await handle.stat()
       if (secret && process.platform !== 'win32' && ((info.mode & 0o077) !== 0 || (process.getuid && info.uid !== process.getuid()))) {
-        throw new AutomationFailure('UNSAFE_INPUT', 'A secret input file must belong to you and allow no group or other access. Use chmod 600.')
+        throw new AutomationFailure('INVALID_INPUT', 'A secret input file must belong to you and allow no group or other access. Use chmod 600.')
       }
       try { result = (await readBoundedHandle(handle, path, maxBytes, 'Input exceeds this command’s byte limit.')).data }
-      catch (error) { if (error instanceof BridgeFailure) throw new AutomationFailure(error.code, error.message); throw error }
+      catch (error) { if (error instanceof BridgeFailure) throw new AutomationFailure(publicCode(error.code), error.message); throw error }
     } finally { await handle.close() }
   } else result = Buffer.from(value)
   if (result.length > maxBytes) throw new AutomationFailure('TOO_LARGE', 'Input exceeds this command’s byte limit.')

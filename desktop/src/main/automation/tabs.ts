@@ -71,7 +71,7 @@ async function moveTab(host: NavigationHost, store: Store, source: WindowEntry, 
   try {
     sent = await host.operate(source.id, { command: 'tab.move', tab: tab.id, to: to ?? null, ...(args.index === undefined ? {} : { at: args.index as number }), background: args.background === true }) as { sourceClosed?: boolean }
   } catch (error) {
-    if (error instanceof AutomationFailure && error.code === 'WINDOW_CLOSED') throw new AutomationFailure('SOURCE_CLOSED', 'The source window closed before it acknowledged. Inspect both windows before another move.', { path: tab.path, window: source.id, target: to ?? null })
+    if (error instanceof AutomationFailure && error.code === 'WINDOW_CLOSED') throw new AutomationFailure('WINDOW_CLOSED', 'The source window closed before it acknowledged. Inspect both windows before another move.', { path: tab.path, window: source.id, target: to ?? null })
     throw error
   }
   // `window:pop-out` names no window: the new one is the live window that was not there before and holds the page.
@@ -81,7 +81,7 @@ async function moveTab(host: NavigationHost, store: Store, source: WindowEntry, 
     if (receiver === undefined) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The new window is not live.')
     received = await host.operate(receiver, { command: 'tab.received', path: tab.path, except }) as { tab?: string }
   } catch (error) {
-    throw new AutomationFailure('TARGET_UNACKNOWLEDGED', 'The tab left the source window, but the target did not acknowledge it. Inspect both windows before another move.', { path: tab.path, window: source.id, target: receiver ?? null, sourceClosed: sent.sourceClosed === true, cause: error instanceof AutomationFailure ? error.code : 'UNKNOWN' })
+    throw new AutomationFailure('RENDERER_TIMEOUT', 'The tab left the source window, but the target did not acknowledge it. Inspect both windows before another move.', { path: tab.path, window: source.id, target: receiver ?? null, sourceClosed: sent.sourceClosed === true, cause: error instanceof AutomationFailure ? error.code : 'UNKNOWN' })
   }
   await store.flush()
   return { window: source.id, target: receiver, created: fresh, path: tab.path, tab: received!.tab!, sourceClosed: sent.sourceClosed === true, diskSaved: true }

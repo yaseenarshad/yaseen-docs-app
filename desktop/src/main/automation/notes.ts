@@ -6,7 +6,7 @@ import { MAX_FILE_BYTES, type AppState } from '@shared/types'
 import { sanitizeReviewSettings, REVIEW_SETTINGS_FILE } from '@shared/reviews'
 import { dueAt, reviewQueue } from '@shared/schedule'
 import { dailyNote } from '../notes/daily'
-import { readSaved, resolveTarget, scopeRoots } from './resources'
+import { createdMeanwhile, readSaved, resolveTarget, scopeRoots } from './resources'
 import { createDurable, fsCall } from '../fs/fsUtils'
 import { decodeViewOnlyText, writeFile } from '../fs/file'
 import { readConfig } from '../vaultConfig'
@@ -37,7 +37,7 @@ export async function noteCommand(state: AppState, command: string, args: Record
   }
   if (body.length > MAX_FILE_BYTES) throw new AutomationFailure('TOO_LARGE', 'The template exceeds the text file size limit.')
   const content = decodeViewOnlyText(body, path)
-  if (args.revision === null) await fsCall(path, () => createDurable(path, content))
+  if (args.revision === null) await fsCall(path, () => createDurable(path, content)).catch(createdMeanwhile)
   else await writeFile({ path, content, expectedRevision: args.revision as string })
   return { ...await readSaved(path), diskSaved: true, rendererMerged: false }
 }

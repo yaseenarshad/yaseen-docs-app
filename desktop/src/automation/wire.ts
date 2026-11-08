@@ -20,7 +20,7 @@ export function readPacket(socket: Socket, inspect?: (control: unknown, contentB
     let contentSize = 0, control: unknown
     const cleanup = () => { socket.off('data', data); socket.off('end', end); socket.off('close', end); socket.off('error', failed) }
     const failed = (error: Error) => { cleanup(); reject(error) }
-    const end = () => failed(new AutomationFailure('CONNECTION_CLOSED', 'Docs closed the connection before replying.'))
+    const end = () => failed(new AutomationFailure('CONNECTION_LOST', 'The connection closed before a reply.'))
     const finish = (content: Buffer) => { cleanup(); resolve({ control, content }) }
     const data = (chunk: Buffer) => {
       try {

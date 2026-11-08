@@ -11,6 +11,12 @@ import { getFocus } from '../focus'
 import { getFocusFolders } from '../focusFolders'
 import { readFile } from '../fs/file'
 import { getIndex, getReadOnlyTree } from '../vaultIndex/live'
+import { BridgeFailure } from '../fs/fsUtils'
+
+/** A `revision: null` create that met a file: that revision is stale, as any other would be (YAZ-4527 P14). */
+export const createdMeanwhile = (error: unknown): never => {
+  throw error instanceof BridgeFailure && error.code === 'ALREADY_EXISTS' ? new AutomationFailure('CONFLICT', 'The file exists now. Read it, then write with its revision.', { path: error.path }) : error
+}
 
 export interface ResourceScope {
   workspace?: string
@@ -53,9 +59,9 @@ export async function scopeRoots(state: AppState, input: ResourceScope, allowPar
   if (!roots.length || roots.length > MAX_WINDOW_ROOTS) throw new AutomationFailure('INVALID_INPUT', `Choose between 1 and ${MAX_WINDOW_ROOTS} vaults.`)
   const exists = await Promise.all(roots.map(root => stat(root).then(info => info.isDirectory(), () => false)))
   const missing = roots.filter((_root, i) => !exists[i])
-  if (missing.length && !allowPartial) throw new AutomationFailure('MISSING_VAULT', `Vault folders were not found: ${missing.join(', ')}`)
+  if (missing.length && !allowPartial) throw new AutomationFailure('MISSING_TARGET', `Vault folders were not found: ${missing.join(', ')}`, { missing })
   const found = roots.filter((_root, i) => exists[i])
-  if (!found.length) throw new AutomationFailure('MISSING_VAULT', 'None of the requested vault folders exists.')
+  if (!found.length) throw new AutomationFailure('MISSING_TARGET', 'None of the requested vault folders exists.', { missing })
   return { roots: found, missing, ...(workspace ? { workspace: workspace.id } : {}) }
 }
 

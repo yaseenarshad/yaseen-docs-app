@@ -22,7 +22,7 @@ export async function linkCommand(state: AppState, command: string, args: Record
   if (command === 'link.outgoing') {
     // A folder is read through its settings record, as its page shows it: nested settings leaves and outline links count.
     const record = index.records.find(record => record.path === path) ?? index.folders.find(folder => folder.path === path || dirname(folder.path) === path)
-    if (!record) throw new AutomationFailure('UNSUPPORTED_TARGET', 'Outgoing links require an indexed Markdown note or folder metadata file.')
+    if (!record) throw new AutomationFailure('UNSUPPORTED', 'Outgoing links require an indexed Markdown note or folder metadata file.')
     const targets = index.folders.includes(record) ? [...referenceTargets(record), ...outlineLinks(record)] : [...record.links, ...record.embeds]
     items = [...new Set(targets)].map(target => ({ target, path: resolve(target), embedded: record.embeds.includes(target) }))
   } else {

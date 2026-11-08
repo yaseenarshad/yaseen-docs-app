@@ -27,7 +27,7 @@ export function markdownAction(crepe: Crepe, action: Exclude<EditorAction, { act
   if (action.action === 'replace') view.dispatch(view.state.tr.insertText(action.text))
   else if (action.action === 'format') {
     const command = { bold: toggleStrongCommand, italic: toggleEmphasisCommand, code: toggleInlineCodeCommand, strike: toggleStrikethroughCommand }[action.format]
-    if (!crepe.editor.action(ctx => ctx.get(commandsCtx).call(command.key))) throw new AutomationFailure('UNSUPPORTED_ACTION', 'This formatting action cannot apply to the current selection.')
+    if (!crepe.editor.action(ctx => ctx.get(commandsCtx).call(command.key))) throw new AutomationFailure('UNSUPPORTED', 'This formatting action cannot apply to the current selection.')
   }
   view.dispatch(closeHistory(view.state.tr))
 }

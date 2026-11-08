@@ -43,7 +43,7 @@ export async function connectedCommand(services: AutomationServices, state: AppS
   if (savedSharePath && (args.id !== undefined || args.name !== undefined)) throw new AutomationFailure('INVALID_INPUT', 'Choose exactly one path, id, or name target.')
   const path = savedSharePath ? absolute(args.path as string) : await resolveTarget(roots, args)
   if (rootOfPath(roots, path) === null || path === root) throw new AutomationFailure('OUTSIDE_SCOPE', 'Choose a board inside the vault.')
-  if (command.startsWith('share.') && !isDrawing(path) && !isDiagram(path)) throw new AutomationFailure('UNSUPPORTED_EXTENSION', 'Sharing requires an Excalidraw drawing or draw.io diagram.')
+  if (command.startsWith('share.') && !isDrawing(path) && !isDiagram(path)) throw new AutomationFailure('UNSUPPORTED', 'Sharing requires an Excalidraw drawing or draw.io diagram.')
   if (command === 'history.list') return { path, ...pageOf(await boardHistory(root, path), args) }
   if (command === 'history.restore') {
     await refuseLiveEdits(liveEdits, path)

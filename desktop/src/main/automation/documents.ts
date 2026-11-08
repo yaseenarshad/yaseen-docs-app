@@ -57,7 +57,7 @@ export async function documentCommand(state: AppState, command: string, args: Re
     return { path, revision: before.revision, ...pageOf(comments, args) }
   }
   if (before.revision !== args.revision) throw new AutomationFailure('CONFLICT', 'The saved file no longer matches this revision. Read it again before editing.')
-  if ((command.startsWith('property.') || command.startsWith('comment.') || command.startsWith('review.')) && !isMarkdown(path)) throw new AutomationFailure('UNSUPPORTED_EXTENSION', 'Properties and comments require a Markdown document.')
+  if ((command.startsWith('property.') || command.startsWith('comment.') || command.startsWith('review.')) && !isMarkdown(path)) throw new AutomationFailure('UNSUPPORTED', 'Properties and comments require a Markdown document.')
   let content = before.content
   let comment: string | undefined
   switch (command) {

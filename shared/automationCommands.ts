@@ -36,7 +36,7 @@ export const validateInput = (schema: CommandSchema, value: unknown, path = 'inp
 /** A command's result, as the wire carries it (JSON), against its declared output (YAZ-4506). Tests run it; see `prepareAutomation`. */
 export const validateOutput = (name: string, value: unknown): void => validateValue(commandDefinition(name).output, value === undefined ? value : JSON.parse(JSON.stringify(value)), `${name} output`, 'OUTPUT_MISMATCH')
 
-function validateValue(schema: CommandSchema, value: unknown, path: string, code: string): void {
+function validateValue(schema: CommandSchema, value: unknown, path: string, code: 'INVALID_INPUT' | 'OUTPUT_MISMATCH'): void {
   const fail = (reason: string): never => { throw new AutomationFailure(code, `${path}: ${reason}`) }
   const check = (schema: CommandSchema, value: unknown, path: string) => validateValue(schema, value, path, code)
   if (typeof schema.type !== 'string') {

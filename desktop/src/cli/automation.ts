@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join } from 'node:path'
-import { AUTOMATION_LIMITS, AUTOMATION_VERSION, AutomationFailure, type AutomationRequest } from '@shared/automation'
+import { AUTOMATION_LIMITS, AUTOMATION_VERSION, AutomationFailure, publicCode, type AutomationRequest } from '@shared/automation'
 import { AUTOMATION_COMMANDS, commandDefinition, validateInput, type CommandSchema } from '@shared/automationCommands'
 import { makeRequest, sendRequest } from '../automation/client'
 import { readConnection, type Connection } from '../automation/connection'
@@ -65,13 +65,13 @@ export function parsedValue(schema: CommandSchema, value: string, flag: string):
 async function startApp(profile: string): Promise<void> {
   const executable = process.env.YASEEN_DOCS_EXECUTABLE ?? process.execPath
   if (!isAbsolute(executable) || (!process.env.YASEEN_DOCS_EXECUTABLE && !/^(Yaseen Docs|Yaseen Docs\.exe|Electron|electron\.exe)$/.test(basename(executable)))) {
-    throw new AutomationFailure('START_UNAVAILABLE', 'Start the dev app with this profile, or set YASEEN_DOCS_EXECUTABLE to its executable.')
+    throw new AutomationFailure('START_FAILED', 'Start the dev app with this profile, or set YASEEN_DOCS_EXECUTABLE to its executable.')
   }
   const env: NodeJS.ProcessEnv = { ...process.env, YASEEN_DOCS_USER_DATA_DIR: profile }
   delete env.ELECTRON_RUN_AS_NODE
   const entry = process.env.YASEEN_DOCS_APP_ENTRY
   if (/^Electron(?:\.exe)?$/i.test(basename(executable)) && !entry) {
-    throw new AutomationFailure('START_UNAVAILABLE', 'Start the dev app with HMR first, or supply YASEEN_DOCS_APP_ENTRY.')
+    throw new AutomationFailure('START_FAILED', 'Start the dev app with HMR first, or supply YASEEN_DOCS_APP_ENTRY.')
   }
   const child = spawn(executable, entry ? [entry] : [], { detached: true, stdio: 'ignore', env })
   await new Promise<void>((done, failed) => {
@@ -100,7 +100,7 @@ async function connectionFor(profile: string, start: boolean, waitMs: number): P
     const answer = await probe(connection, waitMs)
     if (answer.ok) return connection
     // An app answered and refused this descriptor: it is running, and a launch would not replace it.
-    throw new AutomationFailure(answer.error.code, answer.error.message)
+    throw new AutomationFailure(publicCode(answer.error.code), answer.error.message)
   } catch (error) {
     if (!(error instanceof AutomationFailure)) throw error
     if (error.code === 'WAIT_TIMEOUT') throw new AutomationFailure('WAIT_TIMEOUT', 'Docs is running but did not answer within the wait. No operation was submitted.')
@@ -118,7 +118,7 @@ async function connectionFor(profile: string, start: boolean, waitMs: number): P
     } catch { /* The app has not installed its connection yet. */ }
   } while (Date.now() < deadline)
   if (starting) throw new AutomationFailure('WAIT_TIMEOUT', 'Docs is running, but its CLI connection was not ready within the wait. No operation was submitted.')
-  throw new AutomationFailure('START_TIMEOUT', 'Docs did not become ready. No operation was submitted.')
+  throw new AutomationFailure('START_FAILED', 'Docs did not become ready. No operation was submitted.')
 }
 
 export async function runAutomation(argv: readonly string[], io: Io): Promise<number> {

@@ -39,11 +39,11 @@ export async function operateTabs(target: TabOperation, actions: TabActions) {
   }
   if (tab && ['tab.close', 'tab.sleep', 'tab.duplicate', 'tab.move'].includes(target.command)) {
     await flushRenamedPath(tab.path)
-    if (dirtyPaths().includes(tab.path)) throw new AutomationFailure('UNSAVED_CHANGES', 'The tab could not save. Resolve its save error or conflict before this action.')
+    if (dirtyPaths().includes(tab.path)) throw new AutomationFailure('SAVE_INCOMPLETE', 'The tab could not save. Resolve its save error or conflict before this action.')
   }
   if (target.command === 'tab.open' && target.copy) {
     await flushRenamedPath(target.path)
-    if (dirtyPaths().includes(target.path)) throw new AutomationFailure('UNSAVED_CHANGES', 'The source could not save. Resolve its save error or conflict before opening a copy.')
+    if (dirtyPaths().includes(target.path)) throw new AutomationFailure('SAVE_INCOMPLETE', 'The source could not save. Resolve its save error or conflict before opening a copy.')
   }
   // Recheck after an asynchronous flush: a human may have closed the selected tab in the meantime.
   if (tab && !actions.current().tabs.some(current => current.id === tab.id)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab closed during its save.')

@@ -8,7 +8,7 @@ import { readPdf } from '../fs/pdf'
 import { createDurable, fsCall } from '../fs/fsUtils'
 import { revisionOf } from '../fs/revision'
 import { decodeViewOnlyText } from '../fs/file'
-import { absolute, resolveTarget, scopeRoots } from './resources'
+import { absolute, createdMeanwhile, resolveTarget, scopeRoots } from './resources'
 import { refuseLiveEdits, type LiveEdits } from './liveEdits'
 
 /** Binary reads use base64 on the JSON wire; larger viewer files use an explicit exclusive export. */
@@ -21,7 +21,7 @@ export async function assetCommand(state: AppState, command: string, args: Recor
     // The core writer creates nested asset folders. Validate the root rather than requiring those folders to exist.
     await refuseLiveEdits(liveEdits, path)
     const content = (DRAWING_EXTENSIONS as readonly string[]).includes(extname(path).slice(1).toLowerCase()) ? decodeViewOnlyText(body, path) : body
-    const saved = await writeAsset({ root, path, content, ...(args.revision === null ? { create: true } : { expectedRevision: args.revision as string }) })
+    const saved = await writeAsset({ root, path, content, ...(args.revision === null ? { create: true } : { expectedRevision: args.revision as string }) }).catch(createdMeanwhile)
     return { ...saved, revision: revisionOf(content, saved.mtime), diskSaved: true, rendererMerged: false }
   }
   const path = await resolveTarget(roots, args)

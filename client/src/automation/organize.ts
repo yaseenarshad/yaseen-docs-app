@@ -1,4 +1,4 @@
-import { AutomationFailure } from '@shared/automation'
+import { AutomationFailure, publicCode } from '@shared/automation'
 import type { FileOperationTarget } from '@shared/automationNavigation'
 import { api, BridgeRequestError } from '../api'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -39,7 +39,7 @@ export interface OrganizeActions {
 async function copyFiles(target: Extract<OrganizeTarget, { command: 'file.copy' }>, actions: OrganizeActions) {
   for (const path of target.paths) { await flushRenamedPath(path); await flushRenamedDir(path) }
   const unsaved = dirtyPaths().filter(path => target.paths.some(source => path === source || path.startsWith(`${source}/`)))
-  if (unsaved.length) throw new AutomationFailure('UNSAVED_CHANGES', 'Some source editors could not save. Resolve their save errors before copying.', { paths: unsaved })
+  if (unsaved.length) throw new AutomationFailure('SAVE_INCOMPLETE', 'Some source editors could not save. Resolve their save errors before copying.', { paths: unsaved })
   const { root: vault, wikilinks: index } = actions.scopeOf(target.targetDir)
   if (vault === null) throw new AutomationFailure('OUTSIDE_SCOPE', 'The folder is no longer in this window.')
   const dirs = vaultDirs(vault)
@@ -58,7 +58,7 @@ async function copyFiles(target: Extract<OrganizeTarget, { command: 'file.copy' 
 async function replayHistory(verb: 'undo' | 'redo', actions: OrganizeActions) {
   const run = actions.replayStep(verb)
   if (run === 'busy') throw new AutomationFailure('BUSY', 'An organization history action is still running.')
-  if (run === null) throw new AutomationFailure(verb === 'undo' ? 'NOTHING_TO_UNDO' : 'NOTHING_TO_REDO', `This window has no organization step to ${verb}.`)
+  if (run === null) throw new AutomationFailure('NO_HISTORY', `This window has no organization step to ${verb}.`)
   const { restored: _restored, ...outcome } = await run
   const result = { ...outcome, history: actions.historyCounts() }
   if (result.done === 0) throw new AutomationFailure('HISTORY_STEP_FAILED', `The ${verb} changed nothing. Inspect file history before another step.`, result)
@@ -70,7 +70,7 @@ async function replayHistory(verb: 'undo' | 'redo', actions: OrganizeActions) {
 async function restoreDelete(actions: OrganizeActions) {
   const run = actions.replayStep('undo', 'delete')
   if (run === 'busy') throw new AutomationFailure('BUSY', 'An organization history action is still running.')
-  if (run === null) throw new AutomationFailure('NO_DELETE_TO_RESTORE', 'The latest organization step is not a restorable delete. Inspect file history first.')
+  if (run === null) throw new AutomationFailure('NO_HISTORY', 'The latest organization step is not a restorable delete. Inspect file history first.')
   const { restored = [], failed } = await run
   const result = { restored, failed, history: actions.historyCounts(), diskSaved: restored.length > 0 }
   if (failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some Trash items could not be restored.', result)
@@ -116,7 +116,7 @@ async function renameFile(target: Extract<OrganizeTarget, { command: 'file.renam
   const out = await actions.renameWithUndo(target.path, target.command === 'file.rename' ? { newPath: target.newPath } : { title: target.title }, catalog)
   if (out === null) throw new AutomationFailure('OUTSIDE_SCOPE', 'The file is no longer in this window.')
   if ('error' in out) {
-    if (out.error instanceof BridgeRequestError) throw new AutomationFailure(out.error.code, out.error.message)
+    if (out.error instanceof BridgeRequestError) throw new AutomationFailure(publicCode(out.error.code), out.error.message)
     throw out.error
   }
   const result = { ...out, history: actions.historyCounts(), diskSaved: true }

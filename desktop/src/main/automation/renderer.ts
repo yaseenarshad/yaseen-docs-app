@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { AutomationFailure } from '@shared/automation'
+import { AutomationFailure, publicCode } from '@shared/automation'
 import type { FileOperationTarget, InspectTarget, NavigationTarget, RendererCommand, RendererReply } from '@shared/automationNavigation'
 
 export interface RendererPage {
@@ -49,7 +49,7 @@ export class RendererRequests {
       const finish = (reply: RendererReply) => {
         clearTimeout(timer); this.pending.delete(id)
         if (reply.ok) resolve(reply.value)
-        else reject(new AutomationFailure(reply.error.code, reply.error.message, reply.error.details))
+        else reject(new AutomationFailure(publicCode(reply.error.code), reply.error.message, reply.error.details))
       }
       const request = { page, command, finish, sent: false }
       this.pending.set(id, request)

@@ -34,7 +34,7 @@ function validate(value: unknown, connection: Connection): AutomationRequest {
   const request = value as AutomationRequest
   const expected = Buffer.from(connection.token)
   const actual = Buffer.from(typeof request.token === 'string' ? request.token : '')
-  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new AutomationFailure('UNAUTHORIZED', 'The profile token is invalid.')
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new AutomationFailure('BAD_CONNECTION', 'The profile token does not match the running app.')
   if (request.version !== AUTOMATION_VERSION) throw new AutomationFailure('PROTOCOL_VERSION', 'This CLI protocol version is unsupported.')
   if (request.session !== connection.session) throw new AutomationFailure('UNKNOWN_REQUEST', 'Docs restarted. Inspect state before another mutation.')
   if (Object.keys(request).some(key => !['version', 'session', 'token', 'id', 'issuedAt', 'command', 'args', 'hasContent'].includes(key)) ||

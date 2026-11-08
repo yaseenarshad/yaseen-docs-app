@@ -206,7 +206,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       run: async () => { if (!retired.current) await autosave.current?.flush() },
     }, { kind: 'diagram', run: async ({ format }) => {
       // File › Export Image…'s renderer: the XML draw.io last posted, unsaved edits included.
-      if (format === 'pdf') throw new AutomationFailure('UNSUPPORTED_ACTION', 'A diagram exports PNG or SVG.')
+      if (format === 'pdf') throw new AutomationFailure('UNSUPPORTED', 'A diagram exports PNG or SVG.')
       const dirty = autosave.current?.dirty === true, url = await renderDiagramImage(latestXml.current, format)
       if (url === '') throw new AutomationFailure('EXPORT_FAILED', 'The diagram has nothing to export.')
       return { format, data: Uint8Array.from(atob(url.slice(url.indexOf(',') + 1)), (c) => c.charCodeAt(0)), path, dirty }

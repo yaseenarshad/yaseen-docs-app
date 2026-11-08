@@ -9,7 +9,7 @@ import { ReviewsShapeError } from '@shared/reviews'
 import { BridgeFailure } from './fs/fsUtils'
 import { FrontmatterWriteError } from '@shared/frontmatter'
 import { CommentsShapeError } from '@shared/comments'
-import { AutomationFailure, pageOf, type AutomationRequest, AUTOMATION_VERSION } from '@shared/automation'
+import { AutomationFailure, pageOf, publicCode, type AutomationRequest, AUTOMATION_VERSION } from '@shared/automation'
 import { commandDefinition, validateInput, validateOutput } from '@shared/automationCommands'
 import { DRAWING_VIEW_ACTIONS } from '@shared/automationEditor'
 import type { NavigationInput } from '@shared/automationNavigation'
@@ -184,7 +184,7 @@ export function prepareAutomation(...args: Parameters<typeof prepare>): Operatio
       return value
     }
     catch (error) {
-      if (error instanceof BridgeFailure) throw new AutomationFailure(error.code, error.message)
+      if (error instanceof BridgeFailure) throw new AutomationFailure(publicCode(error.code), error.message)
       if (error instanceof FrontmatterWriteError || error instanceof CommentsShapeError || error instanceof ReviewsShapeError) throw new AutomationFailure('INVALID_INPUT', error.message)
       throw error
     }

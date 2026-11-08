@@ -53,7 +53,7 @@ export function readLiveDocument(tab: string): LiveDocument & { conflict: boolea
 
 export async function runEditorAction(target: EditorOperation) {
   const entry = registration(target.tab), control = entry.control
-  if (!control || !control.actions.includes(target.edit.action)) throw new AutomationFailure('UNSUPPORTED_ACTION', 'This editor does not support that action. Read its available actions first.')
+  if (!control || !control.actions.includes(target.edit.action)) throw new AutomationFailure('UNSUPPORTED', 'This editor does not support that action. Read its available actions first.')
   if (revision(entry) !== target.revision) throw new AutomationFailure('CONFLICT', 'The editor or selection changed. Read the live document again.')
   // No await between the revision check and the synchronous edit transaction.
   await control.run(target.edit)
@@ -65,7 +65,7 @@ export async function runEditorAction(target: EditorOperation) {
 /** A live board's GUI export as bytes (YAZ-4515). Main writes the file; this never opens a sheet or touches the board file. */
 export async function exportLiveImage(target: BoardExportOperation): Promise<BoardImage> {
   const exporter = registration(target.tab).exportImage
-  if (exporter?.kind !== target.kind) throw new AutomationFailure('UNSUPPORTED_ACTION', `This tab is not a live ${target.kind}.`)
+  if (exporter?.kind !== target.kind) throw new AutomationFailure('UNSUPPORTED', `This tab is not a live ${target.kind}.`)
   const image = await exporter.run(target)
   if ((image.format === 'pdf' ? image.svg.length * 2 : image.data.byteLength) > AUTOMATION_LIMITS.contentBytes) throw new AutomationFailure('TOO_LARGE', 'This export exceeds the connection limit. Choose a smaller scale or a selection.')
   return image
