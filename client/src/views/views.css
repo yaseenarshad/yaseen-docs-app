@@ -862,6 +862,27 @@
   background-image: linear-gradient(var(--view-selection-wash), var(--view-selection-wash)), linear-gradient(var(--view-cell-fill, transparent), var(--view-cell-fill, transparent));
 }
 
+/* ⌘F on a folder page (YAZ-4613, D64, `view/viewFind.ts`): the note find's wash (`find.css` tokens) on the mounted
+   matching cells and cards, `data-find`, and the solid colour with dark text on the current one. Over a fill and a
+   selection, as the selection wash is. */
+.view-table tbody td[data-find] {
+  background-image: linear-gradient(var(--find-match-bg), var(--find-match-bg)), linear-gradient(var(--view-cell-fill, transparent), var(--view-cell-fill, transparent));
+}
+
+.view-table tbody td[data-find='active'] {
+  color: #1f1f1f;
+  background-image: linear-gradient(var(--find-match-active-bg), var(--find-match-active-bg));
+}
+
+.views-pane li[data-hover-item][data-find] {
+  background-color: var(--find-match-bg);
+}
+
+.views-pane li[data-hover-item][data-find='active'] {
+  color: #1f1f1f;
+  background-color: var(--find-match-active-bg);
+}
+
 /* "Set value ›" on a selection (YAZ-4593): the field a text value is typed in. */
 .view-selection-menu__input {
   width: 180px;

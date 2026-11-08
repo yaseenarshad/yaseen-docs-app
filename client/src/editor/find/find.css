@@ -25,7 +25,7 @@
 }
 
 /* A zero-height dock keeps the floating bar out of document flow. Notes anchor to their page; a
-   folder's Page tab (YAZ-4584) sticks to the folder page's scroller so the bar follows the reader. */
+   folder's Page tab (YAZ-4584) and its views (YAZ-4613) stick to the folder page's scroller so the bar follows the reader. */
 .find-bar-dock {
   z-index: 3;
   height: 0;
@@ -39,7 +39,8 @@
   left: 0;
 }
 
-.find-bar-dock--page {
+.find-bar-dock--page,
+.find-bar-dock--views {
   position: sticky;
   top: 8px;
 }

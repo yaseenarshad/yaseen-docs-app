@@ -9,7 +9,8 @@
  * tab, YAZ-4584) claims the key while focus stands inside its own host, the `note` bar claims it
  * whenever focus is NOT inside any `.folder-page-doc` — and a HIDDEN editor never claims. With no
  * other note editor showing (a folder page and no note window), CMD+F belongs to the Page even from
- * the sidebar or the title. Exactly one bar answers; the other declines. Neither bar claims while focus stands in a code tab
+ * the sidebar or the title. A `views` bar (a folder page's Table, Board, List, Cards or Calendar, YAZ-4613) claims
+ * while focus stands in its pane (`[data-find-host]`), where the `note` bar declines. Exactly one bar answers; the other declines. Neither bar claims while focus stands in a code tab
  * (`.editor--code`): there CMD+F is Monaco's own find box (YAZ-3451, YAZ-3464).
  *
  * Focus: the input does not exist yet on the CMD+F that OPENS the bar, so that focus lands in a
@@ -25,8 +26,8 @@ import './find.css'
 export interface FindBarProps {
   /** The host's one channel per editor mount — the very instance `createCrepe` was given. */
   channel: FindChannel
-  /** Which half of the claim rule this bar answers CMD+F by (🔒 YAZ-967). */
-  scope: 'note' | 'page'
+  /** Which part of the claim rule this bar answers CMD+F by (🔒 YAZ-967); `views`: a folder page's views (YAZ-4613). */
+  scope: 'note' | 'page' | 'views'
   /** The Page bar's own editor mount: its claim IS focus standing inside it. Unread for `note`. */
   hostRef: RefObject<HTMLElement | null>
 }
@@ -65,10 +66,19 @@ export function FindBar({ channel, scope, hostRef }: FindBarProps) {
       const host = hostRef.current
       /** Another note editor shows: the Page's own mount is an `.editor-mount` too, so it does not count. */
       const otherNote = (): boolean => [...document.querySelectorAll('.editor-mount .ProseMirror')].some((el) => !host?.contains(el) && shown(el))
+      /** In a folder page's own find: its Page tab, or its views (`[data-find-host]`, YAZ-4613). */
+      const inPage = active instanceof Element && active.closest('.folder-page-doc, [data-find-host]') !== null
       const claims =
         scope === 'page'
           ? shown(host) && ((active !== null && host !== null && host.contains(active)) || (!inCode && !otherNote()))
-          : shown(host) && !inCode && (!(active instanceof Element) || active.closest('.folder-page-doc') === null)
+          : scope === 'views'
+            ? // The focus in the views (not in a note editor there), or in no page, with no note showing: the first shown views.
+              shown(host) &&
+              !inCode &&
+              (active !== null && host !== null && host.contains(active)
+                ? active.closest('.editor-mount') === null
+                : !inPage && !otherNote() && [...document.querySelectorAll('[data-find-host]')].find(shown) === host)
+            : shown(host) && !inCode && !inPage
       if (!claims) return
       event.preventDefault()
       event.stopPropagation()
@@ -102,6 +112,11 @@ export function FindBar({ channel, scope, hostRef }: FindBarProps) {
               if (event.key === 'Enter') {
                 event.preventDefault()
                 if (event.shiftKey) channel.prev()
+                else channel.next()
+              } else if (scope === 'views' && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                // A folder page's find steps on ↓ and ↑ too (YAZ-4613, D64).
+                event.preventDefault()
+                if (event.key === 'ArrowUp') channel.prev()
                 else channel.next()
               } else if (event.key === 'Escape') {
                 event.preventDefault()
