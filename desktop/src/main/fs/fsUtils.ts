@@ -109,21 +109,21 @@ export function toBridgeFailure(err: unknown, p: string): BridgeFailure {
 
 /**
  * A per-root promise chain: `chained(root, fn)` runs `fn` after everything chained on that root
- * before it, settled or not, so read-modify-writes on one root never interleave.
+ * before it, settled or not, so read-modify-writes on one root never interleave. A root's entry
+ * goes when its last call settles (D9): `size` counts the roots with work still chained.
  */
-export function createRootChain(): <T>(root: string, fn: () => Promise<T>) => Promise<T> {
+export function createRootChain(): (<T>(root: string, fn: () => Promise<T>) => Promise<T>) & { readonly size: number } {
   const chains = new Map<string, Promise<unknown>>()
-  return <T>(root: string, fn: () => Promise<T>): Promise<T> => {
+  const chained = <T>(root: string, fn: () => Promise<T>): Promise<T> => {
     const run = (chains.get(root) ?? Promise.resolve()).then(fn, fn)
-    chains.set(
-      root,
-      run.then(
-        () => undefined,
-        () => undefined,
-      ),
-    )
+    const tail: Promise<void> = run.then(settle, settle)
+    function settle(): void {
+      if (chains.get(root) === tail) chains.delete(root)
+    }
+    chains.set(root, tail)
     return run
   }
+  return Object.defineProperty(chained, 'size', { get: () => chains.size }) as typeof chained & { readonly size: number }
 }
 
 /**
