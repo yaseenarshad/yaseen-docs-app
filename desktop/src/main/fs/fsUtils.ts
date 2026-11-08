@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { renameSync, statSync } from 'node:fs'
 import { link, mkdir, open, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { folderSettingsPath, type BridgeError, type FileKind, type TreeNode } from '@shared/types'
@@ -220,23 +221,58 @@ export function tmpSibling(file: string): string {
  * `ifMtime` is the mtime that the caller's conflict check just accepted (YAZ-4576). Another program
  * can write during the tmp write and its full fsync, which take milliseconds. So `file` is checked
  * again right before the rename: a file there with another mtime is `CONFLICT`, and nothing is
- * replaced. A file that is gone is no conflict. The mtime returned is still a stat after the rename:
+ * replaced. A file that is gone is no conflict. On a quick drive that check and the rename are one
+ * blocking pair (`renameIfUnchanged`). The mtime returned is still a stat after the rename:
  * exFAT changes a file's mtime on close or rename, so the tmp file's own mtime would not match disk.
  */
 export async function atomicWrite(file: string, content: string | Uint8Array, mode?: number, ifMtime?: number): Promise<{ mtime: number; size: number }> {
   const tmp = tmpSibling(file)
   try {
     await writeDurable(tmp, content, 'w', mode)
-    if (ifMtime !== undefined) {
-      const now = await stat(file).catch((err: NodeJS.ErrnoException) => (err.code === 'ENOENT' ? undefined : Promise.reject(err)))
-      if (now !== undefined && now.mtimeMs !== ifMtime) throw new BridgeFailure('CONFLICT', 'file changed on disk since last read', { path: file, mtime: now.mtimeMs })
-    }
+    if (ifMtime !== undefined) return await renameIfUnchanged(tmp, file, ifMtime)
     await rename(tmp, file)
   } catch (err) {
     await unlink(tmp).catch(() => undefined)
     throw err
   }
   const st = await stat(file)
+  return { mtime: st.mtimeMs, size: st.size }
+}
+
+/**
+ * The drives (`st.dev`) whose last guarded rename took under `QUICK_RENAME_MS` (YAZ-4576). Exported for tests only.
+ * On one of them the last check, the rename and the stat after it run back to back, with no event-loop turn: busy JS
+ * on main cannot widen the gap, which is then one rename (about 0.1 ms on APFS). On exFAT, FAT or a network drive a
+ * rename takes milliseconds, and a blocking call there would hold main, and so the keyboard: those keep the async
+ * rename, which is timed too. A drive with no time yet starts async. Numbers: YAZ-4576 "Decision (agent)".
+ */
+export const _quickDevices = new Set<number>()
+const QUICK_RENAME_MS = 1
+
+async function renameIfUnchanged(tmp: string, file: string, ifMtime: number): Promise<{ mtime: number; size: number }> {
+  const unchanged = (now: { mtimeMs: number } | undefined): void => {
+    if (now !== undefined && now.mtimeMs !== ifMtime) throw new BridgeFailure('CONFLICT', 'file changed on disk since last read', { path: file, mtime: now.mtimeMs })
+  }
+  const before = await stat(file).catch((err: NodeJS.ErrnoException) => (err.code === 'ENOENT' ? undefined : Promise.reject(err)))
+  unchanged(before)
+  const dev = before?.dev
+  const t0 = performance.now()
+  let took: number
+  let st: { mtimeMs: number; size: number }
+  if (dev !== undefined && _quickDevices.has(dev)) {
+    unchanged(statSync(file, { throwIfNoEntry: false }))
+    renameSync(tmp, file)
+    st = statSync(file)
+    took = performance.now() - t0 // main was blocked this long
+  } else {
+    await rename(tmp, file)
+    took = performance.now() - t0 // the rename and the wait for main: never less than the rename
+    st = await stat(file)
+  }
+  if (dev !== undefined) {
+    if (took < QUICK_RENAME_MS) _quickDevices.add(dev)
+    else _quickDevices.delete(dev)
+  }
   return { mtime: st.mtimeMs, size: st.size }
 }
 

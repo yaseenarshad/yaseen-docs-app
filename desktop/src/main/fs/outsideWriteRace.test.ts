@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, open, readdir, readFile, rename, rm, stat, writeFile as fsWriteFile } from 'node:fs/promises'
+import { renameSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { writeFile } from './file'
+import { _quickDevices } from './fsUtils'
 import { saveDrawing } from './drawing'
 import { saveDiagram } from './diagram'
 import { writeAsset } from './assets'
@@ -17,16 +19,24 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const m = await importOriginal<typeof import('node:fs/promises')>()
   return { ...m, open: vi.fn(m.open), rename: vi.fn(m.rename), stat: vi.fn(m.stat) }
 })
+vi.mock('node:fs', async (importOriginal) => {
+  const m = await importOriginal<typeof import('node:fs')>()
+  return { ...m, renameSync: vi.fn(m.renameSync) }
+})
 
 const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+const realSync = await vi.importActual<typeof import('node:fs')>('node:fs')
 let root: string
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'yaz-4576-'))
+  // Each test starts on a drive with no time yet: the async rename, which the step spies see.
+  _quickDevices.clear()
 })
 afterEach(async () => {
   vi.mocked(open).mockReset().mockImplementation(real.open)
   vi.mocked(rename).mockReset().mockImplementation(real.rename)
-  vi.mocked(stat).mockClear()
+  vi.mocked(renameSync).mockReset().mockImplementation(realSync.renameSync)
+  vi.mocked(stat).mockReset().mockImplementation(real.stat)
   await rm(root, { recursive: true, force: true })
 })
 
@@ -151,6 +161,54 @@ describe('an outside write during a guarded save is never lost (YAZ-4576)', () =
     landAt('tmp fsync', file, `${body} `, 'in place')
     expect(await shrinkVault(root)).toMatchObject({ shrunk: 0, skipped: 1 })
     expect(await readFile(file, 'utf8')).toBe(`${body} `)
+  })
+
+  // The gap that stays (YAZ-4576 residual): main can run other work between the last check and an async rename.
+  it('a quick drive: other work on main between the last check and the rename cannot slip an outside write in', async () => {
+    const file = path.join(root, 'Typing.md')
+    await fsWriteFile(file, 'Typed base\n')
+    const { mtimeMs, dev } = await stat(file)
+    _quickDevices.add(dev)
+    let closed = false
+    let done = false
+    const once = () => void (!done && ((done = true), writeFileSync(file, 'Agent base\n')))
+    vi.mocked(open).mockImplementation(async (...args) => {
+      const fh = await real.open(...args)
+      const close = fh.close.bind(fh)
+      if (String(args[0]).startsWith(`${file}.tmp-`)) fh.close = async () => ((closed = true), close())
+      return fh
+    })
+    // The last check arms another program's write for main's next turn; an async rename gives it that turn.
+    vi.mocked(stat).mockImplementation(async (...args) => {
+      const st = await real.stat(...args)
+      if (closed && args[0] === file) setImmediate(once)
+      return st
+    })
+    vi.mocked(rename).mockImplementation(async (from, to) => (once(), real.rename(from, to)))
+    const res = await writeFile({ path: file, content: 'Human base\n', expectedMtime: mtimeMs })
+    await new Promise(setImmediate)
+    expect(done).toBe(true)
+    expect(await readFile(file, 'utf8')).toBe('Agent base\n') // it landed after the rename
+    expect(res.mtime).not.toBe((await real.stat(file)).mtimeMs) // and the save's mtime is its own: the watcher sees theirs as a change
+  })
+
+  it('a drive gets the blocking pair after a rename under 1 ms, and loses it after one of 1 ms or more', async () => {
+    const file = path.join(root, 'Drive.md')
+    await fsWriteFile(file, '0\n')
+    const { dev } = await stat(file)
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
+    const asyncRenames = () => vi.mocked(rename).mock.calls.filter(([, to]) => to === file).length
+    vi.mocked(rename).mockImplementation(async (from, to) => (await real.rename(from, to), void clock.mockReturnValue(0.5)))
+    vi.mocked(renameSync).mockImplementation((from, to) => (realSync.renameSync(from, to), void clock.mockReturnValue(5)))
+    const save = async (content: string) => (clock.mockReturnValue(0), writeFile({ path: file, content, expectedMtime: (await real.stat(file)).mtimeMs }))
+    await save('1\n')
+    expect([asyncRenames(), _quickDevices.has(dev)]).toEqual([1, true])
+    await save('2\n')
+    expect([asyncRenames(), vi.mocked(renameSync).mock.calls.length, _quickDevices.has(dev)]).toEqual([1, 1, false])
+    await save('3\n')
+    expect(asyncRenames()).toBe(2)
+    expect(await readFile(file, 'utf8')).toBe('3\n')
+    clock.mockRestore()
   })
 
   it('a folder rename: an outside write during the fsync leaves the board unwritten, and its bytes stay', async () => {
