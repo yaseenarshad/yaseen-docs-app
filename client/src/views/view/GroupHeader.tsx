@@ -1,4 +1,4 @@
-import { createContext, useContext, type CSSProperties, type ReactNode } from 'react'
+import { createContext, useContext, useState, type CSSProperties, type ReactNode } from 'react'
 import { isFolderRow, isShortcut } from '../../links/shortcuts'
 import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
 import { type ViewSet, type ViewDef, type GroupBySpec, shownGroupLevels } from '../viewSchema'
@@ -11,6 +11,7 @@ import '../../editor/wikilink/wikilink.css'
 import { summarize } from '../summaries'
 import { FolderIcon, ShortcutIcon } from './icons'
 import { canonicalKey } from './keys'
+import { GroupHeaderMenu } from './GroupHeaderMenu'
 
 /**
  * One group's header content (4C, GRO-2137), shared by Table today and Cards / List / Board
@@ -281,8 +282,19 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
     open !== undefined && typeof groupKey === 'string' && groupKey !== '' && groupKey !== pages?.folder && shownGroupLevels(view)[level]?.property === 'file.folder'
       ? () => open(groupKey)
       : undefined
+  // The right-click menu (YAZ-4604, D55): the app's own, never the system's. The event stops here, so no row or
+  // selection menu of the view around it opens too. Only this header re-renders when it opens or closes.
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   return (
-    <div className="view-group">
+    <div
+      className="view-group"
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setMenu({ x: e.clientX, y: e.clientY })
+      }}
+    >
+      {menu !== null && <GroupHeaderMenu x={menu.x} y={menu.y} collapsed={collapsed} onToggle={onToggle} onNew={onNew} onClose={() => setMenu(null)} />}
       <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
         <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />
