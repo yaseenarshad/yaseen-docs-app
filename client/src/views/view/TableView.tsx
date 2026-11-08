@@ -169,6 +169,12 @@ const CONFIRM_CLEAR_AT = 50
 const TYPE_KINDS = new Set(['text', 'number', 'link', 'list', 'multi-link'])
 /** The step of each arrow key for ⇧+arrow (YAZ-4603 D53): rows, then columns. */
 const STEPS: Record<string, [number, number] | undefined> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }
+/**
+ * The last ⌘C of any table (YAZ-4636 T9c): the readable text it put on the clipboard, and each cell's value as stored
+ * (`sourceText`). A ⌘V whose clipboard text is that text pastes the stored values, so an id link stays `[[id]]`. One
+ * copy at most; a copy from another app does not match, and parses as text.
+ */
+let lastCopy: { text: string; raw: string[][] } | null = null
 
 /**
  * One display line: a group header row (`depth` = its level, 0 at the top: YAZ-745, YAZ-4531), or a data row with its
@@ -261,11 +267,20 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  /**
+   * The ancestor that scrolls the table vertically (YAZ-4636 T6): in a folder page the wrap takes the table's whole
+   * height and the tab's scroller moves it (folderView.css), so the window is read off THAT scroller. Null when nothing
+   * above the wrap scrolls: then the wrap is the scroller, as in any other host.
+   */
+  const scrollerRef = useRef<HTMLElement | null>(null)
+  /** The scroller's listener hands each frame's scrolled distance here; set only while the table is windowed. */
+  const windowScroll = useRef<((past: number) => void) | null>(null)
 
   useLayoutEffect(() => {
     const wrap = wrapRef.current
     if (wrap === null) return
     const scroller = verticalScrollParent(wrap)
+    scrollerRef.current = scroller
     const table = wrap.querySelector<HTMLElement>('.view-table')
     if (scroller === null || table === null) return
     const header = table.querySelector<HTMLElement>('thead')
@@ -282,6 +297,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       const ratio = window.devicePixelRatio || 1
       const offset = Math.floor(pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, header.getBoundingClientRect().height) * ratio) / ratio / zoom
       wrap.style.setProperty('--view-table-header-y', `${offset}px`)
+      // The same scroll moves the window (T6): how far the table is past the scroller's top, in the table's px.
+      windowScroll.current?.(Math.max(0, (scrollerTop - tableRect.top) / zoom))
     }
     const schedule = () => {
       if (frame === 0) frame = requestAnimationFrame(sync)
@@ -431,7 +448,44 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // chip column wraps and the rest clip, as on `main`. A windowed table clips every cell, so each line is exactly the
   // row height its spacer maths counts.
   const clipped = keys.map((key, c) => windowed || !wrapsColumn(view, key, wrapKind(typings[c]), textInCellsOf(view, defaults)))
-  const viewH = wrapRef.current?.clientHeight || FALLBACK_VIEWPORT
+  /**
+   * The height that shows the table (T6): the wrap's, or the scroller's where that is less — in a folder page the wrap
+   * is as tall as the table, and the tab's scroller is the viewport. Zero (jsdom, the first render) falls back.
+   */
+  const viewportOf = (): number => {
+    const wrap = wrapRef.current
+    const scroller = scrollerRef.current
+    const own = wrap?.clientHeight || Infinity
+    const outer = wrap !== null && scroller !== null ? scroller.clientHeight / cssZoom(wrap) || Infinity : Infinity
+    const h = Math.min(own, outer)
+    return Number.isFinite(h) ? h : FALLBACK_VIEWPORT
+  }
+  /** A scroll's render (T6): the window steps by whole rows, so a scroll inside one row renders nothing. */
+  const setPast = (past: number): void => setScrollTop(Math.floor(past / rowH) * rowH)
+  windowScroll.current = windowed ? setPast : null
+  /**
+   * The wrap's own scroll (any other host): how far the table is past the top of the box that shows it. With a
+   * scroller above, the table's place against it says so, the wrap's inner scroll included.
+   */
+  const scrolledPast = (wrap: HTMLElement): number => {
+    const scroller = scrollerRef.current
+    const table = wrap.querySelector('.view-table')
+    if (scroller === null || table === null) return wrap.scrollTop
+    const zoom = cssZoom(wrap)
+    return Math.max(0, (scroller.getBoundingClientRect().top + scroller.clientTop * zoom - table.getBoundingClientRect().top) / zoom)
+  }
+  /** Scrolls the real scroller so the table is `past` px past its top (T5): the one way find, "New row below" and the note window move a windowed table. */
+  const scrollPast = (past: number): void => {
+    const wrap = wrapRef.current
+    if (wrap === null) return
+    const scroller = scrollerRef.current
+    if (scroller === null) wrap.scrollTop = past
+    else scroller.scrollTop += (past - scrolledPast(wrap)) * cssZoom(wrap)
+    setPast(past)
+  }
+  /** The scroll that puts line `at` in the middle of the viewport. */
+  const lineTop = (at: number): number => Math.max(0, at * rowH - (viewportOf() - rowH) / 2)
+  const viewH = viewportOf()
   const first = windowed ? Math.max(pinned, Math.min(lines.length - 1, Math.floor(scrollTop / rowH) - OVERSCAN)) : pinned
   const count = windowed ? Math.min(lines.length - first, Math.ceil(viewH / rowH) + 2 * OVERSCAN) : lines.length - first
   const visible = lines.slice(first, first + count)
@@ -456,9 +510,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       if (current === null) return
       if (shown !== null) shown.scrollIntoView?.({ block: 'nearest' })
       else if (windowed) {
-        // Windowed out of the mounted slice: scroll the wrap to the row's line, which mounts it.
+        // Windowed out of the mounted slice: scroll to the row's line, which mounts it.
         const at = lines.findIndex((l) => 'row' in l && l.row.record.path === current)
-        if (at !== -1) wrap.scrollTop = Math.max(0, at * rowH - (wrap.clientHeight - rowH) / 2)
+        if (at !== -1) scrollPast(lineTop(at))
       }
     }
   }
@@ -476,12 +530,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const find = useContext(ViewFind)
   if (find !== null)
     find.scrollTo = (path) => {
-      const wrap = wrapRef.current
       const at = lines.findIndex((l) => 'row' in l && l.row.record.path === path)
-      if (!windowed || wrap === null || at === -1) return
-      const top = Math.max(0, at * rowH - (wrap.clientHeight - rowH) / 2)
-      wrap.scrollTop = top
-      setScrollTop(top)
+      if (!windowed || at === -1) return
+      scrollPast(lineTop(at))
     }
 
   /**
@@ -497,12 +548,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (at === -1) return
     newRowRef.current = null
     setTitleEdit(rowKey(lines[at] as Extract<Line, { row: Row }>))
-    const wrap = wrapRef.current
-    if (windowed && wrap !== null) {
-      const top = Math.max(0, at * rowH - (wrap.clientHeight - rowH) / 2)
-      wrap.scrollTop = top
-      setScrollTop(top)
-    }
+    if (windowed) scrollPast(lineTop(at))
   })
   /** The item's action on data row `r` (the right-clicked row, or a selection's last). */
   const newRowBelow =
@@ -590,8 +636,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const selRef = useRef<TableSelection | null>(null)
   /** Whether a mark may be on the DOM: with none and no selection, a render skips the pass. */
   const painted = useRef(false)
-  /** The selection's right-click, with the selection it was opened on. */
-  const [selMenu, setSelMenu] = useState<{ x: number; y: number; sel: TableSelection } | null>(null)
+  /** The selection's right-click, with the selection it was opened on and the notes it held then (YAZ-4636 T7). */
+  const [selMenu, setSelMenu] = useState<{ x: number; y: number; sel: TableSelection; paths: string[] } | null>(null)
   const paintSelection = (): void => {
     const wrap = wrapRef.current
     const sel = selRef.current
@@ -604,6 +650,17 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     for (const td of wrap.querySelectorAll<HTMLElement>('tbody td[data-row]')) td.toggleAttribute(SELECTED, sel?.kind === 'rows' && sel.rows!.has(Number(td.dataset.row)))
     for (const th of wrap.querySelectorAll<HTMLElement>('thead th[data-col]')) th.toggleAttribute(SELECTED, sel?.kind === 'cols' && sel.cols!.has(Number(th.dataset.col)))
   }
+  /**
+   * The rows the selection was made over (YAZ-4636 T7): a selection is by row index, so after a re-sort or an outside
+   * change that moves rows it would mark other notes. It goes instead; a change that keeps the order (by path) keeps it.
+   */
+  const selRows = useRef<readonly Row[]>(flat)
+  useLayoutEffect(() => {
+    const prev = selRows.current
+    selRows.current = flat
+    if (selRef.current === null || prev === flat) return
+    if (prev.length !== flat.length || prev.some((row, i) => row.record.path !== flat[i].record.path)) setSelection(null)
+  })
   useLayoutEffect(paintSelection)
   /**
    * The toolbar chip (YAZ-4612 S46): with two or more cells selected, Count (the cells with a value), and Sum and
@@ -635,30 +692,46 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     chip.textContent = numbers === 0 ? `Count ${count}` : `Count ${count} · Sum ${round(sum)} · Average ${round(sum / numbers)}`
     chip.hidden = false
   }
-  /** ⌘C, ⌘V and Esc while the focus fell to the page (a windowed scroll unmounted the focused cell). Set only while there is a selection. */
-  const pageKeys = useRef<((e: KeyboardEvent) => void) | null>(null)
+  /**
+   * ⌘C, ⌘V and Esc while the focus fell to the page (a windowed scroll unmounted the focused cell). Set only while
+   * there is a selection. Hidden app tabs stay mounted and two folder pages can both hold a selection (YAZ-4636 T1), so
+   * the table acts only while it is shown AND it owns the keys: the last press or focus was inside it (`claim`).
+   */
+  const pageKeys = useRef<{ keys: (e: KeyboardEvent) => void; claim: (e: Event) => void } | null>(null)
+  const ownsKeys = useRef(false)
   const selectionKeyRef = useRef<(e: KeyboardEvent) => boolean>(() => false)
   const setSelection = (next: TableSelection | null): void => {
     selRef.current = next
     paintSelection()
     placeHandle()
     showStats()
+    // A selection is made by a gesture in this table, so it owns the keys now.
+    if (next !== null) ownsKeys.current = true
     if (next !== null && pageKeys.current === null) {
-      pageKeys.current = (e) => {
-        if (!e.defaultPrevented && e.target === document.body && selectionKeyRef.current(e)) e.preventDefault()
+      const shown = () => wrapRef.current?.checkVisibility?.() !== false
+      pageKeys.current = {
+        keys: (e) => {
+          if (!e.defaultPrevented && e.target === document.body && ownsKeys.current && shown() && selectionKeyRef.current(e)) e.preventDefault()
+        },
+        claim: (e) => {
+          ownsKeys.current = e.target instanceof Node && wrapRef.current?.contains(e.target) === true
+        },
       }
-      document.addEventListener('keydown', pageKeys.current)
+      document.addEventListener('keydown', pageKeys.current.keys)
+      document.addEventListener('mousedown', pageKeys.current.claim, true)
+      document.addEventListener('focusin', pageKeys.current.claim, true)
     } else if (next === null && pageKeys.current !== null) {
-      document.removeEventListener('keydown', pageKeys.current)
-      pageKeys.current = null
+      dropPageKeys()
     }
   }
-  useEffect(
-    () => () => {
-      if (pageKeys.current !== null) document.removeEventListener('keydown', pageKeys.current)
-    },
-    [],
-  )
+  const dropPageKeys = (): void => {
+    if (pageKeys.current === null) return
+    document.removeEventListener('keydown', pageKeys.current.keys)
+    document.removeEventListener('mousedown', pageKeys.current.claim, true)
+    document.removeEventListener('focusin', pageKeys.current.claim, true)
+    pageKeys.current = null
+  }
+  useEffect(() => dropPageKeys, [])
 
   /** The `data-cell` of the cell an event is in, inside this table; null elsewhere. */
   const cellAt = (target: EventTarget | null): { r: number; c: number } | null => {
@@ -754,6 +827,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const cellText = (row: Row, c: number): string => (c === nameCol ? row.record.title : render(row.values[keys[c]] ?? null, resolve))
   const copyArea = (area: { rows: number[]; cols: number[] }): void => {
     const text = toTsv(area.rows.map((r) => area.cols.map((c) => cellText(flat[r], c))))
+    // The values as stored, beside the readable text (YAZ-4636 T9c): a paste of this very copy keeps `[[id]]`.
+    lastCopy = { text, raw: area.rows.map((r) => area.cols.map((c) => sourceText(r, c))) }
     navigator.clipboard.writeText(text).catch((error: unknown) => onNotice?.(`Can't copy: ${error instanceof Error ? error.message : String(error)}`))
   }
   /**
@@ -934,7 +1009,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       if (over === null) return
       const down = over.r - lastRow
       const right = over.c - lastCol
-      const next = down >= right ? { axis: 'down' as const, count: Math.max(down, 0) } : { axis: 'right' as const, count: right }
+      // Up or left of the source fills nothing, so it marks nothing (YAZ-4636 T9a).
+      const next = down >= right ? { axis: 'down' as const, count: Math.max(down, 0) } : { axis: 'right' as const, count: Math.max(right, 0) }
       if (fillRef.current?.axis === next.axis && fillRef.current.count === next.count) return
       fillRef.current = { ...area, ...next }
       paintFillTarget()
@@ -957,7 +1033,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       (text) => {
         const cells: { r: number; c: number; value: unknown }[] = []
         let notOption = 0
-        parseTsv(text).forEach((line, i) =>
+        // The table's own last copy pastes its stored values (T9c): a link stays `[[id]]`, never the title it showed.
+        const grid = lastCopy !== null && lastCopy.text === text ? lastCopy.raw : parseTsv(text)
+        grid.forEach((line, i) =>
           line.forEach((t, j) => {
             // Only the shown columns, and of those the writable ones: never a hidden column or the Name (YAZ-4612 S51).
             const [r, c] = [area.rows[0] + i, area.cols[0] + j]
@@ -992,7 +1070,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (sel?.cols === null) targets.push(...notes.map((record) => ({ record })))
     const unwrap = sel?.rows === null ? new Set(area.cols.map((c) => canonicalKey(keys[c]))) : null
     const clear = (d: ViewSet) => {
-      setViewFills(d, viewIndex, targets, null, records, resolveLink)
+      setViewFills(d, viewIndex, targets, null, resolveLink)
       const v = d.views[viewIndex]
       if (unwrap === null || v.columnWrap === undefined) return
       const kept = Object.fromEntries(Object.entries(v.columnWrap).filter(([k]) => !unwrap.has(canonicalKey(k))))
@@ -1047,6 +1125,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   }
   selectionKeyRef.current = selectionKey
 
+  /**
+   * The notes of a selection, for its Duplicate and Delete (YAZ-4592 S26): a folder row is no note, and a note shown
+   * under two groups counts once (YAZ-4636 T7). Read when the menu opens, so a later change of rows cannot swap them.
+   */
+  const notePathsOf = (sel: TableSelection): string[] => [...new Set(indicesOf(sel.rows, flat.length).map((r) => flat[r].record).filter((record) => !isFolderRow(record)).map((record) => record.path))]
   /** Google-Sheets style: right-click selects the data cell, unless a typed editor owns it. Inside the selection it opens the selection's menu (YAZ-4593). */
   const openRowMenu = ({ record, values }: Row) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
     if (!(event.target instanceof Element)) return
@@ -1055,7 +1138,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const gutterCell = event.target.closest<HTMLElement>('td[data-row]')
     if (gutterCell !== null && sel?.kind === 'rows' && sel.rows!.has(Number(gutterCell.dataset.row))) {
       event.preventDefault()
-      setSelMenu({ x: event.clientX, y: event.clientY, sel })
+      setSelMenu({ x: event.clientX, y: event.clientY, sel, paths: notePathsOf(sel) })
       return
     }
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
@@ -1066,7 +1149,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const [r, c] = (cell.dataset.cell ?? '').split(':').map(Number)
     if (sel !== null && inSelection(sel, r, c)) {
       setRowMenu(null)
-      setSelMenu({ x: event.clientX, y: event.clientY, sel })
+      setSelMenu({ x: event.clientX, y: event.clientY, sel, paths: notePathsOf(sel) })
       return
     }
     setSelection(null)
@@ -1107,7 +1190,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** The cells of each column that move with its header (YAZ-4606): the header, every mounted body cell and the summary cell. */
   const columnCells = (): HTMLElement[] => [...(wrapRef.current?.querySelectorAll<HTMLElement>('thead th[data-col], tbody td[data-cell], tfoot td.view-table__summary:not(.view-table__gutter)') ?? [])]
   const columnOfCell = (el: HTMLElement): string =>
-    el.dataset.col !== undefined ? (keys[Number(el.dataset.col)] ?? '') : el.dataset.cell !== undefined ? (keys[Number(el.dataset.cell.split(':')[1])] ?? '') : (keys[(el as HTMLTableCellElement).cellIndex - (numbered ? 1 : 0)] ?? '')
+    // The gutter cell is always first, numbers or not (YAZ-4610 D62, YAZ-4636 T8): a summary cell's column is one before its index.
+    el.dataset.col !== undefined ? (keys[Number(el.dataset.col)] ?? '') : el.dataset.cell !== undefined ? (keys[Number(el.dataset.cell.split(':')[1])] ?? '') : (keys[(el as HTMLTableCellElement).cellIndex - 1] ?? '')
   // THE COLUMN DRAG (YAZ-4606 D58): the tab bar's live gap, across the table. The grabbed column leaves it, and the other
   // columns part, each moving as one: its header, its mounted body cells and its summary cell.
   const live = useLiveGapReorder<HTMLTableRowElement>({ axis: 'x', keys, onMove: moveColumn, slotAt: columnSlot, roomOf: (c) => widthOf(keys[c]), scroller: () => wrapRef.current, cells: columnCells, keyOfCell: columnOfCell })
@@ -1142,7 +1226,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           .map((_, c) => {
             const shift = live.shiftOf(c)
             if (shift === 0 && !live.lifted(c)) return ''
-            const cells = `${scope} thead th[data-col="${c}"],${scope} tbody td[data-cell$=":${c}"],${scope} tfoot td:nth-child(${c + 1 + (numbered ? 1 : 0)})`
+            const cells = `${scope} thead th[data-col="${c}"],${scope} tbody td[data-cell$=":${c}"],${scope} tfoot td:nth-child(${c + 2})`
             return `${cells}{${shift === 0 ? '' : `transform:${partTransform(shift, 'x')};`}${live.lifted(c) ? 'opacity:0;' : ''}}`
           })
           .join('')
@@ -1221,19 +1305,26 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const onTableFocus = (e: ReactFocusEvent): void => {
     placeHandle()
     const at = e.target instanceof HTMLElement ? e.target.dataset.cell : undefined
-    if (at === undefined || at !== downAfter.current) return
+    // The editor's own field taking the focus keeps the memory; any OTHER cell's focus forgets it (YAZ-4636 T9d): a
+    // list editor stays open on Enter, and a press elsewhere must not make the cell's next focus jump a row.
+    if (at === undefined) return
+    const down = downAfter.current
     downAfter.current = null
+    if (at !== down) return
     const [r, c] = at.split(':').map(Number)
     wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${r + 1}:${c}"]`)?.focus()
   }
+  /** The focus leaving the table forgets the Enter too (T9d); between its own cells `onTableFocus` decides. */
+  const onTableBlur = (e: ReactFocusEvent): void => {
+    placeHandle()
+    if (!(e.relatedTarget instanceof Node) || wrapRef.current?.contains(e.relatedTarget) !== true) downAfter.current = null
+  }
 
-  /** The selection's right-click (YAZ-4593): every action works on the selection it was opened on. */
-  const selectionMenu = ({ x, y, sel }: { x: number; y: number; sel: TableSelection }) => {
+  /** The selection's right-click (YAZ-4593): every action works on the selection it was opened on; Duplicate and Delete on the notes it held then (`paths`). */
+  const selectionMenu = ({ x, y, sel, paths }: NonNullable<typeof selMenu>) => {
     const area = areaOf(sel)!
     const one = area.cols.length === 1 ? area.cols[0] : -1
     const typing = one === -1 || bares[one] === null ? undefined : typings[one]
-    // A folder row is no note (YAZ-4592 S26): the selection's Duplicate and Delete skip it, and are off with no note.
-    const paths = area.rows.map((r) => flat[r].record).filter((record) => !isFolderRow(record)).map((record) => record.path)
     return (
       <SelectionMenu
         x={x}
@@ -1246,7 +1337,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         onFill={(target, fill) => {
           const targets = area.rows.flatMap((r) => (target === 'row' ? [{ record: flat[r].record }] : area.cols.map((c) => ({ record: flat[r].record, column: keys[c] }))))
           // No fill offers Undo, as the row menu's (YAZ-4594 S29).
-          onUpdate((d) => setViewFills(d, viewIndex, targets, fill, records, resolveLink), fill === null ? 'Cleared fill' : undefined)
+          onUpdate((d) => setViewFills(d, viewIndex, targets, fill, resolveLink), fill === null ? 'Cleared fill' : undefined)
         }}
         onSetValue={(value) => writeCells(area.rows.map((r) => ({ r, c: one, value })))}
         onClearFormatting={() => clearFormatting(sel, area)}
@@ -1414,7 +1505,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
 
   return (
     <>
-      <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}>
+      <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setPast(scrolledPast(e.currentTarget)) : undefined}>
         {columnRules !== '' && <style>{columnRules}</style>}
         <table
           className="view-table"
@@ -1424,7 +1515,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           onKeyDown={onKeyDown}
           // The fill handle follows the focused cell when there is no selection (D61): placed on the DOM, no render.
           onFocus={onTableFocus}
-          onBlur={placeHandle}
+          onBlur={onTableBlur}
           onKeyDownCapture={onEditorKey}
         >
           <thead>
@@ -1559,7 +1650,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 <FillMenu
                   start={cellFillOf(fills, rowMenu.record.path, rowMenu.column)}
                   // No fill offers Undo (YAZ-4594 S29).
-                  onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, records, resolveLink), fill === null ? 'Cleared fill' : undefined)}
+                  onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, resolveLink), fill === null ? 'Cleared fill' : undefined)}
                   onClose={() => setRowMenu(null)}
                 />
                 {/* ⌘\ on this one cell (YAZ-4603 D54). */}

@@ -71,17 +71,16 @@ export function noteLinkOf(record: IndexRecord, resolveLink: ResolveLink): strin
 
 /**
  * The ONE fills write, as a `Mutate` body: `record`'s cell in `column` (undefined = its row) takes `fill`,
- * or loses its fill when `fill` is null. The same write drops every entry whose note is not among the
- * folder's `records`, so the list never holds more than the folder's notes times its columns (D3).
+ * or loses its fill when `fill` is null. Every other entry stays as it is (YAZ-4636 T9b): a note the view
+ * does not show now (Subfolders: Hide) or a link that does not resolve at this moment keeps its fill.
  */
-export function setViewFill(d: ViewSet, viewIndex: number, record: IndexRecord, column: string | undefined, fill: string | null, records: readonly IndexRecord[], resolveLink: ResolveLink): void {
-  setViewFills(d, viewIndex, [{ record, column }], fill, records, resolveLink)
+export function setViewFill(d: ViewSet, viewIndex: number, record: IndexRecord, column: string | undefined, fill: string | null, resolveLink: ResolveLink): void {
+  setViewFills(d, viewIndex, [{ record, column }], fill, resolveLink)
 }
 
 /** The same write for several cells or rows at once (YAZ-4593: a fill on a selection): one pass over the list. */
-export function setViewFills(d: ViewSet, viewIndex: number, targets: readonly { record: IndexRecord; column?: string }[], fill: string | null, records: readonly IndexRecord[], resolveLink: ResolveLink): void {
+export function setViewFills(d: ViewSet, viewIndex: number, targets: readonly { record: IndexRecord; column?: string }[], fill: string | null, resolveLink: ResolveLink): void {
   const view = d.views[viewIndex]
-  const here = new Set(records.map((r) => r.path))
   const checked = cellColor(fill)
   /** Each target's `path` + slot → its new entry (null: no fill), in the targets' order. */
   const made = new Map<string, ViewFill | null>()
@@ -92,7 +91,10 @@ export function setViewFills(d: ViewSet, viewIndex: number, targets: readonly { 
   const kept: unknown[] = []
   for (const entry of Array.isArray(view.fills) ? view.fills : []) {
     const read = readFill(entry, resolveLink)
-    if (read === null || !here.has(read.path)) continue
+    if (read === null) {
+      kept.push(entry)
+      continue
+    }
     const at = `${read.path}\n${read.slot}`
     const next = made.get(at)
     if (next === undefined) kept.push(entry)

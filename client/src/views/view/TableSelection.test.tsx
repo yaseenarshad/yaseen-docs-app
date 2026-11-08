@@ -47,16 +47,24 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'clipboard', { value: { writeText, readText: vi.fn(async () => clip) }, configurable: true })
 })
 
+/** A second table in the same document (YAZ-4636 T1: two app tabs), unmounted with the first. */
+const extras: { root: Root; container: HTMLElement }[] = []
+
 afterEach(() => {
   act(() => root?.unmount())
   root = null
   container?.remove()
   container = null
+  for (const extra of extras.splice(0)) {
+    act(() => extra.root.unmount())
+    extra.container.remove()
+  }
   vi.clearAllMocks()
 })
 
-function mount(text: string, { records = TEST_RECORDS, ...props }: Partial<ViewsPaneProps> = {}, host: Partial<FolderHost> = {}) {
+function mount(text: string, { records: initial = TEST_RECORDS, ...props }: Partial<ViewsPaneProps> = {}, host: Partial<FolderHost> = {}) {
   let parsed = parseViews(text)
+  let records = initial
   const writeValues = vi.fn(async () => undefined)
   const retitle = vi.fn()
   const folder = testFolderHost({ writeValues, retitle, vaultRecords: records, ...host })
@@ -77,7 +85,31 @@ function mount(text: string, { records = TEST_RECORDS, ...props }: Partial<Views
     )
   draw()
   commits = 0
-  return { el: container, writeValues, retitle, onChange, yaml: () => serializeViews(parsed) }
+  return {
+    el: container,
+    writeValues,
+    retitle,
+    onChange,
+    yaml: () => serializeViews(parsed),
+    /** The index brings a new snapshot (T7). */
+    setRecords: (next: IndexRecord[]) => {
+      records = next
+      draw()
+    },
+  }
+}
+
+/** Another folder page beside the first, as a second app tab is (T1): its own root, its own writes. */
+function mountAnother(text: string) {
+  const parsed = parseViews(text)
+  const writeValues = vi.fn(async () => undefined)
+  const folder = testFolderHost({ writeValues, retitle: vi.fn() })
+  const el = document.createElement('div')
+  document.body.appendChild(el)
+  const other = createRoot(el)
+  extras.push({ root: other, container: el })
+  act(() => other.render(<ViewsPane parsed={parsed} onChange={vi.fn()} root="/vault" folderPath="/vault/pillars.md" records={TEST_RECORDS} readOnly={readOnlyPaths(TEST_RECORDS)} folder={folder} onOpenFile={vi.fn()} />))
+  return { el, writeValues }
 }
 
 const cell = (el: ParentNode, r: number, c: number): HTMLElement => {
@@ -482,6 +514,15 @@ describe('⌘\\ Clear formatting (YAZ-4603 D54)', () => {
     expect(onNotice).not.toHaveBeenCalled()
   })
 
+  it('with nothing to clear: a fill of a note the view hides, or a link to nothing, is no reason to write (YAZ-4636 T9b)', () => {
+    const onNotice = vi.fn()
+    const hidden = TEST_RECORDS.find((r) => r.title === 'VSL-v1')!
+    const { el, onChange } = mount(FORMATTED.replace('    columnWrap:', `      - note: "[[${hidden.title}]]"\n        fill: red\n      - note: "[[Nobody]]"\n        fill: red\n    columnWrap:`), { records: TEST_RECORDS.filter((r) => r !== hidden) }, { onNotice, vaultRecords: TEST_RECORDS })
+    key(cell(el, 2, 3), '\\', { metaKey: true })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onNotice).not.toHaveBeenCalled()
+  })
+
   it('"Clear formatting" in the selection menu and in the cell menu (the focused cell only)', () => {
     const { el, yaml } = setup()
     rightClick(cell(el, 0, 2))
@@ -556,6 +597,17 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
     expect(writeValues).toHaveBeenCalledTimes(2)
     expect(writesOf(writeValues, NOTES[2].path)).toEqual([[{ key: 'num', value: 5 }]])
     expect(writesOf(writeValues, NOTES[3].path)).toEqual([[{ key: 'num', value: 7 }]])
+  })
+
+  it('a drag up and to the left fills nothing and marks no target (YAZ-4636 T9a)', async () => {
+    const { el, writeValues } = mount(FILL_TABLE, { records: NOTES })
+    drag(el, [1, 1], [2, 2])
+    down(handle(el)!)
+    move(cell(el, 0, 1))
+    expect(el.querySelectorAll('[data-fill-target]')).toHaveLength(0)
+    up(cell(el, 0, 1))
+    await flush()
+    expect(writeValues).not.toHaveBeenCalled()
   })
 
   it('one source row down: a date steps by a day, a weekday and a trailing number by 1, other text repeats', async () => {
@@ -670,5 +722,121 @@ describe('the # column and the headers as handles, the corner selects all (YAZ-4
     expect(strip.getAttribute('draggable')).toBe('true')
     down(strip)
     expect(selected(el)).toEqual(['1:0', '1:1', '1:2', '1:3'])
+  })
+})
+
+describe('keys aimed at the page belong to the shown table last used (YAZ-4636 T1)', () => {
+  /** A key while the focus fell to the page: hidden app tabs stay mounted, so their tables hear it too. */
+  const bodyKey = (k: string, init: KeyboardEventInit = {}) => act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init })))
+
+  it('a hidden table (a hidden app tab) does nothing on Backspace aimed at the page; a shown one clears its cells', async () => {
+    const { el, writeValues } = mount(TABLE)
+    drag(el, [1, 1], [2, 2])
+    const wrap = el.querySelector<HTMLElement>('.view-table-wrap')!
+    wrap.checkVisibility = () => false
+    bodyKey('Backspace')
+    await flush()
+    expect(writeValues).not.toHaveBeenCalled()
+    expect(selected(el).length).toBeGreaterThan(0)
+    wrap.checkVisibility = () => true
+    bodyKey('Backspace')
+    await flush()
+    expect(writeValues).toHaveBeenCalled()
+  })
+
+  it('with two tables selected, only the one last pressed in acts; after a press outside both, neither; a press back in one hands it the keys', async () => {
+    const a = mount(TABLE)
+    const b = mountAnother(TABLE)
+    drag(a.el, [1, 1], [2, 2])
+    drag(b.el, [1, 1], [2, 2])
+    bodyKey('Backspace')
+    await flush()
+    expect(a.writeValues).not.toHaveBeenCalled()
+    expect(b.writeValues).toHaveBeenCalled()
+    b.writeValues.mockClear()
+    down(document.body)
+    bodyKey('Backspace')
+    await flush()
+    expect(a.writeValues).not.toHaveBeenCalled()
+    expect(b.writeValues).not.toHaveBeenCalled()
+    // ⇧ on a cell of A keeps its selection and is a press in A.
+    down(cell(a.el, 2, 2), { shiftKey: true })
+    bodyKey('Backspace')
+    await flush()
+    expect(a.writeValues).toHaveBeenCalled()
+    expect(b.writeValues).not.toHaveBeenCalled()
+  })
+})
+
+describe('the selection follows the rows, or goes (YAZ-4636 T7)', () => {
+  const RANKED = `views:
+  - type: table
+    name: T
+    order:
+      - file.name
+      - note.rank
+      - note.word
+    sort:
+      - property: note.rank
+        direction: ASC
+`
+  const ranked = (ranks: number[], word = 'w'): IndexRecord[] => ranks.map((rank, i) => ({ ...TEST_RECORDS[4], path: `/vault/r${i}.md`, basename: `r${i}`, name: `r${i}.md`, title: `r${i}`, folder: '', properties: { rank, word } }))
+  const selectedRows = (el: ParentNode) => [...new Set(selected(el).map((at) => at!.split(':')[0]))]
+  const confirmDelete = () => act(() => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((b) => b.textContent === 'Delete')!.click())
+
+  it('an outside change that keeps the order keeps the selection; one that re-sorts the rows clears it', () => {
+    const { el, setRecords } = mount(RANKED, { records: ranked([1, 2, 3, 4]) })
+    down(gutter(el, 1))
+    down(gutter(el, 2), { shiftKey: true })
+    expect(selectedRows(el)).toEqual(['1', '2'])
+    setRecords(ranked([1, 2, 3, 4], 'changed'))
+    expect(selectedRows(el)).toEqual(['1', '2'])
+    setRecords(ranked([1, 9, 8, 2]))
+    expect(selected(el)).toEqual([])
+  })
+
+  it('Delete notes… trashes the notes the menu was opened on, even after the rows re-sorted under it', () => {
+    const trash = vi.fn(() => Promise.resolve())
+    const { el, setRecords } = mount(RANKED, { records: ranked([1, 2, 3, 4]) }, { trash })
+    down(gutter(el, 1))
+    down(gutter(el, 2), { shiftKey: true })
+    rightClick(cell(el, 2, 2))
+    // r3 and r2 take rows 1 and 2 now; the menu was opened on r1 and r2.
+    setRecords(ranked([1, 9, 8, 2]))
+    act(() => item(el, 'Delete notes…').click())
+    confirmDelete()
+    expect(trash).toHaveBeenCalledExactlyOnceWith(['/vault/r1.md', '/vault/r2.md'])
+  })
+
+  it('a note shown under two groups is trashed once', () => {
+    const trash = vi.fn(() => Promise.resolve())
+    const both = { ...TEST_RECORDS[4], path: '/vault/both.md', basename: 'both', name: 'both.md', title: 'both', folder: '', properties: { tags: ['a', 'b'] } }
+    const onlyC = { ...both, path: '/vault/onlyC.md', basename: 'onlyC', name: 'onlyC.md', title: 'onlyC', properties: { tags: ['c'] } }
+    const { el } = mount(`${TABLE}    groupBy:\n      property: note.tags\n`, { records: [both, onlyC] }, { trash })
+    expect([...el.querySelectorAll('td.view-table__name')].map((td) => td.textContent)).toEqual(['both', 'both', 'onlyC'])
+    down(gutter(el, 0))
+    down(gutter(el, 2), { shiftKey: true })
+    rightClick(cell(el, 0, 1))
+    act(() => item(el, 'Delete notes…').click())
+    confirmDelete()
+    expect(trash).toHaveBeenCalledExactlyOnceWith([both.path, onlyC.path])
+  })
+})
+
+describe('an internal copy keeps the stored value (YAZ-4636 T9c)', () => {
+  it('⌘C then ⌘V on a link cell writes `[[id]]`, while the clipboard text is the title link other apps read', async () => {
+    const ID = 'k3m9x2pq7abc'
+    const target: IndexRecord = { ...TEST_RECORDS[4], path: '/vault/Nurture.md', basename: 'Nurture', name: 'Nurture.md', title: 'Nurture', folder: '', id: ID, properties: {} }
+    const a: IndexRecord = { ...TEST_RECORDS[4], path: '/vault/a.md', basename: 'a', name: 'a.md', title: 'a', folder: '', properties: { link: `[[${ID}]]` } }
+    const b: IndexRecord = { ...a, path: '/vault/b.md', basename: 'b', name: 'b.md', title: 'b', properties: {} }
+    const { el, writeValues } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.link\n', { records: [a, b, target] })
+    const [ra, rb] = [rowOf(el, 'a'), rowOf(el, 'b')]
+    expect(cell(el, ra, 1).textContent).toBe('Nurture')
+    key(cell(el, ra, 1), 'c', { metaKey: true })
+    await flush()
+    expect(clip).toBe('[[Nurture]]')
+    key(cell(el, rb, 1), 'v', { metaKey: true })
+    await flush()
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(b.path, [{ key: 'link', value: `[[${ID}]]` }])
   })
 })
