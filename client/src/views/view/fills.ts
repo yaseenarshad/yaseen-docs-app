@@ -9,6 +9,7 @@ import { exactLinkTarget } from '@shared/linkRewrite'
 import { isRecord } from '@shared/guards'
 import { cellColor } from '../../editor/table/tableComment'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
+import { isFolderRow, rowPage } from '../../links/shortcuts'
 import type { ViewSet } from '../viewSchema'
 import { canonicalKey } from './keys'
 
@@ -21,7 +22,10 @@ export interface ViewFill {
 /** The row's key in a `FillIndex` entry: a fill with no column. */
 const ROW = '*'
 
-/** Note path → canonical column key (or `*` for the row) → fill. */
+/**
+ * Row page → canonical column key (or `*` for the row) → fill. A row's page (`rowPage`) is the note's path, or a
+ * folder row's FOLDER (YAZ-4644 E1): a link to a folder resolves to its directory, never to its `.folder.md`.
+ */
 export type FillIndex = ReadonlyMap<string, ReadonlyMap<string, string>>
 
 /** The note a fill's link names, or null when the link resolves to none. */
@@ -54,9 +58,9 @@ export function fillIndex(fills: unknown, resolveLink: ResolveLink): FillIndex {
   return index
 }
 
-/** A cell's fill: its own, else its row's. */
+/** A cell's fill: its own, else its row's. `path` is the row's record path; a folder row is found by its folder (E1). */
 export function cellFillOf(index: FillIndex, path: string, key: string): string | undefined {
-  const slots = index.get(path)
+  const slots = index.get(rowPage(path))
   return slots?.get(canonicalKey(key)) ?? slots?.get(ROW)
 }
 
@@ -67,11 +71,14 @@ export const fillPaint = (fill: string): string =>
 /**
  * The link a fill names its note by, as every link the app writes (YAZ-2293): the note's id when it has
  * one, else its title while the title resolves to it, else its root-relative path without the extension.
+ * A folder row (YAZ-4644 E1) is its folder: the title or the path that resolves to the directory, never `.folder`.
  */
 export function noteLinkOf(record: IndexRecord, resolveLink: ResolveLink): string {
   if (record.id !== undefined) return `[[${record.id}]]`
-  if (resolveLink(record.title) === record.path) return `[[${record.title}]]`
-  return `[[${record.folder === '' ? record.basename : `${record.folder}/${record.basename}`}]]`
+  const page = rowPage(record.path)
+  if (resolveLink(record.title) === page) return `[[${record.title}]]`
+  const own = isFolderRow(record) ? page.slice(page.lastIndexOf('/') + 1) : record.basename
+  return `[[${record.folder === '' ? own : `${record.folder}/${own}`}]]`
 }
 
 /**
@@ -95,7 +102,7 @@ export function setViewFills(d: ViewSet, viewIndex: number, targets: readonly { 
   /** Each target's `path` + slot → its new entry (null: no fill), in the targets' order. */
   const made = new Map<string, ViewFill | null>()
   for (const { record, column } of targets)
-    made.set(`${record.path}\n${column === undefined ? ROW : canonicalKey(column)}`, checked === null ? null : { note: noteLinkOf(record, resolveLink), ...(column === undefined ? {} : { column }), fill: checked })
+    made.set(`${rowPage(record.path)}\n${column === undefined ? ROW : canonicalKey(column)}`, checked === null ? null : { note: noteLinkOf(record, resolveLink), ...(column === undefined ? {} : { column }), fill: checked })
   // A changed fill keeps its place in the list, so the YAML changes one line.
   const placed = new Set<string>()
   const kept: unknown[] = []

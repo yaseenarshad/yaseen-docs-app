@@ -40,9 +40,11 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 let draw: () => void = () => {}
 
-function mount(text = TABLE, over: Partial<FolderHost> = {}) {
+function mount(text = TABLE, over: Partial<FolderHost> = {}, refused = false) {
   let parsed = parseViews(text)
+  // A read-only page's host refuses every settings write with `false` and keeps its def (YAZ-4644 E2).
   const onChange = vi.fn((next: ParsedViews) => {
+    if (refused) return false
     parsed = next
     draw()
   })
@@ -329,5 +331,35 @@ describe('the Undo toast also covers rename column, change column type and delet
     await act(async () => {})
     expect(onNotice).not.toHaveBeenCalled()
     expect(el.querySelector('.column-detail')?.textContent).toContain('changed since opened')
+  })
+})
+
+describe('a refused settings write says nothing (YAZ-4644 E2): the host returns false, as a read-only folder page does (D36)', () => {
+  it('"Hide column": the banner is the host\'s; no "Hid … · Undo" toast, and the column stays', () => {
+    const { el, onNotice, yaml } = mount(TABLE, {}, true)
+    rightClick(header(el, 'Priority'))
+    click(item(el, 'Hide column'))
+    expect(yaml()).toContain('note.priority')
+    expect(header(el, 'Priority')).toBeDefined()
+    expect(onNotice).not.toHaveBeenCalled()
+  })
+
+  it('a rename, a view delete, "No fill" and "Unfreeze columns" each say nothing when refused', () => {
+    const { el, onChange, onNotice } = mount(TABLE, {}, true)
+    rightClick(header(el, 'Priority'))
+    click(item(el, 'Rename column…'))
+    const field = q<HTMLInputElement>(el, '[aria-label="Rename Priority"]')
+    setValue(field, 'Urgency')
+    press(field, 'Enter')
+    rightClick(q(el, '[role="tab"]').closest('.view-tab')!)
+    click(item(el, 'Delete'))
+    click([...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete')!)
+    rightClick(q(rowNamed(el, 'Attribution'), 'td[data-cell$=":1"]'))
+    click(item(el, 'Fill row'))
+    click(item(el, 'No fill'))
+    rightClick(header(el, 'Priority'))
+    click(item(el, 'Unfreeze columns'))
+    expect(onChange).toHaveBeenCalledTimes(4) // each gesture reached the host, which refused it
+    expect(onNotice).not.toHaveBeenCalled()
   })
 })

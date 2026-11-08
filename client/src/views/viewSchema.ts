@@ -179,13 +179,15 @@ export function serializeViews(parsed: ParsedViews): string {
 
 /**
  * Apply `mutate` to a clone of `def`, then write only the changed paths back
- * into `doc` so comments and untouched keys keep their original text.
+ * into a clone of `doc` so comments and untouched keys keep their original text.
+ * `parsed` itself is untouched (YAZ-4644 E2): a write the host refuses leaves nothing behind in its copy.
  */
 export function updateViews(parsed: ParsedViews, mutate: (def: ViewSet) => void): ParsedViews {
   const next = structuredClone(parsed.def)
   mutate(next)
-  writeChanges(parsed.doc, [], parsed.def, next)
-  return { def: next, doc: parsed.doc }
+  const doc = parsed.doc.clone()
+  writeChanges(doc, [], parsed.def, next)
+  return { def: next, doc }
 }
 
 function writeChanges(doc: Document, path: (string | number)[], prev: unknown, next: unknown): void {

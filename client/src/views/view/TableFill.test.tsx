@@ -8,6 +8,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
+import type { IndexRecord } from '@shared/types'
+import { linkResolver } from '../../links/folderLinks'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import viewsCss from '../views.css?inline'
@@ -198,5 +200,56 @@ describe('"Fill cell ›" and "Fill row ›" in the row right-click (YAZ-4536 D1
     const { el } = mount('views:\n  - type: cards\n    name: C\n')
     rightClick(q(el, '.view-card'))
     expect(items(el).map((b) => b.textContent)).not.toContain('Fill cell')
+  })
+})
+
+describe('a folder row fills (YAZ-4644 E1): Subfolders: As rows on a Schema page whose Orders row has no settings file', () => {
+  const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
+    const rel = path.slice('/vault/'.length)
+    const name = rel.slice(rel.lastIndexOf('/') + 1)
+    const title = name === '.folder.md' ? rel.split('/').at(-2)! : name.replace(/\.md$/, '')
+    return { ...TEST_RECORDS[0], id: undefined, path, name, basename: name.replace(/\.md$/, ''), title, folder: rel.slice(0, rel.lastIndexOf('/')), properties }
+  }
+  const NOTES = [rec('/vault/Schema/Overview.md', { priority: 1 }), rec('/vault/Schema/Orders/total.md', { priority: 2 })]
+  const FOLDER_ROWS = [{ ...rec('/vault/Schema/Orders/.folder.md'), folder: 'Schema' }]
+  const DIRS = ['/vault/Schema', '/vault/Schema/Orders']
+  const SCHEMA = `${TABLE}    subfolders: rows
+`
+  const schema = (text: string) =>
+    mount(text, {
+      folderPath: '/vault/Schema',
+      records: NOTES,
+      folderRows: FOLDER_ROWS,
+      folder: testFolderHost({ vaultRecords: NOTES, resolveLink: linkResolver(NOTES, '/vault', DIRS) }),
+    })
+  /** The Orders row: its Name cell holds the folder icon and "N inside" after the title. */
+  const orders = (el: ParentNode) => [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr')].find((tr) => tr.querySelector('.view-table__name')?.textContent?.startsWith('Orders'))!
+
+  it('a stored row fill on the folder paints every cell of the folder row; the notes stay as they are', () => {
+    const { el } = schema(`${SCHEMA}    fills:
+      - note: "[[Schema/Orders]]"
+        fill: pink
+`)
+    expect([...orders(el).querySelectorAll<HTMLElement>('td[data-cell]')].map(fillOf)).toEqual(Array(3).fill('var(--table-fill-pink)'))
+    expect([...rowNamed(el, 'Overview').querySelectorAll<HTMLElement>('td[data-cell]')].map(fillOf)).toEqual(['', '', ''])
+  })
+
+  it('"Fill row" on the folder row writes a link to the folder (its title, as a note\'s), and the row is drawn filled at once; "Fill cell" paints its one cell', () => {
+    const { el, yaml } = schema(SCHEMA)
+    rightClick(q(orders(el), 'td[data-cell$=":1"]'))
+    click(item(el, 'Fill row'))
+    click(item(el, 'Pink'))
+    expect(yaml()).toContain(`    fills:
+      - note: "[[Orders]]"
+        fill: pink
+`)
+    expect([...orders(el).querySelectorAll<HTMLElement>('td[data-cell]')].map(fillOf)).toEqual(Array(3).fill('var(--table-fill-pink)'))
+    rightClick(q(orders(el), 'td[data-cell$=":1"]'))
+    click(item(el, 'Fill cell'))
+    click(item(el, 'Blue'))
+    expect(fillOf(q(orders(el), 'td[data-cell$=":1"]'))).toBe('var(--table-fill-blue)')
+    expect(fillOf(q(orders(el), 'td[data-cell$=":2"]'))).toBe('var(--table-fill-pink)')
+    // One entry per slot: the second write did not add a twin of the first.
+    expect((yaml().match(/- note: /g) ?? []).length).toBe(2)
   })
 })

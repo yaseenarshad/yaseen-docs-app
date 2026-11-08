@@ -26,7 +26,7 @@ const VIEWS = `views:
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord =>
   ({ path: `/vault/${name}.md`, name: `${name}.md`, basename: name, title: name, folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases: [], tags: [], links: [], embeds: [] }) as IndexRecord
-const RECORDS = [rec('A', { amount: 1234.5, due: '2026-03-04', stage: 'Todo' })]
+const RECORDS = [rec('A', { amount: 1234.5, due: '2026-03-04', stage: 'Todo' }), rec('B', { amount: 1, due: '2026-02-30', stage: 'Todo' })]
 
 let root: Root | null = null
 let container: HTMLElement | null = null
@@ -42,7 +42,7 @@ function mount(columns: Record<string, ColumnDecl>, host: Partial<FolderHost> = 
   draw = () =>
     act(() =>
       root?.render(
-        <ViewsPane parsed={parsed} onChange={(next: ParsedViews) => (parsed = next)} root="/vault" folderPath="/vault/f/.folder.md" records={RECORDS} folder={folder} onOpenFile={vi.fn()} />,
+        <ViewsPane parsed={parsed} onChange={(next: ParsedViews) => void (parsed = next)} root="/vault" folderPath="/vault/f/.folder.md" records={RECORDS} folder={folder} onOpenFile={vi.fn()} />,
       ),
     )
   draw()
@@ -93,6 +93,11 @@ describe('S21/S22: a cell shows its column’s format', () => {
     expect(cells(el).slice(1, 3)).toEqual(['$1,234.50', 'Mar 4, 2026'])
     click(el.querySelector<HTMLElement>('[data-cell="0:1"] [data-edit]')!)
     expect(byLabel<HTMLInputElement>('Edit amount').value).toBe('1234.5')
+  })
+
+  it('an impossible date shows as its raw text, never an invented day (YAZ-4644 E3): 2026-02-30 is not "Mar 2, 2026"', () => {
+    const { el } = mount({ amount: { kind: 'number' }, due: { kind: 'date', format: { style: 'medium' } }, stage: SELECT })
+    expect(cells(el)[6]).toBe('2026-02-30')
   })
 })
 

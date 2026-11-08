@@ -253,7 +253,7 @@ describe('a folder row (D31/D32)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    act(() => root?.render(<ViewsPane parsed={parsed} onChange={(next) => (parsed = next)} root="/vault" folderPath="/vault/Schema" records={NOTES} folderRows={FOLDER_ROWS} folder={testFolderHost({ vaultRecords: NOTES, vaultFolders: FOLDERS, create })} onOpenFile={vi.fn()} />))
+    act(() => root?.render(<ViewsPane parsed={parsed} onChange={(next) => void (parsed = next)} root="/vault" folderPath="/vault/Schema" records={NOTES} folderRows={FOLDER_ROWS} folder={testFolderHost({ vaultRecords: NOTES, vaultFolders: FOLDERS, create })} onOpenFile={vi.fn()} />))
     click(q(container, '[aria-label="New note"]'))
     expect(create).toHaveBeenCalledExactlyOnceWith({ properties: {} }, undefined)
   })

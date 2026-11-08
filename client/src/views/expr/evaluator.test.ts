@@ -253,6 +253,7 @@ describe('global functions', () => {
     expect(ev('date(date("2026-08-21"))')).toEqual(new DateValue(new Date(2026, 7, 21).getTime(), false))
     expect(ev('date(0)')).toEqual(new DateValue(0, true))
     expect(err(ev('date("nope")'))).toMatch(/invalid date/)
+    expect(err(ev('date("2026-02-30")'))).toMatch(/invalid date/) // an impossible day is not March 2 (YAZ-4644 E3)
     const today = ev('today()') as DateValue
     expect(today.hasTime).toBe(false)
     expect(today.ms).toBe(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime())

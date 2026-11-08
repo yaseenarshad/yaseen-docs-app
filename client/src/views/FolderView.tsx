@@ -496,9 +496,9 @@ export function FolderView({
     )
   }
 
-  /** Every config change (sort, columns, widths, summaries…) is ONE settings write (🔒 D3). */
-  const onChange = (next: ParsedViews): void => {
-    if (refuseLocked()) return
+  /** Every config change (sort, columns, widths, summaries…) is ONE settings write (🔒 D3). `false`: read only refused it (YAZ-4644 E2). */
+  const onChange = (next: ParsedViews): boolean => {
+    if (refuseLocked()) return false
     setParsed(next)
     setSettingsError(null)
     // What this write will stamp as when the index returns it (YAZ-1241) — formulas ride unchanged;
@@ -509,6 +509,7 @@ export function FolderView({
     track(writeFolderSettings(file, block({ views: next.def.views, properties: next.def.properties, defaultView: next.def.defaultView }), settings, ids)).catch((err: unknown) =>
       setSettingsError(err instanceof Error ? err.message : String(err)),
     )
+    return true
   }
 
   /**

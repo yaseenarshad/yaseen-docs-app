@@ -12,6 +12,12 @@ import { cellFillOf, fillIndex, fillPaint, noteLinkOf, setViewFill, setViewFills
 
 const resolveLink = linkResolver(TEST_RECORDS, '/vault', vaultDirs('/vault'))
 const [AGENCY, LEVELS] = TEST_RECORDS
+/** The Orders folder's `.folder.md` as the index holds it (no id), and as the Orders ROW of a Schema page (`subfolderRows`: `folder` is the parent). */
+const ORDERS_FILE: IndexRecord = { ...AGENCY, id: undefined, path: '/vault/Schema/Orders/.folder.md', name: '.folder.md', basename: '.folder', title: 'Orders', folder: 'Schema/Orders' }
+const ORDERS: IndexRecord = { ...ORDERS_FILE, folder: 'Schema' }
+const DIRS = ['/vault/Schema', '/vault/Schema/Orders', '/vault/Schema/Users']
+/** A resolver that knows the folders, as the app's does (`vaultDirs` is empty in a test). */
+const folderAware = linkResolver(TEST_RECORDS, '/vault', DIRS, [ORDERS_FILE])
 
 describe('fillIndex and cellFillOf', () => {
   it('reads each fill by its note path, a row fill under "*", a cell fill under its canonical column', () => {
@@ -53,6 +59,34 @@ describe('noteLinkOf', () => {
     const twin: IndexRecord = { ...AGENCY, path: '/vault/Deep/Inner/More/Agentic Agency.md', folder: 'Deep/Inner/More' }
     const twins = linkResolver([...TEST_RECORDS, twin], '/vault', vaultDirs('/vault'))
     expect(noteLinkOf(twin, twins)).toBe('[[Deep/Inner/More/Agentic Agency]]')
+  })
+
+  it('a folder row (YAZ-4644 E1) goes by its id, else by the title that resolves to its folder, else by the folder\'s path', () => {
+    expect(noteLinkOf({ ...ORDERS, id: 'YAZ-7' }, folderAware)).toBe('[[YAZ-7]]')
+    expect(noteLinkOf(ORDERS, folderAware)).toBe('[[Orders]]')
+    // A note titled Orders takes the title: the folder row goes by its folder's path, never by `.folder`.
+    const note: IndexRecord = { ...AGENCY, path: '/vault/Orders.md', name: 'Orders.md', basename: 'Orders', title: 'Orders', folder: '' }
+    expect(noteLinkOf(ORDERS, linkResolver([...TEST_RECORDS, note], '/vault', DIRS, [ORDERS_FILE]))).toBe('[[Schema/Orders]]')
+  })
+})
+
+describe('a folder row\'s fill (YAZ-4644 E1): its link names the folder, and the row is found by its folder too', () => {
+  it('fillIndex and cellFillOf meet on the folder: a fill written by Fill row on the Orders row paints the Orders row', () => {
+    const index = fillIndex([{ note: '[[Orders]]', fill: 'pink' }, { note: '[[Schema/Orders]]', column: 'note.domain', fill: 'blue' }], folderAware)
+    expect(cellFillOf(index, ORDERS.path, 'file.name')).toBe('pink')
+    expect(cellFillOf(index, ORDERS.path, 'domain')).toBe('blue')
+    expect(cellFillOf(index, '/vault/Schema/Users/.folder.md', 'file.name')).toBeUndefined()
+  })
+
+  it('setViewFill on a folder row writes one entry, replaces it in place, and clears it', () => {
+    const d: ViewSet = { views: [{ type: 'table', name: 'T' }] }
+    setViewFill(d, 0, ORDERS, undefined, 'pink', folderAware)
+    setViewFill(d, 0, ORDERS, undefined, 'yellow', folderAware)
+    expect(d.views[0].fills).toEqual([{ note: '[[Orders]]', fill: 'yellow' }])
+    setViewFill(d, 0, ORDERS, 'note.domain', 'blue', folderAware)
+    expect(d.views[0].fills).toEqual([{ note: '[[Orders]]', fill: 'yellow' }, { note: '[[Orders]]', column: 'note.domain', fill: 'blue' }])
+    setViewFill(d, 0, ORDERS, undefined, null, folderAware, true)
+    expect(d.views[0].fills).toEqual([{ note: '[[Orders]]', column: 'note.domain', fill: 'blue' }])
   })
 })
 

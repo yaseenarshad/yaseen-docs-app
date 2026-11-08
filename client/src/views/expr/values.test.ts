@@ -29,6 +29,15 @@ describe('fromYaml', () => {
     expect(fromYaml('not a date')).toBe('not a date')
   })
 
+  it('an impossible day stays text (YAZ-4644 E3): 2026-02-30 is not March 2, with a time or a zone too', () => {
+    expect(fromYaml('2026-02-30')).toBe('2026-02-30')
+    expect(fromYaml('2026-02-30 09:00')).toBe('2026-02-30 09:00')
+    expect(fromYaml('2026-04-31T10:00Z')).toBe('2026-04-31T10:00Z')
+    expect(fromYaml('2026-02-29')).toBe('2026-02-29') // not a leap year
+    expect((fromYaml('2028-02-29') as DateValue).ms).toBe(new Date(2028, 1, 29).getTime())
+    expect((fromYaml('2026-12-31T23:30-08:00') as DateValue).ms).toBe(Date.UTC(2027, 0, 1, 7, 30)) // a zone may move the day: still a real day
+  })
+
   it('converts JS Dates, recurses into arrays and objects, passes the rest through', () => {
     expect(fromYaml(new Date(1000))).toEqual(new DateValue(1000, true))
     expect(fromYaml(['[[A]]', '2026-01-01', 3])).toEqual([new LinkValue('A'), new DateValue(new Date(2026, 0, 1).getTime(), false), 3])

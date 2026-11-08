@@ -130,8 +130,11 @@ export interface FolderHost {
 
 export interface ViewsPaneProps {
   parsed: ParsedViews
-  /** Every config change arrives here as `updateViews(parsed, …)`; the host turns it into a write. */
-  onChange: (next: ParsedViews) => void
+  /**
+   * Every config change arrives here as `updateViews(parsed, …)`; the host turns it into a write. `false` says the host
+   * refused it and kept its def (a read-only folder page, D36): the gesture's Undo toast then says nothing (YAZ-4644 E2).
+   */
+  onChange: (next: ParsedViews) => boolean | void
   /**
    * Vault root. It keys the view state persisted OUTSIDE the file (collapsed groups, GRO-2137)
    * AND roots the resolver (YAZ-846, closing the Engine entry's KNOWN GAP), so a link target
@@ -352,22 +355,22 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // An Undo runs after later renders (YAZ-4594 S29): it writes through the def and the door that are current then.
   const latest = useRef({ parsed, onChange, folder })
   latest.current = { parsed, onChange, folder }
-  const write = (mutate: (def: ViewSet) => void): ViewSet => {
+  const write = (mutate: (def: ViewSet) => void): ViewSet | null => {
     const now = latest.current
     const next = parseViews(serializeViews(updateViews(now.parsed, mutate)))
-    now.onChange(next)
-    return next.def
+    return now.onChange(next) === false ? null : next.def
   }
   /**
    * A gesture that takes something away says so with `undo` (S29): a toast with Undo (`fades`, the S6 pattern), which
    * inverts THAT gesture alone on the def current then (YAZ-4637 M3) — its change from `next` back to `before`, laid
    * on by the one rebase (`rebaseSettings`), so a later sort, another window's change or a view added since stays —
-   * ONE settings write — then runs `after`. A gesture that changed nothing (No fill on a cell with none) says nothing.
+   * ONE settings write — then runs `after`. A gesture that changed nothing (No fill on a cell with none) or that the
+   * host refused (a read-only page, YAZ-4644 E2) says nothing: no toast may offer to undo what did not happen.
    */
   const update = (mutate: (def: ViewSet) => void, undo?: string, after?: () => void) => {
     const before = latest.current.parsed.def
     const next = write(mutate)
-    if (undo === undefined || JSON.stringify(next) === JSON.stringify(before)) return
+    if (undo === undefined || next === null || JSON.stringify(next) === JSON.stringify(before)) return
     const restore = () => {
       write((d) => {
         const put = structuredClone(rebaseSettings(next, before, d)) as ViewSet
