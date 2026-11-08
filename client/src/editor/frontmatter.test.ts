@@ -65,5 +65,12 @@ describe('renameFrontmatterKey (YAZ-4551)', () => {
     expect(() => renameFrontmatterKey(NOTE, [], 'gone', 'x')).toThrow('"gone" is not a property')
     expect(() => renameFrontmatterKey(NOTE, [], 'due', 'status')).toThrow('"status" is already a property')
   })
+
+  it('keeps the frame as a property write does (YAZ-4544, one helper): CRLF line ends, the `...` fence; bad YAML is refused', () => {
+    const crlf = '---\r\nstatus: draft\r\ndue: 2026-12-01\r\n...\r\nBody\r\n'
+    expect(renameFrontmatterKey(crlf, [], 'due', 'Due')).toBe(crlf.replace('due:', 'Due:'))
+    expect(() => renameFrontmatterKey('---\na: [\n---\n', [], 'a', 'b')).toThrow('frontmatter is not valid YAML')
+    expect(() => renameFrontmatterKey('no block\n', [], 'a', 'b')).toThrow('"a" is not a property')
+  })
 })
 

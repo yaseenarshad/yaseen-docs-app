@@ -106,19 +106,13 @@ export function setFrontmatterIn(content: string, path: readonly string[], value
     return `---\n${doc.toString(YAML_OUT)}---\n${body}`
   }
 
-  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
-  const terminator = TERMINATOR_RE.exec(frontmatter)?.[1] ?? '---'
-  const trailingEol = /\r?\n$/.test(frontmatter) ? eol : ''
-
-  const doc = parseDocument(frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, ''))
-  const err = doc.errors[0]
-  if (err) throw new FrontmatterWriteError(`frontmatter is not valid YAML: ${err.message}`)
-  if (doc.contents !== null && !isMap(doc.contents)) throw new FrontmatterWriteError('frontmatter is not a map')
-
-  if (value === undefined) {
-    if (!doc.hasIn(path)) return content
-    doc.deleteIn(path)
-  } else {
+  return editFrontmatter(content, frontmatter, body, (doc) => {
+    if (doc.contents !== null && !isMap(doc.contents)) throw new FrontmatterWriteError('frontmatter is not a map')
+    if (value === undefined) {
+      if (!doc.hasIn(path)) return false
+      doc.deleteIn(path)
+      return
+    }
     // The deepest map on the way that is not there yet takes the rest of the path as a new map.
     let at = path.length - 1
     let set: unknown = leaf
@@ -131,8 +125,22 @@ export function setFrontmatterIn(content: string, path: readonly string[], value
       break
     }
     doc.setIn(path.slice(0, at + 1), set)
-  }
+  })
+}
 
+/**
+ * The one parse and layout of an existing block (YAZ-4544), for `setFrontmatterIn` and `renameFrontmatterKey`: the
+ * block's line ends, its closing fence and the line end after it stay as they were. `edit` changes the parsed block in
+ * place, throws to refuse, or returns false for no change: then `content` comes back as it was.
+ */
+function editFrontmatter(content: string, frontmatter: string, body: string, edit: (doc: Document) => boolean | void): string {
+  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
+  const terminator = TERMINATOR_RE.exec(frontmatter)?.[1] ?? '---'
+  const trailingEol = /\r?\n$/.test(frontmatter) ? eol : ''
+  const doc = parseDocument(frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, ''))
+  const err = doc.errors[0]
+  if (err) throw new FrontmatterWriteError(`frontmatter is not valid YAML: ${err.message}`)
+  if (edit(doc) === false) return content
   const yaml = serializeInner(doc)
   return `---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
 }
@@ -145,22 +153,16 @@ export function setFrontmatterIn(content: string, path: readonly string[], value
  */
 export function renameFrontmatterKey(content: string, parent: readonly string[], from: string, to: string): string {
   const { frontmatter, body } = splitFrontmatter(content)
-  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
-  const terminator = TERMINATOR_RE.exec(frontmatter)?.[1] ?? '---'
-  const trailingEol = /\r?\n$/.test(frontmatter) ? eol : ''
-  const doc = parseDocument(frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, ''))
-  const err = doc.errors[0]
-  if (err) throw new FrontmatterWriteError(`frontmatter is not valid YAML: ${err.message}`)
-  const map = parent.length === 0 ? doc.contents : doc.getIn(parent, true)
-  const keyOf = (pair: { key: unknown }): unknown => (isScalar(pair.key) ? pair.key.value : pair.key)
-  const pair = isMap(map) ? map.items.find((p) => keyOf(p) === from) : undefined
-  if (frontmatter === '' || !isMap(map) || pair === undefined) throw new FrontmatterWriteError(`"${from}" is not a property`)
-  if (map.items.some((p) => keyOf(p) === to)) throw new FrontmatterWriteError(`"${to}" is already a property`)
-  // The key's own scalar keeps its comment (a comment above a key rides on it).
-  if (isScalar(pair.key)) pair.key.value = to
-  else pair.key = doc.createNode(to)
-  const yaml = serializeInner(doc)
-  return `---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
+  return editFrontmatter(content, frontmatter, body, (doc) => {
+    const map = parent.length === 0 ? doc.contents : doc.getIn(parent, true)
+    const keyOf = (pair: { key: unknown }): unknown => (isScalar(pair.key) ? pair.key.value : pair.key)
+    const pair = isMap(map) ? map.items.find((p) => keyOf(p) === from) : undefined
+    if (frontmatter === '' || !isMap(map) || pair === undefined) throw new FrontmatterWriteError(`"${from}" is not a property`)
+    if (map.items.some((p) => keyOf(p) === to)) throw new FrontmatterWriteError(`"${to}" is already a property`)
+    // The key's own scalar keeps its comment (a comment above a key rides on it).
+    if (isScalar(pair.key)) pair.key.value = to
+    else pair.key = doc.createNode(to)
+  })
 }
 
 /**
