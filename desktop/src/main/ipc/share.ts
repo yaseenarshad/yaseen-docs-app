@@ -151,7 +151,7 @@ export function registerShareIpc(userData: string, secrets: Secrets, where: Shar
   })
   handle(CONTRACT.share.stop, async (body: unknown) => {
     const r = requireRequest(body)
-    return sharing.stop(str(r.root, 'root'), str(r.path, 'path'))
+    await sharing.stop(str(r.root, 'root'), str(r.path, 'path'))
   })
   handle(CONTRACT.share.setDomain, async (hostname: unknown) => {
     const h = strOrNull(hostname, 'hostname')

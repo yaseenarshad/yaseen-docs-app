@@ -12,7 +12,7 @@ afterEach(async () => { await rm(root, { recursive: true, force: true }) })
 
 function fixture() {
   const sharing = {
-    stop: vi.fn(async () => {}),
+    stop: vi.fn(async () => true), // a saved share was found and stopped (YAZ-4573: false means none was saved)
     publish: vi.fn(async () => ({ id: 'published' })),
   }
   const run = (command: string, args: Record<string, unknown>, text?: string) => prepareAutomation({

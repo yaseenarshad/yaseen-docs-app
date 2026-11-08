@@ -81,6 +81,9 @@ export async function connectedCommand(services: AutomationServices, state: AppS
     return services.sharing.publish(root, path, content, args.shareId as string | undefined)
   }
   if (command === 'share.setPermission') return services.sharing.setPermission(root, path, args.allowDownload as boolean)
-  if (command === 'share.stop') { await services.sharing.stop(root, path); return { path, stopped: true } }
+  if (command === 'share.stop') {
+    if (!await services.sharing.stop(root, path)) throw new AutomationFailure('NOT_FOUND', 'This board is not shared.', { path })
+    return { path, stopped: true }
+  }
   throw new AutomationFailure('UNKNOWN_COMMAND', 'Unknown connected command.')
 }
