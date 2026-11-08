@@ -6,15 +6,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, type IndexRecord } from '@shared/types'
 import { parseViews, serializeViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
-// The app's Settings (YAZ-4595 S33): a test sets Folder pages › Hide weekends here.
-const appSettings = vi.hoisted(() => ({ value: undefined as unknown }))
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => appSettings.value, getRoots: () => ['/vault'] } }))
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => ['/vault'] } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
 // The real date rules, with `dateColumns` counted (YAZ-4544).
 vi.mock('../calendar', async (load) => {
@@ -82,7 +80,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  appSettings.value = undefined
   act(() => root?.unmount())
   root = null
   container?.remove()
@@ -487,6 +484,15 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     expect(mark(el, 'Timed')).toBeNull()
   })
 
+  it('a Sunday week start (YAZ-4585) still shows Monday to Friday, in Month and in Week', () => {
+    const { el } = mount(HIDE, { records, folderPages: { ...DEFAULT_FOLDER_PAGES, weekStartsOn: 'sunday' } })
+    expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+    expect(el.querySelector('[data-day="2026-12-06"]')).toBeNull()
+    expect(titlesIn(day(el, '2026-12-04'))).toEqual(['Timed', 'Locked', 'Sunday'])
+    click(q(el, '[aria-label="Calendar scale"] [data-scale="week"]'))
+    expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+  })
+
   it('Week shows Monday to Friday of the week', () => {
     const { el } = mount(`${HIDE}    calendarScale: week\n`, { records })
     expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
@@ -525,8 +531,8 @@ describe('hide weekends (YAZ-4595 S33)', () => {
   })
 
   it('the Settings default hides them on a view with no key; the view turns it off with hideWeekends: false', () => {
-    appSettings.value = { folderPages: { hideWeekends: true } }
-    const { el, yaml } = mount(CALENDAR, { records })
+    // Settings › Folder pages reaches the pane as its `folderPages` prop (YAZ-4585), live.
+    const { el, yaml } = mount(CALENDAR, { records, folderPages: { ...DEFAULT_FOLDER_PAGES, hideWeekends: true } })
     expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
     click(q(el, '.view-toolbar [aria-label="Properties"]'))
     expect(hideBox(el).checked).toBe(true)

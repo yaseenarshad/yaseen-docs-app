@@ -116,8 +116,8 @@ describe('withDefaults and chooseOwn (YAZ-4585)', () => {
   it('fills each key the view lacks from Settings; the view’s own key wins; default Settings give the same object', () => {
     const view: ViewDef = { type: 'table', name: 'T', rowHeight: 'medium' }
     expect(withDefaults(view, DEFAULT_FOLDER_PAGES)).toBe(view)
-    const all = fp({ rowHeight: 'tall', rowNumbers: false, groupIndent: 'large', showEmptyGroups: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap' })
-    expect(withDefaults(view, all)).toEqual({ type: 'table', name: 'T', rowHeight: 'medium', rowNumbers: false, groupIndent: 'large', showEmptyColumns: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap' })
+    const all = fp({ rowHeight: 'tall', rowNumbers: false, groupIndent: 'large', showEmptyGroups: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true })
+    expect(withDefaults(view, all)).toEqual({ type: 'table', name: 'T', rowHeight: 'medium', rowNumbers: false, groupIndent: 'large', showEmptyColumns: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true })
     expect(view).toEqual({ type: 'table', name: 'T', rowHeight: 'medium' })
   })
 

@@ -6,7 +6,7 @@ import { absFrom } from '../lib/paths'
  * the key has one reader here; `settings.folderPages` is the Settings › Folder pages group (10A).
  */
 export function showFolderPageFiles(settings: SettingsState): boolean {
-  return (settings as { folderPages?: { showFolderPageFiles?: unknown } }).folderPages?.showFolderPageFiles === true
+  return settings.folderPages.showFolderPageFiles
 }
 
 /**

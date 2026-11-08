@@ -473,6 +473,7 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   foldersFirst: isBool,
   calendarScale: oneOf(FOLDER_PAGE_CHOICES.calendarScale),
   cardTitles: oneOf(FOLDER_PAGE_CHOICES.cardTitles),
+  hideWeekends: isBool,
   showFolderPageFiles: isBool,
 }
 const FOLDER_PAGES_PARTS = Object.keys(FOLDER_PAGES_PART_OK) as (keyof FolderPagesSettings)[]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { IndexRecord, SettingsState } from '@shared/types'
+import { DEFAULT_SETTINGS, type IndexRecord } from '@shared/types'
 import { folderPageRows, showFolderPageFiles } from './folderPageRows'
 
 /** A folder's `.folder.md` record, as the index lists it in `folders`: its `folder` names the folder it configures. */
@@ -58,7 +58,7 @@ describe('folderPageRows: which folders show their page file row (YAZ-4587, D37)
 
 describe('showFolderPageFiles: the global switch (YAZ-4587, D37)', () => {
   it('off by default; on only when Settings › Folder pages says so', () => {
-    expect(showFolderPageFiles({} as SettingsState)).toBe(false)
-    expect(showFolderPageFiles({ folderPages: { showFolderPageFiles: true } } as unknown as SettingsState)).toBe(true)
+    expect(showFolderPageFiles(DEFAULT_SETTINGS)).toBe(false)
+    expect(showFolderPageFiles({ ...DEFAULT_SETTINGS, folderPages: { ...DEFAULT_SETTINGS.folderPages, showFolderPageFiles: true } })).toBe(true)
   })
 })

@@ -107,6 +107,7 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('foldersFirst', 'Folders first', ON_OFF_OPTIONS, { hint: 'Subfolder rows before the notes.', keywords: ['folders', 'first', 'sort'] }),
         row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week'] }),
         row('cardTitles', 'Calendar card titles', CARD_TITLES_OPTIONS, { keywords: ['calendar', 'card', 'titles', 'wrap', 'clip'] }),
+        row('hideWeekends', 'Calendar hides weekends', ON_OFF_OPTIONS, { hint: 'Monday to Friday only. A weekend note shows on the Friday before.', keywords: ['calendar', 'weekends', 'saturday', 'sunday', 'hide'] }),
       ],
     },
     {

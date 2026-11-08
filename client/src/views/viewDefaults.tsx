@@ -21,6 +21,7 @@ const DEFAULTED = {
   foldersFirst: 'foldersFirst',
   calendarScale: 'calendarScale',
   cardTitles: 'cardTitles',
+  hideWeekends: 'hideWeekends',
 } as const satisfies Partial<Record<keyof ViewDef, keyof FolderPagesSettings>>
 export type DefaultedKey = keyof typeof DEFAULTED
 const DEFAULTED_KEYS = Object.keys(DEFAULTED) as DefaultedKey[]

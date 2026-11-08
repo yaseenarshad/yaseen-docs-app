@@ -58,6 +58,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
       ['foldersFirst', 'Off', { foldersFirst: false }],
       ['calendarScale', 'Week', { calendarScale: 'week' }],
       ['cardTitles', 'Wrap', { cardTitles: 'wrap' }],
+      ['hideWeekends', 'On', { hideWeekends: true }],
       ['showFolderPageFiles', 'On', { showFolderPageFiles: true }],
     ]
     for (const [part, label, change] of clicks) {
@@ -79,6 +80,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     expect(pressed('folderPages.foldersFirst')).toBe('On')
     expect(pressed('folderPages.calendarScale')).toBe('Month')
     expect(pressed('folderPages.cardTitles')).toBe('Clip')
+    expect(pressed('folderPages.hideWeekends')).toBe('Off')
     expect(pressed('folderPages.showFolderPageFiles')).toBe('Off')
   })
 

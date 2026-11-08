@@ -12,7 +12,7 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
-const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'folderPages.rowBand', 'folderPages.keepWindowPinned', ...['rowHeight', 'rowNumbers', 'textInCells', 'groupIndent', 'showEmptyGroups', 'subfolders', 'foldersFirst', 'calendarScale', 'cardTitles', 'showFolderPageFiles'].map((part) => `folderPages.${part}`)]
+const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'folderPages.rowBand', 'folderPages.keepWindowPinned', ...['rowHeight', 'rowNumbers', 'textInCells', 'groupIndent', 'showEmptyGroups', 'subfolders', 'foldersFirst', 'calendarScale', 'cardTitles', 'hideWeekends', 'showFolderPageFiles'].map((part) => `folderPages.${part}`)]
 const ids = (hits: readonly SettingHit[]) => hits.map((h) => h.item.id)
 /** The Hotkeys page's rows, in page order. */
 const hotkeyRows = () => ids(settingCandidates(ctx()).filter((h) => h.section.id === 'hotkeys'))

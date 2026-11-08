@@ -1888,6 +1888,8 @@ export interface FolderPagesSettings {
   /** "Calendar opens in": Month or Week. */
   calendarScale: (typeof FOLDER_PAGE_CHOICES.calendarScale)[number]
   cardTitles: (typeof FOLDER_PAGE_CHOICES.cardTitles)[number]
+  /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. */
+  hideWeekends: boolean
   showFolderPageFiles: boolean
 }
 
@@ -1904,6 +1906,7 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   foldersFirst: true,
   calendarScale: 'month',
   cardTitles: 'clip',
+  hideWeekends: false,
   showFolderPageFiles: false,
 }
 

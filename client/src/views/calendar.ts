@@ -3,7 +3,7 @@
  * goes on, the value a move writes, and the month grid. No date library: `expr/dates.ts` and the
  * native `Date` (D4).
  */
-import type { IndexRecord, PropertiesResponse } from '@shared/types'
+import type { FolderPagesSettings, IndexRecord, PropertiesResponse } from '@shared/types'
 import type { Row } from './engine'
 import { columnTyping } from './editorType'
 import { formatDate, parseIsoDate, renderDate } from './expr/dates'
@@ -107,10 +107,9 @@ export const weekendAfter = (day: DayKey): DayKey[] => (localDay(day).getDay() =
 
 /**
  * Settings › Folder pages › "Hide weekends" (YAZ-4595 S33): the default of a calendar with no `hideWeekends` key. The
- * one read of that setting, by a narrow cast: `folderPages` comes with the Folder pages settings (YAZ-4595, 10A).
+ * one read of that setting, on the live `folderPages` that `ViewsPane` gets as a prop and hands on (`useViewDefaults`, YAZ-4585).
  */
-export const hideWeekendsDefault = (settings: unknown): boolean =>
-  (settings as { folderPages?: { hideWeekends?: unknown } } | null | undefined)?.folderPages?.hideWeekends === true
+export const hideWeekendsDefault = (folderPages: FolderPagesSettings): boolean => folderPages.hideWeekends
 
 /** Whether a calendar hides its weekends (YAZ-4595 S33): its own `hideWeekends`, else the Settings default. */
 export const hidesWeekends = (view: ViewDef, byDefault: boolean): boolean => (typeof view.hideWeekends === 'boolean' ? view.hideWeekends : byDefault)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { IndexRecord } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, type IndexRecord } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
 import { addDays, bucketByDay, calendarDateKey, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendAfter, weekendOf, weekLabel, withoutWeekends } from './calendar'
@@ -212,9 +212,8 @@ describe('hide weekends (YAZ-4595 S33)', () => {
   })
 
   it('the Settings default is off; a view key wins over it either way', () => {
-    expect(hideWeekendsDefault(undefined)).toBe(false)
-    expect(hideWeekendsDefault({})).toBe(false)
-    expect(hideWeekendsDefault({ folderPages: { hideWeekends: true } })).toBe(true)
+    expect(hideWeekendsDefault(DEFAULT_FOLDER_PAGES)).toBe(false)
+    expect(hideWeekendsDefault({ ...DEFAULT_FOLDER_PAGES, hideWeekends: true })).toBe(true)
     const view = (extra: Partial<ViewDef> = {}): ViewDef => ({ type: 'calendar', name: 'C', ...extra })
     expect(hidesWeekends(view(), false)).toBe(false)
     expect(hidesWeekends(view(), true)).toBe(true)
