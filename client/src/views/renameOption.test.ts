@@ -18,7 +18,7 @@ vi.mock('./writeProperty', () => ({
   }),
 }))
 import { transformFile } from './writeProperty'
-import { renameInContent, renameInPaths, renameNotice, renameOptionInNotes, renamedValue } from './renameOption'
+import { renameInContent, renameInPaths, renameNotice, renameOptionInFilters, renameOptionInNotes, renamedValue, restoreInPaths } from './renameOption'
 
 const ID = 'k3m9x2pq7abc'
 const OTHER = 'z8y7x6w5v4t3'
@@ -50,19 +50,19 @@ describe('renamedValue', () => {
 describe('renameInContent', () => {
   it('ID vault: only this folder’s block changes — not the note’s own key, not another folder’s', () => {
     const before = `---\ntitle: A\nstage: Todo\nin:\n  ${OTHER}:\n    stage: Todo\n  ${ID}:\n    stage: Todo\n    tags: [x]\n---\nbody\n`
-    expect(renameInContent(before, { block: ID }, 'stage', 'Todo', 'Next')).toBe(`---\ntitle: A\nstage: Todo\nin:\n  ${OTHER}:\n    stage: Todo\n  ${ID}:\n    stage: Next\n    tags: [x]\n---\nbody\n`)
+    expect(renameInContent(before, { block: ID }, 'stage', 'Todo', 'Next')).toEqual({ content: `---\ntitle: A\nstage: Todo\nin:\n  ${OTHER}:\n    stage: Todo\n  ${ID}:\n    stage: Next\n    tags: [x]\n---\nbody\n`, before: 'Todo' })
   })
 
   it('no IDs: the note’s own key; a multi-select list keeps its other elements', () => {
     const before = '---\n# kept comment\nlabels:\n  - red\n  - Todo\n  - blue\nother: 1\n---\n'
-    const after = renameInContent(before, null, 'labels', 'Todo', 'Next')
+    const { content: after } = renameInContent(before, null, 'labels', 'Todo', 'Next')
     expect(after).toContain('# kept comment')
     expect(after).toMatch(/labels:\n {2}- red\n {2}- Next\n {2}- blue\nother: 1/)
   })
 
   it('bytes that no longer hold the label come back the same', () => {
     const before = '---\nstage: Done\n---\n'
-    expect(renameInContent(before, null, 'stage', 'Todo', 'Next')).toBe(before)
+    expect(renameInContent(before, null, 'stage', 'Todo', 'Next')).toEqual({ content: before })
   })
 })
 
@@ -81,7 +81,7 @@ describe('renameOptionInNotes', () => {
     ]
     const result = await renameOptionInNotes(records, { block: ID }, 'stage', 'Todo', 'Next', new Set(['/locked.md']))
     expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual(['/a.md', '/b.md'])
-    expect(result).toEqual({ changed: ['/a.md', '/b.md'], kept: 1 })
+    expect(result).toEqual({ changed: [{ path: '/a.md', before: 'Todo' }, { path: '/b.md', before: ['Todo', 'Done'] }], kept: 1 })
     expect(disk.get('/a.md')).toContain('stage: Next')
     expect(disk.get('/b.md')).toMatch(/Next[\s\S]*Done/)
     expect(disk.get('/b.md')).not.toContain('Todo')
@@ -92,14 +92,46 @@ describe('renameOptionInNotes', () => {
   it('a failed write is counted as kept; the rest still land', async () => {
     disk.set('/a.md', '---\nstage: Todo\n---\n')
     const result = await renameOptionInNotes([rec('/a.md', { stage: 'Todo' }), rec('/gone.md', { stage: 'Todo' })], null, 'stage', 'Todo', 'Next', new Set())
-    expect(result).toEqual({ changed: ['/a.md'], kept: 1 })
+    expect(result).toEqual({ changed: [{ path: '/a.md', before: 'Todo' }], kept: 1 })
   })
 
-  it('Undo renames back in the changed notes alone', async () => {
-    disk.set('/a.md', '---\nstage: Next\n---\n')
-    disk.set('/b.md', '---\nstage: Next\n---\n')
-    expect(await renameInPaths(['/a.md'], null, 'stage', 'Next', 'Todo')).toEqual({ changed: ['/a.md'], failed: 0 })
-    expect(disk.get('/a.md')).toBe('---\nstage: Todo\n---\n')
-    expect(disk.get('/b.md')).toBe('---\nstage: Next\n---\n')
+  it('a note that is read only on disk is never written, wherever it is (YAZ-4637 M6), and counts as not changed', async () => {
+    disk.set('/a.md', '---\nstage: Todo\n---\n')
+    disk.set('/outside.md', '---\nreadonly: true\nstage: Todo\n---\n')
+    const result = await renameOptionInNotes([rec('/a.md', { stage: 'Todo' }), rec('/outside.md', { readonly: true, stage: 'Todo' })], null, 'stage', 'Todo', 'Next', new Set())
+    expect(result).toEqual({ changed: [{ path: '/a.md', before: 'Todo' }], kept: 1 })
+    expect(disk.get('/outside.md')).toBe('---\nreadonly: true\nstage: Todo\n---\n')
+  })
+
+  it('Undo puts each changed note\'s exact previous value back (YAZ-4637 M5): a list that held both labels is whole again', async () => {
+    disk.set('/a.md', '---\nlabels:\n  - Todo\n  - Next\n---\n')
+    disk.set('/b.md', '---\nlabels: Next\n---\n')
+    const { changed } = await renameInPaths(['/a.md'], null, 'labels', 'Todo', 'Next')
+    expect(changed).toEqual([{ path: '/a.md', before: ['Todo', 'Next'] }])
+    expect(disk.get('/a.md')).toBe('---\nlabels:\n  - Next\n---\n')
+    await restoreInPaths(changed, null, 'labels')
+    expect(disk.get('/a.md')).toBe('---\nlabels:\n  - Todo\n  - Next\n---\n')
+    expect(disk.get('/b.md')).toBe('---\nlabels: Next\n---\n') // not among the changed
+  })
+})
+
+describe('renameOptionInFilters (YAZ-4637 M5): a filter on the column that compares to the old label follows it', () => {
+  const views = [
+    { type: 'table', name: 'T', filters: { and: ['note.stage == "Todo"', '["Todo", "Done"].contains(note.stage)', 'note.other == "Todo"'] } },
+    { type: 'board', name: 'B', filters: 'stage.containsAny("Todo")' },
+    { type: 'list', name: 'L' },
+  ]
+  it('rewrites each literal equal to the old label in a leaf naming the column; another column\'s leaf and a view with no filter stay', () => {
+    const out = renameOptionInFilters(views, 'stage', 'Todo', 'Next') as typeof views
+    expect(out[0].filters).toEqual({ and: ['note.stage == "Next"', '["Next", "Done"].contains(note.stage)', 'note.other == "Todo"'] })
+    expect(out[1].filters).toBe('stage.containsAny("Next")')
+    expect(out[2]).toBe(views[2])
+    expect(views[0].filters).toEqual({ and: ['note.stage == "Todo"', '["Todo", "Done"].contains(note.stage)', 'note.other == "Todo"'] }) // input untouched
+  })
+
+  it('comes back as the same list when nothing names the label, and quotes the new label as the builder does', () => {
+    expect(renameOptionInFilters(views, 'stage', 'Later', 'Soon')).toBe(views)
+    expect(renameOptionInFilters([{ type: 'table', name: 'T', filters: 'note.stage == "Todo"' }], 'stage', 'Todo', 'Say "hi"')).toEqual([{ type: 'table', name: 'T', filters: 'note.stage == "Say \\"hi\\""' }])
+    expect(renameOptionInFilters('not a list', 'stage', 'Todo', 'Next')).toBe('not a list')
   })
 })

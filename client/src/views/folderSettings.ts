@@ -359,7 +359,7 @@ export function rebaseSettings(base: unknown, mine: unknown, theirs: unknown): u
  * boundary: concurrent changes to other columns/views are retained, while a changed definition
  * asks the user to reopen its settings. transformFile repeats this check after an mtime retry.
  */
-export function writeFolderColumn(path: string, key: string, next: PropertyDecl, base: PropertyDecl | undefined, ids: boolean): Promise<{ mtime: number }> {
+export function writeFolderColumn(path: string, key: string, next: PropertyDecl, base: PropertyDecl | undefined, ids: boolean, views?: (views: unknown) => unknown): Promise<{ mtime: number }> {
   const problems: string[] = []
   const replacement = readColumns({ column: next }, problems).column
   if (!replacement || problems.length) return Promise.reject(new Error(problems[0] ?? 'Invalid property definition'))
@@ -381,11 +381,13 @@ export function writeFolderColumn(path: string, key: string, next: PropertyDecl,
     if (current !== undefined && (!isRecord(current) || !currentDefinition || currentProblems.length)) throw new Error(`Property “${key}” has an invalid definition. Repair its YAML before editing it.`)
     const currentKnown = JSON.stringify(currentDefinition)
     if (currentKnown !== expected) throw new Error(`Property “${key}” changed since these settings were opened. Reopen the property and try again.`)
-    if (currentKnown === desired) return content
+    // The views ride in the same write when the caller edits them too (YAZ-4637 M5: an option rename's filters); the same list means no change.
+    const nextViews = views === undefined || raw.views === undefined ? raw.views : views(raw.views)
+    if (currentKnown === desired && nextViews === raw.views) return content
     const declaration = { ...current }
     // Removing a known optional setting is intentional; unknown extension metadata survives.
     for (const field of ['kind', 'target', 'required', 'options', 'optionSort', 'description', 'format']) delete declaration[field]
     Object.assign(declaration, replacement)
-    return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, { ...raw, columns: { ...columns, [key]: declaration } })
+    return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, { ...raw, columns: { ...columns, [key]: declaration }, ...(nextViews === undefined ? {} : { views: nextViews }) })
   })
 }

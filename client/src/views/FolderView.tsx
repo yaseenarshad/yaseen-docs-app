@@ -58,7 +58,7 @@ import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './view
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
-import { renameInPaths, renameNotice, renameOptionInNotes, type ValueHome } from './renameOption'
+import { renameNotice, renameOptionInFilters, renameOptionInNotes, restoreInPaths, type ValueHome } from './renameOption'
 import { createNote } from './scaffold'
 import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
 import { writeFolderValues, writeProperties, writeProperty } from './writeProperty'
@@ -364,6 +364,8 @@ export function FolderView({
   /** This render's host (YAZ-4591): a rename's Undo runs later, and writes through the host that is current then. */
   const latestHost = useRef<FolderHost | null>(null)
   const latestParsed = useRef<ParsedViews>(null as unknown as ParsedViews)
+  /** This render's declaration door, for a rename's Undo (YAZ-4637 M5). */
+  const latestDeclaration = useRef<(key: string, next: ColumnDecl, base: ColumnDecl | undefined, rename?: { from: string; to: string }) => Promise<unknown>>(() => Promise.resolve())
   const setAhead = (next: Record<string, ColumnDecl> | null): void => {
     aheadRef.current = next
     setAheadState(next)
@@ -510,25 +512,42 @@ export function FolderView({
   }
 
   /**
+   * ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what stood before and
+   * rejects to the caller, whose inline text is the report. With `rename`, the views' filters on the old label follow
+   * it in the same write (YAZ-4637 M5). The host's `setColumn` and a rename's Undo both come through here.
+   */
+  const writeDeclaration = (key: string, next: ColumnDecl, base: ColumnDecl | undefined, rename?: { from: string; to: string }): Promise<{ mtime: number }> => {
+    if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
+    const before = aheadRef.current
+    setAhead({ ...liveSettings.columns, [key]: next })
+    const filters = rename === undefined ? undefined : (views: unknown) => renameOptionInFilters(views, key, rename.from, rename.to)
+    return track(aheadWrite(writeFolderColumn(file, key, next, base, ids, filters))).catch((err: unknown) => {
+      setAhead(before)
+      throw err
+    })
+  }
+  /**
    * S24 (YAZ-4591): the renamed option in every note that holds it — this folder's block of each indexed note
    * where the vault uses IDs (the notes `deleteColumn` reaches), the rows' own key where it does not — one
-   * guarded write per note, read-only notes kept. Then the toast, whose Undo puts the declaration back through
-   * the LATEST host (its ahead copy is current) and renames back in the notes this rename changed.
+   * guarded write per note, read-only notes kept (YAZ-4637 M6: on disk too, wherever the note is). Then the toast,
+   * whose Undo puts the declaration and the filters back through the LATEST host's door (its ahead copy is current)
+   * and gives each changed note its exact previous value (M5).
    */
   const renameInNotes = async (key: string, next: ColumnDecl, base: ColumnDecl | undefined, { from, to }: { from: string; to: string }): Promise<void> => {
     if (ids && id === undefined) return // a folder with no id holds no values
     const home: ValueHome = ids ? { block: id! } : null
     const result = await track(renameOptionInNotes(ids ? [...feed.records, ...feed.folders] : [...rows, ...subfolders], home, key, from, to, locked))
     const undo = () => {
-      const now = latestHost.current
-      if (base === undefined || now === null) return
-      void now.setColumn(key, base, next).then(
-        () => track(renameInPaths(result.changed, home, key, to, from)),
+      const now = latestDeclaration.current
+      if (base === undefined) return
+      void now(key, base, next, { from: to, to: from }).then(
+        () => track(restoreInPaths(result.changed, home, key)),
         (err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error'),
       )
     }
     onNotice?.(renameNotice(from, to, result), 'info', 'undo', { label: 'Undo', run: undo, fades: true })
   }
+  latestDeclaration.current = writeDeclaration
 
   /**
    * The `other_files` ONE write (YAZ-4597 D44), ahead first as `commitSettings` writes the columns: the list shows at
@@ -608,17 +627,10 @@ export function FolderView({
     // Where the vault does not use IDs the value is the note's own property, and that is all the write is.
     // A read-only note's write is refused here, the one door every view write passes (YAZ-3076 D6, S54).
     writeValues: guardReadOnly(locked, ids ? async (note, writes) => writeFolderValues(note, id ?? (await folderId(path)), writes, dropStaleFolderValues(root, note, feed.folders)) : writeProperties),
-    // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
-    // stood before and rejects to the caller, whose inline text is the report.
-    // An option rename (YAZ-4591 S24) goes on to the notes once the declaration has landed: a refused declaration touches none.
+    // ONE declaration through `writeDeclaration`. An option rename (YAZ-4591 S24) goes on to the notes once the
+    // declaration has landed: a refused declaration touches none.
     setColumn: (key, next, base, rename) => {
-      if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
-      const before = aheadRef.current
-      setAhead({ ...liveSettings.columns, [key]: next })
-      const written = track(aheadWrite(writeFolderColumn(file, key, next, base, ids))).catch((err: unknown) => {
-        setAhead(before)
-        throw err
-      })
+      const written = writeDeclaration(key, next, base, rename)
       return rename === undefined ? written : written.then(() => renameInNotes(key, next, base, rename))
     },
     // `settings` is the index SNAPSHOT, so it can be behind: `parsed` is rebuilt from it and is

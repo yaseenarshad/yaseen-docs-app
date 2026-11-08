@@ -1819,7 +1819,7 @@ describe('S24: renaming an option rewrites the notes that hold it (YAZ-4591)', (
   const yaml = (values: string, own = ''): string => `---\n${own}in:\n  ${STAGES_ID}:\n    ${values}\n---\n`
 
   beforeEach(() => {
-    disk = new Map([[SETTINGS_FILE, `---\nid: ${STAGES_ID}\nfolder_settings:\n  columns:\n    stage:\n      kind: select\n      options: [Todo, Done]\n  views: []\n---\n`]])
+    disk = new Map([[SETTINGS_FILE, `---\nid: ${STAGES_ID}\nfolder_settings:\n  columns:\n    stage:\n      kind: select\n      options: [Todo, Done]\n  views:\n    - type: table\n      name: Table\n      filters: note.stage == "Todo"\n---\n`]])
     transform.mockImplementation(async (path: string, fn: (content: string) => string) => {
       const after = fn(disk.get(path) ?? '')
       disk.set(path, after)
@@ -1835,23 +1835,37 @@ describe('S24: renaming an option rewrites the notes that hold it (YAZ-4591)', (
     return onNotice
   }
 
-  it('ID vault: the declaration first, then one write per note holding it in this folder’s block — a list keeps its other elements; Undo puts both back', async () => {
+  it('ID vault: the declaration and the views\' filters first, then one write per note holding it in this folder’s block — a list keeps its other elements; Undo puts all back', async () => {
     disk.set(LEAD, yaml('stage: Todo'))
-    disk.set(SALES, yaml('stage: [Todo, Done]'))
+    // The list holds both labels (YAZ-4637 M5): the rename folds it to one, and Undo puts the exact list back.
+    disk.set(SALES, yaml('stage: [Todo, Next]'))
     disk.set(OTHER, yaml('stage: Todo', 'stage: Todo\n')) // no row here, but it holds this folder's value; its own key is not ours
-    const onNotice = await mountWith([rec(OTHER, held({ stage: 'Todo' }, { stage: 'Todo' })), rec(LEAD, held({ stage: 'Todo' })), rec(SALES, held({ stage: ['Todo', 'Done'] })), rec(DEEP, held({ stage: 'Done' }))])
+    const onNotice = await mountWith([rec(OTHER, held({ stage: 'Todo' }, { stage: 'Todo' })), rec(LEAD, held({ stage: 'Todo' })), rec(SALES, held({ stage: ['Todo', 'Next'] })), rec(DEEP, held({ stage: 'Done' }))])
     await act(async () => captured.folder!.setColumn('stage', RENAMED, STAGE, { from: 'Todo', to: 'Next' }))
     expect(transform.mock.calls.map(([path]) => path)).toEqual([SETTINGS_FILE, OTHER, LEAD, SALES])
     expect(disk.get(LEAD)).toBe(yaml('stage: Next'))
-    expect(disk.get(SALES)).toMatch(/stage:\n\s+- Next\n\s+- Done\n/)
+    expect(disk.get(SALES)).toMatch(/stage:\n\s+- Next\n---/)
     expect(disk.get(OTHER)).toBe(yaml('stage: Next', 'stage: Todo\n'))
+    // The view's filter on that value follows in the same settings write (M5).
+    expect(disk.get(SETTINGS_FILE)).toContain('filters: note.stage == "Next"')
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('Renamed “Todo” to “Next” in 3 notes', 'info', 'undo', expect.objectContaining({ label: 'Undo', fades: true }))
     transform.mockClear()
     await act(async () => onNotice.mock.calls[0][3].run())
     await flush()
     expect(transform.mock.calls.map(([path]) => path)).toEqual([SETTINGS_FILE, OTHER, LEAD, SALES])
     expect(disk.get(LEAD)).toBe(yaml('stage: Todo'))
+    expect(disk.get(SALES)).toMatch(/stage:\n\s+- Todo\n\s+- Next\n/)
     expect(disk.get(SETTINGS_FILE)).toMatch(/options:\s*\[\s*Todo,\s*Done\s*\]|- Todo\n\s*- Done/)
+    expect(disk.get(SETTINGS_FILE)).toContain('filters: note.stage == "Todo"')
+  })
+
+  it('a note that is read only on disk outside the rows is never written (YAZ-4637 M6): the toast counts it as not changed', async () => {
+    disk.set(LEAD, yaml('stage: Todo'))
+    disk.set(OTHER, yaml('stage: Todo', 'readonly: true\n'))
+    const onNotice = await mountWith([rec(OTHER, held({ stage: 'Todo' }, { readonly: true })), rec(LEAD, held({ stage: 'Todo' }))])
+    await act(async () => captured.folder!.setColumn('stage', RENAMED, STAGE, { from: 'Todo', to: 'Next' }))
+    expect(disk.get(OTHER)).toBe(yaml('stage: Todo', 'readonly: true\n'))
+    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 note · 1 note not changed')
   })
 
   it('a refused declaration touches no note', async () => {
