@@ -1,4 +1,4 @@
-import { useLayoutEffect } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { AutomationFailure } from '@shared/automation'
 import type { NavigationTarget } from '@shared/automationNavigation'
 
@@ -11,15 +11,34 @@ export interface AutomationSurface {
 const surfaces = new Map<string, AutomationSurface>()
 const waiting = new Set<() => void>()
 
-/** Registration holds current callbacks without adding work to typing, scrolling, or hover events. */
+/**
+ * Registration holds current callbacks without adding work to typing, scrolling, or hover events. The surface is
+ * registered once for its key; a commit only points it at the committed callbacks and wakes the CLI waits that are
+ * pending, which re-check their condition then (none while nobody waits).
+ */
 export function useAutomationSurface(key: string | null | (() => string | null), surface: AutomationSurface): void {
+  const latest = useRef(surface)
+  const [stable] = useState<AutomationSurface>(() => ({
+    get ready() { return latest.current.ready },
+    inspect: () => latest.current.inspect(),
+    reveal: target => latest.current.reveal?.(target),
+    selectView: name => latest.current.selectView?.(name),
+  }))
+  const at = useRef<string | null>(null)
   useLayoutEffect(() => {
+    latest.current = surface
     const resolved = typeof key === 'function' ? key() : key
-    if (resolved === null) return
-    surfaces.set(resolved, surface)
+    if (resolved !== at.current) {
+      if (at.current !== null && surfaces.get(at.current) === stable) surfaces.delete(at.current)
+      if (resolved !== null) surfaces.set(resolved, stable)
+      at.current = resolved
+    }
     for (const check of waiting) queueMicrotask(check)
-    return () => { if (surfaces.get(resolved) === surface) surfaces.delete(resolved) }
   })
+  useLayoutEffect(() => () => {
+    if (at.current !== null && surfaces.get(at.current) === stable) surfaces.delete(at.current)
+    at.current = null
+  }, [stable])
 }
 
 /** Inspection never wakes a sleeping surface or changes its state. */
