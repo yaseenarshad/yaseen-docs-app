@@ -24,3 +24,16 @@ export function hoverPreviewOf(properties: Readonly<Record<string, unknown>>): b
   const value = properties[HOVER_PREVIEW_KEY]
   return typeof value === 'boolean' ? value : undefined
 }
+
+/**
+ * A folder page's own switch for its Other files tray (YAZ-4597, D43), stored IN its `.folder.md` as `show_page_file`
+ * is: `show_other_files: true | false`. The cog writes it ("Show Other files": On, Off, or Settings — no key, which
+ * follows Settings › Folder pages, default on). Any other value counts as no key.
+ */
+export const SHOW_OTHER_FILES_KEY = 'show_other_files'
+
+/** The folder's own choice off its `.folder.md` properties: `undefined` follows Settings. */
+export function showOtherFilesOf(properties: Readonly<Record<string, unknown>>): boolean | undefined {
+  const value = properties[SHOW_OTHER_FILES_KEY]
+  return typeof value === 'boolean' ? value : undefined
+}

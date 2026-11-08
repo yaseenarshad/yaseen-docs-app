@@ -7,7 +7,7 @@
  *   settings (`folderRowBandOn`, `folderWindowPinned`) until they are set. "Ask before deleting notes" (YAZ-4592 S26)
  *   is the row menu's Delete note…, separate from the sidebar's Confirm before deleting.
  * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`); its menus say "from Settings".
- * - Page default: the sidebar's folder page file rows (D37); a folder's ⚙ beats it.
+ * - Page defaults: the sidebar's folder page file rows (D37) and the Other files tray (YAZ-4597, D43); a folder's ⚙ beats them.
  *
  * Every row writes one part of `settings.folderPages`. Every default is the look before the page existed.
  */
@@ -117,6 +117,7 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
       title: 'Page',
       items: [
         row('showFolderPageFiles', 'Show folder page files', ON_OFF_OPTIONS, { hint: "Each folder's page file in the sidebar, first under its folder. A folder's ⚙ can say otherwise.", keywords: ['sidebar', 'page file', '.folder.md'] }),
+        row('showOtherFiles', 'Show Other files', ON_OFF_OPTIONS, { hint: "A tray at the foot of each folder page: the folder's files that are not notes, and the notes moved out of its views. A folder's ⚙ can say otherwise.", keywords: ['other files', 'tray', 'pdf', 'image', 'drawing'] }),
       ],
     },
   ],

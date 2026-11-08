@@ -811,12 +811,12 @@ describe('createStore: loading', () => {
 
   it('folderPages (YAZ-4585, D34): every row is valid, each default is the look before, and a broken part costs that part only', async () => {
     const fp = DEFAULT_SETTINGS.folderPages
-    expect(fp).toEqual({ weekStartsOn: 'monday', rowBand: null, keepWindowPinned: null, rowHeight: 'short', rowNumbers: true, textInCells: 'kind', groupIndent: 'medium', showEmptyGroups: false, subfolders: 'notes', foldersFirst: true, calendarScale: 'month', cardTitles: 'clip', hideWeekends: false, showFolderPageFiles: false, askBeforeDelete: true })
+    expect(fp).toEqual({ weekStartsOn: 'monday', rowBand: null, keepWindowPinned: null, rowHeight: 'short', rowNumbers: true, textInCells: 'kind', groupIndent: 'medium', showEmptyGroups: false, subfolders: 'notes', foldersFirst: true, calendarScale: 'month', cardTitles: 'clip', hideWeekends: false, showFolderPageFiles: false, askBeforeDelete: true, showOtherFiles: true })
     // Each value a Settings row writes is accepted by the channel.
-    const written = { weekStartsOn: 'sunday', rowBand: false, keepWindowPinned: true, rowHeight: 'tall', rowNumbers: false, textInCells: 'clip', groupIndent: 'large', showEmptyGroups: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true, showFolderPageFiles: true, askBeforeDelete: false }
+    const written = { weekStartsOn: 'sunday', rowBand: false, keepWindowPinned: true, rowHeight: 'tall', rowNumbers: false, textInCells: 'clip', groupIndent: 'large', showEmptyGroups: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true, showFolderPageFiles: true, askBeforeDelete: false, showOtherFiles: false }
     expect(isSettings({ ...DEFAULT_SETTINGS, folderPages: written })).toBe(true)
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: written }).folderPages).toEqual(written)
-    for (const bad of [{ ...fp, weekStartsOn: 'friday' }, { ...fp, rowBand: 'on' }, { ...fp, subfolders: false }, { ...fp, hideWeekends: 'yes' }, { ...fp, askBeforeDelete: null }, (({ showFolderPageFiles: _gone, ...rest }) => rest)(fp), 'on', undefined]) {
+    for (const bad of [{ ...fp, weekStartsOn: 'friday' }, { ...fp, rowBand: 'on' }, { ...fp, subfolders: false }, { ...fp, hideWeekends: 'yes' }, { ...fp, askBeforeDelete: null }, { ...fp, showOtherFiles: 'on' }, (({ showFolderPageFiles: _gone, ...rest }) => rest)(fp), 'on', undefined]) {
       expect(isSettings({ ...DEFAULT_SETTINGS, folderPages: bad })).toBe(false)
     }
     // A file from before the page reads the defaults; a broken part reads its default and the others keep their values.

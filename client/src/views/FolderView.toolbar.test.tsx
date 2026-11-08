@@ -15,6 +15,7 @@ import { click, flush, q, rec, renderFolderView, unmountFolderView } from './tes
 import { FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import type { FolderViewProps } from './FolderView'
 import { hoverPreviewOf } from '@shared/folderPage'
+import { DEFAULT_FOLDER_PAGES } from '@shared/types'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -106,12 +107,13 @@ describe('the folder page toolbar (D35)', () => {
     expect(chips(el)).toEqual(['page-settings', 'document-zoom', 'save-indicator'])
   })
 
-  it('the cog holds the "This folder page" group: Read only, then Show folder page file, Settings chosen', async () => {
+  // "Show Other files" added by YAZ-4597 (D43): the third row of the group.
+  it('the cog holds the "This folder page" group: Read only, Show folder page file, Show Other files, Settings chosen', async () => {
     const el = await mount()
     openCog(el)
     const group = q(el, '.page-settings__menu [role="group"][aria-label="This folder page"]')
-    // YAZ-4601 D51 adds "Preview on hover" after "Show folder page file".
-    expect([...group.children].map((c) => c.textContent)).toEqual(['This folder page', 'Read only', 'Show folder page file:', 'SettingsOnOff', 'Preview on hover:', 'SettingsOnOff'])
+    // YAZ-4601 D51 adds "Preview on hover" after "Show folder page file"; YAZ-4597 adds "Show Other files" last.
+    expect([...group.children].map((c) => c.textContent)).toEqual(['This folder page', 'Read only', 'Show folder page file:', 'SettingsOnOff', 'Preview on hover:', 'SettingsOnOff', 'Show Other files:', 'SettingsOnOff'])
     expect(pill(el, 'Settings').getAttribute('aria-pressed')).toBe('true')
     // No word counts and no trailing rows: a folder page off its Page tab has only its own group.
     expect(q(el, '.page-settings__menu').textContent).not.toContain('words')
@@ -232,6 +234,34 @@ describe('Preview on hover (YAZ-4601 D51)', () => {
   })
 })
 
+describe('Show Other files (YAZ-4597 D43)', () => {
+  const otherPill = (el: ParentNode, text: string): HTMLButtonElement => button(q(el, '[role="group"][aria-label="Show Other files"]'), text)
+
+  it('writes `show_other_files` in three states, and Off hides the tray; Settings follows Settings › Folder pages', async () => {
+    const el = await mount()
+    expect(el.querySelector('.other-files')).not.toBeNull() // the default is on
+    openCog(el)
+    const value = () => parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties.show_other_files
+    click(otherPill(el, 'Off'))
+    await flush()
+    expect(value()).toBe(false)
+    expect(el.querySelector('.other-files')).toBeNull()
+    click(otherPill(el, 'On'))
+    await flush()
+    expect(value()).toBe(true)
+    expect(el.querySelector('.other-files')).not.toBeNull()
+    click(otherPill(el, 'Settings'))
+    await flush()
+    expect(value()).toBeUndefined()
+    expect(onDisk()).toBe(VIEWS)
+  })
+
+  it('Settings › Folder pages "Show Other files" Off hides the tray of a folder with no choice of its own', async () => {
+    const el = await mount({ folderPages: { ...DEFAULT_FOLDER_PAGES, showOtherFiles: false } })
+    expect(el.querySelector('.other-files')).toBeNull()
+  })
+})
+
 describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar store', () => {
   let root: Root | null = null
   let container: HTMLElement | null = null
@@ -246,7 +276,7 @@ describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar s
     document.body.append(container)
     root = createRoot(container)
     const noop = () => undefined
-    act(() => root!.render(<FolderToolbar store={store} zoom={100} onZoom={noop} readOnly={false} onToggleReadOnly={noop} asking={false} onAsk={noop} onAllow={noop} onCancel={noop} showPageFile={undefined} onChangeShowPageFile={noop} hoverPreview={undefined} onChangeHoverPreview={noop} />))
+    act(() => root!.render(<FolderToolbar store={store} zoom={100} onZoom={noop} readOnly={false} onToggleReadOnly={noop} asking={false} onAsk={noop} onAllow={noop} onCancel={noop} showPageFile={undefined} onChangeShowPageFile={noop} hoverPreview={undefined} onChangeHoverPreview={noop} showOtherFiles={undefined} onChangeShowOtherFiles={noop} />))
     const onToggleLineNumbers = vi.fn()
     act(() => store.set({ page: { cog: { lineNumbers: true, onToggleLineNumbers, readText: () => 'a b' }, save: 'unsaved' } }))
     expect(q(container, '.save-indicator').textContent).toBe('Unsaved')

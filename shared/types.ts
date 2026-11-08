@@ -1873,6 +1873,7 @@ export const FOLDER_PAGE_CHOICES = {
  *   `hoverPreviewIn.folderViews`).
  * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`).
  * - Page default: `showFolderPageFiles`, the sidebar's folder page file rows (D37); a folder's `show_page_file` beats it.
+ *   `showOtherFiles`, the Other files tray at the foot of a folder page (YAZ-4597, D43); a folder's `show_other_files` beats it.
  */
 export interface FolderPagesSettings {
   /** The calendar view's first day. */
@@ -1898,6 +1899,7 @@ export interface FolderPagesSettings {
   showFolderPageFiles: boolean
   /** A folder page's "Delete note…" asks first (YAZ-4592 S26). Its own switch: Files › Confirm before deleting does not touch it. */
   askBeforeDelete: boolean
+  showOtherFiles: boolean
 }
 
 export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
@@ -1916,6 +1918,7 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   hideWeekends: false,
   showFolderPageFiles: false,
   askBeforeDelete: true,
+  showOtherFiles: true,
 }
 
 export interface SettingsState {

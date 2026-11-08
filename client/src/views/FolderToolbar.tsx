@@ -1,9 +1,10 @@
 /**
  * The folder page's top-right toolbar (YAZ-3746 D35): the note page's chips (`StatusChips`) with the folder's own cog.
  *
- *  - THE COG: a "This folder page" group — "Read only" (D36, `readonly: true` in `.folder.md`) and "Show folder page
+ *  - THE COG: a "This folder page" group — "Read only" (D36, `readonly: true` in `.folder.md`), "Show folder page
  *    file" (D37, `show_page_file` in `.folder.md`: On, Off, or Settings — no key, which follows Settings › Folder pages),
- *    and "Preview on hover" (YAZ-4601 D51, `hover_preview` in `.folder.md`, the same three choices).
+ *    "Preview on hover" (YAZ-4601 D51, `hover_preview` in `.folder.md`) and "Show Other files" (YAZ-4597 D43,
+ *    `show_other_files`), each with the same three choices.
  *    On the Page tab, the note's page switches follow it (`FolderPageTab`).
  *  - ZOOM: per app tab and never stored, as a note's. The host keeps it.
  *  - SAVED / SAVING: the folder's own writes — its settings writes, and the Page body's saves (`FolderPageTab.save`).
@@ -52,7 +53,7 @@ export const FOLDER_READ_ONLY_TIP = 'This folder page is read only'
 const SAVE_RANK: Record<SaveStatus, number> = { saved: 0, unsaved: 1, saving: 2, error: 3 }
 const worse = (a: SaveStatus, b: SaveStatus): SaveStatus => (SAVE_RANK[a] >= SAVE_RANK[b] ? a : b)
 
-export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverPreview, onChangeHoverPreview, sync, onSyncNow }: {
+export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverPreview, onChangeHoverPreview, showOtherFiles, onChangeShowOtherFiles, sync, onSyncNow }: {
   store: Store<FolderChipsState>
   zoom: number
   onZoom: (zoom: number) => void
@@ -69,6 +70,9 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
   /** The folder's own "Preview on hover" (YAZ-4601 D51): `undefined` follows Settings. */
   hoverPreview: boolean | undefined
   onChangeHoverPreview: (next: boolean | undefined) => void
+  /** The folder's own "Show Other files" (YAZ-4597): `undefined` follows Settings. */
+  showOtherFiles: boolean | undefined
+  onChangeShowOtherFiles: (next: boolean | undefined) => void
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
 }) {
@@ -83,7 +87,7 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
       { label: 'Off', on: value === false, onPick: () => onChange(false) },
     ],
   })
-  const switches = [choiceRow('Show folder page file', showPageFile, onChangeShowPageFile), choiceRow('Preview on hover', hoverPreview, onChangeHoverPreview)]
+  const switches = [choiceRow('Show folder page file', showPageFile, onChangeShowPageFile), choiceRow('Preview on hover', hoverPreview, onChangeHoverPreview), choiceRow('Show Other files', showOtherFiles, onChangeShowOtherFiles)]
   return (
     <StatusChips zoom={zoom} onZoom={onZoom} readOnly={readOnly ? { asking, onAsk, onAllow, onCancel } : null} sync={sync} onSyncNow={onSyncNow} save={page === null ? save : worse(save, page.save)}>
       <PageSettings {...page?.cog} readOnly={readOnly} onToggleReadOnly={onToggleReadOnly} switches={switches} switchesHeading="This folder page" />

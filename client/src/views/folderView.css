@@ -49,3 +49,105 @@
 .folder-page-doc .editor-instance .milkdown > .ProseMirror {
   zoom: 1;
 }
+
+/*
+ * The Other files tray (YAZ-4597, D43): under the views, in the page's column. Its header is a group header's
+ * look (the toggle is `.view-group__toggle` from views.css); a row dragged
+ * over it shows the views' dashed drop outline.
+ */
+.other-files {
+  margin: 24px 0 8px;
+  border-radius: 6px;
+}
+
+.other-files--drop {
+  outline: 1px dashed var(--accent);
+  outline-offset: 2px;
+}
+
+.other-files__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.other-files__title {
+  font-weight: 600;
+}
+
+.other-files__count {
+  color: var(--fg-muted);
+}
+
+.other-files__empty {
+  margin: 0;
+  padding: 8px 2px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.other-files__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Name, type, size, date: the last three are fixed columns, so the lines align. */
+.other-files__line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 72px 160px;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.other-files__line:hover {
+  background: var(--bg-side);
+}
+
+.other-files__name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  text-align: left;
+}
+
+.other-files__name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.other-files__name:hover > span:last-child {
+  text-decoration: underline;
+}
+
+.other-files__type,
+.other-files__size,
+.other-files__date {
+  overflow: hidden;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.other-files__size {
+  text-align: right;
+}
+
+/* A narrow page keeps the name and the type; the size and the date go. */
+@media (max-width: 640px) {
+  .other-files__line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .other-files__size,
+  .other-files__date {
+    display: none;
+  }
+}

@@ -1,4 +1,4 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf, MAX_GROUP_LEVELS } from '../viewSchema'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
@@ -21,6 +21,7 @@ import { newWindowClick } from '../../lib/newWindowClick'
 import { isFolderRow, rowPage } from '../../links/shortcuts'
 import { UNFROZE_ROWS, frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
+import { OtherFilesMove, trayRowDrag } from './otherFilesMove'
 import { FillMenu } from './FillMenu'
 import { filterValueItems, noteItems } from './rowMenuItems'
 import { withFilter } from './filterRows'
@@ -218,6 +219,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // (YAZ-1101): a level that is not a note property takes no drops and shows no "+".
   const levelKeys = shownGroupLevels(view).map((_, level) => groupByKey(view, level))
   const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
+  /** The Other files tray's door (YAZ-4597): null unless the folder page's tray takes moves. */
+  const moveToTray = useContext(OtherFilesMove)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   /**
@@ -880,7 +883,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           key={rowKey(line)}
           className={[line.gk !== null && dnd.over === line.gk && 'view-table__row--drop', windowLink?.current === line.row.record.path && CURRENT_ROW, ...(frozenRow ?? [])].filter(Boolean).join(' ') || undefined}
           style={frozenRowStyle}
-          {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)), ...dnd.target(line.g, line.at) })}
+          // An ungrouped row drags only onto the Other files tray (YAZ-4597 D46).
+          {...(line.g === null || line.at === null ? trayRowDrag(moveToTray, line.row.record.path) : { ...dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)), ...dnd.target(line.g, line.at) })}
           {...hover.itemProps(line.row.record.path)}
           onContextMenu={openRowMenu(line.row)}
         >

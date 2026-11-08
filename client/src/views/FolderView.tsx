@@ -23,15 +23,20 @@
  *  - THE PAGE AROUND THE VIEWS (D9/D10): the title (a commit renames the directory), the folder's
  *    OWN properties and comments, both stored in `.folder.md`, and its linked mentions — the
  *    components a note uses.
+ *  - OTHER FILES (YAZ-4597, D43-D46): a tray under the views (`view/OtherFiles.tsx`): the folder's files that are not
+ *    notes, then the notes moved there — `other_files` links in the settings, written through the one writer. A moved
+ *    note leaves every view (the views' records). "Show Other files" in the cog (`show_other_files`) beats Settings ›
+ *    Folder pages; with the tray off, every note shows in the views again and nothing moves.
  *
  * Feed: the window's ONE `WikilinkResolveSource`, so the view costs no fetch or watcher of its own.
  */
-import { memo, type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
-import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
-import { HOVER_PREVIEW_KEY, SHOW_PAGE_FILE_KEY, hoverPreviewOf, showPageFileOf } from '@shared/folderPage'
+import { DEFAULT_FOLDER_PAGES, folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
+import { HOVER_PREVIEW_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY, hoverPreviewOf, showOtherFilesOf, showPageFileOf } from '@shared/folderPage'
+import { exactLinkTarget } from '@shared/linkRewrite'
 import { isReadOnlyProperties, READ_ONLY_KEY } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -59,6 +64,9 @@ import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
 import { writeFolderValues, writeProperties, writeProperty } from './writeProperty'
 import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { ViewFolder } from './view/GroupHeader'
+import { noteLinkOf } from './view/fills'
+import { OtherFiles, trayBackTarget } from './view/OtherFiles'
+import { OtherFilesMove } from './view/otherFilesMove'
 import type { PreviewScope } from '../tabs/cardPreview'
 import './views.css'
 import './folderView.css'
@@ -199,8 +207,54 @@ export function FolderView({
   const rows = useMemo(() => folderRows(feed.records, feed.folders, folder), [feed.records, feed.folders, folder])
   /** The folder's id: the name of its block in a note. None until its `.folder.md` holds one — then every value reads as empty. */
   const id = record?.id
-  /** The rows as the views read them (D19): each row's `properties` are THIS folder's values for the note — or, where the vault does not use IDs, the note's own. */
-  const shown = useMemo(() => (ids ? rows.map((row) => ({ ...row, properties: folderValues(row.properties, id) })) : rows), [rows, id, ids])
+
+  // ---------- Other files (YAZ-4597, D43-D46) ----------
+  /** The folder's own "Show Other files": `undefined` follows Settings › Folder pages (default on). */
+  const [showOtherFiles, setShowOtherFiles] = useAheadKey(record === undefined ? undefined : showOtherFilesOf(record.properties))
+  const trayOn = showOtherFiles ?? (folderPages ?? DEFAULT_FOLDER_PAGES).showOtherFiles
+  /** The `other_files` links AHEAD of the index, as `ahead` holds the columns: a move shows at once; null = the index leads. */
+  const [aheadOther, setAheadOtherState] = useState<string[] | null>(null)
+  const aheadOtherRef = useRef<string[] | null>(null)
+  const setAheadOther = (next: string[] | null): void => {
+    aheadOtherRef.current = next
+    setAheadOtherState(next)
+  }
+  const indexOther = JSON.stringify(settings?.otherFiles ?? [])
+  useEffect(() => {
+    if (aheadOtherRef.current !== null && JSON.stringify(aheadOtherRef.current) === indexOther) setAheadOther(null)
+  }, [indexOther])
+  const otherLinks = aheadOther ?? settings?.otherFiles
+  /**
+   * The moved notes, note path → its link, in `other_files` order: a link that names a note of this folder (`rows`),
+   * once. The next write keeps only these, so a deleted or moved-away note leaves the list then, as fills do (D44).
+   * None while the tray is off.
+   */
+  const moved = useMemo(() => {
+    const out = new Map<string, string>()
+    const resolve = feed.resolve
+    if (!trayOn || resolve === null || otherLinks === undefined) return out
+    const here = new Set(rows.map((row) => row.path))
+    for (const link of otherLinks) {
+      const target = exactLinkTarget(link)
+      const path = target === null ? null : resolve(target)
+      if (path !== null && here.has(path) && !out.has(path)) out.set(path, link)
+    }
+    return out
+  }, [trayOn, otherLinks, rows, feed.resolve])
+  const trayNotes = useMemo(() => {
+    const byPath = new Map(rows.map((row) => [row.path, row]))
+    return [...moved.keys()].map((path) => byPath.get(path)!)
+  }, [moved, rows])
+  /** This render's moves, for the stable doors below and a toast's Undo, which runs later. */
+  const latestTray = useRef<{ toTray: (path: string, undoable?: boolean) => void; back: (path: string, undoable?: boolean) => void } | null>(null)
+  const moveToTray = useCallback((path: string) => latestTray.current?.toTray(path), [])
+  const moveBack = useCallback((path: string) => latestTray.current?.back(path), [])
+
+  /** The rows as the views read them (D19): each row's `properties` are THIS folder's values for the note — or, where the vault does not use IDs, the note's own. A note moved to Other files is in none of them. */
+  const shown = useMemo(() => {
+    const inViews = moved.size === 0 ? rows : rows.filter((row) => !moved.has(row.path))
+    return ids ? inViews.map((row) => ({ ...row, properties: folderValues(row.properties, id) })) : inViews
+  }, [rows, moved, id, ids])
   /**
    * The direct subfolders as rows (YAZ-4579 D31), off the Files tree — it knows a folder with no `.folder.md` — and the
    * settings records. A new resolver is the feed's word that the tree's folders moved (`WikilinkIndexBridge`).
@@ -297,8 +351,8 @@ export function FolderView({
     if (aheadRef.current !== null && indexColumns === columnsStamp(aheadRef.current)) setAhead(null)
   }, [indexColumns])
   const liveSettings = useMemo(
-    () => (settings === null ? null : ahead === null ? settings : { ...settings, columns: ahead }),
-    [settings, ahead],
+    () => (settings === null ? null : ahead === null && aheadOther === null ? settings : { ...settings, columns: ahead ?? settings.columns, otherFiles: aheadOther ?? settings.otherFiles }),
+    [settings, ahead, aheadOther],
   )
 
   // Rebuilt when the FILE's own views move — an external edit, or our own write coming back
@@ -369,7 +423,8 @@ export function FolderView({
     setSettingsError(null)
     const before = aheadRef.current
     setAhead(columns)
-    return track(writeFolderSettings(file, { ...settings, columns, views, properties, defaultView: parsed.def.defaultView })).then(
+    // The LIVE settings: a move to Other files still in flight is kept (YAZ-4597).
+    return track(writeFolderSettings(file, { ...liveSettings, columns, views, properties, defaultView: parsed.def.defaultView })).then(
       () => undefined,
       (err: unknown) => {
         setAhead(before)
@@ -414,6 +469,45 @@ export function FolderView({
     }
     onNotice?.(renameNotice(from, to, result), 'info', 'undo', { label: 'Undo', run: undo, fades: true })
   }
+
+  /**
+   * The `other_files` ONE write (YAZ-4597 D44), ahead first as `commitSettings` writes the columns: the list shows at
+   * once, and a refusal puts back what stood before and shows the banner. Read only refuses it (D36).
+   */
+  const writeOtherFiles = (next: string[]): Promise<void> => {
+    if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
+    setSettingsError(null)
+    const before = aheadOtherRef.current
+    setAheadOther(next)
+    return track(writeFolderSettings(file, { ...liveSettings, otherFiles: next, views: parsed.def.views, properties: parsed.def.properties, defaultView: parsed.def.defaultView })).then(
+      () => undefined,
+      (err: unknown) => {
+        setAheadOther(before)
+        setSettingsError(err instanceof Error ? err.message : String(err))
+        throw err
+      },
+    )
+  }
+  // A move shows the S6 toast (YAZ-4541): its Undo moves the note the other way through the moves current then, with no toast.
+  latestTray.current = {
+    toTray: (path, undoable = true) => {
+      const row = rows.find((r) => r.path === path)
+      if (row === undefined || moved.has(path)) return
+      writeOtherFiles([...moved.values(), noteLinkOf(row, resolveLink)]).then(
+        () => undoable && onNotice?.('Moved to Other files', 'info', 'undo', { label: 'Undo', run: () => latestTray.current?.back(path, false), fades: true }),
+        () => undefined,
+      )
+    },
+    back: (path, undoable = true) => {
+      if (!moved.has(path)) return
+      writeOtherFiles([...moved].filter(([p]) => p !== path).map(([, link]) => link)).then(
+        () => undoable && onNotice?.('Moved back to the table', 'info', 'undo', { label: 'Undo', run: () => latestTray.current?.toTray(path, false), fades: true }),
+        () => undefined,
+      )
+    },
+  }
+  /** The tray takes moves while it shows and the page is not read only (D36). */
+  const trayMoves = trayOn && !pageLocked
 
   const host: FolderHost = {
     settings: liveSettings,
@@ -540,6 +634,8 @@ export function FolderView({
         onChangeShowPageFile={(next) => setShowPageFile(next, writeOwnKey(SHOW_PAGE_FILE_KEY, next))}
         hoverPreview={ownHover}
         onChangeHoverPreview={(next) => setOwnHover(next, writeOwnKey(HOVER_PREVIEW_KEY, next))}
+        showOtherFiles={showOtherFiles}
+        onChangeShowOtherFiles={(next) => setShowOtherFiles(next, writeOwnKey(SHOW_OTHER_FILES_KEY, next))}
         sync={sync}
         onSyncNow={onSyncNow}
       />
@@ -559,6 +655,9 @@ export function FolderView({
           <FolderPageChips.Provider value={chips}>
             {/* The skins mark a row that is here by a shortcut (D2): they are told which folder "here" is. */}
             <ViewFolder.Provider value={folder}>
+              {/* The views' row menus and drags reach the tray through this door; a tray note dropped here moves back (YAZ-4597). */}
+              <OtherFilesMove.Provider value={trayMoves ? moveToTray : null}>
+              <div className="folder-view__views" {...trayBackTarget(trayMoves ? moveBack : null)}>
               <ViewsPane
                 parsed={parsed}
                 onChange={onChange}
@@ -577,8 +676,22 @@ export function FolderView({
                 diagramDarkColors={diagramDarkColors}
                 folderPages={folderPages}
               />
+              </div>
+              </OtherFilesMove.Provider>
             </ViewFolder.Provider>
           </FolderPageChips.Provider>
+          {trayOn && (
+            <OtherFiles
+              root={root}
+              dir={path}
+              notes={trayNotes}
+              onOpen={onOpenFile}
+              onOpenBackground={onOpenFileBackground}
+              onNotice={onNotice}
+              onMoveBack={trayMoves ? moveBack : null}
+              onTakeRow={trayMoves ? (row) => latestTray.current?.toTray(row) : null}
+            />
+          )}
         </section>
         {disk !== null && <MemoCommentsSection file={disk} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />}
         {/* The notes and folders that link to the FOLDER (D10): its path is what such a link resolves to. */}

@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react'
+import { useContext, type ReactNode } from 'react'
 import { api, BridgeRequestError } from '../../api'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { rowPage } from '../../links/shortcuts'
+import { OtherFilesMove, movesToOtherFiles } from './otherFilesMove'
 
 interface PageContextMenuProps {
   x: number
@@ -25,6 +26,26 @@ interface PageContextMenuProps {
 export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose, extra, onOpenWindow }: PageContextMenuProps) {
   // A folder row's page is its folder (YAZ-4579 D32): Copy path and Reveal name the directory, not its hidden `.folder.md`.
   const page = rowPage(path)
+  // "Move to Other files" (YAZ-4597 D46): its own group, last, on a note row of a folder page whose tray takes moves.
+  const moveToTray = useContext(OtherFilesMove)
+  const groups =
+    moveToTray === null || !movesToOtherFiles(path)
+      ? extra
+      : [
+          ...(extra ?? []),
+          <button
+            key="other-files"
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onClose()
+              moveToTray(path)
+            }}
+          >
+            Move to Other files
+          </button>,
+        ]
   const reveal = (): void => {
     onClose()
     api.shell.reveal({ path: page }).catch((error: unknown) => {
@@ -112,7 +133,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
 
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>
-      {extra === undefined ? (
+      {groups === undefined ? (
         actions
       ) : (
         // The groups' line between them is `.ctx-menu__group + .ctx-menu__group` (app.css).
@@ -120,7 +141,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
           <div className="ctx-menu__group" role="group">
             {actions}
           </div>
-          {extra.map((group, i) => (
+          {groups.map((group, i) => (
             <div key={i} className="ctx-menu__group" role="group">
               {group}
             </div>
