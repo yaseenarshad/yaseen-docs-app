@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultAppState, MAX_FILE_BYTES } from '@shared/types'
 import { assetCommand } from './assets'
+import type { LiveEdits } from './liveEdits'
 import { readAssetFile, writeAsset } from '../fs/assets'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-cli-assets-')) })
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
-const run = (command: string, path: string, extra: Record<string, unknown> = {}, body = Buffer.alloc(0)) => assetCommand(defaultAppState(), command, { root, path, ...extra }, body)
+const run = (command: string, path: string, extra: Record<string, unknown> = {}, body = Buffer.alloc(0), liveEdits?: LiveEdits) => assetCommand(defaultAppState(), command, { root, path, ...extra }, body, liveEdits)
 
 it('creates binary assets exclusively, reads exact special-character paths, and exports byte-for-byte', async () => {
   const path = join(root, 'assets/Picture#1.png'), bytes = Buffer.from([0, 255, 42, 128])
@@ -50,4 +51,12 @@ it('keeps drawing sidecars textual and rejects other file kinds and out-of-scope
   expect(await readFile(path)).toEqual(bytes)
   await expect(run('asset.write', join(root, 'Bad.md'), { revision: null }, bytes)).rejects.toMatchObject({ code: 'UNSUPPORTED_EXTENSION' })
   await expect(run('asset.write', join(root, '../Outside.png'), { revision: null }, bytes)).rejects.toMatchObject({ code: 'OUTSIDE_SCOPE' })
+})
+it('YAZ-4515: refuses to replace an embedded drawing asset while a live editor holds unsaved edits of it', async () => {
+  const path = join(root, 'assets/Embed.excalidraw'), scene = JSON.stringify({ type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} })
+  const created = await run('asset.write', path, { revision: null }, Buffer.from(scene)) as { revision: string }
+  const liveEdits: LiveEdits = async target => target === path ? [{ window: 'w1', path, tabs: ['t1'] }] : []
+  await expect(run('asset.write', path, { revision: created.revision }, Buffer.from(scene.replace('[]', '[{}]')), liveEdits)).rejects.toMatchObject({ code: 'UNSAVED_LIVE_EDITS', details: { open: [{ window: 'w1', tabs: ['t1'] }] } })
+  expect(await readFile(path, 'utf8')).toBe(scene)
+  expect(await run('asset.write', path, { revision: created.revision }, Buffer.from(scene), async () => [])).toMatchObject({ diskSaved: true })
 })

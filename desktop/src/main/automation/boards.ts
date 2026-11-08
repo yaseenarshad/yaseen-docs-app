@@ -17,21 +17,7 @@ import { BOARDS } from '../fs/boardDocument'
 import { createDurable, fsCall } from '../fs/fsUtils'
 import { decodeViewOnlyText } from '../fs/file'
 import { absolute, resolveTarget, scopeRoots } from './resources'
-import type { NavigationHost } from './navigation'
-
-/** The live windows whose editors hold unsaved edits of a path, with that path's tabs there (YAZ-4515). */
-export type LiveEdits = (path: string) => Promise<{ window: string; tabs: string[] }[]>
-
-export const liveEditsOf = (host: NavigationHost): LiveEdits => async path => {
-  const open = await Promise.all(host.windows().map(async ({ id }) => ({ window: id, ...await host.inspect(id, { kind: 'dirty', path }) as { dirty: boolean; tabs: string[] } })))
-  return open.filter(entry => entry.dirty).map(({ window, tabs }) => ({ window, tabs }))
-}
-
-/** A dirty editor would later meet this write as an outside change; refuse it now and name where the edits are. */
-async function refuseLiveEdits(liveEdits: LiveEdits | undefined, path: string): Promise<void> {
-  const open = await liveEdits?.(path) ?? []
-  if (open.length) throw new AutomationFailure('UNSAVED_LIVE_EDITS', 'An open editor holds unsaved edits of this board. Save it (editor.save) or let it autosave, then read the board again.', { path, open })
-}
+import { refuseLiveEdits, type LiveEdits } from './liveEdits'
 
 export async function boardCommand(state: AppState, command: string, args: Record<string, unknown>, body: Buffer, record?: SavedCallback, liveEdits?: LiveEdits) {
   const [resource, action] = command.split('.')

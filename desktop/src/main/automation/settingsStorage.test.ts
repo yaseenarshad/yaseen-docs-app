@@ -6,6 +6,7 @@ import { createStore } from '../store'
 import { settingsFolderCommand } from './settingsFolder'
 import { storageCommand } from './storage'
 import type { AutomationServices } from './services'
+import { shrinkVault } from '../fs/shrink'
 
 let root: string, store: ReturnType<typeof createStore>
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-cli-settings-storage-')); store = createStore(join(root, '.profile/state.json')) })
@@ -28,4 +29,14 @@ it('pages large storage rows while retaining whole-vault totals and validates th
   await expect(storageCommand(services, store.get(), 'storage.shrink', { root, skip: ['/outside/Board.excalidraw'] })).rejects.toMatchObject({ code: 'OUTSIDE_SCOPE' })
   expect(shrink).not.toHaveBeenCalled()
   expect(await storageCommand(services, store.get(), 'storage.shrink', { root, skip: [large[0].path] })).toMatchObject({ shrunk: 2, skipped: 1, diskSaved: true, rendererMerged: false })
+})
+it('YAZ-4515: a shrink skips the boards with unsaved live edits, as the GUI does, and says which and why', async () => {
+  const board = (name: string) => `${JSON.stringify({ type: 'excalidraw', version: 2, source: 'test', elements: [{ id: `el-${name}`, type: 'image', fileId: name }], appState: {}, files: { [name]: { mimeType: 'image/png', dataURL: `data:image/png;base64,${Buffer.from(name).toString('base64')}` } } })}\n`
+  const dirty = join(root, 'Dirty.excalidraw'), clean = join(root, 'Clean.excalidraw')
+  await writeFile(dirty, board('dirty')); await writeFile(clean, board('clean'))
+  const services = { storage: { shrink: (vault: string, skip: readonly string[]) => shrinkVault(vault, { skip }) } } as unknown as AutomationServices
+  const open = [{ window: 'w1', path: dirty, tabs: ['t1'] }]
+  expect(await storageCommand(services, store.get(), 'storage.shrink', { root }, async folder => folder === root ? open : [])).toMatchObject({ shrunk: 1, skipped: 1, unsavedSkipped: [{ ...open[0], reason: 'UNSAVED_LIVE_EDITS' }], diskSaved: true })
+  expect(await readFile(dirty, 'utf8')).toBe(board('dirty'))
+  expect(await readFile(clean, 'utf8')).not.toBe(board('clean'))
 })

@@ -30,7 +30,7 @@ export interface NavigationTarget {
   view?: string
   reveal?: boolean
 }
-/** `dirty` names the tabs whose editor holds unsaved edits of `path` (YAZ-4515). */
+/** `dirty` lists the paths at or under `path` whose editors hold unsaved edits, with their tabs (YAZ-4515). */
 export type InspectTarget = { kind: 'history' } | { kind: 'window' } | { kind: 'document'; tab: string } | { kind: 'dirty'; path: string }
 export type FileOperationTarget = TabOperation | EditorOperation | BoardExportOperation
   | { command: 'file.copy'; paths: string[]; targetDir: string; external: boolean }

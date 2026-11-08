@@ -9,15 +9,17 @@ import { createDurable, fsCall } from '../fs/fsUtils'
 import { revisionOf } from '../fs/revision'
 import { decodeViewOnlyText } from '../fs/file'
 import { absolute, resolveTarget, scopeRoots } from './resources'
+import { refuseLiveEdits, type LiveEdits } from './liveEdits'
 
 /** Binary reads use base64 on the JSON wire; larger viewer files use an explicit exclusive export. */
-export async function assetCommand(state: AppState, command: string, args: Record<string, unknown>, body: Buffer): Promise<unknown> {
+export async function assetCommand(state: AppState, command: string, args: Record<string, unknown>, body: Buffer, liveEdits?: LiveEdits): Promise<unknown> {
   const { roots } = await scopeRoots(state, args)
   const [kind, action] = command.split('.')
   if (action === 'write') {
     const path = absolute(args.path as string), root = rootOfPath(roots, path)
     if (!root || roots.includes(path)) throw new AutomationFailure('OUTSIDE_SCOPE', 'The asset must be inside the selected vault.')
     // The core writer creates nested asset folders. Validate the root rather than requiring those folders to exist.
+    await refuseLiveEdits(liveEdits, path)
     const content = (DRAWING_EXTENSIONS as readonly string[]).includes(extname(path).slice(1).toLowerCase()) ? decodeViewOnlyText(body, path) : body
     const saved = await writeAsset({ root, path, content, ...(args.revision === null ? { create: true } : { expectedRevision: args.revision as string }) })
     return { ...saved, revision: revisionOf(content, saved.mtime), diskSaved: true, rendererMerged: false }
