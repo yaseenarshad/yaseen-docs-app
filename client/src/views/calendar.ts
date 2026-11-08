@@ -6,7 +6,7 @@
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { Row } from './engine'
 import { columnTyping } from './editorType'
-import { formatDate, parseIsoDate } from './expr/dates'
+import { formatDate, parseIsoDate, renderDate } from './expr/dates'
 import type { FolderSettings } from './folderSettings'
 import { writableKey } from './readOnlyRows'
 import { allPropertyKeys } from './view/properties'
@@ -39,11 +39,14 @@ export function movedDate(prevRaw: unknown, day: DayKey): string {
   return day
 }
 
-/** The `HH:mm` a card shows before its title, as written in the value; null when it has no time. */
+/**
+ * The `HH:mm` a card shows before its title; null when the value has no time. It is the time the board and the table
+ * show (`renderDate`, the app's local time, YAZ-4544): a value with a zone reads in the Mac's zone. Only the DAY keeps
+ * the date part as written (`dayOf`, S3).
+ */
 export function timeOf(raw: unknown): string | null {
-  if (typeof raw !== 'string' || parseIsoDate(raw) === null) return null
-  const time = raw.trim().slice(11, 16)
-  return time === '' ? null : time
+  const parsed = typeof raw === 'string' ? parseIsoDate(raw) : null
+  return parsed === null || !parsed.hasTime ? null : renderDate(parsed.ms, true).slice(11, 16)
 }
 
 /** The rows on each day, in row order, and the "No date" tray: one pass (the view memoizes it). */

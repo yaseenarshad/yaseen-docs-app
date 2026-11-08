@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import type { Row } from './engine'
-import { FileValue } from './expr'
+import { FileValue, fromYaml, render } from './expr'
 import { bucketByDay, calendarDateKey, dateColumns, dayOf, monthWeeks, movedDate, timeOf, dayLabel } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
@@ -72,13 +72,23 @@ describe('dayLabel (YAZ-4541 S6): the day a move toast names', () => {
   })
 })
 
-describe('timeOf (YAZ-4540): the time a card shows, as written', () => {
+describe('timeOf (YAZ-4540): the time a card shows', () => {
   it('reads HH:mm off a value with a time, and nothing off a bare date', () => {
     expect(timeOf('2026-12-03 10:30')).toBe('10:30')
-    expect(timeOf('2026-12-03T23:30Z')).toBe('23:30')
     expect(timeOf('2026-12-03')).toBeNull()
     expect(timeOf('soon')).toBeNull()
     expect(timeOf(new Date())).toBeNull()
+  })
+})
+
+describe('timeOf (YAZ-4544, finding 23): a time with a zone reads as the board and the table read it', () => {
+  it('the local time of the app\'s date renderer, while the day stays the date part as written (S3)', () => {
+    for (const raw of ['2026-11-30T23:45Z', '2026-12-03T08:15+05:30', '2026-12-03 10:30']) {
+      const local = new Date(Date.parse(raw.replace(' ', 'T')))
+      expect(timeOf(raw)).toBe(`${String(local.getHours()).padStart(2, '0')}:${String(local.getMinutes()).padStart(2, '0')}`)
+      expect(timeOf(raw)).toBe(render(fromYaml(raw)).slice(11, 16))
+    }
+    expect(dayOf('2026-11-30T23:45Z')).toBe('2026-11-30')
   })
 })
 
