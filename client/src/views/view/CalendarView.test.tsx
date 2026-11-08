@@ -267,3 +267,34 @@ describe('calendar "+" on a day (YAZ-4540 S10) and "Show by"', () => {
     expect(q<HTMLSelectElement>(pop, '[aria-label="Show by"]').value).toBe('note.due')
   })
 })
+
+describe('Back returns to the view tab it left (YAZ-4544, finding 24)', () => {
+  const TWO = `views:
+  - type: table
+    name: Table
+  - type: calendar
+    name: Calendar
+`
+  const activeTab = (el: ParentNode) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+  const remount = (props: Partial<ViewsPaneProps>) => {
+    act(() => root?.unmount())
+    container?.remove()
+    return mount(TWO, props)
+  }
+
+  it('"+" on a calendar day opens the new note; the folder page that mounts again on that Back step shows the Calendar', async () => {
+    const create = vi.fn(async () => '/vault/Tasks/Untitled.md')
+    const { el, onOpenFile } = mount(TWO, { viewKey: 'step-1', folder: testFolderHost({ create }) })
+    expect(activeTab(el)).toBe('Table')
+    act(() => [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'Calendar')!.click())
+    draw()
+    await act(async () => q<HTMLButtonElement>(el, '[aria-label="New note on 2026-12-03"]').click())
+    expect(onOpenFile).toHaveBeenCalledWith('/vault/Tasks/Untitled.md')
+    // The tab moves on to the note: this page unmounts. Back mounts it again under the same step.
+    expect(activeTab(remount({ viewKey: 'step-1' }).el)).toBe('Calendar')
+    // A new step (the folder opened again from the sidebar) starts on the saved start, as before.
+    expect(activeTab(remount({ viewKey: 'step-2' }).el)).toBe('Table')
+    // With no step (the right panel), nothing is remembered.
+    expect(activeTab(remount({}).el)).toBe('Table')
+  })
+})

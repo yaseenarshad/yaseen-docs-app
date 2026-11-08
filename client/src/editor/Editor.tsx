@@ -289,7 +289,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, renderN
     if (inTree === 'dir') {
       return (
         <section className="editor">
-          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} renderNoteEditor={renderNoteEditor} tabId={tabId} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} previewScope={previewScope} diagramDarkColors={diagramDarkColors} foldingOnByDefault={foldingOnByDefault} />
+          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} renderNoteEditor={renderNoteEditor} tabId={tabId} viewKey={viewKey} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} previewScope={previewScope} diagramDarkColors={diagramDarkColors} foldingOnByDefault={foldingOnByDefault} />
         </section>
       )
     }

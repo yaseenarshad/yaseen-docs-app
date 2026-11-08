@@ -73,6 +73,8 @@ export interface FolderViewProps {
   renderNoteEditor?: (path: string) => ReactNode
   /** The app tab that shows this folder (`Editor`'s `tabId`): handed to `ViewsPane`, whose note window is that tab's (YAZ-4544). */
   tabId?: string
+  /** The main tab's Back step (`Editor`'s `viewKey`): handed to `ViewsPane`, which shows the view tab this step left (YAZ-4544). */
+  viewKey?: string
   wikilinkCandidates?: WikilinkCandidateSource
   newNoteFolderFor?: (sourcePath: string) => string
   /** App's `notify`; the views' moves give it their Undo (YAZ-4541 S6). */
@@ -129,6 +131,7 @@ export function FolderView({
   onOpenFileBackground,
   renderNoteEditor,
   tabId,
+  viewKey,
   wikilinkCandidates,
   newNoteFolderFor,
   onNotice,
@@ -407,6 +410,7 @@ export function FolderView({
             root={root}
             folderPath={path}
             tabId={tabId}
+            viewKey={viewKey}
             records={shown}
             readOnly={locked}
             properties={properties}

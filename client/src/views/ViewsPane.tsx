@@ -120,6 +120,8 @@ export interface ViewsPaneProps {
   folderPath: string
   /** The app tab that shows this folder page (`Editor`'s `tabId`): its note window is that tab's (YAZ-4544, D17). Absent in the right panel. */
   tabId?: string
+  /** The main tab's Back step (`Editor`'s `viewKey`): the page that mounts again on that step shows the view tab it left (YAZ-4544). */
+  viewKey?: string
   /** The notes the views query (YAZ-2290 D4) — the folder's own rows, never the whole vault — each with the FOLDER's values for it as its `properties` (D19). */
   records: IndexRecord[]
   /**
@@ -180,13 +182,30 @@ export function freeName(base: string, taken: ReadonlySet<string>): string {
   for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
 }
 
-export function ViewsPane({ parsed, onChange, root, folderPath, tabId, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', foldingOnByDefault }: ViewsPaneProps) {
+/**
+ * The view tab each Back step of a folder page showed (YAZ-4544), by step and folder: a "+" that opens the new note
+ * unmounts the page, and Back mounts it again on that view, as the code tab keeps its cursor (YAZ-3458). In memory
+ * only, at most `MAX_BACK_VIEWS`, the oldest out.
+ */
+const backViews = new Map<string, string>()
+const MAX_BACK_VIEWS = 200
+function keepBackView(key: string, name: string): void {
+  backViews.delete(key)
+  backViews.set(key, name)
+  if (backViews.size > MAX_BACK_VIEWS) backViews.delete(backViews.keys().next().value!)
+}
+
+export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', foldingOnByDefault }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
-  const [active, setActive] = useState(() =>
-    Math.max(0, parsed.def.views.findIndex((v) => v.name === parsed.def.defaultView)),
-  )
+  // By app tab too: a tab with no Back step yet has step 0, as every other such tab has.
+  const backKey = viewKey === undefined ? undefined : JSON.stringify([tabId ?? null, viewKey, folderPath])
+  const [active, setActive] = useState(() => {
+    const left = backKey === undefined ? undefined : backViews.get(backKey)
+    const back = left === undefined ? -1 : parsed.def.views.findIndex((v) => v.name === left)
+    return back !== -1 ? back : Math.max(0, parsed.def.views.findIndex((v) => v.name === parsed.def.defaultView))
+  })
   const [search, setSearch] = useState<string | null>(null)
   /** Collapsed group keys per view, seeded from the store; a toggle replaces the entry here AND writes through storage. */
   const [collapsedByKey, setCollapsedByKey] = useState<Record<string, string[]>>({})
@@ -222,6 +241,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, records, 
    * `folderViewSet` both fall back to `DEFAULT_VIEWS` — and `index` is clamped into that list.
    */
   const view = views[index]!
+  useEffect(() => {
+    if (backKey !== undefined) keepBackView(backKey, view.name)
+  }, [backKey, view.name])
   // The open card of this app tab, folder page and view tab is in a module map (`NoteWindow.tsx`, D17, YAZ-4544), so a
   // tab that sleeps and mounts again shows it again on the same note, and another tab on this folder has its own.
   const windowKey = noteWindowKey(tabId, folderPath, view.name)
