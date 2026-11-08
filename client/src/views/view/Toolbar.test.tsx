@@ -19,10 +19,9 @@ import type { ColumnDecl } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
 import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 
-/** The document skin's editor is a real Crepe instance; the toolbar's own chrome is what is under test. */
 /** No store behind this mount: collapse state stays in the pane. */
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
-vi.mock('./OutlineEditor', () => ({ OutlineEditor: () => null }))
+
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -178,8 +177,8 @@ function type(el: HTMLInputElement, text: string): void {
 
 /** The draggable/scrolling tab is the WRAPPER, not the `[role="tab"]` button it holds. */
 const wrap = (el: ParentNode, i: number): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-tab')][i]
-/** A def whose first view is the page's ONE outline document. */
-const WITH_OUTLINE = 'views:\n  - type: outline\n    name: Outline\n  - type: table\n    name: Table\n'
+/** A def whose first view is the folder's ONE Page tab (YAZ-4584 D38). */
+const WITH_PAGE = 'views:\n  - type: page\n    name: Page\n  - type: table\n    name: Table\n'
 const tabs = (el: ParentNode): string[] => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent ?? '')
 const selected = (el: ParentNode): string | undefined => [...el.querySelectorAll('[role="tab"]')].find((t) => t.getAttribute('aria-selected') === 'true')?.textContent ?? undefined
 /** Note links in the body: the table's name cells (4B) or the placeholder list of other view types. */
@@ -314,8 +313,8 @@ describe('freeName (YAZ-943): a new view\u2019s name', () => {
  * already use. Rename is the inline `TextField`, so its `normalize` is the whole rule — an empty
  * name, or one another view already answers to, is REFUSED and the field snaps back with nothing
  * written. Duplicate is a `structuredClone` (the copy carries the original's order, sort and
- * everything else) named by `freeName` and activated; a page has ONE outline document, so an
- * outline view can not be duplicated. Delete asks first, through `ConfirmDeleteView` — and is not
+ * everything else) named by `freeName` and activated; a folder has ONE Page tab (YAZ-4584 D38), so
+ * the Page can not be duplicated. Delete asks first, through `ConfirmDeleteView` — and is not
  * offered at all when there is one view left, because `views` can never be empty.
  */
 describe('view tabs — right-click menu (YAZ-1471)', () => {
@@ -398,9 +397,9 @@ describe('view tabs — right-click menu (YAZ-1471)', () => {
     expect(names(el, def)).toEqual(['Table', 'Table copy 2', 'Table copy', 'View', 'View 2'])
   })
 
-  it('Duplicate is disabled for an outline view — a page has ONE document', () => {
-    const { el } = mount(WITH_OUTLINE)
-    expect(item(openOn(el, 'Outline'), 'Duplicate').disabled).toBe(true)
+  it('Duplicate is disabled for the Page tab — a folder has ONE document (YAZ-4584 D38)', () => {
+    const { el } = mount(WITH_PAGE)
+    expect(item(openOn(el, 'Page'), 'Duplicate').disabled).toBe(true)
     expect(item(openOn(el, 'Table'), 'Duplicate').disabled).toBe(false)
   })
 
@@ -460,8 +459,8 @@ describe('view tabs — right-click menu (YAZ-1471)', () => {
  * sort, columns and the rest of the tab CRUD): the view is appended under the first FREE name off
  * its label ("Table", then "Table 2"), lands ACTIVE, and mounts straight into rename so the name
  * can be typed over without a second gesture — Escape there leaves the given name standing and
- * writes nothing more. Outline is offered only while the page has none, because ViewsPane reads
- * and writes the FIRST outline view's document and a second would shadow it.
+ * writes nothing more. Page is offered only while the folder has none (YAZ-4584 D38): the folder
+ * has one document, its `.folder.md` body.
  */
 describe('view tabs — "+" adds a view (YAZ-1471)', () => {
   const plus = (el: ParentNode): HTMLButtonElement => byLabel<HTMLButtonElement>(el, 'Add view')
@@ -487,12 +486,12 @@ describe('view tabs — "+" adds a view (YAZ-1471)', () => {
     expect(plus(el).closest('[role="tablist"]')).toBeNull() // the strip scrolls; "+" does not go with it
     const pop = openPicker(el)
     expect(expanded(el)).toBe('true')
-    expect(kinds(pop)).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List', 'Outline'])
+    expect(kinds(pop)).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List', 'Page'])
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('Outline is offered only while the page has none — a page owns ONE document', () => {
-    const { el } = mount(WITH_OUTLINE)
+  it('Page is offered only while the folder has none — at most one Page tab (YAZ-4584 D38)', () => {
+    const { el } = mount(WITH_PAGE)
     expect(kinds(openPicker(el))).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List'])
   })
 
@@ -655,8 +654,8 @@ describe('filter menu (YAZ-1227-1229)', () => {
     expect(openMenu(el, 'Sort').classList.contains('view-popover--sort')).toBe(true)
   })
 
-  it('an outline is a DOCUMENT, not rows: no button at all', () => {
-    const { el } = mount('views:\n  - type: outline\n    name: Outline\n', { folderPath: '/vault/Topic.md' })
+  it('the Page tab is a DOCUMENT, not rows: no button at all', () => {
+    const { el } = mount('views:\n  - type: page\n    name: Page\n', { folderPath: '/vault/Topic.md' })
     expect(el.querySelector('[aria-label="Filter"]')).toBeNull()
   })
 

@@ -39,10 +39,6 @@ vi.mock('./ViewsPane', async (importOriginal) => {
   }
 })
 
-/** The outline's editor, stubbed (YAZ-903): a real Crepe in jsdom is `OutlineEditor.test.tsx`'s job. */
-vi.mock('./view/OutlineEditor', () => ({
-  OutlineEditor: ({ markdown }: { markdown: string }) => <pre className="outline-doc">{markdown}</pre>,
-}))
 
 import { api, BridgeRequestError } from '../api'
 import { testDoor } from '../testNoteIds'
@@ -87,7 +83,7 @@ const TABLE = { type: 'table', name: 'Table', order: ['file.name', 'note.order',
 const BOARD = { type: 'board', name: 'Board' }
 const SETTINGS = {
   columns: { order: { kind: 'number' as const }, related: { kind: 'multi-link' as const, target: '[[KPIs]]' } },
-  views: [{ type: 'outline', name: 'Outline' }, TABLE],
+  views: [{ type: 'page', name: 'Page' }, TABLE],
 }
 
 /** A note's properties holding `values` for the folder under test — its block of `in` (D19) — beside the note's `own` fields. */
@@ -155,11 +151,9 @@ const texts = (el: ParentNode, sel: string): string[] => [...el.querySelectorAll
 const options = (el: ParentNode): (string | null)[] => [...el.querySelectorAll('[role="option"]')].map((o) => o.textContent)
 /**
  * Row names, whichever body is rendering: the placeholder list or the real table (`file.name`,
- * extension and all). The outline has no rows at all: it is a document.
+ * extension and all). The Page tab has no rows at all: it is a document.
  */
 const rowNames = (el: ParentNode): string[] => texts(el, '.view-row__link, .view-table__name')
-/** The outline document the editor was seeded with (YAZ-903). */
-const doc = (el: ParentNode): string => q(el, '.outline-doc').textContent ?? ''
 
 /** The filter row's Property is the searchable picker (YAZ-1466): open it, click the option. */
 function chooseProperty(el: ParentNode, value: string): void {
@@ -202,7 +196,7 @@ const written = (): Record<string, unknown> => write.mock.calls[0][2] as Record<
 // ---------- the folder itself (D1/D4/E2) ----------
 
 describe('a folder with no settings file', () => {
-  it('shows its notes under the default views — Table, then Board, no Outline — and opening writes NOTHING', async () => {
+  it('shows its notes under the default views — Table, then Board, no Page — and opening writes NOTHING', async () => {
     const el = await mount(null)
     await flush()
     expect(q(el, 'h1').textContent).toBe('stages')
@@ -238,7 +232,7 @@ describe('a folder with no settings file', () => {
   it('the FIRST change writes the whole block into `.folder.md` — the default columns stated with it (E2)', async () => {
     const el = await mount(null)
     click(byLabel(el, 'Add view'))
-    expect(texts(el, '.view-popover--menu [role="menuitem"]')).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List', 'Outline']) // the Outline is the "+" menu's (D5a)
+    expect(texts(el, '.view-popover--menu [role="menuitem"]')).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List', 'Page']) // the Page is the "+" menu's (D5a, YAZ-4584)
     click(menuItem(el, 'Cards'))
     await flush()
     expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', {
@@ -537,27 +531,58 @@ describe('a shortcut is a row too (D2/D4)', () => {
 
 // ---------- the chrome (🔒 rule 4 + Q3) ----------
 
-describe('the outline is a plain document (D5)', () => {
-  const card = (outline: string) => ({ ...SETTINGS, views: [{ type: 'outline', name: 'Outline', outline }, TABLE] })
+describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
+  /** The editor `Editor` builds, stood in for: what it is handed is what is under test here (Editor.test.tsx mounts the real one). */
+  const renderPage = vi.fn(() => <pre className="page-doc">the Page</pre>)
+  const mountPage = async (settings: unknown): Promise<HTMLElement> => {
+    const el = renderFolderView({ path: STAGES, source, onOpenFile, renderPage })
+    feed(settings)
+    await flush()
+    return el
+  }
 
-  it('it shows what the settings hold and names no note of its own accord', async () => {
-    expect(doc(await mount())).toBe('') // Lead Gen and Sales live here; the document does not say so
+  it('a stored `type: outline` shows as the Page tab, and its body is the note editor on `.folder.md`; opening writes nothing', async () => {
+    const el = await mountPage({ ...SETTINGS, views: [{ type: 'outline', name: 'Outline', outline: '- [[Sales]]' }, TABLE] })
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
+    expect(q(el, '.view-page .page-doc').textContent).toBe('the Page')
+    expect(el.querySelector('[aria-label="Filter"]')).toBeNull() // a document, not rows
     expect(write).not.toHaveBeenCalled()
   })
 
-  it('an outline edited outside the app reaches the rendered document on the next snapshot (YAZ-1356)', async () => {
-    const el = await mount(card('- [[Sales]]\n- [[Lead Gen]]'))
-    feed(card('- [[Sales]]\n- [[Lead Gen]]\n- typed by an AI'))
-    expect(doc(el)).toBe('- [[Sales]]\n- [[Lead Gen]]\n- typed by an AI')
-    expect(write).not.toHaveBeenCalled() // a link line is just a link: nothing is tagged
+  it('the first settings write states `type: page`, and the old outline string rides along untouched for the hand move (D39)', async () => {
+    const el = await mountPage({ ...SETTINGS, views: [{ type: 'outline', name: 'Outline', outline: '- [[Sales]]' }, TABLE] })
+    rightClick(tab(el, 'Table'))
+    click(menuItem(el, 'Rename'))
+    const input = byLabel<HTMLInputElement>(el, 'View name')
+    setValue(input, 'Grid')
+    press(input, 'Enter')
+    await flush()
+    expect(written().views).toEqual([{ type: 'page', name: 'Outline', outline: '- [[Sales]]' }, { ...TABLE, name: 'Grid' }])
+  })
+
+  it('at most one Page tab: "+" leaves Page out while there is one, and Duplicate is off on it', async () => {
+    const el = await mountPage(SETTINGS)
+    click(byLabel(el, 'Add view'))
+    expect(texts(el, '.view-popover--menu [role="menuitem"]')).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List'])
+    click(byLabel(el, 'Add view'))
+    rightClick(tab(el, 'Page'))
+    expect((menuItem(el, 'Duplicate') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('a folder with no `.folder.md` yet mounts no editor: there is no file to read until the first write makes one', async () => {
+    const el = renderFolderView({ path: STAGES, source, onOpenFile, renderPage })
+    act(() => source.update(linkResolver(vault(), '/vault', vaultDirs('/vault'), []), vault(), [], true))
+    await flush()
+    expect(el.querySelector('.page-doc')).toBeNull()
+    expect(captured.folder!.renderPage).toBeUndefined()
   })
 })
 
 describe('the chrome is the views chrome', () => {
   it('both skins render and the tabs switch between them', async () => {
     const el = await mount()
-    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table']) // what the settings list is what you get (D3)
-    expect(el.querySelector('.view-outline')).not.toBeNull() // YAZ-820's renderer
+    expect(texts(el, '.view-tab__btn')).toEqual(['Page', 'Table']) // what the settings list is what you get (D3)
+    expect(el.querySelector('.view-page')).not.toBeNull() // YAZ-820's renderer
     expect(el.querySelector('.view-table')).toBeNull()
     selectView(el, 'Table')
     expect(el.querySelector('.view-table')).not.toBeNull()
@@ -567,14 +592,14 @@ describe('the chrome is the views chrome', () => {
   it('switching view writes NOTHING — which view is active is session state, never the file', async () => {
     const el = await mount()
     selectView(el, 'Table')
-    selectView(el, 'Outline')
+    selectView(el, 'Page')
     expect(write).not.toHaveBeenCalled()
   })
 
   it('the tabs EDIT (YAZ-1471): "+" adds, a right-click opens the menu; the outline, a document, still offers no Filter (YAZ-1218)', async () => {
     const el = await mount()
     expect(el.querySelector('[aria-label="Add view"]')).not.toBeNull()
-    rightClick(tab(el, 'Outline'))
+    rightClick(tab(el, 'Page'))
     expect(texts(el, '.ctx-menu[role="menu"] [role="menuitem"]')).toEqual(['Rename', 'Duplicate', 'Delete'])
     expect(el.querySelector('[aria-label="Filter"]')).toBeNull() // documentView — rows-bearing views offer it
     expect(el.querySelector('[aria-label="Sort"]')).not.toBeNull() // the rest of the toolbar is untouched
@@ -598,7 +623,7 @@ describe('an open menu or sheet survives the views list shrinking under it (YAZ-
     expect(el.querySelector('[role="menu"]')).not.toBeNull()
     feed(SETTINGS)
     expect(el.querySelector('[role="menu"]')).toBeNull()
-    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
+    expect(texts(el, '.view-tab__btn')).toEqual(['Page', 'Table'])
   })
 
   it('so does the delete sheet it opened', async () => {
@@ -608,7 +633,7 @@ describe('an open menu or sheet survives the views list shrinking under it (YAZ-
     expect(el.querySelector('[role="dialog"]')).not.toBeNull()
     feed(SETTINGS)
     expect(el.querySelector('[role="dialog"]')).toBeNull()
-    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
+    expect(texts(el, '.view-tab__btn')).toEqual(['Page', 'Table'])
   })
 })
 
@@ -618,19 +643,19 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
   it('a page with a defaultView opens on that view — and opening writes nothing', async () => {
     const el = await mount({ ...SETTINGS, defaultView: 'Table' })
     expect(el.querySelector('.view-table')).not.toBeNull()
-    expect(el.querySelector('.view-outline')).toBeNull()
+    expect(el.querySelector('.view-page')).toBeNull()
     expect(write).not.toHaveBeenCalled()
   })
 
   it('a stale saved name falls back to the first view, silently', async () => {
     const el = await mount({ ...SETTINGS, defaultView: 'Ghost' })
-    expect(el.querySelector('.view-outline')).not.toBeNull()
+    expect(el.querySelector('.view-page')).not.toBeNull()
     expect(write).not.toHaveBeenCalled()
   })
 
   it('Page → Default view is ONE whole-key settings write carrying the name', async () => {
     const el = await mount()
-    click(tab(el, 'Table')) // the outline offers no Properties menu; switching writes nothing
+    click(tab(el, 'Table')) // the Page offers no Properties menu; switching writes nothing
     click(byLabel(el, 'Properties'))
     setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
     await flush()
@@ -673,7 +698,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
   it('an EXTERNAL edit that changes ONLY defaultView rebuilds the def (D4: it rides in the stamp)', async () => {
     const el = await mount()
     feed({ ...SETTINGS, defaultView: 'Table' })
-    click(tab(el, 'Table')) // the outline has no Properties button of its own
+    click(tab(el, 'Table')) // the Page has no Properties button of its own
     click(byLabel(el, 'Properties'))
     expect(byLabel<HTMLSelectElement>(el, 'Default view').value).toBe('Table')
     expect(write).not.toHaveBeenCalled()
@@ -846,8 +871,8 @@ describe('config edits are ONE settings write on the folder', () => {
     const fire = (target: Element, type: string, clientX = 0) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
     const wrap = (name: string): Element => tab(el, name).closest('.view-tab') as Element
     fire(wrap('Table'), 'dragstart')
-    fire(wrap('Outline'), 'dragover', -5)
-    fire(wrap('Outline'), 'drop', -5)
+    fire(wrap('Page'), 'dragover', -5)
+    fire(wrap('Page'), 'drop', -5)
     await flush()
     expect(write).toHaveBeenCalledTimes(1)
     expect(written()).toEqual({ ...SETTINGS, views: [TABLE, SETTINGS.views[0]] })
@@ -856,7 +881,7 @@ describe('config edits are ONE settings write on the folder', () => {
 
   it('a Board deleted through the menu STAYS deleted — nothing puts it back on the next read (D3)', async () => {
     const el = await mount({ ...SETTINGS, views: [...SETTINGS.views, BOARD] })
-    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table', 'Board'])
+    expect(texts(el, '.view-tab__btn')).toEqual(['Page', 'Table', 'Board'])
     rightClick(tab(el, 'Board'))
     click(menuItem(el, 'Delete'))
     click(q(el, '.confirm__btn--danger'))
@@ -864,7 +889,7 @@ describe('config edits are ONE settings write on the folder', () => {
     expect(write).toHaveBeenCalledTimes(1)
     expect(written()).toEqual(SETTINGS)
     feed(written()) // the index echoes our own write back
-    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
+    expect(texts(el, '.view-tab__btn')).toEqual(['Page', 'Table'])
   })
 
   it('a failed write says so and never takes the block down', async () => {
@@ -957,7 +982,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
 
   it('columns AND views ride in that SAME single write when views are passed', async () => {
     await mount()
-    const views = [{ type: 'outline', name: 'Outline', order: ['[[Sales]]'] }, TABLE]
+    const views = [{ type: 'page', name: 'Page', order: ['[[Sales]]'] }, TABLE]
     act(() => captured.folder!.setColumns(COLUMNS, views))
     await flush()
     expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, columns: COLUMNS, views })
@@ -971,7 +996,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
    */
   it('carries an in-flight defaultView choice the index has not echoed back yet', async () => {
     const el = await mount()
-    click(tab(el, 'Table')) // the outline offers no Properties menu
+    click(tab(el, 'Table')) // the Page offers no Properties menu
     click(byLabel(el, 'Properties'))
     setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
     await flush()
@@ -990,7 +1015,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     act(() => captured.folder!.setColumns(COLUMNS))
     await flush()
     expect(q(el, '[role="alert"]').textContent).toContain('disk full')
-    expect(el.querySelector('.view-outline')).not.toBeNull()
+    expect(el.querySelector('.view-page')).not.toBeNull()
 
     feed(SETTINGS, [...vault(), rec('/vault/stages/Expansion.md')])
     await flush()

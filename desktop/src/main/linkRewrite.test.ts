@@ -53,14 +53,14 @@ describe('rewriteIds: an ID becomes its new ID wherever a file names it', () => 
     expect(rewriteIds(before, ONE)).toEqual({ content: before, changed: 0 })
   })
 
-  it('the link places of a folder’s settings: a view’s order, an outline line, a column’s target', () => {
+  it('the link places of a folder’s settings: a view’s order and a column’s target; an old outline string is no link place (YAZ-4584 D40)', () => {
     const before =
       '---\nid: YAZ-4\nfolder_settings:\n  columns:\n    Parent:\n      type: text\n      target: "[[YAZ-1]]"\n  views:\n    - type: table\n      name: All\n      order:\n        - "[[YAZ-1]]"\n        - "[[YAZ-2]]"\n    - type: outline\n      name: Map\n      outline: |-\n        - [[YAZ-1]]\n            - see [[YAZ-1]] in prose\n---\n'
     const { content, changed } = rewriteIds(before, ONE)
     expect(content).toContain('target: "[[YAZ-9]]"')
     expect(content).toContain('- "[[YAZ-9]]"\n        - "[[YAZ-2]]"')
-    expect(content).toContain('- [[YAZ-9]]\n            - see [[YAZ-1]] in prose')
-    expect(changed).toBe(3)
+    expect(content).toContain('- [[YAZ-1]]\n            - see [[YAZ-1]] in prose')
+    expect(changed).toBe(2)
   })
 
   it('the file’s own `id:` line only when the caller asks (`own`)', () => {

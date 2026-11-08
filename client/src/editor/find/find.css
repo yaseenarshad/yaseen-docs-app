@@ -24,8 +24,8 @@
   color: #1f1f1f;
 }
 
-/* A zero-height dock keeps the floating bar out of document flow. Notes anchor to their page;
-   outlines stick to their outer editor scroller so the bar follows the reader through the view. */
+/* A zero-height dock keeps the floating bar out of document flow. Notes anchor to their page; a
+   folder's Page tab (YAZ-4584) sticks to the folder page's scroller so the bar follows the reader. */
 .find-bar-dock {
   z-index: 3;
   height: 0;
@@ -39,7 +39,7 @@
   left: 0;
 }
 
-.find-bar-dock--outline {
+.find-bar-dock--page {
   position: sticky;
   top: 8px;
 }

@@ -147,12 +147,12 @@ describe('views: parseViews\'s own assertion, mirrored', () => {
   it('keeps view order, and unknown types and extra keys pass through untouched', () => {
     const settings = settingsOf({
       views: [
-        { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
+        { type: 'page', name: 'Page', order: ['[[CAC]]', '[[LTV]]'] },
         { type: 'gantt', name: 'Table', columnSize: { owner: 120 }, zoom: 3 },
       ],
     })
     expect(settings.views).toEqual([
-      { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
+      { type: 'page', name: 'Page', order: ['[[CAC]]', '[[LTV]]'] },
       { type: 'gantt', name: 'Table', columnSize: { owner: 120 }, zoom: 3 },
     ])
     expect(settings.views[1].zoom).toBe(3)
@@ -183,15 +183,15 @@ describe('views: parseViews\'s own assertion, mirrored', () => {
     expect(settings.problems).toEqual([])
   })
 
-  it('a string outline rides along verbatim (🔒 D2: the view IS its markdown bullet list)', () => {
+  it('a stored Outline reads as the Page tab, its name kept and its string riding along verbatim until the hand move (YAZ-4584 D38, D39)', () => {
     const settings = settingsOf({ views: [{ type: 'outline', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }] })
-    expect(settings.views).toEqual([{ type: 'outline', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }])
+    expect(settings.views).toEqual([{ type: 'page', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }])
     expect(settings.problems).toEqual([])
   })
 
-  it('a non-string outline is a problem and only THAT key is dropped — the view stays', () => {
+  it('a non-string outline is a problem and only THAT key is dropped — the view stays, as the Page tab', () => {
     const settings = settingsOf({ views: [{ type: 'outline', name: 'Outline', outline: ['[[CAC]]'], limit: 3 }] })
-    expect(settings.views).toEqual([{ type: 'outline', name: 'Outline', limit: 3 }])
+    expect(settings.views).toEqual([{ type: 'page', name: 'Outline', limit: 3 }])
     expect(settings.problems).toHaveLength(1)
     expect(settings.problems[0]).toContain('outline')
   })
@@ -262,7 +262,7 @@ describe('writeFolderSettings: ONE key, through the shared writer', () => {
     const raw = {
       columns: { owner: { kind: 'text' }, kpis: { kind: 'multi-link', target: '[[KPIs]]' } },
       views: [
-        { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
+        { type: 'page', name: 'Page', order: ['[[CAC]]', '[[LTV]]'] },
         { type: 'table', name: 'Table', order: ['file.name', 'owner'], columnSize: { owner: 120 }, zoom: 3 },
       ],
     }

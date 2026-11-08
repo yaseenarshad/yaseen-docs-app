@@ -1,7 +1,11 @@
 /**
- * STAND-IN for 10D's `pageViewIndex` (YAZ-4587 calls it; 10D's file replaces this one at merge, same signature):
- * the index of the folder's Page tab — the view whose type is `page`, or a stored `outline` (D38) — or -1.
+ * The Page tab (YAZ-4584 D38): the folder's own document, the body of its `.folder.md`, in the note
+ * editor. It replaced the Outline view, and a stored `type: outline` reads as `page` (`folderSettings`).
+ * A folder has at most one.
  */
+export const PAGE_VIEW_TYPE = 'page'
+
+/** The index of a folder's Page view, or -1 (the sidebar's page row opens the folder on it, YAZ-4584). */
 export function pageViewIndex(views: readonly { type: string }[]): number {
-  return views.findIndex((v) => v.type === 'page' || v.type === 'outline')
+  return views.findIndex((view) => view.type === PAGE_VIEW_TYPE || view.type === 'outline')
 }

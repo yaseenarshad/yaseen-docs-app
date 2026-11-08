@@ -401,8 +401,8 @@ export interface CreateCrepeOptions {
   /** First-class images (YAZ-1656): root + note path for src resolution, the lightbox opener, the paste notice. Absent → stock `<img>`, and pasted image bytes are not written. */
   image?: ImageOptions
   /**
-   * Feature overrides for a NON-note instance (YAZ-901's bullets-only outline editor passes
-   * `outlineFeatures`). The note editor passes none and gets `featureConfig.ts`'s allowlist
+   * Feature overrides for a NON-note instance (a drawing's text box). The note editor passes
+   * none and gets `featureConfig.ts`'s allowlist
    * verbatim — which is what `featureConfig.test.ts` keeps honest.
    */
   features?: Partial<Record<CrepeFeature, boolean>>

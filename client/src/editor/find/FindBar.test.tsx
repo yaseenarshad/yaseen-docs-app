@@ -4,8 +4,8 @@
  * (findInPage.test.ts proves the engine; this file proves the bar and the keyboard surface).
  *
  * Claim rule under test (locked in YAZ-967): CMD+F is a window capture-phase listener per bar.
- * An `outline` bar claims only while focus is inside its own host element; the `note` bar
- * claims whenever focus is NOT inside any `.view-outline-editor`. At most one of each is
+ * A `page` bar (a folder's Page tab, YAZ-4584) claims only while focus is inside its own host element; the `note` bar
+ * claims whenever focus is NOT inside any `.folder-page-doc`. At most one of each is
  * mounted, so exactly one bar answers.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -37,7 +37,7 @@ async function mountEditor(markdown: string, opts: Omit<CreateCrepeOptions, 'roo
   return { crepe, el, view: view as EditorView }
 }
 
-function renderBar(channel: FindChannel, scope: 'note' | 'outline', host: HTMLElement) {
+function renderBar(channel: FindChannel, scope: 'note' | 'page', host: HTMLElement) {
   const el = document.createElement('div')
   document.body.appendChild(el)
   const root = createRoot(el)
@@ -132,17 +132,17 @@ describe('claim rule with a note editor and an outline view mounted together', (
     noteMount.appendChild(note.el)
     const outlineChannel = createFindChannel()
     const outlineHost = document.createElement('div')
-    outlineHost.className = 'view-outline-editor'
+    outlineHost.className = 'folder-page-doc'
     document.body.appendChild(outlineHost)
     const outline = await mountEditor('* outline apple', { find: outlineChannel })
     outlineHost.appendChild(outline.el)
     renderBar(noteChannel, 'note', note.el)
-    const outlineBarEl = renderBar(outlineChannel, 'outline', outlineHost)
+    const outlineBarEl = renderBar(outlineChannel, 'page', outlineHost)
 
     outline.view.dom.focus()
     pressCmdF(outline.view.dom)
     expect(outlineChannel.getState().open).toBe(true)
-    expect(outlineBarEl.querySelector('.find-bar-dock--outline > .find-bar')).not.toBeNull()
+    expect(outlineBarEl.querySelector('.find-bar-dock--page > .find-bar')).not.toBeNull()
     expect(noteChannel.getState().open).toBe(false)
 
     act(() => outlineChannel.close())
@@ -178,12 +178,12 @@ describe('claim rule beside a code tab (YAZ-3451)', () => {
   it("an outline view's bar leaves CMD+F alone while the focus is in a code tab (YAZ-3464)", () => {
     const outlineChannel = createFindChannel()
     const outlineHost = document.createElement('div')
-    outlineHost.className = 'view-outline-editor'
+    outlineHost.className = 'folder-page-doc'
     const outlineInput = document.createElement('div')
     outlineInput.tabIndex = 0
     outlineHost.appendChild(outlineInput)
     document.body.appendChild(outlineHost)
-    renderBar(outlineChannel, 'outline', outlineHost)
+    renderBar(outlineChannel, 'page', outlineHost)
     const codeTab = document.createElement('section')
     codeTab.className = 'editor editor--code'
     const monacoInput = document.createElement('textarea')

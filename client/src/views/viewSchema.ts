@@ -34,8 +34,6 @@ export interface ViewDef {
   name: string
   filters?: FilterNode
   order?: string[]
-  /** 🔒 D2 (YAZ-867): an outline view's whole document — ONE markdown bullet list (`views/outlineDoc.ts`). */
-  outline?: string
   sort?: SortSpec[]
   /** Ordered levels, outer first; only the first three are honoured (YAZ-745, `MAX_GROUP_LEVELS` since YAZ-4531). The single-object form stays valid. */
   groupBy?: GroupBySpec | GroupBySpec[]

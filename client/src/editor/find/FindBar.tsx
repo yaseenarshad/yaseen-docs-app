@@ -5,11 +5,11 @@
  * commands; while the channel is closed there is no bar at all.
  *
  * 🔒 THE CLAIM RULE (locked in YAZ-967, visibility amendment in YAZ-970) is why CMD+F is a WINDOW
- * CAPTURE listener, one per bar and with no coordinator between them: an `outline` bar claims the
- * key while focus stands inside its own host, the `note` bar claims it whenever focus is NOT inside
- * any `.view-outline-editor` — and a HIDDEN editor never claims. A folder's tab has no note mount
- * at all, so there CMD+F belongs to the outline even from the sidebar or the title. Exactly one
- * bar answers; the other declines. Neither bar claims while focus stands in a code tab
+ * CAPTURE listener, one per bar and with no coordinator between them: a `page` bar (a folder's Page
+ * tab, YAZ-4584) claims the key while focus stands inside its own host, the `note` bar claims it
+ * whenever focus is NOT inside any `.folder-page-doc` — and a HIDDEN editor never claims. With no
+ * other note editor showing (a folder page and no note window), CMD+F belongs to the Page even from
+ * the sidebar or the title. Exactly one bar answers; the other declines. Neither bar claims while focus stands in a code tab
  * (`.editor--code`): there CMD+F is Monaco's own find box (YAZ-3451, YAZ-3464).
  *
  * Focus: the input does not exist yet on the CMD+F that OPENS the bar, so that focus lands in a
@@ -26,8 +26,8 @@ export interface FindBarProps {
   /** The host's one channel per editor mount — the very instance `createCrepe` was given. */
   channel: FindChannel
   /** Which half of the claim rule this bar answers CMD+F by (🔒 YAZ-967). */
-  scope: 'note' | 'outline'
-  /** The outline bar's own view element: its claim IS focus standing inside it. Unread for `note`. */
+  scope: 'note' | 'page'
+  /** The Page bar's own editor mount: its claim IS focus standing inside it. Unread for `note`. */
   hostRef: RefObject<HTMLElement | null>
 }
 
@@ -60,14 +60,15 @@ export function FindBar({ channel, scope, hostRef }: FindBarProps) {
       const active = document.activeElement
       // checkVisibility is absent under jsdom, where nothing is ever hidden — hence the ?? true.
       const shown = (el: Element | null): boolean => el instanceof HTMLElement && (el.checkVisibility?.() ?? true)
-      // Never from a code tab (YAZ-3451, YAZ-3464): its ⌘F is Monaco's find box. A note or an outline view in the other place would take it first.
+      // Never from a code tab (YAZ-3451, YAZ-3464): its ⌘F is Monaco's find box. A note or a Page tab in the other place would take it first.
       const inCode = active instanceof Element && active.closest('.editor--code') !== null
+      const host = hostRef.current
+      /** Another note editor shows: the Page's own mount is an `.editor-mount` too, so it does not count. */
+      const otherNote = (): boolean => [...document.querySelectorAll('.editor-mount .ProseMirror')].some((el) => !host?.contains(el) && shown(el))
       const claims =
-        scope === 'outline'
-          ? shown(hostRef.current) &&
-            ((active !== null && hostRef.current !== null && hostRef.current.contains(active)) ||
-              (!inCode && !shown(document.querySelector('.editor-mount .ProseMirror'))))
-          : shown(hostRef.current) && !inCode && (!(active instanceof Element) || active.closest('.view-outline-editor') === null)
+        scope === 'page'
+          ? shown(host) && ((active !== null && host !== null && host.contains(active)) || (!inCode && !otherNote()))
+          : shown(host) && !inCode && (!(active instanceof Element) || active.closest('.folder-page-doc') === null)
       if (!claims) return
       event.preventDefault()
       event.stopPropagation()
@@ -82,8 +83,8 @@ export function FindBar({ channel, scope, hostRef }: FindBarProps) {
   /** The buttons act on the search; the caret stays where the reader left it, in the query. */
   const hold = (event: MouseEvent): void => event.preventDefault()
 
-  // Keep the zero-height dock mounted while closed: OutlineEditor appends its editor in an effect,
-  // so this existing first child is what gives the outline's sticky bar its top anchor.
+  // Keep the zero-height dock mounted while closed: the Page tab's editor appends itself in an effect,
+  // so this existing first child is what gives the Page's sticky bar its top anchor (YAZ-4584).
   return (
     <div className={`find-bar-dock find-bar-dock--${scope}`}>
       {state.open && (

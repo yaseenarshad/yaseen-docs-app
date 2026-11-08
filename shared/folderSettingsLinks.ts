@@ -12,56 +12,18 @@ import { isRecord } from './guards'
  */
 export const FOLDER_SETTINGS_KEY = 'folder_settings'
 
-/** Exactly a wikilink, nothing around it. */
-const EXACT_WIKILINK_RE = /^\[\[[^[\]]*\]\]$/
-
-/** THE LINK RULE of an outline line: decided on spelling alone, long before anything resolves the line (YAZ-900). */
-export const isExactWikilink = (text: string): boolean => EXACT_WIKILINK_RE.test(text.trim())
-
-/**
- * A bullet line of an outline (`client/src/views/outlineDoc.ts` owns the grammar) as three pieces:
- * the whole prefix (so a rewrite can splice by offset), the indentation alone (depth) and the text,
- * trimmed of the trailing whitespace and any `\r`. A bare marker is an empty line; `-foo`, with no
- * gap, is not a bullet at all (nor is it to CommonMark).
- */
-export const BULLET_LINE = /^(([ \t]*)[-*+](?:[ \t]+|(?=\r?$)))(.*?)[ \t]*\r?$/
-
-/**
- * A rename walking INTO the outline (YAZ-900): every LINE that is exactly a wikilink is offered to
- * `map`, `undefined` meaning leave it — the same leaf contract `mapFolderSettingsLinks` uses
- * for an `order` entry, so an outline link and an order entry cannot spell themselves differently.
- * A wikilink inside prose is NOT a leaf and is never touched. Undefined when no line changed;
- * every other byte — markers, indentation, blank lines, prose — survives, since only the link text
- * is spliced.
- */
-export function mapOutlineLinks(outline: string, map: (link: string) => string | undefined): string | undefined {
-  let changed = false
-  const out = outline.split('\n').map((raw) => {
-    const match = BULLET_LINE.exec(raw)
-    if (match === null || !isExactWikilink(match[3])) return raw
-    const next = map(match[3])
-    if (next === undefined) return raw
-    changed = true
-    // Splice the link text alone: the marker, the indentation and any trailing bytes stay as written.
-    const lead = match[1].length
-    return raw.slice(0, lead) + next + raw.slice(lead + match[3].length)
-  })
-  return changed ? out.join('\n') : undefined
-}
-
 /**
  * A rename has to walk INTO `folder_settings` — the one reserved key with app-defined link
  * semantics (🔒 Q1) — and the rule that no surface re-parses that key holds for the rename engine
  * too: it comes through here, and the key STRING rides back in the result rather than being spelled
  * anywhere else.
  *
- * The link-bearing leaves are exactly four: every view's [D5] `order` entry (🔒 Q3), every
- * outline LINE that is exactly a wikilink (🔒 D2, YAZ-900 — the line rule stays `outlineDoc`'s,
- * never re-spelled here), every view's `fills[].note` (YAZ-4536) and every column's belongs-to
- * `target` (🔒 Q2) — the places this
- * vocabulary spells a wikilink. Each string leaf is offered to `map`; `undefined` means LEAVE IT,
- * and a wikilink sitting inside an outline line's PROSE is not a leaf at all. Everything else in the
- * value — unknown view types, extra keys, unusable shapes — rides along verbatim.
+ * The link-bearing leaves are exactly three: every view's [D5] `order` entry (🔒 Q3), every view's
+ * `fills[].note` (YAZ-4536) and every column's belongs-to `target` (🔒 Q2) — the places this
+ * vocabulary spells a wikilink. Each string leaf is offered to `map`; `undefined` means LEAVE IT.
+ * Everything else in the value — unknown view types, extra keys, unusable shapes, an old Outline's
+ * `outline` string (YAZ-4584 D40: the folder's document is its Page, the `.folder.md` body, whose
+ * links a rename rewrites as a note's) — rides along verbatim.
  *
  * Deliberately over the RAW value, not the tolerant read: `folderSettings()` normalises and
  * DROPS what it cannot use, so a rewrite built on it would quietly delete a hand-written shape,
@@ -90,13 +52,6 @@ export function mapFolderSettingsLinks(
       if (Array.isArray(view.order)) next.order = view.order.map(mapLink)
       // A cell or row fill names its note by a link (YAZ-4536 D3): a rename keeps the fill on its note.
       if (Array.isArray(view.fills)) next.fills = view.fills.map((fill: unknown) => (isRecord(fill) && 'note' in fill ? { ...fill, note: mapLink(fill.note) } : fill))
-      if (typeof view.outline === 'string') {
-        const outline = mapOutlineLinks(view.outline, map)
-        if (outline !== undefined) {
-          changed = true
-          next.outline = outline
-        }
-      }
       return next
     })
   }
