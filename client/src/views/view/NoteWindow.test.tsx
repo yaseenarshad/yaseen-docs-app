@@ -128,7 +128,9 @@ describe('Open in a window (YAZ-4547)', () => {
   it('the row menu item, after "Open in right panel", opens the card on that note; the table marks its row', () => {
     mount(SORTED, {}, testFolderHost({ openRight: vi.fn(), renderNoteEditor: (p) => <div className="stub-editor">{p}</div> }))
     rightClick(rowCell('D'))
-    expect(menuItems().map((item) => item.textContent).slice(-2)).toEqual(['Open in right panel', 'Open in a window'])
+    // The page actions end with the two pane opens; the table's Fill items (YAZ-4536) follow in their own group.
+    const labels = menuItems().map((item) => item.textContent)
+    expect(labels.slice(labels.indexOf('Open in right panel'), labels.indexOf('Open in right panel') + 2)).toEqual(['Open in right panel', 'Open in a window'])
     click(menuItems().find((item) => item.textContent === 'Open in a window')!)
 
     expect(card()).not.toBeNull()
