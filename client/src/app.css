@@ -417,6 +417,11 @@ button {
   align-items: center;
 }
 
+/* The add form is 371px with its type (YAZ-4551): on a narrow note, Add and Cancel wrap to the next line (YAZ-4544). */
+.frontmatter-panel__new {
+  flex-wrap: wrap;
+}
+
 .frontmatter-panel__name {
   width: 150px;
 }
