@@ -74,10 +74,51 @@ export function monthWeeks(year: number, month: number): DayKey[][] {
   )
 }
 
+/** A day key as a local `Date` at midnight, moved by `days` and `months`; `Date` rolls the overflow into the next month or year. */
+const localDay = (day: DayKey, days = 0, months = 0): Date =>
+  new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1 + months, Number(day.slice(8, 10)) + days)
+
+/** The day `days` after `day` (before it when negative): the week view's ‹ › step 7 (YAZ-4558 D22). */
+export const addDays = (day: DayKey, days: number): DayKey => formatDate(localDay(day, days).getTime(), 'YYYY-MM-DD')
+
+/** The 1st of the month `months` after the month of `day`: the month grid's ‹ › (YAZ-4558 D22). */
+export const monthStart = (day: DayKey, months: number): DayKey => formatDate(localDay(`${day.slice(0, 8)}01`, 0, months).getTime(), 'YYYY-MM-DD')
+
+/** The 7 days, Monday first, of the week that holds `day` (YAZ-4558 D22). */
+export function weekDays(day: DayKey): DayKey[] {
+  const monday = addDays(day, -((localDay(day).getDay() + 6) % 7))
+  return Array.from({ length: 7 }, (_, i) => addDays(monday, i))
+}
+
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const monthDay = (day: DayKey): string => `${SHORT_MONTHS[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8, 10))}`
 
 /** A day as a move's toast names it (YAZ-4541 S6): `Dec 9, 2026`. */
-export const dayLabel = (day: DayKey): string => `${SHORT_MONTHS[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8, 10))}, ${day.slice(0, 4)}`
+export const dayLabel = (day: DayKey): string => `${monthDay(day)}, ${day.slice(0, 4)}`
+
+/** A week's title (YAZ-4558 D22): `Nov 30 – Dec 6, 2026`; a week across two years names both. */
+export function weekLabel(days: readonly DayKey[]): string {
+  const first = days[0]
+  const last = days[days.length - 1]
+  return `${first.slice(0, 4) === last.slice(0, 4) ? monthDay(first) : dayLabel(first)} – ${dayLabel(last)}`
+}
+
+/**
+ * A week day's cards (YAZ-4558 D22): the ones with a time first, in the order of the time they show
+ * (`timeOf`, `HH:mm` sorts as text), then the rest in row order. The sort is stable, so equal times
+ * keep the engine's order.
+ */
+export function timeFirst(rows: readonly Row[], key: string): Row[] {
+  const timed: { row: Row; time: string }[] = []
+  const rest: Row[] = []
+  for (const row of rows) {
+    const time = timeOf(row.record.properties[key])
+    if (time === null) rest.push(row)
+    else timed.push({ row, time })
+  }
+  timed.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
+  return [...timed.map((t) => t.row), ...rest]
+}
 
 /** Today, as a day key in local time: the day the grid rings (S7). */
 export const todayKey = (): DayKey => formatDate(Date.now(), 'YYYY-MM-DD')

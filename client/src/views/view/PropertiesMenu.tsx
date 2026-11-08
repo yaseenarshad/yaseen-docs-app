@@ -319,6 +319,24 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
             <span>Show by</span>
             <CalendarShowBy def={def} view={view} viewIndex={viewIndex} columns={dateColumns} onUpdate={onUpdate} />
           </label>
+          <label className="view-settings-row">
+            <span>Card titles</span>
+            <select
+              className="view-select"
+              aria-label="Card titles"
+              value={view.cardTitles === 'wrap' ? 'wrap' : 'clip'}
+              onChange={(e) =>
+                onUpdate((d) => {
+                  // Clip is the default: it removes the key (YAZ-4558 D23).
+                  if (e.target.value === 'wrap') d.views[viewIndex].cardTitles = 'wrap'
+                  else delete d.views[viewIndex].cardTitles
+                })
+              }
+            >
+              <option value="clip">Clip …</option>
+              <option value="wrap">Wrap</option>
+            </select>
+          </label>
         </>
       )}
       {view.type === 'list' && (

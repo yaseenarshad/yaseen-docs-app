@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
-import { bucketByDay, calendarDateKey, dateColumns, dayOf, monthWeeks, movedDate, timeOf, dayLabel } from './calendar'
+import { addDays, bucketByDay, calendarDateKey, dateColumns, dayOf, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekLabel } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -120,6 +120,39 @@ describe('monthWeeks (YAZ-4540 D11): Monday first', () => {
     // March 2026 starts on a Sunday: 6 + 31 days need six weeks.
     expect(monthWeeks(2026, 2)).toHaveLength(6)
     expect(monthWeeks(2026, 2)[0][0]).toBe('2026-02-23')
+  })
+})
+
+describe('the week view (YAZ-4558 D22)', () => {
+  it('weekDays: Monday to Sunday of the week that holds the day', () => {
+    expect(weekDays('2026-12-10')).toEqual(['2026-12-07', '2026-12-08', '2026-12-09', '2026-12-10', '2026-12-11', '2026-12-12', '2026-12-13'])
+    // A Monday and a Sunday stay in their own week; a week may cross a month and a year.
+    expect(weekDays('2026-11-30')[0]).toBe('2026-11-30')
+    expect(weekDays('2026-12-06')).toEqual(weekDays('2026-11-30'))
+    expect(weekDays('2027-01-01')).toEqual(['2026-12-28', '2026-12-29', '2026-12-30', '2026-12-31', '2027-01-01', '2027-01-02', '2027-01-03'])
+  })
+  it('addDays steps by days across months; monthStart steps by months across years', () => {
+    expect(addDays('2026-11-30', 7)).toBe('2026-12-07')
+    expect(addDays('2026-12-07', -7)).toBe('2026-11-30')
+    expect(addDays('2026-12-28', 7)).toBe('2027-01-04')
+    expect(monthStart('2026-12-10', 1)).toBe('2027-01-01')
+    expect(monthStart('2026-01-31', -1)).toBe('2025-12-01')
+    expect(monthStart('2026-12-10', 0)).toBe('2026-12-01')
+  })
+  it('weekLabel names the range: one year once, two years both', () => {
+    expect(weekLabel(weekDays('2026-11-30'))).toBe('Nov 30 – Dec 6, 2026')
+    expect(weekLabel(weekDays('2026-12-10'))).toBe('Dec 7 – Dec 13, 2026')
+    expect(weekLabel(weekDays('2027-01-01'))).toBe('Dec 28, 2026 – Jan 3, 2027')
+  })
+  it('timeFirst: the cards with a time first, in time order, then the rest in row order', () => {
+    const rows = [
+      row('plain 1', { due: '2026-12-08' }),
+      row('late', { due: '2026-12-08 15:00' }),
+      row('plain 2', { due: '2026-12-08' }),
+      row('early', { due: '2026-12-08 09:15' }),
+      row('also early', { due: '2026-12-08 09:15' }),
+    ]
+    expect(timeFirst(rows, 'due').map((r) => r.record.title)).toEqual(['early', 'also early', 'late', 'plain 1', 'plain 2'])
   })
 })
 

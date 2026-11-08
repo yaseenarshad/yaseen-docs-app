@@ -333,3 +333,124 @@ describe('"Show by" works out the date columns once (YAZ-4544, finding 9)', () =
     expect(vi.mocked(dateColumns)).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('calendar week view (YAZ-4558 D22)', () => {
+  const WEEK = `${CALENDAR}    calendarScale: week\n`
+  const scaleBtn = (el: ParentNode, name: string) => q<HTMLButtonElement>(el, `[aria-label="Calendar scale"] [data-scale="${name}"]`)
+  const shownDays = (el: ParentNode) => [...el.querySelectorAll('.view-cal__day')].map((d) => d.getAttribute('data-day'))
+
+  it('the Month / Week switch writes calendarScale: week; Month deletes it (absent = month)', () => {
+    const { el, yaml } = mount(CALENDAR)
+    expect(scaleBtn(el, 'month').getAttribute('aria-pressed')).toBe('true')
+    expect(yaml()).not.toContain('calendarScale')
+    click(scaleBtn(el, 'week'))
+    expect(yaml()).toContain('calendarScale: week')
+    expect(scaleBtn(el, 'week').getAttribute('aria-pressed')).toBe('true')
+    expect(shownDays(el)).toEqual(['2026-12-07', '2026-12-08', '2026-12-09', '2026-12-10', '2026-12-11', '2026-12-12', '2026-12-13'])
+    click(scaleBtn(el, 'month'))
+    expect(yaml()).not.toContain('calendarScale')
+    expect(q(el, '.view-cal__month').textContent).toBe('December 2026')
+    expect(shownDays(el)).toHaveLength(35)
+  })
+
+  it('reads calendarScale: week: Monday to Sunday of today, today ringed, the range as the title', () => {
+    const { el } = mount(WEEK)
+    expect(q(el, '.view-cal__month').textContent).toBe('Dec 7 – Dec 13, 2026')
+    expect(q(el, '.view-cal__grid').getAttribute('aria-label')).toBe('Dec 7 – Dec 13, 2026')
+    expect([...el.querySelectorAll('.view-cal__weekday')].map((d) => d.textContent)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
+    expect(day(el, '2026-12-10').getAttribute('aria-current')).toBe('date')
+    expect(el.querySelectorAll('.view-cal__day--other')).toHaveLength(0)
+    expect(titlesIn(q(el, '.view-cal__tray'))).toEqual(['Nothing'])
+  })
+
+  it('‹ and › step one week, across a month and a year; Today comes back', () => {
+    const { el } = mount(WEEK)
+    click(q(el, '[aria-label="Previous week"]'))
+    expect(q(el, '.view-cal__month').textContent).toBe('Nov 30 – Dec 6, 2026')
+    expect(shownDays(el)[0]).toBe('2026-11-30')
+    // Late zone has a time (23:30Z), so it comes before Bare here; Month keeps the row order.
+    expect(titlesIn(day(el, '2026-12-03'))).toEqual(['Late zone', 'Bare'])
+    for (let i = 0; i < 4; i++) click(q(el, '[aria-label="Next week"]'))
+    expect(q(el, '.view-cal__month').textContent).toBe('Dec 28, 2026 – Jan 3, 2027')
+    click(q(el, '[aria-label="Today"]'))
+    expect(q(el, '.view-cal__month').textContent).toBe('Dec 7 – Dec 13, 2026')
+  })
+
+  it('a day shows every card, no "+N more"; the timed ones first, in time order', () => {
+    const records = [
+      ...RECORDS,
+      rec('Plain 1', { due: '2026-12-08' }),
+      rec('Late', { due: '2026-12-08 15:00' }),
+      rec('Plain 2', { due: '2026-12-08' }),
+      rec('Early', { due: '2026-12-08 09:15' }),
+    ]
+    const { el } = mount(WEEK, { records })
+    expect(titlesIn(day(el, '2026-12-08'))).toEqual(['Early', 'Late', 'Plain 1', 'Plain 2'])
+    click(q(el, '[aria-label="Next week"]'))
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D', 'Busy E'])
+    expect(el.querySelector('.view-cal__grid .view-cal__more')).toBeNull()
+  })
+
+  it('a drag to a day writes it and keeps the time; "+" on a day makes a note with that date', async () => {
+    const create = vi.fn(() => Promise.resolve('/vault/Untitled.md'))
+    const { el } = mount(WEEK, { folder: testFolderHost({ create }) })
+    click(q(el, '[aria-label="Previous week"]'))
+    drag(cardOf(el, 'Timed'), day(el, '2026-12-01'))
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Timed.md', 'due', '2026-12-01 10:30')
+    expect(titlesIn(day(el, '2026-12-01'))).toEqual(['Timed'])
+    await flush()
+    click(q(day(el, '2026-12-02'), '[aria-label="New note on 2026-12-02"]'))
+    await flush()
+    expect(create).toHaveBeenCalledExactlyOnceWith({ properties: { due: '2026-12-02' } }, undefined)
+  })
+
+  it('a move in Week says "Moved to" with Undo, as in Month', async () => {
+    const onNotice = vi.fn()
+    const { el } = mount(WEEK, { folder: testFolderHost({ onNotice }) })
+    click(q(el, '[aria-label="Previous week"]'))
+    drag(cardOf(el, 'Bare'), day(el, '2026-12-01'))
+    await flush()
+    expect(onNotice).toHaveBeenCalledWith('Moved to Dec 1, 2026', 'info', 'undo', expect.objectContaining({ label: 'Undo' }))
+  })
+})
+
+describe('calendar card titles: Clip or Wrap (YAZ-4558 D23)', () => {
+  const LONG = 'A very long title that will not fit in one narrow calendar day'
+  const records = [...RECORDS, rec(LONG, { due: '2026-12-09' })]
+  const cardTitles = (el: ParentNode) => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Card titles"]')
+  function choose(select: HTMLSelectElement, value: string) {
+    act(() => {
+      select.value = value
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    draw()
+  }
+
+  it('Clip by default: one line, and the full title in a tooltip', () => {
+    const { el } = mount(CALENDAR, { records })
+    const card = cardOf(el, LONG)
+    expect(card.classList.contains('view-cal__card--wrap')).toBe(false)
+    expect(q(card, '.view-cal__card-title').getAttribute('title')).toBe(LONG)
+  })
+
+  it('Properties › Calendar "Card titles" writes cardTitles: wrap; Clip deletes it (absent = clip)', () => {
+    const { el, yaml } = mount(CALENDAR, { records })
+    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    expect(cardTitles(el).value).toBe('clip')
+    expect([...cardTitles(el).options].map((o) => o.textContent)).toEqual(['Clip …', 'Wrap'])
+    choose(cardTitles(el), 'wrap')
+    expect(yaml()).toContain('cardTitles: wrap')
+    expect(cardOf(el, LONG).classList.contains('view-cal__card--wrap')).toBe(true)
+    choose(cardTitles(el), 'clip')
+    expect(yaml()).not.toContain('cardTitles')
+    expect(cardOf(el, LONG).classList.contains('view-cal__card--wrap')).toBe(false)
+  })
+
+  it('Wrap applies in Month and in Week; a wrapped card needs no tooltip', () => {
+    const { el } = mount(`${CALENDAR}    cardTitles: wrap\n`, { records })
+    expect(cardOf(el, LONG).classList.contains('view-cal__card--wrap')).toBe(true)
+    expect(q(cardOf(el, LONG), '.view-cal__card-title').getAttribute('title')).toBeNull()
+    click(q(el, '[aria-label="Calendar scale"] [data-scale="week"]'))
+    expect(cardOf(el, LONG).classList.contains('view-cal__card--wrap')).toBe(true)
+  })
+})

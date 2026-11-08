@@ -1,6 +1,6 @@
 import { type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from 'react'
 import { openTarget } from '../../lib/openGesture'
-import { type DayKey, bucketByDay, monthWeeks, timeOf, todayKey } from '../calendar'
+import { type DayKey, bucketByDay, addDays, monthStart, monthWeeks, timeFirst, timeOf, todayKey, weekDays, weekLabel } from '../calendar'
 import { type Row, propertyLabel } from '../engine'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
@@ -24,6 +24,12 @@ export interface CalendarViewProps {
   moveError: { path: string; message: string } | null
   /** "+" on a day (S10): a new note with that date. */
   onNewOnDay?: (day: DayKey) => void
+  /** The tab's `calendarScale` (YAZ-4558 D22): a month grid, or one week of 7 tall days. */
+  scale: 'month' | 'week'
+  /** The Month / Week switch: ViewsPane writes `calendarScale` (Month deletes it). */
+  onScale: (scale: 'month' | 'week') => void
+  /** `cardTitles: wrap` (YAZ-4558 D23): titles take more lines and the day grows; else one line with "…". */
+  wrap?: boolean
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -34,6 +40,10 @@ const DAY_CARDS = 3
 const TRAY_CARDS = 20
 /** The drop id of the "No date" tray; a day's id is its key. */
 const NO_DATE = 'none'
+const SCALES = [
+  ['month', 'Month'],
+  ['week', 'Week'],
+] as const
 
 /**
  * The calendar view (YAZ-4540, YAZ-949): a month grid, Monday first (D11), with ‹, › and Today.
@@ -41,20 +51,27 @@ const NO_DATE = 'none'
  * "+N more", which opens the whole day in place. Today's date wears a ring (S7). A plain click opens
  * the note in a background tab, ⌥-click in the right panel, Enter in this tab (D11). Dragging a card
  * to a day writes that day and keeps the time (D4); the "No date" tray below takes a card (its date
- * goes) and gives one. Only the drag and the month are state here: the rows go into days ONCE per
+ * goes) and gives one. Only the drag and the shown day are state here: the rows go into days ONCE per
  * rows change, in a `useMemo`, and a dragover sets state only when the hovered target changes.
+ * Week (YAZ-4558 D22): Monday to Sunday as 7 tall days with every card, the timed ones first in time
+ * order; ‹ › step a week. Both scales show the month or the week that holds `anchor`, so the switch
+ * keeps the place.
  */
-export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onMoveToDay, moveError, onNewOnDay }: CalendarViewProps) {
-  const [month, setMonth] = useState(() => {
-    const now = new Date()
-    return { y: now.getFullYear(), m: now.getMonth() }
-  })
+export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onMoveToDay, moveError, onNewOnDay, scale, onScale, wrap = false }: CalendarViewProps) {
+  // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
+  const [anchor, setAnchor] = useState<DayKey>(todayKey)
+  const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
   const [expanded, setExpanded] = useState<DayKey | null>(null)
   const [trayAll, setTrayAll] = useState(false)
   const [drag, setDrag] = useState<{ path: string; from: DayKey | null } | null>(null)
   const [over, setOver] = useState<string | null>(null)
   const { days, undated } = useMemo(() => bucketByDay(rows, dateKey), [rows, dateKey])
-  const weeks = useMemo(() => monthWeeks(month.y, month.m), [month])
+  const weeks = useMemo(() => (scale === 'week' ? [weekDays(anchor)] : monthWeeks(month.y, month.m)), [scale, anchor, month.y, month.m])
+  // A week's 7 days in their order (D22), once per rows or week change, not on each dragover.
+  const weekCards = useMemo(
+    () => (scale === 'week' && dateKey !== null ? new Map(weeks[0].map((day) => [day, timeFirst(days.get(day) ?? [], dateKey)])) : null),
+    [scale, weeks, days, dateKey],
+  )
 
   const clear = () => {
     setDrag(null)
@@ -78,11 +95,11 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
     )
 
   const today = todayKey()
-  const step = (by: number) => setMonth(({ y, m }) => ({ y: y + Math.floor((m + by) / 12), m: (((m + by) % 12) + 12) % 12 }))
-  const goToday = () => {
-    const now = new Date()
-    setMonth({ y: now.getFullYear(), m: now.getMonth() })
-  }
+  const isWeek = scale === 'week'
+  const step = (by: number) => setAnchor((a) => (isWeek ? addDays(a, 7 * by) : monthStart(a, by)))
+  const goToday = () => setAnchor(todayKey())
+  const unit = isWeek ? 'week' : 'month'
+  const title = isWeek ? weekLabel(weeks[0]) : `${MONTHS[month.m]} ${month.y}`
 
   /** The click rule here (D11): plain and ⌘ → a background tab, ⌥ → the right panel, ⇧ / ⌃ → nothing. */
   const open = (e: ReactMouseEvent, path: string) => {
@@ -120,7 +137,7 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
     return (
       <li
         key={path}
-        className={`view-cal__card${drag?.path === path ? ' view-cal__card--drag' : ''}`}
+        className={`view-cal__card${wrap ? ' view-cal__card--wrap' : ''}${drag?.path === path ? ' view-cal__card--drag' : ''}`}
         tabIndex={0}
         {...(!locked && {
           draggable: true,
@@ -140,7 +157,8 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
         }}
       >
         {time !== null && <span className="view-cal__time">{time}</span>}
-        <span className="view-cal__card-title">{locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}</span>
+        {/* Clip shows the full title on a hover (D23); a wrapped title is all there. */}
+        <span className="view-cal__card-title" title={wrap ? undefined : row.record.title}>{locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}</span>
         {moveError?.path === path && (
           <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
             Move failed
@@ -153,18 +171,25 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   return (
     <div className="view-cal">
       <div className="view-cal__nav">
-        <button type="button" className="view-toolbar__btn" aria-label="Previous month" title="Previous month" onClick={() => step(-1)}>
+        <button type="button" className="view-toolbar__btn" aria-label={`Previous ${unit}`} title={`Previous ${unit}`} onClick={() => step(-1)}>
           ‹
         </button>
-        <button type="button" className="view-toolbar__btn" aria-label="Next month" title="Next month" onClick={() => step(1)}>
+        <button type="button" className="view-toolbar__btn" aria-label={`Next ${unit}`} title={`Next ${unit}`} onClick={() => step(1)}>
           ›
         </button>
         <button type="button" className="view-toolbar__btn view-cal__today" aria-label="Today" onClick={goToday}>
           Today
         </button>
-        <h3 className="view-cal__month">{`${MONTHS[month.m]} ${month.y}`}</h3>
+        <div className="view-seg view-cal__scale" role="group" aria-label="Calendar scale">
+          {SCALES.map(([value, text]) => (
+            <button key={value} type="button" className="view-seg__opt" data-scale={value} aria-pressed={scale === value} onClick={() => scale !== value && onScale(value)}>
+              {text}
+            </button>
+          ))}
+        </div>
+        <h3 className="view-cal__month">{title}</h3>
       </div>
-      <div className="view-cal__grid" role="grid" aria-label={`${MONTHS[month.m]} ${month.y}`}>
+      <div className={`view-cal__grid${isWeek ? ' view-cal__grid--week' : ''}`} role="grid" aria-label={title}>
         <div className="view-cal__week" role="row">
           {WEEKDAYS.map((d) => (
             <span key={d} className="view-cal__weekday" role="columnheader">
@@ -177,8 +202,9 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
             {week.map((day) => {
               const list = days.get(day) ?? []
               const all = expanded === day
-              const shown = all ? list : list.slice(0, DAY_CARDS)
-              const inMonth = Number(day.slice(5, 7)) === month.m + 1
+              // Week shows every card, the timed ones first (D22); Month keeps the row order and "+N more".
+              const shown = weekCards?.get(day) ?? (all ? list : list.slice(0, DAY_CARDS))
+              const inMonth = isWeek || Number(day.slice(5, 7)) === month.m + 1
               return (
                 <div
                   key={day}
@@ -197,7 +223,7 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
                     )}
                   </div>
                   {shown.length > 0 && <ul className="view-cal__cards">{shown.map((row) => card(row, day))}</ul>}
-                  {list.length > DAY_CARDS && (
+                  {!isWeek && list.length > DAY_CARDS && (
                     <button type="button" className="view-cal__more" onClick={() => setExpanded(all ? null : day)}>
                       {all ? 'Show less' : `+${list.length - DAY_CARDS} more`}
                     </button>

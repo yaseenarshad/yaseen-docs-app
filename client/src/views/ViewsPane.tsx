@@ -635,6 +635,15 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onNewOnDay={(day) => {
             if (dateKey !== null) onNewNote(null, undefined, undefined, { [dateKey]: day })
           }}
+          scale={view.calendarScale === 'week' ? 'week' : 'month'}
+          onScale={(scale) =>
+            update((d) => {
+              // Month is the default: it removes the key (YAZ-4558 D22).
+              if (scale === 'week') d.views[index].calendarScale = 'week'
+              else delete d.views[index].calendarScale
+            })
+          }
+          wrap={view.cardTitles === 'wrap'}
         />
       ) : view.type === 'cards' ? (
         <CardsView

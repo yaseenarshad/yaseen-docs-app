@@ -1637,6 +1637,10 @@
   font-size: 12px;
 }
 
+.view-cal__scale {
+  margin-left: 6px;
+}
+
 .view-cal__month {
   margin: 0 0 0 8px;
   font-size: 15px;
@@ -1683,6 +1687,11 @@
 .view-cal__day + .view-cal__day,
 .view-cal__weekday + .view-cal__weekday {
   border-left: 1px solid var(--border);
+}
+
+/* Week (YAZ-4558 D22): 7 tall days, each with every card. */
+.view-cal__grid--week .view-cal__day {
+  min-height: 360px;
 }
 
 /* The days of the next and previous month: there, but quiet. */
@@ -1794,6 +1803,13 @@
   color: var(--fg);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Wrap (YAZ-4558 D23): the full title on more lines, and the day grows with it. */
+.view-cal__card--wrap .view-cal__card-title,
+.view-cal__card--wrap .view-read-only-name__text {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .view-cal__time {
