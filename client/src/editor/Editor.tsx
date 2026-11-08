@@ -1,6 +1,6 @@
-import { markdownAction } from './automationActions'
+import { markdownAction, markdownVersion } from './automationActions'
 import { TEXT_READ_ONLY_ACTIONS, type EditorAction } from '@shared/automationEditor'
-import { registerLiveDocument, editorStateVersion } from '../automation/liveDocument'
+import { registerLiveDocument } from '../automation/liveDocument'
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
 import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
@@ -944,7 +944,7 @@ function CrepeHost({
           const { selection, doc } = editorViewOf(crepe).state
           return { path: file.path, kind: 'markdown', content: parts.frontmatter + bodyNow, baselineMtime: controller!.mtime, dirty: bodyNow !== parts.body, selection: { anchor: selection.anchor, head: selection.head, text: doc.textBetween(selection.from, selection.to, '\n'), coordinate: 'prosemirror' } }
         }, {
-          version: () => `${editorStateVersion(editorViewOf(crepe).state)}:${controller!.mtime}`,
+          version: () => `${markdownVersion(crepe)}:${controller!.mtime}`,
           // Read only blocks a person's edits and Undo (YAZ-3076 D2), so the CLI gets none either (YAZ-4560).
           get actions(): EditorAction['action'][] { return readOnlyRef.current ? [...TEXT_READ_ONLY_ACTIONS] : ['select', 'replace', 'format', 'undo', 'redo', 'save'] },
           run: async action => {

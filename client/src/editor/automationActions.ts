@@ -7,6 +7,7 @@ import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 import { AutomationFailure } from '@shared/automation'
 import type { EditorAction } from '@shared/automationEditor'
 import { editorViewOf } from './createCrepe'
+import { editorStateVersion } from '../automation/liveDocument'
 
 /** The same installed commands as the editor toolbar; no keys, focus, or global editor lookup. */
 export function markdownAction(crepe: Crepe, action: Exclude<EditorAction, { action: 'save' }>): void {
@@ -29,4 +30,13 @@ export function markdownAction(crepe: Crepe, action: Exclude<EditorAction, { act
     if (!crepe.editor.action(ctx => ctx.get(commandsCtx).call(command.key))) throw new AutomationFailure('UNSUPPORTED_ACTION', 'This formatting action cannot apply to the current selection.')
   }
   view.dispatch(closeHistory(view.state.tr))
+}
+
+/**
+ * The live revision's editor part (YAZ-4561): the document's identity and the selection. A transaction with only
+ * metadata (a fold, a glow, a zoom) keeps both, so it does not make an agent's read stale.
+ */
+export function markdownVersion(crepe: Crepe): string {
+  const { doc, selection } = editorViewOf(crepe).state
+  return `${editorStateVersion(doc)}.${selection.anchor}.${selection.head}`
 }
