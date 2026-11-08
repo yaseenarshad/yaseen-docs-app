@@ -1044,16 +1044,23 @@
 
 .view-table__group-cell > .view-group {
   position: sticky;
-  left: 8px;
+  left: calc(8px + var(--view-group-indent, 28px) * var(--depth, 0));
   width: fit-content;
   max-width: 100%;
 }
 
-/* an inner section (YAZ-745) is one 28px step in from the cell's 8px padding edge. The indent
-   rides the sticky offset, not cell padding: the cluster pins at `left` while the table scrolls
-   horizontally (YAZ-1043-46), so a padded one would slide back onto the outer's 8px. */
+/* an inner section (YAZ-745) is one indent step in from the cell's 8px padding edge: 14, 28 or
+   42px (`groupIndent`, YAZ-4532 D10). The indent rides the sticky offset, not cell padding: the
+   cluster pins at `left` while the table scrolls horizontally (YAZ-1043-46), so a padded one would
+   slide back onto the outer's 8px. */
 .view-table__group-cell--nested > .view-group {
-  left: 36px;
+  left: calc(8px + var(--view-group-indent, 28px));
+}
+
+/* A row's Name cell steps in with its group levels (YAZ-4532 D10): `--depth` = the levels above
+   the row. At depth 0, and with no `--depth`, it keeps the cell's own 8px padding. */
+.view-table tbody td.view-table__name {
+  padding-left: calc(var(--view-table-cell-pad-x) + var(--view-group-indent, 28px) * var(--depth, 0));
 }
 
 .view-group {
@@ -1483,6 +1490,11 @@
   padding: 2px 0 4px;
 }
 
+/* A nested group level steps in by the view's group indent, as the table does (YAZ-4532 D10). */
+.view-list__group .view-list__group {
+  margin-left: var(--view-group-indent, 28px);
+}
+
 .view-list__item {
   display: flex;
   gap: 8px;
@@ -1822,3 +1834,5 @@
 }
 .sort-menu > .view-rule__main { grid-template-columns: minmax(0, 1fr) 118px; padding: 0 28px 0 26px; margin-bottom: 6px; }
 .sort-menu > .view-rule__main > .column-picker { grid-column: 1; }
+/* Small / Medium / Large under the group levels (YAZ-4532 D10). */
+.sort-menu__indent { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 28px 0 26px; margin-top: 4px; font-size: 12px; color: var(--fg-muted); }

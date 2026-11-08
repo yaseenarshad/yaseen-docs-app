@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, groupIndentOf } from '../viewSchema'
 import { titleCandidates } from '../../links/completion'
 import { belongsToTitles } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -426,7 +426,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}>
         <table
           className="view-table"
-          style={{ width: gutterWidth + keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px` } as CSSProperties}
+          style={{ width: gutterWidth + keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px`, '--view-group-indent': `${groupIndentOf(view)}px` } as CSSProperties}
           onKeyDown={onKeyDown}
         >
           <thead>
@@ -496,7 +496,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     return (
                       <td
                         key={key}
-                        // `view-table__name` has no style: the tests and the end-to-end specs find the Name cell by it.
+                        // The tests and the end-to-end specs find the Name cell by `view-table__name`; its only style is the group indent (YAZ-4532).
                         className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', isFrozen(c) && 'view-table__frozen'].filter(Boolean).join(' ') || undefined}
                         style={frozenStyle(c)}
                         tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}

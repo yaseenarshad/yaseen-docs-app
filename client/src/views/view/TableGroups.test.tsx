@@ -15,6 +15,7 @@ import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import { groupKeyOf } from './GroupHeader'
+import viewsCss from '../views.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -401,5 +402,24 @@ describe('windowing with headers', () => {
     expect(links(el)).toHaveLength(300)
     expect(links(el)[0]).toBe('n001')
     expect(links(el)).toContain('n599')
+  })
+})
+
+describe('group indent (YAZ-4532 D10)', () => {
+  const withIndent = (step?: string) => GROUP_BASE.replace('    groupBy:\n', `${step === undefined ? '' : `    groupIndent: ${step}\n`}    groupBy:\n`)
+  it.each([
+    ['small', '14px'],
+    ['medium', '28px'],
+    ['large', '42px'],
+    [undefined, '28px'],
+    ['huge', '28px'],
+  ])('groupIndent %s sets --view-group-indent to %s on the table', (step, px) => {
+    const { el } = mount(withIndent(step))
+    expect(q<HTMLElement>(el, '.view-table').style.getPropertyValue('--view-group-indent')).toBe(px)
+  })
+  it('the CSS contract: a header and a row\'s Name cell step in by the indent × --depth, and stay at 8px at depth 0', () => {
+    expect(viewsCss).toMatch(/\.view-table__group-cell > \.view-group \{[^}]*left: calc\(8px \+ var\(--view-group-indent, 28px\) \* var\(--depth, 0\)\)/s)
+    expect(viewsCss).toMatch(/\.view-table tbody td\.view-table__name \{[^}]*padding-left: calc\(var\(--view-table-cell-pad-x\) \+ var\(--view-group-indent, 28px\) \* var\(--depth, 0\)\)/s)
+    expect(viewsCss).toMatch(/\.view-table \{[^}]*--view-table-cell-pad-x: 8px/s)
   })
 })

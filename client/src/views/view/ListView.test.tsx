@@ -381,3 +381,12 @@ describe('list settings in the Properties menu', () => {
     expect(inlineOf(items(el)[0])).toBe('idea, 2')
   })
 })
+
+describe('group indent (YAZ-4532 D10)', () => {
+  it('the list takes the same step as the table: --view-group-indent on .view-list, 28px when absent', () => {
+    const large = mount(GROUPED_BASE.replace('    groupBy:\n', '    groupIndent: large\n    groupBy:\n')).el
+    expect(large.querySelector<HTMLElement>('.view-list')!.style.getPropertyValue('--view-group-indent')).toBe('42px')
+    unmount()
+    expect(mount(GROUPED_BASE).el.querySelector<HTMLElement>('.view-list')!.style.getPropertyValue('--view-group-indent')).toBe('28px')
+  })
+})
