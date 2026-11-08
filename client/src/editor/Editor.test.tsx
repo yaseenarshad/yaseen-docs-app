@@ -2722,6 +2722,20 @@ describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
 
 
 describe('automation live Markdown read', () => {
+  // Checker (YAZ-4510 round 2): the real serializer writes `# H\ntext\n` back as `# H\n\ntext\n` with no edit.
+  // Autosave treats the tab as clean (nothing is written), so the live read must not say dirty.
+  it('checker: an unedited note whose saved text is not in the serializer form reads as clean', async () => {
+    const el = await mount('# H\ntext\n')
+    el.classList.add('tabstack__layer'); el.dataset.tab = 'live-unedited'
+    crepe().md = '# H\n\ntext\n' // the editor's own round trip, no user edit and no update event
+    vi.mocked(editorViewOf).mockReturnValue({ ...emptyView(), state: { selection: { anchor: 1, head: 1, from: 1, to: 1 }, doc: { textBetween: () => '' } } } as never)
+    try {
+      await pastDebounce()
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(readLiveDocument('live-unedited')).toMatchObject({ dirty: false })
+    } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
+  })
+
   it('returns current typing and selection without saving or substituting disk content', async () => {
     const el = await mount('---\ntitle: Original\n---\nSaved body\n')
     el.classList.add('tabstack__layer'); el.dataset.tab = 'live-markdown'
