@@ -716,6 +716,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
     const el = await mount()
     click(tab(el, 'Table')) // the Page offers no Properties menu; switching writes nothing
     click(byLabel(el, 'Properties'))
+    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
     setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
     await flush()
     expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, defaultView: 'Table' }, expect.any(Function))
@@ -724,6 +725,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
   it('the dropdown shows the saved value, and First view clears the key', async () => {
     const el = await mount({ ...SETTINGS, defaultView: 'Table' })
     click(byLabel(el, 'Properties'))
+    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
     const select = byLabel<HTMLSelectElement>(el, 'Default view')
     expect(select.value).toBe('Table')
     setSelect(select, '')
@@ -759,6 +761,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
     feed({ ...SETTINGS, defaultView: 'Table' })
     click(tab(el, 'Table')) // the Page has no Properties button of its own
     click(byLabel(el, 'Properties'))
+    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
     expect(byLabel<HTMLSelectElement>(el, 'Default view').value).toBe('Table')
     expect(write).not.toHaveBeenCalled()
   })
@@ -796,6 +799,7 @@ describe('config edits are ONE settings write on the folder', () => {
     const el = await mount(withBoard)
     selectView(el, 'Board')
     click(byLabel(el, 'Properties'))
+    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
     const width = byLabel<HTMLInputElement>(el, 'Column width in pixels')
     setValue(width, '400')
     press(width, 'Enter')
@@ -1057,6 +1061,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     const el = await mount()
     click(tab(el, 'Table')) // the Page offers no Properties menu
     click(byLabel(el, 'Properties'))
+    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
     setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
     await flush()
     expect(write).toHaveBeenCalledTimes(1)

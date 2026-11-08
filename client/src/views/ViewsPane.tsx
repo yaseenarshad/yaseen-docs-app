@@ -778,6 +778,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         documentView={isPage}
         folder={folder}
         dateColumns={calendarColumns}
+        tabId={tabId}
       />
       {/* ⌘F (YAZ-4613): on the Page tab the note's own find answers. */}
       {!isPage && <FindBar channel={find.channel} scope="views" hostRef={paneRef} />}

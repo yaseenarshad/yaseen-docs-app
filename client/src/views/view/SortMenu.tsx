@@ -5,14 +5,13 @@ import { ColumnPicker } from './ColumnPicker'
 import { DirectionPicker, withOrder } from './DirectionPicker'
 import { GroupStylePicker } from './GroupStylePicker'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import { type ViewSet, type ViewDef, type Mutate, type SortSpec, type GroupBySpec, groupByLevels, groupIndentOf, GROUP_INDENTS, MAX_GROUP_LEVELS } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, type SortSpec, type GroupBySpec, groupByLevels, MAX_GROUP_LEVELS } from '../viewSchema'
 import { propertyLabel } from '../engine'
 import { columnTyping } from '../editorType'
 import type { FolderSettings } from '../folderSettings'
 import { canonicalKey } from './keys'
 import { allPropertyKeys, propertyOptions } from './properties'
-import { FoldersFirstToggle, SubfoldersSwitch } from './SubfoldersSwitch'
-import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
+import { FoldersFirstToggle } from './SubfoldersSwitch'
 
 export interface SortMenuProps {
   def: ViewSet
@@ -37,7 +36,6 @@ const FOLDER = 'file.folder'
 /** Each group level's picker and order-menu names, outer first (YAZ-4532). */
 const GROUP_LABELS = ['Group by', 'Then group by', 'Then group by (level 3)'] as const
 const GROUP_DIRECTION_LABELS = ['Group direction', 'Then group direction', 'Then group direction (level 3)'] as const
-const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']] as const
 
 /**
  * Stable row identities of one reorderable rule list: the sorts (GRO-2135) and
@@ -117,9 +115,13 @@ function ruleRow(ids: readonly number[], live: RuleDrag, i: number, count: numbe
   )
 }
 
-/** Sort menu (GRO-2135): `view.sort` rows (property, direction, order, remove) and `view.groupBy` beneath. */
+/**
+ * The ⇅ popover (GRO-2135), sorting and grouping ONLY since YAZ-4607 D60: two sections, Sort and Group, one row shape
+ * (⋮⋮, the column, the order, ×; a group row keeps its Aa, D5). "Add sort" and "Add group level" add a row on the
+ * first free column; the latter is hidden at `MAX_GROUP_LEVELS`. "Folders first" sits under Sort, a sort rule, only
+ * while the view shows folder rows (D33). Group indent and Subfolders moved to Properties › View (D60).
+ */
 export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, properties, onEditColumn }: SortMenuProps) {
-  const defaults = useViewDefaults()
   const own = def.views[viewIndex] ?? view
   const listed = allPropertyKeys(def, view, records, settings.columns)
   const keys = listed.includes(FOLDER) ? listed : [...listed, FOLDER]
@@ -188,11 +190,13 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
   /** A calendar's days are its groups (YAZ-4540 D4): it ignores `groupBy`, so the menu offers only Sort. */
   const grouping = view.type !== 'calendar'
 
+  /** The column a new group level starts on: the first one the levels above do not use (Folder aside). */
+  const nextLevel = grouping && levels.length < MAX_GROUP_LEVELS ? options(undefined, above(levels.length))[0] : undefined
+
   return (
     <div className="view-menu sort-menu">
-      {sort.length === 0 ? (
-        <p className="view-menu__empty">No sort</p>
-      ) : (
+      <p className="view-menu__label">Sort</p>
+      {sort.length > 0 && (
         <ul className="view-menu__list" {...sortLive.listProps}>
           {sort.map((s, i) => ruleRow(sortRows.ids, sortLive, i, sort.length, moveSort, `Reorder sort ${i + 1}: ${propertyLabel(def, s.property)}`, <>
             <ColumnPicker label="Sort property" value={canonicalKey(s.property)} onChange={(value) => setSort(i, { property: value })} options={options(s.property)} />
@@ -208,7 +212,9 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
           Add sort
         </button>
       </div>
-      {grouping && <p className="view-menu__label">Group by</p>}
+      {/* A sort rule (YAZ-4579 D33, D60): whether folder rows lead; only while the view shows them. */}
+      <FoldersFirstToggle view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} className="view-menu__toggle sort-menu__folders-first" />
+      {grouping && <p className="view-menu__label">Group</p>}
       {grouping && levels.length > 0 && (
         <ul className="view-menu__list" {...groupLive.listProps}>
           {levels.map((level, i) => ruleRow(groupRows.ids, groupLive, i, levels.length, moveLevel, `Reorder group level ${i + 1}: ${propertyLabel(def, level.property)}`, <>
@@ -227,37 +233,14 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
           </>, 'sort-menu__level'))}
         </ul>
       )}
-      {grouping && levels.length < MAX_GROUP_LEVELS && (
-        <div className="view-rule__main">
-          <ColumnPicker
-            label={GROUP_LABELS[levels.length]}
-            value=""
-            onChange={(value) => { if (value) writeGroup([...levels, { property: value, direction: 'ASC' }], [...groupRows.ids, groupRows.newId()]) }}
-            options={[{ value: '', label: 'None' }, ...options(undefined, above(levels.length))]} />
+      {/* "Add group level" (D60) replaces the empty "None" picker: a row on the first free column, gone at three levels. */}
+      {nextLevel !== undefined && (
+        <div className="view-menu__foot">
+          <button type="button" className="view-menu__action" onClick={() => writeGroup([...levels, { property: nextLevel.value, direction: 'ASC' }], [...groupRows.ids, groupRows.newId()])}>
+            Add group level
+          </button>
         </div>
       )}
-      {/* A Board does not indent its groups (YAZ-4544): Table, List and Cards read the indent. */}
-      {grouping && levels.length > 0 && view.type !== 'board' && (
-        <div className="sort-menu__indent">
-          <span>Indent</span>
-          <div className="view-seg" role="group" aria-label="Group indent">
-            {INDENT_STEPS.map(([step, text]) => (
-              <button key={step} type="button" className="view-seg__opt" data-indent={step} aria-pressed={GROUP_INDENTS[step] === groupIndentOf(view)}
-                onClick={() => onUpdate((d) => {
-                  // Settings' indent removes the key (YAZ-4532 D10, YAZ-4585): Medium unless Settings › Folder pages says otherwise.
-                  chooseOwn(d.views[viewIndex], 'groupIndent', step, defaults)
-                })}>
-                {text}
-              </button>
-            ))}
-          </div>
-          <FromSettings own={own} viewKey="groupIndent" viewIndex={viewIndex} onUpdate={onUpdate} />
-        </div>
-      )}
-      {/* The rows themselves (YAZ-4579 D30/D33): the Subfolders switch, as Properties has it, and whether folder rows lead. */}
-      <p className="view-menu__label">Subfolders</p>
-      <SubfoldersSwitch view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} className="sort-menu__indent" text="Show" />
-      <FoldersFirstToggle view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} className="view-menu__toggle sort-menu__folders-first" />
     </div>
   )
 }

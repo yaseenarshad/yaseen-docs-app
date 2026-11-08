@@ -465,6 +465,48 @@
   color: var(--fg-muted);
 }
 
+/* The Properties popover's two tabs, Columns and View (YAZ-4607 D59): a sticky strip at the top; the Columns tab's
+   search head sticks under it. */
+.view-menu__tabs {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  gap: 2px;
+  margin: 0 -10px;
+  padding: 8px 10px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.view-menu__tab {
+  padding: 6px 10px 7px;
+  margin-bottom: -1px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  border-bottom: 2px solid transparent;
+}
+.view-menu__tab:hover { color: var(--fg); }
+.view-menu__tab[aria-pressed='true'] {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+.view-menu--tabbed .column-menu-head { top: 37px; padding-top: 8px; }
+
+/* The View tab (YAZ-4607 D59): sections of settings rows, the label left and the control with its "from Settings"
+   hint at the right; it fits the 340px popover with no horizontal scroll. */
+.view-settings { display: flex; flex-direction: column; gap: 6px; padding: 6px 0 2px; }
+.view-settings > .view-menu__label { margin: 8px 0 0; }
+.view-settings > .view-menu__label:first-child { margin-top: 2px; }
+.view-settings .view-settings-row { justify-content: flex-start; min-width: 0; font-size: 12px; }
+.view-settings .view-settings-row > span:first-child { flex: 1 1 auto; }
+.view-settings .view-settings-row > .view-select { max-width: 150px; min-width: 0; }
+.view-settings .view-settings-row > input[type='checkbox'] { margin: 0; accent-color: var(--accent); }
+.view-settings .view-settings-row__text { width: 56px; }
+.view-settings .view-seg__opt { padding: 2px 7px; }
+.view-settings .property-board-setting { padding: 0; margin: 0; border: 0; }
+.view-settings .property-board-setting small { margin-top: 2px; }
+
 .view-prop {
   display: flex;
   flex-direction: column;
@@ -2403,16 +2445,6 @@
   width: 72px;
 }
 
-.view-list-settings {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.view-list-settings .view-input {
-  width: 56px;
-}
-
 /* ---------- inline cell editors (5B, GRO-2142) ---------- */
 
 .view-cell-edit {
@@ -2640,6 +2672,8 @@
 .sort-menu .view-prop__handle:hover { opacity: 1; }
 .sort-menu .view-prop__handle:disabled { opacity: .35; cursor: default; }
 .sort-menu .view-menu__foot { padding-left: 26px; margin-top: 6px; }
+/* "+ Add sort" / "+ Add group level" (YAZ-4607 D60): the plus is drawn, not text. */
+.sort-menu .view-menu__action::before { content: '+ '; }
 .sort-menu > .view-menu__label {
   border-top: 1px solid var(--border);
   padding-top: 14px;
@@ -2648,6 +2682,8 @@
   color: var(--fg);
   font-weight: 600;
 }
+/* "Sort" heads the popover (D60): no line over the first section. */
+.sort-menu > .view-menu__label:first-child { border-top: 0; padding-top: 0; margin-top: 2px; }
 .sort-menu > .view-rule__main { grid-template-columns: minmax(0, 1fr) 118px; padding: 0 28px 0 26px; margin-bottom: 6px; }
 .sort-menu > .view-rule__main > .column-picker { grid-column: 1; }
 /* A group level's row has one more column, the "Aa" style chip (YAZ-3742). */
@@ -2663,7 +2699,5 @@
 .group-style__swatch[aria-pressed='true'] { outline: 2px solid var(--accent); outline-offset: 1px; }
 .group-style__large { margin-left: auto; padding: 2px 8px; font-size: 12px; font-weight: 700; color: var(--fg-muted); border: 1px solid var(--border); border-radius: 4px; }
 .group-style__large[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
-/* Small / Medium / Large under the group levels (YAZ-4532 D10). */
-.sort-menu__indent { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 28px 0 26px; margin-top: 4px; font-size: 12px; color: var(--fg-muted); }
-/* "Folders first" under the Subfolders switch (YAZ-4579 D33), lined up with it. */
+/* "Folders first" under the sort rows (YAZ-4579 D33, YAZ-4607 D60), lined up with them. */
 .sort-menu__folders-first { display: flex; padding: 0 28px 0 26px; margin-top: 8px; }

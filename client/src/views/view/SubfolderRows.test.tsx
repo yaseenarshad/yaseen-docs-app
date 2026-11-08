@@ -148,9 +148,10 @@ describe('the "Subfolders" switch (D30)', () => {
     expect(names(mount(table('    subfolders: false\n')).el)).toEqual(['Overview'])
   })
 
-  it('Properties › Subfolders writes each mode; Their notes removes the key', () => {
+  it('Properties › View › Subfolders writes each mode; Their notes removes the key', () => {
     const { el, yaml } = mount(table())
     click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // View › Rows (YAZ-4607 D59)
     const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]')
     expect([...select().options].map((o) => o.text)).toEqual(['Their notes', 'As rows', 'Both', 'Hide'])
     expect(select().value).toBe('notes')
@@ -161,14 +162,18 @@ describe('the "Subfolders" switch (D30)', () => {
     expect(yaml()).not.toContain('subfolders')
   })
 
-  it('the Sort and group menu has the same switch, beside "Folders first"', () => {
+  // YAZ-4607 D60: the ⇅ popover lost its Subfolders switch (Properties › View › Rows has it); "Folders first" stays there, under Sort.
+  it('the ⇅ popover has no Subfolders switch; its "Folders first" shows once folder rows do', () => {
     const { el, yaml } = mount(table())
     click(q(el, '.view-toolbar [aria-label="Sort"]'))
-    const select = () => q<HTMLSelectElement>(el, '.view-popover--sort [aria-label="Subfolders"]')
+    expect(el.querySelector('.view-popover--sort [aria-label="Subfolders"]')).toBeNull()
     // "Folders first" shows only while folder rows do: it changes nothing else.
     expect(el.querySelector('.view-popover--sort [aria-label="Folders first"]')).toBeNull()
-    choose(select(), 'both')
+    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+    choose(q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]'), 'both')
     expect(yaml()).toContain('subfolders: both')
+    click(q(el, '.view-toolbar [aria-label="Sort"]'))
     expect(q<HTMLInputElement>(el, '.view-popover--sort [aria-label="Folders first"]').checked).toBe(true)
   })
 })

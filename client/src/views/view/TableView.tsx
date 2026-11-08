@@ -24,7 +24,7 @@ import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader
 import { openByGesture, openByKey } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
 import { isFolderRow, rowPage } from '../../links/shortcuts'
-import { UNFROZE_ROWS, frozenColumnCount } from './frozenColumns'
+import { MAX_FROZEN_ROWS, UNFROZE_ROWS, frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 import { OtherFilesMove, trayRowDrag } from './otherFilesMove'
 import { FillMenu } from './FillMenu'
@@ -148,8 +148,6 @@ const SLIM_GUTTER_WIDTH = 12
 const COLUMN_MIME = 'application/x-yaseen-table-column'
 /** The row of the note the note window shows (YAZ-4547). */
 const CURRENT_ROW = 'view-table__row--current'
-/** Frozen rows (YAZ-4537): at most this many data rows freeze. */
-const MAX_FROZEN_ROWS = 10
 /**
  * ...and the frozen lines stop here (YAZ-4544): at most, each row brings a header for each level and its own
  * "+ New" row (YAZ-4539), so 10 rows always fit, at three levels with one row in each group.
