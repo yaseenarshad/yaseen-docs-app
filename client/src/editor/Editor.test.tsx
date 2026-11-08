@@ -23,7 +23,8 @@ import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikil
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'
 import { announceTwinSave } from '../lib/twinEditors'
-import { NoteWindow, noteWindowLink, noteWindowMemory } from '../views/view/NoteWindow'
+import { NoteWindow, dropNoteWindowsAt, noteWindowLink, noteWindowMemory, renameNoteWindows } from '../views/view/NoteWindow'
+import type { Row } from '../views/engine'
 import { readPageView } from '../lib/pageView'
 import type { NoticeKind } from '../lib/notice'
 
@@ -141,7 +142,7 @@ import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
 import { setAllDocumentFolds } from './outline/foldAllHotkeys'
 import { createCrepe, editorViewOf, focusEditor, getCaretOf, getPlainText, getZoomKeyOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
-import { _resetRenameContinuity, carryEditorAcrossRename, registerRenameContinuity } from '../lib/renameContinuity'
+import { _resetRenameContinuity, carryEditorAcrossRename, registerRenameContinuity, retireDeletedPath } from '../lib/renameContinuity'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { mergeExternalMarkdown } from './external/mergeExternal'
 import type { BlockLines } from './lineNumbers/blockLines'
@@ -1465,6 +1466,69 @@ describe('the note window holds a real editor (YAZ-4547)', () => {
     await settle()
     return container
   }
+
+  /** The card alone on PATH, with ‹ › over PATH then OTHER. */
+  const OTHER = '/vault/other.md'
+  async function mountCardAlone(onClose = noop) {
+    readFile.mockResolvedValueOnce({ path: PATH, content: FM + BODY, mtime: 1, size: (FM + BODY).length })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const props = { root: '/vault', path: PATH, watch, onOpenFile: openFile, commentsOrder: 'oldest' as const, onChangeCommentsOrder: noop, wikilinks: createWikilinkResolveSource(), onRetitle: noop }
+    const link = noteWindowLink()
+    link.rows = [PATH, OTHER].map((path) => ({ record: { path } }) as Row)
+    act(() =>
+      root?.render(
+        <section className="editor">
+          <NoteWindow renderEditor={(path) => <Editor {...props} path={path} />} link={link} titleOf={() => 'note'} memory={noteWindowMemory(PATH)} onOpenInTab={noop} onClose={onClose} />
+        </section>,
+      ),
+    )
+    await settle()
+    await settle()
+  }
+
+  it('a step with unsaved typing saves the note before the next note mounts (5E Speed)', async () => {
+    await mountCardAlone()
+    type('# Hello\n\ntyped in the card\n')
+    expect(writeFile).not.toHaveBeenCalled()
+    readFile.mockResolvedValueOnce({ path: OTHER, content: BODY, mtime: 1, size: BODY.length })
+    act(() => container!.querySelector<HTMLButtonElement>('[aria-label="Next row"]')!.click())
+    await settle()
+    expect(writeFile.mock.calls.map(([body]) => [body.path, body.content])).toEqual([[PATH, `${FM}# Hello\n\ntyped in the card\n`]])
+    expect(readFile.mock.calls.at(-1)?.[0]).toBe(OTHER)
+  })
+
+  it('a rename of its note moves the card\'s editor to the new path: unsaved typing and new typing save there (YAZ-4544)', async () => {
+    const NEW = '/vault/renamed.md'
+    await mountCardAlone()
+    type('# Hello\n\nbefore the rename\n')
+    readFile.mockResolvedValueOnce({ path: NEW, content: FM + BODY, mtime: 2, size: (FM + BODY).length })
+    // App's `file:renamed`, in its order: retire the editors at the old path, then the card follows.
+    act(() => {
+      carryEditorAcrossRename(PATH, NEW)
+      renameNoteWindows(PATH, NEW)
+    })
+    await settle()
+    await settle()
+    type('# Hello\n\nafter the rename\n')
+    await pastDebounce()
+    expect(writeFile.mock.calls.map(([body]) => body.path)).toEqual([NEW])
+    expect(writeFile.mock.calls[0]?.[0].content).toBe(`${FM}# Hello\n\nafter the rename\n`)
+  })
+
+  it('a delete of its note closes the card, and writes nothing (YAZ-4544)', async () => {
+    const onClose = vi.fn()
+    await mountCardAlone(onClose)
+    type('# Hello\n\nunsaved\n')
+    act(() => {
+      retireDeletedPath(PATH)
+      dropNoteWindowsAt(PATH)
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
 
   it('the card shows the note\'s Properties panel', async () => {
     const el = await mountWithCard()

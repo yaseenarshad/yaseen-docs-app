@@ -36,14 +36,15 @@ export interface NoteWindowMemory {
 export const noteWindowMemory = (path: string): NoteWindowMemory => ({ path, placed: null, width: null, height: null, pinned: cellNotePinnedAtStart() })
 
 /**
- * The open cards, by folder page and view tab (YAZ-4547 D17). A tab that sleeps unmounts its folder page; when it
- * mounts again, its card shows again on the same note, at the same place. Bounded: a card that closes drops its
- * entry, and at most `MAX_OPEN_WINDOWS` stay, the oldest open out.
+ * The open cards, by app tab, folder page and view tab (YAZ-4547 D17, YAZ-4544). A tab that sleeps unmounts its
+ * folder page; when it mounts again, its card shows again on the same note, at the same place. Two tabs on one folder
+ * each have their own card; a folder page with no tab (the right panel) is its own place. Bounded: a card that closes
+ * drops its entry, and at most `MAX_OPEN_WINDOWS` stay, the oldest open out.
  */
 const openWindows = new Map<string, NoteWindowMemory>()
 export const MAX_OPEN_WINDOWS = 50
 
-export const noteWindowKey = (folderPath: string, viewName: string): string => JSON.stringify([folderPath, viewName])
+export const noteWindowKey = (tabId: string | undefined, folderPath: string, viewName: string): string => JSON.stringify([tabId ?? null, folderPath, viewName])
 export const openNoteWindow = (key: string): NoteWindowMemory | undefined => openWindows.get(key)
 export function keepNoteWindow(key: string, memory: NoteWindowMemory): void {
   openWindows.delete(key)
@@ -53,6 +54,28 @@ export function keepNoteWindow(key: string, memory: NoteWindowMemory): void {
 export const dropNoteWindow = (key: string): void => void openWindows.delete(key)
 /** For tests: no card open anywhere. */
 export const dropAllNoteWindows = (): void => openWindows.clear()
+
+/** `path` is `at` or a file under the folder `at`. */
+const isAtOrUnder = (path: string, at: string): boolean => path === at || path.startsWith(`${at}/`)
+
+/** The mounted cards, told of a rename (`to` its new path) or a delete (`to` null) of a note or a folder (YAZ-4544). */
+const windowListeners = new Set<(from: string, to: string | null) => void>()
+
+/**
+ * A rename of a note or a folder (YAZ-4544): App's `file:renamed`, after `carryEditorAcrossRename` retired the
+ * editors at the old path. Each card on it, mounted or not, moves to the new path; a mounted card mounts its editor there.
+ */
+export function renameNoteWindows(oldPath: string, newPath: string): void {
+  for (const memory of openWindows.values()) if (isAtOrUnder(memory.path, oldPath)) memory.path = newPath + memory.path.slice(oldPath.length)
+  for (const tell of [...windowListeners]) tell(oldPath, newPath)
+}
+
+/** A delete of a note or a folder (YAZ-4544): App's `file:deleted`, after `retireDeletedPath`. Each card on it closes. */
+export function dropNoteWindowsAt(path: string): void {
+  // The mounted cards close first, so their folder page keeps the place and size for its next card.
+  for (const tell of [...windowListeners]) tell(path, null)
+  for (const [key, memory] of openWindows) if (isAtOrUnder(memory.path, path)) openWindows.delete(key)
+}
 
 interface NoteWindowProps {
   /** A full `Editor` on a note (App's `renderNoteEditor`): the tab itself, in the card. */
@@ -97,7 +120,7 @@ const stepIndex = (found: number, last: number, dir: -1 | 1): number => (found =
  * drag the head, 8 grips, a double click on the head resets, and the pin. It is rendered by the folder page
  * (`ViewsPane`), so it belongs to that tab; its DOM goes beside the page's scroller (`section.editor`), out of the
  * views' document zoom. One editor is mounted at a time, keyed by the path: a step saves the note and mounts the next.
- * A drag or a resize writes the card's style only: nothing renders while the pointer moves.
+ * A drag or a resize writes the card's style only: nothing renders and no layout is read while the pointer moves.
  */
 export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, onClose }: NoteWindowProps) {
   const [path, setPath] = useState(memory.path)
@@ -149,12 +172,24 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
     [link],
   )
 
-  /** The card at its remembered place and size, inside the folder page; returns what shows. */
-  const place = (): { left: number; top: number; width: number; height: number } | null => {
+  // A rename of the note moves the card to the new path, and the editor mounts there; a delete closes it (YAZ-4544).
+  useEffect(() => {
+    const follow = (from: string, to: string | null) => {
+      if (!isAtOrUnder(path, from)) return
+      if (to === null) closeRef.current()
+      else setPath(to + path.slice(from.length))
+    }
+    windowListeners.add(follow)
+    return () => void windowListeners.delete(follow)
+  }, [path])
+
+  /** The folder page's size: read once for a drag or a resize, so a mouse move reads no layout (YAZ-4544). */
+  const hostSize = (): { W: number; H: number } => ({ W: host?.clientWidth ?? 0, H: host?.clientHeight ?? 0 })
+
+  /** The card at its remembered place and size, inside the folder page of size `W` × `H`; returns what shows. */
+  const place = ({ W, H } = hostSize()): { left: number; top: number; width: number; height: number } | null => {
     const card = cardRef.current
     if (card === null || host === null) return null
-    const W = host.clientWidth
-    const H = host.clientHeight
     const width = clamp(memory.width ?? DEFAULT_WIDTH, Math.min(MIN_WIDTH, W), Math.max(MIN_WIDTH, W - 2 * GAP))
     const left = memory.placed === null ? Math.max(0, W - width - GAP) : clamp(memory.placed.x, 0, Math.max(0, W - width))
     const top = memory.placed === null ? GAP : clamp(memory.placed.y, 0, Math.max(0, H - MIN_HEIGHT))
@@ -206,11 +241,12 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
   const onHeadDown = (event: ReactMouseEvent) => {
     if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button') !== null)) return
     event.preventDefault()
-    const from = place()
+    const size = hostSize()
+    const from = place(size)
     if (from === null) return
     track('grabbing', event, (dx, dy) => {
       memory.placed = { x: from.left + dx, y: from.top + dy }
-      place()
+      place(size)
     })
   }
 
@@ -218,10 +254,10 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
     if (event.button !== 0 || host === null) return
     event.preventDefault()
     event.stopPropagation()
-    const from = place()
+    const size = hostSize()
+    const from = place(size)
     if (from === null) return
-    const W = host.clientWidth
-    const H = host.clientHeight
+    const { W, H } = size
     const right = from.left + from.width
     const bottom = from.top + from.height
     track(grip.cursor, event, (dx, dy) => {
@@ -239,7 +275,7 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
       memory.placed = { x: left, y: top }
       memory.width = width
       memory.height = height
-      place()
+      place(size)
     })
   }
 

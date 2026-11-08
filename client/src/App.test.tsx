@@ -203,6 +203,7 @@ vi.mock('./sidebar/Sidebar', () => ({
 }))
 
 import { App, preloadTabBoard, replayNotice } from './App'
+import { dropAllNoteWindows, keepNoteWindow, noteWindowKey, noteWindowMemory, openNoteWindow } from './views/view/NoteWindow'
 import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -1287,6 +1288,22 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     expect(el.querySelector('.right-panel__header')?.getAttribute('title')).toBe('/v/Notes/b.md')
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/main.md'], '/v/main.md', { open: true, width: 440, items: ['/v/Notes/b.md'], expanded: '/v/Notes/b.md' }))
     carry.mockRestore()
+  })
+
+  it('a folder table\'s note window follows a rename of its note or of a folder above it, and closes on a delete (YAZ-4544)', async () => {
+    const { emitFileRenamed, emitFileDeleted } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] })
+    const key = noteWindowKey('t1', '/v/F', 'Table')
+    keepNoteWindow(key, noteWindowMemory('/v/F/a.md'))
+    await act(async () => emitFileRenamed('/v/F/a.md', '/v/F/b.md', 'file'))
+    expect(openNoteWindow(key)?.path).toBe('/v/F/b.md')
+    await act(async () => emitFileRenamed('/v/F', '/v/G', 'dir'))
+    expect(openNoteWindow(key)?.path).toBe('/v/G/b.md')
+    await act(async () => emitFileDeleted('/v/G/b.md'))
+    expect(openNoteWindow(key)).toBeUndefined()
+    keepNoteWindow(key, noteWindowMemory('/v/H/c.md'))
+    await act(async () => emitFileDeleted('/v/H', 'dir'))
+    expect(openNoteWindow(key)).toBeUndefined()
+    dropAllNoteWindows()
   })
 })
 

@@ -12,7 +12,7 @@ import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { setCellNotePinnedAtStart } from '../../editor/table/cellNoteCard'
-import { MAX_OPEN_WINDOWS, dropAllNoteWindows, keepNoteWindow, noteWindowKey, noteWindowMemory, openNoteWindow } from './NoteWindow'
+import { MAX_OPEN_WINDOWS, dropAllNoteWindows, dropNoteWindowsAt, keepNoteWindow, noteWindowKey, noteWindowMemory, openNoteWindow, renameNoteWindows } from './NoteWindow'
 
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => ['/vault'] } }))
 
@@ -286,10 +286,94 @@ describe('Open in a window (YAZ-4547)', () => {
   })
 
   it('the open cards are bounded: at most MAX_OPEN_WINDOWS, the oldest open out', () => {
-    for (let i = 0; i <= MAX_OPEN_WINDOWS; i++) keepNoteWindow(noteWindowKey(`/vault/p${i}`, 'T'), noteWindowMemory(`/vault/p${i}/n.md`))
-    expect(openNoteWindow(noteWindowKey('/vault/p0', 'T'))).toBeUndefined()
-    expect(openNoteWindow(noteWindowKey('/vault/p1', 'T'))?.path).toBe('/vault/p1/n.md')
-    expect(openNoteWindow(noteWindowKey(`/vault/p${MAX_OPEN_WINDOWS}`, 'T'))).toBeDefined()
+    for (let i = 0; i <= MAX_OPEN_WINDOWS; i++) keepNoteWindow(noteWindowKey('t1', `/vault/p${i}`, 'T'), noteWindowMemory(`/vault/p${i}/n.md`))
+    expect(openNoteWindow(noteWindowKey('t1', '/vault/p0', 'T'))).toBeUndefined()
+    expect(openNoteWindow(noteWindowKey('t1', '/vault/p1', 'T'))?.path).toBe('/vault/p1/n.md')
+    expect(openNoteWindow(noteWindowKey('t1', `/vault/p${MAX_OPEN_WINDOWS}`, 'T'))).toBeDefined()
+  })
+
+  it('two app tabs on one folder page each have their own card; closing one leaves the other (YAZ-4544, D17)', () => {
+    const host = testFolderHost({ renderNoteEditor: (p) => <div className="stub-editor">{p}</div> })
+    const pane = (tabId: string) => (
+      <section className="editor" data-tab={tabId}>
+        <ViewsPane parsed={parseViews(SORTED)} onChange={vi.fn()} root="/vault" folderPath="/vault/f" tabId={tabId} records={RECORDS} folder={{ ...host, vaultRecords: RECORDS }} onOpenFile={vi.fn()} />
+      </section>
+    )
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    draw = () => act(() => root?.render(<>{pane('t1')}{pane('t2')}</>))
+    draw()
+    const inTab = (tabId: string) => q<HTMLElement>(`[data-tab="${tabId}"]`)
+    const cardIn = (tabId: string) => inTab(tabId).querySelector('.note-window')
+    const openIn = (tabId: string, title: string) => {
+      rightClick([...inTab(tabId).querySelectorAll<HTMLElement>('.view-table__name')].find((c) => c.textContent === title)!)
+      click(menuItems().find((item) => item.textContent === 'Open in a window')!)
+    }
+    openIn('t1', 'A')
+    expect(cardIn('t1')?.querySelector('.stub-editor')?.textContent).toBe(path('A'))
+    expect(cardIn('t2')).toBeNull()
+    openIn('t2', 'C')
+    expect(cardIn('t1')?.querySelector('.stub-editor')?.textContent).toBe(path('A'))
+    expect(cardIn('t2')?.querySelector('.stub-editor')?.textContent).toBe(path('C'))
+    click(cardIn('t1')!.querySelector('[aria-label="Close window"]')!)
+    expect(cardIn('t1')).toBeNull()
+    expect(cardIn('t2')?.querySelector('.stub-editor')?.textContent).toBe(path('C'))
+    // The right panel's folder page (no tab) is its own place too.
+    expect(openNoteWindow(noteWindowKey(undefined, '/vault/f', 'T'))).toBeUndefined()
+  })
+
+  it('a retitle in the table\'s Name cell moves the card to the new path; a delete closes it (YAZ-4544)', () => {
+    // The host stands in for App: main renames the file, and App's `file:renamed` calls `renameNoteWindows`.
+    let setRecords: (next: IndexRecord[]) => void = () => {}
+    const retitle = vi.fn((from: string, title: string) => {
+      const to = `/vault/f/${title}.md`
+      act(() => renameNoteWindows(from, to))
+      setRecords(RECORDS.map((r) => (r.path === from ? { ...r, path: to, name: `${title}.md`, basename: title, title } : r)))
+    })
+    ;({ setRecords } = mount(SORTED, {}, testFolderHost({ retitle, renderNoteEditor: (p) => <div className="stub-editor">{p}</div> })))
+    openOn('D')
+    const cell = rowCell('D')
+    act(() => {
+      cell.click()
+      cell.click()
+      cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    })
+    draw()
+    const input = q<HTMLInputElement>('.view-table__name input')
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'Dee')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    draw()
+    expect(retitle).toHaveBeenCalledExactlyOnceWith(path('D'), 'Dee')
+    expect(shownPath()).toBe(path('Dee'))
+    expect(card()!.querySelector('.cell-note-card__title')?.textContent).toBe('Dee')
+    expect(count()).toBe('2 of 5')
+    expect(currentRows()).toEqual(['Dee'])
+    // A rename of the folder above it moves the card too.
+    act(() => renameNoteWindows('/vault/f', '/vault/g'))
+    expect(shownPath()).toBe('/vault/g/Dee.md')
+    act(() => dropNoteWindowsAt('/vault/g/Dee.md'))
+    draw()
+    expect(card()).toBeNull()
+    expect(openNoteWindow(noteWindowKey(undefined, '/vault/f', 'T'))).toBeUndefined()
+  })
+
+  it('a rename or a delete reaches a card whose tab sleeps: it shows again on the new path, or not at all (YAZ-4544)', () => {
+    mount(SORTED)
+    openOn('B')
+    act(() => root?.unmount())
+    container?.remove()
+    renameNoteWindows(path('B'), path('Bee'))
+    mount(SORTED)
+    expect(shownPath()).toBe(path('Bee'))
+    act(() => root?.unmount())
+    container?.remove()
+    dropNoteWindowsAt('/vault/f')
+    mount(SORTED)
+    expect(card()).toBeNull()
   })
 
   describe('the place, the size and the pin are remembered for the tab', () => {
@@ -298,6 +382,23 @@ describe('Open in a window (YAZ-4547)', () => {
       vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(800)
     })
     afterEach(() => vi.restoreAllMocks())
+
+    it('a drag or a resize reads the folder page\'s size once, at the start: a mouse move reads no layout (YAZ-4544)', () => {
+      mount(SORTED)
+      openOn('A')
+      const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200)
+      const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(800)
+      for (const start of [q('.note-window__head'), q('.note-window [data-grip="se"]')]) {
+        act(() => void start.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: 900, clientY: 30 })))
+        const reads = width.mock.calls.length + height.mock.calls.length
+        act(() => {
+          for (let i = 1; i <= 20; i++) window.dispatchEvent(new MouseEvent('mousemove', { clientX: 900 - i * 5, clientY: 30 + i * 5 }))
+        })
+        expect(width.mock.calls.length + height.mock.calls.length).toBe(reads)
+        act(() => void window.dispatchEvent(new MouseEvent('mouseup')))
+      }
+      expect(card()!.style.width).not.toBe('480px')
+    })
 
     it('a drag of the head moves the card, a reopen keeps the place and the pin, and a double click resets it', () => {
       mount(SORTED)

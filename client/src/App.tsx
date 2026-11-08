@@ -59,6 +59,7 @@ import { setLanguageHelpers } from './code/languageHelpers'
 import { setCalendarDaySetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
+import { dropNoteWindowsAt, renameNoteWindows } from './views/view/NoteWindow'
 import { setTypingArrows } from './editor/typingArrows'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
@@ -2187,6 +2188,7 @@ export function App() {
         for (const vault of now.vaults) vault.renames.suppress(oldPath, newPath, kind)
         if (kind === 'dir') {
           carryEditorsAcrossDirRename(oldPath, newPath)
+          renameNoteWindows(oldPath, newPath)
           const moved = now.roots.map((vault) => movedRoot(vault, oldPath, newPath))
           const vaultMoved = moved.some((vault, i) => vault !== now.roots[i])
           if (vaultMoved) {
@@ -2200,6 +2202,8 @@ export function App() {
           return
         }
         carryEditorAcrossRename(oldPath, newPath)
+        // A folder table's note window on the note follows it (YAZ-4544): its editor at the old path is retired now.
+        renameNoteWindows(oldPath, newPath)
         renamedUnderOverview(oldPath, newPath, false)
         renameWorkspacePath(oldPath, newPath)
       }),
@@ -2710,10 +2714,13 @@ export function App() {
       api.file.onDeleted(({ path, kind }) => {
         if (kind === 'dir') {
           retireDeletedDir(path)
+          dropNoteWindowsAt(path)
           deleteWorkspaceDir(path)
           return
         }
         retireDeletedPath(path)
+        // A note window on the note closes with it (YAZ-4544).
+        dropNoteWindowsAt(path)
         deleteWorkspacePath(path)
       }),
     [deleteWorkspacePath, deleteWorkspaceDir],

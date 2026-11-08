@@ -117,6 +117,8 @@ export interface ViewsPaneProps {
   root: string
   /** Absolute path of the folder the views belong to: it keys the collapse state. */
   folderPath: string
+  /** The app tab that shows this folder page (`Editor`'s `tabId`): its note window is that tab's (YAZ-4544, D17). Absent in the right panel. */
+  tabId?: string
   /** The notes the views query (YAZ-2290 D4) — the folder's own rows, never the whole vault — each with the FOLDER's values for it as its `properties` (D19). */
   records: IndexRecord[]
   /**
@@ -177,7 +179,7 @@ export function freeName(base: string, taken: ReadonlySet<string>): string {
   for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
 }
 
-export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', foldingOnByDefault }: ViewsPaneProps) {
+export function ViewsPane({ parsed, onChange, root, folderPath, tabId, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', foldingOnByDefault }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -219,9 +221,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
    * `folderViewSet` both fall back to `DEFAULT_VIEWS` — and `index` is clamped into that list.
    */
   const view = views[index]!
-  // The open card of this folder page and view tab is in a module map (`NoteWindow.tsx`, D17), so a tab that sleeps and
-  // mounts again shows it again on the same note.
-  const windowKey = noteWindowKey(folderPath, view.name)
+  // The open card of this app tab, folder page and view tab is in a module map (`NoteWindow.tsx`, D17, YAZ-4544), so a
+  // tab that sleeps and mounts again shows it again on the same note, and another tab on this folder has its own.
+  const windowKey = noteWindowKey(tabId, folderPath, view.name)
   const noteWindow = openNoteWindow(windowKey)
   const openWindow =
     folder.renderNoteEditor === undefined
