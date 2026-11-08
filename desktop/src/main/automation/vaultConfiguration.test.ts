@@ -33,10 +33,22 @@ describe('public vault configuration adapters', () => {
     const a = join(root, 'A.md'), b = join(root, 'B.md'); await writeFile(a, 'A'); await writeFile(b, 'B')
     await Promise.all([run('icon.set', { path: a, icon: 'markdown' }), run('icon.set', { path: b, icon: 'python' })])
     expect(await run('icon.list')).toMatchObject({ total: 2 })
-    await expect(run('icon.set', { path: a, icon: 'not an icon' })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(run('icon.set', { path: a, icon: 'not an icon' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    // A well-formed name the app does not ship is refused, as the picker offers only the shipped set (YAZ-4518).
+    await expect(run('icon.set', { path: a, icon: 'zzz-not-an-icon' })).rejects.toMatchObject({ code: 'INVALID_INPUT', message: expect.stringContaining('icon.names') })
+    expect(await run('icon.list')).toMatchObject({ items: [{ path: a, icon: 'markdown' }, { path: b, icon: 'python' }] })
     await expect(run('icon.remove', { path: '/outside' })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     await run('icon.remove', { path: a })
     expect(await run('icon.list')).toMatchObject({ items: [{ path: b, icon: 'python' }] })
+  })
+  it('lists the icon names the picker offers, searched as the picker searches', async () => {
+    const all = await run('icon.names', { limit: 200 }) as { items: string[]; total: number }
+    expect(all.total).toBeGreaterThan(500)
+    const python = await run('icon.names', { query: 'pyth' }) as { items: string[] }
+    expect(python.items).toContain('python')
+    expect((await run('icon.names', { query: 'folder src', limit: 200 }) as { items: string[] }).items).toEqual(expect.arrayContaining(['folder-src']))
+    // The open and light twins follow their icon; the picker does not list them.
+    expect((await run('icon.names', { query: 'folder src open', limit: 200 }) as { items: string[] }).items).not.toContain('folder-src-open')
   })
   it('patches latest public config, retains unrelated fields, and refuses corruption or unknown fields', async () => {
     const name = 'review.json', file = join(root, '.yaseendocs', name)

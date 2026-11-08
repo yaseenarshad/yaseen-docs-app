@@ -6,6 +6,7 @@ import { createStore } from '../store'
 import { configurationCommand } from './configuration'
 import { _resetMint, _actAs } from '../vaultIndex/mint'
 import { checked } from './contract'
+import { prepareAutomation } from '../automation'
 
 let base: string, root: string, other: string, store: ReturnType<typeof createStore>
 beforeEach(async () => {
@@ -20,8 +21,9 @@ const run = (command: string, args: Record<string, unknown>) => checked(command,
 
 describe('configuration commands', () => {
   it('patches vault names and unique number keys and persists picture-folder changes', async () => {
-    await run('vault.patch', { root, changes: { name: 'Notes', key: 3 } })
-    await run('vault.patch', { root: other, changes: { key: 3 } })
+    expect(await run('vault.patch', { root, changes: { name: 'Notes', key: 3 } })).toEqual({ root, name: 'Notes', key: 3, diskSaved: true })
+    // The number moves, as in the vault switcher, and the result names the vault that lost it.
+    expect(await run('vault.patch', { root: other, changes: { key: 3 } })).toEqual({ root: other, name: null, key: 3, keyFrom: root, diskSaved: true })
     expect(store.get().folders[root]).toMatchObject({ name: 'Notes', key: null })
     expect(store.get().folders[other].key).toBe(3)
     await run('pictureFolder.allow', { folder: join(base, 'Pictures') })
@@ -37,6 +39,12 @@ describe('configuration commands', () => {
     expect(JSON.parse(await readFile(join(base, 'profile/state.json'), 'utf8')).settings.dailyNotes).toBe(true)
     await expect(run('settings.patch', { changes: { madeUp: true } })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
     await expect(run('settings.patch', { changes: { dailyNotes: 'yes' } })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    // An icon rule names an icon the app ships, as the rules control picks it (YAZ-4518).
+    const rule = { match: '*.py', kind: 'file', icon: 'zzz-not-an-icon' }
+    await expect(run('settings.patch', { changes: { sidebarIconRules: [rule] } })).rejects.toMatchObject({ code: 'INVALID_INPUT', message: expect.stringContaining('zzz-not-an-icon') })
+    expect(store.get().settings.sidebarIconRules).toEqual([])
+    await run('settings.patch', { changes: { sidebarIconRules: [{ ...rule, icon: 'python' }] } })
+    expect(store.get().settings.sidebarIconRules).toEqual([{ ...rule, icon: 'python' }])
   })
   it('keeps workspace identity through updates and refuses an accidental same-name replacement', async () => {
     const first = await run('workspace.create', { name: 'Skills', roots: [root, other] }) as { workspace: { id: string } }
@@ -64,7 +72,11 @@ describe('configuration commands', () => {
     const result = await run('session.save', { name: 'Morning', roots: [root], tabs: [tab] }) as { session: { id: string } }
     expect(await run('session.list', {})).toMatchObject({ source: 'saved', items: [{ id: result.session.id, tabs: [tab] }] })
     await expect(run('session.save', { name: 'Invalid', roots: [other], tabs: [tab] })).rejects.toMatchObject({ code: 'OUTSIDE_SCOPE' })
-    await run('session.remove', { id: result.session.id })
+    // The session list asks before a delete (YAZ-4567): without confirm the dispatcher refuses and the session stays.
+    const request = (args: Record<string, unknown>) => prepareAutomation({ profile: '/p', version: 'test', store }, { version: 1, session: 's', token: 't', id: 'r', issuedAt: Date.now(), command: 'session.remove', args }, Buffer.alloc(0))
+    expect(() => request({ id: result.session.id })).toThrow(/missing confirm/)
+    expect(store.get().sessions).toHaveLength(1)
+    await request({ id: result.session.id, confirm: true }).run()
     expect(store.get().sessions).toEqual([])
   })
 })

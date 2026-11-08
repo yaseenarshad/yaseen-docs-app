@@ -10,7 +10,7 @@ import { api } from '../api'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { storage } from '../lib/storage'
 import { favoriteOrder } from '../lib/treeState'
-import { itemOf, mergeFolders, resolveItem, sameItem, upsert, type FolderItem } from './focusFolders'
+import { folderDeletion, itemOf, mergeFolders, sameItem, upsert, type FolderItem } from './focusFolders'
 
 export const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -297,16 +297,14 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
     const remove = (id: string, keep = true): void => {
       const f = now.current.find((x) => x.id === id)
       if (f === undefined) return
-      const back = keep ? f.items.map((i) => resolveItem(i, live.current.roots)).flatMap((r) => ('path' in r ? [r.path] : [])) : []
-      const gone: FocusFolder = { ...f, deleted: true, items: [], at: Date.now() }
       const there = inOther(id)
       const theirs = otherNow.current.find((x) => x.id === id)
       const inOtherList = (p: string) => (otherLists.held.current[rootOfPath(live.current.roots, p) ?? ''] ?? []).includes(p)
-      const freshThere = there ? back.filter((p) => !inOtherList(p)) : []
+      // The plan is shared with the CLI's group.remove (D7, YAZ-4568).
+      const { gone, here: fresh, there: freshThere } = folderDeletion(f, live.current.roots, keep, Date.now(), (p) => top.current.includes(p), there ? inOtherList : null)
       if (!store.save(gone)) return loading()
       // A delete is the folder's, in both places: the other scope gets the tombstone too, whether or not this window has seen a copy there.
       other.save(gone)
-      const fresh = back.filter((p) => !top.current.includes(p))
       const putHere = fresh.length > 0 ? toggleIn(lists, fresh, false, max) : false
       const putThere = freshThere.length > 0 ? toggleIn(otherLists, freshThere, false, max) : false
       if (putHere === null || putThere === null) return notice.current(`Couldn't put every item of ${f.name} back: a vault is still loading. Add them again.`, 'error')

@@ -72,7 +72,7 @@ it('declares notes, reviews, comments, and binary reads', async () => {
   await mkdir(join(root, '.yaseendocs')); await writeFile(join(root, '.yaseendocs/review.json'), '{"enabled":true}')
   const read = async () => (await run('file.read', { root, path: note }) as { revision: string }).revision
   await run('review.setEnabled', { root, path: note, revision: await read(), enabled: true })
-  await run('review.reset', { root, path: note, revision: await read() })
+  await run('review.reset', { root, path: note, revision: await read(), confirm: true })
   await utimes(note, 1_600_000_000, 1_600_000_000) // long overdue
   expect(await run('review.queue', { root })).toMatchObject({ root, items: [{ path: note }] })
   await writeFile(join(root, 'Picture.png'), Buffer.from([137, 80, 78, 71]))

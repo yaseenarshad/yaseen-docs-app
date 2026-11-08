@@ -36,3 +36,22 @@ it('declares a description, an effect, requirements, and closed outputs for ever
   // Each rule still names a real field, so the list cannot hide a removed one.
   for (const rule of OPEN_CONTENT) expect(open.some(field => rule.test(field.path)), String(rule)).toBe(true)
 })
+
+/**
+ * D8: a command whose app twin asks first takes the answer as an explicit input (YAZ-4567). `confirm` takes only
+ * true; another field is the sheet's choice. A command that asks only sometimes (a move or a shortcut removal that
+ * clears folder values: `dropValues`) refuses at run time instead, with CONFIRMATION_REQUIRED.
+ */
+const ANSWERS: Record<string, string> = {
+  'folderView.remove': 'confirm', 'folderColumn.remove': 'confirm', 'session.remove': 'confirm', 'ids.disable': 'confirm',
+  'comment.remove': 'confirm', 'review.reset': 'confirm', 'component.remove': 'confirm', 'media.removePacks': 'confirm', 'file.trash': 'confirm',
+  'group.remove': 'keepItems', 'share.disconnect': 'deleteEverything',
+}
+it('requires the delete sheet’s answer for every command whose app twin asks first', () => {
+  for (const [name, field] of Object.entries(ANSWERS)) {
+    const input = AUTOMATION_COMMANDS.find(command => command.name === name)!.input
+    expect(input.required, name).toContain(field)
+    if (field === 'confirm') expect(input.properties![field], name).toEqual({ type: 'boolean', enum: [true] })
+  }
+  for (const name of ['file.move', 'file.copy', 'shortcut.remove']) expect(AUTOMATION_COMMANDS.find(command => command.name === name)!.input.properties!.dropValues, name).toEqual({ type: 'boolean' })
+})

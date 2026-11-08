@@ -6,6 +6,7 @@ import { getFocus, updateFocus } from '../focus'
 import { absolute, resolveTarget, scopeRoots } from './resources'
 import { allowPictureFolder } from '../pictureFolderActions'
 import { serializeFile } from '../fs/revision'
+import { requireShippedIcon } from './vaultConfiguration'
 
 const page = <T>(items: readonly T[], args: Record<string, unknown>) => {
   const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
@@ -17,11 +18,14 @@ export async function configurationCommand(store: Store, command: string, args: 
   if (command === 'vault.list') return page(listVaults(store.get()), args)
   if (command === 'vault.patch') {
     const { roots: [root] } = await scopeRoots(store.get(), { root: args.root as string })
-    store.setFolder(root, args.changes as { name?: string | null; key?: number | null })
+    const changes = args.changes as { name?: string | null; key?: number | null }
+    // A number key moves, as in the vault switcher: the result names the vault that loses it.
+    const keyFrom = changes.key == null ? undefined : Object.entries(store.get().folders).find(([other, folder]) => other !== root && folder.key === changes.key)?.[0]
+    store.setFolder(root, changes)
     await store.flush()
     // Only the label and the number key: the vault's bucket also holds this Mac's private open and save history.
     const { name, key } = store.get().folders[root]
-    return { root, name, key, diskSaved: true }
+    return { root, name, key, ...(keyFrom === undefined ? {} : { keyFrom }), diskSaved: true }
   }
   if (command.startsWith('pictureFolder.')) {
     if (command === 'pictureFolder.allow') await allowPictureFolder(store, absolute(args.folder as string))
@@ -34,6 +38,8 @@ export async function configurationCommand(store: Store, command: string, args: 
   }
   if (command === 'session.list') return { ...page(store.get().sessions, args), source: 'saved' }
   if (command === 'settings.patch') {
+    const rules = (args.changes as Record<string, unknown>).sidebarIconRules
+    if (Array.isArray(rules)) for (const rule of rules) if (typeof rule?.icon === 'string') await requireShippedIcon(rule.icon)
     let next
     try { next = patchSettings(store.get().settings, args.changes as Record<string, unknown>) }
     catch { throw new AutomationFailure('INVALID_INPUT', 'A settings field is unknown or has an invalid value. No settings were changed.') }
