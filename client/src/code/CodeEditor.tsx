@@ -389,7 +389,8 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
       const text = model.getValue().slice(Math.min(selection.anchor, selection.head), Math.max(selection.anchor, selection.head))
       return { path, kind: 'text', content: textNow(), baselineMtime: doc.autosave.current?.mtime ?? loaded.mtime, dirty: doc.autosave.current?.dirty ?? false, conflict: doc.conflicted.current, selection: { ...selection, text, coordinate: 'utf16' } }
     }, {
-      version: () => `${model.getAlternativeVersionId()}:${JSON.stringify(caretOf(editor, model))}:${doc.autosave.current?.mtime}`,
+      // Not the save's mtime: an autosave between two agent calls changes nothing an action reads (YAZ-4563).
+      version: () => `${model.getAlternativeVersionId()}:${JSON.stringify(caretOf(editor, model))}`,
       // A locked tab takes no edits from a person, so none from the CLI either (YAZ-4560).
       get actions(): EditorAction['action'][] { return lockedRef.current ? [...TEXT_READ_ONLY_ACTIONS] : ['select', 'replace', 'undo', 'redo', 'save'] },
       run: async action => {

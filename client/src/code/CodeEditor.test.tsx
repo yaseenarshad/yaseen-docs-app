@@ -1038,6 +1038,17 @@ describe('automation live code read', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
+  it('YAZ-4563: an autosave between two editor actions does not make the first result\'s revision stale', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-code'
+    await opened('a\n')
+    const run = (revision: string, edit: Parameters<typeof runEditorAction>[0]['edit']) => runEditorAction({ command: 'editor.action', tab: 'live-code', revision, edit })
+    const selected = await run(readLiveDocument('live-code').revision, { action: 'select', anchor: 0, head: 1 })
+    const replaced = await run(selected.revision, { action: 'replace', text: 'b' })
+    await after(600)
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    await expect(run(replaced.revision, { action: 'select', anchor: 0, head: 0 })).resolves.toMatchObject({ dirty: false, selection: { anchor: 0, head: 0 } })
+  })
+
   it('YAZ-4515: a live read says when the conflict bar is up', async () => {
     container.classList.add('tabstack__layer'); container.dataset.tab = 'live-code'
     await opened('a\n')

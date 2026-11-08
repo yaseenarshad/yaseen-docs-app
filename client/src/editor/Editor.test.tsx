@@ -2735,6 +2735,19 @@ describe('automation live Markdown read', () => {
     } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
   })
 
+  it('YAZ-4563: an autosave does not change the live revision when the document and the selection stay', async () => {
+    const el = await mount(FM + BODY)
+    el.classList.add('tabstack__layer'); el.dataset.tab = 'live-saved'
+    vi.mocked(editorViewOf).mockReturnValue({ ...emptyView(), state: { selection: { anchor: 1, head: 1, from: 1, to: 1 }, doc: { textBetween: () => '' } } } as never)
+    try {
+      type('# Hello\n\nedit\n')
+      const before = readLiveDocument('live-saved').revision
+      await pastDebounce()
+      expect(writeFile).toHaveBeenCalledTimes(1)
+      expect(readLiveDocument('live-saved')).toMatchObject({ dirty: false, revision: before })
+    } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
+  })
+
   it('YAZ-4515: a live read says when the conflict bar is up, so an agent knows why a save stays incomplete', async () => {
     const el = await mount(FM + BODY)
     el.classList.add('tabstack__layer'); el.dataset.tab = 'live-conflict'

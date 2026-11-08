@@ -944,7 +944,8 @@ function CrepeHost({
           const { selection, doc } = editorViewOf(crepe).state
           return { path: file.path, kind: 'markdown', content: parts.frontmatter + bodyNow, baselineMtime: controller!.mtime, dirty: bodyNow !== parts.body, conflict: conflicted(), selection: { anchor: selection.anchor, head: selection.head, text: doc.textBetween(selection.from, selection.to, '\n'), coordinate: 'prosemirror' } }
         }, {
-          version: () => `${markdownVersion(crepe)}:${controller!.mtime}`,
+          // Not the save's mtime: an autosave between two agent calls changes nothing an action reads (YAZ-4563).
+          version: () => markdownVersion(crepe),
           // Read only blocks a person's edits and Undo (YAZ-3076 D2), so the CLI gets none either (YAZ-4560).
           get actions(): EditorAction['action'][] { return readOnlyRef.current ? [...TEXT_READ_ONLY_ACTIONS] : ['select', 'replace', 'format', 'undo', 'redo', 'save'] },
           run: async action => {
