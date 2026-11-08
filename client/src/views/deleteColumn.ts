@@ -4,9 +4,10 @@
  *
  *  (a) the declaration `folder_settings.columns.<key>` of THIS folder,
  *  (b) every reference the folder's views hold to the key — `order`, `sort`, `groupBy`,
- *      `summaries`, `columnSize`, `columnWrap`, `cardStyle`, a cards `image`, and every filter leaf that names
- *      it — and its label under `properties`, so nothing dangles (a `frozenColumns` prefix follows
- *      the shortened order through the one order writer, `withOrder`),
+ *      `summaries`, `columnSize`, `columnWrap`, `cardStyle`, a cards `image`, a calendar's `dateProperty`, the cell
+ *      `fills` in it, and every filter leaf that names it — and its label under `properties`, so nothing dangles (a
+ *      `frozenColumns` prefix loses the column if it held it, then follows the shortened order through the one order
+ *      writer, `withOrder`),
  *  (c) the field from THIS folder's block (D19, `shared/folderValues.ts`) in every indexed note
  *      that holds it there (`notesHolding`). Nothing else in a note is touched: not its own field
  *      of that name, not another folder's.
@@ -22,10 +23,12 @@
  * hidden. `undeletableReason` is the one rule both menus disable their item by.
  */
 import { folderValues, setFolderValue } from '@shared/folderValues'
+import { isRecord } from '@shared/guards'
 import type { IndexRecord } from '@shared/types'
 import { reservedKeys } from '../links/reservedKeys'
 import type { ColumnDecl } from './folderSettings'
 import { withOrder } from './view/columnOrder'
+import { frozenColumnCount } from './view/frozenColumns'
 import { canonicalKey } from './view/keys'
 import { groupByLevels, type FilterNode, type ViewDef, type ViewSet } from './viewSchema'
 import { transformFile } from './writeProperty'
@@ -85,7 +88,11 @@ export function pruneColumnFromViews(views: readonly ViewDef[], key: string): Vi
       const order = view.order.filter((k) => !names(k))
       if (order.length !== view.order.length) {
         changed = true
-        next = withOrder(next, order)
+        // A frozen column that goes takes its place in the frozen count with it (YAZ-4596 S37): the line stays
+        // after the same column, and the column after it does not freeze in its place.
+        const frozen = frozenColumnCount(view.frozenColumns, view.order.length)
+        const frozenGone = view.order.slice(0, frozen).filter(names).length
+        next = withOrder(frozenGone > 0 ? { ...next, frozenColumns: frozen - frozenGone } : next, order)
       }
     }
     if (Array.isArray(view.sort)) {
@@ -108,6 +115,20 @@ export function pruneColumnFromViews(views: readonly ViewDef[], key: string): Vi
     if (names(view.image)) {
       changed = true
       delete next.image
+    }
+    // A calendar's "Show by" (YAZ-4596 S37): it falls back to the first date column.
+    if (names(view.dateProperty)) {
+      changed = true
+      delete next.dateProperty
+    }
+    // A cell fill in the column goes; a row fill stays (YAZ-4596 S37).
+    if (Array.isArray(view.fills)) {
+      const fills = view.fills.filter((fill: unknown) => !(isRecord(fill) && names(fill.column)))
+      if (fills.length !== view.fills.length) {
+        changed = true
+        if (fills.length === 0) delete next.fills
+        else next.fills = fills
+      }
     }
     if (view.filters !== undefined) {
       const filters = pruneFilter(view.filters, key)

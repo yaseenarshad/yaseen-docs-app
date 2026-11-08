@@ -529,6 +529,60 @@ describe('a shortcut is a row too (D2/D4)', () => {
   })
 })
 
+describe('Delete column leaves no stale reference (YAZ-4596 S37)', () => {
+  it('sort, group levels, filters, wrap, fills, the frozen count and a calendar\'s "Show by" lose the column in the one write; `other_files` and the rest stay; every view renders after the echo', async () => {
+    const table = {
+      type: 'table',
+      name: 'Table',
+      order: ['file.name', 'note.order', 'note.related'],
+      frozenColumns: 2, // frozen up to Order: the line moves back to Name, never on to Related
+      sort: [{ property: 'note.order', direction: 'DESC' }, { property: 'file.name', direction: 'ASC' }],
+      groupBy: [{ property: 'note.order' }, { property: 'file.folder' }],
+      filters: { and: ['note.order != 9', 'file.name.contains("")'] },
+      columnWrap: { 'note.order': false, 'note.related': false },
+      fills: [{ note: '[[Lead Gen]]', column: 'note.order', fill: 'red' }, { note: '[[Sales]]', fill: 'blue' }, { note: '[[Sales]]', column: 'order', fill: 'green' }],
+    }
+    const calendar = { type: 'calendar', name: 'Calendar', dateProperty: 'note.order' }
+    const settings = { ...SETTINGS, views: [SETTINGS.views[0], table, BOARD, calendar], other_files: ['[[Old]]'] }
+    const el = await mount(settings)
+    selectView(el, 'Table')
+    rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][1])
+    click(menuItem(el, 'Delete column…'))
+    click(q(el, '.confirm__btn--danger'))
+    await flush()
+
+    expect(write).toHaveBeenCalledTimes(1)
+    const after = written() as typeof settings
+    expect(after.columns).toEqual({ related: SETTINGS.columns.related })
+    expect(after.views[1]).toEqual({
+      type: 'table',
+      name: 'Table',
+      order: ['file.name', 'note.related'],
+      frozenColumns: 1,
+      sort: [{ property: 'file.name', direction: 'ASC' }],
+      groupBy: [{ property: 'file.folder' }],
+      filters: { and: ['file.name.contains("")'] },
+      columnWrap: { 'note.related': false },
+      fills: [{ note: '[[Sales]]', fill: 'blue' }],
+    })
+    expect(after.views[2]).toEqual(BOARD)
+    expect(after.views[3]).toEqual({ type: 'calendar', name: 'Calendar' })
+    expect(after.other_files).toEqual(['[[Old]]'])
+    expect(JSON.stringify(after.views)).not.toMatch(/note\.order|"column":"order"/)
+
+    // The echo: every view renders on the new settings, with no banner.
+    feed(after)
+    await flush()
+    for (const name of ['Table', 'Board', 'Calendar']) {
+      selectView(el, name)
+      await flush()
+      expect(el.querySelector('[role="alert"]')).toBeNull()
+    }
+    selectView(el, 'Table')
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).not.toContain('Order')
+  })
+})
+
 // ---------- the chrome (🔒 rule 4 + Q3) ----------
 
 describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
