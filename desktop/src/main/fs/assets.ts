@@ -149,9 +149,9 @@ export async function writeAsset(req: AssetWriteRequest & { expectedRevision?: s
 /**
  * The headers of the `IMAGE_EXTENSIONS` formats, read as latin1 (one char per byte). A raster name takes any raster
  * header: the app names a paste by the system's MIME type, which can disagree with the bytes, and the browser
- * shows such a file anyway. An SVG is text, so it needs an `<svg` element.
+ * shows such a file anyway (a pasted .ico saves as .png, YAZ-4600). An SVG is text, so it needs an `<svg` element.
  */
-const RASTER_HEAD = /^(?:\x89PNG\r\n\x1a\n|\xff\xd8\xff|GIF8|RIFF[^]{4}WEBP|[^]{4}ftyp|BM)/
+const RASTER_HEAD = /^(?:\x89PNG\r\n\x1a\n|\xff\xd8\xff|GIF8|RIFF[^]{4}WEBP|[^]{4}ftyp|BM|\x00\x00[\x01\x02]\x00)/
 function isPicture(ext: string, bytes: Uint8Array): boolean {
   const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   return ext === 'svg' ? buf.includes('<svg') : RASTER_HEAD.test(buf.toString('latin1', 0, 12))
@@ -184,7 +184,7 @@ async function writeAssetUnlocked(req: AssetWriteRequest & { expectedRevision?: 
   const size = typeof body === 'string' ? Buffer.byteLength(body, 'utf8') : body.byteLength
   if (size > MAX_FILE_BYTES) throw new BridgeFailure('TOO_LARGE', `content exceeds ${MAX_FILE_BYTES} bytes`, { path: file })
   if (typeof body === 'string') parseScene(body, file, 'BAD_REQUEST')
-  else if (!isPicture(ext, body)) throw new BridgeFailure('BAD_REQUEST', ext === 'svg' ? 'the text is not an SVG picture' : 'the bytes are not a PNG, JPEG, GIF, WebP, AVIF or BMP picture', { path: file })
+  else if (!isPicture(ext, body)) throw new BridgeFailure('BAD_REQUEST', ext === 'svg' ? 'the text is not an SVG picture' : 'the bytes are not a PNG, JPEG, GIF, WebP, AVIF, BMP or ICO picture', { path: file })
   if (expectedMtime !== undefined && typeof expectedMtime !== 'number') {
     throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: file })
   }

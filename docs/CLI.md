@@ -9,7 +9,7 @@ yaseendocs app status --json
 yaseendocs request status --id <request-id>
 ```
 
-Each input field is a flag. Complex fields accept JSON; `--input -` reads an input object from stdin. `--input @file.json` reads a file. Commands that accept large content use `--body`, transferred separately from the control frame. Secrets must use stdin or a private file, never a command-line value.
+Each input field is a flag. A text field takes the text as it is; a field that also allows null takes the word `null` as null. Complex fields accept JSON; `--input -` reads an input object from stdin. `--input @file.json` reads a file. Commands that accept large content use `--body`, transferred separately from the control frame. Secrets must use stdin or a private file, never a command-line value.
 
 ## Profiles and startup
 
