@@ -1689,3 +1689,75 @@ describe('a read-only note in a folder that uses IDs (YAZ-3076 D6)', () => {
     expect(cellOf(el, 'Old', 1).querySelector('[data-edit]')).not.toBeNull()
   })
 })
+
+describe('S24: renaming an option rewrites the notes that hold it (YAZ-4591)', () => {
+  const STAGE = { kind: 'select' as const, options: ['Todo', 'Done'] }
+  const RENAMED = { kind: 'select' as const, options: ['Next', 'Done'] }
+  const WITH_STAGE = { columns: { stage: STAGE }, views: [TABLE] }
+  /** The files `transformFile` reads and rewrites: the settings file and the notes. */
+  let disk: Map<string, string>
+  const yaml = (values: string, own = ''): string => `---\n${own}in:\n  ${STAGES_ID}:\n    ${values}\n---\n`
+
+  beforeEach(() => {
+    disk = new Map([[SETTINGS_FILE, `---\nid: ${STAGES_ID}\nfolder_settings:\n  columns:\n    stage:\n      kind: select\n      options: [Todo, Done]\n  views: []\n---\n`]])
+    transform.mockImplementation(async (path: string, fn: (content: string) => string) => {
+      const after = fn(disk.get(path) ?? '')
+      disk.set(path, after)
+      return { mtime: 2, content: after }
+    })
+  })
+
+  async function mountWith(records: IndexRecord[], ids = true) {
+    const onNotice = vi.fn()
+    renderFolderView({ path: STAGES, source, onOpenFile, onNotice })
+    feed(WITH_STAGE, records, ids)
+    await flush()
+    return onNotice
+  }
+
+  it('ID vault: the declaration first, then one write per note holding it in this folder’s block — a list keeps its other elements; Undo puts both back', async () => {
+    disk.set(LEAD, yaml('stage: Todo'))
+    disk.set(SALES, yaml('stage: [Todo, Done]'))
+    disk.set(OTHER, yaml('stage: Todo', 'stage: Todo\n')) // no row here, but it holds this folder's value; its own key is not ours
+    const onNotice = await mountWith([rec(OTHER, held({ stage: 'Todo' }, { stage: 'Todo' })), rec(LEAD, held({ stage: 'Todo' })), rec(SALES, held({ stage: ['Todo', 'Done'] })), rec(DEEP, held({ stage: 'Done' }))])
+    await act(async () => captured.folder!.setColumn('stage', RENAMED, STAGE, { from: 'Todo', to: 'Next' }))
+    expect(transform.mock.calls.map(([path]) => path)).toEqual([SETTINGS_FILE, OTHER, LEAD, SALES])
+    expect(disk.get(LEAD)).toBe(yaml('stage: Next'))
+    expect(disk.get(SALES)).toMatch(/stage:\n\s+- Next\n\s+- Done\n/)
+    expect(disk.get(OTHER)).toBe(yaml('stage: Next', 'stage: Todo\n'))
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Renamed “Todo” to “Next” in 3 notes', 'info', 'undo', expect.objectContaining({ label: 'Undo', fades: true }))
+    transform.mockClear()
+    await act(async () => onNotice.mock.calls[0][3].run())
+    await flush()
+    expect(transform.mock.calls.map(([path]) => path)).toEqual([SETTINGS_FILE, OTHER, LEAD, SALES])
+    expect(disk.get(LEAD)).toBe(yaml('stage: Todo'))
+    expect(disk.get(SETTINGS_FILE)).toMatch(/options:\s*\[\s*Todo,\s*Done\s*\]|- Todo\n\s*- Done/)
+  })
+
+  it('a refused declaration touches no note', async () => {
+    disk.set(LEAD, yaml('stage: Todo'))
+    const onNotice = await mountWith([rec(LEAD, held({ stage: 'Todo' }))])
+    await act(async () => expect(captured.folder!.setColumn('stage', RENAMED, { kind: 'select', options: ['Other'] }, { from: 'Todo', to: 'Next' })).rejects.toThrow('changed since'))
+    expect(transform.mock.calls.map(([path]) => path)).toEqual([SETTINGS_FILE])
+    expect(onNotice).not.toHaveBeenCalled()
+  })
+
+  it('a read-only note keeps the old label, and the toast says so', async () => {
+    disk.set(LEAD, yaml('stage: Todo'))
+    disk.set(SALES, yaml('stage: Todo', 'readonly: true\n'))
+    const onNotice = await mountWith([rec(LEAD, held({ stage: 'Todo' })), rec(SALES, held({ stage: 'Todo' }, { readonly: true }))])
+    await act(async () => captured.folder!.setColumn('stage', RENAMED, STAGE, { from: 'Todo', to: 'Next' }))
+    expect(transform.mock.calls.map(([path]) => path)).toEqual([SETTINGS_FILE, LEAD])
+    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 note · 1 note not changed')
+  })
+
+  it('a vault without IDs: the rows’ own top-level key', async () => {
+    disk.set(LEAD, '---\nstage: Todo\n---\n')
+    disk.set(SETTINGS_FILE, '---\nfolder_settings:\n  columns:\n    stage:\n      kind: select\n      options: [Todo, Done]\n  views: []\n---\n')
+    const onNotice = await mountWith([rec(LEAD, { stage: 'Todo' }), rec(OTHER, { stage: 'Todo' })], false)
+    await act(async () => captured.folder!.setColumn('stage', RENAMED, STAGE, { from: 'Todo', to: 'Next' }))
+    expect(transform.mock.calls.map(([path]) => path)).toEqual([SETTINGS_FILE, LEAD]) // Other is no row of this folder
+    expect(disk.get(LEAD)).toBe('---\nstage: Next\n---\n')
+    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 note')
+  })
+})

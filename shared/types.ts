@@ -3435,6 +3435,19 @@ export interface PropertyDecl {
   required?: boolean
   /** What the column holds, in words (YAZ-4590 S23): Edit column sets it; the table header shows it on hover. */
   description?: string
+  /** number/date only: how a cell shows the value (YAZ-4591 S21/S22). Display only — the stored value never changes. */
+  format?: PropertyFormat
+}
+
+/**
+ * A Number or Date column's display format (YAZ-4591). Number styles: `plain` (the default),
+ * `grouped` (1,234), `currency`, `percent`, with `decimals` 0–4 and `currency` an ISO 4217 code.
+ * Date styles: `iso` (the default), `medium` ("Nov 7, 2026") and `relative` ("in 3 days").
+ */
+export interface PropertyFormat {
+  style: 'plain' | 'grouped' | 'currency' | 'percent' | 'iso' | 'medium' | 'relative'
+  decimals?: number
+  currency?: string
 }
 
 export interface PropertiesResponse {

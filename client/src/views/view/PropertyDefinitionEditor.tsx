@@ -39,8 +39,10 @@ export function PropertyTypeIcon({ kind }: { kind: PropertyKind }) {
  * host saves, the Properties menu's detail panel (YAZ-1513) writes each change immediately.
  * Carved out of `PropertyDefinitionEditor` so both can hold the one implementation.
  */
-export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
+export function PropertyOptionsEditor({ value, onChange, observed = [], onRename }: {
   value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]
+  /** A rename that also rewrites the notes holding the option (YAZ-4591 S24): the folder's column editor. Absent: a rename is `onChange`, metadata only. */
+  onRename?: (next: PropertyDecl, from: string, to: string) => void
 }) {
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
@@ -77,7 +79,8 @@ export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
     const next = draft.trim()
     if (!next) { setError('Enter an option name.'); return }
     if (options.some(option => option === next && option !== editing)) { setError('That option already exists.'); return }
-    setOptions(editing === null ? [...options, next] : options.map(option => option === editing ? next : option))
+    if (editing !== null && editing !== next && onRename) onRename({ ...value, options: options.map(option => option === editing ? next : option) }, editing, next)
+    else setOptions(editing === null ? [...options, next] : options.map(option => option === editing ? next : option))
     closeDetail()
   }
 
@@ -99,7 +102,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
         <div className="property-def__form-actions"><button type="button" onClick={closeDetail}>Cancel</button><button type="submit" className="property-def__save">Save</button></div>
       </form>
       <button type="button" className="property-def__delete" onClick={() => { setOptions(options.filter(option => option !== editing)); closeDetail() }}>Remove option</button>
-      <p className="property-def__hint">Renaming or removing this option keeps existing note values.</p>
+      <p className="property-def__hint">{onRename ? 'Renaming this option changes it in every note that holds it. Removing it keeps existing note values.' : 'Renaming or removing this option keeps existing note values.'}</p>
     </div> : <>
       <div className="property-def__option-list">
         {displayOptions.map((option, index) => <div key={option} className="property-def__option"
