@@ -6,6 +6,7 @@ import { sanitizeReviewSettings } from '@shared/reviews'
 import { isHeadingStyle, isTextStyle } from '@shared/textFormatting'
 import { isLineDefaults } from '@shared/line'
 import { HEADING_KEYS, type AppState } from '@shared/types'
+import { iconMatcher, pickableIconIds } from '@shared/vaultIcons'
 import { getProperties, patchProperty, removeProperty } from '../properties'
 import { getIcons, patchIcons } from '../icons'
 import { patchConfig, readConfigDetailed } from '../vaultConfig'
@@ -15,6 +16,14 @@ const page = <T>(items: T[], args: Record<string, unknown>) => {
   const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
   return { items: items.slice(offset, offset + limit), total: items.length, nextOffset: offset + limit < items.length ? offset + limit : null }
 }
+let shipped: Promise<ReadonlySet<string>> | undefined
+/** Material's icon ids, as the app ships them: loaded on the first icon command, then kept. */
+export const shippedIcons = () => shipped ??= import('@shared/materialIconData').then(data => new Set(data.MATERIAL_IDS.split(' ')))
+/** The picker offers only icons the app ships; a CLI name must be one too (YAZ-4518). */
+export async function requireShippedIcon(icon: string) {
+  if (!(await shippedIcons()).has(icon)) throw new AutomationFailure('INVALID_INPUT', `The app ships no icon named ${icon}. Run icon.names to find one.`)
+}
+
 function patchPublic(name: string, current: unknown, changes: Record<string, unknown>) {
   if (current !== null && !isRecord(current)) throw new AutomationFailure('INVALID_CONFIG', 'The existing configuration is not an object.')
   const next = { ...current as Record<string, unknown> }
@@ -42,6 +51,7 @@ function patchPublic(name: string, current: unknown, changes: Record<string, unk
   return next
 }
 export async function vaultConfiguration(state: AppState, command: string, args: Record<string, unknown>) {
+  if (command === 'icon.names') return page(pickableIconIds(await shippedIcons()).sort().filter(iconMatcher(args.query as string ?? '')), args)
   const { roots: [root] } = await scopeRoots(state, { root: args.root as string })
   if (command === 'newPlace.list') return { root, places: await getNewPlaces(root) }
   if (command === 'newPlace.set') {
@@ -57,7 +67,7 @@ export async function vaultConfiguration(state: AppState, command: string, args:
   }
   if (command.startsWith('icon.')) {
     const path = command === 'icon.list' ? undefined : absolute(args.path as string)
-    if (command === 'icon.set') await resolveTarget([root], { path })
+    if (command === 'icon.set') { await resolveTarget([root], { path }); await requireShippedIcon(args.icon as string) }
     const value = command === 'icon.list' ? await getIcons(root) : await patchIcons(root, { [path!]: command === 'icon.remove' ? null : args.icon as string })
     return { root, ...page(Object.entries(value.paths).map(([path, icon]) => ({ path, icon })), args), ...(command === 'icon.list' ? {} : { diskSaved: true }) }
   }

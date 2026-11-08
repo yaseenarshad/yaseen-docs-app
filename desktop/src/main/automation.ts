@@ -92,7 +92,7 @@ function prepare(context: { profile: string; version: string; packaged?: boolean
     case 'media.drawingIndex': case 'media.drawing': case 'media.packList': case 'media.packStatus': case 'media.downloadPacks': case 'media.stopPacks': case 'media.checkPacks': case 'media.removePacks':
       return { writes: request.command === 'media.stopPacks' ? [] : definition.effect === 'read' ? ['large-content'] : ['large-content', 'media'], run: () => mediaCommand(context.services!, request.command, request.args, content) }
     case 'newPlace.list': case 'newPlace.set':
-    case 'declaration.list': case 'declaration.patch': case 'declaration.remove': case 'icon.list': case 'icon.set': case 'icon.remove': case 'vaultConfig.read': case 'vaultConfig.patch':
+    case 'declaration.list': case 'declaration.patch': case 'declaration.remove': case 'icon.list': case 'icon.names': case 'icon.set': case 'icon.remove': case 'vaultConfig.read': case 'vaultConfig.patch':
       return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => vaultConfiguration(context.state!(), request.command, request.args) }
     case 'link.resolve': case 'link.outgoing': case 'link.incoming':
       return { writes: [], run: () => linkCommand(context.state!(), request.command, request.args) }

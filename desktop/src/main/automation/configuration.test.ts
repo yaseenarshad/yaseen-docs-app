@@ -21,8 +21,9 @@ const run = (command: string, args: Record<string, unknown>) => checked(command,
 
 describe('configuration commands', () => {
   it('patches vault names and unique number keys and persists picture-folder changes', async () => {
-    await run('vault.patch', { root, changes: { name: 'Notes', key: 3 } })
-    await run('vault.patch', { root: other, changes: { key: 3 } })
+    expect(await run('vault.patch', { root, changes: { name: 'Notes', key: 3 } })).toEqual({ root, name: 'Notes', key: 3, diskSaved: true })
+    // The number moves, as in the vault switcher, and the result names the vault that lost it.
+    expect(await run('vault.patch', { root: other, changes: { key: 3 } })).toEqual({ root: other, name: null, key: 3, keyFrom: root, diskSaved: true })
     expect(store.get().folders[root]).toMatchObject({ name: 'Notes', key: null })
     expect(store.get().folders[other].key).toBe(3)
     await run('pictureFolder.allow', { folder: join(base, 'Pictures') })
@@ -38,6 +39,12 @@ describe('configuration commands', () => {
     expect(JSON.parse(await readFile(join(base, 'profile/state.json'), 'utf8')).settings.dailyNotes).toBe(true)
     await expect(run('settings.patch', { changes: { madeUp: true } })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
     await expect(run('settings.patch', { changes: { dailyNotes: 'yes' } })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    // An icon rule names an icon the app ships, as the rules control picks it (YAZ-4518).
+    const rule = { match: '*.py', kind: 'file', icon: 'zzz-not-an-icon' }
+    await expect(run('settings.patch', { changes: { sidebarIconRules: [rule] } })).rejects.toMatchObject({ code: 'INVALID_INPUT', message: expect.stringContaining('zzz-not-an-icon') })
+    expect(store.get().settings.sidebarIconRules).toEqual([])
+    await run('settings.patch', { changes: { sidebarIconRules: [{ ...rule, icon: 'python' }] } })
+    expect(store.get().settings.sidebarIconRules).toEqual([{ ...rule, icon: 'python' }])
   })
   it('keeps workspace identity through updates and refuses an accidental same-name replacement', async () => {
     const first = await run('workspace.create', { name: 'Skills', roots: [root, other] }) as { workspace: { id: string } }
