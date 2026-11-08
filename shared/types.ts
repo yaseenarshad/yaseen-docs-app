@@ -3433,6 +3433,16 @@ export function isPropertyName(name: unknown): name is string {
 }
 
 /**
+ * Why a NEW property name is refused where a view could read it (YAZ-4637 M7), or null: a name under `file.`, `formula.`
+ * or `note.` would clash with the built-in columns of those prefixes. A stored key still reads — this guards the doors
+ * that make one: "+ Add column" and the Properties panel's add and rename.
+ */
+export function builtInPrefixRefusal(name: string): string | null {
+  const prefix = ['file.', 'formula.', 'note.'].find((p) => name.startsWith(p))
+  return prefix === undefined ? null : `${name} starts with ${prefix}, which the built-in columns use — choose another name`
+}
+
+/**
  * Folder-name grammar (GRO-2226, GRO-2204 audit fold-in): root-relative, '/'-separated
  * plain segments — no leading '/', no drive-like prefix, no '\' or NUL, and no '..' or other
  * leading-dot segments (dotfolders are invisible to the tree; '..' could aim a create outside

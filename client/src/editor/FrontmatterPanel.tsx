@@ -9,7 +9,7 @@ import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFro
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, folderValues, setFolderValue } from '@shared/folderValues'
 import { TITLE_KEY } from '@shared/noteName'
-import { PROPERTY_KINDS, folderSettingsPath, inFolder, isFolderSettingsPath, isPropertyName, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl, type PropertyKind } from '@shared/types'
+import { PROPERTY_KINDS, builtInPrefixRefusal, folderSettingsPath, inFolder, isFolderSettingsPath, isPropertyName, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 import { titleCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
@@ -340,6 +340,9 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   const nameRefusal = (name: string, folder: boolean): string | null => {
     if (!isPropertyName(name)) return 'Type a property name'
     if (Object.prototype.hasOwnProperty.call(folder ? block : parsed, name)) return `"${name}" is already a property of this page`
+    // A built-in prefix (YAZ-4637 M7): the views would read `file.x` as a file field, never as this key.
+    const clash = builtInPrefixRefusal(name)
+    if (clash !== null) return clash
     // The app's own keys have their own doors: a row added here would be read-only on a note and
     // hidden on a folder, and its value would stand where the app's belongs.
     if (reserved.has(name) || (own && name === FOLDER_SETTINGS_KEY)) return reservedText(name)

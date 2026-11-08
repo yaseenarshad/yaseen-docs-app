@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { DEFAULT_FOLDER_PAGES } from '@shared/types'
 import { type ParsedViews, type ViewSet, parseViews, serializeViews } from '../viewSchema'
 import { type FolderHost, ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
@@ -251,7 +252,19 @@ describe('the header menu (YAZ-1513)', () => {
     rightClick(q(el, '.view-table thead th.view-table__gutter'))
     expect(menuItems(el)).toEqual(['Show row numbers'])
     click(item(el, 'Show row numbers'))
+    // A choice equal to Settings removes the view's key (YAZ-4585 D34, YAZ-4637 M4): the view follows Settings again.
+    expect(def().views[0].rowNumbers).toBeUndefined()
+  })
+
+  it('the # header\'s choice goes through chooseOwn (M4): with Settings › Row numbers off, Hide removes the key and Show writes true', () => {
+    const { el, def } = mount(BASE, { folderPages: { ...DEFAULT_FOLDER_PAGES, rowNumbers: false } })
+    rightClick(q(el, '.view-table thead th.view-table__gutter'))
+    expect(menuItems(el)).toEqual(['Show row numbers'])
+    click(item(el, 'Show row numbers'))
     expect(def().views[0].rowNumbers).toBe(true)
+    rightClick(q(el, '.view-table thead th.view-table__gutter'))
+    click(item(el, 'Hide row numbers'))
+    expect(def().views[0].rowNumbers).toBeUndefined()
   })
 
   it('Delete column…: asks first — the sheet names the label, the key and the count of notes holding a value; Cancel deletes nothing', () => {

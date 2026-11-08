@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { isPropertyName } from '@shared/types'
+import { builtInPrefixRefusal, isPropertyName } from '@shared/types'
 import { reservedKeyText } from '../../links/reservedKeys'
 import type { ColumnDecl } from '../folderSettings'
 import { PropertyDefinitionEditor } from './PropertyDefinitionEditor'
@@ -50,6 +50,12 @@ export function AddColumn({ taken, shown, reserved, onSave, onShow, autoOpen = f
     }
     if (reserved.has(key)) {
       setError(reservedKeyText(key))
+      return
+    }
+    // A built-in prefix (YAZ-4637 M7): `file.x` would read as a file field, never as this column.
+    const clash = builtInPrefixRefusal(key)
+    if (clash !== null) {
+      setError(clash)
       return
     }
     const c = canonicalKey(key)

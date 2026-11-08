@@ -1434,6 +1434,13 @@ views:
     setValue(byLabel(pop, 'Column name'), 'status')
     click(byLabel(pop, 'Save column'))
     expect(q(pop, '[role="alert"]').textContent).toBe('status is already a column')
+    // A name under a built-in prefix would clash with the built-in fields (YAZ-4637 M7).
+    for (const name of ['file.name', 'formula.x', 'note.status']) {
+      setValue(byLabel(pop, 'Column name'), name)
+      click(byLabel(pop, 'Save column'))
+      expect(q(pop, '[role="alert"]').textContent).toBe(`${name} starts with ${name.slice(0, name.indexOf('.') + 1)}, which the built-in columns use — choose another name`)
+    }
+    expect(setColumns).not.toHaveBeenCalled()
     expect(setColumns).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
   })

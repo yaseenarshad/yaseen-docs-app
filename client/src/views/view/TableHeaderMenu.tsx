@@ -6,7 +6,7 @@ import { undeletableReason } from '../deleteColumn'
 import type { ColumnTyping } from '../editorType'
 import type { ColumnDecl } from '../folderSettings'
 import { type Mutate, type ViewDef, type ViewSet, MAX_GROUP_LEVELS } from '../viewSchema'
-import { useViewDefaults } from '../viewDefaults'
+import { chooseOwn, useViewDefaults } from '../viewDefaults'
 import type { FolderHost } from '../ViewsPane'
 import { AddColumn } from './AddColumn'
 import { ColumnDetail, type ColumnDoors, columnKind, columnTypeLabel } from './ColumnDetail'
@@ -93,7 +93,8 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
   const flyout = useFlyout<'sort' | 'group' | 'text'>()
   // The view's own Text in cells, else Settings' (YAZ-4544 10A).
-  const textInCells = textInCellsOf(def.views[viewIndex], useViewDefaults())
+  const defaults = useViewDefaults()
+  const textInCells = textInCellsOf(def.views[viewIndex], defaults)
   /** Once per menu, not per keystroke in its fields: the kind may walk the rows. */
   const typeLabel = useMemo(() => (columnKey === null ? '' : columnTypeLabel(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
   const kind = useMemo(() => (columnKey === null ? null : columnKind(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
@@ -109,9 +110,8 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
           className="ctx-menu__item"
           role="menuitem"
           onClick={() => {
-            onUpdate((d) => {
-              d.views[viewIndex].rowNumbers = !rowNumbers
-            })
+            // A choice equal to Settings removes the view's key (YAZ-4585 D34, YAZ-4637 M4).
+            onUpdate((d) => chooseOwn(d.views[viewIndex], 'rowNumbers', !rowNumbers, defaults))
             onClose()
           }}
         >

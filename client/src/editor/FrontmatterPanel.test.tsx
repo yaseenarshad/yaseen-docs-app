@@ -522,6 +522,12 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(errorLine(el)?.textContent).toBe('"status" is already a property of this page')
     expect(writeFile).not.toHaveBeenCalled()
 
+    // A built-in prefix is refused with the same words as "+ Add column" (YAZ-4637 M7).
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'file.size')
+    click(btn(el, 'Add'))
+    expect(errorLine(el)?.textContent).toBe('file.size starts with file., which the built-in columns use — choose another name')
+    expect(writeFile).not.toHaveBeenCalled()
+
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'author')
     click(btn(el, 'Add'))
     await flush()
