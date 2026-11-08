@@ -1,5 +1,5 @@
 import { boardOptionGroups } from './boardOptionGroups'
-import { columnTyping } from './editorType'
+import { columnTyping, optionOrderFor } from './editorType'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
@@ -296,12 +296,10 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // The page the views belong to, as the index names its folder (YAZ-2541): a Folder level groups by
   // the folders below it, each headed by its title off the vault's folder records.
   const page = useMemo(() => ({ folder: relTo(root, folderPath), folders: vaultFolders, vault: folder.vaultName }), [root, folderPath, vaultFolders, folder.vaultName])
-  // A Select column's options in the column editor's order (YAZ-3940): its sorts and groups follow them.
+  // A Select column's options in the column editor's order (YAZ-3940): its sorts and groups follow them. One typing
+  // per key for these records (YAZ-4544): a run that the view's def starts reads no record for it again.
   const settings = folder.settings
-  const optionOrder = useCallback((key: string) => {
-    const typing = columnTyping(key, shown, properties, settings)
-    return typing?.assigned === 'select' || typing?.assigned === 'multi-select' ? typing.options : undefined
-  }, [shown, properties, settings])
+  const optionOrder = useMemo(() => optionOrderFor(shown, properties, settings), [shown, properties, settings])
   const result = useMemo(
     () => runView(def, view, shown, { resolve, declared: Object.keys(folder.settings.columns), page, optionOrder }),
     [def, view, shown, resolve, page, optionOrder],

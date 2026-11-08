@@ -93,6 +93,22 @@ export function columnTyping(
   return { assigned: null, dominant }
 }
 
+/**
+ * A Select or Multi-select column's options in the column editor's order (YAZ-3940): the engine's `optionOrder` for
+ * one records snapshot. Each key is typed once (YAZ-4544): `columnTyping` reads every record, and a run asks once per
+ * sort and group level. The cache holds one entry per key asked, and goes with the snapshot.
+ */
+export function optionOrderFor(records: readonly IndexRecord[], properties: PropertiesResponse | null, settings: FolderSettings): (key: string) => readonly string[] | undefined {
+  const known = new Map<string, readonly string[] | undefined>()
+  return (key) => {
+    if (known.has(key)) return known.get(key)
+    const typing = columnTyping(key, records, properties, settings)
+    const options = typing?.assigned === 'select' || typing?.assigned === 'multi-select' ? typing.options : undefined
+    known.set(key, options)
+    return options
+  }
+}
+
 /** The editor for one cell; null = read-only. */
 export function cellEditor(raw: unknown, column: ColumnTyping): EditorKind | null {
   if (column === null) return null
