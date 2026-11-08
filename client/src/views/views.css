@@ -943,6 +943,12 @@
   box-sizing: border-box;
 }
 
+/* Group ›'s Levels (YAZ-4588 D42): rows to read, not to click — no hover fill, the plain cursor. */
+.view-header-menu .ctx-menu__item.view-header-menu__level {
+  cursor: default;
+  background: none;
+}
+
 .view-table tbody td {
   height: var(--view-table-row-h, 28px);
   overflow-wrap: anywhere;

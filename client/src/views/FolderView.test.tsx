@@ -1615,7 +1615,7 @@ describe('each folder has its own properties (D19)', () => {
       expect(el.querySelector('[aria-label="Delete column Owner"]')).toBeNull()
       click(byLabel(el, 'Properties'))
       rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][5])
-      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Hide column', 'Add column to the right…', 'Sort A to Z', 'Sort Z to A', 'Group by this column', 'Wrap text', '✓ Clip text', 'Freeze up to this column', 'Unfreeze columns'])
+      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Hide column', 'Add column to the right…', 'Sort', 'Group', 'Text', 'Freeze up to this column', 'Unfreeze columns'])
       click(menuItem(el, 'Hide column'))
       await flush()
       expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Title'])
