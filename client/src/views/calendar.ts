@@ -90,6 +90,28 @@ export function weekDays(day: DayKey): DayKey[] {
   return Array.from({ length: 7 }, (_, i) => addDays(monday, i))
 }
 
+/** `Sat` or `Sun` for a weekend day, the mark its card wears on the Friday before (YAZ-4595 S33); null on a weekday. */
+export function weekendOf(day: DayKey): 'Sat' | 'Sun' | null {
+  const weekday = localDay(day).getDay()
+  return weekday === 6 ? 'Sat' : weekday === 0 ? 'Sun' : null
+}
+
+/** "Hide weekends" (YAZ-4595 S33): the days of a week row without its Saturday and Sunday, by the weekday, not the column. */
+export const withoutWeekends = (days: readonly DayKey[]): DayKey[] => days.filter((day) => weekendOf(day) === null)
+
+/** The Saturday and Sunday whose cards a Friday shows while weekends hide (YAZ-4595 S33); none for another day. */
+export const weekendAfter = (day: DayKey): DayKey[] => (localDay(day).getDay() === 5 ? [addDays(day, 1), addDays(day, 2)] : [])
+
+/**
+ * Settings › Folder pages › "Hide weekends" (YAZ-4595 S33): the default of a calendar with no `hideWeekends` key. The
+ * one read of that setting, by a narrow cast: `folderPages` comes with the Folder pages settings (YAZ-4595, 10A).
+ */
+export const hideWeekendsDefault = (settings: unknown): boolean =>
+  (settings as { folderPages?: { hideWeekends?: unknown } } | null | undefined)?.folderPages?.hideWeekends === true
+
+/** Whether a calendar hides its weekends (YAZ-4595 S33): its own `hideWeekends`, else the Settings default. */
+export const hidesWeekends = (view: ViewDef, byDefault: boolean): boolean => (typeof view.hideWeekends === 'boolean' ? view.hideWeekends : byDefault)
+
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const monthDay = (day: DayKey): string => `${SHORT_MONTHS[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8, 10))}`
 

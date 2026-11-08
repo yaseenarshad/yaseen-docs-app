@@ -17,6 +17,8 @@ import { TextField } from './TextField'
 import { frozenColumnCount } from './frozenColumns'
 import { cardWidth } from './cardWidth'
 import { CalendarShowBy } from './CalendarView'
+import { hideWeekendsDefault, hidesWeekends } from '../calendar'
+import { storage } from '../../lib/storage'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
 
 export interface PropertiesMenuProps {
@@ -339,6 +341,21 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
               <option value="clip">Clip …</option>
               <option value="wrap">Wrap</option>
             </select>
+          </label>
+          <label className="view-menu__toggle">
+            <input
+              type="checkbox"
+              aria-label="Hide weekends"
+              checked={hidesWeekends(view, hideWeekendsDefault(storage.getSettings()))}
+              onChange={(e) =>
+                onUpdate((d) => {
+                  // The Settings › Folder pages default leaves no key (YAZ-4595 S33): only a choice that differs from it is written.
+                  if (e.target.checked === hideWeekendsDefault(storage.getSettings())) delete d.views[viewIndex].hideWeekends
+                  else d.views[viewIndex].hideWeekends = e.target.checked
+                })
+              }
+            />
+            Hide weekends
           </label>
         </>
       )}
