@@ -296,6 +296,16 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
     storage.setViewGroups(root, fromKey, [])
     if (toKey !== null) storage.setViewGroups(root, toKey, kept)
   }
+  // An outside edit (another window, the CLI) renames or deletes views without `moveCollapsed`: main's store already
+  // moved the entry, so a local copy for a view that is gone goes too, and a later view of that name starts open.
+  const viewNames = views.map((v) => v.name).join('\u0000')
+  useEffect(() => {
+    setCollapsedByKey((m) => {
+      const kept = Object.entries(m).filter(([key]) => views.some((v) => key === `${folderPath}::${v.name}`))
+      return kept.length === Object.keys(m).length ? m : Object.fromEntries(kept)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- by value: `views` is read through its names
+  }, [viewNames, folderPath])
   const onToggleGroup = (key: string) => {
     writeCollapsed(collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key])
   }
