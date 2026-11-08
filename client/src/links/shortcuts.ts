@@ -16,7 +16,10 @@ import { setFrontmatterIn, setFrontmatterProperty } from '@shared/frontmatter'
 import { NOTE_ID_KEY } from '@shared/noteId'
 import { clearedFolders, dropStaleFolderValues, foldersShowing, heldFolderId, idsUnder, withoutLeftFolders, withShortcut, withoutShortcut, type LeftBehind } from '@shared/shortcuts'
 import { folderSettingsPath, type IndexRecord } from '@shared/types'
+import { api } from '../api'
 import { basename, dirname, relTo } from '../lib/paths'
+import { fetchTree } from '../lib/treeFeed'
+import { notesAt } from '../lib/treeState'
 import { takeNoteId } from '../views/scaffold'
 import { transformFile, type ContentTransform } from '../views/writeProperty'
 // The pure rules live in `@shared/shortcuts`, which the CLI's shortcut commands share (YAZ-4518).
@@ -168,6 +171,16 @@ export async function dropFolderValuesAfterMove(move: Move & Snapshot): Promise<
     if (written) cleared.push({ path: record.path, values: Object.fromEntries(Object.entries(held).filter(([id]) => !Object.hasOwn(stay, id))) })
   }
   return cleared
+}
+
+/**
+ * After a copy lands in a vault that uses IDs (YAZ-2420 3E1): each note it made — a folder's
+ * included — keeps no values for the folders that do not show it, judged on a fresh tree and index.
+ * The original is never written. The sidebar's Paste of a Copy and the CLI's `file copy` share it.
+ */
+export async function dropFolderValuesAfterCopy(root: string, landed: readonly string[]): Promise<void> {
+  const [{ tree }, { folders }] = await Promise.all([fetchTree(root), api.index(root)])
+  for (const to of landed) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(root, path, folders), true).catch(() => undefined) // quiet (YAZ-3235 D1)
 }
 
 /**

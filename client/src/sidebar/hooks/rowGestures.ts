@@ -14,11 +14,9 @@ import { gestureNotice, namedItems, onDisk, unlessFailed, type NoticeKind, type 
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
-import { fetchTree } from '../../lib/treeFeed'
-import { findDirNode, notesAt, treeHasPath } from '../../lib/treeState'
-import { dropFolderValuesAfterMove, dropStaleFolderValues, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
+import { findDirNode, treeHasPath } from '../../lib/treeState'
+import { dropFolderValuesAfterCopy, dropFolderValuesAfterMove, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
 import { createNote, folderPath } from '../../views/scaffold'
-import { transformFile } from '../../views/writeProperty'
 import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
 import { dragPill, pillLabel } from '../dragPill'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
@@ -654,10 +652,7 @@ export function useFileClipboard(
         // What D20 cleared, for the undo list.
         const cleared: MovedGesture['cleared'] = []
         if (before !== null) for (const { from, to, kind } of res.pasted) cleared.push(...(await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })))
-        else if (index.ids) {
-          const [{ tree }, { folders }] = await Promise.all([fetchTree(vault), api.index(vault)])
-          for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(vault, path, folders), true).catch(() => undefined) // quiet (YAZ-3235 D1)
-        }
+        else if (index.ids) await dropFolderValuesAfterCopy(vault, res.pasted.map(({ to }) => to))
         // Each item that did not land, by its page name; the titles are read only when one did not.
         const titles = res.failed.length === 0 ? undefined : pathTitles(index.records, index.folders)
         const failed = titles === undefined ? [] : res.failed.map((f) => `${pageName(vault, f.from, titles)} — ${f.message}`)

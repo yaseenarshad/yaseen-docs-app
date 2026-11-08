@@ -27,7 +27,7 @@ export async function fileOperation(host: NavigationHost, command: string, args:
     const paths = [...new Set(args.paths as string[])]
     if (!paths.length) throw new AutomationFailure('INVALID_INPUT', 'Supply at least one source path.')
     const resolved = await Promise.all(paths.map(p => external ? absolute(p) : target(p)))
-    return host.operate(window.id, { command: 'file.copy', paths: resolved, targetDir, external })
+    return host.operate(window.id, { command: 'file.copy', paths: resolved, targetDir, external, dropValues: args.dropValues === true })
   }
   if (command === 'file.move') {
     const targetDir = await folder('Move')

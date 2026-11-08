@@ -36,7 +36,7 @@ export interface NavigationTarget {
 /** `dirty` lists the paths at or under `path` whose editors hold unsaved edits, with their tabs (YAZ-4515). */
 export type InspectTarget = { kind: 'history' } | { kind: 'window' } | { kind: 'document'; tab: string } | { kind: 'dirty'; path: string }
 export type FileOperationTarget = TabOperation | EditorOperation | BoardExportOperation
-  | { command: 'file.copy'; paths: string[]; targetDir: string; external: boolean }
+  | { command: 'file.copy'; paths: string[]; targetDir: string; external: boolean; dropValues: boolean }
   | { command: 'file.restore' } | { command: 'file.undo' } | { command: 'file.redo' }
   | { command: 'file.rename'; path: string; newPath: string; kind: 'file' | 'dir' }
   | { command: 'file.move'; moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; dropValues: boolean }

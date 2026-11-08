@@ -30,7 +30,7 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 | Create folders | `folder create` | Existing ID-aware folder service; never overwrite. |
 | Rename and retitle | `file rename/retitle` | Complete renderer action: flush, link repair, state repair, and Undo. `file rename` takes a new name in the same folder, as the sidebar's Rename. |
 | Move | `file move` | The GUI's move door (`planMoves` → `runMoves`), as a drag: each item keeps its name; one move step on the Undo list, with the cleared folder values that Undo restores. The D21 sheet is `dropValues: true` (`CONFIRMATION_REQUIRED` without it). Items in two vaults fail `BETWEEN_VAULTS`. |
-| Copy and import | `file copy/importCopy` | Explicit sources and destination; no clipboard changes; existing copy services and free-name rules; report partial results. |
+| Copy and import | `file copy/importCopy` | Explicit sources and destination; no clipboard changes; existing copy services and free-name rules; report partial results. As the sidebar's Paste of a Copy, a copied note keeps no values for folders that do not show it (`dropFolderValuesAfterCopy`); `file copy` needs `dropValues: true` when that drops values. |
 | Trash and restore | `file trash/history/restore` | System Trash; existing organization history; restore only the latest delete; no permanent delete command. |
 | Organization Undo and Redo | `file undo/redo` | The ⌘Z/⌘⇧Z step function and the window's 20-step session history, shared with the GUI; partial and empty steps are reported. |
 | Favorites and Focus | `collection list/add/remove/reorder` | Explicit vault/workspace list scope; patch latest state under the shared lock. |

@@ -4172,6 +4172,21 @@ describe('App rename door (⚡ YAZ-888)', () => {
         expect(bridge.file.rename).not.toHaveBeenCalled()
       })
 
+      it('a CLI copy asks as the sidebar’s Paste of a Copy does (YAZ-2420 3E1): refused without dropValues; with it, the copy keeps no values for folders that do not show it, and the original stays', async () => {
+        const files: Disk = { [NOOR]: { content: held, mtime: 1 }, [ARCHIVED]: { content: held, mtime: 1 } }
+        const { bridge, emitAutomation } = await mountTeam(files)
+        bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [{ type: 'dir', name: 'Team', path: '/v/Team', children: [{ type: 'dir', name: 'Archive', path: '/v/Team/Archive', children: [{ type: 'file', name: 'Noor.md', path: ARCHIVED, size: 1, mtime: 1, kind: 'markdown' }] }] }], generatedAt: 2 }))
+        const copy = (dropValues: boolean) => ({ command: 'file.copy' as const, paths: [NOOR], targetDir: '/v/Team/Archive', external: false, dropValues })
+        await act(async () => emitAutomation({ id: 'c-ask', action: 'operate', target: copy(false) }))
+        expect(replyOf(bridge, 'c-ask')).toMatchObject({ ok: false, error: { code: 'CONFIRMATION_REQUIRED', details: { folders: ['/v/Team/Hiring'], notes: 1 } } })
+        expect(bridge.file.copyTo).not.toHaveBeenCalled()
+        bridge.file.copyTo.mockResolvedValueOnce({ pasted: [{ from: NOOR, to: ARCHIVED, kind: 'file' }], failed: [] })
+        await act(async () => emitAutomation({ id: 'c-run', action: 'operate', target: copy(true) }))
+        expect(replyOf(bridge, 'c-run')).toMatchObject({ ok: true, value: { pasted: [{ to: ARCHIVED }], diskSaved: true } })
+        expect(files[ARCHIVED].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(files[NOOR].content).toBe(held)
+      })
+
       it('a CLI restore and every organization write report the history and diskSaved, as file undo does', async () => {
         const { bridge, emitAutomation } = await mountTeam({})
         bridge.file.delete.mockImplementation(async ({ path }) => ({ path, kind: 'file', trashed: `/scratch-trash/${path.split('/').at(-1)}` }))
@@ -7305,7 +7320,7 @@ describe('App automation tab actions', () => {
     let dirty = true
     const flush = vi.fn(async () => {})
     const off = continuity.registerRenameContinuity(path, { flush, capture: () => dirty ? { frontmatter: '', body: 'unsaved' } : null, retire: () => {} })
-    const target = { command: 'file.copy' as const, paths: ['/v/Folder'], targetDir: '/v/To', external: false }
+    const target = { command: 'file.copy' as const, paths: ['/v/Folder'], targetDir: '/v/To', external: false, dropValues: false }
     try {
       await act(async () => emitAutomation({ id: 'copy-dirty', action: 'operate', target }))
       expect(flush).toHaveBeenCalled()

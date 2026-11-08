@@ -28,7 +28,7 @@ import { requestBoardCommand } from './documents/boardCommand'
 import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
-import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
+import { dropFolderValuesAfterCopy, dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type StepOutcome, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
@@ -1968,7 +1968,16 @@ export function App() {
       for (const path of target.paths) { await flushRenamedPath(path); await flushRenamedDir(path) }
       const unsaved = dirtyPaths().filter(path => target.paths.some(source => path === source || path.startsWith(`${source}/`)))
       if (unsaved.length) throw new AutomationFailure('UNSAVED_CHANGES', 'Some source editors could not save. Resolve their save errors before copying.', { paths: unsaved })
+      // The sidebar's Paste of a Copy (YAZ-2420 3E1): it asks first when a copy will not keep a folder's values; dropValues is its Copy button.
+      const { root, wikilinks } = scopeOf(target.targetDir)
+      if (root !== null) {
+        const dirs = vaultDirs(root)
+        const moves = target.paths.flatMap((oldPath): Move[] => oldPath === `${target.targetDir}/${basename(oldPath)}` ? [] : [{ oldPath, newPath: `${target.targetDir}/${basename(oldPath)}`, kind: dirs.includes(oldPath) ? 'dir' : 'file' }])
+        const lost = valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders })
+        if (lost.folders.length > 0 && !target.dropValues) throw new AutomationFailure('CONFIRMATION_REQUIRED', 'The copies will not keep values of other folders. Pass dropValues: true to confirm.', { folders: lost.folders, notes: lost.notes })
+      }
       const result = await api.file.copyTo({ paths: target.paths, targetDir: target.targetDir, external: target.external })
+      if (root !== null && wikilinks.ids && result.pasted.length > 0) await dropFolderValuesAfterCopy(root, result.pasted.map(({ to }) => to))
       if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items could not be copied.', { ...result, diskSaved: result.pasted.length > 0 })
       return { ...result, diskSaved: true }
     }
