@@ -10,7 +10,7 @@
  */
 import type { IndexRecord } from '@shared/types'
 import { isReadOnlyProperties } from '@shared/readOnly'
-import { reservedKeys } from '../links/reservedKeys'
+import { reservedKeys } from '@shared/reservedKeys'
 import { canonicalKey } from './view/keys'
 import type { PropertyWrite } from './writeProperty'
 
