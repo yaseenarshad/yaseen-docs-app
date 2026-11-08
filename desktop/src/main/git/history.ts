@@ -114,10 +114,13 @@ export async function restoreBoardVersion(root: unknown, rawPath: unknown, ref: 
   const json = await readVersion(b, ref)
   parseScene(json, b.file, 'IO_ERROR') // never write something that is not a scene over a board
   await serializeFile(b.file, async () => {
+    let accepted: number | undefined
     if (expectedRevision !== undefined) {
       const current = await readBoundedRegularFile(b.file, MAX_DRAWING_BYTES, 'Drawing is too large.')
       if (revisionOf(current.data, current.mtime) !== expectedRevision) throw new BridgeFailure('CONFLICT', 'Drawing changed since the supplied revision.', { path: b.file })
+      accepted = current.mtime
     }
-    await atomicWrite(b.file, json)
+    // Checked again right before the rename (YAZ-4576, YAZ-4602): another program can write during the fsync.
+    await atomicWrite(b.file, json, undefined, accepted)
   })
 }

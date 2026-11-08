@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import { mkdtemp, open, readFile, rm, stat, writeFile as fsWriteFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { saveDrawing } from './drawing'
 import { saveDiagram } from './diagram'
 import { revisionOf } from './revision'
+import { restoreBoardVersion } from '../git/history'
 import { failure } from './testFixture'
 
 // Checker (YAZ-4502 final round, YAZ-4576 follow-up): the CLI's `drawing save` and `diagram save` send only
@@ -47,5 +49,20 @@ describe('checker: a revision-only board save keeps an outside write that lands 
     outsideAtFsync(file, `${body} `)
     expect((await failure(save(rev))).code).toBe('CONFLICT')
     expect(await readFile(file, 'utf8')).toBe(`${body} `)
+  })
+
+  // YAZ-4602: `history restore --revision` writes a drawing itself and a diagram through `saveDiagram`.
+  it.each([['drawing', 'Board.excalidraw', scene], ['diagram', 'Flow.drawio', diagram]] as const)('history restore of a %s with --revision: CONFLICT, and the outside bytes stay', async (_kind, rel, body) => {
+    const file = path.join(root, rel)
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args], { cwd: root, encoding: 'utf8' }).trim()
+    await fsWriteFile(file, body('a'))
+    git('init', '-q')
+    git('add', rel)
+    git('commit', '-qm', 'one')
+    await fsWriteFile(file, body('b'))
+    const rev = revisionOf(body('b'), (await stat(file)).mtimeMs)
+    outsideAtFsync(file, `${body('b')} `)
+    expect((await failure(restoreBoardVersion(root, rel, `${git('rev-parse', 'HEAD')}:${rel}`, rev))).code).toBe('CONFLICT')
+    expect(await readFile(file, 'utf8')).toBe(`${body('b')} `)
   })
 })

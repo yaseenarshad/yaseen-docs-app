@@ -35,11 +35,14 @@ async function saveDiagramUnlocked(req: unknown): Promise<DiagramSaveResponse> {
   const problem = diagramDocumentError(xml)
   if (problem !== null) throw new BridgeFailure('BAD_REQUEST', `'xml' is not a draw.io diagram: ${problem}`, { path: file })
   await requireDir(dir)
+  // The mtime that the check right before the rename guards (YAZ-4576): a CLI save sends only its revision (YAZ-4602).
+  let accepted = expectedMtime as number | undefined
   if (expectedRevision !== undefined) {
     const snapshot = await readBoundedRegularFile(file, BOARDS.diagram.max, BOARDS.diagram.tooLarge)
     if (typeof expectedRevision !== 'string' || revisionOf(snapshot.data, snapshot.mtime) !== expectedRevision) throw new BridgeFailure('CONFLICT', 'diagram changed since the supplied revision', { path: file, mtime: snapshot.mtime })
+    accepted ??= snapshot.mtime
   }
   const stamped = await guardedStamp(file, 'diagram', expectedMtime, (at, prior) => stampDiagramMeta(xml, at, prior))
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, accepted))
   return { path: file, mtime, size, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
 }

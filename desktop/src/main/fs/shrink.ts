@@ -84,7 +84,7 @@ async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>, 
     // the one we read. A tab that saved in between wins, and this board waits for the next click.
     const now = await stat(file)
     if (now.mtimeMs !== snapshot.mtime) return { kind: 'skipped' }
-    await atomicWrite(file, lean)
+    await atomicWrite(file, lean, undefined, snapshot.mtime)
     return { kind: 'shrunk', bytesMoved: Math.max(0, snapshot.size - Buffer.byteLength(lean, 'utf8')) }
   } catch {
     return { kind: 'skipped' }

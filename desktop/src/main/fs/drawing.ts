@@ -255,6 +255,8 @@ async function saveDrawingUnlocked(req: unknown, approved: readonly string[]): P
   if (expectedRevision !== undefined && (typeof expectedRevision !== 'string' || current === null || revisionOf(current.data, current.head.mtime) !== expectedRevision)) throw new BridgeFailure('CONFLICT', 'drawing changed since the supplied revision', { path: file, mtime: known?.mtime })
   // A board's ID (YAZ-3943 4C): given on its first save in a vault that gives IDs, never on a save the guard refuses.
   const conflict = expectedMtime !== undefined && known !== null && known.mtime !== expectedMtime
+  // The mtime that the check right before the rename guards (YAZ-4576): a CLI save sends only its revision (YAZ-4602).
+  const accepted = (expectedMtime as number | undefined) ?? (expectedRevision !== undefined ? known?.mtime : undefined)
   const id = conflict ? undefined : await boardIdToGive(dir, file, known?.block)
   const withId = (block: BoardMetaBlock | null): BoardMetaBlock | null => (id === undefined ? block : ({ ...block, [BOARD_ID_KEY]: id } as BoardMetaBlock))
   const given = id === undefined ? {} : { id }
@@ -269,7 +271,7 @@ async function saveDrawingUnlocked(req: unknown, approved: readonly string[]): P
     // (YAZ-4576) comes after them: its `CONFLICT` can leave the new pictures in the store, unnamed
     // until a later save of the scene names them. A save with no new picture asks no `realpath` (YAZ-4071 nit).
     const persisted = pending.length === 0 ? [] : await landAssets(dir, pending, await landingFolder(dir, picturesFolderOf(known?.block), approved))
-    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
+    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, accepted))
     return { path: file, mtime, size, persisted, ...given, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
   }
 
@@ -301,10 +303,10 @@ async function saveDrawingUnlocked(req: unknown, approved: readonly string[]): P
     known,
   )
   if (!movedOut) {
-    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
+    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, accepted))
     return { path: file, mtime, size, persisted: Object.keys(pictures), inside: true, ...given, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
   }
   const persisted = await landAssets(dir, liftEmbedded(inside, elements).lifted)
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, accepted))
   return { path: file, mtime, size, persisted, movedOut: true, ...given, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
 }

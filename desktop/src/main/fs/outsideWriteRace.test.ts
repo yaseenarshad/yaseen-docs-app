@@ -7,6 +7,9 @@ import { saveDrawing } from './drawing'
 import { saveDiagram } from './diagram'
 import { writeAsset } from './assets'
 import { setBoardReadOnly } from './boardReadOnly'
+import { renameBoardFolders } from './boardFolderRename'
+import { shrinkVault } from './shrink'
+import { serializeBoard, withPicturesOut } from '@shared/drawingAssets'
 import { failure } from './testFixture'
 
 // Pass-through spies: each test makes another program write the target at one step of a save (YAZ-4576).
@@ -138,5 +141,24 @@ describe('an outside write during a guarded save is never lost (YAZ-4576)', () =
     expect(await failure(save(mtimeMs))).toMatchObject({ code: 'CONFLICT', mtime: (await stat(file)).mtimeMs })
     expect(await readFile(file, 'utf8')).toBe(`${body} `)
     expect(await tmpsLeft()).toEqual([])
+  })
+
+  // Two more writers that checked the mtime but did not pass it on (YAZ-4602): an outside write skips the board.
+  it('shrinkVault: an outside write during the fsync skips the board, and its bytes stay', async () => {
+    const file = path.join(root, 'Big.excalidraw')
+    const body = JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 'e', type: 'image', fileId: 'aaa', isDeleted: false }], appState: {}, files: { aaa: { mimeType: 'image/png', id: 'aaa', dataURL: 'data:image/png;base64,QQ==' } } })
+    await fsWriteFile(file, body)
+    landAt('tmp fsync', file, `${body} `, 'in place')
+    expect(await shrinkVault(root)).toMatchObject({ shrunk: 0, skipped: 1 })
+    expect(await readFile(file, 'utf8')).toBe(`${body} `)
+  })
+
+  it('a folder rename: an outside write during the fsync leaves the board unwritten, and its bytes stay', async () => {
+    const file = path.join(root, 'Out.excalidraw')
+    const body = serializeBoard(withPicturesOut(JSON.parse(scene('a')) as Record<string, unknown>, true, 1, 1, 'Pics'))
+    await fsWriteFile(file, body)
+    landAt('tmp fsync', file, `${body} `, 'in place')
+    expect(await renameBoardFolders(root, path.join(root, 'Pics'), path.join(root, 'Photos'))).toEqual([])
+    expect(await readFile(file, 'utf8')).toBe(`${body} `)
   })
 })

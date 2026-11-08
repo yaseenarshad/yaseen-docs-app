@@ -52,7 +52,7 @@ async function writeFolder(file: string, folder: string): Promise<boolean> {
     const { scene } = parseScene(snap.data.toString('utf8'), file, 'IO_ERROR')
     const next = serializeBoard(withPicturesOut(scene, true, snap.mtime, Date.now(), folder))
     if ((await stat(file)).mtimeMs !== snap.mtime) return false
-    await atomicWrite(file, next)
+    await atomicWrite(file, next, undefined, snap.mtime)
     return true
   } catch {
     // A board that is not a scene, or that went: nothing to name.
