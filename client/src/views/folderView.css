@@ -43,3 +43,9 @@
   max-width: none;
   padding: 0;
 }
+
+/* The folder page's zoom (YAZ-3746 D35) is on the views pane already (app.css: `.editor-host > :not(.editor-mount) > *`), so the
+   Page's ProseMirror does not take `--document-zoom` a second time (YAZ-4584). */
+.folder-page-doc .editor-instance .milkdown > .ProseMirror {
+  zoom: 1;
+}

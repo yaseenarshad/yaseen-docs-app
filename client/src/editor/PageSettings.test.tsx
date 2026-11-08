@@ -438,6 +438,21 @@ describe('PageSettings: Read only', () => {
     expect(menu()!.lastElementChild!.textContent).toBe('Table of contents\u2713')
   })
 
+  it('YAZ-3746 D35: with a heading, "Read only" stands first IN the group (a folder page\'s "This folder page"), and the note rows follow the line', () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    const onToggleReadOnly = vi.fn()
+    const choice = { label: 'Show folder page file', choices: [{ label: 'Settings', on: true, onPick: () => undefined }, { label: 'On', on: false, onPick: () => undefined }] }
+    act(() => root.render(<PageSettings readOnly={false} onToggleReadOnly={onToggleReadOnly} switches={[choice]} switchesHeading="This folder page" lineNumbers={false} onToggleLineNumbers={() => undefined} />))
+    click(cog())
+    const group = menu()!.querySelector('[role="group"][aria-label="This folder page"]')!
+    expect([...group.children].map((child) => child.textContent)).toEqual(['This folder page', 'Read only', 'Show folder page file:', 'SettingsOn'])
+    expect([...menu()!.children].map((child) => child.textContent)).toEqual([expect.stringContaining('Read only'), '', 'Line numbers'])
+    click(switchNamed('Read only'))
+    expect(onToggleReadOnly).toHaveBeenCalledTimes(1)
+  })
+
   it('S41: a board\u2019s menu has only that row, and no counts', () => {
     mountReadOnly({ board: true })
     expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Read only'])

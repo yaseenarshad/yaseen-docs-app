@@ -312,13 +312,14 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
       click(header(el)!)
       await flush()
       expect(readFile).toHaveBeenCalledWith(PAGE)
-      expect(snippets(el).map((s) => s.textContent)).toEqual(['B'])
+      // The line as a note's shows (its bullet marker too), the frontmatter's own `owner: "[[B]]"` never.
+      expect(snippets(el).map((s) => s.textContent)).toEqual(['- B'])
       expect([...el.querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B'])
       // The Page moved on disk: its record's new mtime reads the body again.
       onDisk('- [[B]]\n- and [[B]] again, in a sentence\n')
       feed([rec(B)], [folder(['B', 'B'], undefined, 2)])
       await flush()
-      expect(snippets(el).map((s) => s.textContent)).toEqual(['B', 'and B again, in a sentence'])
+      expect(snippets(el).map((s) => s.textContent)).toEqual(['- B', '- and B again, in a sentence'])
     })
 
     it('a folder that links by a view\'s `order` or a link column\'s `target` is listed the same way, with no snippet', async () => {

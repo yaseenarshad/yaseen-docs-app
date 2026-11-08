@@ -99,11 +99,11 @@ export interface FolderHost {
   /** The window's ONE resolve source: whether the vault uses IDs decides the reserved keys. */
   wikilinks: WikilinkResolveSource
   /**
-   * The Page tab's body (YAZ-4584 D38): the note editor on the folder's `.folder.md`, built by `Editor`. The
-   * page cog, fold-all and Saved chips go into `switchesHost`, an element of the folder page toolbar; null shows none.
-   * Absent while the folder has no `.folder.md` yet: the Page then shows nothing.
+   * The Page tab's body (YAZ-4584 D38): the note editor on the folder's `.folder.md`, built by `Editor`. Its page
+   * switches and save state go to the folder page's toolbar (`FolderPageChips`). Absent while the folder has no
+   * `.folder.md` yet: the Page then shows nothing.
    */
-  renderPage?: (switchesHost: HTMLElement | null) => ReactNode
+  renderPage?: () => ReactNode
 }
 
 export interface ViewsPaneProps {
@@ -150,8 +150,6 @@ export interface ViewsPaneProps {
   /** What the hover panel needs of a page's vault: App's `boardPreviewScope`. No scope, no hover panel. */
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
-  /** The folder page toolbar's element that takes the Page tab's cog and chips (YAZ-4584 D38, D35): `FolderHost.renderPage`'s `switchesHost`. */
-  pageSwitchesHost?: HTMLElement | null
 }
 
 /**
@@ -205,7 +203,7 @@ const NO_FOLDER_ROWS: IndexRecord[] = []
 /** A folder row has no note to preview (YAZ-4579 D32): the hover panel is the notes', so its dwell never starts. */
 const noHover = (): void => undefined
 
-export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', pageSwitchesHost = null }: ViewsPaneProps) {
+export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -586,7 +584,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       )}
       {isPage ? (
         // The note editor replaces the view body (YAZ-4584 D38): it saves the `.folder.md` body itself, never a settings write.
-        <div className="view-page">{folder.renderPage?.(pageSwitchesHost)}</div>
+        <div className="view-page">{folder.renderPage?.()}</div>
       ) : view.type === 'table' ? (
         <TableView
           hover={viewHover}

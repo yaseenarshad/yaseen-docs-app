@@ -533,7 +533,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
 
 describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
   /** The editor `Editor` builds, stood in for: what it is handed is what is under test here (Editor.test.tsx mounts the real one). */
-  const renderPage = vi.fn((host: HTMLElement | null) => <pre className="page-doc">{host === null ? 'no toolbar' : 'toolbar'}</pre>)
+  const renderPage = vi.fn(() => <pre className="page-doc">the Page</pre>)
   const mountPage = async (settings: unknown): Promise<HTMLElement> => {
     const el = renderFolderView({ path: STAGES, source, onOpenFile, renderPage })
     feed(settings)
@@ -544,7 +544,7 @@ describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
   it('a stored `type: outline` shows as the Page tab, and its body is the note editor on `.folder.md`; opening writes nothing', async () => {
     const el = await mountPage({ ...SETTINGS, views: [{ type: 'outline', name: 'Outline', outline: '- [[Sales]]' }, TABLE] })
     expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
-    expect(q(el, '.view-page .page-doc').textContent).toBe('no toolbar')
+    expect(q(el, '.view-page .page-doc').textContent).toBe('the Page')
     expect(el.querySelector('[aria-label="Filter"]')).toBeNull() // a document, not rows
     expect(write).not.toHaveBeenCalled()
   })

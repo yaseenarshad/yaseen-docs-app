@@ -26,6 +26,7 @@ import { announceTwinSave } from '../lib/twinEditors'
 import { NoteWindow, dropNoteWindowsAt, noteWindowLink, noteWindowMemory, renameNoteWindows } from '../views/view/NoteWindow'
 import type { Row } from '../views/engine'
 import { readPageView } from '../lib/pageView'
+import { writeProperty } from '../views/writeProperty'
 import type { NoticeKind } from '../lib/notice'
 
 /**
@@ -2183,13 +2184,15 @@ describe('the page settings cog (YAZ-2643)', () => {
     expect(el.querySelector('.page-settings')).toBeNull()
   })
 
-  it('a folder page has no cog (S11)', async () => {
+  // Changed by YAZ-3746 D35 (it was S11's "a folder page has no cog"): a folder page has the note page's toolbar, its own cog first.
+  it('a folder page has the toolbar: cog, zoom pill, sync chip, save chip, before its scroller (YAZ-3746 D35)', async () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [{ type: 'dir', name: 'Projects', path: `${r}/Projects`, children: [] }], generatedAt: 1 }))
     const source = createWikilinkResolveSource()
     act(() => source.update(() => null, [], [])) // the first index snapshot: an empty vault, no folder settings
-    const el = await open('/cog-folders/Projects', { root: '/cog-folders', wikilinks: source })
+    const el = await open('/cog-folders/Projects', { root: '/cog-folders', wikilinks: source, sync: { root: '/cog-folders', state: 'synced' }, onSyncNow: noop })
     expect(el.querySelector('.folder-view')).not.toBeNull()
-    expect(el.querySelector('.page-settings')).toBeNull()
+    expect([...el.querySelector('section.editor')!.children].map((c) => c.className)).toEqual(['status-chips', 'editor-host'])
+    expect([...el.querySelector('.status-chips')!.children].map((chip) => chip.className.split(' ')[0])).toEqual(['page-settings', 'document-zoom', 'sync-indicator', 'save-indicator'])
   })
 
   it('the switch sets `data-line-numbers` on the scroller and clears it again; the Crepe is never recreated (S6)', async () => {
@@ -2838,4 +2841,122 @@ describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
       vi.mocked(moveCaretIntoZoom).mockReset()
     }
   })
+})
+
+/**
+ * The folder's Page tab (YAZ-4584 D38): the Outline view renamed, now the note editor on the folder's `.folder.md` —
+ * the body alone, the frontmatter split off. The folder page writes its settings into the SAME file, so the two
+ * writers must never lose each other's bytes. A tiny disk with mtime guards stands under the real `writeProperty`.
+ */
+describe('the folder Page tab (YAZ-4584 D38)', () => {
+  const VAULT = '/pg'
+  const DIR = `${VAULT}/Projects`
+  const PAGE = `${DIR}/.folder.md`
+  const SETTINGS = '---\nfolder_settings:\n  views:\n    - type: outline\n      name: Page\n    - type: table\n      name: Table\n---\n'
+  let disk: { content: string; mtime: number }
+  let source: ReturnType<typeof createWikilinkResolveSource>
+
+  /** The index's word on the settings file, as the bridge feeds it. */
+  const feedIndex = (): void => {
+    const properties = frontmatter.parseFrontmatter(frontmatter.splitFrontmatter(disk.content).frontmatter).properties
+    act(() => source.update(() => null, [], [{ path: PAGE, name: '.folder.md', basename: '.folder', title: 'Projects', folder: 'Projects', ext: 'md', size: disk.content.length, ctime: 1, mtime: disk.mtime, properties, aliases: [], tags: [], links: [], embeds: [] } as IndexRecord]))
+  }
+
+  async function openFolder(content: string): Promise<HTMLElement> {
+    disk = { content, mtime: 10 }
+    tree.mockImplementation(async (r) => ({ root: r, tree: [{ type: 'dir', name: 'Projects', path: DIR, children: [] }], generatedAt: 1 }))
+    readFile.mockImplementation(async (path) => {
+      if (path !== PAGE) throw new BridgeRequestError('NOT_FOUND', 'path does not exist')
+      return { path, content: disk.content, mtime: disk.mtime, size: disk.content.length }
+    })
+    // The main process's guard: a write against an older mtime is a CONFLICT that names the disk's.
+    writeFile.mockImplementation(async ({ path, content: next, expectedMtime }) => {
+      if (expectedMtime !== disk.mtime) throw new BridgeRequestError('CONFLICT', 'file changed on disk since last read', disk.mtime)
+      disk = { content: next, mtime: disk.mtime + 1 }
+      return { path, mtime: disk.mtime, size: next.length }
+    })
+    source = createWikilinkResolveSource()
+    feedIndex()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<Editor root={VAULT} path={DIR} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
+    for (let i = 0; i < 4; i++) await settle()
+    return container
+  }
+
+  /** The folder page writes a key of its own `.folder.md` (its cog, a view edit): the real door, `transformFile`. */
+  async function settingsWrite(): Promise<void> {
+    await act(async () => void (await writeProperty(PAGE, 'show_page_file', true)))
+  }
+
+  it('a stored Outline opens as the Page tab: the note editor holds the BODY of `.folder.md`; the folder page keeps the one title and properties panel', async () => {
+    const el = await openFolder(`${SETTINGS}# Intro\n`)
+    expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Page', 'Table'])
+    expect(createCrepeMock).toHaveBeenCalledTimes(1)
+    expect(crepe().md).toBe('# Intro\n')
+    expect(el.querySelector('.view-page .folder-page-doc .editor-mount')).not.toBeNull()
+    expect(el.querySelectorAll('.page-title')).toHaveLength(1)
+    expect(el.querySelectorAll('.editor-host')).toHaveLength(1) // the folder page's scroller; the Page has none of its own
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('edits and saves the body: the save keeps the settings frontmatter byte for byte', async () => {
+    await openFolder(`${SETTINGS}# Intro\n`)
+    type('# Intro\n\ntyped\n')
+    await pastDebounce()
+    expect(disk.content).toBe(`${SETTINGS}# Intro\n\ntyped\n`)
+  })
+
+  it('a settings write while typing keeps BOTH: the watcher brings the new frontmatter, the save brings the typing', async () => {
+    await openFolder(`${SETTINGS}# Intro\n`)
+    type('# Intro\n\ntyped before the setting\n')
+    await settingsWrite()
+    expect(disk.content).toContain('show_page_file: true')
+    expect(disk.content).toContain('# Intro\n') // the settings write kept the body that was on disk
+    await emit({ type: 'change', path: PAGE, mtime: disk.mtime })
+    await pastDebounce()
+    expect(el().querySelector('.conflict-bar')).toBeNull()
+    expect(disk.content).toContain('show_page_file: true')
+    expect(disk.content).toContain('folder_settings:')
+    expect(frontmatter.splitFrontmatter(disk.content).body).toBe('# Intro\n\ntyped before the setting\n')
+  })
+
+  it('a settings write that lands before the watcher speaks: the refused save adopts the new frontmatter and keeps the typing', async () => {
+    await openFolder(`${SETTINGS}# Intro\n`)
+    type('# Intro\n\nraced\n')
+    await settingsWrite()
+    await pastDebounce()
+    await settle()
+    expect(el().querySelector('.conflict-bar')).toBeNull()
+    expect(disk.content).toContain('show_page_file: true')
+    expect(frontmatter.splitFrontmatter(disk.content).body).toBe('# Intro\n\nraced\n')
+  })
+
+  it("the note's page switches show in the folder page's cog, after its own group, and write into `.folder.md` with the body kept (D35)", async () => {
+    const el = await openFolder(`${SETTINGS}# Intro\n`)
+    expect(el.querySelectorAll('.page-settings')).toHaveLength(1) // ONE cog: the folder page's
+    click(el.querySelector<HTMLElement>('.status-chips .page-settings__trigger')!)
+    const menu = el.querySelector('.page-settings__menu')!
+    expect(menu.textContent).toContain('This folder page')
+    expect(menu.textContent).toContain('Section indent')
+    expect(menu.textContent!.indexOf('Line numbers')).toBeGreaterThan(menu.textContent!.indexOf('Show folder page file'))
+    expect(menu.textContent).toContain('2 words') // the Page body's count (the fake editor's text is its markdown)
+    click([...menu.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent?.replace('✓', '').trim() === 'Section indent')!)
+    await settle()
+    expect(disk.content).toContain('section-indent: true')
+    expect(frontmatter.splitFrontmatter(disk.content).body).toBe('# Intro\n')
+  })
+
+  it('a read-only folder page makes the Page read only (D36), and the toolbar takes the Page back off as another view shows', async () => {
+    const el = await openFolder(`---\nreadonly: true\n${SETTINGS.slice(4)}# Intro\n`)
+    expect((crepe() as FakeCrepe & { readonly: boolean }).readonly).toBe(true)
+    click([...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'Table')!)
+    await settle()
+    click(el.querySelector<HTMLElement>('.status-chips .page-settings__trigger')!)
+    expect(el.querySelector('.page-settings__menu')!.textContent).not.toContain('Section indent')
+  })
+
+  const el = (): HTMLElement => container!
+  const click = (target: HTMLElement): void => act(() => target.click())
 })

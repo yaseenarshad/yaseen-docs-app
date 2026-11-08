@@ -311,7 +311,7 @@ describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', ()
     click(q(el, '.backlinks__header'))
     await flush()
     expect([...el.querySelectorAll('.backlinks__note')].map((n) => n.textContent)).toEqual(['Plan', 'Team'])
-    expect([...el.querySelectorAll('.backlinks__snippet')].slice(-2).map((n) => n.textContent)).toEqual(['Stages', 'then on through Stages'])
+    expect([...el.querySelectorAll('.backlinks__snippet')].slice(-2).map((n) => n.textContent)).toEqual(['- Stages', '- then on through Stages'])
     // Clicking the folder opens the folder's page.
     click([...el.querySelectorAll('.backlinks__note')][1])
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(TEAM)
