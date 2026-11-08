@@ -265,6 +265,36 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     expect(def().views[0].frozenColumns).toBe(1)
   })
 
+  it('the gap in the frozen part is COVERED (YAZ-4643 S2): the first parted frozen cell paints the grabbed column\'s room of background on its left, so no scrolled column shows in it', () => {
+    const { el } = mount(`${BASE}    frozenColumns: 1\n`)
+    fire(ths(el)[2], 'dragstart')
+    fire(ths(el)[0], 'dragover', LEFT)
+    const room = widthAt(el, 2)
+    expect(widthAt(el, 0)).toBeGreaterThanOrEqual(room) // one shadow covers the room
+    // A box-shadow, not a pseudo-element: the cell's `overflow: hidden` would clip that. Its header goes over the scrolled headers.
+    expect(rules(el)).toMatch(new RegExp(`th\\[data-col="0"\\],[^{]*td\\[data-cell\\$=":0"\\],[^{]*tfoot td:nth-child\\(2\\)\\{box-shadow:-${room}px 0 0 var\\(--bg\\);\\}`))
+    expect(rules(el)).toContain('thead th[data-col="0"]{z-index:4;}')
+    // The same drag with the gap right of the freeze line: no cover.
+    fire(ths(el)[1], 'dragover', LEFT)
+    expect(rules(el)).not.toContain('box-shadow')
+  })
+
+  it('a lifted FROZEN column\'s own place is covered the same way, by the gutter cell on its right (YAZ-4643 S2)', () => {
+    const { el } = mount(`${BASE}    frozenColumns: 1\n`)
+    fire(ths(el)[0], 'dragstart')
+    fire(ths(el)[0], 'dragover', LEFT) // its own slot: no gap
+    const room = widthAt(el, 0)
+    expect(rules(el)).not.toContain('transform')
+    // The slim gutter lays its shadows end to end; the last ends one room on. Its header goes over the scrolled headers.
+    expect(rules(el)).toMatch(new RegExp(`th\\.view-table__gutter,[^{]*td\\.view-table__gutter,[^{]*tfoot td\\.view-table__gutter\\{box-shadow:[^}]*?${room}px 0 0 var\\(--bg\\);\\}`))
+    expect(rules(el)).toContain('thead th.view-table__gutter{z-index:4;}')
+    // A lifted SCROLLED column keeps the plain lift.
+    pressEscape()
+    fire(ths(el)[2], 'dragstart')
+    fire(ths(el)[2], 'dragover', LEFT)
+    expect(rules(el)).not.toContain('box-shadow')
+  })
+
   it('with row numbers off the slim gutter cell is still the first, so the summary cells that part are still the ones after it (YAZ-4636 T8)', () => {
     const { el } = mount(`${BASE}    rowNumbers: false\n`)
     fire(ths(el)[2], 'dragstart')

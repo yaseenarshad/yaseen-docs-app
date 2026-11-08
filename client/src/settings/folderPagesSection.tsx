@@ -91,8 +91,9 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
             <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreviewIn.folderViews} onChange={(on) => onChange({ ...settings, hoverPreviewIn: { ...settings.hoverPreviewIn, folderViews: on } })} ariaLabel="Preview on hover: Folder views" />
           ),
         },
-        row('rowBand', 'Row band on hover', ON_OFF_OPTIONS, { hint: 'A band on the table row under the mouse. Until you set it, it follows Editor › Tables › Row band.', keywords: ['band', 'highlight', 'hover', 'row'], shown: ({ settings }) => folderRowBandOn(settings) }),
-        row('keepWindowPinned', 'Keep the mini window pinned', ON_OFF_OPTIONS, { hint: 'The mini window of a row stays open on a click outside it. Until you set it, it follows Editor › Cell notes › Keep cell notes open.', keywords: ['mini window', 'note window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
+        // The hints' "›" stays with the word after it: a no-break space, so the arrow never ends a line (YAZ-4643 S7).
+        row('rowBand', 'Row band on hover', ON_OFF_OPTIONS, { hint: 'A band on the table row under the mouse. Until you set it, it follows Editor ›\u00a0Tables ›\u00a0Row band.', keywords: ['band', 'highlight', 'hover', 'row'], shown: ({ settings }) => folderRowBandOn(settings) }),
+        row('keepWindowPinned', 'Keep the mini window pinned', ON_OFF_OPTIONS, { hint: 'The mini window of a row stays open on a click outside it. Until you set it, it follows Editor ›\u00a0Cell notes ›\u00a0Keep cell notes open.', keywords: ['mini window', 'note window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
         // Its own switch (YAZ-4592 S26): the sidebar's Confirm before deleting does not turn it off.
         row('askBeforeDelete', 'Ask before deleting notes', ON_OFF_OPTIONS, { hint: 'Delete note… in a row’s menu asks first. The note moves to the Trash. The sidebar’s Confirm before deleting does not change this.', keywords: ['delete', 'confirm', 'trash', 'ask'] }),
       ],

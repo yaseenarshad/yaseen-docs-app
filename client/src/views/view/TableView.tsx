@@ -24,7 +24,7 @@ import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader
 import { openByGesture, openByKey } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
 import { isFolderRow, rowPage } from '../../links/shortcuts'
-import { MAX_FROZEN_ROWS, UNFROZE_ROWS, frozenColumnCount } from './frozenColumns'
+import { MAX_FROZEN_ROWS, UNFROZE_ROWS, frozenColumnCount, frozenGapCover, frozenGapShadow, type FrozenGapCover } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 import { OtherFilesMove, trayRowDrag } from './otherFilesMove'
 import { FillMenu } from './FillMenu'
@@ -1219,6 +1219,18 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // change re-renders no cell's style, and the cells a scroll mounts mid-drag take the rule too.
   const tableId = useId()
   const scope = `.view-table[data-table-id="${tableId}"]`
+  /** The cells of column `c`, the `#` gutter's for -1: the header, every mounted body cell and the summary cell. */
+  const cellsOf = (c: number): string =>
+    c === -1
+      ? `${scope} thead th.view-table__gutter,${scope} tbody td.view-table__gutter,${scope} tfoot td.view-table__gutter`
+      : `${scope} thead th[data-col="${c}"],${scope} tbody td[data-cell$=":${c}"],${scope} tfoot td:nth-child(${c + 2})`
+  // The empty place in the FROZEN part is covered (YAZ-4643 S2): the frozen cells are sticky over the scrolled columns,
+  // so the frozen cell beside the place paints the grabbed column's room of background there, as a box-shadow (a cell's
+  // `overflow: hidden` would clip a pseudo-element). Its header cell goes over the scrolled headers (z-index 3), as a
+  // frozen header does (4): the gutter's header sits at 1.
+  const cover = live.drag === null ? null : frozenGapCover(live.gap, live.drag.from, frozen, live.drag.room)
+  const coverRule = (c: FrozenGapCover): string =>
+    `${cellsOf(c.col)}{box-shadow:${frozenGapShadow(c, c.col === -1 ? gutterWidth : widthOf(keys[c.col]))};}${scope} thead th${c.col === -1 ? '.view-table__gutter' : `[data-col="${c.col}"]`}{z-index:4;}`
   const columnRules =
     live.drag === null
       ? ''
@@ -1226,10 +1238,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           .map((_, c) => {
             const shift = live.shiftOf(c)
             if (shift === 0 && !live.lifted(c)) return ''
-            const cells = `${scope} thead th[data-col="${c}"],${scope} tbody td[data-cell$=":${c}"],${scope} tfoot td:nth-child(${c + 2})`
-            return `${cells}{${shift === 0 ? '' : `transform:${partTransform(shift, 'x')};`}${live.lifted(c) ? 'opacity:0;' : ''}}`
+            return `${cellsOf(c)}{${shift === 0 ? '' : `transform:${partTransform(shift, 'x')};`}${live.lifted(c) ? 'opacity:0;' : ''}}`
           })
-          .join('')
+          .join('') + (cover === null ? '' : coverRule(cover))
 
   /** A header right-click (YAZ-1513): rename / hide / add-right on a column, hide on the `#` gutter. */
   const openHeaderMenu = (key: string | null) => (event: ReactMouseEvent<HTMLTableCellElement>): void => {

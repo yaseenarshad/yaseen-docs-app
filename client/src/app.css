@@ -1689,6 +1689,9 @@ button {
    its stored width comes back when the window does. A Files window is only the sidebar. */
 .app:not(.app--files) > .sidebar {
   max-width: calc(100vw - 360px);
+  /* In a window under 360 px that leaves no width at all: nothing of the sidebar shows beside its edge (YAZ-4643 S10).
+     `clip`, not `hidden`: no scroll container, so a focus inside it never shifts its content. Menus portal out. */
+  overflow: clip;
 }
 
 /* A Files window (YAZ-3357 D1, D8) is only the sidebar: it fills the window, with no edge to drag. While Tabs Mission

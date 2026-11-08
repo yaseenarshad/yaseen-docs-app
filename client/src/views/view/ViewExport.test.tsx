@@ -138,10 +138,9 @@ describe('the view tab exports (YAZ-4594 S30)', () => {
     expect(writeText).toHaveBeenCalledWith('Name\tPriority\tRelated\nThe Levels of an Agency\t1\tAgentic Agency')
   })
 
-  it('a Page tab has no rows: both items are there, disabled', () => {
+  it('a Page tab has no rows: neither item is offered (YAZ-4643 S8); the rest of the menu is', () => {
     const { el } = mount()
     openOn(el, 'Page')
-    expect(item(el, 'Export as CSV…').disabled).toBe(true)
-    expect(item(el, 'Copy as table').disabled).toBe(true)
+    expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).toEqual(['Rename', 'Duplicate', 'View settings…', 'Delete'])
   })
 })

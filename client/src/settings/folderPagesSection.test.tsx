@@ -106,9 +106,20 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     const items = SETTINGS_SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.items))
     const hint = (id: string) => String(items.find((item) => item.id === id)!.hint)
     expect(hint('tableRowBand')).toContain('Folder pages › Row band on hover')
-    expect(hint('folderPages.rowBand')).toContain('Editor › Tables › Row band')
+    // No-break spaces after the arrows (YAZ-4643 S7).
+    expect(hint('folderPages.rowBand')).toContain('Editor › Tables › Row band')
     await open('Folder pages')
-    expect(row('folderPages.rowBand')?.querySelector('.setting__hint')?.textContent).toContain('Editor › Tables › Row band')
+    expect(row('folderPages.rowBand')?.querySelector('.setting__hint')?.textContent).toContain('Editor › Tables › Row band')
+  })
+
+  it('a hint keeps "›" with the word after it (YAZ-4643 S7): a no-break space, so the arrow never ends a line', async () => {
+    await open('Folder pages')
+    for (const id of ['folderPages.rowBand', 'folderPages.keepWindowPinned']) {
+      const hint = row(id)?.querySelector('.setting__hint')?.textContent ?? ''
+      expect(hint).toContain('›')
+      expect(hint).toMatch(/› \S/)
+      expect(hint).not.toMatch(/› /)
+    }
   })
 
   it('Preview on hover for folder views lives here now, on the same key; Files & Links keeps the other places', async () => {
