@@ -32,7 +32,7 @@ Name the vaults with exactly one of `--root`, `--roots`, or `--workspace`, or na
 | `--root` | One vault folder. | `--root "/Vaults/Demo Skills"` |
 | `--roots` | Several vault folders, as a JSON list (at most 8). | `--roots '["/Vaults/Demo Skills","/Vaults/Demo Notes"]'` |
 | `--workspace` | A saved workspace: its ID, or its name if no other workspace has that name (case is ignored). All its vaults open. | `--workspace "All Folders"` |
-| `--path` | A folder or page inside those vaults. It must exist. | `--path "/Vaults/Demo Skills/Example"` |
+| `--path` | A folder or page inside those vaults. It must exist, and it cannot be hidden (a name that starts with a dot, or `node_modules`). A vault folder itself means that vault with no page, as opening a vault in the app does: the list shows, nothing is revealed. | `--path "/Vaults/Demo Skills/Example"` |
 | `--sidebar` | `files`, `favorites`, or `focus`. The sidebar shows, even when it was hidden. | `--sidebar favorites` |
 | `--reveal` | `true` (the default when a sidebar is named) reveals the path in that list and expands its folders. `false` only opens the page. | `--reveal false` |
 | `--group` | A Favorites or Focus group: its ID, or its unique name. Needs `--sidebar favorites` or `--sidebar focus`. With a path, the path must be in that group. | `--group "Study"` |
@@ -111,11 +111,13 @@ A failure before the request reaches Docs (invalid input, Docs not running) prin
 | `NOT_FOUND` | The path, the workspace name, the group, or the view does not exist. For a view, `details.views` lists the saved views. |
 | `AMBIGUOUS_TARGET` | A workspace, group or view name matches more than one. `details.candidates` lists them (at most 200). Use an ID. |
 | `NOT_IN_COLLECTION` | The path is not in the Favorites or Focus list (or group) you asked for. Nothing opens. |
+| `HIDDEN_TARGET` | The path is hidden, or inside a hidden folder: a name that starts with a dot, or `node_modules`. The sidebar never shows it. Nothing opens. |
+| `NOT_SHOWN` | The window opened the page, but its row did not show in the sidebar list within 5 seconds. |
 | `OUTSIDE_SCOPE` | The path is not inside the named vaults. |
 | `MISSING_VAULT` | A vault folder does not exist. Use `--allow-partial true` for a workspace. |
 | `WINDOW_NOT_FOUND` | The `--window` is not open. |
 | `WINDOW_SCOPE_MISMATCH` | The `--window` shows other vaults than the vault input. It was left as it was. |
-| `WINDOW_CLOSED`, `RENDERER_TIMEOUT` | The window closed, or did not answer within 2 minutes. Its final state is unknown. |
+| `WINDOW_CLOSED`, `RENDERER_TIMEOUT`, `SURFACE_TIMEOUT` | The window closed, did not answer within 30 seconds, or a part of it did not become ready within 20 seconds. Its final state is unknown. The next navigation does not wait longer than that. |
 | `NOT_RUNNING` | Docs is not running in this profile (`app status`, `request status`). |
 | `START_FAILED`, `START_UNAVAILABLE`, `START_TIMEOUT` | The CLI could not start Docs, or Docs did not become ready within 30 seconds. Nothing was sent. |
 | `WAIT_TIMEOUT` | The wait ended. See below. |
@@ -130,7 +132,7 @@ A failure before the request reaches Docs (invalid input, Docs not running) prin
 - `--request <reference>` sends the exact request again. Docs answers it from its receipt and does not run it twice. Other input with the same reference fails with `REQUEST_MISMATCH`.
 - Docs keeps up to 256 small receipts for five minutes. A restart forgets them.
 - Navigations run one at a time. A quick second call after a cold start waits for the first and sees its window.
-- A slow Docs is never started twice: a running app that does not answer fails with `WAIT_TIMEOUT`, and an app that is starting is waited for.
+- Docs is never started twice for one profile. Of calls that start it at the same time, one launches it (it holds `<profile>/cli/start.lock` while Docs starts) and the others wait for its connection. A lock older than 60 seconds was left by a caller that stopped, and the next caller takes it. A running app that does not answer fails with `WAIT_TIMEOUT`, and an app that is starting is waited for.
 
 ## Connection and profiles
 
