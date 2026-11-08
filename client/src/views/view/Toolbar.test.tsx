@@ -242,14 +242,14 @@ describe('view tabs — drag to reorder (YAZ-1471)', () => {
   it('dropping on a tab\'s LEFT half inserts before it, in ONE write', () => {
     const { el, onChange, yaml } = mount()
     fire(wrap(el, 1), 'dragstart') // grab "View"
-    expect(wrap(el, 1).classList.contains('view-tab--dragging')).toBe(true)
+    expect(strip(el).hasAttribute('data-live-parting')).toBe(true) // the gap is the marker: no marker class (YAZ-4606)
     fire(wrap(el, 0), 'dragover', -5) // left half of "Table"
-    expect(wrap(el, 0).classList.contains('view-tab--insert-before')).toBe(true)
+    expect(wrap(el, 0).style.transform).toBe('translateX(100px)') // "Table" slides right to open the gap before it
     fire(wrap(el, 0), 'drop', -5)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(names(yaml())).toEqual(['View', 'Table', 'View 2'])
     expect(tabs(el)).toEqual(['View', 'Table', 'View 2'])
-    expect(el.querySelector('.view-tab--dragging')).toBeNull() // drag state cleared
+    expect(strip(el).hasAttribute('data-live-parting')).toBe(false) // drag state cleared
   })
 
   it('LIVE GAP (YAZ-4606): the tabs part along the strip, a drop in the middle is ONE write, and Esc cancels', () => {
@@ -269,11 +269,11 @@ describe('view tabs — drag to reorder (YAZ-1471)', () => {
     expect(names(yaml())).toEqual(['View', 'Table', 'View 2'])
   })
 
-  it('dropping on the strip\'s empty tail lands the tab LAST (the last tab marks --insert-after)', () => {
+  it('dropping on the strip\'s empty tail lands the tab LAST (the tabs after the grab slide left)', () => {
     const { el, onChange, yaml } = mount()
     fire(wrap(el, 0), 'dragstart') // grab "Table"
     fire(strip(el), 'dragover') // the tail is a direct hit on the strip = the end slot
-    expect(wrap(el, 2).classList.contains('view-tab--insert-after')).toBe(true)
+    expect(wrap(el, 2).style.transform).toBe('translateX(-100px)')
     fire(strip(el), 'drop')
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(names(yaml())).toEqual(['View', 'View 2', 'Table'])
@@ -1946,18 +1946,18 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
     expect(pop.querySelector('[aria-label="Move down"]')).toBeNull()
   })
 
-  it('dragging file.name past the last row writes it last, in ONE write, with drag and insertion classes', () => {
+  it('dragging file.name past the last row writes it last, in ONE write; the rows part, no marker class (YAZ-4606)', () => {
     const { el, def, onChange } = mount(THREE)
     const pop = openMenu(el, 'Columns and view')
     fire(grip(pop, 'Name'), 'dragstart')
-    expect(rowOf(pop, 'Name').classList.contains('view-prop--dragging')).toBe(true)
+    expect(q(pop, '.view-menu__list').hasAttribute('data-live-parting')).toBe(true)
     fire(rowOf(pop, 'Priority'), 'dragover', 5) // below priority's midpoint → the end slot
-    expect(rowOf(pop, 'Priority').classList.contains('view-prop--insert-after')).toBe(true)
+    expect(rowOf(pop, 'Priority').style.transform).toBe('translateY(-100px)')
     fire(rowOf(pop, 'Priority'), 'drop', 5)
     expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
     expect(onChange).toHaveBeenCalledTimes(1)
-    expect(pop.querySelector('.view-prop--dragging')).toBeNull()
-    expect(pop.querySelector('.view-prop--insert-after')).toBeNull()
+    expect(q(pop, '.view-menu__list').hasAttribute('data-live-parting')).toBe(false)
+    expect(rowOf(pop, 'Priority').style.transform).toBe('')
   })
 
   it('dragging the last row above the first inserts BEFORE it', () => {
@@ -1965,7 +1965,7 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
     const pop = openMenu(el, 'Columns and view')
     fire(grip(pop, 'Priority'), 'dragstart')
     fire(rowOf(pop, 'Name'), 'dragover', -5)
-    expect(rowOf(pop, 'Name').classList.contains('view-prop--insert-before')).toBe(true)
+    expect(rowOf(pop, 'Name').style.transform).toBe('translateY(100px)') // Name slides down: the gap opens before it
     fire(rowOf(pop, 'Name'), 'drop', -5)
     expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
   })
@@ -1978,7 +1978,7 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
     expect(onChange).not.toHaveBeenCalled()
     fire(grip(pop, 'Status'), 'dragstart')
     fire(grip(pop, 'Status'), 'dragend')
-    expect(pop.querySelector('.view-prop--dragging')).toBeNull()
+    expect(q(pop, '.view-menu__list').hasAttribute('data-live-parting')).toBe(false)
   })
 
   it('LIVE GAP (YAZ-4606): the rows part down the list, a drop in the middle is ONE write, and Esc cancels', () => {

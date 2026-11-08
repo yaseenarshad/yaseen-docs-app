@@ -1131,15 +1131,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     onDrop: live.drop,
     onDragEnd: live.end,
   })
-  /** The grabbed header and where the gap opens — before a header, or after the last for the end slot (YAZ-1548): they draw nothing, the gap is the marker (YAZ-4606). */
-  const headerDragClass = (index: number): string[] => {
-    if (live.drag === null) return []
-    const cls: string[] = []
-    if (live.drag.from === index) cls.push('view-table__th--drag-source')
-    if (live.gap === index) cls.push('view-table__th--insert-before')
-    if (live.gap === keys.length && index === keys.length - 1) cls.push('view-table__th--insert-after')
-    return cls
-  }
   // Each column's slide and the grabbed column's lift, as ONE rule per moved column for this table (YAZ-4606): a slot
   // change re-renders no cell's style, and the cells a scroll mounts mid-drag take the rule too.
   const tableId = useId()
@@ -1460,7 +1451,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   <th
                     key={key}
                     scope="col"
-                    className={[frozenClass(index), ...headerDragClass(index)].filter(Boolean).join(' ') || undefined}
+                    className={frozenClass(index) || undefined}
                     style={{ width: widthOf(key), ...frozenStyle(index) }}
                     // The column's description on hover (YAZ-4590 S23).
                     title={c.startsWith('note.') ? settings.columns[c.slice('note.'.length)]?.description : undefined}

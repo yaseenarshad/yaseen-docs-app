@@ -285,7 +285,14 @@
 }
 
 /* An option drag is the tab bar's live gap, down the list (YAZ-4606 D58, lib/liveGap.css): no drop line, the gap is
-   the marker. `data-dragging` and `data-insert` name the grabbed option and where the gap opens; they draw nothing. */
+   the marker. No hover look on an option while the options part (the tab bar's 6F). */
+[data-live-parting] .property-def__option:hover {
+  background: transparent;
+}
+[data-live-parting] .property-def__option:hover .property-def__more,
+[data-live-parting] .property-def__option:hover .property-def__remove {
+  opacity: 0;
+}
 
 .property-def__order {
   max-width: 130px;

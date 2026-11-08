@@ -5,6 +5,7 @@ import { SortMenu } from './SortMenu'
 import { type GroupBySpec, type Mutate, type SortSpec, type ViewSet, type ViewDef, groupByLevels } from '../viewSchema'
 import type { FolderSettings } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
+import { liveGapPoint } from '../../test-liveGap'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -41,8 +42,9 @@ function mount(view: ViewDef = { name: 'Table', type: 'table', sort: structuredC
 const addLevelButton = (el: ParentNode) => [...el.querySelectorAll<HTMLButtonElement>('.view-menu__action')].find((b) => b.textContent === 'Add group level') ?? null
 const addLevel = (el: ParentNode) => act(() => addLevelButton(el)!.click())
 
+/** `clientY` is px from the target row's midpoint, in a layout jsdom is given (YAZ-4606): the slot and the room are read from it. */
 function drag(target: HTMLElement, type: string, clientY = 0) {
-  act(() => { target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })) })
+  act(() => { target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY: liveGapPoint(target, 'y', clientY) })) })
 }
 function press(target: HTMLElement, key: string) {
   act(() => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key })) })
@@ -58,13 +60,13 @@ describe('SortMenu external settings refresh', () => {
     const { el, grip, replace, sort, onUpdate } = mount()
     drag(grip(1, 'Status'), 'dragstart')
     drag(grip(3, 'Priority').closest('li')!, 'dragover', 5)
-    expect(el.querySelector('.view-prop--dragging')).not.toBeNull()
+    expect(el.querySelector('[data-live-parting]')).not.toBeNull() // the gap is the marker: no marker class (YAZ-4606)
     const replacement: SortSpec[] = [
       { property: 'note.priority', direction: 'ASC' },
       { property: 'file.name', direction: 'DESC' },
     ]
     replace(replacement)
-    expect(el.querySelector('.view-prop--dragging, .view-prop--insert-after')).toBeNull()
+    expect(el.querySelector('[data-live-parting]')).toBeNull()
     drag(grip(2, 'Name').closest('li')!, 'drop', 5)
     expect(onUpdate).not.toHaveBeenCalled()
     expect(sort()).toEqual(replacement)
@@ -214,7 +216,7 @@ describe('Group levels: handles, remove, third level (YAZ-4532)', () => {
     drag(levelGrip(el, 1, 'Status'), 'dragstart')
     const last = levelGrip(el, 3, 'Pillar').closest('li')!
     drag(last, 'dragover', 5)
-    expect(last.classList.contains('view-prop--insert-after')).toBe(true)
+    expect(last.style.transform).toBe('translateY(-100px)') // the rows after the grab slide up: the gap opens at the end
     drag(last, 'drop', 5)
     expect(view().groupBy).toEqual([THREE[1], THREE[2], THREE[0]])
   })
