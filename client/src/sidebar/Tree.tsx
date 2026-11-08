@@ -256,6 +256,14 @@ interface TreeProps {
    * click on it selects nothing, so ⌘C / ⌘X / ⌘V never act on the note from here.
    */
   shortcuts: ReadonlyMap<string, readonly TreeNode[]>
+  /**
+   * The folders that list their page file (YAZ-4587, D37), by absolute path (`folderPageRows`): each draws a
+   * "📄 <title> (page)" row first under it. Not a file of the tree: it never drags, renames or deletes, and a
+   * click opens the folder page on its Page tab (`onOpenPage`). Absent: no such row.
+   */
+  pageRows?: ReadonlySet<string>
+  /** A click on a folder page row (YAZ-4587): its folder, and the copy it stands in, as `onKeepFile`'s `top`. */
+  onOpenPage?: (dir: string, top?: string) => void
   /** What each row is labelled with (YAZ-2420 🔒 D15): its title; a row the index does not hold shows its file name. Name sorts by this label (YAZ-3227 D8). */
   titles: PathTitles
   /** A tab whose top rows reorder (YAZ-2631 D3): they drag along the list instead of moving on disk. Without it no row reorders. The top level alone gets it, so a drag's line draws no level below again. */
@@ -336,6 +344,8 @@ function TreeLevel({
   move,
   selection,
   shortcuts,
+  pageRows,
+  onOpenPage,
   titles,
   reorder,
   sort,
@@ -353,7 +363,7 @@ function TreeLevel({
   shift = 0,
 }: TreeProps) {
   const level = depth + shift
-  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
+  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
@@ -445,6 +455,22 @@ function TreeLevel({
             onSubmit={pending.onSubmit}
             onCancel={pending.onCancel}
           />
+        </li>
+      )}
+      {pageRows?.has(dirPath) === true && onOpenPage !== undefined && (
+        // The folder's page file (YAZ-4587, D37), first under it. No `data-path` (it is no row on disk: the selection,
+        // a reveal and the drops never find it); `data-walk` lets the arrows walk it. Right-click: the folder page menu.
+        <li role="treeitem">
+          <button
+            type="button"
+            data-walk=""
+            className="tree__row tree__row--file tree__row--page"
+            style={{ paddingLeft: 8 + level * 14 + 14 }}
+            onClick={() => onOpenPage(dirPath, copies ? top : undefined)}
+            onContextMenu={(e) => onNodeContextMenu({ type: 'dir', path: dirPath, pageOf: dirPath, top: top ?? dirPath }, e)}
+          >
+            <span className="tree__label">📄 {pageLabel(dirPath, true, titles)} (page)</span>
+          </button>
         </li>
       )}
       {rows.map((node) =>

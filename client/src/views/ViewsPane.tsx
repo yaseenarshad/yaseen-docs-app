@@ -1,6 +1,6 @@
 import { boardOptionGroups } from './boardOptionGroups'
 import { columnTyping, optionOrderFor } from './editorType'
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
@@ -33,6 +33,8 @@ import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/card
 import type { ViewHover } from './view/viewHover'
 import { FolderPages, type FolderPagesValue } from './view/GroupHeader'
 import { directlyIn, rowPage, rowsByFolder } from '../links/shortcuts'
+import { onPageTabAsk, takePageTab } from './pageTabRequest'
+import { pageViewIndex } from './pageView'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -261,6 +263,18 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   useEffect(() => {
     if (backKey !== undefined) keepBackView(backKey, view.name)
   }, [backKey, view.name])
+  // The sidebar's folder page row (YAZ-4587, D37) asks for the Page tab: the page of an app tab takes the ask as it
+  // mounts, or at once while mounted, and shows its Page tab, else its start view. Before paint, so the mount shows no other view first.
+  useLayoutEffect(() => {
+    if (tabId === undefined) return
+    const take = () => {
+      if (!takePageTab(folderPath)) return
+      const page = pageViewIndex(def.views)
+      setActive(page !== -1 ? page : Math.max(0, def.views.findIndex((v) => v.name === def.defaultView)))
+    }
+    take()
+    return onPageTabAsk(take)
+  }, [tabId, folderPath, def])
   // The open card of this app tab, folder page and view tab is in a module map (`NoteWindow.tsx`, D17, YAZ-4544), so a
   // tab that sleeps and mounts again shows it again on the same note, and another tab on this folder has its own.
   const windowKey = noteWindowKey(tabId, folderPath, view.name)

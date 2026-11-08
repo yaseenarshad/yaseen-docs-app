@@ -72,6 +72,7 @@ vi.mock('./folderShortcuts', async (importOriginal) => {
 })
 
 import { testDoor } from '../testNoteIds'
+import { onPageTabAsk, takePageTab } from '../views/pageTabRequest'
 import { LIFT_PX } from './hooks/rowGestures'
 import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
 import { useSameList } from './hooks/useVaultTree'
@@ -11649,5 +11650,68 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     await rerender({ lens: 'files' })
     expect(el.querySelector('.tree__date')).toBeNull()
     expect([...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)).toEqual(['docs', 'plan empty', 'plan old', 'plan a', 'plan b'])
+  })
+})
+
+describe('the folder page file row (YAZ-4587, D37)', () => {
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const NESTED: TreeNode[] = [
+    { type: 'dir', name: 'Areas', path: '/v/Areas', children: [file('/v/Areas/a.md')] },
+    { type: 'dir', name: 'Projects', path: '/v/Projects', children: [{ type: 'dir', name: 'Alpha', path: '/v/Projects/Alpha', children: [file('/v/Projects/Alpha/c.md')] }, file('/v/Projects/b.md')] },
+  ]
+  const folder = (dir: string, title: string, properties: Record<string, unknown> = {}): IndexRecord => ({ ...indexRecord(`${dir}/.folder.md`), title, folder: dir.slice('/v/'.length), properties })
+  const ON = { ...TEST_SETTINGS, folderPages: { showFolderPageFiles: true } } as SettingsState
+  const pageRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.tree__row--page')]
+  const mountPages = async (folders: IndexRecord[], settings: SettingsState = TEST_SETTINGS) => {
+    vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Areas', '/v/Projects', '/v/Projects/Alpha'])
+    const indexSource = createWikilinkResolveSource()
+    act(() => indexSource.update(() => null, [indexRecord('/v/Areas/a.md'), indexRecord('/v/Projects/b.md'), indexRecord('/v/Projects/Alpha/c.md')], folders, true))
+    return mount({ indexSource, settings }, (bridge) => void bridge.tree.mockResolvedValue({ root: '/v', tree: NESTED, generatedAt: 1 }))
+  }
+  const ALL = [folder('/v/Areas', 'Areas'), folder('/v/Projects', 'Projects'), folder('/v/Projects/Alpha', 'Alpha')]
+
+  it('global off: no rows; global on: a row first under each folder that has a page file, labelled "📄 <title> (page)"', async () => {
+    const off = await mountPages(ALL)
+    expect(pageRows(off.el)).toEqual([])
+    act(() => root?.unmount())
+    const { el } = await mountPages(ALL, ON)
+    expect(pageRows(el).map((r) => r.textContent)).toEqual(['📄 Areas (page)', '📄 Projects (page)', '📄 Alpha (page)'])
+    // First under its folder: the first row of the folder's own level.
+    const projects = el.querySelector('.tree__row[data-path="/v/Projects"]')?.closest('li')
+    expect(projects?.querySelector(':scope > ul.tree > li > .tree__row')?.textContent).toBe('📄 Projects (page)')
+  })
+
+  it("a folder's override on covers it and its subfolders; a nested override off wins inside it", async () => {
+    const { el } = await mountPages([folder('/v/Areas', 'Areas'), folder('/v/Projects', 'Projects', { show_page_file: true }), folder('/v/Projects/Alpha', 'Alpha')])
+    expect(pageRows(el).map((r) => r.textContent)).toEqual(['📄 Projects (page)', '📄 Alpha (page)'])
+    act(() => root?.unmount())
+    const nested = await mountPages([folder('/v/Areas', 'Areas'), folder('/v/Projects', 'Projects', { show_page_file: true }), folder('/v/Projects/Alpha', 'Alpha', { show_page_file: false })])
+    expect(pageRows(nested.el).map((r) => r.textContent)).toEqual(['📄 Projects (page)'])
+  })
+
+  it('a click opens the folder page as "Open folder page" does, asking for its Page tab; the row never drags or joins the selection', async () => {
+    const asked = vi.fn()
+    const off = onPageTabAsk(asked)
+    const { el, props } = await mountPages(ALL, ON)
+    const row = pageRows(el)[1]!
+    expect(row.draggable).toBe(false)
+    expect(row.hasAttribute('data-path')).toBe(false)
+    act(() => row.click())
+    expect(asked).toHaveBeenCalledExactlyOnceWith('/v/Projects')
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/Projects')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(el.querySelector('.tree__row--selected')).toBeNull()
+    off()
+    takePageTab('/v/Projects') // the ask no page took goes
+  })
+
+  it('its right-click offers the folder page items alone: no rename, delete, create or clipboard item', async () => {
+    const { el, props } = await mountPages(ALL, ON)
+    act(() => void pageRows(el)[1]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    const labels = menuItems(el).map((b) => b.textContent)
+    // Open, a new tab, Copy path and "Open in ▸" (Finder, VS Code, the default app), all of the folder.
+    expect(labels).toEqual(['Open folder page', 'Open in new tab', 'Copy path', 'Open in'])
+    act(() => itemByLabel(el, 'Open folder page')?.click())
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/Projects')
   })
 })
