@@ -23,7 +23,10 @@ describe('collection group commands', () => {
     for (const root of roots) expect((await getFocusFolders(root, 'workspace', 'favorites'))[0].items).toHaveLength(2)
     await run('group.rename', { group: group.id, name: 'Flashcards' })
     await run('group.position', { group: group.id, position: 2 })
-    expect(await run('group.list')).toMatchObject({ items: [{ id: group.id, name: 'Flashcards', pos: 2, resolvedItems: [{ path: join(roots[0], 'Mochi.md') }, { path: join(roots[1], 'Mochi.md') }] }] })
+    // The two adds raced, so either may be first. Both must be kept.
+    const listed = await run('group.list') as { items: { resolvedItems: { path: string }[] }[] }
+    expect(listed).toMatchObject({ items: [{ id: group.id, name: 'Flashcards', pos: 2 }] })
+    expect(listed.items[0].resolvedItems.map(item => item.path).sort()).toEqual(roots.map(root => join(root, 'Mochi.md')).sort())
     await run('group.remove', { group: group.id })
     expect(await run('group.list')).toMatchObject({ items: [] })
     for (const root of roots) expect((await getFocusFolders(root, 'workspace', 'favorites'))[0].deleted).toBe(true)
