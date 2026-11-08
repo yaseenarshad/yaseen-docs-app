@@ -1,6 +1,7 @@
 import { PropertyTypeIcon } from './PropertyDefinitionEditor'
 import { ColumnSearch, matchesColumn } from './ColumnSearch'
-import { useMemo, useState, type DragEvent, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import type { FolderHost } from '../ViewsPane'
@@ -60,8 +61,6 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const [query, setQuery] = useState('')
   /** The DETAIL level (YAZ-1513): the open column's key, or null for the list. Its editor is `ColumnDetail` (YAZ-4533). */
   const [detail, setDetail] = useState<string | null>(null)
-  /** The drag in flight (YAZ-1207): `from` is an index in `shown`, `to` the insertion slot it would land in. */
-  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
   /** Settings › Folder pages (YAZ-4585): `view` has them filled in; `own` is the view as written, for "from Settings". */
   const defaults = useViewDefaults()
   const own = def.views[viewIndex] ?? view
@@ -79,11 +78,6 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   // A hide offers Undo (YAZ-4594 S29); a show does not.
   const toggle = (key: string) =>
     isShown(key) ? writeOrder(shown.filter((k) => canonicalKey(k) !== canonicalKey(key)), `Hid ${propertyLabel(def, key)}`) : writeOrder([...shown, key])
-  /** The slot a pointer at `clientY` over shown row `i` means: before (i) or after (i+1) it. */
-  const insertionAt = (e: DragEvent<HTMLElement>, i: number): number => {
-    const r = e.currentTarget.getBoundingClientRect()
-    return e.clientY < r.top + r.height / 2 ? i : i + 1
-  }
   /**
    * Reorder (YAZ-1207), TabBar's move rule (GRO-2235): the slot is an index in the WITH-dragged-row
    * list, so past the grab point it shifts one left. ONE `writeOrder` — never a bypass, it is what
@@ -97,6 +91,9 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
     next.splice(to, 0, key)
     writeOrder(next)
   }
+  // The tab bar's drag, down the list (YAZ-4606 D58): the shown rows part live; the slot is read from their layout places.
+  // The hidden rows below them are no items, so a drag over them is the end slot.
+  const live = useLiveGapReorder<HTMLUListElement>({ axis: 'y', keys: shown, onMove: (from, to) => move(from, to > from ? to + 1 : to) })
   /** The kinds the list glyphs show, remembered per canonical key for as long as their inputs stand (YAZ-1549) — no row rescan per render. */
   const kinds = useMemo(() => new Map<string, PropertyKind>(), [records, properties, folder.settings])
   /** The kind a list row's glyph shows: the declaration, else the inferred editor kind, else text. */
@@ -161,36 +158,23 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
         {filtering && matches.length > 0 && <p className="column-reorder-hint">Clear search to reorder columns.</p>}
       </div>
       {matches.length === 0 && <p className="column-search__empty">No columns found. Try another name.</p>}
-      <ul className="view-menu__list">
+      <ul className="view-menu__list" {...live.listProps}>
         {matches.map((key) => {
           const on = isShown(key)
           const i = shown.indexOf(key)
           const label = propertyLabel(def, key)
           const cls = ['view-prop']
-          if (drag !== null && i >= 0) {
-            if (drag.from === i) cls.push('view-prop--dragging')
-            // The insertion indicator: an accent edge on the row the drop would land before — or
-            // after the LAST row for the end slot.
-            if (drag.to === i) cls.push('view-prop--insert-before')
-            if (drag.to === shown.length && i === shown.length - 1) cls.push('view-prop--insert-after')
+          if (live.drag !== null && i >= 0) {
+            // The grabbed row and where the gap opens — or after the LAST row for the end slot: they draw nothing, the gap is the marker (YAZ-4606).
+            if (live.drag.from === i) cls.push('view-prop--dragging')
+            if (live.gap === i) cls.push('view-prop--insert-before')
+            if (live.gap === shown.length && i === shown.length - 1) cls.push('view-prop--insert-after')
           }
           return (
             <li
               key={key}
+              {...(i >= 0 && !filtering ? live.itemProps(i) : {})}
               className={cls.join(' ')}
-              onDragOver={(e) => {
-                if (drag === null || i < 0) return
-                e.preventDefault()
-                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                const to = insertionAt(e, i)
-                if (drag.to !== to) setDrag({ ...drag, to })
-              }}
-              onDrop={(e) => {
-                if (drag === null || i < 0) return
-                e.preventDefault()
-                setDrag(null)
-                move(drag.from, insertionAt(e, i))
-              }}
             >
               <div className="view-prop__identity">
                 {on && !filtering && (
@@ -204,9 +188,9 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
                       // The groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none.
                       e.dataTransfer?.setData('text/plain', key)
                       if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-                      setDrag({ from: i, to: i })
+                      live.start(e, i)
                     }}
-                    onDragEnd={() => setDrag(null)}
+                    onDragEnd={live.end}
                     onKeyDown={(e) => {
                       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
                       e.preventDefault()

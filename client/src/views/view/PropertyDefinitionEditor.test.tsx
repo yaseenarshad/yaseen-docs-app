@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PropertyDecl } from '@shared/types'
 import { PropertyDefinitionEditor } from './PropertyDefinitionEditor'
+import { liveGapPoint } from '../../test-liveGap'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 let root: Root
@@ -21,8 +22,9 @@ function mount(options = initial) {
 afterEach(() => { act(() => root.unmount()); host.remove() })
 const rows = () => [...host.querySelectorAll<HTMLElement>('.property-def__option')]
 const handle = (i: number) => rows()[i].querySelector('button')!
+/** A row's halves as `hover` gives them (top 100, 34 px high), put on the layout jsdom is given: the slot is read from the layout (YAZ-4606). */
 function drag(element: Element, type: string, y = 0) {
-  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientY: y })
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientY: liveGapPoint(element, 'y', y - 117) })
   act(() => element.dispatchEvent(event))
 }
 function hover(index: number, half: 'top' | 'bottom') {
@@ -66,6 +68,16 @@ describe('option reorder feedback', () => {
     expect(change).not.toHaveBeenCalled()
     expect(host.querySelector('[data-insert]')).toBeNull()
     expect(host.querySelector('[data-dragging]')).toBeNull()
+  })
+  it('LIVE GAP (YAZ-4606): the options part down the list, and Esc cancels', () => {
+    const change = mount()
+    drag(handle(0), 'dragstart')
+    hover(2, 'bottom')
+    expect(rows().map(row => row.style.transform)).toEqual(['', 'translateY(-100px)', 'translateY(-100px)', ''])
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(rows().map(row => row.style.transform)).toEqual(['', '', '', ''])
+    drag(rows()[2], 'drop', 130)
+    expect(change).not.toHaveBeenCalled()
   })
   it('does not write when dropping at either edge of the same slot; keyboard reorder still works', () => {
     const change = mount()
