@@ -406,6 +406,16 @@ describe('createStore: loading', () => {
     }
   })
 
+  it('Kind first (YAZ-4614 D66): a tab\'s `kinds` boolean survives; a value that is no boolean falls back', async () => {
+    const kinds = { ...DEFAULT_SIDEBAR_SORT, files: { by: 'name', reverse: false, kinds: true }, focus: { by: 'manual', reverse: false, kinds: false } }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarSort: kinds } }))
+    expect(createStore(file).get().settings.sidebarSort).toEqual(kinds)
+    const bad = { ...DEFAULT_SIDEBAR_SORT, files: { by: 'name', reverse: false, kinds: 'yes' } }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarSort: bad } }))
+    expect(createStore(file).get().settings.sidebarSort).toEqual(DEFAULT_SIDEBAR_SORT)
+    expect(isSettings({ ...DEFAULT_SETTINGS, sidebarSort: bad })).toBe(false) // the IPC boundary refuses it too
+  })
+
   it('searchSort and rowDates (YAZ-3511 D1, D10, D12): a file without them reads Best match, with the dates on Search only; a pick survives; a bad value falls back and keeps every other field', async () => {
     const { searchSort: _sort, rowDates: _dates, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: { ...legacySettings, searchDates: false } }))

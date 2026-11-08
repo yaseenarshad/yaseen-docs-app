@@ -697,8 +697,8 @@ export function Sidebar({
   const sortedTab: SortMenuTab | null = lens === 'files' || lens === 'focus' || lens === 'favorites' || lens === 'search' ? lens : null
   const stored = sortedTab === null ? undefined : sortedTab === 'search' ? settings.searchSort : settings.sidebarSort[sortedTab]
   // Each state broadcast hands over a new copy of the settings (YAZ-3237): the sort keeps its identity while its
-  // value stays, so the memoised levels (YAZ-2194) draw nothing again on a tab click or a window move.
-  const sort = useMemo<TabSort | undefined>(() => (stored === undefined ? undefined : { by: stored.by, reverse: stored.reverse }), [stored?.by, stored?.reverse])
+  // value stays, so the memoised levels (YAZ-2194) draw nothing again on a tab click or a window move. Kind first (YAZ-4614 D66) is part of the value.
+  const sort = useMemo<TabSort | undefined>(() => (stored === undefined ? undefined : { by: stored.by, reverse: stored.reverse, ...(stored.kinds === true ? { kinds: true } : {}) }), [stored?.by, stored?.reverse, stored?.kinds])
   // The Search sort on its own (YAZ-3511): the search tree and its ↑/↓ keep it whichever tab shows.
   const searchSort = useMemo<TabSort>(() => ({ by: settings.searchSort.by, reverse: settings.searchSort.reverse }), [settings.searchSort.by, settings.searchSort.reverse])
   // The Search tab's filters (YAZ-3511 D13 to D15): held here, never saved, so a time range keeps the file times live below.
