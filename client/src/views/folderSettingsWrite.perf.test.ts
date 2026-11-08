@@ -42,13 +42,14 @@ describe('a settings write on a `.folder.md` with a 34k-character Page body (YAZ
       problems: [],
     })
 
-    await writeFolderSettings(PATH, settings(0)) // warm up
+    // Each write's base is the block on disk before it, as the page heard it. Warm up from the file's first block.
+    await writeFolderSettings(PATH, settings(0), { columns: {}, views: [{ type: 'page', name: 'Page' }], problems: [] })
     vi.mocked(api.readFile).mockClear()
     vi.mocked(api.writeFile).mockClear()
     const ms: number[] = []
     for (let i = 1; i <= 15; i++) {
       const start = performance.now()
-      await writeFolderSettings(PATH, settings(i))
+      await writeFolderSettings(PATH, settings(i), settings(i - 1))
       ms.push(performance.now() - start)
     }
     console.log(`settings write, 34k body: median ${median(ms).toFixed(2)} ms, worst ${Math.max(...ms).toFixed(2)} ms`)

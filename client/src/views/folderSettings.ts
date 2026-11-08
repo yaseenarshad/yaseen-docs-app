@@ -262,12 +262,78 @@ function plain(settings: FolderSettings): Record<string, unknown> {
  * duplicated). EXACTLY what the caller passes is written: `undefined` deletes the key and an
  * all-default value is still a value, because a delete is the caller's explicit choice and never
  * this module's inference.
+ *
+ * With `base`, the block as the caller last read it from disk (a folder page: the index's), the write is a REBASE
+ * (YAZ-4596 S38): at each read, the first and the retry after a CONFLICT, the change from `base` to `next` is laid
+ * onto the block on disk (`rebaseSettings`). The caller's own writes still in flight are in `next`, so they ride
+ * again; another tab's or window's write that the caller has not heard of yet stays.
  */
 export function writeFolderSettings(
   path: string,
   next: FolderSettings | undefined,
+  base?: FolderSettings,
 ): Promise<{ mtime: number }> {
-  return writeProperty(path, FOLDER_SETTINGS_KEY, next === undefined ? undefined : plain(next))
+  if (next === undefined || base === undefined) return writeProperty(path, FOLDER_SETTINGS_KEY, next === undefined ? undefined : plain(next))
+  const mine = plain(next)
+  const from = plain(base)
+  // The block on disk, read as this module reads it (a stored `outline` is a Page, as in `base`), then the change.
+  // `true`: the kind of vault only picks the views of a block that has none usable.
+  return writeProperty(path, FOLDER_SETTINGS_KEY, mine, (onDisk) =>
+    isRecord(onDisk) ? rebaseSettings(from, mine, plain(folderSettings({ properties: { [FOLDER_SETTINGS_KEY]: onDisk } } as unknown as IndexRecord, true))) : mine,
+  )
+}
+
+/** The same YAML value, whatever the order of a map's keys; an absent key and an `undefined` one are the same. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((x, i) => sameValue(x, b[i]))
+  if (!isRecord(a) || !isRecord(b)) return false
+  const keys = (r: Record<string, unknown>) => Object.keys(r).filter((k) => r[k] !== undefined)
+  return keys(a).length === keys(b).length && keys(a).every((k) => sameValue(a[k], b[k]))
+}
+
+/** A list's names when each entry is a map with its own unique `name` (the views), else null. */
+function namesOf(list: readonly unknown[]): string[] | null {
+  const names = list.map((entry) => (isRecord(entry) && typeof entry.name === 'string' ? entry.name : null))
+  return names.every((n): n is string => n !== null) && new Set(names).size === names.length ? names : null
+}
+
+/**
+ * THE REBASE of a settings write (YAZ-4596 S38): this page's change, from `base` (the block as it last heard it from
+ * disk) to `mine` (the block it means), laid onto `theirs` (the block on disk now — another tab or window may have written it since).
+ * Each part this page did not change is disk's; each part it changed is its own. Maps merge key by key; the views
+ * merge view by view (by name) while one side kept the list's names and order. A part that both sides changed is
+ * this write's: it is the later one.
+ */
+export function rebaseSettings(base: unknown, mine: unknown, theirs: unknown): unknown {
+  if (sameValue(mine, base)) return theirs
+  if (sameValue(theirs, base)) return mine
+  if (isRecord(base) && isRecord(mine) && isRecord(theirs)) {
+    const out: Record<string, unknown> = {}
+    for (const key of new Set([...Object.keys(theirs), ...Object.keys(mine)])) {
+      const value = rebaseSettings(base[key], mine[key], theirs[key])
+      if (value !== undefined) out[key] = value
+    }
+    return out
+  }
+  if (Array.isArray(base) && Array.isArray(mine) && Array.isArray(theirs)) {
+    const [b, m, t] = [namesOf(base), namesOf(mine), namesOf(theirs)]
+    if (b !== null && m !== null && t !== null) {
+      // The side that kept the names gives way: the other side's list, each entry the three entries of its name merged.
+      const kept = sameValue(m, b)
+      if (kept || sameValue(t, b)) {
+        const [list, names, other, otherNames] = kept ? [theirs, t, mine, m] : [mine, m, theirs, t]
+        return list.map((entry, i) => {
+          const name = names[i]
+          if (!b.includes(name) || !otherNames.includes(name)) return entry
+          const at = base[b.indexOf(name)]
+          const others = other[otherNames.indexOf(name)]
+          return kept ? rebaseSettings(at, others, entry) : rebaseSettings(at, entry, others)
+        })
+      }
+    }
+  }
+  return mine
 }
 
 

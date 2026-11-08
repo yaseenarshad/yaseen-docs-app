@@ -242,7 +242,7 @@ describe('a folder with no settings file', () => {
         { type: 'board', name: 'Board' },
         { type: 'cards', name: 'Cards' },
       ],
-    })
+    }, expect.any(Function))
     expect(byLabel<HTMLInputElement>(el, 'View name').value).toBe('Cards') // the appended tab mounts in rename
   })
 
@@ -290,7 +290,7 @@ describe('a folder whose `.folder.md` declares columns', () => {
     await flush()
     act(() => captured.folder!.setColumns({ ...SETTINGS.columns, owner: { kind: 'link' } }))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', expect.anything()) // the settings, and no note
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', expect.anything(), expect.any(Function)) // the settings, and no note
     expect(writeValues).not.toHaveBeenCalled()
     expect(transform).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
@@ -718,7 +718,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
     click(byLabel(el, 'Properties'))
     setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, defaultView: 'Table' })
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, defaultView: 'Table' }, expect.any(Function))
   })
 
   it('the dropdown shows the saved value, and First view clears the key', async () => {
@@ -784,7 +784,7 @@ describe('config edits are ONE settings write on the folder', () => {
         const { frozenColumns: _frozen, ...rest } = view
         return { ...rest, order: [] }
       }),
-    })
+    }, expect.any(Function))
     expect(clear.disabled).toBe(true)
     click(clear)
     await flush()
@@ -804,7 +804,7 @@ describe('config edits are ONE settings write on the folder', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', {
       ...withBoard,
       views: [...SETTINGS.views, { ...BOARD, cardSize: 400 }],
-    })
+    }, expect.any(Function))
   })
 
   it('a sort change goes back through the one door, whole-key, views verbatim', async () => {
@@ -902,7 +902,7 @@ describe('config edits are ONE settings write on the folder', () => {
     press(field, 'Enter')
     await flush()
 
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, properties: { order: { displayName: 'Rank' } } })
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, properties: { order: { displayName: 'Rank' } } }, expect.any(Function))
     const headers = () => [...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].map((th) => th.textContent)
     expect(headers()).toEqual(['Name', 'Rank', 'Related'])
     // the index echoes our own write back: the label stays, nothing is rebuilt from an older def
@@ -1036,7 +1036,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     await mount()
     act(() => captured.folder!.setColumns(COLUMNS))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, columns: COLUMNS })
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, columns: COLUMNS }, expect.any(Function))
   })
 
   it('columns AND views ride in that SAME single write when views are passed', async () => {
@@ -1044,7 +1044,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     const views = [{ type: 'page', name: 'Page', order: ['[[Sales]]'] }, TABLE]
     act(() => captured.folder!.setColumns(COLUMNS, views))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, columns: COLUMNS, views })
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, columns: COLUMNS, views }, expect.any(Function))
   })
 
   /**

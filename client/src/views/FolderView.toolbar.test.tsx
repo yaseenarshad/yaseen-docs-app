@@ -293,7 +293,7 @@ describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar s
 })
 
 describe('two folder pages on one `.folder.md` (YAZ-4596 S38)', () => {
-  it('two tabs write different settings at once, then again after the echo: the mtime guard and the retry keep both writes each time', async () => {
+  it('two tabs write different settings at once, after the echo, and before it: each write rebases on the disk, and only the same key takes the later write', async () => {
     // The main process's guard: a write against an older mtime is a CONFLICT that names the disk's.
     let conflicts = 0
     writeFile.mockImplementation(async ({ path, content, expectedMtime }) => {
@@ -341,6 +341,38 @@ describe('two folder pages on one `.folder.md` (YAZ-4596 S38)', () => {
       expect(end.folder_settings.views).toHaveLength(3) // B's copy and A's copy: A wrote on the settings it heard from B
       expect(end.folder_settings.views[0].name).toBe('Pipeline')
       expect(writeFile).toHaveBeenCalledTimes(6) // four writes, two of them refused once
+
+      // Both block writes now, and the watcher speaks to neither: each tab writes from a block that is behind the disk.
+      // Different keys, at once: A makes Pipeline the start view, B duplicates it. The refused one rebases on the other.
+      feed()
+      await flush()
+      const tabMenu = (el: ParentNode, name: string, item: string): void => {
+        const t = [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((x) => x.textContent === name)!
+        act(() => void t.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+        click([...el.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((x) => x.textContent?.replace('✓', '').trim() === item)!)
+      }
+      tabMenu(a, 'Pipeline', 'Open on this view')
+      duplicateView(b)
+      await flush()
+      await flush()
+      expect(conflicts).toBe(3)
+      const both = onDiskNow() as ReturnType<typeof onDiskNow> & { folder_settings: { defaultView?: string } }
+      expect(both.folder_settings.defaultView).toBe('Pipeline')
+      expect(both.folder_settings.views).toHaveLength(4)
+      // The same key, one after the other, still unheard: A, then B, choose a start view. The later one wins; nothing
+      // else goes — A's list does not hold B's new copy yet, and the copy stays.
+      expect(both.folder_settings.views.map((v) => v.name)).toEqual(['Pipeline', 'Pipeline copy 3', 'Pipeline copy 2', 'Pipeline copy'])
+      expect([...a.querySelectorAll('[role="tab"]')].map((x) => x.textContent)).not.toContain('Pipeline copy 3')
+      tabMenu(a, 'Pipeline copy', 'Open on this view')
+      await flush()
+      expect((onDiskNow() as typeof both).folder_settings.defaultView).toBe('Pipeline copy')
+      tabMenu(b, 'Pipeline copy 2', 'Open on this view')
+      await flush()
+      const last = onDiskNow() as typeof both
+      expect(last.folder_settings.defaultView).toBe('Pipeline copy 2')
+      expect(last.folder_settings.views.map((v) => v.name)).toEqual(both.folder_settings.views.map((v) => v.name))
+      expect(last.show_page_file).toBe(true)
+      expect(last.hover_preview).toBe(false)
     } finally {
       act(() => rootB.unmount())
       b.remove()
