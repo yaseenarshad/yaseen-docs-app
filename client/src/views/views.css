@@ -1125,15 +1125,17 @@
 }
 
 /* The "+ New" row (YAZ-4539, S12): one row high, at the end of the table and of each innermost group. Not a data
-   row, so no band; the button stays at the left edge while the table scrolls sideways, as a group header does. */
+   row, so no band; the button stays at the left edge while the table scrolls sideways, as a group header does: the
+   cell does not clip, and the button pins at its rows' indent (`--depth`: the levels above them, YAZ-4544). */
 .view-table td.view-table__new-cell {
   padding-top: 0;
   padding-bottom: 0;
+  overflow: visible;
 }
 
 .view-table__new-btn {
   position: sticky;
-  left: 8px;
+  left: calc(8px + var(--view-group-indent, 28px) * var(--depth, 0));
   padding: 0 6px;
   font-size: 13px;
   color: var(--fg-muted);

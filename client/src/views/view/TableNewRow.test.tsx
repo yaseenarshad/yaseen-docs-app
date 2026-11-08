@@ -123,6 +123,22 @@ describe('the "+ New" row (YAZ-4539)', () => {
     expect(lineNames(el)).toEqual(['[A]', 'a1', '[p1]', 'a2', '+', '[p2]', 'a3', '+', '[B]', '[p1]', 'b1', '+'])
   })
 
+  it('stays in view when the table scrolls sideways, as a group header does: its cell lets the sticky button out, at its rows\' indent (YAZ-4544)', () => {
+    const grouped = mount(NESTED, { records: NESTED_RECORDS.map((r) => ({ ...r, properties: { ...r.properties, kind: 'task' } })) })
+    // Each "+ New" ends a level-2 section: one step in from its group header (depth 1), as its rows are.
+    expect(newRows(grouped.el).map((tr) => q<HTMLElement>(tr, 'td').style.getPropertyValue('--depth'))).toEqual(['2', '2', '2'])
+    act(() => root?.unmount())
+    container?.remove()
+    const flat = mount(table())
+    expect(q<HTMLElement>(newRows(flat.el)[0], 'td').style.getPropertyValue('--depth')).toBe('0')
+    // A table cell clips (`overflow: hidden`), which would pin the button to the cell: the "+ New" cell does not.
+    const cell = /\.view-table td\.view-table__new-cell\s*\{([^}]*)\}/.exec(viewsCss)![1]
+    expect(cell).toMatch(/overflow:\s*visible/)
+    const button = /\.view-table__new-btn\s*\{([^}]*)\}/.exec(viewsCss)![1]
+    expect(button).toMatch(/position:\s*sticky/)
+    expect(button).toMatch(/left:\s*calc\(8px \+ var\(--view-group-indent, 28px\) \* var\(--depth, 0\)\)/)
+  })
+
   it('a click seeds the filter, the group and every group above it', async () => {
     const { el } = mount(NESTED, { records: NESTED_RECORDS.map((r) => ({ ...r, properties: { ...r.properties, kind: 'task' } })) })
     await act(async () => click(q(newRows(el)[2], 'button')))

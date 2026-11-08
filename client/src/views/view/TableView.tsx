@@ -531,7 +531,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       // The "+ New" row (YAZ-4539): the group header "+"'s path, so the note gets the filter seed and every group value above it.
       return (
         <tr key={`new:${line.gk}`} className={['view-table__new', ...(frozenRow ?? [])].filter(Boolean).join(' ')} style={frozenRowStyle}>
-          <td className="view-table__new-cell" colSpan={span}>
+          <td className="view-table__new-cell" colSpan={span} style={{ '--depth': line.at === undefined ? 0 : line.at.level + 1 } as CSSProperties}>
             <button type="button" className="view-table__new-btn" onClick={() => onNewInGroup?.(line.add, undefined, line.at)}>
               + New
             </button>
