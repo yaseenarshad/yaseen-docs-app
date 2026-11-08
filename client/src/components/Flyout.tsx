@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 /**
  * The app's ONE menu flyout (YAZ-4544 4F): the sidebar's right-click (`sidebar/ContextMenu.tsx`, YAZ-1674 D7), the
@@ -23,10 +23,11 @@ export function useFlyout<T extends string>() {
     if (open === null) setOpen(id)
     else if (id !== open) timer.current = window.setTimeout(() => setOpen(id), SWITCH_MS)
   }
-  const openNow = (id: T | null) => {
+  // Stable, so a menu's window listeners that read it are not re-added on each render.
+  const openNow = useCallback((id: T | null) => {
     window.clearTimeout(timer.current)
     setOpen(id)
-  }
+  }, [])
   return { open, hover, openNow }
 }
 
