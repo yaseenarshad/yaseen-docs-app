@@ -3,7 +3,10 @@ import { isFolderRow, isShortcut } from '../../links/shortcuts'
 import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
 import { type ViewSet, type ViewDef, type GroupBySpec, shownGroupLevels } from '../viewSchema'
 import { type Row, propertyLabel } from '../engine'
-import type { PropertyDecl } from '@shared/types'
+import { isFolderSettingsPath, type PropertyDecl } from '@shared/types'
+import { basename, dirname } from '../../lib/paths'
+import { fileKind } from '@shared/fileKind'
+import { IconsContext, fileIconAttrs } from '../../sidebar/FileIcon'
 import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value, fromYaml, linkText, render } from '../expr'
 import { formatDateValue, formatNumber } from '../columnFormat'
 import { WIKILINK_RE } from '@shared/linkRewrite'
@@ -80,7 +83,23 @@ function LinkChip({ link, resolve }: { link: LinkValue | FileValue; resolve?: Re
       {text}
     </span>
   ) : (
-    <span className="wikilink view-link-pill" data-link-path={path} title={text}>
+    <PillWithIcon path={path} text={text} />
+  )
+}
+
+/**
+ * A resolved pill with the icon its page has in the sidebar (YAZ-4544 4G), as the note editor's pill has (YAZ-3609
+ * D13): the icon's attributes on the pill, drawn on its `::before`. Settings › File icons reach it through the app's
+ * CSS (`data-sidebar-file-icons`) and `IconsContext`, as they reach the note's pills.
+ */
+function PillWithIcon({ path, text }: { path: string; text: string }) {
+  const icons = useContext(IconsContext)
+  // A folder resolves to its directory, the editor's rule (no file kind); a folder row's page is its `.folder.md`.
+  const settings = isFolderSettingsPath(path)
+  const folder = settings || fileKind(basename(path)) === null
+  const { style, ...attrs } = fileIconAttrs(icons, settings ? dirname(path) : path, folder)
+  return (
+    <span {...attrs} style={style} className={`wikilink view-link-pill file-icon file-icon--${folder ? 'dir' : 'file'}`} data-link-path={path} title={text}>
       {text}
     </span>
   )

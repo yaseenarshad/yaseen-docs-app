@@ -111,6 +111,13 @@ describe('D47: a link value is a pill', () => {
     expect(pills(cell(el, 2)).map((p) => p.dataset.linkPath)).toEqual([BOB, CAROL])
   })
 
+  it('a pill wears its page’s file icon, as a note’s pill does (YAZ-4544 4G)', () => {
+    const { el } = mount(TABLE)
+    const pill = pills(cell(el, 1))[0]
+    expect([pill.classList.contains('file-icon'), pill.classList.contains('file-icon--file'), pill.dataset.kind]).toEqual([true, true, 'markdown'])
+    expect(pill.textContent).toBe('Bob')
+  })
+
   it('a click opens the linked page and does not edit; ⌘-click opens a background tab', () => {
     const { el, onOpenFile, openBackground } = mount(TABLE)
     click(pills(cell(el, 1))[0])

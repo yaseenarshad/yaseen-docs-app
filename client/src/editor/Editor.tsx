@@ -534,6 +534,8 @@ function CrepeHost({
       linkAt.current = null
     },
   }))
+  // The properties panel's link pills (YAZ-4544 4G): a note link's doors and this note's link card. Stable, for its memo.
+  const panelLinks = useMemo(() => ({ open: { onOpenFile: onOpenLink, onOpenFileBackground: onOpenLinkBackground, onOpenFileRight }, hover: linkHover }), [onOpenLink, onOpenLinkBackground, onOpenFileRight, linkHover])
   // The card says how to open the link, as the gestures are now (YAZ-3879 point 9): "⌘-click to open".
   const linkCard = (_: string, path: string): { root: string | null; name: string; hint?: string } => ({ root: null, name: pageLabel(path, false, titles), hint: linkOpenHint(hotkeysNow(), linkAt.current?.editable ?? true) })
   // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
@@ -1317,7 +1319,7 @@ function CrepeHost({
             {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
                 folder view — ONE registry, so a type declared in a row types the same column in
                 every folder's views. */}
-            <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} />
+            <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} links={panelLinks} />
           </div>
           <div className="editor-mount" ref={hostRef} />
           {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only

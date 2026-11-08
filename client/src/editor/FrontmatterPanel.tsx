@@ -3,7 +3,7 @@
  * `in` (`shared/folderValues.ts`), typed and listed by its columns. Every edit goes where its row
  * lives. Value writes remain surgical and conflict-checked; raw YAML retains its own dirty draft.
  */
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
@@ -24,14 +24,17 @@ import { PROPERTY_LABELS, PropertyDefinitionEditor, PropertyTypeIcon } from '../
 import { declarationForKind } from '../views/view/declarationForKind'
 import { TextField } from '../views/view/TextField'
 import { properties as vaultProperties } from '../views/useProperties'
+import { showsFolderRows } from '../views/viewSchema'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { Popover } from '../views/view/Popover'
 import { EditableCell } from '../views/view/EditableCell'
 import { ColumnSearch } from '../views/view/ColumnSearch'
-import { cellContent } from '../views/view/GroupHeader'
+import { LinkPills, cellContent } from '../views/view/GroupHeader'
+import { openByGesture, type OpenHandlers } from '../lib/openGesture'
 import { PropertiesIcon } from '../views/view/icons'
 import { readForWrite, trackFileWrite, transformFile, writeFolderValues, type ContentTransform } from '../views/writeProperty'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import type { WikilinkHover } from './wikilink/wikilinkHover'
 import '../views/views.css'
 
 export interface FrontmatterPanelProps {
@@ -49,6 +52,12 @@ export interface FrontmatterPanelProps {
    * which write the same block, are not this panel's and stay allowed (S24).
    */
   readOnly?: boolean
+  /**
+   * The doors of the link pills (YAZ-4544 4G): a link value is the note editor's pill, as in a folder page's cells. A
+   * click opens its page by the note links' rule (⌘ a background tab, ⌥ the right panel) and edits nothing; `hover`,
+   * the host's link card (the note's own `[[links]]` panel). Absent: the pills show and open nothing.
+   */
+  links?: { open: OpenHandlers; hover?: WikilinkHover }
 }
 
 
@@ -140,7 +149,19 @@ interface Snapshot {
   draft: string | null
 }
 
-export function FrontmatterPanel({ file, root, properties: decls = null, wikilinks, readOnly = false }: FrontmatterPanelProps) {
+/** The pill under a pointer event (YAZ-4544 4G): a resolved link's `data-link-path`. */
+const pillOf = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? target.closest<HTMLElement>('[data-link-path]') : null)
+
+/** A link value is the note editor's pill here too, as in a folder page's cells (YAZ-4544 4G): one look for links. */
+export function FrontmatterPanel(props: FrontmatterPanelProps) {
+  return (
+    <LinkPills.Provider value={true}>
+      <Panel {...props} />
+    </LinkPills.Provider>
+  )
+}
+
+function Panel({ file, root, properties: decls = null, wikilinks, readOnly = false, links }: FrontmatterPanelProps) {
   const [propertyMenu, setPropertyMenu] = useState<{ key: string; folder: boolean; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; editing: boolean } | null>(null)
   // The panel follows the folder settings FILES (YAZ-2196): every index refetch hands over a new
   // array, and one that moved no `.folder.md` — a save anywhere in the vault — re-renders nothing here.
@@ -242,10 +263,16 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const vault = root?.replace(/\/+$/, '')
   const dirs = useMemo(() => {
     if (!ids || vault === undefined || !inFolder(dir, vault)) return []
-    // A folder's own page shows its values for its PARENT, the one folder that has it as a row (YAZ-3746 2D, D31); the root has none.
-    if (own) return dir === vault ? [] : [dirname(dir)]
+    // A folder's own page shows its values for its PARENT, where the folder is a row (YAZ-3746 2D, D31): a parent view
+    // shows its subfolders as rows, or the folder holds values for the parent already. The root has no parent.
+    if (own) {
+      if (dir === vault) return []
+      const parent = folderRecord(folders, dirname(dir))
+      const held = parent?.id !== undefined && Object.keys(folderValues(parsed, parent.id)).length > 0
+      return held || folderSettings(parent, ids).views.some(showsFolderRows) ? [dirname(dir)] : []
+    }
     return foldersShowing(dir === vault ? '' : relTo(vault, dir), parsed, byId).map((folder) => (folder === '' ? vault : absFrom(vault, folder)))
-  }, [ids, own, vault, dir, parsed, byId])
+  }, [ids, own, vault, dir, parsed, byId, folders])
   // ONE folder is in force: the one picked, else the first that saved settings, else the one the note lives in.
   const chosen = dirs.find((d) => d === picked) ?? dirs.find((d) => hasFolderSettings(folderRecord(folders, d))) ?? dirs[0]
   const chosenRecord = useMemo(() => (chosen === undefined ? undefined : folderRecord(folders, chosen)), [folders, chosen])
@@ -418,8 +445,32 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
     )
   }
 
+  /**
+   * The pills' doors (YAZ-4544 4G), delegated on the panel, as `ViewsPane` does: in the capture phase, so the cell under
+   * a pill neither edits nor selects. The pointer on a pill shows its page through the host's link card.
+   */
+  const onPillClick = (e: ReactMouseEvent) => {
+    const path = pillOf(e.target)?.dataset.linkPath
+    if (path === undefined) return
+    e.stopPropagation()
+    e.preventDefault()
+    if (e.type === 'click' && links !== undefined) openByGesture(e, path, links.open)
+  }
+  const onPillOver = (e: ReactMouseEvent) => {
+    const pill = pillOf(e.target)
+    const to = pillOf(e.relatedTarget)
+    if (pill === null || pill === to || links?.hover === undefined) return
+    const box = pill.getBoundingClientRect()
+    links.hover.onHover(pill.dataset.linkPath!, { left: box.left, top: box.top, right: box.right, bottom: box.bottom }, false)
+  }
+  const onPillOut = (e: ReactMouseEvent) => {
+    const pill = pillOf(e.target)
+    if (pill === null || pill === pillOf(e.relatedTarget)) return
+    links?.hover?.onLeave()
+  }
+
   return (
-    <section className="frontmatter-panel">
+    <section className="frontmatter-panel" onClickCapture={onPillClick} onDoubleClickCapture={onPillClick} onMouseOver={onPillOver} onMouseOut={onPillOut}>
       <button type="button" className="frontmatter-panel__header" aria-expanded={expanded} aria-label={label} title={label} onClick={() => { setExpanded((open) => !open); setQuery('') }}>
         <svg className="frontmatter-panel__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />

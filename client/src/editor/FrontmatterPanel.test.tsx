@@ -697,7 +697,9 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     source.update((target) => (target === AREAS_ID ? '/vault/Areas' : null), [], []) // the window's link resolver: a note, else a folder
     const el = mount(`---\narea: "[[${AREAS_ID}]]"\n---\nBody\n`, { root: ROOT, wikilinks: source })
     expand(el)
-    expect(rowOf(el, 'area').querySelector('.view-table__chip')?.textContent).toBe('Areas')
+    // Changed by YAZ-4544 (4G): the link is the note editor's pill here, so it is read off the pill's class.
+    expect(rowOf(el, 'area').querySelector('.view-link-pill')?.textContent).toBe('Areas')
+    expect(rowOf(el, 'area').querySelector('.view-link-pill')?.classList.contains('file-icon--dir')).toBe(true)
   })
 
   it('`also_in` is RESERVED too (YAZ-2290 D2): chipped, read-only — and it reads as the folders it names, an id no folder has as written', () => {
@@ -1037,16 +1039,25 @@ describe('FrontmatterPanel — "Properties from"', () => {
     expect(rowOf(el, 'effort').querySelector('.frontmatter-panel__value')?.textContent).toBe('high')
   })
 
-  it('a subfolder’s value for its parent is written in its own `.folder.md`, in the parent’s block (YAZ-3746 2D)', async () => {
+  it('a subfolder’s value for its parent is written in its own `.folder.md`, in the parent’s block, when a parent view shows it as a row (YAZ-3746 2D)', async () => {
     const own = '/vault/A/B/.folder.md'
     const bytes = `---\nid: ${B_ID}\nowner: Yasin\n---\n`
     readFile.mockResolvedValue({ path: own, content: bytes, mtime: 100, size: bytes.length })
-    const el = mountAt(own, bytes)
+    const a = folderMd('/vault/A', { columns: A_COLUMNS, id: A_ID })
+    const rows = { ...a, properties: { folder_settings: { columns: A_COLUMNS, views: [{ type: 'table', name: 'T', subfolders: 'rows' }] } } }
+    const el = mountAt(own, bytes, feedOf(rows, folderMd('/vault/A/B', { columns: B_COLUMNS, id: B_ID })))
+    expect(from(el)?.textContent).toBe('Properties from A')
     click(rowOf(el, 'priority').querySelector('[data-edit]'))
     setValue(byLabel<HTMLInputElement>(el, 'Edit priority'), 'P1')
     press(byLabel(el, 'Edit priority'), 'Enter')
     await flush()
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: own, content: `---\nid: ${B_ID}\nowner: Yasin\nin:\n  ${A_ID}:\n    priority: P1\n---\n`, expectedMtime: 100 })
+  })
+
+  it('a subfolder that is no row of its parent (no view shows it, no values held): no "Properties from"', () => {
+    const el = mountAt('/vault/A/B/.folder.md', '---\nowner: Yasin\n---\n')
+    expect(from(el)).toBeNull()
+    expect(keysOf(el)).toEqual(['owner'])
   })
 
   it('the vault root’s own panel has no parent: no "Properties from"', () => {
@@ -1217,7 +1228,8 @@ describe('FrontmatterPanel — a stored id link reads as the note title (YAZ-229
     source.update(() => null, [{ ...TEST_RECORDS[0], path: '/vault/home-k3m9x2pq7abc.md', name: 'home-k3m9x2pq7abc.md', basename: 'home-k3m9x2pq7abc', title: 'Home', folder: '', id: ID }])
     return source
   }
-  const linkIn = (el: HTMLElement, key: string) => rowOf(el, key).querySelector('.view-table__chip--link')?.textContent
+  // Changed by YAZ-4544 (4G): a link reads as the note editor's pill here too, so the chip class is the pill's.
+  const linkIn = (el: HTMLElement, key: string) => rowOf(el, key).querySelector('.view-link-pill')?.textContent
 
   it('a link row and a read-only row both show the title, while the editor still holds the id the file stores', () => {
     const el = mount(NOTE, { root: ROOT, wikilinks: feed() })
@@ -1232,6 +1244,33 @@ describe('FrontmatterPanel — a stored id link reads as the note title (YAZ-229
     const el = mount(NOTE, { root: ROOT })
     expand(el)
     expect(linkIn(el, 'parent')).toBe(ID)
+  })
+
+  it('a link is the note editor’s pill, with its page’s icon; a click opens the page and edits nothing; ⌘-click opens a background tab; the pointer on it shows the linked page (YAZ-4544 4G)', () => {
+    const open = { onOpenFile: vi.fn(), onOpenFileBackground: vi.fn() }
+    const hover = { onHover: vi.fn(), onLeave: vi.fn() }
+    const el = mount(NOTE, { root: ROOT, wikilinks: feed(), links: { open, hover } })
+    expand(el)
+    const pill = rowOf(el, 'parent').querySelector<HTMLElement>('.view-link-pill')!
+    expect(pill.classList.contains('wikilink')).toBe(true)
+    expect(pill.dataset.linkPath).toBe('/vault/home-k3m9x2pq7abc.md')
+    expect(pill.classList.contains('file-icon--file')).toBe(true)
+    expect(pill.dataset.kind).toBe('markdown')
+    act(() => void pill.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    expect(hover.onHover).toHaveBeenCalledWith('/vault/home-k3m9x2pq7abc.md', expect.any(Object), false)
+    act(() => void pill.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: rowOf(el, 'parent') })))
+    expect(hover.onLeave).toHaveBeenCalledTimes(1)
+    click(pill)
+    expect(open.onOpenFile).toHaveBeenCalledWith('/vault/home-k3m9x2pq7abc.md')
+    expect(byLabel(el, 'Edit parent')).toBeNull()
+    act(() => void pill.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true })))
+    expect(open.onOpenFileBackground).toHaveBeenCalledWith('/vault/home-k3m9x2pq7abc.md')
+  })
+
+  it('a text row still edits as text: the panel’s text editor does not complete `[[` (YAZ-4544 4G keeps it)', () => {
+    const el = mount('---\nnote: see it\n---\n', { root: ROOT, wikilinks: feed() })
+    expand(el)
+    expect(editorOf(el, 'note')).toBe('text')
   })
 })
 
@@ -1517,13 +1556,12 @@ Body
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: `---\ntitle: Deep Work\nin:\n  ${FOLDER_ID}:\n    effort: 3\n---\nBody\n`, expectedMtime: 100 })
   })
 
-  it('A folder’s own panel (the panel on a folder’s page): the folder’s own properties are the top level of its `.folder.md`; Add stays there', async () => {
+  it('A folder’s own panel (the panel on a folder’s page): unchanged — the folder’s own properties are the top level of its `.folder.md`', async () => {
     const own = '/vault/Hiring/.folder.md'
     const bytes = `---\nid: ${HIRING_ID}\nowner: Yasin\nfolder_settings:\n  columns:\n    score:\n      kind: number\n---\n`
     const el = mountNote(bytes, own)
-    // Changed by YAZ-3746 2D: its values for its parent (the vault root) follow under "Properties from".
-    expect(from(el)?.textContent).toBe('Properties from vault')
-    expect(names(ownRows(el))).toEqual(['id', 'owner'])
+    expect(from(el)).toBeNull()
+    expect(keysOf(el)).toEqual(['id', 'owner'])
     click(rowOf(el, 'owner').querySelector('[data-edit]'))
     setValue(byLabel<HTMLInputElement>(el, 'Edit owner'), 'Noor')
     press(byLabel(el, 'Edit owner'), 'Enter')

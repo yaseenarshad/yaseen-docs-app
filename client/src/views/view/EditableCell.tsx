@@ -1,13 +1,16 @@
-import { useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { type LinkCandidate, matchLinkCandidates, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
-import { ColumnDecls, LinkPills, cellContent } from './GroupHeader'
+import { ColumnDecls, cellContent } from './GroupHeader'
 import { TextField } from './TextField'
 import { createPortal } from 'react-dom'
 import { Popover } from './Popover'
 import { SelectValueEditor } from './SelectValueEditor'
 import { READ_ONLY_TIP } from '../readOnlyRows'
+
+/** A text cell's editor completes `[[` (YAZ-4601 D48): on in a folder page's views (`ViewsPane`), off in the properties panel. */
+export const TextLinkPicker = createContext(false)
 
 export interface EditableCellProps {
   /** Bare key (no `note.` prefix): the cell's accessible name. */
@@ -63,8 +66,8 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
   const writes = useRef<Promise<void> | null>(null)
   const revision = useRef(0)
   const echoes = useRef<{ revision: number; value: string }[]>([])
-  /** A folder page's text cell completes `[[` (YAZ-4601 D48), as its inline links show as pills; the properties panel's does not. */
-  const textLinks = useContext(LinkPills)
+  /** A folder page's text cell completes `[[` (YAZ-4601 D48); the properties panel's does not, though it shows pills too (YAZ-4544 4G). */
+  const textLinks = useContext(TextLinkPicker)
   /** The column's declaration (YAZ-4591): a Number or Date column's format shapes the display; the editor keeps the raw value. */
   const decl = useContext(ColumnDecls)[propKey]
 

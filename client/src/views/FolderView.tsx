@@ -267,6 +267,8 @@ export function FolderView({
   )
   /** The read-only notes (YAZ-3076 D6), read off each note's OWN properties before `shown` swaps in the folder's values; a folder row's off its `.folder.md` (D32). */
   const locked = useMemo(() => readOnlyPaths([...rows, ...subfolders]), [rows, subfolders])
+  /** The folder's own properties panel opens its link pills as the cells do (YAZ-4544 4G); the cells' card is the views' own. */
+  const panelLinks = useMemo(() => ({ open: { onOpenFile, onOpenFileBackground, onOpenFileRight } }), [onOpenFile, onOpenFileBackground, onOpenFileRight])
 
   // ---------- The toolbar (YAZ-3746 D35) ----------
   /** The toolbar's store: the save state of the folder's own writes, the Page tab's part, and the lock for the Page tab. */
@@ -643,7 +645,7 @@ export function FolderView({
         <div className="page-header">
           {/* Read only (D36) locks the title and the folder's own properties, as a note's does. */}
           <PageTitle path={path} kind="dir" titles={titles} readOnly={pageLocked} onRetitle={(title) => onRetitle(path, title, 'dir')} />
-          {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} readOnly={pageLocked} />}
+          {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} readOnly={pageLocked} links={panelLinks} />}
         </div>
         <section className="folder-view">
           {visibleError !== null && (

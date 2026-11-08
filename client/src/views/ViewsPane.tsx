@@ -30,6 +30,7 @@ import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
 import { ColumnDecls, FolderPages, type FolderPagesValue, LinkPills } from './view/GroupHeader'
+import { TextLinkPicker } from './view/EditableCell'
 import { openByGesture } from '../lib/openGesture'
 import { useDeleteNotes } from './view/deleteNotes'
 import { directlyIn, isFolderRow, rowPage, rowsByFolder } from '../links/shortcuts'
@@ -917,7 +918,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   return (
     <ViewDefaults.Provider value={defaults}>
       <FolderPages.Provider value={folderPages}>
-        <LinkPills.Provider value={true}>{pane}</LinkPills.Provider>
+        <LinkPills.Provider value={true}>
+          <TextLinkPicker.Provider value={true}>{pane}</TextLinkPicker.Provider>
+        </LinkPills.Provider>
       </FolderPages.Provider>
     </ViewDefaults.Provider>
   )
