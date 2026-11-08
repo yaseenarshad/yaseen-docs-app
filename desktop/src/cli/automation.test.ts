@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'esbuild'
 import { execFile } from 'node:child_process'
@@ -68,12 +69,13 @@ describe('actual CLI process', () => {
 })
 
 describe('parallel cold starts (YAZ-4640)', () => {
-  it.each([['no lock', false], ['a stale lock a dead caller left', true]])('start Docs once for one profile with %s; the other callers wait for its connection', async (_name, stale) => {
+  it.each([['no lock', 'none'], ['a stale lock a dead caller left', 'old'], ['a fresh lock whose caller was stopped (YAZ-4642)', 'dead']] as const)('start Docs once for one profile with %s; the other callers wait for its connection', async (_name, stale) => {
     const cold = await mkdtemp(join(tmpdir(), 'docs-cli-cold-'))
-    if (stale) {
+    if (stale !== 'none') {
       await privateDirectory(dirname(descriptorPath(cold)))
       const lock = join(dirname(descriptorPath(cold)), 'start.lock'), old = new Date(Date.now() - 120_000)
-      await writeFile(lock, '1'); await utimes(lock, old, old)
+      if (stale === 'old') { await writeFile(lock, '1'); await utimes(lock, old, old) }
+      else await writeFile(lock, String(spawnSync(process.execPath, ['-e', '']).pid))
     }
     const launches = join(cold, 'launches.txt'), launcher = join(cold, 'docs.sh')
     await writeFile(launcher, `#!/bin/sh\necho launch >> "${launches}"\n`, { mode: 0o755 })

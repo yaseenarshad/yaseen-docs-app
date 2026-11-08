@@ -593,10 +593,10 @@ const NO_SHORTCUTS: ReadonlyMap<string, readonly TreeNode[]> = new Map()
 /** The folders the Sessions tab unfolds — none: it has no file tree (YAZ-3147 D4), so it has no expand-all button. One array, so nothing reads a change. */
 const NO_DIRS: readonly string[] = []
 
-/** Mounted with `key={one vault of the window}` by App (YAZ-2631 D5), so all state below lives while that vault is in the window. */
 /** How long a CLI reveal waits for its row once the list is loaded (YAZ-4638): a target the list cannot show fails, not stalls. */
 export const REVEAL_WAIT_MS = 5000
 
+/** Mounted with `key={one vault of the window}` by App (YAZ-2631 D5), so all state below lives while that vault is in the window. */
 export function Sidebar({
   vaults,
   lists,

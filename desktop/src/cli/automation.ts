@@ -127,9 +127,17 @@ async function connectionFor(profile: string, start: boolean, waitMs: number): P
   throw new AutomationFailure('START_TIMEOUT', 'Docs did not become ready. No operation was submitted.')
 }
 
+/** The lock's caller still runs (YAZ-4642): its pid answers signal 0. A lock with no readable pid counts as alive until it ages out. */
+async function ownerAlive(lock: string): Promise<boolean> {
+  const pid = Number((await readFile(lock, 'utf8').catch(() => '')).trim())
+  if (!Number.isInteger(pid) || pid <= 0) return true
+  try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH' }
+}
+
 /**
  * One launch per profile (YAZ-4640): the caller that makes `cli/start.lock` starts Docs and answers the lock's path; the
- * callers that find it wait for the connection (null). A lock older than two start waits was left by a caller that died.
+ * callers that find it wait for the connection (null). A lock whose caller is gone (Ctrl-C, YAZ-4642), or older than two
+ * start waits, is taken over.
  */
 async function startOnce(profile: string): Promise<string | null> {
   const lock = join(dirname(descriptorPath(profile)), 'start.lock')
@@ -138,7 +146,7 @@ async function startOnce(profile: string): Promise<string | null> {
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
     const age = Date.now() - await stat(lock).then(info => info.mtimeMs, () => 0)
-    if (age < 2 * AUTOMATION_LIMITS.waitMs) return null
+    if (age < 2 * AUTOMATION_LIMITS.waitMs && await ownerAlive(lock)) return null
     await unlink(lock).catch(() => {})
     return startOnce(profile)
   }
