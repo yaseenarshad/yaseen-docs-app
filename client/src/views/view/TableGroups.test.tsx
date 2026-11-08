@@ -429,9 +429,24 @@ describe('group indent (YAZ-4532 D10)', () => {
     unmount()
     expect(depths(mount(GROUP_BASE.replace('    groupBy:\n      property: note.status\n', '')).el)).toEqual([''])
   })
-  it('the CSS contract: a header and a row\'s Name cell step in by the indent × --depth, and stay at 8px at depth 0', () => {
+  it('the Name cell\'s indent is the indent × depth, but leaves 60px of title in the column (YAZ-4544)', () => {
+    const nested = (extra: string) => GROUP_BASE.replace('    groupBy:\n      property: note.status\n', `${extra}    groupBy:\n      - property: note.status\n      - property: note.pillar\n`)
+    const indents = (el: HTMLElement) => [...new Set([...el.querySelectorAll<HTMLElement>('td.view-table__name')].map(td => td.style.getPropertyValue('--view-name-indent')))].sort()
+    // medium, 150px column: 28 and 56 fit (150 - 2 × 8px padding - 60 = 74)
+    expect(indents(mount(nested('')).el)).toEqual(['28px', '56px'])
+    unmount()
+    // large: 42 fits; 84 is cut to 74, so the title keeps 60px
+    expect(indents(mount(nested('    groupIndent: large\n')).el)).toEqual(['42px', '74px'])
+    unmount()
+    // a wide Name column keeps the full indent
+    expect(indents(mount(nested('    groupIndent: large\n    columnSize:\n      file.name: 300\n')).el)).toEqual(['42px', '84px'])
+    unmount()
+    // a column narrower than the title's room: no indent, never a negative one
+    expect(indents(mount(nested('    groupIndent: large\n    columnSize:\n      file.name: 60\n')).el)).toEqual(['0px'])
+  })
+  it('the CSS contract: a header steps in by the indent × --depth; a row\'s Name cell by its --view-name-indent; both stay at 8px at depth 0', () => {
     expect(viewsCss).toMatch(/\.view-table__group-cell > \.view-group \{[^}]*left: calc\(8px \+ var\(--view-group-indent, 28px\) \* var\(--depth, 0\)\)/s)
-    expect(viewsCss).toMatch(/\.view-table tbody td\.view-table__name \{[^}]*padding-left: calc\(var\(--view-table-cell-pad-x\) \+ var\(--view-group-indent, 28px\) \* var\(--depth, 0\)\)/s)
+    expect(viewsCss).toMatch(/\.view-table tbody td\.view-table__name \{[^}]*padding-left: calc\(var\(--view-table-cell-pad-x\) \+ var\(--view-name-indent, 0px\)\)/s)
     expect(viewsCss).toMatch(/\.view-table \{[^}]*--view-table-cell-pad-x: 8px/s)
   })
 })

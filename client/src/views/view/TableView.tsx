@@ -101,6 +101,8 @@ export interface TableViewProps {
 
 const DEFAULT_WIDTH = 150
 const MIN_WIDTH = 60
+/** The Name cell's room for the title that its group indent leaves (YAZ-4544): 60px of title and the cell's two 8px paddings. */
+const NAME_TITLE_ROOM = 60 + 2 * 8
 /** `view.rowHeight` presets (Obsidian's names); the value feeds `--view-table-row-h` AND the windowing maths. */
 const ROW_HEIGHTS: Record<string, number> = { short: 28, medium: 44, tall: 68 }
 /** Above this many lines only a scroll-positioned slice is mounted, padded by spacer rows. */
@@ -289,11 +291,16 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** The freeze line (YAZ-4534): the table block's 3px edge on the last frozen column. */
   const frozenClass = (index: number): string | false => isFrozen(index) && (index === frozen - 1 ? 'view-table__frozen view-table__frozen-end' : 'view-table__frozen')
   const frozenStyle = (index: number): CSSProperties | undefined => (isFrozen(index) ? { left: frozenLeft[index] } : undefined)
-  /** A body cell's inline style: the frozen offset, a fill (YAZ-4536, painted by views.css) and the Name cell's group depth (YAZ-4532 D10). */
+  /**
+   * The Name cell's indent in px (YAZ-4532 D10): one group indent per level above the row, but never more than the
+   * column's width less the title's room (YAZ-4544), so a deep row in a narrow column still shows its title.
+   */
+  const nameIndent = (depth: number): number => Math.max(0, Math.min(groupIndentOf(view) * depth, widthOf(keys[nameCol]!) - NAME_TITLE_ROOM))
+  /** A body cell's inline style: the frozen offset, a fill (YAZ-4536, painted by views.css) and the Name cell's group depth and indent (YAZ-4532 D10). */
   const cellStyle = (index: number, fill: string | undefined, depth: number | undefined): CSSProperties | undefined => {
     const base = frozenStyle(index)
     if (fill === undefined && depth === undefined) return base
-    return { ...base, ...(fill !== undefined && { '--view-cell-fill': fillPaint(fill) }), ...(depth !== undefined && { '--depth': depth }) } as CSSProperties
+    return { ...base, ...(fill !== undefined && { '--view-cell-fill': fillPaint(fill) }), ...(depth !== undefined && { '--depth': depth, '--view-name-indent': `${nameIndent(depth)}px` }) } as CSSProperties
   }
   /** The view's cell and row fills by note path (YAZ-4536): built once per fills write, two map reads per cell. */
   const fills = useMemo(() => fillIndex(view.fills, resolveLink), [view.fills, resolveLink])

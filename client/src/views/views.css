@@ -1163,15 +1163,15 @@
   max-width: 100%;
 }
 
-/* A row's Name cell steps in with its group levels (YAZ-4532 D10): `--depth` = the levels above
-   the row. At depth 0, and with no `--depth`, it keeps the cell's own 8px padding. */
+/* A row's Name cell steps in with its group levels (YAZ-4532 D10). TableView sets `--view-name-indent`: the indent ×
+   the levels above the row, cut so the title keeps 60px of the column (YAZ-4544). With none, the cell's own 8px padding. */
 .view-table tbody td.view-table__name {
-  padding-left: calc(var(--view-table-cell-pad-x) + var(--view-group-indent, 28px) * var(--depth, 0));
+  padding-left: calc(var(--view-table-cell-pad-x) + var(--view-name-indent, 0px));
 }
 
 /* The title field of a nested row starts where its title stood. */
 .view-table tbody td.view-table__name > .view-cell-edit[data-editing] .view-cell-edit__input {
-  padding-left: calc(var(--view-table-cell-pad-x) + var(--view-group-indent, 28px) * var(--depth, 0));
+  padding-left: calc(var(--view-table-cell-pad-x) + var(--view-name-indent, 0px));
 }
 
 .view-group {
