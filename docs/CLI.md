@@ -15,9 +15,9 @@ Each input field is a flag. A text field takes the text as it is; a field that a
 
 The CLI and app use the same `YASEEN_DOCS_USER_DATA_DIR` override. `--profile <absolute-path>` selects a profile for new commands. The app writes an owner-only connection file below that profile. It holds a random token and app-session ID. Never share or log that file.
 
-Navigation starts the app when needed. Other new commands require a running app unless passed `--start`. Startup launches the executable that owns the CLI, with `ELECTRON_RUN_AS_NODE` removed. A development run should already be running with HMR. Test harnesses can explicitly set `YASEEN_DOCS_EXECUTABLE` and `YASEEN_DOCS_APP_ENTRY`.
+Navigation starts the app when needed. Other new commands require a running app unless passed `--start`. The CLI starts the app only when it is absent: no connection file, or nothing listens. A slow app that does not answer within the wait fails with `WAIT_TIMEOUT` and gets no second launch. An app that holds the profile's single-instance lock but has no connection yet is starting: the CLI waits for it. Startup launches the executable that owns the CLI, with `ELECTRON_RUN_AS_NODE` removed. A development run should already be running with HMR. Test harnesses can explicitly set `YASEEN_DOCS_EXECUTABLE` and `YASEEN_DOCS_APP_ENTRY`.
 
-The listener uses a Unix socket on macOS and a named pipe on Windows. There is no TCP service or separate daemon. Closing the app drains accepted operations and removes the connection.
+The listener uses a Unix socket on macOS and a named pipe on Windows. There is no TCP service or separate daemon. Closing the app refuses new operations and stops a CLI pack download or helper install. It waits at most 3 seconds for the other accepted operations, then removes the connection. A caller whose operation still ran loses the connection: the outcome is unknown.
 
 ## Results and retries
 
@@ -27,7 +27,9 @@ The default wait is 30 seconds. `--wait-ms` changes how long the caller waits. *
 
 The app keeps up to 256 small receipts for five minutes. Large results go to waiting callers but are not retained. Restarted, expired, or evicted receipts mean **unknown**, not failure. Old request references are refused after restart or eviction. There is no persistent replay journal.
 
-Four operations can run at once, with up to 64 queued. Resource writes serialize. The control frame is limited to 64 KiB; a separate content frame is limited to 64 MiB. Accepted content has a combined 128 MiB bound. Existing file formats retain their stricter limits. Paged commands default to 50 items and allow at most 200.
+A write whose file is saved never reports failure. When a later step fails, the result keeps `ok: true` and names it in `warnings`: `RECENTS_NOT_SAVED` means the file is saved but its Recents entry is not.
+
+Four operations can run at once, with up to 64 queued. Writes to the same resource serialize: one vault's documents, one live window, the app configuration, or one remote service (sharing, one vault's sync, the icon packs). Reads take no lock, so a status read answers while a long download runs. The control frame is limited to 64 KiB; a separate content frame is limited to 64 MiB. Accepted content has a combined 128 MiB bound. Existing file formats retain their stricter limits. Paged commands default to 50 items and allow at most 200.
 
 ## Command guide
 

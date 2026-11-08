@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createStore } from '../store'
 import { prepareAutomation } from '../automation'
+import { validateOutput } from '@shared/automationCommands'
 import { readSaved } from './resources'
 import { loadDrawing } from '../fs/drawing'
 import { _actAs, _resetMint } from '../vaultIndex/mint'
@@ -33,4 +34,14 @@ it('logs a guarded board save through the same completion step', async () => {
   await writeFile(path, scene)
   expect(await run('drawing.save', { path, revision: (await loadDrawing({ root, path, includeRevision: true })).revision }, scene)).toMatchObject({ diskSaved: true })
   expect((await readFile(join(profile, 'state.json'), 'utf8'))).toContain('Board.excalidraw')
+})
+it('reports a landed save as saved, with a warning, when only its Recents entry fails', async () => {
+  const path = join(root, 'Note.md'); await writeFile(path, 'before')
+  const revision = (await readSaved(path)).revision
+  const flush = store.flush
+  store.flush = async () => { throw new Error('disk full') }
+  const result = await run('file.write', { path, revision }, 'after').finally(() => { store.flush = flush })
+  expect(result).toMatchObject({ diskSaved: true, warnings: ['RECENTS_NOT_SAVED'] })
+  validateOutput('file.write', result)
+  expect(await readFile(path, 'utf8')).toBe('after')
 })

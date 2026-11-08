@@ -4,7 +4,6 @@ import type { FileOperationTarget, InspectTarget, NavigationInput, NavigationTar
 import { sameVaults, type AppState, type OpenWindowOptions, type WindowEntry } from '@shared/types'
 import { atOrBelow, collectionPaths, resolveTarget, scopeRoots } from './resources'
 import { navigationLink } from '@shared/navigationLinks'
-import { savedViewName } from './folders'
 
 export interface NavigationHost {
   state(): AppState
@@ -52,7 +51,8 @@ export async function resolveNavigation(state: AppState, input: NavigationInput,
   if (input.view && (!path || !(await stat(path)).isDirectory())) throw new AutomationFailure('INVALID_INPUT', 'A view needs a target folder.')
   if (input.panel && (!path || input.tab !== undefined || input.view !== undefined)) throw new AutomationFailure('INVALID_INPUT', 'The right panel needs a page target, without a tab or a view.')
   // The saved file decides: a view it lacks fails before any window moves, and the renderer waits for one it holds.
-  if (input.view && path) target.view = await savedViewName(resolved.roots, path, input.view)
+  // The folder adapter loads only when a view is named: a deep link at startup does not parse it (YAZ-4527 P21).
+  if (input.view && path) target.view = await (await import('./folders')).savedViewName(resolved.roots, path, input.view)
   if (input.sidebar === 'favorites' || input.sidebar === 'focus') {
     const scope = input.scope ?? (resolved.roots.length > 1 && state.settings.workspaceLists[input.sidebar] ? 'workspace' : 'vault')
     const collection = await collectionPaths(resolved.roots, input.sidebar, scope, input.group)

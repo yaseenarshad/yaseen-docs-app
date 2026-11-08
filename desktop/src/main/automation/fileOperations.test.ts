@@ -16,7 +16,8 @@ const run = (navigation: NavigationHost, command: string, args: Record<string, u
 it.each(['file.undo', 'file.redo'])('%s runs the window’s organization history step and declares its result', async command => {
   const navigation = host()
   const operation = run(navigation, command, { window: 'w1' })
-  expect(operation.writes).toEqual(['documents', 'navigation'])
+  // The window's vaults, not every vault's documents (YAZ-4527 P2).
+  expect(operation.writes).toEqual(['navigation', 'window:w1', 'documents:/v'])
   const value = await operation.run()
   expect(navigation.operate).toHaveBeenCalledExactlyOnceWith('w1', { command })
   validateOutput(command, value)
