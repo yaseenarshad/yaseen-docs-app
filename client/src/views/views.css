@@ -862,8 +862,9 @@
 }
 
 /* Frozen rows (YAZ-4537, D9b / S4): the lines from the top through the Nth data row stay under the header. For the
-   outer scroller they take the header's own translate; inside the wrap each cell sticks at the header's height
-   (`--view-table-head-h`, measured once) plus its line's place (`--view-frozen-i`) times the row height. z-index 2:
+   outer scroller they take the header's own translate; inside the wrap each cell sticks at its line's measured top
+   (`--view-frozen-top`: the header's height and the real heights of the frozen lines above, YAZ-4582), and before the
+   first measure at the header's height plus its line's place (`--view-frozen-i`) times the row height. z-index 2:
    over the frozen columns (1), under the header (3 and 4). */
 .view-table tbody tr.view-table__row--frozen {
   position: relative;
@@ -873,7 +874,7 @@
 
 .view-table tbody tr.view-table__row--frozen > td {
   position: sticky;
-  top: calc(var(--view-table-head-h, 0px) + var(--view-frozen-i, 0) * var(--view-table-row-h, 28px));
+  top: var(--view-frozen-top, calc(var(--view-table-head-h, 0px) + var(--view-frozen-i, 0) * var(--view-table-row-h, 28px)));
 }
 
 /* Opaque, so the rows scroll under them; a fill paints as an image over it. Low specificity on purpose: the
@@ -944,19 +945,35 @@
 
 .view-table tbody td {
   height: var(--view-table-row-h, 28px);
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
-/* Every data row is exactly the row height (YAZ-4544): windowing and frozen rows count lines × `--view-table-row-h`.
-   A Select chip is 21.4px and a Short cell holds 21px (28 less 6px padding and the 1px border), so in a cell the chip
-   is 19px. Many Multi-select chips stay on one line and the cell clips them, as it clips text. */
-.view-table tbody td .property-choice-chips {
+/* Wrap or Clip per column (YAZ-4582 D29). A cell wraps its text and chips by default, and its row grows: the row
+   height is the least a row is. A Clip column, and every cell of a windowed table, is exactly one row high (windowing
+   counts lines × `--view-table-row-h`): one line with "…", the full value in `title`. A Select chip is 21.4px and a
+   Short cell holds 21px (28 less 6px padding and the 1px border), so a clipped cell's chip is 19px (YAZ-4544), and
+   its Multi-select chips stay on one line. */
+.view-table tbody td.view-table__cell--clip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-table tbody td.view-table__cell--clip .view-cell-edit__display {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.view-table tbody td.view-table__cell--clip .property-choice-chips {
   flex-wrap: nowrap;
   max-width: 100%;
   overflow: hidden;
   vertical-align: middle;
 }
 
-.view-table tbody td .property-choice-chip {
+.view-table tbody td.view-table__cell--clip .property-choice-chip {
   flex: none;
   padding-top: 1px;
   padding-bottom: 1px;

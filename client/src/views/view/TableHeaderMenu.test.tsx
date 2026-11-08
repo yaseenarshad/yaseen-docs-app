@@ -118,6 +118,8 @@ describe('the header menu (YAZ-1513)', () => {
       'Sort A to Z',
       'Sort Z to A',
       'Group by this column',
+      'Wrap text', // YAZ-4582: Status is a text column, one line by its kind
+      '✓ Clip text',
       '✓ Frozen up to this column', // BASE freezes two: Status is the last frozen column
       'Unfreeze columns',
       'Delete column…',

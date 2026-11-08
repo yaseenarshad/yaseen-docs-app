@@ -50,6 +50,7 @@ const TABLE: ViewDef = {
   groupBy: { property: 'status' },
   summaries: { 'note.status': 'Count', 'note.owner': 'Count' },
   columnSize: { 'note.status': 120 },
+  columnWrap: { 'note.status': false },
 }
 const BOARD: ViewDef = { type: 'board', name: 'B', order: ['file.name', 'status'], groupBy: [{ property: 'note.status' }, { property: 'note.owner' }], cardStyle: { 'note.status': { bold: true } } }
 const OUTLINE: ViewDef = { type: 'outline', name: 'O', order: ['[[a]]', '[[b]]'] }
@@ -104,7 +105,7 @@ describe('undeletableReason: built-in keys are hidden, never deleted', () => {
 })
 
 describe('the pure pruners', () => {
-  it('pruneColumnFromViews drops the key from order / sort / groupBy / summaries / columnSize / cardStyle, clamps frozenColumns, and leaves untouched views as the same object', () => {
+  it('pruneColumnFromViews drops the key from order / sort / groupBy / summaries / columnSize / columnWrap (YAZ-4582) / cardStyle, clamps frozenColumns, and leaves untouched views as the same object', () => {
     const [table, board, outline] = pruneColumnFromViews([TABLE, BOARD, OUTLINE], 'status')
     expect(table).toEqual({
       type: 'table',

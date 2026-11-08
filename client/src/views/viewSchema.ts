@@ -43,6 +43,8 @@ export interface ViewDef {
   limit?: number
   summaries?: Record<string, string>
   columnSize?: Record<string, number>
+  /** Wrap or Clip per column (YAZ-4582 D29): `false` under a canonical key clips that column to one line. Absent = Wrap. */
+  columnWrap?: Record<string, boolean>
   frozenColumns?: number
   /** Frozen rows (YAZ-4537, D9b / S4): the count of DATA rows frozen at the top, at most 10; the group headers above them freeze too. */
   frozenRows?: number
