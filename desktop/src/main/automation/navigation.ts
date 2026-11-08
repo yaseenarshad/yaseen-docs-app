@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { AutomationFailure } from '@shared/automation'
 import type { FileOperationTarget, InspectTarget, NavigationInput, NavigationTarget } from '@shared/automationNavigation'
-import { sameVaults, type AppState, type OpenWindowOptions, type WindowEntry } from '@shared/types'
+import { sameVaults, shownListScope, type AppState, type OpenWindowOptions, type WindowEntry } from '@shared/types'
 import { atOrBelow, collectionPaths, resolveTarget, scopeRoots } from './resources'
 import { navigationLink } from '@shared/navigationLinks'
 
@@ -54,10 +54,11 @@ export async function resolveNavigation(state: AppState, input: NavigationInput,
   // The folder adapter loads only when a view is named: a deep link at startup does not parse it (YAZ-4527 P21).
   if (input.view && path) target.view = await (await import('./folders')).savedViewName(resolved.roots, path, input.view)
   if (input.sidebar === 'favorites' || input.sidebar === 'focus') {
-    const scope = input.scope ?? (resolved.roots.length > 1 && state.settings.workspaceLists[input.sidebar] ? 'workspace' : 'vault')
+    // The window shows the list its vaults and the switch choose. A scope checks that list for this request; it never changes it (YAZ-4527 P3).
+    const scope = shownListScope(resolved.roots, state.settings.workspaceLists, input.sidebar)
+    if (input.scope !== undefined && input.scope !== scope) throw new AutomationFailure('INVALID_INPUT', `This window shows the ${scope} ${input.sidebar === 'favorites' ? 'Favorites' : 'Focus'} list. A workspace list shows only with two or more vaults and the setting workspaceLists.${input.sidebar} on.`, { scope })
     const collection = await collectionPaths(resolved.roots, input.sidebar, scope, input.group)
     if (path && !collection.paths.some(member => atOrBelow(path, member))) throw new AutomationFailure('NOT_IN_COLLECTION', 'The target is not in the requested collection. No fallback was opened.')
-    target.scope = scope
     if (collection.group) target.group = collection.group
   }
   return { resolved, target }

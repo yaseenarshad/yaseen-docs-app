@@ -5,7 +5,7 @@ import { isAbsolute, resolve } from 'node:path'
 import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
 import { mergeFolders, resolveItem } from '@shared/collectionFolders'
 import { fileCandidates, folderCandidates, searchCandidates, searchRows, type SearchCandidate } from '@shared/searchCandidates'
-import { MAX_WINDOW_ROOTS, rootOfPath, type AppState, type ListScope, type TreeNode } from '@shared/types'
+import { MAX_WINDOW_ROOTS, rootOfPath, shownListScope, type AppState, type ListScope, type TreeNode } from '@shared/types'
 import { getFavorites } from '../favorites'
 import { getFocus } from '../focus'
 import { getFocusFolders } from '../focusFolders'
@@ -102,7 +102,7 @@ export async function scopedCandidates(state: AppState, input: ResourceScope): P
   }
   if (input.group && !input.collection) throw new AutomationFailure('INVALID_INPUT', 'A group needs a collection.')
   if (input.collection) {
-    const scope = input.scope ?? (roots.length > 1 && state.settings.workspaceLists[input.collection] ? 'workspace' : 'vault')
+    const scope = input.scope ?? shownListScope(roots, state.settings.workspaceLists, input.collection)
     const { paths } = await collectionPaths(roots, input.collection, scope, input.group)
     rows = rows.filter(row => paths.some(path => atOrBelow(row.path, path)))
   }
@@ -128,8 +128,7 @@ export async function search(state: AppState, input: ResourceScope & { query: st
   const { roots, rows } = await scopedCandidates(state, input)
   // Rank once with the UI matcher, then remove alias duplicates before applying the page.
   const lists = await Promise.all((['focus', 'favorites'] as const).map(kind => {
-    const scope = roots.length > 1 && state.settings.workspaceLists[kind] ? 'workspace' : 'vault'
-    return collectionPaths(roots, kind, scope)
+    return collectionPaths(roots, kind, shownListScope(roots, state.settings.workspaceLists, kind))
   }))
   const pinned = new Set(lists.flatMap(list => list.paths))
   const first = new Set(rows.flatMap(row => {

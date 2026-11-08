@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { VIEW_OPTIONS } from '@shared/folderViews'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { heldFolderId } from '@shared/shortcuts'
 import { AUTOMATION_COMMANDS, commandDefinition, validateInput } from '@shared/automationCommands'
 import { defaultAppState, defaultFolderState, type AppState } from '@shared/types'
 import { removeVault, vaultFiles } from '../fs/testFixture'
 import { _evictAll } from '../vaultIndex/live'
-import { folderCommand } from './folders'
+import { folderCommand, transformSaved } from './folders'
 import { readSaved } from './resources'
 import { checked } from './contract'
 import { prepareAutomation } from '../automation'
@@ -213,4 +215,27 @@ describe('shortcuts', () => {
     await writeFile(join(root, '.yaseendocs/ids.json'), JSON.stringify({ enabled: false }))
     await expect(run('shortcut.list')).rejects.toMatchObject({ code: 'IDS_OFF' })
   })
+})
+
+it('writes a quiet change as the window does: a newer file is read again and the change retried once (YAZ-4527 P7)', async () => {
+  const note = join(dir, 'Note.md'), settings = join(dir, '.folder.md')
+  await writeFile(note, '---\na: 1\n---\nBody\n')
+  let calls = 0
+  // Another writer lands between the read and the write, once: the change then runs on its bytes.
+  await transformSaved(note, content => {
+    if (calls++ === 0) writeFileSync(note, '---\na: 1\nb: 2\n---\nBody\n')
+    return content.replace('Body', 'Edited')
+  })
+  expect(await readFile(note, 'utf8')).toBe('---\na: 1\nb: 2\n---\nEdited\n')
+  expect(calls).toBe(2)
+  // An absent folder page reads as empty, and another writer creating it first is retried too.
+  calls = 0
+  const { content } = await transformSaved(settings, bytes => {
+    if (calls++ === 0) writeFileSync(settings, '---\nid: TST-7\n---\n')
+    return heldFolderId(bytes) === undefined ? '---\nid: TST-8\n---\n' : bytes
+  })
+  expect(content).toBe('---\nid: TST-7\n---\n')
+  expect(await readFile(settings, 'utf8')).toBe('---\nid: TST-7\n---\n')
+  // A missing note is never created.
+  await expect(transformSaved(join(dir, 'Gone.md'), () => 'x')).rejects.toMatchObject({ code: 'NOT_FOUND' })
 })

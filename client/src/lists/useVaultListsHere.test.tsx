@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MAX_FOCUS, MAX_FOLDER_ITEMS, defaultAppState, defaultRightPanelIdentity, type AppState, type FocusFolder, type ListScope, type WindowIdentity, type WorkspaceLists } from '@shared/types'
+import { MAX_FAVORITES, MAX_FOCUS, MAX_FOLDER_ITEMS, defaultAppState, defaultRightPanelIdentity, type AppState, type FocusFolder, type ListScope, type WindowIdentity, type WorkspaceLists } from '@shared/types'
 import { storage } from '../lib/storage'
 import { useVaultListsHere, type VaultListsHere } from './useVaultListsHere'
 
@@ -308,6 +308,20 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     expect(onNotice).toHaveBeenLastCalledWith('Deleted f. Focus limit reached: 500 items, so some of its items left focus.', 'error', undefined, UNDO)
   })
 
+  it(`YAZ-4527 P7: Favorites keeps ${MAX_FAVORITES} at its top level and says so, as Focus does: a move out keeps the item in its folder, and "Keep items" says what left`, async () => {
+    const full = Array.from({ length: MAX_FAVORITES }, (_, i) => `/x/Notes/top${i}.md`)
+    const bridge = installBridge()
+    bridge.favoriteFolders.get.mockImplementation(async (_r: string, scope?: unknown) => (scope === 'workspace' ? [folder('f', [{ vault: 'Notes', path: 'a.md' }])] : []))
+    bridge.favorites.get.mockImplementation(async (r: string, scope: ListScope) => (r === '/x/Notes' && scope === 'workspace' ? full : []))
+    await storage.init()
+    await mount(roots, ON)
+    await act(async () => here().favoritesTab.moveOut('/x/Notes/a.md'))
+    expect(onNotice).toHaveBeenLastCalledWith(`Favorites limit reached: ${MAX_FAVORITES} items. It stays in its folder.`, 'error')
+    expect(here().favoritesTab.folderOf('/x/Notes/a.md')?.id).toBe('f')
+    await act(async () => here().favoritesTab.remove('f'))
+    expect(onNotice).toHaveBeenLastCalledWith(`Deleted f. Favorites limit reached: ${MAX_FAVORITES} items, so some of its items left favorites.`, 'error', undefined, UNDO)
+    expect(bridge.favorites.set).not.toHaveBeenCalledWith('/x/Notes', expect.anything(), 'workspace')
+  })
   it('YAZ-4477 (M13, M15): Undo of an add and of a remove in Focus and in Favorites; a folder add names the folder and its kind, a new folder says "a new … folder"', async () => {
     const { bridge, list } = folderBridge([folder('f', [])], ['workspace'])
     const favs = new Map<string, string[]>()

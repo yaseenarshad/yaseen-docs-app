@@ -3,7 +3,7 @@
  * delete sheet use, shared with the CLI's folder column commands (YAZ-4518) so both make the same change.
  */
 import type { IndexRecord, PropertyDecl, PropertyKind } from './types'
-import { folderValues } from './folderValues'
+import { folderValues, setFolderValue } from './folderValues'
 import { reservedKeys } from './reservedKeys'
 import { groupByLevels, type FilterNode, type ViewDef, type ViewSet } from './folderViews'
 
@@ -201,4 +201,53 @@ export function pruneColumnLabel(properties: ViewSet['properties'], key: string)
   const c = canonicalKey(key)
   const kept = Object.fromEntries(Object.entries(properties).filter(([k]) => canonicalKey(k) !== c))
   return Object.keys(kept).length === 0 ? undefined : kept
+}
+
+/** What deleting a column asks of its host: the folder as the host holds it, and the host's two file doors. */
+export interface ColumnRemovalHost {
+  /** The folder's declarations as the host holds them — its AHEAD copy (YAZ-1549), never a stale snapshot. */
+  columns: Readonly<Record<string, PropertyDecl>>
+  /** The LIVE def (views + labels) — the host's `parsed.def`, never the index snapshot (YAZ-1234). */
+  def: Pick<ViewSet, 'views' | 'properties'>
+  /** The WHOLE index snapshot and the folder's id: whose block the strip reads and rewrites (`notesHolding`). */
+  records: readonly IndexRecord[]
+  folderId: string | undefined
+  /** The host's one settings door: declarations, views and labels in ONE write. Resolves when it landed; rejects when it did not. */
+  writeSettings: (columns: Record<string, PropertyDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>
+  /** The host's guarded, quiet whole-file change of one note (YAZ-3235 D1: a tidy-up of each note). */
+  transform: (path: string, change: (content: string) => string) => Promise<unknown>
+}
+
+/**
+ * Delete a column (YAZ-1513, Notion semantics, confirm-first): ONE function behind the table header's right-click, the
+ * Properties menu's detail panel and the CLI's `folderColumn remove` (YAZ-4527 P7). It removes
+ *
+ *  (a) the declaration `folder_settings.columns.<key>` of THIS folder,
+ *  (b) every reference the folder's views hold to the key — `order`, `sort`, `groupBy`, `summaries`, `columnSize`,
+ *      `cardStyle`, a cards `image`, and every filter leaf that names it — and its label under `properties`, so nothing
+ *      dangles (a `frozenColumns` prefix follows the shortened order through the one order writer, `withOrder`),
+ *  (c) the field from THIS folder's block (D19, `folderValues.ts`) in every indexed note that holds it there
+ *      (`notesHolding`). Nothing else in a note is touched: not its own field of that name, not another folder's.
+ *
+ * (a)+(b) are ONE settings write through the host's door — never a bypass of the folder host's echo guard
+ * (YAZ-1234/1241) — and they land FIRST and are AWAITED: settings are the source of truth, and if that write is refused
+ * nothing else moves (YAZ-1549). (c) is per note, against fresh file bytes, byte-preserving every other key; a note
+ * whose record shows the field but whose disk no longer does is simply not written. Strip failures are collected —
+ * successes committed, no rollback — and answered with the notes that held the value.
+ *
+ * Built-in columns are never deletable — `file.*`, `formula.*` and the reserved keys — only hidden. `undeletableReason`
+ * is the one rule both menus disable their item by.
+ */
+export async function removeColumn(key: string, host: ColumnRemovalHost): Promise<{ holding: IndexRecord[]; failed: { note: IndexRecord; why: string }[] }> {
+  const reason = undeletableReason(key)
+  if (reason !== null) throw new Error(`Can't delete ${canonicalKey(key)}: ${reason.toLowerCase()}`)
+  const bare = bareOf(key)
+  const { [bare]: _gone, ...columns } = host.columns
+  await host.writeSettings(columns, pruneColumnFromViews(host.def.views, key), pruneColumnLabel(host.def.properties, key))
+  const { folderId } = host
+  if (folderId === undefined) return { holding: [], failed: [] } // no id, no values
+  const holding = notesHolding(host.records, folderId, key)
+  const results = await Promise.allSettled(holding.map((note) => host.transform(note.path, (content) => setFolderValue(content, folderId, bare, undefined))))
+  const failed = results.flatMap((result, i) => (result.status === 'rejected' ? [{ note: holding[i]!, why: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : []))
+  return { holding, failed }
 }

@@ -93,6 +93,32 @@ describe('exact context navigation', () => {
     await expect(generateNavigationLink(defaultAppState(), { root, path, view: 'Missing' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
     expect(app.raise).not.toHaveBeenCalled()
   })
+  it('picks a view by the rule the live tab uses: an exact name first, else one match without case (YAZ-4527 P9)', async () => {
+    const app = host([entry('w1', [root])]), path = join(root, 'Mochi')
+    await writeFile(join(path, '.folder.md'), '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n    - type: list\n      name: table\n---\n')
+    for (const name of ['Table', 'table']) {
+      await checked('navigation.open', navigate(app, { window: 'w1', path, view: name }))
+      expect(app.apply).toHaveBeenLastCalledWith('w1', { path, view: name })
+    }
+    await expect(navigate(app, { window: 'w1', path, view: 'TABLE' })).rejects.toMatchObject({ code: 'AMBIGUOUS_TARGET', details: { views: ['Table', 'table'] } })
+  })
+  it('checks a list scope against the list the window shows and stores none in it (YAZ-4527 P3)', async () => {
+    const other = await mkdtemp(join(tmpdir(), 'docs-nav-other-'))
+    try {
+      const app = host([entry('one', [root]), entry('two', [root, other])])
+      // A vault alone shows its own list; a workspace shows the workspace list while its switch is on (the default).
+      await expect(navigate(app, { window: 'one', sidebar: 'favorites', scope: 'workspace' })).rejects.toMatchObject({ code: 'INVALID_INPUT', details: { scope: 'vault' } })
+      await expect(navigate(app, { window: 'two', sidebar: 'focus', scope: 'vault' })).rejects.toMatchObject({ code: 'INVALID_INPUT', details: { scope: 'workspace' } })
+      expect(app.raise).not.toHaveBeenCalled()
+      await checked('navigation.open', navigate(app, { window: 'one', sidebar: 'favorites', scope: 'vault' }))
+      expect(app.apply).toHaveBeenLastCalledWith('one', { sidebar: 'favorites' })
+      const state = defaultAppState()
+      state.settings.workspaceLists = { favorites: false, focus: true }
+      app.state = () => state
+      await checked('navigation.open', navigate(app, { window: 'two', sidebar: 'favorites', scope: 'vault' }))
+      expect(app.apply).toHaveBeenLastCalledWith('two', { sidebar: 'favorites' })
+    } finally { await rm(other, { recursive: true, force: true }) }
+  })
   it('resolves workspace identities and requires explicit partial opening', async () => {
     const state = defaultAppState(), app = host()
     state.vaultSets = [{ id: 'skills', name: 'Skills', roots: [root, join(root, 'missing')], lastUsed: 0 }]

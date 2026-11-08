@@ -1,11 +1,12 @@
 import { isTabOperation } from '@shared/automationTabs'
 import { operateTabs } from './automation/tabs'
+import { operateFiles } from './automation/organize'
 import { AutomationFailure } from '@shared/automation'
 import { exportLiveImage, readLiveDocument, runEditorAction, unsavedUnder } from './automation/liveDocument'
 import { flushSync } from 'react-dom'
 import { useAutomation } from './automation/useAutomation'
 import { inspectSurface, useAutomationSurface, waitForSurface } from './automation/surfaces'
-import type { ListScope, RightPanelIdentity } from '@shared/types'
+import type { RightPanelIdentity } from '@shared/types'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
@@ -28,7 +29,7 @@ import { requestBoardCommand } from './documents/boardCommand'
 import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
-import { dropFolderValuesAfterCopy, dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
+import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type StepOutcome, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
@@ -43,7 +44,7 @@ import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unless
 import { treeHasPath } from './lib/treeState'
 import { NoticeToast } from './components/NoticeToast'
 import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
-import { carryEditorAcrossRename, carryEditorsAcrossDirRename, dirtyPaths, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
+import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
 import { resolveItem } from './lists/focusFolders'
@@ -71,7 +72,6 @@ import { setTypingArrows } from './editor/typingArrows'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
 import type { CodeSettingsPatch } from './code/codeSettings'
-import { landPaste } from './sidebar/landPaste'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
@@ -407,8 +407,7 @@ export function App() {
   const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType, action?: Notice['action']) => showNotice({ text, icon, type, ...(action !== undefined && { action }) }), [showNotice])
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
-  const [automationScopes, setAutomationScopes] = useState<Partial<Record<'favorites' | 'focus', ListScope>>>({})
-  const lists = useVaultListsHere(roots, notify, settings.workspaceLists, automationScopes)
+  const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
   // The new tab page's Favorites column (YAZ-4450): the tab's own list, kept by value so the page cuts its columns only on a change.
   // Its favorite folders too (YAZ-4470, 11): each folder's items that this window shows.
   const favoriteFolders = lists.favoritesTab.folders
@@ -1896,9 +1895,6 @@ export function App() {
   useAutomation(async target => {
     if (target.tab !== undefined && !now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
     flushSync(() => {
-      if (target.scope && (target.sidebar === 'favorites' || target.sidebar === 'focus')) {
-        setAutomationScopes(previous => ({ ...previous, [target.sidebar!]: target.scope }))
-      }
       if (target.sidebar !== undefined) {
         if (sidebarCollapsedRef.current) toggleSidebar()
         changeLens(target.sidebar)
@@ -1922,7 +1918,8 @@ export function App() {
       // Main named a view the saved file holds; a page whose index has not caught up with that file yet waits for it.
       const view = await waitForSurface(key, surface => surface.ready && (surface.inspect().views as string[] | undefined)?.includes(target.view!) === true)
       flushSync(() => view.selectView?.(target.view!))
-      await waitForSurface(key, surface => String(surface.inspect().view).toLowerCase() === target.view!.toLowerCase() || surface.inspect().viewId === target.view)
+      // Main sent the saved name, which the page holds: `selectView`'s rule (`viewIndex`) picks exactly that view.
+      await waitForSurface(key, surface => surface.inspect().view === target.view)
     }
     return { ...app.inspect(), acknowledged: true }
   }, target => {
@@ -1965,88 +1962,9 @@ export function App() {
     }
     if (target.command === 'editor.action') return runEditorAction(target)
     if (target.command === 'board.export') return exportLiveImage(target)
-    if (target.command === 'file.copy') {
-      for (const path of target.paths) { await flushRenamedPath(path); await flushRenamedDir(path) }
-      const unsaved = dirtyPaths().filter(path => target.paths.some(source => path === source || path.startsWith(`${source}/`)))
-      if (unsaved.length) throw new AutomationFailure('UNSAVED_CHANGES', 'Some source editors could not save. Resolve their save errors before copying.', { paths: unsaved })
-      // The sidebar's Paste of a Copy (YAZ-2420 3E1): it asks first when a copy will not keep a folder's values; dropValues is its Copy button.
-      const { root, wikilinks } = scopeOf(target.targetDir)
-      if (root !== null) {
-        const dirs = vaultDirs(root)
-        const moves = target.paths.flatMap((oldPath): Move[] => oldPath === `${target.targetDir}/${basename(oldPath)}` ? [] : [{ oldPath, newPath: `${target.targetDir}/${basename(oldPath)}`, kind: dirs.includes(oldPath) ? 'dir' : 'file' }])
-        const lost = valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders })
-        if (lost.folders.length > 0 && !target.dropValues) throw new AutomationFailure('CONFIRMATION_REQUIRED', 'The copies will not keep values of other folders. Pass dropValues: true to confirm.', { folders: lost.folders, notes: lost.notes })
-      }
-      const result = await api.file.copyTo({ paths: target.paths, targetDir: target.targetDir, external: target.external })
-      if (root !== null && wikilinks.ids && result.pasted.length > 0) await dropFolderValuesAfterCopy(root, result.pasted.map(({ to }) => to))
-      if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items could not be copied.', { ...result, diskSaved: result.pasted.length > 0 })
-      return { ...result, diskSaved: true }
-    }
-    if (target.command === 'file.undo' || target.command === 'file.redo') {
-      const verb = target.command === 'file.undo' ? 'undo' : 'redo'
-      const run = replayStep(verb)
-      if (run === 'busy') throw new AutomationFailure('BUSY', 'An organization history action is still running.')
-      if (run === null) throw new AutomationFailure(verb === 'undo' ? 'NOTHING_TO_UNDO' : 'NOTHING_TO_REDO', `This window has no organization step to ${verb}.`)
-      const result = { ...(await run), history: historyCounts() }
-      // The window's own toasts and history rules already ran; the reply only reports them.
-      if (result.done === 0) throw new AutomationFailure('HISTORY_STEP_FAILED', `The ${verb} changed nothing. Inspect file history before another step.`, result)
-      if (result.failed.length > 0 || (result.links?.skipped ?? 0) > 0) throw new AutomationFailure('PARTIAL_FAILURE', `Part of the ${verb} failed.`, { ...result, diskSaved: true })
-      return { ...result, diskSaved: true }
-    }
-    if (target.command === 'file.restore') {
-      if (replaying.current) throw new AutomationFailure('BUSY', 'An organization history action is still running.')
-      const entry = moveHistory.current.inspect().undo.at(-1)
-      if (!entry || isMoveStep(entry) || entry.step !== 'delete') throw new AutomationFailure('NO_DELETE_TO_RESTORE', 'The latest organization step is not a restorable delete. Inspect file history first.')
-      moveHistory.current.undo()
-      replaying.current = true
-      try {
-        const restored = await putBackStep(entry)
-        const result = { ...restored, history: historyCounts(), diskSaved: restored.restored.length > 0 }
-        if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some Trash items could not be restored.', result)
-        return result
-      } finally { replaying.current = false }
-    }
-    if (target.command === 'file.trash') {
-      const trashed = await trashMany(target.paths)
-      const result = { ...trashed, history: historyCounts(), diskSaved: trashed.went.length > 0 }
-      if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items could not be moved to Trash.', result)
-      return result
-    }
-    if (target.command === 'file.move') {
-      const plan = planMoves(target.moves)
-      if (plan === 'between') {
-        // A drag refuses this (YAZ-2602 R11); the GUI moves between vaults only by Cut and Paste. This is that paste, with
-        // explicit items and neither clipboard: D21 as `pasteInto` judges it, on the target vault's index, then `landPaste`.
-        const { root: vault, wikilinks: index } = scopeOf(target.targetDir)
-        if (vault === null) throw new AutomationFailure('OUTSIDE_SCOPE', 'The folder is no longer in this window.')
-        const lost = valuesLeftBehind({ root: vault, moves: target.moves, records: index.records, folders: index.folders })
-        if (lost.folders.length > 0 && !target.dropValues) throw new AutomationFailure('CONFIRMATION_REQUIRED', 'This move clears values of other folders. Pass dropValues: true to confirm.', { folders: lost.folders, notes: lost.notes })
-        const before = { records: index.records, folders: index.folders }
-        const res = await api.file.moveTo({ paths: target.moves.map((move) => move.oldPath), targetDir: target.targetDir })
-        const { gesture, failed } = await landPaste({ vault, index, before, res }, { onNotice: notify, onMoved: recordMoves })
-        // A Paste of a Cut rewrites no link.
-        const result = { moved: gesture?.moves ?? [], cleared: gesture?.cleared ?? [], failed, links: { updated: 0, skipped: 0 }, betweenVaults: true, history: historyCounts(), diskSaved: res.pasted.length > 0 }
-        if (failed.length > 0) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items did not move.', result)
-        return result
-      }
-      // The GUI's D21 sheet asks here; the caller's dropValues is its Move button.
-      if (plan !== null && plan.lost.folders.length > 0 && !target.dropValues) throw new AutomationFailure('CONFIRMATION_REQUIRED', 'This move clears values of other folders. Pass dropValues: true to confirm.', { folders: plan.lost.folders, notes: plan.lost.notes })
-      const run = plan === null ? null : await runMoves(plan.moves)
-      const result = { moved: run?.moves ?? [], cleared: run?.cleared ?? [], failed: run?.failed ?? [], links: run?.links ?? { updated: 0, skipped: 0 }, betweenVaults: false, history: historyCounts(), diskSaved: (run?.moves.length ?? 0) > 0 }
-      if (result.failed.length > 0 || result.links.skipped > 0) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items did not move, or some links could not be updated.', result)
-      return result
-    }
-    const catalog = await catalogForRename(target.path, target.kind)
-    if (catalog === undefined) throw new AutomationFailure('CONTEXT_CHANGED', 'The window context changed or its current file list could not be read.')
-    const out = await renameWithUndo(target.path, target.command === 'file.rename' ? { newPath: target.newPath } : { title: target.title }, catalog)
-    if (out === null) throw new AutomationFailure('OUTSIDE_SCOPE', 'The file is no longer in this window.')
-    if ('error' in out) {
-      if (out.error instanceof BridgeRequestError) throw new AutomationFailure(out.error.code, out.error.message)
-      throw out.error
-    }
-    const result = { ...out, history: historyCounts(), diskSaved: true }
-    if (out.links.skipped) throw new AutomationFailure('PARTIAL_FAILURE', 'The rename completed, but some referencing documents could not be updated.', result)
-    return result
+    return operateFiles(target, {
+      scopeOf, notify, recordMoves, historyCounts, replayStep, trashMany, planMoves, runMoves, catalogForRename, renameWithUndo,
+    })
   })
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
@@ -2718,11 +2636,16 @@ export function App() {
    * on the undo list with what it cleared this time. One that moved nothing stays on the redo list,
    * as an undo does (audit 21).
    *
-   * One door for the keys, the toasts' buttons and the CLI's `file undo` / `file redo` (YAZ-4502):
-   * `busy` while one runs, null with nothing on the list, else what the step did.
+   * One door for the keys, the toasts' buttons and the CLI's `file undo` / `file redo` / `file restore` (YAZ-4502):
+   * `busy` while one runs, null with nothing on the list (or, with `only`, when the newest step is not a delete),
+   * else what the step did. An undone delete also answers the items that came back.
    */
-  const replayStep = useCallback((verb: 'undo' | 'redo'): Promise<StepOutcome & { step: 'move' | 'rename' | 'delete' }> | 'busy' | null => {
+  const replayStep = useCallback((verb: 'undo' | 'redo', only?: 'delete'): Promise<StepOutcome & { step: 'move' | 'rename' | 'delete'; restored?: DeleteStep['items'] }> | 'busy' | null => {
     if (replaying.current) return 'busy'
+    if (only !== undefined) {
+      const newest = moveHistory.current.inspect()[verb].at(-1)
+      if (newest === undefined || isMoveStep(newest) || newest.step !== only) return null
+    }
     const entry = verb === 'undo' ? moveHistory.current.undo() : moveHistory.current.redo()
     if (entry === undefined) return null
     replaying.current = true
@@ -2730,7 +2653,7 @@ export function App() {
       try {
         // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
         if (!isMoveStep(entry)) {
-          const outcome = entry.step === 'rename' ? await replayRename(entry, verb) : verb === 'undo' ? await putBackStep(entry).then(({ restored, failed }) => ({ done: restored.length, failed })) : await deleteAgain(entry)
+          const outcome = entry.step === 'rename' ? await replayRename(entry, verb) : verb === 'undo' ? await putBackStep(entry).then(({ restored, failed }) => ({ done: restored.length, failed, restored })) : await deleteAgain(entry)
           return { step: entry.step, ...outcome }
         }
         const run = await runMoves(verb === 'undo' ? invertMoves(entry.moves) : entry.moves, { record: false })

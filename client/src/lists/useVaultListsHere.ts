@@ -5,12 +5,12 @@
  * before); the sidebar and the tab menu reach the SAME lists, through the one writer (6C).
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { MAX_FOCUS, MAX_FOLDER_ITEMS, rootOfPath, type FocusFolder, type ListScope, type WorkspaceLists } from '@shared/types'
+import { MAX_FAVORITES, MAX_FOCUS, MAX_FOLDER_ITEMS, rootOfPath, shownListScope, type FocusFolder, type ListScope, type WorkspaceLists } from '@shared/types'
 import { api } from '../api'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { storage } from '../lib/storage'
 import { favoriteOrder } from '../lib/treeState'
-import { folderDeletion, folderScopeChange, itemOf, mergeFolders, sameItem, upsert, type FolderItem } from './focusFolders'
+import { folderDeletion, folderScopeChange, itemOf, mergeFolders, onTopLevel, sameItem, upsert, type FolderItem } from './focusFolders'
 
 export const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -202,6 +202,7 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
     /** A copy there, live or not yet merged: by each vault's raw copy too, so a copy written a moment ago (another window's) still counts. */
     const inOther = (id: string): boolean => otherNow.current.some((f) => f.id === id) || Object.values(other.held.current).some((list) => list.some((f) => f.id === id && !f.deleted))
     const loading = () => notice.current(kind === 'focus' ? 'Focus is still loading. Try again.' : 'Favorites are still loading. Try again.', 'error')
+    const limitReached = `${kind === 'focus' ? 'Focus' : 'Favorites'} limit reached:`
     const itemsOf = (paths: readonly string[]) => paths.map((p) => itemOf(p, live.current.roots)).filter((i): i is FolderItem => i !== null)
     /** The folder that holds `path`, an absolute path of the window. */
     const folderOf = (path: string): FocusFolder | undefined => {
@@ -312,7 +313,7 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
       const full = putHere === true || putThere === true
       // Undo (YAZ-4470, 7): the folder again where it showed, with its items; the items it put at the top level leave it.
       notice.current(
-        full ? `Deleted ${f.name}. Focus limit reached: ${max} items, so some of its items left focus.` : `Deleted ${f.name} (${kind === 'focus' ? 'focus' : 'favorite'} folder)`,
+        full ? `Deleted ${f.name}. ${limitReached} ${max} items, so some of its items left ${kind}.` : `Deleted ${f.name} (${kind === 'focus' ? 'focus' : 'favorite'} folder)`,
         full ? 'error' : kind === 'focus' ? 'focus' : 'favorite',
         full ? undefined : 'lists', // an error always shows (YAZ-3303 D2)
         undoAction(() => {
@@ -327,7 +328,7 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
     /** F5: out of its folder to the top level, last. A full top level keeps it in its folder and says so (YAZ-4479). */
     const moveOut = (path: string): void => {
       const root = rootOfPath(live.current.roots, path)
-      if (!top.current.includes(path) && root !== null && (lists.held.current[root] ?? []).length >= max) return notice.current(`Focus limit reached: ${max} items. It stays in its folder.`, 'error')
+      if (!top.current.includes(path) && root !== null && (lists.held.current[root] ?? []).length >= max) return notice.current(`${limitReached} ${max} items. It stays in its folder.`, 'error')
       strip([path])
       if (!top.current.includes(path)) toggleIn(lists, [path], false, max)
     }
@@ -408,15 +409,14 @@ export type VaultListsHere = ReturnType<typeof useVaultListsHere>
  * order. App calls it once and hands it to the sidebar (`useVaultTree`) and to the tab menu
  * (`stateOf`, `toggleFocus`, `toggleFavorite`).
  */
-export function useVaultListsHere(roots: readonly string[], onNotice: Notice, separate: WorkspaceLists, scopes: Partial<Record<'favorites' | 'focus', ListScope>> = {}) {
+export function useVaultListsHere(roots: readonly string[], onNotice: Notice, separate: WorkspaceLists) {
   // What the callbacks below ask at call time, so each keeps its identity.
   const live = useRef({ roots })
   live.current = { roots }
   // YAZ-4450 D2, D4: a window with two or more vaults is a workspace. With a tab's switch on (the default), each vault
   // shows its ONE workspace list there, the same in every workspace; a vault alone always shows its own list.
-  const multi = roots.length > 1
-  const favoritesScope: ListScope = scopes.favorites ?? (multi && separate.favorites ? 'workspace' : 'vault')
-  const focusScope: ListScope = scopes.focus ?? (multi && separate.focus ? 'workspace' : 'vault')
+  const favoritesScope = shownListScope(roots, separate, 'favorites')
+  const focusScope = shownListScope(roots, separate, 'focus')
   /** The vault that holds `path`, the most specific one; a path in no vault of the window gets the first. */
   const rootOf = useCallback((path: string): string => rootOfPath(live.current.roots, path) ?? live.current.roots[0], [])
   // Favorites (YAZ-1766 D2, in the vault since 6A/D11): each vault's pinned files and folders in the
@@ -485,9 +485,8 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
         const own = paths.filter((p) => rootOf(p) === vault)
         if (own.length === 0) continue
         const prev = lists.held.current[vault] ?? []
-        const next = isOn ? prev.filter((p) => !own.includes(p)) : [...prev, ...own.filter((p) => !prev.includes(p))]
-        if (next.length > max) full = true
-        const kept = next.slice(0, max)
+        const { list: kept, full: over } = isOn ? onTopLevel(prev.filter((p) => !own.includes(p)), [], max) : onTopLevel(prev, own, max)
+        if (over) full = true
         // A list that did not change — an add to a full list — is not written.
         if (!sameList(kept, prev)) lists.save(vault, kept)
       }
@@ -508,7 +507,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
    */
   // The folders of each tab (YAZ-4460; Favorites since the demo), in the scope that tab shows.
   const focusTab = useTabFolders('focus', focusScope, focus, focusOther, focusList, MAX_FOCUS, live, onNotice, toggleIn)
-  const favoritesTab = useTabFolders('favorites', favoritesScope, favorites, favoritesOther, favoritePaths, Infinity, live, onNotice, toggleIn)
+  const favoritesTab = useTabFolders('favorites', favoritesScope, favorites, favoritesOther, favoritePaths, MAX_FAVORITES, live, onNotice, toggleIn)
 
   // Each vault's first read of both lists, for as long as the vault is in the window (YAZ-2631 D1;
   // focus: YAZ-2702): a vault that joins is read, one that leaves is dropped, and a vault that stays

@@ -1,4 +1,3 @@
-import { AutomationFailure } from '@shared/automation'
 import { useAutomationSurface } from '../automation/surfaces'
 import { boardOptionGroups } from './boardOptionGroups'
 import { columnTyping } from './editorType'
@@ -26,7 +25,7 @@ import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
 import type { ViewTabsProps } from './view/ViewTabs'
-import { addView, deleteView, duplicateView, freeName, moveView, renameView } from '@shared/folderViews'
+import { addView, deleteView, duplicateView, freeName, moveView, renameView, viewIndex } from '@shared/folderViews'
 import { NO_READ_ONLY } from './readOnlyRows'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
@@ -207,11 +206,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   }, {
     ready: true,
     inspect: () => ({ view: view.name, views: views.map(item => item.name) }),
-    selectView: name => {
-      const matches = views.flatMap((item, at) => item.name.toLowerCase() === name.toLowerCase() ? [at] : [])
-      if (matches.length !== 1) throw new AutomationFailure(matches.length ? 'AMBIGUOUS_TARGET' : 'NOT_FOUND', 'Choose a unique folder view name.')
-      setActive(matches[0])
-    },
+    selectView: name => setActive(viewIndex(views, name)),
   })
   // Re-parse after every edit: `doc.setIn` stores plain JS values, so a second edit inside a
   // collection a previous edit created would throw ("Expected YAML collection"). The round trip

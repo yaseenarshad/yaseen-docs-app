@@ -7273,6 +7273,23 @@ describe('App automation navigation acknowledgement', () => {
     expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-later', ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
     expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe('Later')
   })
+  it('picks a folder view by the one shared rule: of "Table" and "table", each name selects its own view (YAZ-4527 P9)', async () => {
+    const path = '/v/Automation Folder'
+    const views = [{ type: 'table', name: 'Table' }, { type: 'list', name: 'table' }]
+    const folder: IndexRecord = { path: `${path}/.folder.md`, name: '.folder.md', basename: '.folder', title: 'Automation Folder', folder: 'Automation Folder', ext: 'md', size: 7, ctime: 1, mtime: 2, properties: { folder_settings: { views } }, aliases: [], tags: [], links: [], embeds: [] }
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], sidebarCollapsed: true }, {}, b => {
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: [{ type: 'dir', path, name: 'Automation Folder', children: [] }], generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [folder], generatedAt: 1, ids: true })
+    })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await act(async () => {})
+    expect([...el.querySelectorAll('.view-tab__btn')].map(node => node.textContent)).toEqual(['Table', 'table'])
+    for (const name of ['table', 'Table']) {
+      await act(async () => { emitAutomation({ id: `nav-${name}`, action: 'navigate', target: { path, view: name } }); await new Promise(resolve => setTimeout(resolve, 50)) })
+      expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: `nav-${name}`, ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+      expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe(name)
+    }
+  })
   it('preserves the hidden sidebar when only a page was requested', async () => {
     const path = '/v/Journal.md'
     const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Journal', mtime: 1 } })
@@ -7346,6 +7363,17 @@ describe('App automation restore', () => {
 
 
 describe('App automation tab actions', () => {
+  it('lands a CLI copy as the sidebar’s Paste of a Copy does (YAZ-4527 P6): the tree is read again, and one notice says what landed', async () => {
+    // A vault that does not use IDs: no folder-value pass reads the tree for the copy.
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, b => b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false })))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    const before = bridge.tree.mock.calls.length
+    bridge.file.copyTo.mockResolvedValueOnce({ pasted: [{ from: '/v/a.md', to: '/v/To/a.md', kind: 'file' }], failed: [] })
+    await act(async () => emitAutomation({ id: 'copy-land', action: 'operate', target: { command: 'file.copy', paths: ['/v/a.md'], targetDir: '/v/To', external: false, dropValues: false } }))
+    expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'copy-land', ok: true, value: { pasted: [{ from: '/v/a.md', to: '/v/To/a.md', kind: 'file' }], failed: [], diskSaved: true } })
+    expect(bridge.tree.mock.calls.slice(before)).toContainEqual(['/v'])
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Pasted 1 file (a.md)')
+  })
   it('flushes a copied folder’s dirty descendants and reports partial copy results', async () => {
     const path = '/v/Folder/Note.md'
     const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path] })

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { MAX_FOCUS, defaultAppState, type FocusFolder } from '@shared/types'
+import { MAX_FAVORITES, MAX_FOCUS, defaultAppState, type FocusFolder } from '@shared/types'
 import { groupCommand } from './groups'
 import { getFocusFolders, setFocusFolders } from '../focusFolders'
 import { _actAs, _resetMint } from '../vaultIndex/mint'
@@ -64,6 +64,15 @@ describe('collection group commands', () => {
     await updateFocus(roots[0], 'workspace', () => others)
     expect(await focus({ command: 'group.remove', group: made.id, keepItems: true })).toMatchObject({ limitReached: true })
     expect(await getFocus(roots[0], 'workspace')).toEqual(others)
+  })
+  it('says when a full Favorites list keeps its limit, as it does for Focus (YAZ-4527 P7)', async () => {
+    const group = await create(), path = join(roots[0], 'Mochi.md')
+    await run('group.addItems', { group: group.id, paths: [path] })
+    const others = Array.from({ length: MAX_FAVORITES }, (_, i) => join(roots[0], `F${i}.md`))
+    await Promise.all(others.map(other => writeFile(other, ''))) // a favorites list keeps only items that exist
+    await updateFavorites(roots[0], 'workspace', () => others)
+    expect(await run('group.remove', { group: group.id, keepItems: true })).toMatchObject({ limitReached: true })
+    expect(await getFavorites(roots[0], 'workspace')).toEqual(others)
   })
   it('can remove a missing-vault item by its stored reference and rejects duplicate membership input', async () => {
     const group = await create(), ghost = { vault: 'Missing', path: 'Old.md' }
