@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { isPropertyName } from '@shared/types'
+import { reservedKeyText } from '../../links/reservedKeys'
 import type { ColumnDecl } from '../folderSettings'
 import { PropertyDefinitionEditor } from './PropertyDefinitionEditor'
 import { declarationForKind } from './declarationForKind'
@@ -10,6 +11,8 @@ export interface AddColumnProps {
   taken: readonly string[]
   /** The view's shown keys: a taken name that is not among them is SHOWN, not refused (YAZ-4535 S1). */
   shown: readonly string[]
+  /** The app's own keys in this vault (`reservedKeys`): refused, as the Properties panel refuses them (D19, YAZ-4544). */
+  reserved: ReadonlySet<string>
   onSave: (name: string, column: ColumnDecl) => void
   /** S1: show the existing column `key` (as `taken` spells it) — no declaration, no twin. */
   onShow: (key: string) => void
@@ -26,7 +29,7 @@ export interface AddColumnProps {
  * column — is SHOWN when the view hides it (S1: no twin), and refused when the view shows it. It
  * lived inside `PropertiesMenu.tsx` until YAZ-1513 gave the table header a second doorway to it.
  */
-export function AddColumn({ taken, shown, onSave, onShow, autoOpen = false, onCancel }: AddColumnProps) {
+export function AddColumn({ taken, shown, reserved, onSave, onShow, autoOpen = false, onCancel }: AddColumnProps) {
   const [open, setOpen] = useState(autoOpen)
   const [name, setName] = useState('')
   const [definition, setDefinition] = useState<ColumnDecl>({ kind: 'text' })
@@ -43,6 +46,10 @@ export function AddColumn({ taken, shown, onSave, onShow, autoOpen = false, onCa
     const key = name.trim()
     if (!isPropertyName(key)) {
       setError('Type a name')
+      return
+    }
+    if (reserved.has(key)) {
+      setError(reservedKeyText(key))
       return
     }
     const c = canonicalKey(key)

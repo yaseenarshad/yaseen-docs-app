@@ -7,7 +7,7 @@ import type { ColumnDecl } from '../folderSettings'
 import { type Mutate, type ViewDef, type ViewSet, groupByLevels } from '../viewSchema'
 import type { FolderHost } from '../ViewsPane'
 import { AddColumn } from './AddColumn'
-import { ColumnDetail, columnTypeLabel } from './ColumnDetail'
+import { ColumnDetail, columnKind, columnTypeLabel } from './ColumnDetail'
 import { displayNameOf, setDisplayName } from './columnLabel'
 import { setViewOrder, withOrder } from './columnOrder'
 import { frozenColumnCount } from './frozenColumns'
@@ -25,6 +25,8 @@ export interface TableHeaderMenuProps {
   keys: readonly string[]
   /** Every key the folder already offers, declared columns included — "Add column" refuses a repeat. Asked only once the form opens. */
   takenKeys: () => readonly string[]
+  /** The app's own keys in this vault: "Add column" refuses them (YAZ-4544). */
+  reserved: ReadonlySet<string>
   /** The folder's rows: the type line infers an undeclared column's kind from them (YAZ-4533). */
   records: readonly IndexRecord[]
   /** The vault's property declarations, the type line's and the editor's fallback. */
@@ -58,10 +60,15 @@ export function insertAfter(keys: readonly string[], after: string, next: string
  * column" and Freeze / ✓ Frozen / Unfreeze write the same `sort`, `groupBy` and `frozenColumns` the
  * Sort and Properties menus write (YAZ-4534).
  */
-export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, records, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
+export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, reserved, records, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
   /** Once per menu, not per keystroke in its fields: the kind may walk the rows. */
   const typeLabel = useMemo(() => (columnKey === null ? '' : columnTypeLabel(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
+  /** A Select or Multi-select column (YAZ-4544): its "Sort A to Z" sorts by value, not in option order (D1). */
+  const hasOptions = useMemo(() => {
+    const kind = columnKey === null ? null : columnKind(columnKey, records, properties, folder.settings)
+    return kind === 'select' || kind === 'multi-select'
+  }, [columnKey, records, properties, folder.settings])
   const columns = folder.settings.columns
 
   if (columnKey === null) {
@@ -96,9 +103,9 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
     onUpdate((d) => edit(d.views[viewIndex]))
     onClose()
   }
-  /** One rule on this column replaces the sort (YAZ-4534). */
+  /** One rule on this column replaces the sort (YAZ-4534); on a Select column it sorts by value, as the label says (YAZ-4544). */
   const sortBy = (direction: 'ASC' | 'DESC') => write((v) => {
-      v.sort = [{ property: c, direction }]
+      v.sort = [hasOptions ? { property: c, direction, by: 'value' } : { property: c, direction }]
     })
   /**
    * This column becomes the FIRST group level (YAZ-4534). The first level's other fields (its style)
@@ -146,6 +153,7 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
             autoOpen
             taken={takenKeys()}
             shown={keys}
+            reserved={reserved}
             onCancel={onClose}
             onShow={(existing) => {
               onUpdate((d) => setViewOrder(d, viewIndex, insertAfter(keys, key, existing)))

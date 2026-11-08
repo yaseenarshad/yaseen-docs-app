@@ -14,7 +14,7 @@ import { BridgeRequestError, api } from '../api'
 import { titleCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
 import { absFrom, dirname, relTo } from '../lib/paths'
-import { reservedKeys } from '../links/reservedKeys'
+import { reservedKeyText as reservedText, reservedKeys } from '../links/reservedKeys'
 import { dropStaleFolderValues, folderId, folderRecord, folderTitle, foldersById, foldersShowing } from '../links/shortcuts'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
@@ -51,8 +51,6 @@ export interface FrontmatterPanelProps {
   readOnly?: boolean
 }
 
-/** Why a reserved key has no editor, and why Add property refuses one: said once, in the same words. */
-const reservedText = (key: string): string => `${key} is the app's own property — it is set where it belongs, not here`
 
 /** No view is rendering here, so the ladder's record-derived rungs have nothing to read. */
 const NO_RECORDS: readonly IndexRecord[] = []

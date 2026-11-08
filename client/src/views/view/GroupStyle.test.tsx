@@ -58,6 +58,14 @@ describe('each level styles its own headers (YAZ-3742)', () => {
     expect(styleOf(outer)).toEqual([true, '#ffd500', true])
   })
 
+  it('a groupBy entry with no property is no level: the next entry styles the outer headers (YAZ-4544)', () => {
+    const el = mount('table', `      - highlight: red\n${TWO_LEVELS}`)
+    const outer = [...el.querySelectorAll<HTMLElement>('.view-group__value')].find(v => v.textContent === 'idea')!
+    const inner = [...el.querySelectorAll<HTMLElement>('.view-group__value')].find(v => v.textContent === 'Agentic Agency')!
+    expect(styleOf(outer)).toEqual([true, '#ffd500', true])
+    expect(styleOf(inner)).toEqual([true, '#50a0ff', false])
+  })
+
   it('no style, or an unknown colour name, leaves the header as it was', () => {
     const el = mount('table', '      property: note.status\n      highlight: chartreuse\n')
     const value = [...el.querySelectorAll<HTMLElement>('.view-group__value')].find(v => v.textContent === 'idea')!

@@ -298,6 +298,16 @@ describe('Group levels: handles, remove, third level, indent (YAZ-4532)', () => 
     const { el } = mount({ name: 'Table', type: 'table' })
     expect(el.querySelector('[aria-label="Group indent"]')).toBeNull()
   })
+
+  it('a Board, which does not indent its groups, has no Group indent control; List and Cards have it (YAZ-4544)', () => {
+    for (const [type, shows] of [['board', false], ['list', true], ['cards', true]] as const) {
+      const { el } = mount({ name: 'V', type, groupBy: THREE[0] })
+      expect(el.querySelector('[aria-label="Group indent"]') !== null).toBe(shows)
+      expect(el.querySelector('[aria-label="Group by"]')).not.toBeNull()
+      act(() => root?.unmount())
+      container?.remove()
+    }
+  })
 })
 
 describe('Group header style chip (YAZ-3742 D5)', () => {

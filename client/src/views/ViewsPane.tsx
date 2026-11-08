@@ -28,6 +28,7 @@ import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, note
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { NO_READ_ONLY } from './readOnlyRows'
+import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
 
@@ -575,6 +576,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, records, 
           valueCount={folder.valueCount}
           onWriteValue={writeValue}
           onRetitle={folder.retitle}
+          reservedKeys={reservedKeys(folder.wikilinks.ids)}
         />
       ) : view.type === 'board' ? (
         <BoardView

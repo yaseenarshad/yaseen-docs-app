@@ -28,7 +28,6 @@ const EMPTY_SORT: SortSpec[] = []
 /** Folder (YAZ-2541): a place to sort and group by, never a column — and the one property that may group twice, the second level being the next folder down. */
 const FOLDER = 'file.folder'
 
-/** At most three group levels (YAZ-3741 D2). */
 /** Each group level's picker and order-menu names, outer first (YAZ-4532). */
 const GROUP_LABELS = ['Group by', 'Then group by', 'Then group by (level 3)'] as const
 const GROUP_DIRECTION_LABELS = ['Group direction', 'Then group direction', 'Then group direction (level 3)'] as const
@@ -244,7 +243,8 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
             options={[{ value: '', label: 'None' }, ...options(undefined, above(levels.length))]} />
         </div>
       )}
-      {grouping && levels.length > 0 && (
+      {/* A Board does not indent its groups (YAZ-4544): Table, List and Cards read the indent. */}
+      {grouping && levels.length > 0 && view.type !== 'board' && (
         <div className="sort-menu__indent">
           <span>Indent</span>
           <div className="view-seg" role="group" aria-label="Group indent">

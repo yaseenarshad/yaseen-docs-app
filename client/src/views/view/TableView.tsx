@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf, MAX_GROUP_LEVELS } from '../viewSchema'
 import { titleCandidates } from '../../links/completion'
 import { belongsToTitles } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -95,6 +95,8 @@ export interface TableViewProps {
   readOnly?: ReadonlySet<string>
   /** The Name cell's commit (YAZ-2420 🔒 D19): the row's new title, through `FolderHost.retitle`. */
   onRetitle: (path: string, title: string) => void
+  /** The app's own keys in this vault (`reservedKeys`): the header's "Add column" refuses them (YAZ-4544). */
+  reservedKeys: ReadonlySet<string>
 }
 
 const DEFAULT_WIDTH = 150
@@ -114,8 +116,11 @@ const COLUMN_MIME = 'application/x-yaseen-table-column'
 const CURRENT_ROW = 'view-table__row--current'
 /** Frozen rows (YAZ-4537): at most this many data rows freeze. */
 const MAX_FROZEN_ROWS = 10
-/** ...and the frozen lines stop here, group headers included: 10 rows under up to three headers each. */
-const MAX_FROZEN_LINES = 40
+/**
+ * ...and the frozen lines stop here (YAZ-4544): at most, each row brings a header for each level and its own
+ * "+ New" row (YAZ-4539), so 10 rows always fit, at three levels with one row in each group.
+ */
+const MAX_FROZEN_LINES = MAX_FROZEN_ROWS * (MAX_GROUP_LEVELS + 2)
 
 /**
  * One display line: a group header row (`depth` = its level, 0 at the top: YAZ-745, YAZ-4531), or a data row with its
@@ -161,7 +166,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, reservedKeys, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
@@ -773,6 +778,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             viewIndex={viewIndex}
             keys={keys}
             takenKeys={() => allPropertyKeys(def, view, records, settings.columns)}
+            reserved={reservedKeys}
             records={records}
             properties={properties}
             folder={{ settings, setColumn, deleteColumn, valueCount }}

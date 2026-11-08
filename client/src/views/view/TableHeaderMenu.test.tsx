@@ -216,6 +216,16 @@ describe('the header menu (YAZ-1513)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
+  it('Add column to the right… refuses an app key, in the Properties panel\'s words (YAZ-4544)', () => {
+    const { el, setColumns } = mount()
+    rightClick(th(el, 0))
+    click(item(el, 'Add column to the right…'))
+    setValue(q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Column name"]'), 'readonly')
+    click(q(el, '.ctx-menu [aria-label="Save column"]'))
+    expect(q(el, '.ctx-menu [role="alert"]').textContent).toBe("readonly is the app's own property — it is set where it belongs, not here")
+    expect(setColumns).not.toHaveBeenCalled()
+  })
+
   it('the # header offers only Hide row numbers, which writes rowNumbers: false', () => {
     const { el, onChange, def, yaml } = mount()
     rightClick(q(el, '.view-table thead th.view-table__gutter'))
@@ -341,6 +351,20 @@ describe('freeze, sort and group from the header (YAZ-4534)', () => {
     click(item(el, 'Sort Z to A'))
     expect(view(def).sort).toEqual([{ property: 'file.name', direction: 'DESC' }])
     expect(yaml()).toContain('property: file.name\n        direction: DESC')
+  })
+
+  it('on a Select or Multi-select column, Sort A to Z / Z to A sort by value, not in option order (YAZ-4544)', () => {
+    for (const kind of ['select', 'multi-select'] as const) {
+      const { el, def } = mount(BASE, {}, { settings: { columns: { status: { kind, options: ['zeta', 'alpha'] } }, views: [], problems: [] } })
+      rightClick(th(el, 1))
+      click(item(el, 'Sort A to Z'))
+      expect(view(def).sort).toEqual([{ property: 'note.status', direction: 'ASC', by: 'value' }])
+      rightClick(th(el, 1))
+      click(item(el, 'Sort Z to A'))
+      expect(view(def).sort).toEqual([{ property: 'note.status', direction: 'DESC', by: 'value' }])
+      act(() => root?.unmount())
+      container?.remove()
+    }
   })
 
   it('Group by this column sets the FIRST level: no grouping yet → the single-object form', () => {

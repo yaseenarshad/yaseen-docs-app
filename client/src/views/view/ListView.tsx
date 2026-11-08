@@ -11,7 +11,7 @@ import type { FolderSettings } from '../folderSettings'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, rowTitle } from './GroupHeader'
-import { type GroupSpot, TOP_SPOT, childSpot, spotKey } from './groupDrag'
+import { type GroupSpot, TOP_SPOT, childSpot, groupTakesNew, spotKey } from './groupDrag'
 import { PageContextMenu } from './PageContextMenu'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
@@ -189,7 +189,8 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
           rows={g.rows}
           collapsed={isCollapsed}
           onToggle={() => onToggleGroup(gk)}
-          onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g, undefined, at)}
+          // A level a new note cannot take (a `file.*` one) has no "+", as in Table and Board (YAZ-4544).
+          onNew={onNewInGroup === undefined || !groupTakesNew(view, at.level) ? undefined : () => onNewInGroup(g, undefined, at)}
           resolve={resolve}
           level={at.level}
         />

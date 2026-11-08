@@ -7,7 +7,8 @@ import type { FolderHost } from '../ViewsPane'
 import { propertyKeys, propertyLabel } from '../engine'
 import { canonicalKey } from './keys'
 import { AddColumn } from './AddColumn'
-import { setViewOrder, withOrder } from './columnOrder'
+import { canHideColumn, setViewOrder, withOrder } from './columnOrder'
+import { reservedKeys } from '../../links/reservedKeys'
 import { ColumnDetail, columnKind } from './ColumnDetail'
 import { DragHandleIcon, FileFieldIcon, FormulaIcon } from './icons'
 import { markerStyleOf } from './ListView'
@@ -61,7 +62,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const matches = keys.filter(key => matchesColumn(query, propertyLabel(def, key), key))
   const matchingKeys = new Set(matches.map(canonicalKey))
   const isShown = (key: string) => shown.some((k) => canonicalKey(k) === canonicalKey(key))
-  const canToggle = (key: string) => !(canonicalKey(key) === 'file.name' && view.type !== 'table' && view.type !== 'board')
+  const canToggle = (key: string) => canHideColumn(view, key)
 
   const openDetail = (key: string) => setDetail(key)
   /** ONE order write, `frozenColumns` following positionally — the shared rule (`columnOrder.ts`). */
@@ -223,6 +224,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
       <AddColumn
         taken={keys}
         shown={shown}
+        reserved={reservedKeys(folder.wikilinks.ids)}
         onShow={(existing) => writeOrder([...shown, existing])}
         onSave={(name, column) =>
           folder.setColumns(

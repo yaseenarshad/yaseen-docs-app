@@ -6,7 +6,7 @@ import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
 import { CalendarShowBy } from './CalendarView'
 import { ColumnDetail } from './ColumnDetail'
-import { setViewOrder } from './columnOrder'
+import { canHideColumn, setViewOrder } from './columnOrder'
 import { canonicalKey } from './keys'
 import { CollapseAllIcon, ExpandAllIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { FilterMenu } from './FilterMenu'
@@ -114,7 +114,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
           // The Properties menu's column editor, in this popover: ‹ and Esc go back to the menu (YAZ-3940).
           <ColumnDetail key={editing} columnKey={editing} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder}
             shown={shownKeys().some((k) => canonicalKey(k) === editing)}
-            canHide={!(editing === 'file.name' && view.type !== 'table' && view.type !== 'board')}
+            canHide={canHideColumn(view, editing)}
             onHide={() => onUpdate((d) => setViewOrder(d, viewIndex, shownKeys().filter((k) => canonicalKey(k) !== editing)))}
             onBack={() => setEditing(null)} onLeave={() => setEditing(null)} />
         ))}

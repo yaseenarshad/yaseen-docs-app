@@ -1489,14 +1489,20 @@
   margin-left: 6px;
 }
 
-/* The row of the note the note window shows (YAZ-4547): an accent edge on its first cell and a soft fill. */
+/* The row of the note the note window shows (YAZ-4547): an accent edge on its first cell and a soft fill. The
+   colour only (YAZ-4544): a cell or row fill is a `background-image`, and it stays over the soft fill. */
 .view-table tr.view-table__row--current td,
 .view-table tr.view-table__row--current td.view-table__frozen {
-  background: var(--accent-soft);
+  background-color: var(--accent-soft);
 }
 
 .view-table tr.view-table__row--current td:first-child {
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Under the hover band, whose shadow replaces the one above, the edge goes first in the band's own list (YAZ-4544). */
+.app:not([data-table-row-band='off']):not([data-table-band-rows='caret']) .view-table tbody tr.view-table__row--current:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
 }
 
 /* The note window (YAZ-4547, `NoteWindow.tsx`): a card over the folder page, in its `section.editor` beside the

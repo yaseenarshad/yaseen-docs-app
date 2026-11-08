@@ -29,3 +29,6 @@ const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, NOTE_ID_KEY, TITLE_KEY,
  * only where the vault uses IDs (🔒 V11), so `deleteColumn.ts` asks for that vault's keys.
  */
 export const reservedKeys = (ids: boolean): ReadonlySet<string> => (ids ? ID_VAULT : PLAIN)
+
+/** Why a reserved key has no editor, and why Add property and "+ Add column" refuse one: said once, in the same words (YAZ-4544). */
+export const reservedKeyText = (key: string): string => `${key} is the app's own property — it is set where it belongs, not here`

@@ -17,6 +17,7 @@ import { ViewsPane, freeName, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import type { ColumnDecl } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
+import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 
 /** The document skin's editor is a real Crepe instance; the toolbar's own chrome is what is under test. */
 /** No store behind this mount: collapse state stays in the pane. */
@@ -1407,6 +1408,31 @@ views:
     const [columns, views] = setColumns.mock.calls[0] as [Record<string, unknown>, ViewDef[]]
     expect(columns).toEqual({ 'AI or App': { kind: 'text' } })
     expect(views[0].order).toEqual(['file.name', 'note.AI or App'])
+  })
+
+  it('refuses the app\'s own keys, in the Properties panel\'s words: in an ID vault id too (D19, YAZ-4544)', () => {
+    for (const [ids, refused, taken] of [[true, ['id', 'title', 'readonly', 'comments'], []], [false, ['readonly', 'comments'], ['id']]] as const) {
+      const setColumns = vi.fn()
+      const wikilinks = createWikilinkResolveSource()
+      wikilinks.update(null, [], [], ids)
+      const { el } = mount(undefined, { folder: testFolderHost({ setColumns, wikilinks }) })
+      const pop = openMenu(el, 'Properties')
+      click(byText(pop, 'button', '+ Add column'))
+      for (const name of refused) {
+        setValue(byLabel(pop, 'Column name'), name)
+        click(byLabel(pop, 'Save column'))
+        expect(q(pop, '[role="alert"]').textContent).toBe(`${name} is the app's own property — it is set where it belongs, not here`)
+      }
+      expect(setColumns).not.toHaveBeenCalled()
+      // Where the vault uses no IDs, `id` is an ordinary property.
+      for (const name of taken) {
+        setValue(byLabel(pop, 'Column name'), name)
+        click(byLabel(pop, 'Save column'))
+        expect(setColumns.mock.calls[0]?.[0]).toEqual({ [name]: { kind: 'text' } })
+      }
+      act(() => root?.unmount())
+      container?.remove()
+    }
   })
 
   it('S1: a note property of the same name is SHOWN, not declared again — one order write', () => {

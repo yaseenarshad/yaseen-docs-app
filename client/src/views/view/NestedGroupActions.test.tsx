@@ -294,6 +294,17 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', 'proc', 'p1')
   })
 
+  it.each(['list', 'cards'])('%s: a formula outer has no "+", and its writable inner level keeps it, as in Table and Board (YAZ-4544)', (type) => {
+    const { el } = mount(FORMULA_OUTER_TABLE.replace('type: table', `type: ${type}`))
+    const plus = (label: string) => el.querySelector(`[aria-label="New note in group ${label}"]`)
+    expect(plus('A')).toBeNull()
+    expect(plus('B')).toBeNull()
+    expect(plus('p1')).not.toBeNull()
+    act(() => (plus('p1') as HTMLElement).click())
+    expect(create).toHaveBeenCalledOnce()
+    expect(seed()).toEqual({ proc: 'p1' })
+  })
+
   it('the outer has no "+" and rejects drops; inner drag still writes, without the outer', () => {
     const { el } = mount(FORMULA_OUTER_TABLE)
     // outer headers (A, B) carry no "+"; inner headers (p1, p2) keep theirs

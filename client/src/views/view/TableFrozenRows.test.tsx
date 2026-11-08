@@ -149,6 +149,23 @@ describe('the frozen lines (YAZ-4537)', () => {
     expect(frozenEnd(el)).toEqual(['b2'])
   })
 
+  it('three levels with one row in each group, and a "+ New" row in each: "Freeze up to this row" on row 10 freezes 10 rows (YAZ-4544)', () => {
+    const records = Array.from({ length: 12 }, (_, i) => rec(`r${String(i).padStart(2, '0')}`, { a: `A${i}`, b: `B${i}`, c: `C${i}` }))
+    const { el } = mount(
+      table(`    groupBy:
+      - property: note.a
+      - property: note.b
+      - property: note.c
+    frozenRows: 10
+`),
+      { records },
+    )
+    const frozen = frozenLines(el).map((l) => l.split('@')[0])
+    // Each row: three headers, the row and its "+ New": the 10th row is line 49.
+    expect(frozen.filter((l) => !l.startsWith('[') && l !== '+')).toEqual(records.slice(0, 10).map((r) => r.title))
+    expect(frozenEnd(el)).toEqual(['r09'])
+  })
+
   it('freezes at most 10 rows', () => {
     const { el } = mount(table('    frozenRows: 50\n'), { records: manyRecords(30) })
     expect(frozenLines(el).map((l) => l.split('@')[0])).toEqual(['n000', 'n001', 'n002', 'n003', 'n004', 'n005', 'n006', 'n007', 'n008', 'n009'])

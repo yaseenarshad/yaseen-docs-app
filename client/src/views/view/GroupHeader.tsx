@@ -1,7 +1,7 @@
 import { createContext, useContext, type CSSProperties, type ReactNode } from 'react'
 import { isShortcut } from '../../links/shortcuts'
 import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
-import { type ViewSet, type ViewDef, type GroupBySpec, groupByLevels } from '../viewSchema'
+import { type ViewSet, type ViewDef, type GroupBySpec, shownGroupLevels } from '../viewSchema'
 import { type Row, propertyLabel } from '../engine'
 import { ErrorValue, FileValue, LinkValue, type Resolver, type Value, linkText, render } from '../expr'
 import { summarize } from '../summaries'
@@ -130,7 +130,8 @@ export interface GroupHeaderProps {
 }
 
 export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, resolve, level = 0 }: GroupHeaderProps) {
-  const look = groupValueLook(groupByLevels(view)[level])
+  // `level` counts the levels that group (YAZ-4544): an entry with no property is none.
+  const look = groupValueLook(shownGroupLevels(view)[level])
   return (
     <div className="view-group">
       <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
