@@ -12,7 +12,9 @@ import { linkCommand } from './automation/links'
 import { noteCommand } from './automation/notes'
 import { ReviewsShapeError } from '@shared/reviews'
 import { editorCommand } from './automation/editor'
-import { boardCommand } from './automation/boards'
+import { boardCommand, liveEditsOf } from './automation/boards'
+import { boardImageCommand } from './automation/boardImages'
+import { printSvgToPdf } from './drawings/printPdf'
 import { fileOperation } from './automation/fileOperations'
 import { groupCommand } from './automation/groups'
 import { configurationCommand } from './automation/configuration'
@@ -44,6 +46,8 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
       throw new AutomationFailure('SAVE_LOG_FAILED', 'The document was saved, but its Recents entry could not be persisted.', { path, diskSaved: true, rendererMerged: false })
     }
   }
+  // Every editor.* command is one live editor action (the registry lists them, YAZ-4515).
+  if (request.command.startsWith('editor.')) return { writes: ['navigation', 'documents'], run: () => editorCommand(context.navigation!, request.command, request.args, content) }
   switch (request.command) {
     case 'languageHelper.state': case 'languageHelper.install': case 'languageHelper.cancel':
       return { writes: request.command === 'languageHelper.install' ? ['language-helpers'] : [], run: async () => {
@@ -83,11 +87,11 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
       return { writes: [], run: () => linkCommand(context.state!(), request.command, request.args) }
     case 'daily.find': case 'daily.create': case 'template.read': case 'template.write': case 'review.queue':
       return { writes: definition.effect === 'read' ? [] : ['documents'], run: () => noteCommand(context.state!(), request.command, request.args, content) }
-    case 'editor.select': case 'editor.replace': case 'editor.format': case 'editor.undo': case 'editor.redo': case 'editor.save':
-      return { writes: ['navigation', 'documents'], run: () => editorCommand(context.navigation!, request.command, request.args, content) }
+    case 'drawing.exportImage': case 'diagram.exportImage':
+      return { writes: ['large-content', 'navigation'], run: () => boardImageCommand(context.navigation!, request.command, request.args, printSvgToPdf) }
     case 'drawing.create': case 'diagram.create': case 'drawing.setReadOnly': case 'diagram.setReadOnly': case 'drawing.setHoverLinks': case 'drawing.setHoverOutline': case 'drawing.setFoldArrows': case 'drawing.setPictures':
     case 'drawing.read': case 'drawing.save': case 'drawing.export': case 'diagram.read': case 'diagram.save': case 'diagram.export':
-      return { writes: ['large-content', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => boardCommand(context.state!(), request.command, request.args, content, record) }
+      return { writes: ['large-content', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => boardCommand(context.state!(), request.command, request.args, content, record, context.navigation && liveEditsOf(context.navigation)) }
     case 'file.copy': case 'file.importCopy':
     case 'file.rename': case 'file.retitle': case 'file.trash': case 'file.restore':
       return { writes: ['documents', 'navigation'], run: () => fileOperation(context.navigation!, request.command, request.args) }

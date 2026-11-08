@@ -1,6 +1,7 @@
 import { MEDIA_COLOR_FILTERS, MEDIA_STYLE_FILTERS, MEDIA_LICENSE_FILTERS, MAX_FILTER_PACKS } from './iconPacks'
 import { PROPERTY_KINDS, MEDIA_ZOOM_WIDTHS } from './types'
 import { AUTOMATION_LIMITS, AutomationFailure } from './automation'
+import { DRAWING_ACTIONS, DRAWING_VIEW_ACTIONS, type DrawingAction } from './automationEditor'
 
 /** JSON Schema subset used by public commands. Additional object keys are rejected by default. */
 type SchemaType = 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'null'
@@ -131,10 +132,31 @@ const groupCommands: CommandDefinition[] = [
   ...['addItems', 'removeItems', 'reorderItems'].map(action => ({ name: `group.${action}`, description: `${action} in a named collection group, preserving other groups and existing membership rules.`, effect: 'write' as const, input: object({ ...groupInput, group: string(), paths: array(string()), ...(action === 'addItems' ? {} : { items: array(object({ vault: string(), path: string() }, ['vault', 'path'])) }) }, action === 'addItems' ? ['kind', 'scope', 'group', 'paths'] : ['kind', 'scope', 'group']), output: configResult, requires: ['explicit vault scope'] })),
 ]
 
+const number = { type: 'number' } as CommandSchema, integer = { type: 'integer' } as CommandSchema, boolean = { type: 'boolean' } as CommandSchema
+const boardFile = { path: string(), mtime: number, size: integer }
+/** A board option write: the file's new mtime and size. Read the board again for its revision. */
+export const boardWritten = object({ ...boardFile, diskSaved: boolean, rendererMerged: boolean }, ['path', 'mtime', 'size', 'diskSaved'])
+const boardSaved = object({ ...boardFile, revision: string(), persisted: array(string()), inside: boolean, movedOut: boolean, id: string(), diskSaved: boolean, rendererMerged: boolean }, ['path', 'mtime', 'size', 'revision', 'diskSaved', 'rendererMerged'])
+const largeText = { type: 'string', maxLength: AUTOMATION_LIMITS.contentBytes } as CommandSchema
+const boardRead = (kind: string) => kind === 'drawing'
+  ? object({ ...boardFile, revision: string(), source: { type: 'string', enum: ['disk'] }, json: largeText, stored: array(string()), files: { type: 'object', additionalProperties: object({ mimeType: string(), dataURL: largeText }, ['mimeType', 'dataURL']) } }, ['path', 'mtime', 'size', 'revision', 'source', 'json', 'files', 'stored'])
+  : object({ ...boardFile, revision: string(), source: { type: 'string', enum: ['disk'] }, xml: largeText }, ['path', 'mtime', 'size', 'revision', 'source', 'xml'])
+const exportSettings = {
+  background: { ...boolean, description: 'Export the canvas background. Default: the export box’s current setting.' },
+  darkMode: { ...boolean, description: 'Export in dark mode. Default: the export box’s current setting.' },
+  scale: { type: 'integer', enum: [1, 2, 3], description: 'PNG/SVG scale. Not for PDF.' } as CommandSchema,
+  embedScene: { ...boolean, description: 'Embed the scene in the PNG/SVG. Not for PDF.' },
+  selectionOnly: { ...boolean, description: 'Export only the selection. Default: true when something is selected, as in the export box.' },
+}
 const boardCommands: CommandDefinition[] = ['drawing', 'diagram'].flatMap(kind => [
-  { name: `${kind}.read`, description: `Read a saved ${kind} through its existing format and asset service, with a revision. Use export for a large payload.`, effect: 'read' as const, input: object({ ...resourceInput, ...targetInput }), output: configResult, requires: ['explicit vault scope and target'] },
-  { name: `${kind}.save`, description: `Save a ${kind} with a required saved revision. Embedded image data uses the existing asset rules. Large content can come from sourceFile.`, effect: 'write' as const, input: object({ ...resourceInput, ...targetInput, revision: string(), sourceFile: string() }, ['revision']), output: configResult, content: 'text' as const, requires: ['explicit vault scope and target', 'saved revision', 'body or source file'] },
-  { name: `${kind}.export`, description: `Export the saved ${kind} to a new standalone file without overwriting an existing destination.`, effect: 'write' as const, input: object({ ...resourceInput, ...targetInput, outputFile: string() }, ['outputFile']), output: configResult, requires: ['explicit vault scope and target', 'new output file'] },
+  { name: `${kind}.read`, description: `Read a saved ${kind} through its existing format and asset service, with a revision. A file over the connection limit is refused before it is read; use export.`, effect: 'read' as const, input: object({ ...resourceInput, ...targetInput }), output: boardRead(kind), requires: ['explicit vault scope and target'] },
+  { name: `${kind}.save`, description: `Save a ${kind} with a required saved revision. Refused while an open editor holds unsaved edits of this file. Embedded image data uses the existing asset rules. Large content can come from sourceFile.`, effect: 'write' as const, input: object({ ...resourceInput, ...targetInput, revision: string(), sourceFile: string() }, ['revision']), output: boardSaved, content: 'text' as const, requires: ['explicit vault scope and target', 'saved revision', 'body or source file', 'no unsaved live edits of the file'] },
+  { name: `${kind}.export`, description: `Copy the saved ${kind} file to a new standalone ${kind === 'drawing' ? '.excalidraw' : '.drawio'} file, pictures embedded, without overwriting. This is not the GUI’s standard-font copy and not an image; use ${kind}.exportImage for PNG, SVG${kind === 'drawing' ? ', or PDF' : ''}.`, effect: 'write' as const, input: object({ ...resourceInput, ...targetInput, outputFile: string() }, ['outputFile']), output: object({ path: string(), outputFile: string(), revision: string(), size: integer, source: { type: 'string', enum: ['disk'] }, diskSaved: boolean }, ['path', 'outputFile', 'revision', 'size', 'source', 'diskSaved']), requires: ['explicit vault scope and target', 'new output file'] },
+  { name: `${kind}.exportImage`, description: kind === 'drawing'
+    ? 'Export a live drawing tab as PNG, SVG, or PDF through the GUI export box’s own renderer and PDF printer, with no dialog. Unsaved canvas edits are included; the board file is not touched. Writes a new file only; the extension must match the format.'
+    : 'Export a live diagram tab as PNG or SVG through File › Export Image…’s renderer, with no dialog. Unsaved edits are included; the board file is not touched. Writes a new file only. The GUI has no diagram PDF.', effect: 'write' as const,
+    input: object({ window: string(), tab: string(), format: { type: 'string', enum: kind === 'drawing' ? ['png', 'svg', 'pdf'] : ['png', 'svg'] }, outputFile: string('Absolute path of a new file.'), ...(kind === 'drawing' ? exportSettings : {}) }, ['window', 'tab', 'format', 'outputFile']),
+    output: object({ window: string(), tab: string(), path: string(), format: string(), outputFile: string(), size: integer, dirty: boolean, source: { type: 'string', enum: ['live'] }, diskSaved: boolean }, ['window', 'tab', 'path', 'format', 'outputFile', 'size', 'dirty', 'source', 'diskSaved']), requires: [`explicit live window and ready ${kind} tab`, 'new output file'] },
 ])
 
 const mediaItem = object({ itemKey: string(), provider: string(), providerId: string(), kind: string(), title: string(), previewUrl: string(), creator: string(), creatorUrl: string(), collectionName: string(), sourceUrl: string(), licenseName: string(), licenseUrl: string(), attribution: string(), width: { type: 'number' }, height: { type: 'number' }, trademarkNotice: { type: 'boolean' } }, ['itemKey', 'provider', 'providerId', 'kind', 'title'])
@@ -175,11 +197,32 @@ const noteCommands: CommandDefinition[] = [
 ]
 
 const editorTarget = { window: string(), tab: string(), revision: string('Tab-local revision from document.live. Includes the selection state.') }
+const liveState = {
+  path: string(), tab: string(), source: { type: 'string', enum: ['live'] } as CommandSchema, kind: { type: 'string', enum: ['markdown', 'text', 'drawing', 'diagram'] } as CommandSchema, revision: string(),
+  actions: array(string('An action this tab offers now. Read only drawings offer only view actions.')), baselineMtime: { type: 'number' } as CommandSchema, dirty: { type: 'boolean' } as CommandSchema,
+  selection: object({ anchor: { type: 'integer' }, head: { type: 'integer' }, text: { type: 'string', maxLength: 10 * 1024 * 1024 }, coordinate: { type: 'string', enum: ['prosemirror', 'utf16'] } }),
+}
+const editorResult = object({ ...liveState, rendererApplied: { type: 'boolean' }, diskSaved: { type: 'boolean' } }, ['path', 'tab', 'source', 'kind', 'revision', 'actions', 'baselineMtime', 'dirty', 'rendererApplied', 'diskSaved'])
+const drawingActionText: Record<DrawingAction, string> = {
+  selectAll: 'Select every element', deleteSelection: 'Delete the selection', duplicate: 'Duplicate the selection', group: 'Group the selection', ungroup: 'Ungroup the selection',
+  bringForward: 'Bring the selection forward', sendBackward: 'Send the selection backward', bringToFront: 'Bring the selection to the front', sendToBack: 'Send the selection to the back',
+  alignTop: 'Align the selection to the top', alignBottom: 'Align the selection to the bottom', alignLeft: 'Align the selection to the left', alignRight: 'Align the selection to the right',
+  alignVerticallyCentered: 'Center the selection vertically', alignHorizontallyCentered: 'Center the selection horizontally',
+  distributeHorizontally: 'Distribute the selection horizontally', distributeVertically: 'Distribute the selection vertically',
+  flipHorizontal: 'Flip the selection horizontally', flipVertical: 'Flip the selection vertically', toggleLock: 'Lock or unlock the selection',
+  zoomIn: 'Zoom in', zoomOut: 'Zoom out', resetZoom: 'Zoom to 100%', zoomToFit: 'Zoom to fit everything', zoomToFitSelection: 'Zoom to fit the selection',
+}
+const drawingActionCommands: CommandDefinition[] = (Object.keys(DRAWING_ACTIONS) as DrawingAction[]).map(action => ({
+  name: `editor.${action}`, description: `${drawingActionText[action]} on a live drawing tab through the engine’s own action and Undo history. Refused when the action does not apply to the current selection.${DRAWING_VIEW_ACTIONS.includes(action) ? ' Also runs on a Read only drawing.' : ' Not on a Read only drawing.'}`,
+  effect: 'write' as const, input: object(editorTarget, ['window', 'tab', 'revision']), output: editorResult, requires: ['explicit ready drawing tab', 'current live revision', 'action listed in document.live actions'],
+}))
 const editorCommands: CommandDefinition[] = [
-  { name: 'editor.select', description: 'Set an explicit ready tab’s selection, using the coordinate system returned by document.live.', effect: 'write', input: object({ ...editorTarget, anchor: { type: 'integer', minimum: 0 }, head: { type: 'integer', minimum: 0 } }, ['window', 'tab', 'revision', 'anchor', 'head']), output: configResult, requires: ['explicit ready tab', 'current live revision'] },
-  { name: 'editor.replace', description: 'Replace the current selection with plain text as one local Undo step. Autosave remains active.', effect: 'write', input: object(editorTarget, ['window', 'tab', 'revision']), output: configResult, content: 'text', contentRequired: true, requires: ['explicit ready text tab', 'current live revision'] },
-  { name: 'editor.format', description: 'Toggle one supported Markdown format through the installed editor command, preserving visible-line rules.', effect: 'write', input: object({ ...editorTarget, format: { type: 'string', enum: ['bold', 'italic', 'code', 'strike'] } }, ['window', 'tab', 'revision', 'format']), output: configResult, requires: ['explicit ready Markdown tab', 'current live revision'] },
-  ...['undo', 'redo', 'save'].map(action => ({ name: `editor.${action}`, description: `${action} through this ready editor’s local history or autosave. A save reports failure when the editor remains dirty.`, effect: 'write' as const, input: object(editorTarget, ['window', 'tab', 'revision']), output: configResult, requires: ['explicit ready text tab', 'current live revision'] })),
+  ...drawingActionCommands,
+  { name: 'editor.selectElements', description: 'Select exactly these live element IDs on a drawing tab, in place of a click or lasso. Unknown IDs are refused and nothing changes.', effect: 'write', input: object({ ...editorTarget, ids: { type: 'array', items: string(), maxItems: 10_000 } }, ['window', 'tab', 'revision', 'ids']), output: editorResult, requires: ['explicit ready drawing tab', 'current live revision'] },
+  { name: 'editor.select', description: 'Set an explicit ready tab’s selection, using the coordinate system returned by document.live.', effect: 'write', input: object({ ...editorTarget, anchor: { type: 'integer', minimum: 0 }, head: { type: 'integer', minimum: 0 } }, ['window', 'tab', 'revision', 'anchor', 'head']), output: editorResult, requires: ['explicit ready tab', 'current live revision'] },
+  { name: 'editor.replace', description: 'Replace the current selection with plain text as one local Undo step. Autosave remains active.', effect: 'write', input: object(editorTarget, ['window', 'tab', 'revision']), output: editorResult, content: 'text', contentRequired: true, requires: ['explicit ready text tab', 'current live revision'] },
+  { name: 'editor.format', description: 'Toggle one supported Markdown format through the installed editor command, preserving visible-line rules.', effect: 'write', input: object({ ...editorTarget, format: { type: 'string', enum: ['bold', 'italic', 'code', 'strike'] } }, ['window', 'tab', 'revision', 'format']), output: editorResult, requires: ['explicit ready Markdown tab', 'current live revision'] },
+  ...['undo', 'redo', 'save'].map(action => ({ name: `editor.${action}`, description: `${action} through this ready editor’s local history or autosave. Drawings use the engine history; diagrams offer save only. A save reports failure when the editor remains dirty.`, effect: 'write' as const, input: object(editorTarget, ['window', 'tab', 'revision']), output: editorResult, requires: ['explicit ready tab', 'current live revision', 'action listed in document.live actions'] })),
 ]
 
 const connectedCommands: CommandDefinition[] = [
@@ -224,15 +267,15 @@ export const AUTOMATION_COMMANDS: readonly CommandDefinition[] = [
   ...groupCommands,
   ...boardCommands,
   ...['drawing', 'diagram'].flatMap(kind => [
-    { name: `${kind}.create`, description: 'Create an empty stamped board through the format service. Never replaces an existing file.', effect: 'write' as const, input: object({ ...resourceInput, path: string() }, ['path']), output: configResult, requires: ['explicit vault scope and new path'] },
-    { name: `${kind}.setReadOnly`, description: 'Change the human Read only switch with a required saved revision. Agent writing does not require changing this switch.', effect: 'write' as const, input: object({ ...resourceInput, ...targetInput, revision: string(), on: { type: 'boolean' as const } }, ['revision', 'on']), output: configResult, requires: ['explicit board and saved revision'] },
+    { name: `${kind}.create`, description: 'Create an empty stamped board through the format service. Never replaces an existing file.', effect: 'write' as const, input: object({ ...resourceInput, path: string() }, ['path']), output: object({ path: string(), mtime: { type: 'number' }, size: { type: 'integer' }, diskSaved: { type: 'boolean' } }, ['path', 'mtime', 'size', 'diskSaved']), requires: ['explicit vault scope and new path'] },
+    { name: `${kind}.setReadOnly`, description: 'Change the human Read only switch with a required saved revision. Agent writing does not require changing this switch. Refused while an open editor holds unsaved edits of this file.', effect: 'write' as const, input: object({ ...resourceInput, ...targetInput, revision: string(), on: { type: 'boolean' as const } }, ['revision', 'on']), output: boardWritten, requires: ['explicit board and saved revision', 'no unsaved live edits of the file'] },
   ]),
   ...([
     { name: 'setHoverLinks', fields: { on: { type: 'boolean' } }, required: ['on'] },
     { name: 'setHoverOutline', fields: { value: { type: ['boolean', 'string'], enum: [true, false, 'app'] } }, required: ['value'] },
     { name: 'setFoldArrows', fields: { value: { type: 'string', enum: ['app', 'hover', 'always', 'off'] } }, required: ['value'] },
     { name: 'setPictures', fields: { out: { type: 'boolean' }, folder: string() }, required: ['out'] },
-  ] as { name: string; fields: Record<string, CommandSchema>; required: string[] }[]).map(item => ({ name: `drawing.${item.name}`, description: 'Change this drawing option through the existing format service under its revision guard. Picture folders retain existing approval rules.', effect: 'write' as const, input: object({ ...resourceInput, ...targetInput, revision: string(), ...item.fields }, ['revision', ...item.required]), output: configResult, requires: ['explicit drawing and saved revision'] })),
+  ] as { name: string; fields: Record<string, CommandSchema>; required: string[] }[]).map(item => ({ name: `drawing.${item.name}`, description: 'Change this drawing option through the existing format service under its revision guard. Picture folders retain existing approval rules. Refused while an open editor holds unsaved edits of this file.', effect: 'write' as const, input: object({ ...resourceInput, ...targetInput, revision: string(), ...item.fields }, ['revision', ...item.required]), output: boardWritten, requires: ['explicit drawing and saved revision', 'no unsaved live edits of the file'] })),
   ...editorCommands,
   ...noteCommands,
   ...vaultConfigurationCommands,
@@ -257,7 +300,7 @@ export const AUTOMATION_COMMANDS: readonly CommandDefinition[] = [
 
   { name: 'window.list', description: 'List live full windows, most recently focused first. This is not persisted session restoration state.', effect: 'read', input: object(pageInput), output: pageSchema({ type: 'object', additionalProperties: true }), requires: ['running app'] },
   { name: 'window.inspect', description: 'Read current tabs, active tab, vaults, sidebar, and current/supported folder views. Unavailable view surfaces are explicit.', effect: 'read', input: object({ window: string() }, ['window']), output: { type: 'object', additionalProperties: true }, requires: ['explicit live window'] },
-  { name: 'document.live', description: 'Read a ready editor buffer and selection from an explicit live tab. Never substitutes saved disk content.', effect: 'read', input: object({ window: string(), tab: string() }, ['window', 'tab']), output: object({ path: string(), tab: string(), source: { type: 'string', enum: ['live'] }, kind: { type: 'string', enum: ['markdown', 'text', 'drawing', 'diagram'] }, revision: string(), actions: array(string()), content: { type: 'string', maxLength: 64 * 1024 * 1024 }, baselineMtime: { type: 'number' }, dirty: { type: 'boolean' }, selection: object({ anchor: { type: 'integer' }, head: { type: 'integer' }, text: { type: 'string', maxLength: 10 * 1024 * 1024 }, coordinate: { type: 'string', enum: ['prosemirror', 'utf16'] } }) }, ['path', 'tab', 'source', 'kind', 'content', 'baselineMtime', 'dirty']), requires: ['explicit live window and ready tab'] },
+  { name: 'document.live', description: 'Read a ready editor buffer and selection from an explicit live tab. Never substitutes saved disk content.', effect: 'read', input: object({ window: string(), tab: string() }, ['window', 'tab']), output: object({ ...liveState, content: { type: 'string', maxLength: 64 * 1024 * 1024 } }, ['path', 'tab', 'source', 'kind', 'revision', 'actions', 'content', 'baselineMtime', 'dirty']), requires: ['explicit live window and ready tab'] },
 
   { name: 'app.status', description: 'Read this running Docs instance and its profile.', effect: 'read', input: object({}), output: object({ version: string(), profile: string(), running: { type: 'boolean' } }, ['version', 'profile', 'running']), requires: ['running app'] },
   { name: 'request.status', description: 'Inspect a request receipt. Unknown is not proof that a mutation failed.', effect: 'read', input: object({ id: string() }, ['id']), output: object({ id: string(), state: { type: 'string', enum: ['queued', 'running', 'completed', 'unknown'] }, resultRetained: { type: 'boolean' }, result: { type: 'object', additionalProperties: true } }, ['id', 'state']), requires: ['same app session'] },

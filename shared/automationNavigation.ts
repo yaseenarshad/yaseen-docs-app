@@ -1,5 +1,5 @@
 import type { TabOperation } from './automationTabs'
-import type { EditorOperation } from './automationEditor'
+import type { BoardExportOperation, EditorOperation } from './automationEditor'
 import type { ListScope, SidebarTab } from './types'
 
 export interface NavigationInput {
@@ -30,8 +30,9 @@ export interface NavigationTarget {
   view?: string
   reveal?: boolean
 }
-export type InspectTarget = { kind: 'history' } | { kind: 'window' } | { kind: 'document'; tab: string }
-export type FileOperationTarget = TabOperation | EditorOperation
+/** `dirty` names the tabs whose editor holds unsaved edits of `path` (YAZ-4515). */
+export type InspectTarget = { kind: 'history' } | { kind: 'window' } | { kind: 'document'; tab: string } | { kind: 'dirty'; path: string }
+export type FileOperationTarget = TabOperation | EditorOperation | BoardExportOperation
   | { command: 'file.copy'; paths: string[]; targetDir: string; external: boolean }
   | { command: 'file.restore' }
   | { command: 'file.rename'; path: string; newPath: string; kind: 'file' | 'dir' }

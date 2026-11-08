@@ -1,17 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, truncate, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultAppState } from '@shared/types'
 import { EMPTY_DIAGRAM_XML } from '@shared/diagramFile'
-import { boardCommand } from './boards'
+import { boardCommand, liveEditsOf, type LiveEdits } from './boards'
+import { saveDrawingIndexed } from '../documentSaves'
+import type { NavigationHost } from './navigation'
 import { _actAs, _resetMint } from '../vaultIndex/mint'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-cli-board-')); _actAs(root, join(root, 'profile')) })
 afterEach(async () => { _resetMint(); await rm(root, { recursive: true, force: true }) })
 const scene = JSON.stringify({ type: 'excalidraw', version: 2, source: 'test', elements: [], appState: {}, files: {} })
-const run = (kind: string, action: string, path: string, extra: Record<string, unknown> = {}, body = '') => boardCommand(defaultAppState(), `${kind}.${action}`, { root, path, ...extra }, Buffer.from(body))
+const run = (kind: string, action: string, path: string, extra: Record<string, unknown> = {}, body = '', liveEdits?: LiveEdits) => boardCommand(defaultAppState(), `${kind}.${action}`, { root, path, ...extra }, Buffer.from(body), undefined, liveEdits)
 
 describe('board CLI adapters', () => {
   it.each([['drawing', 'excalidraw'], ['diagram', 'drawio']])('creates a valid %s without replacing an existing board', async (kind, extension) => {
@@ -65,5 +67,35 @@ describe('board CLI adapters', () => {
     const results = await Promise.allSettled([run('drawing', 'save', path, { revision: before.revision }, scene), run('drawing', 'save', path, { revision: before.revision }, scene)])
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
     expect(results.find(result => result.status === 'rejected')).toMatchObject({ reason: { code: 'CONFLICT' } })
+  })
+
+  it('YAZ-4515: without the live check, a CLI save lands under a dirty editor, whose own save then meets a conflict', async () => {
+    const path = join(root, 'Board.excalidraw')
+    await writeFile(path, scene); await utimes(path, 1_700_000_000, 1_700_000_000)
+    const before = await run('drawing', 'read', path)
+    await run('drawing', 'save', path, { revision: before.revision }, scene.replace('test', 'agent'))
+    // The open tab's autosave still holds the mtime it loaded: the shared save refuses it, and the user meets the conflict bar.
+    await expect(saveDrawingIndexed({ root, path, json: scene.replace('test', 'human'), newFiles: [], expectedMtime: (before as { mtime: number }).mtime }, [])).rejects.toMatchObject({ code: 'CONFLICT' })
+  })
+  it.each([['save', {}, scene], ['setReadOnly', { on: true }, ''], ['setFoldArrows', { value: 'off' }, '']] as const)('YAZ-4515: refuses %s while a live editor holds unsaved edits, naming the window and tab', async (action, option, body) => {
+    const path = join(root, 'Board.excalidraw')
+    await writeFile(path, scene)
+    const before = await run('drawing', 'read', path)
+    const liveEdits: LiveEdits = async target => target === path ? [{ window: 'w1', tabs: ['t1'] }] : []
+    await expect(run('drawing', action, path, { revision: before.revision, ...option }, body, liveEdits)).rejects.toMatchObject({ code: 'UNSAVED_LIVE_EDITS', details: { path, open: [{ window: 'w1', tabs: ['t1'] }] } })
+    expect(await readFile(path, 'utf8')).toBe(scene)
+    expect(await run('drawing', action, path, { revision: before.revision, ...option }, body, async () => [])).toMatchObject({ diskSaved: true })
+  })
+  it('YAZ-4515: asks every live window and keeps only those with unsaved edits', async () => {
+    const asked: unknown[] = []
+    const host = { windows: () => [{ id: 'w1' }, { id: 'w2' }], inspect: async (id: string, target: unknown) => { asked.push([id, target]); return id === 'w2' ? { dirty: true, tabs: ['t9'] } : { dirty: false, tabs: ['t1'] } } } as unknown as NavigationHost
+    expect(await liveEditsOf(host)('/v/B.excalidraw')).toEqual([{ window: 'w2', tabs: ['t9'] }])
+    expect(asked).toEqual([['w1', { kind: 'dirty', path: '/v/B.excalidraw' }], ['w2', { kind: 'dirty', path: '/v/B.excalidraw' }]])
+  })
+  it.each([['drawing', 'excalidraw'], ['diagram', 'drawio']])('YAZ-4515: refuses a %s read over the connection limit before loading it', async (kind, extension) => {
+    const path = join(root, `Big.${extension}`)
+    await writeFile(path, '')
+    await truncate(path, 70 * 1024 * 1024)
+    await expect(run(kind, 'read', path)).rejects.toMatchObject({ code: 'TOO_LARGE', message: expect.stringContaining('export --output-file') })
   })
 })

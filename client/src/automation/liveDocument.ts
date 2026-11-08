@@ -1,4 +1,4 @@
-import type { EditorAction, EditorOperation } from '@shared/automationEditor'
+import type { BoardExportOperation, BoardImage, BoardImageData, EditorAction, EditorOperation } from '@shared/automationEditor'
 import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
 
 export interface LiveDocument {
@@ -9,8 +9,10 @@ export interface LiveDocument {
   dirty: boolean
   selection?: { anchor: number; head: number; text: string; coordinate: 'prosemirror' | 'utf16' }
 }
-interface EditorControl { version(): string | number; run(action: EditorAction): void | Promise<void>; actions: EditorAction['action'][] }
-interface Registration { id: number; read(): LiveDocument; control?: EditorControl }
+interface EditorControl { version(): string | number; run(action: EditorAction): void | Promise<void>; readonly actions: EditorAction['action'][] }
+/** A board's export (YAZ-4515): the bytes its GUI export makes, with no sheet. */
+type BoardExporter = (target: BoardExportOperation) => Promise<BoardImageData>
+interface Registration { id: number; read(): LiveDocument; control?: EditorControl; exportImage?: BoardExporter }
 const readers = new WeakMap<Element, Registration>()
 let nextId = 0
 /** Immutable editor-state identities do not add a subscription or retain old documents. */
@@ -20,10 +22,16 @@ export function editorStateVersion(state: object): number {
   if (id === undefined) { id = ++nextId; identities.set(state, id) }
   return id
 }
+/** A text's identity, hashed only when a revision is read (FNV-1a). */
+export function textVersion(text: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193)
+  return `${text.length}.${(hash >>> 0).toString(36)}`
+}
 const revision = (entry: Registration) => `${entry.id}:${entry.control?.version() ?? 'read-only'}`
 /** Read only when requested. Registration adds no typing or selection subscriptions. */
-export function registerLiveDocument(host: Element, read: () => LiveDocument, control?: EditorControl): () => void {
-  const entry = { id: ++nextId, read, control }
+export function registerLiveDocument(host: Element, read: () => LiveDocument, control?: EditorControl, exportImage?: BoardExporter): () => void {
+  const entry = { id: ++nextId, read, control, exportImage }
   readers.set(host, entry)
   return () => { if (readers.get(host) === entry) readers.delete(host) }
 }
@@ -50,4 +58,13 @@ export async function runEditorAction(target: EditorOperation) {
   const { content: _content, ...state } = readLiveDocument(target.tab)
   if (target.edit.action === 'save' && state.dirty) throw new AutomationFailure('SAVE_INCOMPLETE', 'The editor remains unsaved. Inspect its conflict or save error before retrying.', state)
   return { ...state, rendererApplied: true, diskSaved: target.edit.action === 'save' && !state.dirty }
+}
+
+/** A live board's GUI export as bytes (YAZ-4515). Main writes the file; this never opens a sheet or touches the board file. */
+export async function exportLiveImage(target: BoardExportOperation): Promise<BoardImage> {
+  const entry = registration(target.tab), { path, kind, dirty } = entry.read()
+  if (!entry.exportImage || kind !== target.kind) throw new AutomationFailure('UNSUPPORTED_ACTION', `This tab is not a live ${target.kind}.`)
+  const image = await entry.exportImage(target)
+  if ((image.format === 'pdf' ? image.svg.length * 2 : image.data.byteLength) > AUTOMATION_LIMITS.contentBytes) throw new AutomationFailure('TOO_LARGE', 'This export exceeds the connection limit. Choose a smaller scale or a selection.')
+  return { ...image, path, dirty }
 }

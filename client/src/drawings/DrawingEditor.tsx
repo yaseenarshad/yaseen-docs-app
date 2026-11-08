@@ -1,4 +1,5 @@
-import { registerLiveDocument } from '../automation/liveDocument'
+import { editorStateVersion, registerLiveDocument } from '../automation/liveDocument'
+import { DRAWING_ACTIONS, DRAWING_VIEW_ACTIONS, type EditorAction } from '@shared/automationEditor'
 import { AutomationFailure } from '@shared/automation'
 /**
  * THE DRAWING DOCUMENT (Draw's 🔒 YAZ-1810, ported by YAZ-3028 D2): a `.excalidraw` opened full-pane in a
@@ -390,6 +391,30 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       if (!current || !save || board.retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The drawing is not ready.')
       const { json, files } = current.serialize()
       return { path, kind: 'drawing', content: JSON.stringify({ ...JSON.parse(json), files }), baselineMtime: save.mtime, dirty: save.dirty }
+    }, {
+      // YAZ-4515: the engine's own actions and history. Read only leaves the view actions; content edits then use drawing.save.
+      version: () => `${snapshot.current?.version}:${surface.current === null ? 0 : editorStateVersion(surface.current.selection())}`,
+      get actions(): EditorAction['action'][] {
+        return readOnlyRef.current ? [...DRAWING_VIEW_ACTIONS] : ['selectElements', ...(Object.keys(DRAWING_ACTIONS) as (keyof typeof DRAWING_ACTIONS)[]), 'undo', 'redo', 'save']
+      },
+      run: async (edit) => {
+        const s = surface.current
+        if (s === null || board.retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The drawing is not ready.')
+        if (edit.action === 'save') return void (await autosave.current?.flush())
+        if (edit.action === 'selectElements') {
+          const missing = s.selectElements(edit.ids)
+          if (missing.length) throw new AutomationFailure('NOT_FOUND', 'Some element ids are not on the canvas.', { ids: missing })
+          return
+        }
+        const name = edit.action === 'undo' || edit.action === 'redo' ? edit.action : edit.action in DRAWING_ACTIONS ? DRAWING_ACTIONS[edit.action as keyof typeof DRAWING_ACTIONS] : null
+        if (name === null) throw new AutomationFailure('UNSUPPORTED_ACTION', 'A drawing does not support this action.')
+        if (!s.runAction(name)) throw new AutomationFailure('NOT_APPLICABLE', 'This action does not apply to the current selection.')
+      },
+    }, async ({ format, options }) => {
+      const s = surface.current
+      if (s === null || board.retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The drawing is not ready.')
+      try { return await s.exportImage(format, options) }
+      catch (error) { throw new AutomationFailure('EXPORT_FAILED', error instanceof Error ? error.message : 'The drawing could not be exported.') }
     })
   }, [path, board.hostRef, board.retired, autosave])
 

@@ -1,4 +1,4 @@
-import { readLiveDocument } from '../automation/liveDocument'
+import { exportLiveImage, readLiveDocument, runEditorAction } from '../automation/liveDocument'
 /**
  * The drawing document's chrome, with the ENGINE replaced by a stub (Draw's 🔒 YAZ-1810, ported by YAZ-3028).
  *
@@ -62,6 +62,10 @@ const surface = {
   pictures: { bytes: 0, count: 0, missing: 0 },
   /** The pan and zoom the engine is on (YAZ-3737 D13). */
   canvas: { scrollX: 0, scrollY: 0, zoom: 1 },
+  /** YAZ-4515: the engine actions run by name, what each answers, and the selection's identity. */
+  ran: [] as string[],
+  applies: true,
+  selection: {} as object,
 }
 
 vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
@@ -92,6 +96,17 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
       },
       pictures: () => surface.pictures,
       canvas: () => surface.canvas,
+      runAction: (name) => {
+        surface.ran.push(name)
+        return surface.applies
+      },
+      selectElements: (ids) => {
+        const missing = ids.filter((id) => id !== 'a')
+        if (missing.length === 0) surface.selection = { a: true }
+        return missing
+      },
+      selection: () => surface.selection,
+      exportImage: async (format) => (format === 'pdf' ? { format, svg: '<svg/>', width: 10, height: 20 } : { format, data: new Uint8Array([1, 2, 3]) }),
     } satisfies DrawingSurfaceApi)
     // The real engine renders this into its own top-right row; the stub just puts it on screen,
     // because WHERE the chips go is the surface's business and WHAT they say is the host's.
@@ -159,6 +174,9 @@ beforeEach(() => {
   surface.nextReplaceVersion = 0
   surface.commands = []
   surface.pictures = { bytes: 0, count: 0, missing: 0 }
+  surface.ran = []
+  surface.applies = true
+  surface.selection = {}
   Object.defineProperty(window, 'yaseenDocs', {
     configurable: true,
     writable: true,
@@ -1131,6 +1149,45 @@ describe('automation live drawing', () => {
     const live = readLiveDocument('live-drawing')
     expect(live).toMatchObject({ path: PATH, kind: 'drawing', source: 'live', baselineMtime: 100, dirty: true })
     expect(JSON.parse(live.content)).toMatchObject({ elements: [{ id: 'unsaved' }], files })
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4515: runs the engine actions it advertises under a live revision that the selection moves', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-drawing'
+    render(); await flush(); emit(1, scene())
+    const first = readLiveDocument('live-drawing')
+    expect(first.actions).toEqual(expect.arrayContaining(['selectElements', 'deleteSelection', 'group', 'zoomToFit', 'undo', 'redo', 'save']))
+    const run = (edit: Parameters<typeof runEditorAction>[0]['edit'], revision = readLiveDocument('live-drawing').revision) => runEditorAction({ command: 'editor.action', tab: 'live-drawing', revision, edit })
+    await expect(run({ action: 'selectElements', ids: ['a', 'gone'] })).rejects.toMatchObject({ code: 'NOT_FOUND', details: { ids: ['gone'] } })
+    await run({ action: 'selectElements', ids: ['a'] })
+    // The selection moved, so the first revision is stale.
+    await expect(run({ action: 'deleteSelection' }, first.revision)).rejects.toMatchObject({ code: 'CONFLICT' })
+    await run({ action: 'deleteSelection' })
+    await run({ action: 'undo' })
+    expect(surface.ran).toEqual(['deleteSelectedElements', 'undo'])
+    surface.applies = false
+    await expect(run({ action: 'group' })).rejects.toMatchObject({ code: 'NOT_APPLICABLE' })
+  })
+
+  it('YAZ-4515: a Read only drawing offers only the view actions and still exports', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-drawing'
+    load.mockResolvedValue(loaded({ json: `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} })}\n` }))
+    render(); await flush(); emit(1, scene())
+    const live = readLiveDocument('live-drawing')
+    expect(live.actions).toEqual(['zoomIn', 'zoomOut', 'resetZoom', 'zoomToFit', 'zoomToFitSelection'])
+    await expect(runEditorAction({ command: 'editor.action', tab: 'live-drawing', revision: live.revision, edit: { action: 'deleteSelection' } })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
+    await runEditorAction({ command: 'editor.action', tab: 'live-drawing', revision: live.revision, edit: { action: 'zoomToFit' } })
+    expect(surface.ran).toEqual(['zoomToFit'])
+    expect(await exportLiveImage({ command: 'board.export', tab: 'live-drawing', kind: 'drawing', format: 'pdf', options: {} })).toEqual({ format: 'pdf', svg: '<svg/>', width: 10, height: 20, path: PATH, dirty: false })
+  })
+
+  it('YAZ-4515: exports the live canvas bytes with its dirty state, and refuses the wrong board kind', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-drawing'
+    render(); await flush(); emit(1, scene()); emit(2)
+    const image = await exportLiveImage({ command: 'board.export', tab: 'live-drawing', kind: 'drawing', format: 'png', options: { scale: 2 } })
+    expect(image).toMatchObject({ format: 'png', path: PATH, dirty: true })
+    expect([...(image as { data: Uint8Array }).data]).toEqual([1, 2, 3])
+    await expect(exportLiveImage({ command: 'board.export', tab: 'live-drawing', kind: 'diagram', format: 'png', options: {} })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
     expect(save).not.toHaveBeenCalled()
   })
 })

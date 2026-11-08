@@ -1,7 +1,7 @@
 import { isTabOperation } from '@shared/automationTabs'
 import { operateTabs } from './automation/tabs'
 import { AutomationFailure } from '@shared/automation'
-import { readLiveDocument, runEditorAction } from './automation/liveDocument'
+import { exportLiveImage, readLiveDocument, runEditorAction } from './automation/liveDocument'
 import { flushSync } from 'react-dom'
 import { useAutomation } from './automation/useAutomation'
 import { inspectSurface, useAutomationSurface, waitForSurface } from './automation/surfaces'
@@ -1923,6 +1923,8 @@ export function App() {
       if (!now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
       return readLiveDocument(target.tab)
     }
+    // YAZ-4515: a CLI board write refuses while an editor here holds unsaved edits of that file.
+    if (target.kind === 'dirty') return { dirty: dirtyPaths().includes(target.path), tabs: now.current.tabs.filter(tab => tab.path === target.path).map(tab => tab.id) }
     return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, storedTabs: storage.getTabStrip(), tabViews: now.current.tabs.map(tab => ({ tab: tab.id, ...inspectSurface(`view:${tab.id}`) })), sidebar: sidebarLens, sidebarCollapsed }
   }, async target => {
     if (isTabOperation(target)) {
@@ -1938,6 +1940,7 @@ export function App() {
       return result
     }
     if (target.command === 'editor.action') return runEditorAction(target)
+    if (target.command === 'board.export') return exportLiveImage(target)
     if (target.command === 'file.copy') {
       for (const path of target.paths) { await flushRenamedPath(path); await flushRenamedDir(path) }
       const unsaved = dirtyPaths().filter(path => target.paths.some(source => path === source || path.startsWith(`${source}/`)))
