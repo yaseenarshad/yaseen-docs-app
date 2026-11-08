@@ -29,6 +29,19 @@ describe('exact context navigation', () => {
     expect(parseNavigationLink('yaseendocs://navigate?v=1&request=' + encodeURIComponent(JSON.stringify({ root, tab: 'two' })))).toBeNull()
   })
 
+  it('opens a page in the right panel through the same exact-window door and refuses one without a page', async () => {
+    const app = host([entry('w1', [root])]), path = join(root, 'Mochi/card.md')
+    expect(await navigate(app, { root, path, panel: 'right', sidebar: 'files' })).toMatchObject({ window: 'w1', created: false })
+    expect(app.apply).toHaveBeenLastCalledWith('w1', { path, panel: 'right', sidebar: 'files' })
+    vi.mocked(app.apply).mockClear()
+    await expect(navigate(app, { root, panel: 'right' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(navigate(app, { root, path: join(root, 'Mochi'), panel: 'right', view: 'Table' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    app.inspect = vi.fn(async () => ({ tabs: [{ id: 'one', path }] }))
+    await expect(navigate(app, { window: 'w1', tab: 'one', panel: 'right' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    expect(app.apply).not.toHaveBeenCalled()
+    expect(parseNavigationLink(navigationLink({ root, path, panel: 'right' }))).toEqual({ root, path, panel: 'right' })
+  })
+
   it('reuses only the most recent exact window and preserves unspecified state', async () => {
     const app = host([entry('unrelated', [root, '/other']), entry('recent', [root]), entry('older', [root])])
     expect(await navigate(app, { root, path: join(root, 'Mochi') })).toMatchObject({ window: 'recent', created: false })

@@ -5,7 +5,7 @@ import { readLiveDocument, runEditorAction } from './automation/liveDocument'
 import { flushSync } from 'react-dom'
 import { useAutomation } from './automation/useAutomation'
 import { inspectSurface, useAutomationSurface, waitForSurface } from './automation/surfaces'
-import type { ListScope } from '@shared/types'
+import type { ListScope, RightPanelIdentity } from '@shared/types'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
@@ -1305,8 +1305,8 @@ export function App() {
   const [overview, setOverview] = useState<{ phase: 'closed' | 'open' | 'leaving'; from: string | null }>(OVERVIEW_CLOSED)
   const overviewOpen = overview.phase === 'open'
   /** What the doors below read at the moment they are used; they keep their identity under the board. */
-  const now = useRef({ file, active: activeTab, tabs, mounted, preview, blank, phase: overview.phase, right: rightPanel.items.length })
-  now.current = { file, active: activeTab, tabs, mounted, preview, blank, phase: overview.phase, right: rightPanel.items.length }
+  const now = useRef({ file, active: activeTab, tabs, mounted, preview, blank, phase: overview.phase, right: rightPanel.items.length, rightPanel })
+  now.current = { file, active: activeTab, tabs, mounted, preview, blank, phase: overview.phase, right: rightPanel.items.length, rightPanel }
   // The note's first edit keeps the preview tab that shows it (YAZ-2648 D2). An editor says its path;
   // `keep` takes the tab's id (YAZ-2940 D1). Through `now`, because a new `onUserEdit` identity would rebuild every mounted editor.
   const keepEdited = useCallback((path: string) => {
@@ -1642,23 +1642,27 @@ export function App() {
    * Only this tab leaves: a copy's twins stay (YAZ-2940 S16). A `send` that answers `false` sent nothing (YAZ-3637 D5:
    * the window moved with its tab, or the drop was on a window): the tab stays, no notice.
    */
-  const sendTabAway = useCallback((path: string, id: string, send: (carry: PopOutCarry) => Promise<void | boolean>, failed: string, closeEmptyWindow: boolean) => {
+  const sendTabAwayNow = useCallback(async (path: string, id: string, send: (carry: PopOutCarry) => Promise<void | boolean>, closeEmptyWindow: boolean): Promise<'sent' | 'kept' | 'window-closed'> => {
     // The page opens there as it looks here (YAZ-2951 D2): read before the save, while its editor is the one on show.
     const view = pageViewOf(id)
     // The tab's display name goes with it (YAZ-2949 D7, S19).
     const name = now.current.tabs.find((t) => t.id === id)?.name
-    flushRenamedPath(path)
-      .then(() => send({ view, name }))
-      .then((sent) => {
-        if (sent === false) return
-        // YAZ-3091 D6: the only tab of a window whose right panel is empty takes the window with it, through its real close.
-        if (closeEmptyWindow && aloneHere(id)) void api.window.closeSelf()
-        // A moved tab lives on in the other window: no "Recently closed" (YAZ-3487 D10).
-        else if (now.current.phase === 'open') closeUnderOverview([id], true)
-        else closeTab(id, true)
-      })
-      .catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
-  }, [aloneHere, closeUnderOverview, closeTab, notify, pageViewOf])
+    await flushRenamedPath(path)
+    if ((await send({ view, name })) === false) return 'kept'
+    // YAZ-3091 D6: the only tab of a window whose right panel is empty takes the window with it, through its real close.
+    if (closeEmptyWindow && aloneHere(id)) {
+      void api.window.closeSelf()
+      return 'window-closed'
+    }
+    // A moved tab lives on in the other window: no "Recently closed" (YAZ-3487 D10).
+    if (now.current.phase === 'open') closeUnderOverview([id], true)
+    else closeTab(id, true)
+    return 'sent'
+  }, [aloneHere, closeUnderOverview, closeTab, pageViewOf])
+  /** The same, for a gesture: a refusal or a failed save says why, and the tab stays (`sendTabAwayNow` is the CLI's awaited door, YAZ-4502). */
+  const sendTabAway = useCallback((path: string, id: string, send: (carry: PopOutCarry) => Promise<void | boolean>, failed: string, closeEmptyWindow: boolean) => {
+    sendTabAwayNow(path, id, send, closeEmptyWindow).catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
+  }, [sendTabAwayNow, notify])
   /** "Move to new window" (YAZ-2933): main opens the window and stores the name with its one tab (YAZ-3057). A last tab leaves this window empty. */
   const movePageToNewWindow = useCallback((path: string, id: string) =>
     sendTabAway(path, id, (carry) => api.window.popOut(path, carry), "Can't move to a new window", false), [sendTabAway])
@@ -1887,7 +1891,7 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
-  useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
+  useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed, rightPanel }) })
   useAutomation(async target => {
     if (target.tab !== undefined && !now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
     flushSync(() => {
@@ -1899,11 +1903,13 @@ export function App() {
         changeLens(target.sidebar)
       }
       if (target.tab !== undefined) activate(target.tab)
-      else if (target.path !== undefined) openPage(target.path)
+      // "Open to the right" (YAZ-2940): the page leaves the main tabs and shows expanded in the right panel.
+      else if (target.path !== undefined) (target.panel === 'right' ? openRight : openPage)(target.path)
     })
     const app = await waitForSurface('app', surface => {
-      const state = surface.inspect()
-      return (target.tab === undefined || state.tab === target.tab) && (target.path === undefined || state.path === target.path) && (target.sidebar === undefined || (state.sidebar === target.sidebar && state.sidebarCollapsed === false))
+      const state = surface.inspect() as { path?: string | null; tab?: string; sidebar?: string; sidebarCollapsed?: boolean; rightPanel: RightPanelIdentity }
+      const shown = target.panel === 'right' ? state.rightPanel.open && state.rightPanel.expanded === target.path : state.path === target.path
+      return (target.tab === undefined || state.tab === target.tab) && (target.path === undefined || shown) && (target.sidebar === undefined || (state.sidebar === target.sidebar && state.sidebarCollapsed === false))
     })
     if ((target.path || target.group) && target.reveal !== false && target.sidebar && ['files', 'favorites', 'focus'].includes(target.sidebar)) {
       const sidebar = await waitForSurface('sidebar')
@@ -1923,7 +1929,7 @@ export function App() {
       if (!now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
       return readLiveDocument(target.tab)
     }
-    return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, storedTabs: storage.getTabStrip(), tabViews: now.current.tabs.map(tab => ({ tab: tab.id, ...inspectSurface(`view:${tab.id}`) })), sidebar: sidebarLens, sidebarCollapsed }
+    return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, storedTabs: storage.getTabStrip(), tabViews: now.current.tabs.map(tab => ({ tab: tab.id, ...inspectSurface(`view:${tab.id}`) })), sidebar: sidebarLens, sidebarCollapsed, rightPanel: now.current.rightPanel }
   }, async target => {
     if (isTabOperation(target)) {
       const result = await operateTabs(target, {
@@ -1931,7 +1937,19 @@ export function App() {
         open: openKept, background: openBackground, blank: openBlank, duplicate: duplicateTab, close: closeTab,
         keep, rename: setTabName, move: moveTab, sleep: sleepTabs, wake: wakeTab, restore: openStored,
         collapse: value => { if (sidebarCollapsedRef.current !== value) toggleSidebar() },
+        right: () => now.current.rightPanel, setRightOpen,
+        send: async (id, to, at, background) => {
+          const { path } = now.current.tabs.find(tab => tab.id === id)!
+          // The GUI's doors: "Move to new window", "Move to ▸", a strip drop (`at`), and a quiet board move (`background`).
+          const move = to === null ? (carry: PopOutCarry) => api.window.popOut(path, carry) : (carry: PopOutCarry) => api.window.moveTo(to, path, { ...carry, ...(at === undefined ? {} : { at }), ...(background ? { background } : {}) })
+          const sent = await sendTabAwayNow(path, id, carry => move(carry).catch((err: unknown) => {
+            throw new AutomationFailure('TARGET_UNAVAILABLE', `The target refused the tab, which stayed here: ${err instanceof Error ? err.message : String(err)}`)
+          }), to !== null)
+          return sent === 'window-closed'
+        },
       })
+      // This window is closing through its real close, which saves and stores it.
+      if ('sourceClosed' in result && result.sourceClosed) return result
       // Await the same identity door the workspace mirrors, before main flushes its durable store.
       const strip = storage.getTabStrip()
       await api.window.setIdentity({ tabs: [...new Set(strip.map(tab => tab.path))], tabStrip: strip, file: storage.getFile(), rightPanel: storage.getRightPanel(), sidebarCollapsed: storage.getSidebarCollapsed() })

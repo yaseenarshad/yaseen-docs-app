@@ -63,7 +63,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
         if (!context.navigation?.manage) throw new AutomationFailure('UNAVAILABLE', 'Window management is unavailable in this app instance.')
         return context.navigation.manage(request.args.window as string, request.command.slice(7) as 'show' | 'close' | 'rename', request.args.name as string | null | undefined)
       } }
-    case 'tab.open': case 'tab.blank': case 'tab.close': case 'tab.duplicate': case 'tab.keep': case 'tab.sleep': case 'tab.wake': case 'tab.rename': case 'tab.reorder': case 'sidebar.setCollapsed': case 'session.restore': case 'session.capture':
+    case 'tab.open': case 'tab.blank': case 'tab.close': case 'tab.duplicate': case 'tab.keep': case 'tab.sleep': case 'tab.wake': case 'tab.rename': case 'tab.reorder': case 'tab.move': case 'sidebar.setCollapsed': case 'rightPanel.setOpen': case 'session.restore': case 'session.capture':
       return { writes: ['navigation', 'documents', 'configuration'], run: () => tabsCommand(context.navigation!, context.store!, request.command, request.args) }
     case 'app.diagnostics': case 'app.restart': case 'update.state': case 'update.notes': case 'update.check': case 'update.restart':
       return { writes: definition.effect === 'read' ? [] : ['app-management'], run: () => appCommand(context.app!, request.command) }

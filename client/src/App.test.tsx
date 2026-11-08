@@ -7281,3 +7281,76 @@ describe('App automation tab actions', () => {
     } finally { off() }
   })
 })
+
+describe('App automation right panel and cross-window tab moves', () => {
+  const entry = (over: Partial<WindowEntry> & Pick<WindowEntry, 'id' | 'root'>): WindowEntry => ({ roots: [over.root!], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 }, ...over })
+  const withW2 = (): AppState => ({ ...defaultAppState(), windows: [entry({ id: 'w2', root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] })] })
+  const tabNames = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  const ids = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((t) => t.dataset.tab!)
+  const replyOf = (bridge: ReturnType<typeof installBridge>['bridge'], id: string) => (bridge.automation.reply.mock.calls as unknown as [{ id: string }][]).map(([r]) => r).find((r) => r.id === id)
+
+  it('opens a page in the right panel as Open to the right does, reads it back, and hides the panel', async () => {
+    const files = { '/v/a.md': { content: 'A', mtime: 1 }, '/v/b.md': { content: 'B', mtime: 1 } }
+    const { bridge, el, emitAutomation } = await mount(withW2(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }, files)
+    await act(async () => emitAutomation({ id: 'right-1', action: 'navigate', target: { path: '/v/b.md', panel: 'right' } }))
+    expect(replyOf(bridge, 'right-1')).toMatchObject({ ok: true, value: { rightPanel: { open: true, items: ['/v/b.md'], expanded: '/v/b.md' }, acknowledged: true } })
+    // One owner per page: the main tab of the page closed.
+    expect(tabNames(el)).toEqual(['a'])
+    expect(el.querySelector('[data-testid="right-layer-/v/b.md"]')).not.toBeNull()
+    await act(async () => emitAutomation({ id: 'inspect-right', action: 'inspect', target: { kind: 'window' } }))
+    expect(replyOf(bridge, 'inspect-right')).toMatchObject({ ok: true, value: { rightPanel: { open: true, items: ['/v/b.md'], expanded: '/v/b.md' } } })
+    await act(async () => emitAutomation({ id: 'hide', action: 'operate', target: { command: 'rightPanel.setOpen', open: false } }))
+    expect(el.querySelector('.right-panel')).toBeNull()
+    expect(el.querySelector('.right-panel-reopen')).not.toBeNull()
+    expect(replyOf(bridge, 'hide')).toMatchObject({ ok: true, value: { rightPanel: { open: false, items: ['/v/b.md'] } } })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ rightPanel: expect.objectContaining({ open: false, items: ['/v/b.md'] }) }))
+    await act(async () => emitAutomation({ id: 'show', action: 'operate', target: { command: 'rightPanel.setOpen', open: true } }))
+    expect(el.querySelector('[data-testid="right-layer-/v/b.md"]')).not.toBeNull()
+  })
+
+  it('sends a tab through the GUI move door after its save, and keeps it when the target refuses or it stays dirty', async () => {
+    const { bridge, el, emitAutomation } = await mount(withW2(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/c.md'] })
+    const [a, b, c] = ids(el)
+    await act(async () => emitAutomation({ id: 'move-1', action: 'operate', target: { command: 'tab.move', tab: a, to: 'w2', at: 0, background: false } }))
+    expect(bridge.window.moveTo).toHaveBeenCalledExactlyOnceWith('w2', '/v/a.md', expect.objectContaining({ at: 0 }))
+    expect(bridge.window.moveTo.mock.lastCall?.[2]).not.toHaveProperty('background')
+    expect(tabNames(el)).toEqual(['b', 'c'])
+    expect(replyOf(bridge, 'move-1')).toMatchObject({ ok: true, value: { sourceClosed: false, rendererApplied: true } })
+    bridge.window.moveTo.mockRejectedValueOnce(new Error('that window is closed'))
+    await act(async () => emitAutomation({ id: 'move-refused', action: 'operate', target: { command: 'tab.move', tab: b, to: 'w2', background: true } }))
+    expect(bridge.window.moveTo).toHaveBeenLastCalledWith('w2', '/v/b.md', expect.objectContaining({ background: true }))
+    expect(replyOf(bridge, 'move-refused')).toMatchObject({ ok: false, error: { code: 'TARGET_UNAVAILABLE' } })
+    expect(tabNames(el)).toEqual(['b', 'c'])
+    const off = continuity.registerRenameContinuity('/v/c.md', { flush: async () => {}, capture: () => ({ frontmatter: '', body: 'unsaved' }), retire: () => {} })
+    try {
+      await act(async () => emitAutomation({ id: 'move-dirty', action: 'operate', target: { command: 'tab.move', tab: c, to: null, background: false } }))
+      expect(replyOf(bridge, 'move-dirty')).toMatchObject({ ok: false, error: { code: 'UNSAVED_CHANGES' } })
+      expect(bridge.window.popOut).not.toHaveBeenCalled()
+    } finally { off() }
+    await act(async () => emitAutomation({ id: 'move-new', action: 'operate', target: { command: 'tab.move', tab: c, to: null, background: false } }))
+    expect(bridge.window.popOut).toHaveBeenCalledExactlyOnceWith('/v/c.md', expect.anything())
+    expect(tabNames(el)).toEqual(['b'])
+    expect(bridge.window.closeSelf).not.toHaveBeenCalled()
+  })
+
+  it('closes a window that the move empties through its real close, without a later identity write', async () => {
+    const { bridge, el, emitAutomation } = await mount(withW2(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const writes = bridge.window.setIdentity.mock.calls.length
+    await act(async () => emitAutomation({ id: 'move-last', action: 'operate', target: { command: 'tab.move', tab: ids(el)[0], to: 'w2', background: false } }))
+    expect(bridge.window.closeSelf).toHaveBeenCalledOnce()
+    expect(replyOf(bridge, 'move-last')).toMatchObject({ ok: true, value: { sourceClosed: true } })
+    expect(bridge.window.setIdentity.mock.calls.length).toBe(writes)
+  })
+
+  it('acknowledges a received tab only once the take-tab door has added it', async () => {
+    const { bridge, el, emitAutomation, emitTakeTab } = await mount(defaultAppState(), { id: 'w2', root: '/v', file: '/v/z.md', tabs: ['/v/z.md'] })
+    const [existing] = ids(el)
+    await act(async () => emitAutomation({ id: 'recv', action: 'operate', target: { command: 'tab.received', path: '/v/z.md', except: [existing] } }))
+    expect(replyOf(bridge, 'recv')).toBeUndefined()
+    await act(async () => emitTakeTab({ path: '/v/z.md', background: true }))
+    await act(async () => {})
+    const copy = ids(el).find((id) => id !== existing)
+    expect(copy).toBeDefined()
+    expect(replyOf(bridge, 'recv')).toMatchObject({ ok: true, value: { tab: copy, rendererApplied: true } })
+  })
+})

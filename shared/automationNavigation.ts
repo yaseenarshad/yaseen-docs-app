@@ -12,6 +12,7 @@ export interface NavigationInput {
   window?: string
   tab?: string
   mode?: 'reuse' | 'new'
+  panel?: 'right'
   sidebar?: SidebarTab
   scope?: ListScope
   group?: string
@@ -24,6 +25,8 @@ export interface NavigationInput {
 export interface NavigationTarget {
   tab?: string
   path?: string
+  /** Open `path` in the right panel instead of a main tab. */
+  panel?: 'right'
   sidebar?: SidebarTab
   scope?: ListScope
   group?: string

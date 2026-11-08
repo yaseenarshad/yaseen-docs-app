@@ -39,6 +39,7 @@ export async function resolveNavigation(state: AppState, input: NavigationInput,
   const target: NavigationTarget = {
     ...(input.tab === undefined ? {} : { tab: input.tab }),
     ...(path === undefined ? {} : { path }),
+    ...(input.panel === undefined ? {} : { panel: input.panel }),
     ...(input.sidebar === undefined ? {} : { sidebar: input.sidebar }),
     ...(input.view === undefined ? {} : { view: input.view }),
     ...(input.reveal === undefined ? {} : { reveal: input.reveal }),
@@ -46,6 +47,7 @@ export async function resolveNavigation(state: AppState, input: NavigationInput,
   if (input.group && input.sidebar !== 'favorites' && input.sidebar !== 'focus') throw new AutomationFailure('INVALID_INPUT', 'A group needs the Favorites or Focus sidebar.')
   if (input.scope !== undefined && input.sidebar !== 'favorites' && input.sidebar !== 'focus') throw new AutomationFailure('INVALID_INPUT', 'A collection scope needs the Favorites or Focus sidebar.')
   if (input.view && (!path || !(await stat(path)).isDirectory())) throw new AutomationFailure('INVALID_INPUT', 'A view needs a target folder.')
+  if (input.panel && (!path || input.tab !== undefined || input.view !== undefined)) throw new AutomationFailure('INVALID_INPUT', 'The right panel needs a page target, without a tab or a view.')
   if (input.sidebar === 'favorites' || input.sidebar === 'focus') {
     const scope = input.scope ?? (resolved.roots.length > 1 && state.settings.workspaceLists[input.sidebar] ? 'workspace' : 'vault')
     const collection = await collectionPaths(resolved.roots, input.sidebar, scope, input.group)

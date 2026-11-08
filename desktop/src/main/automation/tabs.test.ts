@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +6,8 @@ import { defaultRightPanelIdentity, type WindowEntry } from '@shared/types'
 import { createStore } from '../store'
 import type { NavigationHost } from './navigation'
 import { tabsCommand } from './tabs'
+import { AutomationFailure } from '@shared/automation'
+import { commandDefinition, validateInput } from '@shared/automationCommands'
 
 let base: string, root: string, store: ReturnType<typeof createStore>, host: NavigationHost
 beforeEach(async () => {
@@ -47,4 +49,64 @@ it('captures the live strip with duplicate copies and refuses a changed window c
   vi.mocked(host.inspect).mockResolvedValue({ roots: ['/changed'], storedTabs })
   await expect(tabsCommand(host, store, 'session.capture', { window: 'w1', name: 'Wrong context' })).rejects.toMatchObject({ code: 'CONTEXT_CHANGED' })
   expect(store.get().sessions).toHaveLength(1)
+})
+it('shows or hides the right panel through the window’s own action and reports what it shows', async () => {
+  const rightPanel = { open: true, width: 320, items: [join(root, 'A.md')], expanded: join(root, 'A.md') }
+  vi.mocked(host.operate).mockResolvedValue({ tabs: [], rightPanel, rendererApplied: true })
+  const result = await tabsCommand(host, store, 'rightPanel.setOpen', { window: 'w1', open: true })
+  expect(host.operate).toHaveBeenCalledExactlyOnceWith('w1', { command: 'rightPanel.setOpen', open: true })
+  expect(result).toEqual({ window: 'w1', rightPanel, diskSaved: true })
+  validateInput(commandDefinition('rightPanel.setOpen').output, result)
+  await expect(tabsCommand(host, store, 'rightPanel.setOpen', { window: 'gone', open: false })).rejects.toMatchObject({ code: 'WINDOW_NOT_FOUND' })
+})
+describe('cross-window tab moves', () => {
+  const path = () => join(root, 'A.md')
+  const window = (id: string, roots: string[], tabs: string[] = []): WindowEntry => ({ id, root: roots[0], roots, tabs, file: null, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 1000, height: 800 } })
+  const live = (windows: WindowEntry[]) => {
+    host.windows = () => windows
+    host.inspect = vi.fn(async (id: string) => ({ tabs: id === 'w1' ? [{ id: 't1', path: path() }] : [{ id: 'old-copy', path: path() }] }))
+  }
+  it('sends through the source, then waits for the target to show the tab', async () => {
+    live([window('w1', [root]), window('w2', [root])])
+    vi.mocked(host.operate).mockImplementation(async (id: string) => id === 'w1' ? { sourceClosed: false } : { tab: 't9' })
+    const result = await tabsCommand(host, store, 'tab.move', { window: 'w1', tab: 't1', to: 'w2', index: 1, background: true })
+    expect(vi.mocked(host.operate).mock.calls).toEqual([
+      ['w1', { command: 'tab.move', tab: 't1', to: 'w2', at: 1, background: true }],
+      ['w2', { command: 'tab.received', path: path(), except: ['old-copy'] }],
+    ])
+    expect(result).toEqual({ window: 'w1', target: 'w2', created: false, path: path(), tab: 't9', sourceClosed: false, diskSaved: true })
+    validateInput(commandDefinition('tab.move').output, result)
+  })
+  it('finds the new window that the pop-out door opened and waits for it', async () => {
+    const windows = [window('w1', [root])]
+    live(windows)
+    vi.mocked(host.operate).mockImplementation(async (id: string) => {
+      if (id === 'w1') { windows.push(window('w3', [root], [path()])); return { sourceClosed: false } }
+      return { tab: 'n1' }
+    })
+    expect(await tabsCommand(host, store, 'tab.move', { window: 'w1', tab: 't1', newWindow: true })).toMatchObject({ target: 'w3', created: true, tab: 'n1' })
+    expect(host.operate).toHaveBeenLastCalledWith('w3', { command: 'tab.received', path: path(), except: [] })
+  })
+  it('refuses closed, unrelated, and ambiguous targets before the source acts', async () => {
+    live([window('w1', [root]), window('other', ['/elsewhere'])])
+    await expect(tabsCommand(host, store, 'tab.move', { window: 'w1', tab: 't1', to: 'gone' })).rejects.toMatchObject({ code: 'WINDOW_NOT_FOUND' })
+    await expect(tabsCommand(host, store, 'tab.move', { window: 'w1', tab: 't1', to: 'other' })).rejects.toMatchObject({ code: 'TARGET_UNAVAILABLE' })
+    await expect(tabsCommand(host, store, 'tab.move', { window: 'w1', tab: 't1', to: 'other', newWindow: true })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(tabsCommand(host, store, 'tab.move', { window: 'w1', tab: 't1', newWindow: true, background: true })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(tabsCommand(host, store, 'tab.move', { window: 'w1', tab: 'missing', newWindow: true })).rejects.toMatchObject({ code: 'TAB_NOT_FOUND' })
+    expect(host.operate).not.toHaveBeenCalled()
+  })
+  it('never reports success when either window closes during the move', async () => {
+    live([window('w1', [root]), window('w2', [root])])
+    vi.mocked(host.operate).mockRejectedValueOnce(new AutomationFailure('WINDOW_CLOSED', 'closed'))
+    await expect(tabsCommand(host, store, 'tab.move', { window: 'w1', tab: 't1', to: 'w2' })).rejects.toMatchObject({ code: 'SOURCE_CLOSED' })
+    vi.mocked(host.operate).mockReset().mockImplementation(async (id: string) => {
+      if (id === 'w1') return { sourceClosed: true }
+      throw new AutomationFailure('WINDOW_CLOSED', 'closed')
+    })
+    await expect(tabsCommand(host, store, 'tab.move', { window: 'w1', tab: 't1', to: 'w2' })).rejects.toMatchObject({ code: 'TARGET_UNACKNOWLEDGED', details: { path: path(), window: 'w1', target: 'w2', sourceClosed: true, cause: 'WINDOW_CLOSED' } })
+    vi.mocked(host.operate).mockReset().mockRejectedValueOnce(new AutomationFailure('TARGET_UNAVAILABLE', 'refused'))
+    await expect(tabsCommand(host, store, 'tab.move', { window: 'w1', tab: 't1', to: 'w2' })).rejects.toMatchObject({ code: 'TARGET_UNAVAILABLE' })
+    expect(host.operate).toHaveBeenCalledOnce()
+  })
 })
