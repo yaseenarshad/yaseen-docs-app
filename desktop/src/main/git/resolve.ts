@@ -2,7 +2,9 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
-import { isBoard, isDiagram, isDrawing } from '@shared/fileKind'
+import { mergeNoteComments } from '@shared/commentMerge'
+import { isBoard, isDiagram, isDrawing, isMarkdown } from '@shared/fileKind'
+import { mergePeopleFile, PEOPLE_FILE } from '@shared/people'
 import { VAULT_CONFIG_DIR, type GithubSyncMerge } from '@shared/types'
 import { FAVORITES_FILE, FAVORITES_WORKSPACE_FILE, mergeFavoritesFile } from '../favorites'
 import { ICONS_FILE, mergeIconsFile } from '@shared/vaultIcons'
@@ -24,13 +26,19 @@ import { git, zList } from './exec'
  *    it as `<name> (conflict, YYYY-MM-DD).drawio`. So does a drawing that will not parse, or two
  *    unrelated new drawings at one path;
  *  - the vault's `shares.json`, `favorites.json` (and `favorites-workspace.json`, YAZ-4450) and `icons.json` (YAZ-3440 D8) merge per entry;
- *  - a board one side deleted and the other edited keeps the edit.
+ *  - a board one side deleted and the other edited keeps the edit;
+ *  - a NOTE (YAZ-4615 D4, D9 — `shared/commentMerge.ts`): its comments merge by id, and a clashing
+ *    number goes to the local comment; when both sides changed the REST of the note (the same lines,
+ *    or git would have merged them), the remote's stays at the path with every comment merged into
+ *    it, and ours goes beside it as `<name> (conflict, YYYY-MM-DD).md`, with no comments — so one
+ *    note never stops the whole vault's sync again. (This reverses YAZ-3028 D12's "a note never gets
+ *    a conflicted copy". A note still never gets a `<<<<<<<` marker.) A `.folder.md` is a note here;
+ *  - the vault's `people.json` (YAZ-4615 D1) merges card by card, the newer card winning.
  *
- * DOCS IS THE FIRST-CLASS APP (YAZ-3028 D12). Everything else — a NOTE above all, any other file,
- * any other `.yaseendocs/` config — is NOT settled here: one such conflict at a stop aborts the
- * whole rebase before anything is written, exactly as Docs did before (`attention/conflict`, "the
- * same lines changed on two machines — nothing was lost, but this needs a human"). A note never
- * gets a conflicted copy and never gets a `<<<<<<<` marker.
+ * Everything else — any other file, any other `.yaseendocs/` config — is NOT settled here: one such
+ * conflict at a stop aborts the whole rebase before anything is written, exactly as Docs did before
+ * (`attention/conflict`, "the same lines changed on two machines — nothing was lost, but this needs
+ * a human").
  *
  * THE LOSSLESS RULE STILL HOLDS. Anything this cannot settle — a git step that fails, a stop that
  * is not a conflict — aborts the rebase exactly as before, and the caller reports `conflict`.
@@ -64,6 +72,7 @@ const FAVORITES_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_FILE}`
 /** The workspace Favorites (YAZ-4450 D1) merge by the same rule. */
 const FAVORITES_WORKSPACE_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_WORKSPACE_FILE}`
 const ICONS_PATH = `${VAULT_CONFIG_DIR}/${ICONS_FILE}`
+const PEOPLE_PATH = `${VAULT_CONFIG_DIR}/${PEOPLE_FILE}`
 
 /**
  * The file's new contents with every entry of `entries` present, or null when it already has them
@@ -209,13 +218,25 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   const stages = await stagesOf(bin, root, rel)
   if (stages === null) return null
   const { base, theirs, mine } = stages
-  // A board deleted on one side, edited on the other: the edit stays (S11). Nothing to tell anyone.
-  // (`settles` already let only boards and the two list files through; a list file is never deleted by the app.)
+  // A board or note deleted on one side, edited on the other: the edit stays (S11). Nothing to tell anyone.
+  // (`settles` already let only boards, notes and the list files through; a list file is never deleted by the app.)
   if (theirs === null || mine === null) {
     const kept = theirs ?? mine
     if (kept === null) return null
     await atomicWrite(abs(root, rel), kept)
     return { staged: [rel], report: null }
+  }
+  if (isMarkdown(rel)) {
+    // YAZ-4615 D4, D9: comments by id; the rest kept both ways when both sides changed it.
+    const merged = mergeNoteComments(base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8'))
+    if (merged === null) return null
+    await atomicWrite(abs(root, rel), merged.text)
+    const renumbered = merged.renumbered.length === 0 ? {} : { renumbered: merged.renumbered }
+    if (merged.copy === undefined) return { staged: [rel], report: { path: rel, author: await author(), clashes: 0, kind: 'note', ...renumbered } }
+    const copy = copies.get(rel) ?? freeCopyName(root, rel)
+    copies.set(rel, copy)
+    await atomicWrite(abs(root, copy), merged.copy)
+    return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, kind: 'note', ...renumbered } }
   }
   const merged = mergeText(rel, base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8'))
   if (merged !== null) {
@@ -233,7 +254,8 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
 }
 
 /** Whether sync may settle a conflict on `rel` at all (YAZ-3028 D4): a board, or one of the per-entry list files. Never a note. */
-const settles = (rel: string): boolean => isBoard(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH
+const settles = (rel: string): boolean =>
+  isBoard(rel) || isMarkdown(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH || rel === PEOPLE_PATH
 
 /**
  * The merge a file knows how to do, or null for keep-both. `clashes: null` marks a merge nobody
@@ -246,6 +268,7 @@ function mergeText(rel: string, base: string | null, theirs: string, mine: strin
   if (rel === SHARES_PATH) return quiet(mergeSharesFile(base, theirs, mine))
   if (rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH) return quiet(mergeFavoritesFile(base, theirs, mine))
   if (rel === ICONS_PATH) return quiet(mergeIconsFile(base, theirs, mine))
+  if (rel === PEOPLE_PATH) return quiet(mergePeopleFile(base, theirs, mine))
   return null
 }
 

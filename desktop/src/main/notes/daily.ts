@@ -16,7 +16,7 @@ import { fileTitle, scanFile } from '../vaultIndex/scan'
 import { noteDisk } from './disk'
 import { LOCK_DIR, onlyOne } from '../fs/lock'
 
-export type DailySettings = Pick<SettingsState, 'dailyNotes' | 'dailyNoteFolder' | 'dailyNoteFormat' | 'dailyNoteDayFolder'>
+export type DailySettings = Pick<SettingsState, 'dailyNotes' | 'dailyNoteFolder' | 'dailyNoteFormat' | 'dailyNoteDayFolder'> & Partial<Pick<SettingsState, 'commentsHint'>>
 
 /** The Markdown notes of `dir`, never a hidden file (a folder's `.folder.md`, the `.template.md`); its folders apart. */
 async function entriesOf(dir: string): Promise<{ notes: string[]; dirs: string[] }> {
@@ -55,7 +55,7 @@ export async function dailyNote(root: string, settings: DailySettings, day: Date
     const [found, ...others] = dailyNotes(records, settings.dailyNoteFolder, title, settings.dailyNoteDayFolder)
     if (found !== undefined) return { path: found, title, id: ids ? (records.find((r) => r.path === found)?.id ?? null) : null, created: false, others }
     if (!make) return null
-    const { disk } = await noteDisk(ids ? root : null)
+    const { disk } = await noteDisk(ids ? root : null, settings.commentsHint === true)
     const made = await makeDailyNote(disk, root, settings, title, ids)
     return { path: made, title, id: ids ? ((await scanFile(root, made)).id ?? null) : null, created: true, others: [] }
   })

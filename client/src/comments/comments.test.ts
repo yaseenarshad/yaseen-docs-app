@@ -15,10 +15,13 @@ import {
   editComment,
   newCommentId,
   nowIso,
+  ownedBy,
   readComments,
+  setResolved,
   threadsOf,
   type PageComment,
 } from '@shared/comments'
+import { COMMENTS_HINT, withCommentsHint } from '@shared/frontmatter'
 
 /** The schema from the brief, verbatim — the round-trip target. */
 const NOTE = `---
@@ -363,5 +366,53 @@ describe('numbers (🔒 D15): `n` is one past the highest in its run, never reas
   it('a bare `reply_to:` reads as top level (the bare-optionals rule), so its number is in the top-level run', () => {
     const content = `---\ncomments:\n  - id: a\n    n: 3\n    at: ${at(1)}\n    reply_to:\n    body: A\n---\n`
     expect(readComments(addComment(content, 'B', { id: 'b', at: at(2) })).at(-1)).toMatchObject({ id: 'b', n: 4 })
+  })
+})
+
+describe('YAZ-4615: resolve, ownership, hand-written entries, the hint', () => {
+  const base = `---\ncomments:\n  - id: a\n    n: 1\n    at: ${at(1)}\n    by: sam\n    body: A\n  - id: r\n    n: 1\n    at: ${at(2)}\n    reply_to: a\n    body: R\n---\n`
+
+  it('setResolved stamps `resolved` and `resolved_by` before the body; reopen deletes both; replies keep their own state', () => {
+    const done = setResolved(base, 'a', at(3), 'yaseen')
+    expect(done).toContain(`    by: sam\n    resolved: ${at(3)}\n    resolved_by: yaseen\n    body: A\n`)
+    expect(readComments(done).find((c) => c.id === 'r')?.resolved).toBeUndefined()
+    expect(setResolved(done, 'a', null)).toBe(base)
+    expect(setResolved(base, 'a', null)).toBe(base) // reopen of an open one: nothing
+    expect(setResolved(base, 'nope', at(3))).toBe(base)
+    expect(setResolved(base, 'a', at(3))).not.toContain('resolved_by') // no profile, no resolver
+  })
+
+  it('ownedBy: a writer owns only what it signed; no `by`, a blank one, or another name is never theirs', () => {
+    expect(ownedBy({ by: 'agent' }, 'agent')).toBe(true)
+    expect(ownedBy({ by: ' claude ' }, 'claude')).toBe(true)
+    expect(ownedBy({ by: 'yaseen' }, 'agent')).toBe(false)
+    expect(ownedBy({}, 'agent')).toBe(false)
+    expect(ownedBy({ by: '  ' }, '  ')).toBe(false)
+  })
+
+  it('D10: a hand-written `{by, body}` shows, sorts last, and takes an id and the next number on the next write', () => {
+    const hand = `---\ncomments:\n  - {id: a, n: 4, at: "${at(1)}", body: A}\n  - {by: claude, body: Fix the intro.}\n---\n`
+    const [first, mine] = readComments(hand)
+    expect(first.id).toBe('a')
+    expect(mine).toMatchObject({ by: 'claude', body: 'Fix the intro.', at: '' })
+    expect(mine.id).toMatch(/^[0-9a-f]{8}$/)
+    expect(readComments(hand)[1].id).toBe(mine.id) // stable between reads
+    const out = addComment(hand, 'B', { id: 'b', at: at(2) })
+    const after = readComments(out)
+    expect(after.find((c) => c.id === mine.id)?.n).toBe(5)
+    expect(after.find((c) => c.id === 'b')?.n).toBe(6)
+    // An edit through the derived id lands on the hand-written entry.
+    expect(readComments(editComment(hand, mine.id, 'Done', at(3), '')).find((c) => c.id === mine.id)?.body).toBe('Done')
+  })
+
+  it('D10: the hint at the top of the block outlives every comment write, the last delete included', () => {
+    const hinted = withCommentsHint('# Hello\n')
+    expect(hinted).toBe(`---\n${COMMENTS_HINT}\n---\n# Hello\n`)
+    const added = addComment(hinted, 'A', { id: 'a', at: at(1) })
+    expect(added.startsWith(`---\n${COMMENTS_HINT}\ncomments:\n`)).toBe(true)
+    expect(deleteComment(added, 'a')).toBe(hinted)
+    const idNote = withCommentsHint('---\nid: YAZ-1\n---\n')
+    expect(addComment(idNote, 'A', { id: 'a', at: at(1) }).startsWith(`---\n${COMMENTS_HINT}\nid: YAZ-1\ncomments:\n`)).toBe(true)
+    expect(withCommentsHint(idNote)).toBe(idNote)
   })
 })

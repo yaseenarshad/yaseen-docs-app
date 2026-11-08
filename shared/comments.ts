@@ -1,4 +1,5 @@
-import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
+import { COMMENTS_HINT, parseFrontmatter, setFrontmatterProperty, splitFrontmatter, withCommentsHint } from './frontmatter'
+import { textFingerprint } from './reviews'
 
 /**
  * Comments per page (YAZ-1472): a note's comment stream lives ON the note, under the reserved
@@ -38,6 +39,10 @@ export interface PageComment {
   reply_to?: string
   /** Stamped by `editComment`, same format as `at`. */
   edited?: string
+  /** YAZ-4615 D3: when it was resolved, same format as `at`; absent while open. Reopen deletes it. */
+  resolved?: string
+  /** YAZ-4615 D3: the handle that resolved it, when the resolver had a profile. */
+  resolved_by?: string
   /**
    * Who left it, declared by the WRITER — the app writes none for the person at the keyboard; an
    * agent editing the file writes `by: agent`. Never inferred: a file carries no authorship.
@@ -87,13 +92,38 @@ export function commentsShape(content: string): CommentsShape {
 const isString = (v: unknown): v is string => typeof v === 'string'
 /** An optional key may be absent, a string, or a bare `title:` (YAML null) — never another shape. */
 const optionalString = (v: unknown): boolean => v == null || typeof v === 'string'
-const OPTIONAL = ['reply_to', 'by', 'title', 'edited'] as const
+const OPTIONAL = ['reply_to', 'by', 'title', 'edited', 'resolved', 'resolved_by'] as const
 
-/** A list entry the block understands: a map with string `id`, `at` and `body` (an EMPTY body included), and string-or-empty `reply_to` / `by` / `title` / `edited`. */
-function isComment(entry: unknown): entry is PageComment {
+/**
+ * A list entry the block understands: a map with a string `body` (an EMPTY body included), and
+ * string-or-empty `id` / `at` / `reply_to` / `by` / `title` / `edited` / `resolved` / `resolved_by`.
+ * YAZ-4615 D10: `id` and `at` may be missing — an agent's hand-written `{by, body}` must show.
+ */
+function isRawComment(entry: unknown): entry is Record<string, unknown> & { body: string } {
   if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return false
   const e = entry as Record<string, unknown>
-  return isString(e.id) && isString(e.at) && isString(e.body) && OPTIONAL.every((k) => optionalString(e[k])) && (e.n == null || typeof e.n === 'number')
+  return isString(e.body) && optionalString(e.id) && optionalString(e.at) && OPTIONAL.every((k) => optionalString(e[k])) && (e.n == null || typeof e.n === 'number')
+}
+
+/** An entry the writers may act on by id: a recognised entry that already HAS one. */
+const isComment = (entry: unknown): entry is PageComment => isRawComment(entry) && isString(entry.id) && entry.id !== ''
+
+/**
+ * The id an entry without one is shown and written under (YAZ-4615 D10): eight hex of its writer,
+ * time and text, so the block's view and the next write agree without a write first. A second
+ * identical entry is told apart by its place among the identical ones.
+ */
+function derivedIds(list: readonly unknown[]): Map<number, string> {
+  const ids = new Map<number, string>()
+  const seen = new Map<string, number>()
+  list.forEach((e, i) => {
+    if (!isRawComment(e) || isComment(e)) return
+    const base = textFingerprint(`${String(e.by ?? '')}\u0000${String(e.at ?? '')}\u0000${e.body}`)
+    const k = seen.get(base) ?? 0
+    seen.set(base, k + 1)
+    ids.set(i, k === 0 ? base : textFingerprint(`${base}\u0000${k}`))
+  })
+  return ids
 }
 
 /** The typed view drops a bare optional (`title:` with nothing) so readers see it as absent; the raw list keeps it for the write. */
@@ -104,10 +134,26 @@ function withoutEmptyOptionals(c: PageComment): PageComment {
   return copy
 }
 
-const byTime = (a: PageComment, b: PageComment): number => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)
+/** `at` ascending; an entry with no time (a hand-written one, D10) sorts LAST. */
+const byTime = (a: PageComment, b: PageComment): number => {
+  if (a.at === b.at) return 0
+  if (a.at === '') return 1
+  if (b.at === '') return -1
+  return a.at < b.at ? -1 : 1
+}
 
-/** The recognised entries, `at` ascending (stable). Anything else in the list is skipped here and carried on write. */
-const typed = (list: readonly unknown[]): PageComment[] => list.filter(isComment).map(withoutEmptyOptionals).sort(byTime)
+/** The recognised entries, `at` ascending (stable). An entry with no id wears its derived one; anything else in the list is skipped here and carried on write. */
+function typed(list: readonly unknown[]): PageComment[] {
+  const derived = derivedIds(list)
+  const out: PageComment[] = []
+  list.forEach((e, i) => {
+    if (!isRawComment(e)) return
+    const id = derived.get(i)
+    const c = withoutEmptyOptionals({ ...e, id: id ?? (e.id as string), at: isString(e.at) ? e.at : '' } as PageComment)
+    out.push(c)
+  })
+  return out.sort(byTime)
+}
 
 /** The comments the block shows. A non-list value or a broken block reads as none — `commentsShape` says which. */
 export function readComments(content: string): PageComment[] {
@@ -166,16 +212,33 @@ export function threadsOf(comments: readonly PageComment[]): CommentThread[] {
   return [...threads.values()]
 }
 
-/** The list as it will be written back, or the refusal: `foreign` and `invalid` bytes are not ours. */
+/**
+ * The list as it will be written back, or the refusal: `foreign` and `invalid` bytes are not ours.
+ * YAZ-4615 D10: every write first gives a hand-written entry with no id its derived id and the next
+ * number in its run — the "next time the app writes that note's comments". An entry that has an id
+ * keeps what it has (an unnumbered one stays unnumbered, D15).
+ */
 function writable(content: string): readonly unknown[] {
   const { shape, list } = rawList(content)
   if (shape === 'foreign' || shape === 'invalid') throw new CommentsShapeError(shape)
-  return list
+  const derived = derivedIds(list)
+  if (derived.size === 0) return list
+  let out: unknown[] = [...list]
+  for (const [i, id] of [...derived].sort((a, b) => a[0] - b[0])) {
+    const { id: _id, n: _n, ...rest } = out[i] as Record<string, unknown>
+    const replyTo = isString(rest.reply_to) ? rest.reply_to : undefined
+    out = out.map((e, j) => (j === i ? { id, n: nextNumber(out.filter((_, k) => k !== i), replyTo), ...rest } : e))
+  }
+  return out
 }
 
 /** An emptied list deletes the KEY (🔒 D7): no `comments: []` is ever left behind. */
 function write(content: string, list: readonly unknown[]): string {
-  return setFrontmatterProperty(content, COMMENTS_KEY, list.length === 0 ? undefined : list)
+  const next = setFrontmatterProperty(content, COMMENTS_KEY, list.length === 0 ? undefined : list)
+  // YAZ-4615 D10: the hint outlives a comment write. yaml drops a block's only comment once its last
+  // key goes, and parts it from a first key with a blank line; put it back where it stood.
+  if (!splitFrontmatter(content).frontmatter.includes(COMMENTS_HINT)) return next
+  return withCommentsHint(next.replace(`${COMMENTS_HINT}\n\n`, `${COMMENTS_HINT}\n`).replace(/^---\r?\n---\r?\n/, ''))
 }
 
 /** A title is a key only when it says something: blank means none, and none is written as nothing. */
@@ -234,3 +297,46 @@ export function deleteComment(content: string, id: string): string {
   const kept = list.filter((e) => !(isComment(e) && (e.id === id || e.reply_to === id)))
   return kept.length === list.length ? content : write(content, kept)
 }
+
+/**
+ * Resolve one comment (`at` an ISO stamp) or reopen it (`at` null) — YAZ-4615 D3. A parent's
+ * replies keep their own state: the block moves the whole thread when its PARENT is resolved.
+ * `resolved` and `resolved_by` land just before `body`, which stays last; unknown keys ride along.
+ * An unknown id, or a reopen of an open comment, changes nothing.
+ */
+export function setResolved(content: string, id: string, at: string | null, by?: string): string {
+  const list = writable(content)
+  const i = list.findIndex((e) => isComment(e) && e.id === id)
+  if (i === -1) return content
+  const { resolved, resolved_by: _by, body, ...rest } = list[i] as PageComment
+  if (at === null && resolved == null) return content
+  const next = at === null ? { ...rest, body } : { ...rest, resolved: at, ...(by === undefined || by.trim() === '' ? {} : { resolved_by: by.trim() }), body }
+  return write(
+    content,
+    list.map((e, j) => (j === i ? next : e)),
+  )
+}
+
+/**
+ * The ONE ownership rule of both command doors (YAZ-4615 D2; the nit on YAZ-4574): a writer edits or
+ * deletes only what it signed. A comment with no `by` — or a blank one — is no writer's: never theirs.
+ */
+export const ownedBy = (comment: Pick<PageComment, 'by'>, by: string): boolean => {
+  const mine = by.trim()
+  return mine !== '' && typeof comment.by === 'string' && comment.by.trim() === mine
+}
+
+/**
+ * For sync's merge (`shared/commentMerge.ts`, YAZ-4615 D4): the list as a write would see it — hand
+ * entries given their ids and numbers — or the refusal for `foreign` / `invalid` bytes.
+ */
+export const writableComments = (content: string): readonly unknown[] => writable(content)
+
+/** For sync's merge: `content` with `list` as its comments, through the one writer (D7's empty-list rule and D10's hint kept). */
+export const withComments = (content: string, list: readonly unknown[]): string => write(content, list)
+
+/** For sync's merge: whether a raw entry is one the writers act on by id. */
+export const isIdComment = (entry: unknown): entry is PageComment => isComment(entry)
+
+/** For sync's merge: one past the highest number in a run, over a raw list. */
+export const nextCommentNumber = (list: readonly unknown[], replyTo: string | undefined): number => nextNumber(list, replyTo)

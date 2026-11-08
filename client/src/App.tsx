@@ -1446,7 +1446,7 @@ export function App() {
       const board = firstBoard === null ? null : absFrom(vault.root, firstBoard)
       setNotice(board === null ? { text, icon: 'info' } : { text, icon: 'info', action: { label: 'See changes', run: () => openHistory(board, true) } })
       // A shared drawing the merge rewrote re-uploads its link, as a local save would (YAZ-3040).
-      for (const m of merged) if (m.copy === undefined) noteBoardSaved(vault.root, absFrom(vault.root, m.path))
+      for (const m of merged) if (m.copy === undefined && m.kind !== 'note') noteBoardSaved(vault.root, absFrom(vault.root, m.path))
     }
   })
   const leftOverview = useCallback(() => setOverview((at) => (at.phase === 'leaving' ? OVERVIEW_CLOSED : at)), [])
