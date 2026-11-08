@@ -9,7 +9,7 @@ import { FOLDER_VALUES_KEY, withoutStaleFolderValues } from './folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from './noteId'
 import { dirname, relTo } from './paths'
-import { inFolder, type IndexRecord } from './types'
+import { folderSettingsPath, inFolder, type IndexRecord } from './types'
 
 /** One pure change of a file's bytes, applied against what is on disk now. */
 export type ContentTransform = (content: string) => string
@@ -46,6 +46,31 @@ export const propertiesOf = (content: string): Record<string, unknown> => parseF
 export function heldFolderId(bytes: string): string | undefined {
   const id = propertiesOf(bytes)[NOTE_ID_KEY]
   return isNoteId(id) ? canonicalNoteId(id) : undefined
+}
+
+/**
+ * The id of the folder at `dir`, for its first shortcut or the first value written for it (D19). The sidebar's `folderId`
+ * and the CLI's `shortcut add` both take it here (YAZ-4527 P7); each passes its own file door. A folder with no
+ * `.folder.md` gets one holding just its id, and a file with no id, or another tool's (YAZ-2420 🔒 D30), is given a
+ * fresh one. Asked of the file's own bytes, never the index: a snapshot one write behind would give a second id over
+ * the first, and every shortcut and value naming the first would be lost.
+ *
+ * The fresh id is the vault's next number (`mint`, YAZ-2677 D4), taken only when the file is seen to hold none: a
+ * folder that has its id costs no number. `transform` is the caller's guarded whole-file write: a change to nothing
+ * writes nothing (and makes no file), and a write that meets a newer file reads it again and retries once.
+ */
+export async function folderIdWith(
+  dir: string,
+  io: { transform(path: string, change: ContentTransform): Promise<{ content: string }>; mint(dir: string): Promise<string> },
+): Promise<{ id: string; created: boolean }> {
+  const file = folderSettingsPath(dir)
+  const there = heldFolderId((await io.transform(file, (bytes) => bytes)).content)
+  if (there !== undefined) return { id: there, created: false }
+  const fresh = await io.mint(dir)
+  // Written against the file's bytes as they are now: an id that arrived since the read above stays.
+  const { content } = await io.transform(file, (bytes) => (heldFolderId(bytes) === undefined ? setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh) : bytes))
+  const id = heldFolderId(content) ?? fresh
+  return { id, created: id === fresh }
 }
 
 /** A note that also appears in the folder with `id`: the id joins its `also_in` — once, and beside every entry already there, understood or not. */

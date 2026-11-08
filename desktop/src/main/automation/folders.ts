@@ -3,15 +3,14 @@ import { basename, dirname, relative } from 'node:path'
 import { AutomationFailure } from '@shared/automation'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import { columnChange, folderSettingsOf, folderSettingsValue } from '@shared/folderSettings'
-import { canonicalKey, declarationForKind, notesHolding, pruneColumnFromViews, pruneColumnLabel, setDisplayName, undeletableReason } from '@shared/folderColumns'
+import { canonicalKey, declarationForKind, pruneColumnFromViews, pruneColumnLabel, removeColumn, setDisplayName, undeletableReason } from '@shared/folderColumns'
 import { addView, deleteView, duplicateView, moveView, renameView, setViewOptions, uniqueViewName, viewIndex, ViewOptionError, type ViewSet } from '@shared/folderViews'
-import { FOLDER_VALUES_KEY, setFolderValue } from '@shared/folderValues'
+import { FOLDER_VALUES_KEY } from '@shared/folderValues'
 import { foldersById } from '@shared/folderRecords'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY } from '@shared/noteId'
 import { reservedKeys } from '@shared/reservedKeys'
-import { dropStaleFolderValues, foldersShowing, heldFolderId, idsUnder, isShortcut, valuesLeftByShortcut, withShortcut, withoutShortcut, type ContentTransform } from '@shared/shortcuts'
-import { PROPERTY_NAME, folderSettingsPath, rootOfPath, type AppState, type PropertyDecl } from '@shared/types'
+import { dropStaleFolderValues, folderIdWith, foldersShowing, heldFolderId, idsUnder, isShortcut, valuesLeftByShortcut, withShortcut, withoutShortcut, type ContentTransform } from '@shared/shortcuts'
+import { PROPERTY_NAME, folderSettingsPath, isFolderSettingsPath, rootOfPath, type AppState, type PropertyDecl } from '@shared/types'
 import { isMarkdown } from '@shared/fileKind'
 import { createDurable, fsCall } from '../fs/fsUtils'
 import { writeFile } from '../fs/file'
@@ -144,26 +143,37 @@ async function propertyCommand(page: Page, command: string, args: Record<string,
 }
 
 /**
- * The id of the folder at `dir`, as the sidebar's `folderId` takes it: the one its `.folder.md` holds, else
- * the vault's next number, written quietly into that file (created when absent). Asked of the bytes, never the index.
+ * The renderer's `transformFile` in main: one change written against the bytes just read, read again and retried once
+ * when another writer got there first; a change to nothing writes nothing. A folder's absent `.folder.md` reads as
+ * empty, and the change creates it. Quiet, as the window's tidy-ups are: the index takes it at once, the save log does not.
  */
-async function folderIdOf(root: string, dir: string): Promise<{ id: string; created: boolean }> {
-  const file = folderSettingsPath(dir)
-  const read = async () => await exists(file) ? await readSaved(file) : null
-  const held = heldFolderId((await read())?.content ?? '')
-  if (held !== undefined) return { id: held, created: false }
-  const door = await doorOf(root)
-  if (door === null) throw new AutomationFailure('IDS_OFF', 'Shortcuts need a vault that uses IDs.')
-  const [fresh] = await door.mint(1)
-  const now = await read()
-  const there = heldFolderId(now?.content ?? '')
-  if (there !== undefined) return { id: there, created: false }
-  const content = setFrontmatterProperty(now?.content ?? '', NOTE_ID_KEY, fresh)
-  if (now === null) await fsCall(file, () => createDurable(file, content))
-  else await writeFile({ path: file, content, expectedRevision: now.revision })
-  await indexWrote(file)
-  return { id: fresh, created: true }
+export async function transformSaved(path: string, change: ContentTransform): Promise<{ content: string }> {
+  for (let retried = false; ; retried = true) {
+    const saved = isFolderSettingsPath(path) && !(await exists(path)) ? null : await readSaved(path)
+    const before = saved?.content ?? ''
+    const content = change(before)
+    if (content === before) return { content }
+    try {
+      if (saved === null) await fsCall(path, () => createDurable(path, content))
+      else await writeFile({ path, content, expectedMtime: saved.mtime })
+      await indexWrote(path)
+      return { content }
+    } catch (error) {
+      const code = (error as { code?: string }).code
+      if ((code !== 'CONFLICT' && code !== 'ALREADY_EXISTS') || retried) throw error
+    }
+  }
 }
+
+/** The id of the folder at `dir`: the sidebar's own `folderIdWith`, through main's file door and the vault's ID door. */
+const folderIdOf = (root: string, dir: string) => folderIdWith(dir, {
+  transform: transformSaved,
+  mint: async () => {
+    const door = await doorOf(root)
+    if (door === null) throw new AutomationFailure('IDS_OFF', 'Shortcuts need a vault that uses IDs.')
+    return (await door.mint(1))[0]
+  },
+})
 
 async function shortcutCommand(page: Page, command: string, args: Record<string, unknown>, record: SavedCallback) {
   if (!page.ids) throw new AutomationFailure('IDS_OFF', 'Shortcuts need a vault that uses IDs.')
@@ -211,17 +221,6 @@ export async function savedViewName(roots: readonly string[], dir: string, name:
 
 const FORMULA_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
 
-/** One note's value of the deleted column leaves this folder's block, against fresh bytes, retried once on a conflict; quiet, as the UI's strip is. */
-async function stripValue(path: string, folderId: string, key: string): Promise<void> {
-  for (let attempt = 0; ; attempt++) {
-    const file = await readSaved(path)
-    const content = setFolderValue(file.content, folderId, key, undefined)
-    if (content === file.content) return
-    try { await writeFile({ path, content, expectedMtime: file.mtime }); await indexWrote(path); return }
-    catch (error) { if ((error as { code?: string }).code !== 'CONFLICT' || attempt > 0) throw error }
-  }
-}
-
 /** The Properties menu's column edits (YAZ-1513, YAZ-1549) and a named formula, through the shared column rules. */
 async function columnCommand(page: Page, command: string, args: Record<string, unknown>, record: SavedCallback) {
   if (command === 'folderFormula.set') {
@@ -253,17 +252,19 @@ async function columnCommand(page: Page, command: string, args: Record<string, u
     // The shared rule refuses an invalid definition with a plain error; a write's own failures keep their codes.
     catch (error) { throw (error as { code?: string }).code === undefined ? new AutomationFailure('INVALID_INPUT', (error as Error).message) : error }
   }
-  // "Delete column…" (YAZ-1513): settings first, awaited; then this folder's value leaves each note holding it.
-  const result = await writePage(page, args.revision, content => {
-    const settings = folderSettingsOf(parseFrontmatter(splitFrontmatter(content).frontmatter).properties, page.ids)
-    const { [bare]: _gone, ...columns } = settings.columns
-    return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, folderSettingsValue({ ...settings, columns, views: pruneColumnFromViews(settings.views, key), properties: pruneColumnLabel(settings.properties, key) }))
-  }, record)
+  // "Delete column…" (YAZ-1513): the menus' own `removeColumn`. Settings first, awaited; then this folder's value leaves each note holding it.
+  const settings = folderSettingsOf(parseFrontmatter(splitFrontmatter(page.content).frontmatter).properties, page.ids)
   const folderId = heldFolderId(page.content)
-  const holding = folderId === undefined ? [] : notesHolding((await getIndex(page.root, { readOnly: true })).records, folderId, key)
-  const outcomes = await Promise.allSettled(holding.map(note => stripValue(note.path, folderId!, bare)))
-  const failed = outcomes.flatMap((outcome, i) => outcome.status === 'rejected' ? [{ path: holding[i].path, reason: String((outcome.reason as Error)?.message ?? outcome.reason) }] : [])
-  const report = { ...result, column: bare, cleared: holding.length - failed.length, failed }
+  let result!: Awaited<ReturnType<typeof writePage>>
+  const { holding, failed } = await removeColumn(key, {
+    columns: settings.columns, def: settings, folderId,
+    records: folderId === undefined ? [] : (await getIndex(page.root, { readOnly: true })).records,
+    writeSettings: async (columns, views, properties) => {
+      result = await writePage(page, args.revision, content => setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, folderSettingsValue({ ...folderSettingsOf(parseFrontmatter(splitFrontmatter(content).frontmatter).properties, page.ids), columns, views, properties })), record)
+    },
+    transform: transformSaved,
+  })
+  const report = { ...result, column: bare, cleared: holding.length - failed.length, failed: failed.map(({ note, why }) => ({ path: note.path, reason: why })) }
   if (failed.length) throw new AutomationFailure('PARTIAL_FAILURE', `The column left the folder, but ${failed.length} of ${holding.length} notes kept its value.`, report)
   return report
 }

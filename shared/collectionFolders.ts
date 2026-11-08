@@ -3,7 +3,7 @@
  * whole folder; of two copies of one folder the later `at` wins, and a deleted folder (a tombstone) hides every older
  * copy. An item names its vault by the vault's folder name, so an item of a vault the window does not show is a ghost.
  */
-import { rootOfPath, stripSlash, type FocusFolder } from '@shared/types'
+import { MAX_FAVORITES, MAX_FOCUS, rootOfPath, stripSlash, type FocusFolder } from '@shared/types'
 
 export type FolderItem = FocusFolder['items'][number]
 
@@ -83,6 +83,19 @@ export const upsert = (list: readonly FocusFolder[], folder: FocusFolder): Focus
 export function folderDeletion(folder: FocusFolder, roots: readonly string[], keep: boolean, at: number, inHere: (path: string) => boolean, inThere: ((path: string) => boolean) | null): { gone: FocusFolder; here: string[]; there: string[] } {
   const back = keep ? folder.items.flatMap((item) => { const found = resolveItem(item, roots); return 'path' in found ? [found.path] : [] }) : []
   return { gone: { ...folder, deleted: true, items: [], at }, here: back.filter((p) => !inHere(p)), there: inThere === null ? [] : back.filter((p) => !inThere(p)) }
+}
+
+/** How many items one vault's top level holds, by list (YAZ-2702 R2 for Focus; the stored cap for Favorites). */
+export const TOP_LEVEL_MAX = { focus: MAX_FOCUS, favorites: MAX_FAVORITES } as const
+
+/**
+ * Paths onto the top level of one vault's list, as "Keep items" of a group's Delete and a move out of a group put them:
+ * each once, after the list, the first `max` kept, and `full` when some did not fit (YAZ-4479). The sidebar and the
+ * CLI's `group remove` share it (YAZ-4527 P7).
+ */
+export function onTopLevel(list: readonly string[], paths: readonly string[], max: number): { list: string[]; full: boolean } {
+  const next = [...list, ...paths.filter((p) => !list.includes(p))]
+  return { list: next.slice(0, max), full: next.length > max }
 }
 
 /**

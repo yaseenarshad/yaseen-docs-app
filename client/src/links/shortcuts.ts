@@ -12,9 +12,8 @@
 import { foldersByDir } from '@shared/folderRecords'
 export { foldersByDir } from '@shared/folderRecords'
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
-import { setFrontmatterIn, setFrontmatterProperty } from '@shared/frontmatter'
-import { NOTE_ID_KEY } from '@shared/noteId'
-import { clearedFolders, dropStaleFolderValues, foldersShowing, heldFolderId, idsUnder, withoutLeftFolders, withShortcut, withoutShortcut, type LeftBehind } from '@shared/shortcuts'
+import { setFrontmatterIn } from '@shared/frontmatter'
+import { clearedFolders, dropStaleFolderValues, folderIdWith, foldersShowing, idsUnder, withoutLeftFolders, withShortcut, withoutShortcut, type LeftBehind } from '@shared/shortcuts'
 import { folderSettingsPath, type IndexRecord } from '@shared/types'
 import { api } from '../api'
 import { basename, dirname, relTo } from '../lib/paths'
@@ -75,25 +74,12 @@ export const folderRows = (records: readonly IndexRecord[], folders: readonly In
   rowsByFolder(records, folders).get(folder) ?? []
 
 /**
- * The id of the folder at `dir`, for its first shortcut or the first value written for it (D19): a
- * folder with no `.folder.md` gets one holding just its id (that write creates the file,
- * `readForWrite`), and a file with no id, or another tool's (YAZ-2420 🔒 D30), is given a fresh one.
- * Asked of the file's own bytes, never the index: a snapshot one write behind would give a second
- * id over the first, and every shortcut and value naming the first would be lost.
- *
- * The fresh id is the vault's next number, from the door (YAZ-2677 D4), taken only when the file
- * is seen to hold none: a folder that has its id costs no number. Returned as the index holds it (R2).
+ * The id of the folder at `dir`, for its first shortcut or the first value written for it (D19): `folderIdWith`, which
+ * the CLI shares, through this window's file door. Quiet (YAZ-3235 D1): a folder's id is the app's bookkeeping, not an
+ * edit the user made. Returned as the index holds it (R2).
  */
 export async function folderId(dir: string): Promise<string> {
-  const file = folderSettingsPath(dir)
-  // A transform that changes nothing is a read: it writes nothing, and makes no file where there is none.
-  const there = heldFolderId((await transformFile(file, (bytes) => bytes)).content)
-  if (there !== undefined) return there
-  const fresh = await takeNoteId(dir)
-  // Written against the file's bytes as they are now: an id that arrived since the read above stays.
-  // Quiet (YAZ-3235 D1): a folder's id is the app's bookkeeping, not an edit the user made.
-  const { content } = await transformFile(file, (bytes) => (heldFolderId(bytes) === undefined ? setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh) : bytes), true)
-  return heldFolderId(content) ?? fresh
+  return (await folderIdWith(dir, { transform: (path, change) => transformFile(path, change, true), mint: takeNoteId })).id
 }
 
 /**

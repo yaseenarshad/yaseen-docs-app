@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { AutomationFailure } from '@shared/automation'
-import { folderDeletion, folderScopeChange, itemOf, mergeFolders, resolveItem, sameItem } from '@shared/collectionFolders'
-import { MAX_FAVORITES, MAX_FOCUS, MAX_FOLDER_ITEMS, rootOfPath, type AppState, type FocusFolder, type ListScope } from '@shared/types'
+import { folderDeletion, folderScopeChange, itemOf, mergeFolders, onTopLevel, resolveItem, sameItem, TOP_LEVEL_MAX } from '@shared/collectionFolders'
+import { MAX_FOLDER_ITEMS, rootOfPath, type AppState, type FocusFolder, type ListScope } from '@shared/types'
 import { getFavorites, updateFavorites } from '../favorites'
 import { getFocus, updateFocus } from '../focus'
 import { getFocusFolders, patchFocusFolder, type FolderKind } from '../focusFolders'
@@ -61,8 +61,8 @@ const named = (folders: FocusFolder[], group: string) => folders.find(folder => 
 
 /**
  * The sidebar's Delete (`folderDeletion`, D7): the tombstone goes to the named scope, then to the other one; with
- * `keep`, the items go back to the top level of each list the group showed in. A Focus list keeps MAX_FOCUS for each
- * vault, as the sidebar does, and `limitReached` says when items left. A step that fails after the first write is
+ * `keep`, the items go back to the top level of each list the group showed in (`onTopLevel`). Each vault's list keeps
+ * its limit, as the sidebar does, and `limitReached` says when items left. A step that fails after the first write is
  * a partial failure: it says what was done.
  */
 async function removeGroup(roots: string[], scope: ListScope, kind: FolderKind, ref: string, keep: boolean) {
@@ -84,9 +84,9 @@ async function removeGroup(roots: string[], scope: ListScope, kind: FolderKind, 
       const own = paths.filter(path => rootOfPath(roots, path) === root)
       if (!own.length) continue
       await update(root, s, current => {
-        const next = [...current, ...own.filter(path => !current.includes(path))]
-        if (kind === 'focus' && next.length > MAX_FOCUS) limitReached = true
-        return next.slice(0, kind === 'focus' ? MAX_FOCUS : MAX_FAVORITES)
+        const { list, full } = onTopLevel(current, own, TOP_LEVEL_MAX[kind])
+        if (full) limitReached = true
+        return list
       })
     }
   }
