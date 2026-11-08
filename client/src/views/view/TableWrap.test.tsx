@@ -1,6 +1,7 @@
 /**
- * Wrap or Clip per column (YAZ-4582, D29): ViewsPane mounted in jsdom. A column wraps by default and its row grows;
- * `view.columnWrap[<canonical key>] = false` clips it to one line with the full value in `title`. A windowed table
+ * Wrap or Clip per column (YAZ-4582, D29): ViewsPane mounted in jsdom. With no choice a column goes by its kind, as on
+ * `main`: a chip column (list, link, select…) wraps and its row grows; a text, number or date column is one line with
+ * the full value in `title`. `view.columnWrap[<canonical key>]` chooses: `true` Wrap, `false` Clip. A windowed table
  * clips every cell, so each line is exactly the row height. Frozen rows stick by their measured heights.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -90,7 +91,7 @@ const column = (el: ParentNode, c: number) => [...el.querySelectorAll<HTMLElemen
 const CLIP = 'view-table__cell--clip'
 
 describe('"Wrap text" and "Clip text" in the column header menu (YAZ-4582, D29)', () => {
-  it('Wrap is the default with ✓; Clip text writes columnWrap[canonical key] = false, and Wrap text deletes it and the empty map', () => {
+  it('a chip column (Tags, a list) has ✓ Wrap text; Clip text writes columnWrap[canonical key] = false, and Wrap text deletes it and the empty map', () => {
     const { el, yaml } = mount(table())
     rightClick(th(el, 1))
     expect(items(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['✓ Wrap text', 'Clip text']))
@@ -104,13 +105,28 @@ describe('"Wrap text" and "Clip text" in the column header menu (YAZ-4582, D29)'
     expect(yaml()).not.toContain('columnWrap')
   })
 
-  it('reads a key in any spelling, and Wrap text removes that spelling; other columns keep theirs', () => {
-    const { el, yaml } = mount(table('    columnWrap:\n      tags: false\n      note.status: false\n'))
+  it('a text column (Status) has ✓ Clip text; Wrap text writes columnWrap[canonical key] = true, and Clip text deletes it', () => {
+    const { el, yaml } = mount(table())
+    rightClick(th(el, 2))
+    expect(items(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['Wrap text', '✓ Clip text']))
+    act(() => item(el, 'Wrap text').click())
+    expect(yaml()).toContain('columnWrap:\n      note.status: true')
+    expect(column(el, 2).some((td) => td.classList.contains(CLIP))).toBe(false)
+
+    rightClick(th(el, 2))
+    expect(items(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['✓ Wrap text', 'Clip text']))
+    act(() => item(el, 'Clip text').click())
+    expect(yaml()).not.toContain('columnWrap')
+  })
+
+  it('reads a key in any spelling, and the by-kind choice removes that spelling; other columns keep theirs', () => {
+    const { el, yaml } = mount(table('    columnWrap:\n      tags: false\n      note.status: true\n'))
     expect(column(el, 1).every((td) => td.classList.contains(CLIP))).toBe(true)
+    expect(column(el, 2).some((td) => td.classList.contains(CLIP))).toBe(false)
     rightClick(th(el, 1))
     act(() => item(el, 'Wrap text').click())
-    expect(yaml()).toContain('columnWrap:\n      note.status: false')
-    expect(yaml()).not.toContain('tags: false')
+    expect(yaml()).toContain('columnWrap:\n      note.status: true')
+    expect(yaml()).not.toContain('tags:')
   })
 
   it('the two items are their own group, after Sort and Group', () => {
@@ -123,24 +139,34 @@ describe('"Wrap text" and "Clip text" in the column header menu (YAZ-4582, D29)'
 })
 
 describe('the cells of a Wrap or a Clip column (YAZ-4582)', () => {
-  it('a wrapped cell has no clip class and no title; a clipped cell has the class and its full value in title', () => {
-    const { el } = mount(table('    columnWrap:\n      note.tags: false\n'))
+  it('with no choice: the chip column wraps, with no clip class and no title; the text column clips, its full value in title', () => {
+    const { el } = mount(table())
+    expect(column(el, 1).some((td) => td.classList.contains(CLIP) || td.hasAttribute('title'))).toBe(false)
     const status = column(el, 2)
-    expect(status.some((td) => td.classList.contains(CLIP) || td.hasAttribute('title'))).toBe(false)
+    expect(status.every((td) => td.classList.contains(CLIP))).toBe(true)
+    expect(status[0].title).toBe('idea')
+  })
+
+  it('a clipped chip column has its whole list in title', () => {
+    const { el } = mount(table('    columnWrap:\n      note.tags: false\n'))
     const tags = column(el, 1)
     expect(tags.every((td) => td.classList.contains(CLIP))).toBe(true)
     // Agentic Agency's tags: the whole list, as text.
     expect(tags[0].title).toBe('agentic, pillar')
   })
 
-  it('a clipped Name column shows the title in title', () => {
-    const { el } = mount(table('    columnWrap:\n      file.name: false\n'))
-    expect(column(el, 0)[0].classList.contains(CLIP)).toBe(true)
-    expect(column(el, 0)[0].title).toBe('Agentic Agency')
+  it('the Name column is one line with the title in title, unless the view wraps it', () => {
+    const one = mount(table())
+    expect(column(one.el, 0)[0].classList.contains(CLIP)).toBe(true)
+    expect(column(one.el, 0)[0].title).toBe('Agentic Agency')
+    act(() => root?.unmount())
+    container?.remove()
+    const wrapped = mount(table('    columnWrap:\n      file.name: true\n'))
+    expect(column(wrapped.el, 0)[0].classList.contains(CLIP)).toBe(false)
   })
 
   it('a windowed table (more than 500 lines) clips every cell, whatever columnWrap says', () => {
-    const { el } = mount(table(), { records: manyRecords() })
+    const { el } = mount(table('    columnWrap:\n      note.tags: true\n      note.status: true\n'), { records: manyRecords() })
     const cells = [...el.querySelectorAll<HTMLElement>('.view-table tbody td[data-cell]')]
     expect(cells.length).toBeGreaterThan(0)
     expect(cells.every((td) => td.classList.contains(CLIP))).toBe(true)

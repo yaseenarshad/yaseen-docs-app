@@ -47,10 +47,17 @@ export function insertAfter(keys: readonly string[], after: string, next: string
   return at === -1 ? [...keys, next] : [...keys.slice(0, at + 1), next, ...keys.slice(at + 1)]
 }
 
-/** A column the view clips to one line (YAZ-4582 D29): `columnWrap` holds `false` under its key, in any spelling. Absent = Wrap. */
-export function clipsColumn(view: ViewDef, key: string): boolean {
+/** The kinds whose cells are chips (YAZ-4582 D29): what wrapped on `main`, so with no choice they wrap and the rest clip. */
+const CHIP_KINDS: ReadonlySet<string> = new Set(['list', 'link', 'multi-link', 'select', 'multi-select'])
+
+/**
+ * Does the column wrap (YAZ-4582 D29)? `columnWrap` under its key, in any spelling: `true` Wrap, `false` Clip.
+ * With no entry, by its kind: a chip column wraps and a text, number or date column is one line, as on `main`.
+ */
+export function wrapsColumn(view: ViewDef, key: string, kind: string | null | undefined): boolean {
   const c = canonicalKey(key)
-  return Object.entries(view.columnWrap ?? {}).some(([k, wrap]) => wrap === false && canonicalKey(k) === c)
+  const chosen = Object.entries(view.columnWrap ?? {}).find(([k, wrap]) => typeof wrap === 'boolean' && canonicalKey(k) === c)?.[1]
+  return chosen ?? (kind != null && CHIP_KINDS.has(kind))
 }
 
 /**
@@ -64,18 +71,17 @@ export function clipsColumn(view: ViewDef, key: string): boolean {
  * A grey "<Type> · <key>" line tops the column menu, and "Edit column…" opens `ColumnDetail` — the
  * Properties menu's own column editor — inside it (YAZ-4533). Sort A to Z / Z to A, "Group by this
  * column" and Freeze / ✓ Frozen / Unfreeze write the same `sort`, `groupBy` and `frozenColumns` the
- * Sort and Properties menus write (YAZ-4534). "Wrap text" / "Clip text" (YAZ-4582 D29), ✓ on the current one, write
- * `columnWrap[<canonical key>] = false` for Clip; Wrap deletes the entry in any spelling, and an empty map.
+ * Sort and Properties menus write (YAZ-4534). "Wrap text" / "Clip text" (YAZ-4582 D29), ✓ on the column's effective
+ * choice, write `columnWrap[<canonical key>]` (`true` Wrap, `false` Clip); the choice its kind makes anyway deletes the
+ * entry in any spelling, and an empty map.
  */
 export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, reserved, records, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
   /** Once per menu, not per keystroke in its fields: the kind may walk the rows. */
   const typeLabel = useMemo(() => (columnKey === null ? '' : columnTypeLabel(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
+  const kind = useMemo(() => (columnKey === null ? null : columnKind(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
   /** A Select or Multi-select column (YAZ-4544): its "Sort A to Z" sorts by value, not in option order (D1). */
-  const hasOptions = useMemo(() => {
-    const kind = columnKey === null ? null : columnKind(columnKey, records, properties, folder.settings)
-    return kind === 'select' || kind === 'multi-select'
-  }, [columnKey, records, properties, folder.settings])
+  const hasOptions = kind === 'select' || kind === 'multi-select'
   const columns = folder.settings.columns
 
   if (columnKey === null) {
@@ -124,11 +130,11 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
     const levels = [{ ...first, property: c, direction: 'ASC' as const }, ...rest.filter((l) => typeof l?.property !== 'string' || canonicalKey(l.property) !== c)]
     v.groupBy = levels.length === 1 ? levels[0] : levels
   })
-  const clipped = clipsColumn(def.views[viewIndex], key)
+  const wrapped = wrapsColumn(def.views[viewIndex], key, kind)
   const setWrap = (wrap: boolean) =>
     write((v) => {
       const next = Object.fromEntries(Object.entries(v.columnWrap ?? {}).filter(([k]) => canonicalKey(k) !== c))
-      if (!wrap) next[c] = false
+      if (wrap !== wrapsColumn({ ...v, columnWrap: undefined }, key, kind)) next[c] = wrap
       if (Object.keys(next).length) v.columnWrap = next
       else delete v.columnWrap
     })
@@ -223,10 +229,10 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
             </div>
             <div className="ctx-menu__group">
               <button type="button" className="ctx-menu__item" role="menuitem" onClick={setWrap(true)}>
-                {clipped ? 'Wrap text' : '✓ Wrap text'}
+                {wrapped ? '✓ Wrap text' : 'Wrap text'}
               </button>
               <button type="button" className="ctx-menu__item" role="menuitem" onClick={setWrap(false)}>
-                {clipped ? '✓ Clip text' : 'Clip text'}
+                {wrapped ? 'Clip text' : '✓ Clip text'}
               </button>
             </div>
             <div className="ctx-menu__group">
