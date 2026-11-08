@@ -257,6 +257,33 @@ describe('defaultView (YAZ-1104): the saved starting view', () => {
   })
 })
 
+describe('other_files (YAZ-4597 D44): the notes moved to the Other files tray', () => {
+  const write = vi.mocked(writeProperty)
+
+  it('reads a list of links; absent stays undefined with no problem', () => {
+    expect(settingsOf({ other_files: ['[[A]]', '[[B]]'] }).otherFiles).toEqual(['[[A]]', '[[B]]'])
+    expect(settingsOf({ other_files: ['[[A]]'] }).problems).toEqual([])
+    expect(settingsOf({}).otherFiles).toBeUndefined()
+  })
+
+  it('a non-list is ONE problem and absent; an entry that is not text is dropped with ONE problem', () => {
+    expect(settingsOf({ other_files: '[[A]]' }).otherFiles).toBeUndefined()
+    expect(settingsOf({ other_files: '[[A]]' }).problems).toHaveLength(1)
+    const mixed = settingsOf({ other_files: ['[[A]]', 7, null] })
+    expect(mixed.otherFiles).toEqual(['[[A]]'])
+    expect(mixed.problems).toHaveLength(1)
+  })
+
+  it('round-trips to disk as `other_files`, and an empty list writes no key', async () => {
+    write.mockReset()
+    write.mockResolvedValue({ mtime: 200 })
+    await writeFolderSettings(METRICS, settingsOf({ other_files: ['[[A]]'] }))
+    expect(write.mock.calls[0][2]).toMatchObject({ other_files: ['[[A]]'] })
+    await writeFolderSettings(METRICS, { ...settingsOf({}), otherFiles: [] })
+    expect(write.mock.calls[1][2]).not.toHaveProperty('other_files')
+  })
+})
+
 describe('writeFolderSettings: ONE key, through the shared writer', () => {
   const write = vi.mocked(writeProperty)
 

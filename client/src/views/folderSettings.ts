@@ -13,7 +13,7 @@ import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } fr
 import { isRecord } from '@shared/guards'
 // The one reserved key this module owns, and where links live inside it (YAZ-864): both are in
 // `@shared/folderSettingsLinks`, so the main process's ID rewrite walks the same leaves (YAZ-2677).
-import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
+import { FOLDER_SETTINGS_KEY, OTHER_FILES_KEY } from '@shared/folderSettingsLinks'
 import type { ViewDef } from './viewSchema'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { transformFile, writeProperty } from './writeProperty'
@@ -40,6 +40,11 @@ export interface FolderSettings {
    * the file lists, nothing added (🔒 D3, YAZ-1471). `ViewDef` verbatim.
    */
   views: ViewDef[]
+  /**
+   * The notes moved to the page's Other files tray (YAZ-4597 D44), as links: `other_files` in the file. They leave
+   * every view of the folder. Undefined when absent; an entry that is not text is a problem and dropped.
+   */
+  otherFiles?: string[]
   /** Human one-liners a surface can show. Never thrown, never written back. */
   problems: string[]
 }
@@ -187,6 +192,18 @@ function readProperties(raw: unknown, problems: string[]): Record<string, { disp
   return properties
 }
 
+/** `other_files`: a list of note links. Only text survives; what a link names is the page's to resolve. */
+function readOtherFiles(raw: unknown, problems: string[]): string[] | undefined {
+  if (raw === undefined) return undefined
+  if (!Array.isArray(raw)) {
+    problems.push(`${FOLDER_SETTINGS_KEY}.${OTHER_FILES_KEY} must be a list of note links — ignoring it`)
+    return undefined
+  }
+  const links = raw.filter((link): link is string => typeof link === 'string')
+  if (links.length < raw.length) problems.push(`${FOLDER_SETTINGS_KEY}.${OTHER_FILES_KEY} must hold only note links — ignoring the rest`)
+  return links
+}
+
 /** The saved starting view's NAME. Any string reads verbatim — staleness is the pane's concern. */
 function readDefaultView(raw: unknown, problems: string[]): string | undefined {
   if (raw === undefined) return undefined
@@ -221,6 +238,7 @@ export function folderSettings(record: IndexRecord | undefined, ids: boolean): F
     formulas: readFormulas(raw.formulas, problems),
     properties: readProperties(raw.properties, problems),
     views: readViews(raw.views, problems, ids),
+    otherFiles: readOtherFiles(raw[OTHER_FILES_KEY], problems),
     problems,
   }
 }
@@ -233,6 +251,8 @@ function plain(settings: FolderSettings): Record<string, unknown> {
   if (settings.formulas !== undefined) out.formulas = settings.formulas
   if (settings.properties !== undefined) out.properties = settings.properties
   out.views = settings.views
+  // An empty tray writes no key (YAZ-4597).
+  if (settings.otherFiles !== undefined && settings.otherFiles.length > 0) out[OTHER_FILES_KEY] = settings.otherFiles
   return out
 }
 

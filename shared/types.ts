@@ -1868,6 +1868,7 @@ export const FOLDER_PAGE_CHOICES = {
  *   `hoverPreviewIn.folderViews`).
  * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`).
  * - Page default: `showFolderPageFiles`, the sidebar's folder page file rows (D37); a folder's `show_page_file` beats it.
+ *   `showOtherFiles`, the Other files tray at the foot of a folder page (YAZ-4597, D43); a folder's `show_other_files` beats it.
  */
 export interface FolderPagesSettings {
   /** The calendar view's first day. */
@@ -1891,6 +1892,7 @@ export interface FolderPagesSettings {
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. */
   hideWeekends: boolean
   showFolderPageFiles: boolean
+  showOtherFiles: boolean
 }
 
 export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
@@ -1908,6 +1910,7 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   cardTitles: 'clip',
   hideWeekends: false,
   showFolderPageFiles: false,
+  showOtherFiles: true,
 }
 
 export interface SettingsState {

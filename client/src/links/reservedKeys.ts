@@ -1,6 +1,6 @@
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { COMMENTS_KEY } from '@shared/comments'
-import { SHOW_PAGE_FILE_KEY } from '@shared/folderPage'
+import { SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY } from '@shared/folderPage'
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
 import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
@@ -8,8 +8,8 @@ import { OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { REVIEWS_KEY } from '@shared/reviews'
 
-// `show_page_file` (YAZ-3746 D37): a folder page's cog sets it, as a note's cog sets its page switches.
-const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, SHOW_PAGE_FILE_KEY])
+// `show_page_file` (YAZ-3746 D37) and `show_other_files` (YAZ-4597): a folder page's cog sets them, as a note's cog sets its page switches.
+const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, SHOW_PAGE_FILE_KEY, SHOW_OTHER_FILES_KEY])
 const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY])
 
 /**
