@@ -40,6 +40,6 @@ async function saveDiagramUnlocked(req: unknown): Promise<DiagramSaveResponse> {
     if (typeof expectedRevision !== 'string' || revisionOf(snapshot.data, snapshot.mtime) !== expectedRevision) throw new BridgeFailure('CONFLICT', 'diagram changed since the supplied revision', { path: file, mtime: snapshot.mtime })
   }
   const stamped = await guardedStamp(file, 'diagram', expectedMtime, (at, prior) => stampDiagramMeta(xml, at, prior))
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
   return { path: file, mtime, size, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
 }

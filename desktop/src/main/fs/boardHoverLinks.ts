@@ -32,6 +32,6 @@ async function setBoardHoverLinksUnlocked(req: unknown): Promise<BoardReadOnlyRe
   if (marked === scene) return { path: file, mtime: snap.mtime, size: snap.size }
   const next = serializeBoard(marked)
   if (Buffer.byteLength(next, 'utf8') > BOARDS.drawing.max) throw new BridgeFailure('TOO_LARGE', BOARDS.drawing.tooLarge, { path: file })
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next))
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next, undefined, snap.mtime))
   return { path: file, mtime, size }
 }

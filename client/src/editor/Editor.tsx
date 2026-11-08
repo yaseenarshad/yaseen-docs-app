@@ -942,7 +942,7 @@ function CrepeHost({
         offLiveDocument = registerLiveDocument(scroller, () => {
           const parts = diskParts(), bodyNow = getMarkdownForSave(crepe)
           const { selection, doc } = editorViewOf(crepe).state
-          return { path: file.path, kind: 'markdown', content: parts.frontmatter + bodyNow, baselineMtime: controller!.mtime, dirty: bodyNow !== parts.body, conflict: conflicted(), selection: { anchor: selection.anchor, head: selection.head, text: doc.textBetween(selection.from, selection.to, '\n'), coordinate: 'prosemirror' } }
+          return { path: file.path, kind: 'markdown', content: parts.frontmatter + bodyNow, baselineMtime: controller!.mtime, dirty: controller!.unsaved(bodyNow), conflict: conflicted(), selection: { anchor: selection.anchor, head: selection.head, text: doc.textBetween(selection.from, selection.to, '\n'), coordinate: 'prosemirror' } }
         }, {
           // Not the save's mtime: an autosave between two agent calls changes nothing an action reads (YAZ-4563).
           version: () => markdownVersion(crepe),
