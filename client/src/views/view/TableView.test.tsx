@@ -167,8 +167,8 @@ function rightClick(el: EventTarget, clientX = 0, clientY = 0): MouseEvent {
 
 const headers = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table th:not(.view-table__gutter)')].map((t) => t.textContent ?? '')
 const links = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__name')].map((b) => b.textContent ?? '')
-/** Data rows only (spacers excluded). */
-const bodyRows = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer)')]
+/** Data rows only (spacers and the "+ New" row excluded). */
+const bodyRows = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer):not(.view-table__new)')]
 const cells = (row: HTMLTableRowElement): HTMLTableCellElement[] => [...row.querySelectorAll<HTMLTableCellElement>('td:not(.view-table__gutter)')]
 
 const box = (top: number, height: number, width = 600): DOMRect => new DOMRect(0, top, width, height)
@@ -444,7 +444,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(document.activeElement).toBe(cell)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel', 'Fill cell', 'Fill row'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel', 'Fill cell', 'Fill row', 'Freeze up to this row', 'Unfreeze rows'])
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -552,7 +552,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     const event = rightClick(checkbox)
 
     expect(event.defaultPrevented).toBe(true)
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Fill cell', 'Fill row'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Fill cell', 'Fill row', 'Freeze up to this row', 'Unfreeze rows'])
   })
 
   it('targets the rendered record when file.name is hidden, grouped, or windowed', () => {
@@ -906,9 +906,10 @@ describe('windowing', () => {
     expect(links(el).length).toBeGreaterThan(0)
   })
 
-  it('500 rows or fewer render in full, no spacers', () => {
-    const { el } = mount('views:\n  - type: table\n    name: T\n', { records: manyRecords(500) })
-    expect(bodyRows(el)).toHaveLength(500)
+  // 499 notes and the "+ New" row (YAZ-4539) are 500 lines: windowing counts the row.
+  it('500 lines or fewer render in full, no spacers', () => {
+    const { el } = mount('views:\n  - type: table\n    name: T\n', { records: manyRecords(499) })
+    expect(bodyRows(el)).toHaveLength(499)
     expect(el.querySelector('.view-table__spacer')).toBeNull()
   })
 })
@@ -1001,6 +1002,8 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
       'Reveal in Finder',
       'Fill cell',
       'Fill row',
+      'Freeze up to this row',
+      'Unfreeze rows',
     ])
     click([...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Open in new tab')!)
     expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')

@@ -88,7 +88,7 @@ function click(el: Element): void {
 
 /** Data rows only (headers and spacers excluded), in document order. */
 const dataRows = (el: ParentNode): HTMLTableRowElement[] =>
-  [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer):not(.view-table__group)')]
+  [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer):not(.view-table__group):not(.view-table__new)')]
 /** `[name, #]` per data row, in display order. */
 const numbered = (el: ParentNode): [string, string][] =>
   dataRows(el).map((tr) => [q(tr, '.view-table__name').textContent ?? '', q(tr, 'td.view-table__gutter').textContent ?? ''])
@@ -101,7 +101,7 @@ function sections(el: ParentNode): Record<string, string[]> {
     if (tr.classList.contains('view-table__group')) {
       current = q(tr, '.view-group__value').textContent ?? ''
       out[current] = []
-    } else if (!tr.classList.contains('view-table__spacer')) {
+    } else if (!tr.classList.contains('view-table__spacer') && !tr.classList.contains('view-table__new')) {
       out[current]?.push(q(tr, 'td.view-table__gutter').textContent ?? '')
     }
   }

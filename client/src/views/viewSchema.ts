@@ -44,6 +44,8 @@ export interface ViewDef {
   summaries?: Record<string, string>
   columnSize?: Record<string, number>
   frozenColumns?: number
+  /** Frozen rows (YAZ-4537, D9b / S4): the count of DATA rows frozen at the top, at most 10; the group headers above them freeze too. */
+  frozenRows?: number
   /** The `#` gutter (YAZ-1513). Absent = shown. */
   rowNumbers?: boolean
   rowHeight?: string

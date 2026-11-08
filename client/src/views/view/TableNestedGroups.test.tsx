@@ -294,8 +294,9 @@ describe('three levels (YAZ-4531)', () => {
     const { el } = mount(THREE_BASE, { records: many })
     expect([...el.querySelectorAll('tbody tr')].length).toBeLessThan(200) // slice + spacers, not 600 + 38 headers
     expect(headerTexts(el).slice(0, 3)).toEqual(['even', 'p0', 's0'])
-    // the bottom spacer covers the unmounted lines at one row height each: 600 rows + 2 + 6 + 30 headers
+    // the bottom spacer covers the unmounted lines at one row height each: 600 rows + 2 + 6 + 30 headers + a "+ New" row
+    // under each of the 30 innermost groups (YAZ-4539)
     const mounted = [...el.querySelectorAll('tbody tr')].filter((tr) => !tr.classList.contains('view-table__spacer')).length
-    expect(parseFloat(q<HTMLElement>(el, 'tr.view-table__spacer').style.height)).toBe((638 - mounted) * 28)
+    expect(parseFloat(q<HTMLElement>(el, 'tr.view-table__spacer').style.height)).toBe((668 - mounted) * 28)
   })
 })

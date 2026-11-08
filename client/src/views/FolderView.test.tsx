@@ -222,7 +222,8 @@ describe('a folder with no settings file', () => {
     expect(q(el, 'h1').textContent).toBe('stages')
     expect(texts(el, '.view-tab__btn')).toEqual(['Table', 'Board'])
     expect(rowNames(el)).toEqual([])
-    expect(el.querySelectorAll('.view-table tbody tr')).toHaveLength(0)
+    // No data rows: only the "+ New" row (YAZ-4539).
+    expect([...el.querySelectorAll('.view-table tbody tr')].map((tr) => tr.className)).toEqual(['view-table__new'])
     expect(q(el, '.view-toolbar__count').textContent).toBe('0 items')
     selectView(el, 'Board')
     expect(el.querySelectorAll('.view-board__card')).toHaveLength(0)

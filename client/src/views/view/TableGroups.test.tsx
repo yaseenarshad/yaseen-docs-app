@@ -218,7 +218,7 @@ describe('grouped sections', () => {
 
     // 'both' joins group a AND group b, so two records produce three data rows
     expect(headers(el)).toHaveLength(2)
-    const data = [...el.querySelectorAll('tbody tr:not(.view-table__group)')]
+    const data = [...el.querySelectorAll('tbody tr:not(.view-table__group):not(.view-table__new)')]
     expect(data).toHaveLength(3)
     // React only warns once per duplicate-key list, and silently mis-reconciles after that
     expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key|unique "key"/i)
@@ -292,7 +292,10 @@ describe('collapse', () => {
       properties: { ...TEST_RECORDS[0].properties, status: `s${i}` },
     }))
     const { el } = mount(GROUP_BASE, { records: many })
-    expect(el.querySelectorAll('.view-table__group').length).toBe(MAX_COLLAPSED_GROUP_KEYS + 1)
+    // Each group is three lines (header, row, "+ New" row: YAZ-4539), so the table windows: the spacers and the
+    // mounted lines add up to 3 × 201.
+    const spacers = [...el.querySelectorAll<HTMLElement>('.view-table__spacer')].reduce((sum, tr) => sum + parseFloat(tr.style.height) / 28, 0)
+    expect(spacers + el.querySelectorAll('.view-table tbody tr:not(.view-table__spacer)').length).toBe(3 * (MAX_COLLAPSED_GROUP_KEYS + 1))
     expect(el.querySelector('[aria-label="Collapse all groups"]')).toBeNull()
   })
 
