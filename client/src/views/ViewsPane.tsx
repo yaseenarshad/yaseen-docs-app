@@ -1,6 +1,6 @@
 import { boardOptionGroups } from './boardOptionGroups'
 import { columnTyping } from './editorType'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
@@ -22,6 +22,7 @@ import { groupKeyOf, nestedGroupKeyOf } from './view/GroupHeader'
 import { ListView } from './view/ListView'
 import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
+import { NoteWindow, type NoteWindowMemory, noteWindowLink, noteWindowMemory } from './view/NoteWindow'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { NO_READ_ONLY } from './readOnlyRows'
@@ -80,6 +81,11 @@ export interface FolderHost {
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
   openRight?: (path: string) => void
+  /**
+   * A full editor on a note, for the table's note window (YAZ-4547 D14): App's, the same editor a tab has. Stable.
+   * Absent: the row menu has no "Open in a window".
+   */
+  renderNoteEditor?: (path: string) => ReactNode
   /** Passive notice surface for row actions that fail because a page moved or disappeared. */
   onNotice?: (message: string) => void
   /**
@@ -189,6 +195,13 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
     return items.find((el) => el.matches(':hover')) ?? items[0] ?? null
   })
   const { hoverCard, leaveCard, close: closeItemHover } = itemHover
+  // The note window (YAZ-4547): which note it opened on (`n` mounts a new card per open), its link to the table, and its
+  // place, size and pin, kept for this folder page (the tab's) while the app runs.
+  const [noteWindow, setNoteWindow] = useState<{ path: string; n: number } | null>(null)
+  const windowLink = useMemo(noteWindowLink, [])
+  const windowMemory = useRef<NoteWindowMemory | null>(null)
+  const openWindow = folder.renderNoteEditor === undefined ? undefined : (path: string) => setNoteWindow((open) => ({ path, n: (open?.n ?? 0) + 1 }))
+  const closeWindow = useCallback(() => setNoteWindow(null), [])
   const itemProps = useCallback((path: string) => ({ 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard])
   const viewHover = useMemo<ViewHover>(() => ({ itemProps }), [itemProps])
   // New records (a sync, another window's edit) can remove or move the item under the panel, and a removed item
@@ -477,6 +490,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
           onOpenFile={onOpenFile}
           onOpenFileRight={folder.openRight}
           onOpenFileBackground={folder.openBackground}
+          onOpenWindow={openWindow}
+          windowLink={windowLink}
           onNotice={folder.onNotice}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
@@ -582,6 +597,19 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
         <p className="views-pane__notes" role="note">
           {notes.join(' · ')}
         </p>
+      )}
+      {/* After the views: the table has written this render's rows to the link when the card reads them. */}
+      {noteWindow !== null && folder.renderNoteEditor !== undefined && (
+        <NoteWindow
+          key={noteWindow.n}
+          start={noteWindow.path}
+          renderEditor={folder.renderNoteEditor}
+          link={windowLink}
+          titleOf={(path) => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')}
+          memory={(windowMemory.current ??= noteWindowMemory())}
+          onOpenInTab={onOpenFile}
+          onClose={closeWindow}
+        />
       )}
       <CardPreviewHost store={itemHover.store} cardOf={(_, path) => ({ root: null, name: records.find((r) => r.path === path)?.title ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
     </div>

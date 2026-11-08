@@ -23,6 +23,7 @@ import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikil
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'
 import { announceTwinSave } from '../lib/twinEditors'
+import { NoteWindow, noteWindowLink, noteWindowMemory } from '../views/view/NoteWindow'
 import { readPageView } from '../lib/pageView'
 import type { NoticeKind } from '../lib/notice'
 
@@ -1430,6 +1431,62 @@ describe('copies of one file hear a save at once (YAZ-2940 D4, S23)', () => {
     expect(readFile.mock.calls.length).toBe(reads + 2)
     await pastDebounce()
     expect(writeFile).toHaveBeenCalledTimes(1) // B's reloaded text is its baseline: no save back
+  })
+})
+
+/**
+ * Open a row in a window (YAZ-4547 D14): the card holds a real `Editor` on the note, the tab itself in a pop-up, so the
+ * twin rule covers a note that is also open in a tab, and the card shows the note's Properties panel.
+ */
+describe('the note window holds a real editor (YAZ-4547)', () => {
+  const NEXT = '# Hello\n\nfrom the card\n'
+
+  async function mountWithCard() {
+    const file: FileResponse = { path: PATH, content: FM + BODY, mtime: 1, size: (FM + BODY).length }
+    readFile.mockResolvedValueOnce(file)
+    readFile.mockResolvedValueOnce(file)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const props = { root: '/vault', path: PATH, watch, onOpenFile: openFile, commentsOrder: 'oldest' as const, onChangeCommentsOrder: noop, wikilinks: createWikilinkResolveSource(), onRetitle: noop }
+    act(() =>
+      root?.render(
+        <>
+          <div className="tab-copy">
+            <Editor {...props} />
+          </div>
+          <section className="editor">
+            <NoteWindow start={PATH} renderEditor={(path) => <Editor {...props} path={path} />} link={noteWindowLink()} titleOf={() => 'note'} memory={noteWindowMemory()} onOpenInTab={noop} onClose={noop} />
+          </section>
+        </>,
+      ),
+    )
+    await settle()
+    await settle()
+    return container
+  }
+
+  it('the card shows the note\'s Properties panel', async () => {
+    const el = await mountWithCard()
+    expect(el.querySelector('.note-window .frontmatter-panel')).not.toBeNull()
+    expect(el.querySelector('.tab-copy .frontmatter-panel')).not.toBeNull()
+  })
+
+  it('a save in the card reaches the tab\'s copy of the note at once (twin rule)', async () => {
+    await mountWithCard()
+    const [tab, card] = createCrepeMock.mock.results.map((r) => r.value as FakeCrepe)
+    expect(createCrepeMock).toHaveBeenCalledTimes(2)
+    act(() => {
+      card.md = NEXT
+      card.onMarkdownUpdated?.(NEXT)
+    })
+    diskHas(FM + NEXT, 99) // the tab copy's read of the change
+    diskHas(FM + NEXT, 99) // its reload() re-reads
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(applyExternalMock).toHaveBeenCalledExactlyOnceWith(tab, NEXT, true)
+    expect(tab.md).toBe(NEXT)
+    expect(container?.querySelector('.conflict-bar')).toBeNull()
   })
 })
 
