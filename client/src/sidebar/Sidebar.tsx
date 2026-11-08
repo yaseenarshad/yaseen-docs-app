@@ -1,5 +1,6 @@
 import { flushSync } from 'react-dom'
 import type { NavigationTarget } from '@shared/automationNavigation'
+import { AutomationFailure } from '@shared/automation'
 import { useAutomationSurface, waitForSurface } from '../automation/surfaces'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { isBoard } from '@shared/fileKind'
@@ -593,6 +594,9 @@ const NO_SHORTCUTS: ReadonlyMap<string, readonly TreeNode[]> = new Map()
 const NO_DIRS: readonly string[] = []
 
 /** Mounted with `key={one vault of the window}` by App (YAZ-2631 D5), so all state below lives while that vault is in the window. */
+/** How long a CLI reveal waits for its row once the list is loaded (YAZ-4638): a target the list cannot show fails, not stalls. */
+export const REVEAL_WAIT_MS = 5000
+
 export function Sidebar({
   vaults,
   lists,
@@ -1200,7 +1204,10 @@ export function Sidebar({
         const groups = await waitForSurface(`groups:${lens}`)
         flushSync(() => { void groups.reveal?.(target) })
       }
-      await waitForSurface('sidebar', (surface) => surface.inspect().revealed === (target.group ?? target.path))
+      // The tree is loaded, the folders are open: the row shows within a few commits, or it is not in this list.
+      await waitForSurface('sidebar', (surface) => surface.inspect().revealed === (target.group ?? target.path), REVEAL_WAIT_MS).catch(() => {
+        throw new AutomationFailure('NOT_SHOWN', 'The target has no row in this sidebar list.')
+      })
       automationFlash.current?.()
       automationFlash.current = null
       if (bodyRef.current && target.path) automationFlash.current = flashTreeRows(bodyRef.current, target.path, false) ?? null

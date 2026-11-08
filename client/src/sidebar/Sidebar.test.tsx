@@ -11651,3 +11651,25 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect([...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)).toEqual(['docs', 'plan empty', 'plan old', 'plan a', 'plan b'])
   })
 })
+
+describe('CLI navigation reveal (YAZ-4502, YAZ-4638)', () => {
+  const TREE: TreeNode[] = [{ type: 'dir', name: 'target', path: '/v/target', children: [{ type: 'file', name: 'Note.md', path: '/v/target/Note.md', size: 1, mtime: 1, kind: 'markdown' }] }]
+  it('reveals a row and expands its folder; a target with no row fails within REVEAL_WAIT_MS, not after a minute', async () => {
+    const { waitForSurface } = await import('../automation/surfaces')
+    const { REVEAL_WAIT_MS } = await import('./Sidebar')
+    const { el } = await mount({}, (bridge) => bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 }))
+    const sidebar = await waitForSurface('sidebar')
+    await act(async () => { await sidebar.reveal?.({ path: '/v/target/Note.md', sidebar: 'files' }) })
+    expect(el.querySelector('.tree__row[data-path="/v/target/Note.md"]')).not.toBeNull()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let settled = false
+      const missing = Promise.resolve(sidebar.reveal?.({ path: '/v/target/Gone.md', sidebar: 'files' })).finally(() => { settled = true })
+      const failed = expect(missing).rejects.toMatchObject({ code: 'NOT_SHOWN' })
+      await act(async () => { await vi.advanceTimersByTimeAsync(REVEAL_WAIT_MS - 1) })
+      expect(settled).toBe(false)
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+      await failed
+    } finally { vi.useRealTimers() }
+  })
+})

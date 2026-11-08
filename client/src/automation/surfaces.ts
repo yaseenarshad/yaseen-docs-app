@@ -47,8 +47,11 @@ export function inspectSurface(key: string): Record<string, unknown> {
   return surface?.ready ? { ...surface.inspect(), state: 'ready' } : { state: 'unavailable' }
 }
 
+/** A window waits less than main waits for it (30 s), so its reply always arrives and names what failed (YAZ-4638). */
+export const SURFACE_WAIT_MS = 20_000
+
 /** Wait for actual component state, including lazy loading. No polling or synthetic input events. */
-export function waitForSurface(key: string, condition: (surface: AutomationSurface) => boolean = surface => surface.ready): Promise<AutomationSurface> {
+export function waitForSurface(key: string, condition: (surface: AutomationSurface) => boolean = surface => surface.ready, timeoutMs = SURFACE_WAIT_MS): Promise<AutomationSurface> {
   return new Promise((resolve, reject) => {
     const finish = (surface?: AutomationSurface, error?: unknown) => {
       clearTimeout(timer); waiting.delete(check)
@@ -59,7 +62,7 @@ export function waitForSurface(key: string, condition: (surface: AutomationSurfa
       const surface = surfaces.get(key)
       try { if (surface && condition(surface)) finish(surface) } catch (error) { finish(undefined, error) }
     }
-    const timer = setTimeout(() => finish(undefined, new AutomationFailure('SURFACE_TIMEOUT', `The requested ${key.split(':')[0]} state did not become ready.`)), 60_000)
+    const timer = setTimeout(() => finish(undefined, new AutomationFailure('SURFACE_TIMEOUT', `The requested ${key.split(':')[0]} state did not become ready.`)), timeoutMs)
     waiting.add(check); check()
   })
 }

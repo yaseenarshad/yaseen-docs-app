@@ -1,8 +1,9 @@
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
-import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
+import { AutomationFailure } from '@shared/automation'
 import { shownListScope, viewIndex, type NavigationInput, type NavigationTarget } from '@shared/automationNavigation'
 import { mergeFolders, resolveItem } from '@shared/collectionFolders'
+import { isSkipped } from '@shared/fileKind'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { isRecord } from '@shared/guards'
@@ -33,7 +34,7 @@ export function unique<T>(values: readonly T[], describe: string): T {
     for (const value of values) {
       const identity = typeof value === 'string' ? value : { id: (value as { id?: string }).id, name: (value as { name?: string }).name }
       const size = Buffer.byteLength(JSON.stringify(identity))
-      if (candidates.length >= AUTOMATION_LIMITS.maxPage || bytes + size > 32 * 1024) break
+      if (candidates.length >= 200 || bytes + size > 32 * 1024) break
       candidates.push(identity); bytes += size
     }
     throw new AutomationFailure('AMBIGUOUS_TARGET', `${describe} is ambiguous. Use its ID or full path.`, { candidates, total: values.length, truncated: candidates.length < values.length })
@@ -71,7 +72,10 @@ async function resolvePath(roots: readonly string[], input: string): Promise<str
   // A disk that ignores case finds `mochi` for `Mochi`: take the names below the vault as they are on disk, so the
   // lists and the sidebar rows match. A link inside the vault that leads out of it keeps the path as given.
   const [real, base] = await Promise.all([realpath(path), realpath(root)])
-  return real === base ? root : real.startsWith(`${base}/`) ? `${root}${real.slice(base.length)}` : path
+  const named = real === base ? root : real.startsWith(`${base}/`) ? `${root}${real.slice(base.length)}` : path
+  // The sidebar never shows a hidden item (a dot name, node_modules), so a window could never reveal it (YAZ-4638).
+  if (named !== root && named.slice(root.length + 1).split('/').some(isSkipped)) throw new AutomationFailure('HIDDEN_TARGET', 'Docs does not show hidden items (a name that starts with a dot, or node_modules).')
+  return named
 }
 
 /** The paths a Favorites or Focus list shows: its top level and its groups, or one group alone. Reading writes nothing. */
@@ -103,7 +107,9 @@ export async function savedViewName(root: string, dir: string, name: string): Pr
 
 /** Validate the whole target against the saved state before any window opens or moves. */
 async function resolveNavigation(state: AppState, input: NavigationInput, roots: string[]): Promise<NavigationTarget> {
-  const path = input.path === undefined ? undefined : await resolvePath(roots, input.path)
+  // A vault folder is that vault with no page, as opening a vault in the app is (YAZ-4639): the app has no page for it.
+  const resolved = input.path === undefined ? undefined : await resolvePath(roots, input.path)
+  const path = resolved !== undefined && roots.includes(resolved) ? undefined : resolved
   const target: NavigationTarget = {
     ...(path === undefined ? {} : { path }),
     ...(input.sidebar === undefined ? {} : { sidebar: input.sidebar }),

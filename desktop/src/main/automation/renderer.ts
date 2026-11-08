@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { AutomationFailure } from '@shared/automation'
+import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
 import type { NavigationTarget, RendererCommand, RendererReply } from '@shared/automationNavigation'
 
 export interface RendererPage {
@@ -34,8 +34,8 @@ export class RendererRequests {
     const command: RendererCommand = { id: randomUUID(), action: 'navigate', target }
     const { id } = command
     return new Promise((resolve, reject) => {
-      // The caller's 30-second timeout does not cancel this handshake. A dead renderer still has a finite bound.
-      const timer = setTimeout(() => finish({ id, ok: false, error: { code: 'RENDERER_TIMEOUT', message: 'The renderer did not acknowledge. Its final state is unknown.' } }), 120_000)
+      // Navigations run one at a time: a window that never answers holds the next one no longer than the CLI's default wait (YAZ-4638).
+      const timer = setTimeout(() => finish({ id, ok: false, error: { code: 'RENDERER_TIMEOUT', message: 'The window did not show the target in time. Its final state is unknown.' } }), AUTOMATION_LIMITS.waitMs)
       const finish = (reply: RendererReply) => {
         clearTimeout(timer); this.pending.delete(id)
         if (reply.ok) resolve(reply.value)

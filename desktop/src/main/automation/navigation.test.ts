@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { AUTOMATION_LIMITS } from '@shared/automation'
 import { validateOutput } from '@shared/automationCommands'
 import { defaultAppState, defaultRightPanelIdentity, VAULT_CONFIG_DIR, type WindowEntry } from '@shared/types'
 import { setFavorites } from '../favorites'
@@ -198,6 +199,58 @@ describe('exact context navigation', () => {
     expect(first).toMatchObject({ window: 'made', created: true, closedStartWindows: ['start'] })
     expect(second).toMatchObject({ window: 'made', created: false, closedStartWindows: [] })
     expect(app.open).toHaveBeenCalledOnce()
+  })
+})
+
+describe('targets the sidebar cannot show (YAZ-4638, YAZ-4639)', () => {
+  it('refuses a hidden item, or a path below one, before any window moves (YAZ-4638)', async () => {
+    const app = host([entry('w1', [root])])
+    await mkdir(join(root, '.yaseendocs/inner'), { recursive: true }); await mkdir(join(root, 'node_modules'))
+    await writeFile(join(root, 'Mochi/.folder.md'), '---\n---\n')
+    for (const path of [join(root, '.yaseendocs'), join(root, '.yaseendocs/inner'), join(root, 'Mochi/.folder.md'), join(root, 'node_modules')]) {
+      await expect(navigate(app, { window: 'w1', path, sidebar: 'files' }), path).rejects.toMatchObject({ code: 'HIDDEN_TARGET' })
+    }
+    expect(app.raise).not.toHaveBeenCalled()
+    expect(app.apply).not.toHaveBeenCalled()
+  })
+
+  it('takes a vault folder as the path as that vault with no page, as opening a vault does (YAZ-4639)', async () => {
+    const other = await mkdtemp(join(tmpdir(), 'docs-nav-other-'))
+    try {
+      const app = host([entry('one', [root]), entry('two', [root, other])])
+      await setFavorites(root, [join(root, 'Mochi')])
+      for (const path of [root, `${root}/`]) {
+        expect(await checked(navigate(app, { root, path, sidebar: 'favorites', reveal: true }))).toMatchObject({ window: 'one', created: false })
+        expect(app.apply).toHaveBeenLastCalledWith('one', { sidebar: 'favorites', reveal: true })
+      }
+      await checked(navigate(app, { roots: [root, other], path: other, sidebar: 'files' }))
+      expect(app.apply).toHaveBeenLastCalledWith('two', { sidebar: 'files' })
+      await expect(navigate(app, { root, path: root, view: 'Table' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    } finally { await rm(other, { recursive: true, force: true }) }
+  })
+
+  it('lets the next navigation run when a window never answers, within the CLI’s default wait (YAZ-4638)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const requests = new RendererRequests('automation:request'), page = { id: 1, send: vi.fn() }
+      requests.setReady(page, true)
+      const app = host([entry('w1', [root])])
+      app.apply = vi.fn((_id, target) => requests.navigate(page, target))
+      const stuck = navigate(app, { window: 'w1', path: join(root, 'Mochi') })
+      const failed = expect(stuck).rejects.toMatchObject({ code: 'RENDERER_TIMEOUT' })
+      // The file checks are real I/O: wait for each send before the clock moves.
+      const sent = async (count: number) => { while (page.send.mock.calls.length < count) await new Promise(done => setImmediate(done)) }
+      let next = false
+      const later = navigate(app, { window: 'w1', path: join(root, 'Mochi/card.md') }).then(value => { next = true; return value })
+      await sent(1)
+      await vi.advanceTimersByTimeAsync(AUTOMATION_LIMITS.waitMs - 1)
+      expect(page.send).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(1); await failed
+      await sent(2)
+      requests.reply(1, { id: page.send.mock.calls[1][1].id, ok: true, value: { acknowledged: true } })
+      await later
+      expect(next).toBe(true)
+    } finally { vi.useRealTimers() }
   })
 })
 
