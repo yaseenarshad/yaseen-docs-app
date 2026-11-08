@@ -1,5 +1,6 @@
 import { AutomationFailure } from './automation'
-import { navigationSchema, validateInput } from './automationCommands'
+import { validateInput } from './automationCommands'
+import { navigationSchema } from './commands/windows'
 import type { NavigationInput } from './automationNavigation'
 
 const PREFIX = 'yaseendocs://navigate?v=1&request='
