@@ -46,9 +46,8 @@ function registration(tab: string): Registration {
   return entry
 }
 export function readLiveDocument(tab: string): LiveDocument & { conflict: boolean; source: 'live'; tab: string; revision: string; actions: EditorAction['action'][] } {
+  // Main measures the reply once, where it serializes it (YAZ-4527 P22): no copy of a large board here.
   const entry = registration(tab), value = entry.read()
-  // Keep the renderer reply below the same bound as the local connection.
-  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > AUTOMATION_LIMITS.contentBytes - 4096) throw new AutomationFailure('TOO_LARGE', 'This live document exceeds the connection limit. Use a saved board export for large content.')
   return { ...value, conflict: value.conflict === true, source: 'live', tab, revision: revision(entry), actions: entry.control?.actions ?? [] }
 }
 

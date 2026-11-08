@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,15 +9,16 @@ import { makeRequest, sendRequest } from './client'
 import { descriptorPath, readConnection } from './connection'
 import { startAutomationServer, type AutomationServer } from './server'
 import { readPacket } from './wire'
+import { CLOSE_WAIT_MS } from './requests'
 
 const profiles: string[] = [], servers: AutomationServer[] = []
 afterEach(async () => {
   await Promise.all(servers.splice(0).map(server => server.close()))
   await Promise.all(profiles.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
-async function start(run: (content: Buffer) => Promise<unknown>) {
+async function start(run: (content: Buffer) => Promise<unknown>, stopWork?: () => Promise<unknown>) {
   const profile = await mkdtemp(join(tmpdir(), 'docs-cli-test-')); profiles.push(profile)
-  const server = await startAutomationServer(profile, (_request, content) => ({ writes: ['test'], run: () => run(content) }))
+  const server = await startAutomationServer(profile, (_request, content) => ({ writes: ['test'], run: () => run(content) }), stopWork)
   servers.push(server)
   return { profile, server, connection: await readConnection(profile) }
 }
@@ -72,5 +73,40 @@ describe('real local socket', () => {
   it('does not replace a live endpoint for the same profile', async () => {
     const { profile } = await start(async () => null)
     await expect(startAutomationServer(profile, () => ({ writes: [], run: async () => null }))).rejects.toBeInstanceOf(AutomationFailure)
+  })
+
+  it('serializes a result once, for both its size check and the reply', async () => {
+    let serialized = 0
+    const { connection } = await start(async () => ({ toJSON: () => { serialized++; return { large: true } } }))
+    expect(await sendRequest(connection, makeRequest(connection, 'file.patch', {}))).toEqual({ ok: true, value: { large: true } })
+    expect(serialized).toBe(1)
+  })
+
+  it('stops long work first when it closes, so the caller still gets the result', async () => {
+    let finish!: (value: unknown) => void, began!: () => void
+    const started = new Promise<void>(resolve => { began = resolve })
+    const { server, connection } = await start(() => { began(); return new Promise(resolve => { finish = resolve }) }, async () => finish({ stopped: true }))
+    const pending = sendRequest(connection, makeRequest(connection, 'media.downloadPacks', {}))
+    await started
+    await server.close(); servers.splice(servers.indexOf(server), 1)
+    expect(await pending).toEqual({ ok: true, value: { stopped: true } })
+  })
+
+  it('closes within its limit while an operation never ends, and the caller loses the connection', async () => {
+    let began!: () => void
+    const started = new Promise<void>(resolve => { began = resolve })
+    const { server, connection } = await start(() => { began(); return new Promise(() => {}) })
+    const pending = sendRequest(connection, makeRequest(connection, 'sync.now', {}))
+    const lost = expect(pending).rejects.toBeInstanceOf(AutomationFailure)
+    await started
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldClearNativeTimers: true })
+    try {
+      let closed = false
+      const closing = server.close().then(() => { closed = true }); servers.splice(servers.indexOf(server), 1)
+      await vi.advanceTimersByTimeAsync(CLOSE_WAIT_MS - 1)
+      expect(closed).toBe(false)
+      await vi.advanceTimersByTimeAsync(1); await closing
+    } finally { vi.useRealTimers() }
+    await lost
   })
 })

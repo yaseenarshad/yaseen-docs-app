@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { AUTOMATION_LIMITS, AutomationFailure, automationError, type AutomationReceipt, type AutomationRequest, type AutomationResult } from '@shared/automation'
 
 export interface Operation {
-  /** Complete shared actions provide stable resource keys; readers can run together. */
+  /** Complete shared actions provide stable resource keys; readers can run together. A bare key covers its family:
+   * `documents` overlaps `documents:/vault`, and `documents:/vault` overlaps `documents:/vault/inner`. */
   writes: readonly string[]
   run(): Promise<unknown>
 }
@@ -15,6 +16,14 @@ interface Entry {
   promise: Promise<AutomationResult>
   resolve(result: AutomationResult): void
 }
+
+/** How long a close waits for accepted work before the app quits anyway (YAZ-4527 P1). Its callers lose the connection. */
+export const CLOSE_WAIT_MS = 3_000
+const overlaps = (a: string, b: string) => a === b || a.startsWith(`${b}:`) || b.startsWith(`${a}:`) || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)
+const taken = (keys: Iterable<string>, key: string) => { for (const held of keys) if (overlaps(held, key)) return true; return false }
+/** The result's JSON, made once by the queue for its size check and kept for the reply (YAZ-4527 P22). */
+const encoded = new WeakMap<AutomationResult, Buffer>()
+export const resultBytes = (result: AutomationResult): Buffer => encoded.get(result) ?? Buffer.from(JSON.stringify(result))
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
@@ -55,8 +64,8 @@ export class RequestQueue {
     if (this.contentBytes + content.length > AUTOMATION_LIMITS.inFlightContentBytes) throw new AutomationFailure('BUSY', 'Too much content is in flight. No request was accepted.')
     // Count queued work independently: requests blocked on a resource must not exceed the queue bound.
     const operation = prepare()
-    const waiting = new Set(this.queue.flatMap(entry => entry.operation.writes))
-    const canStart = this.active < AUTOMATION_LIMITS.active && operation.writes.every(key => !this.locked.has(key) && !waiting.has(key))
+    const waiting = this.queue.flatMap(entry => entry.operation.writes)
+    const canStart = this.active < AUTOMATION_LIMITS.active && operation.writes.every(key => !taken(this.locked, key) && !taken(waiting, key))
     if (!canStart && this.queue.length >= AUTOMATION_LIMITS.queued) throw new AutomationFailure('BUSY', 'The request queue is full. No request was accepted.')
     let resolve!: Entry['resolve']
     const promise = new Promise<AutomationResult>(done => { resolve = done })
@@ -68,9 +77,13 @@ export class RequestQueue {
     return promise
   }
 
+  /** Refuses new work at once, then waits for accepted work, at most CLOSE_WAIT_MS. */
   async close(): Promise<void> {
     this.closing = true
-    if (this.active || this.queue.length) await new Promise<void>(resolve => this.drained.push(resolve))
+    if (!this.active && !this.queue.length) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([new Promise<void>(resolve => this.drained.push(resolve)), new Promise<void>(resolve => { timer = setTimeout(resolve, CLOSE_WAIT_MS) })])
+    clearTimeout(timer)
   }
 
   private prune(): void {
@@ -87,10 +100,10 @@ export class RequestQueue {
   private pump(): void {
     while (this.active < AUTOMATION_LIMITS.active) {
       // A later request cannot pass an earlier request for the same resource.
-      const waiting = new Set<string>()
+      const waiting: string[] = []
       const index = this.queue.findIndex(entry => {
-        const free = entry.operation.writes.every(key => !this.locked.has(key) && !waiting.has(key))
-        entry.operation.writes.forEach(key => waiting.add(key))
+        const free = entry.operation.writes.every(key => !taken(this.locked, key) && !taken(waiting, key))
+        waiting.push(...entry.operation.writes)
         return free
       })
       if (index < 0) break
@@ -110,15 +123,16 @@ export class RequestQueue {
     this.contentBytes -= entry.contentBytes
     entry.operation.writes.forEach(key => this.locked.delete(key))
     this.active--
-    let bytes: number
+    let bytes: Buffer
     try {
-      bytes = Buffer.byteLength(JSON.stringify(result))
-      if (bytes > AUTOMATION_LIMITS.contentBytes) throw new AutomationFailure('TOO_LARGE', 'The result exceeds the connection limit. Use a paged read or file export.')
+      bytes = Buffer.from(JSON.stringify(result))
+      if (bytes.length > AUTOMATION_LIMITS.contentBytes) throw new AutomationFailure('TOO_LARGE', 'The result exceeds the connection limit. Use a paged read or file export.')
     } catch (error) {
       result = automationError(error instanceof AutomationFailure ? error : new AutomationFailure('INVALID_RESULT', 'The command returned a value that cannot be serialized. Inspect its current state before another mutation.'))
-      bytes = Buffer.byteLength(JSON.stringify(result))
+      bytes = Buffer.from(JSON.stringify(result))
     }
-    const retained = bytes <= AUTOMATION_LIMITS.receiptBytes
+    encoded.set(result, bytes)
+    const retained = bytes.length <= AUTOMATION_LIMITS.receiptBytes
     entry.receipt = { id: entry.receipt.id, state: 'completed', resultRetained: retained, ...(retained ? { result } : {}) }
     entry.resolve(result)
     // Do not retain a resolved promise or closure containing a large body or a protected input.

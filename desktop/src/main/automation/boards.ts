@@ -66,7 +66,6 @@ export async function boardCommand(state: AppState, command: string, args: Recor
     await fsCall(outputFile, () => createDurable(outputFile, text))
     return { path, outputFile, revision: loaded.revision, size: Buffer.byteLength(text), source: 'disk', diskSaved: true }
   }
-  // Payloads over the bounded socket response use the explicit export command.
-  if (Buffer.byteLength(JSON.stringify(loaded)) > AUTOMATION_LIMITS.contentBytes - 4096) throw new AutomationFailure('TOO_LARGE', `Use ${kind} export --output-file for this large document.`)
+  // The queue measures the reply once (YAZ-4527 P22); a larger one fails there with TOO_LARGE.
   return { ...loaded, source: 'disk' }
 }

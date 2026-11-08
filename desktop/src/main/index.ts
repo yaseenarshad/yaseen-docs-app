@@ -456,7 +456,9 @@ app.whenReady().then(() => {
         else restartWithoutUpdate = true
         app.quit()
       },
-    } }, request, content))
+    } }, request, content),
+    // A quit stops a CLI pack download or helper install at once, as it stops the GUI's (YAZ-4527 P1).
+    () => Promise.all([automationServices.studio.packs.stop(), automationServices.languageHelpers.cancel()]))
   void automationServer.catch(() => console.error('[cli] Could not start the local connection. Check profile permissions.'))
   // The memory meter (YAZ-3737 D1): one `getAppMetrics` each 30 s, in memory only. The rest is read only for a report.
   meter = createMemoryMeter({

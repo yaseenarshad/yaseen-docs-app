@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { AUTOMATION_LIMITS, AUTOMATION_VERSION, type AutomationRequest } from '@shared/automation'
-import { RequestQueue } from './requests'
+import { CLOSE_WAIT_MS, RequestQueue } from './requests'
 
 const request = (id: string, issuedAt = 100_000): AutomationRequest => ({ version: AUTOMATION_VERSION, session: 'test', token: 'test', id, issuedAt, command: 'file.patch', args: {} })
 const deferred = () => { let resolve!: (value: unknown) => void; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
@@ -75,4 +75,30 @@ describe('bounded requests', () => {
     await queue.close()
   })
 
+  it('lets a bare key cover its family and a vault key cover the vaults inside it', async () => {
+    const queue = new RequestQueue(() => 100_000), gate = deferred(), order: string[] = []
+    const submit = (id: string, writes: string[], wait?: Promise<unknown>) => queue.submit(request(id), Buffer.alloc(0), () => ({ writes, run: async () => { order.push(id); return wait } }))
+    const first = submit('vault', ['documents:/v'], gate.promise)
+    await Promise.all([submit('other', ['documents:/w']), submit('sibling', ['documents:/vault']), submit('window', ['window:w1'])])
+    const later = [submit('inner', ['documents:/v/inner']), submit('every', ['documents'])]
+    await tick()
+    expect(order).toEqual(['vault', 'other', 'sibling', 'window'])
+    gate.resolve(null); await Promise.all([first, ...later])
+    expect(order.slice(4)).toEqual(['inner', 'every'])
+  })
+
+  it('refuses new work at once on close and stops waiting for unfinished work after the close limit', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const queue = new RequestQueue(() => 100_000)
+      void queue.submit(request('endless'), Buffer.alloc(0), () => ({ writes: ['icon-packs'], run: () => new Promise(() => {}) }))
+      let closed = false
+      const closing = queue.close().then(() => { closed = true })
+      expect(() => queue.submit(request('late'), Buffer.alloc(0), () => ({ writes: [], run: async () => null }))).toThrow('stopping')
+      await vi.advanceTimersByTimeAsync(CLOSE_WAIT_MS - 1)
+      expect(closed).toBe(false)
+      await vi.advanceTimersByTimeAsync(1); await closing
+      expect(closed).toBe(true)
+    } finally { vi.useRealTimers() }
+  })
 })

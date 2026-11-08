@@ -5,7 +5,7 @@ import { dirname } from 'node:path'
 import { AUTOMATION_LIMITS, AUTOMATION_VERSION, AutomationFailure, automationError, type AutomationRequest } from '@shared/automation'
 import { commandDefinition, validateInput } from '@shared/automationCommands'
 import { descriptorPath, endpointFor, privateDirectory, type Connection } from './connection'
-import { RequestQueue, type Operation } from './requests'
+import { RequestQueue, resultBytes, type Operation } from './requests'
 import { encodePacket, readPacket } from './wire'
 
 export interface AutomationServer { close(): Promise<void>; connection: Connection }
@@ -45,8 +45,11 @@ function validate(value: unknown, connection: Connection): AutomationRequest {
   return request
 }
 
-/** Same-user connection owned by the app, with no TCP listener and no service after app exit. */
-export async function startAutomationServer(profile: string, prepare: (request: AutomationRequest, content: Buffer) => Operation): Promise<AutomationServer> {
+/**
+ * Same-user connection owned by the app, with no TCP listener and no service after app exit. `stopWork` ends the long
+ * services a command can wait on (a pack download, a helper install) when the app closes, so a quit never waits for them.
+ */
+export async function startAutomationServer(profile: string, prepare: (request: AutomationRequest, content: Buffer) => Operation, stopWork?: () => Promise<unknown>): Promise<AutomationServer> {
   const descriptor = descriptorPath(profile)
   await privateDirectory(dirname(descriptor))
   const endpoint = await endpointFor(profile)
@@ -76,9 +79,9 @@ export async function startAutomationServer(profile: string, prepare: (request: 
         }
         socket.setTimeout(0) // Accepted work can outlive the caller's wait. It is never cancelled by disconnect.
         const result = request.command === 'request.status'
-          ? { ok: true, value: queue.receipt(String(request.args.id ?? '')) }
-          : await queue.submit(request, packet.content, () => prepare(request, packet.content))
-        if (!socket.destroyed) socket.end(encodePacket({ version: AUTOMATION_VERSION, id: request.id }, Buffer.from(JSON.stringify(result))))
+          ? Buffer.from(JSON.stringify({ ok: true, value: queue.receipt(String(request.args.id ?? '')) }))
+          : resultBytes(await queue.submit(request, packet.content, () => prepare(request, packet.content)))
+        if (!socket.destroyed) socket.end(encodePacket({ version: AUTOMATION_VERSION, id: request.id }, result))
       } catch (error) {
         if (!socket.destroyed) socket.end(encodePacket({ version: AUTOMATION_VERSION }, Buffer.from(JSON.stringify(automationError(error)))))
       } finally { contentInFlight -= reserved }
@@ -101,7 +104,10 @@ export async function startAutomationServer(profile: string, prepare: (request: 
     connection,
     async close() {
       const closed = new Promise<void>(resolve => server.close(() => resolve()))
-      await queue.close()
+      // Refuse new work, stop the long services, then wait for the rest at most CLOSE_WAIT_MS (YAZ-4527 P1).
+      const drained = queue.close()
+      void Promise.resolve().then(stopWork).catch(() => {})
+      await drained
       for (const socket of sockets) socket.destroy()
       await closed
       await unlink(descriptor).catch(() => {})

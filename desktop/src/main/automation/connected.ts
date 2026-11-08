@@ -56,13 +56,12 @@ export async function connectedCommand(services: AutomationServices, state: AppS
   }
   if (command === 'history.read' || command === 'history.export') {
     const value = await boardVersion(root, path, args.ref)
-    const content = JSON.stringify(value)
     if (command === 'history.export') {
+      const content = JSON.stringify(value)
       const outputFile = absolute(args.outputFile as string)
       await fsCall(outputFile, () => createDurable(outputFile, content))
       return { path, outputFile, size: Buffer.byteLength(content), diskSaved: true }
     }
-    if (Buffer.byteLength(content) > AUTOMATION_LIMITS.contentBytes - 4096) throw new AutomationFailure('TOO_LARGE', 'Use history export for this large version.')
     return { path, ref: args.ref, ...value }
   }
   if (command === 'share.get') return { path, share: await services.sharing.get(root, path) }
