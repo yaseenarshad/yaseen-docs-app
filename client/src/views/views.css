@@ -853,6 +853,22 @@
   box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
 }
 
+/* A selected cell, row number or column header (YAZ-4593, S27 / S28, `view/tableSelection.ts`): the app's selection
+   wash, a background image over the cell's fill (YAZ-4536) and over a frozen cell's opaque `--bg`. The table marks
+   the mounted cells with `data-selected`; the hover band still paints over it. */
+.view-table tbody td[data-selected],
+.view-table thead th[data-selected] {
+  --view-selection-wash: color-mix(in srgb, var(--accent) 16%, transparent);
+  background-image: linear-gradient(var(--view-selection-wash), var(--view-selection-wash)), linear-gradient(var(--view-cell-fill, transparent), var(--view-cell-fill, transparent));
+}
+
+/* "Set value ›" on a selection (YAZ-4593): the field a text value is typed in. */
+.view-selection-menu__input {
+  width: 180px;
+  margin: 4px 6px;
+  box-sizing: border-box;
+}
+
 /* "Custom colour…" in a Fill flyout (YAZ-4536, `FillMenu.tsx`): the colour box under the item, as wide as the
    table block's (`table.css` `.table-colour-box`, 190px less its padding). */
 .view-fill-menu__box .colour-box {

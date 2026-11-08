@@ -655,6 +655,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           deleteColumn={folder.deleteColumn}
           valueCount={folder.valueCount}
           onWriteValue={writeValue}
+          onWriteValues={folder.writeValues}
           onRetitle={folder.retitle}
           reservedKeys={reservedKeys(folder.wikilinks.ids)}
         />
