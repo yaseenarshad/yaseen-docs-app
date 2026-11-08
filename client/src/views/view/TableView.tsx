@@ -261,11 +261,20 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  /**
+   * The ancestor that scrolls the table vertically (YAZ-4636 T6): in a folder page the wrap takes the table's whole
+   * height and the tab's scroller moves it (folderView.css), so the window is read off THAT scroller. Null when nothing
+   * above the wrap scrolls: then the wrap is the scroller, as in any other host.
+   */
+  const scrollerRef = useRef<HTMLElement | null>(null)
+  /** The scroller's listener hands each frame's scrolled distance here; set only while the table is windowed. */
+  const windowScroll = useRef<((past: number) => void) | null>(null)
 
   useLayoutEffect(() => {
     const wrap = wrapRef.current
     if (wrap === null) return
     const scroller = verticalScrollParent(wrap)
+    scrollerRef.current = scroller
     const table = wrap.querySelector<HTMLElement>('.view-table')
     if (scroller === null || table === null) return
     const header = table.querySelector<HTMLElement>('thead')
@@ -282,6 +291,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       const ratio = window.devicePixelRatio || 1
       const offset = Math.floor(pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, header.getBoundingClientRect().height) * ratio) / ratio / zoom
       wrap.style.setProperty('--view-table-header-y', `${offset}px`)
+      // The same scroll moves the window (T6): how far the table is past the scroller's top, in the table's px.
+      windowScroll.current?.(Math.max(0, (scrollerTop - tableRect.top) / zoom))
     }
     const schedule = () => {
       if (frame === 0) frame = requestAnimationFrame(sync)
@@ -431,7 +442,44 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // chip column wraps and the rest clip, as on `main`. A windowed table clips every cell, so each line is exactly the
   // row height its spacer maths counts.
   const clipped = keys.map((key, c) => windowed || !wrapsColumn(view, key, wrapKind(typings[c]), textInCellsOf(view, defaults)))
-  const viewH = wrapRef.current?.clientHeight || FALLBACK_VIEWPORT
+  /**
+   * The height that shows the table (T6): the wrap's, or the scroller's where that is less — in a folder page the wrap
+   * is as tall as the table, and the tab's scroller is the viewport. Zero (jsdom, the first render) falls back.
+   */
+  const viewportOf = (): number => {
+    const wrap = wrapRef.current
+    const scroller = scrollerRef.current
+    const own = wrap?.clientHeight || Infinity
+    const outer = wrap !== null && scroller !== null ? scroller.clientHeight / cssZoom(wrap) || Infinity : Infinity
+    const h = Math.min(own, outer)
+    return Number.isFinite(h) ? h : FALLBACK_VIEWPORT
+  }
+  /** A scroll's render (T6): the window steps by whole rows, so a scroll inside one row renders nothing. */
+  const setPast = (past: number): void => setScrollTop(Math.floor(past / rowH) * rowH)
+  windowScroll.current = windowed ? setPast : null
+  /**
+   * The wrap's own scroll (any other host): how far the table is past the top of the box that shows it. With a
+   * scroller above, the table's place against it says so, the wrap's inner scroll included.
+   */
+  const scrolledPast = (wrap: HTMLElement): number => {
+    const scroller = scrollerRef.current
+    const table = wrap.querySelector('.view-table')
+    if (scroller === null || table === null) return wrap.scrollTop
+    const zoom = cssZoom(wrap)
+    return Math.max(0, (scroller.getBoundingClientRect().top + scroller.clientTop * zoom - table.getBoundingClientRect().top) / zoom)
+  }
+  /** Scrolls the real scroller so the table is `past` px past its top (T5): the one way find, "New row below" and the note window move a windowed table. */
+  const scrollPast = (past: number): void => {
+    const wrap = wrapRef.current
+    if (wrap === null) return
+    const scroller = scrollerRef.current
+    if (scroller === null) wrap.scrollTop = past
+    else scroller.scrollTop += (past - scrolledPast(wrap)) * cssZoom(wrap)
+    setPast(past)
+  }
+  /** The scroll that puts line `at` in the middle of the viewport. */
+  const lineTop = (at: number): number => Math.max(0, at * rowH - (viewportOf() - rowH) / 2)
+  const viewH = viewportOf()
   const first = windowed ? Math.max(pinned, Math.min(lines.length - 1, Math.floor(scrollTop / rowH) - OVERSCAN)) : pinned
   const count = windowed ? Math.min(lines.length - first, Math.ceil(viewH / rowH) + 2 * OVERSCAN) : lines.length - first
   const visible = lines.slice(first, first + count)
@@ -456,9 +504,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       if (current === null) return
       if (shown !== null) shown.scrollIntoView?.({ block: 'nearest' })
       else if (windowed) {
-        // Windowed out of the mounted slice: scroll the wrap to the row's line, which mounts it.
+        // Windowed out of the mounted slice: scroll to the row's line, which mounts it.
         const at = lines.findIndex((l) => 'row' in l && l.row.record.path === current)
-        if (at !== -1) wrap.scrollTop = Math.max(0, at * rowH - (wrap.clientHeight - rowH) / 2)
+        if (at !== -1) scrollPast(lineTop(at))
       }
     }
   }
@@ -476,12 +524,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const find = useContext(ViewFind)
   if (find !== null)
     find.scrollTo = (path) => {
-      const wrap = wrapRef.current
       const at = lines.findIndex((l) => 'row' in l && l.row.record.path === path)
-      if (!windowed || wrap === null || at === -1) return
-      const top = Math.max(0, at * rowH - (wrap.clientHeight - rowH) / 2)
-      wrap.scrollTop = top
-      setScrollTop(top)
+      if (!windowed || at === -1) return
+      scrollPast(lineTop(at))
     }
 
   /**
@@ -497,12 +542,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (at === -1) return
     newRowRef.current = null
     setTitleEdit(rowKey(lines[at] as Extract<Line, { row: Row }>))
-    const wrap = wrapRef.current
-    if (windowed && wrap !== null) {
-      const top = Math.max(0, at * rowH - (wrap.clientHeight - rowH) / 2)
-      wrap.scrollTop = top
-      setScrollTop(top)
-    }
+    if (windowed) scrollPast(lineTop(at))
   })
   /** The item's action on data row `r` (the right-clicked row, or a selection's last). */
   const newRowBelow =
@@ -1423,7 +1463,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
 
   return (
     <>
-      <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}>
+      <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setPast(scrolledPast(e.currentTarget)) : undefined}>
         {columnRules !== '' && <style>{columnRules}</style>}
         <table
           className="view-table"
