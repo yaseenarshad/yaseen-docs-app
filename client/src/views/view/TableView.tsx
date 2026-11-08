@@ -350,6 +350,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const firstDataRow = [...head, ...visible].find((l): l is Extract<Line, { row: Row }> => 'row' in l)?.r
   // The note window (YAZ-4547 D16): the rows it steps through, read at its step, and the mark of its row. A step writes
   // the mark on the DOM, so the table does not render for it; a render of the table draws the same mark from `current`.
+  const wroteRows = useRef<readonly Row[]>(flat)
+  wroteRows.current = flat
   if (windowLink !== undefined) {
     windowLink.rows = flat
     windowLink.show = () => {
@@ -373,7 +375,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   }
   useEffect(
     () => () => {
-      if (windowLink === undefined) return
+      // Only the table's own rows (YAZ-4547 D24): on a switch of view tab the next view wrote the link in its render.
+      if (windowLink === undefined || windowLink.rows !== wroteRows.current) return
       windowLink.rows = []
       windowLink.show = () => {}
     },

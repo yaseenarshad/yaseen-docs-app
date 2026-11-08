@@ -1,4 +1,4 @@
-import { type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useMemo, useState } from 'react'
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, groupIndentOf } from '../viewSchema'
 import { titleCandidates, type LinkCandidate } from '../../links/completion'
@@ -13,6 +13,7 @@ import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, rowTitle } from './GroupHeader'
 import { type GroupSpot, TOP_SPOT, childSpot, groupTakesNew, spotKey } from './groupDrag'
 import { PageContextMenu } from './PageContextMenu'
+import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
@@ -34,6 +35,10 @@ export interface ListViewProps {
   /** The row's right-click menu (`PageContextMenu`): its two opens, and where a failed action says so. */
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
+  /** "Open in a window" in the right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
+  onOpenWindow?: (path: string) => void
+  /** The card's link: this view writes the order it shows and marks the card's note (D24). */
+  windowLink?: NoteWindowLink
   onNotice?: (message: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
@@ -82,8 +87,12 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY, hover }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY, hover }: ListViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
+  // The note window (YAZ-4547 D24): the order shown through the groups, once per rows, groups or collapse change.
+  const windowOrder = useMemo(() => shownRows(groups, rows, collapsed), [groups, rows, collapsed])
+  const rootRef = useRef<HTMLDivElement>(null)
+  useNoteWindowItems(windowLink, windowOrder, rootRef)
   /** A typed editor keeps its own (native) menu, as in the table. */
   const openMenu = (event: ReactMouseEvent, row: Row): void => {
     if (event.target instanceof Element && event.target.closest('[data-editing]') !== null) return
@@ -137,7 +146,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
       {shown.map((row, i) => {
         const inline = indent ? '' : rest.map((k) => render(row.values[k], resolve)).filter((s) => s !== '').join(separator)
         return (
-          <li key={row.record.path} className="view-list__item" onContextMenu={(event) => openMenu(event, row)} {...hover.itemProps(row.record.path)}>
+          <li key={row.record.path} className={`view-list__item${currentItemClass(windowLink, row.record.path)}`} onContextMenu={(event) => openMenu(event, row)} {...hover.itemProps(row.record.path)}>
             {marker !== 'none' && (
               <span className="view-list__marker" aria-hidden>
                 {marker === 'number' ? `${i + 1}.` : '•'}
@@ -201,11 +210,11 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   }
 
   return (
-    <div className="view-list" style={{ '--view-group-indent': `${groupIndentOf(view)}px` } as CSSProperties}>
+    <div ref={rootRef} className="view-list" style={{ '--view-group-indent': `${groupIndentOf(view)}px` } as CSSProperties}>
       {groups === null
         ? items(rows)
         : groups.map((g) => section(g, TOP_SPOT))}
-      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onNotice={onNotice} onClose={() => setMenu(null)} />}
+      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onOpenWindow={onOpenWindow} onNotice={onNotice} onClose={() => setMenu(null)} />}
     </div>
   )
 }

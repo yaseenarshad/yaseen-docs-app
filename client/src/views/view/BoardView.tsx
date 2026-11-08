@@ -1,4 +1,4 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { type Modifiers, openByGesture, openTarget } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
@@ -13,6 +13,7 @@ import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
+import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
@@ -38,6 +39,10 @@ export interface BoardViewProps {
   onOpenFileRight?: (path: string) => void
   /** Open a card's page without replacing the current tab. */
   onOpenFileBackground?: (path: string) => void
+  /** "Open in a window" in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
+  onOpenWindow?: (path: string) => void
+  /** The card's link: the board writes its order (column by column, top to bottom) and marks the card's note (D24). */
+  windowLink?: NoteWindowLink
   /** Passive notice surface for page actions that fail because a card moved or disappeared. */
   onNotice?: (message: string) => void
   /** A drop on another section, including nested level metadata, via ViewsPane's existing optimistic write path. */
@@ -96,6 +101,8 @@ export function BoardView({
   onOpenFile,
   onOpenFileRight,
   onOpenFileBackground,
+  onOpenWindow,
+  windowLink,
   onNotice,
   onMoveToGroup,
   moveError,
@@ -110,6 +117,18 @@ export function BoardView({
   const adds = levels.map((_, level) => groupTakesNew(view, level))
   /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES. */
   const flipRoot = useFlip()
+  // The note window (YAZ-4547 D24): column by column, top to bottom, collapsed sections left out; the board's root
+  // is the FLIP root too, so one stable ref callback sets both.
+  const windowOrder = useMemo(() => shownRows(groups, [], collapsed), [groups, collapsed])
+  const boardRef = useRef<HTMLDivElement | null>(null)
+  const setBoardRoot = useCallback(
+    (el: HTMLDivElement | null) => {
+      boardRef.current = el
+      flipRoot(el)
+    },
+    [flipRoot],
+  )
+  useNoteWindowItems(windowLink, windowOrder, boardRef)
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */
   const [adding, setAdding] = useState<{ key: string; name: string } | null>(null)
   /** The exact rendered record targeted by the latest whole-card secondary click. */
@@ -237,7 +256,7 @@ export function BoardView({
         <li
           key={row.record.path}
           data-flip-key={row.record.path}
-          className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
+          className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}${currentItemClass(windowLink, row.record.path)}`}
           {...dragSource(row, group, at)}
           {...hover.itemProps(row.record.path)}
           // Every card is a focusable "cell" (YAZ-1557 D2): a plain click SELECTS it, and only the
@@ -360,7 +379,7 @@ export function BoardView({
 
   return (
     <>
-      <div className="view-board" ref={flipRoot} onKeyDown={onCardKeyDown} style={{ '--view-board-col-w': `${width}px` } as CSSProperties}>
+      <div className="view-board" ref={setBoardRoot} onKeyDown={onCardKeyDown} style={{ '--view-board-col-w': `${width}px` } as CSSProperties}>
         {groups.map((g) => {
           const outerAt = TOP_SPOT
           const gk = spotKey(g, outerAt)
@@ -419,6 +438,7 @@ export function BoardView({
           title={menu.title}
           onOpenRight={onOpenFileRight}
           onOpenBackground={onOpenFileBackground}
+          onOpenWindow={onOpenWindow}
           onNotice={onNotice}
           onClose={() => setMenu(null)}
         />

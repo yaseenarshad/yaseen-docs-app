@@ -1,9 +1,11 @@
-import { type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from 'react'
+import { type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { openTarget } from '../../lib/openGesture'
 import { type DayKey, bucketByDay, addDays, monthStart, monthWeeks, timeFirst, timeOf, todayKey, weekDays, weekLabel } from '../calendar'
 import { type Row, propertyLabel } from '../engine'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
+import { type NoteWindowLink, currentItemClass, useNoteWindowItems } from './NoteWindow'
+import { PageContextMenu } from './PageContextMenu'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 
@@ -18,6 +20,12 @@ export interface CalendarViewProps {
   onOpenFile?: (path: string) => void
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
+  /** "Open in a window" in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
+  onOpenWindow?: (path: string) => void
+  /** The card's link: the calendar writes its order and marks the card's note (D24). */
+  windowLink?: NoteWindowLink
+  /** Where a failed page action of the right-click menu says so. */
+  onNotice?: (message: string) => void
   /** A drop on a day, or on the "No date" tray (`null`): ViewsPane's optimistic write. */
   onMoveToDay: (path: string, day: DayKey | null) => void
   /** The last failed move, flagged on its card. */
@@ -57,7 +65,7 @@ const SCALES = [
  * order; ‹ › step a week. Both scales show the month or the week that holds `anchor`, so the switch
  * keeps the place.
  */
-export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onMoveToDay, moveError, onNewOnDay, scale, onScale, wrap = false }: CalendarViewProps) {
+export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, scale, onScale, wrap = false }: CalendarViewProps) {
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
@@ -65,6 +73,8 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   const [trayAll, setTrayAll] = useState(false)
   const [drag, setDrag] = useState<{ path: string; from: DayKey | null } | null>(null)
   const [over, setOver] = useState<string | null>(null)
+  /** The card's right-click menu (YAZ-4547 D24), as the board's. */
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   const { days, undated } = useMemo(() => bucketByDay(rows, dateKey), [rows, dateKey])
   const weeks = useMemo(() => (scale === 'week' ? [weekDays(anchor)] : monthWeeks(month.y, month.m)), [scale, anchor, month.y, month.m])
   // A week's 7 days in their order (D22), once per rows or week change, not on each dragover.
@@ -72,6 +82,14 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
     () => (scale === 'week' && dateKey !== null ? new Map(weeks[0].map((day) => [day, timeFirst(days.get(day) ?? [], dateKey)])) : null),
     [scale, weeks, days, dateKey],
   )
+  // The note window (YAZ-4547 D24): day by day across the days on screen, the timed cards first within a day (every
+  // card, also those behind "+N more"), then "No date". Once per rows or page change, not on each dragover.
+  const windowOrder = useMemo(
+    () => (dateKey === null ? [] : [...weeks.flat().flatMap((day) => weekCards?.get(day) ?? timeFirst(days.get(day) ?? [], dateKey)), ...undated]),
+    [weeks, weekCards, days, undated, dateKey],
+  )
+  const rootRef = useRef<HTMLDivElement>(null)
+  useNoteWindowItems(windowLink, windowOrder, rootRef)
 
   const clear = () => {
     setDrag(null)
@@ -137,7 +155,7 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
     return (
       <li
         key={path}
-        className={`view-cal__card${wrap ? ' view-cal__card--wrap' : ''}${drag?.path === path ? ' view-cal__card--drag' : ''}`}
+        className={`view-cal__card${wrap ? ' view-cal__card--wrap' : ''}${drag?.path === path ? ' view-cal__card--drag' : ''}${currentItemClass(windowLink, path)}`}
         tabIndex={0}
         {...(!locked && {
           draggable: true,
@@ -150,6 +168,10 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
         })}
         {...hover.itemProps(path)}
         onClick={(e) => open(e, path)}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setMenu({ x: e.clientX, y: e.clientY, path, title: row.record.title })
+        }}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget || e.key !== 'Enter') return
           e.preventDefault()
@@ -169,7 +191,7 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   }
 
   return (
-    <div className="view-cal">
+    <div ref={rootRef} className="view-cal">
       <div className="view-cal__nav">
         <button type="button" className="view-toolbar__btn" aria-label={`Previous ${unit}`} title={`Previous ${unit}`} onClick={() => step(-1)}>
           ‹
@@ -245,6 +267,19 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
           </button>
         )}
       </section>
+      {menu !== null && (
+        <PageContextMenu
+          x={menu.x}
+          y={menu.y}
+          path={menu.path}
+          title={menu.title}
+          onOpenRight={onOpenFileRight}
+          onOpenBackground={onOpenFileBackground}
+          onOpenWindow={onOpenWindow}
+          onNotice={onNotice}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   )
 }

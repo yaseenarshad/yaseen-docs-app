@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { budgetMs, timeMedian } from '../test-perf'
-import { bucketByDay } from './calendar'
+import { bucketByDay, timeFirst } from './calendar'
 import type { Row } from './engine'
 import { FileValue } from './expr'
 
@@ -36,6 +36,15 @@ describe('calendar perf (YAZ-4540)', () => {
     console.log(`calendar bucket 1000: median ${median.toFixed(2)} ms, worst ${worst.toFixed(2)} ms`)
     expect(result.undated).toHaveLength(100)
     expect([...result.days.values()].reduce((n, d) => n + d.length, 0)).toBe(900)
+    expect(median).toBeLessThan(budgetMs(16))
+  })
+
+  it('puts 1000 records in time order (a week, and the note window order) in under 16 ms (YAZ-4558, YAZ-4547 D24)', () => {
+    const rows = Array.from({ length: 1000 }, (_, i) => row(i))
+    timeFirst(rows, 'due') // warm up
+    const { median, worst, result } = timeMedian(9, () => timeFirst(rows, 'due'))
+    console.log(`calendar timeFirst 1000: median ${median.toFixed(2)} ms, worst ${worst.toFixed(2)} ms`)
+    expect(result).toHaveLength(1000)
     expect(median).toBeLessThan(budgetMs(16))
   })
 })

@@ -1,4 +1,4 @@
-import { type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { api } from '../../api'
 import { createPreviewCache } from '../../lib/previewCache'
@@ -16,6 +16,7 @@ import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, rowTitle } from './GroupHeader'
 import { type GroupSpot, TOP_SPOT, childSpot, groupTakesNew, spotKey } from './groupDrag'
 import { PageContextMenu } from './PageContextMenu'
+import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
@@ -39,6 +40,10 @@ export interface CardsViewProps {
   /** The card's right-click menu (`PageContextMenu`): its two opens, and where a failed action says so. */
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
+  /** "Open in a window" in the right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
+  onOpenWindow?: (path: string) => void
+  /** The card's link: this view writes the order it shows and marks the card's note (D24). */
+  windowLink?: NoteWindowLink
   onNotice?: (message: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
@@ -141,8 +146,12 @@ function CardCover({ root, cover }: { root: string; cover: Cover }) {
  * page's card); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY, hover }: CardsViewProps) {
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY, hover }: CardsViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
+  // The note window (YAZ-4547 D24): the order shown through the groups, once per rows, groups or collapse change.
+  const windowOrder = useMemo(() => shownRows(groups, rows, collapsed), [groups, rows, collapsed])
+  const rootRef = useRef<HTMLDivElement>(null)
+  useNoteWindowItems(windowLink, windowOrder, rootRef)
   /** A typed editor keeps its own (native) menu, as in the table. */
   const openMenu = (event: ReactMouseEvent, row: Row): void => {
     if (event.target instanceof Element && event.target.closest('[data-editing]') !== null) return
@@ -185,7 +194,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
   const grid = (shown: readonly Row[]) => (
     <ul className="view-cards__grid">
       {shown.map((row) => (
-        <li key={row.record.path} className="view-card" onContextMenu={(event) => openMenu(event, row)} {...hover.itemProps(row.record.path)}>
+        <li key={row.record.path} className={`view-card${currentItemClass(windowLink, row.record.path)}`} onContextMenu={(event) => openMenu(event, row)} {...hover.itemProps(row.record.path)}>
           {imageKey !== null && <CardCover root={root} cover={coverOf(row.record, imageKey)} />}
           <div className="view-card__body">
             <button type="button" className="view-card__title" onClick={() => onOpenFile(row.record.path)}>
@@ -252,11 +261,11 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
   }
 
   return (
-    <div className="view-cards" style={style}>
+    <div ref={rootRef} className="view-cards" style={style}>
       {groups === null
         ? grid(rows)
         : groups.map((g) => section(g, TOP_SPOT))}
-      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onNotice={onNotice} onClose={() => setMenu(null)} />}
+      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onOpenWindow={onOpenWindow} onNotice={onNotice} onClose={() => setMenu(null)} />}
     </div>
   )
 }

@@ -433,3 +433,117 @@ describe('Open in a window (YAZ-4547)', () => {
     })
   })
 })
+
+describe('Open in a window in every folder view (YAZ-4547 D24)', () => {
+  /** Grouped by status, sorted by name: A todo, B done, C todo, D done, E todo, so the groups' order is not the rows' order. */
+  const grouped = (type: string) => `views:
+  - type: ${type}
+    name: V
+    order:
+      - file.name
+    sort:
+      - property: file.name
+        direction: ASC
+    groupBy:
+      property: note.status
+`
+  const host = () => testFolderHost({ openRight: vi.fn(), renderNoteEditor: (p) => <div className="stub-editor">{p}</div> })
+  const ITEM: Record<string, string> = { board: '.view-board__card', list: '.view-list__item', cards: '.view-card', calendar: '.view-cal__card' }
+  const items = (type: string) => [...document.querySelectorAll<HTMLElement>(ITEM[type])]
+  const itemOf = (type: string, p: string) => items(type).find((i) => i.dataset.hoverItem === p)!
+  const marked = () => [...document.querySelectorAll<HTMLElement>('.view-item--current')].map((i) => i.dataset.hoverItem)
+  function openItem(type: string, p: string): void {
+    rightClick(itemOf(type, p))
+    const labels = menuItems().map((item) => item.textContent)
+    expect(labels[labels.indexOf('Open in right panel') + 1]).toBe('Open in a window')
+    click(menuItems().find((item) => item.textContent === 'Open in a window')!)
+  }
+  /** Every note the card shows from where it opened to the end, by ›. */
+  function walk(): (string | null)[] {
+    const seen = [shownPath()]
+    while (!button('Next row').disabled) {
+      click(button('Next row'))
+      seen.push(shownPath())
+    }
+    return seen
+  }
+
+  for (const type of ['board', 'list', 'cards']) {
+    it(`${type}: the item opens the card, ‹ › follow the order shown through the groups, and the current item is marked`, () => {
+      mount(grouped(type), {}, host())
+      const shown = items(type).map((i) => i.dataset.hoverItem!)
+      // Board: column by column, top to bottom; List and Cards: the order shown, through the groups.
+      expect(shown).toHaveLength(5)
+      expect(shown).not.toEqual(['A', 'B', 'C', 'D', 'E'].map(path))
+      openItem(type, shown[0])
+      expect(shownPath()).toBe(shown[0])
+      expect(marked()).toEqual([shown[0]])
+      expect(button('Previous row').disabled).toBe(true)
+      expect(walk()).toEqual(shown)
+      expect(count()).toBe('5 of 5')
+      expect(marked()).toEqual([shown[4]])
+      click(button('Previous row'))
+      expect(marked()).toEqual([shown[3]])
+      click(button('Close window'))
+      expect(marked()).toEqual([])
+    })
+  }
+
+  it('list: the items of a collapsed group are skipped', () => {
+    mount(grouped('list'), {}, host())
+    click([...document.querySelectorAll<HTMLButtonElement>('.view-group__toggle')].find((b) => b.getAttribute('aria-label')?.includes('done'))!)
+    openItem('list', path('A'))
+    expect(walk()).toEqual(['A', 'C', 'E'].map(path))
+  })
+
+  it('back on the Board tab from the Table tab, › steps through the board\'s order (the table leaves the link alone)', () => {
+    mount(`views:
+  - type: table
+    name: T
+${grouped('board').split('\n').slice(1).join('\n').replace('name: V', 'name: B')}`, {}, host())
+    const tab = (name: string) => click([...document.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === name)!)
+    tab('B')
+    const shown = items('board').map((i) => i.dataset.hoverItem!)
+    openItem('board', shown[0])
+    // Away to the table and back: the board's card shows again. A › with no render of the board reads its order.
+    tab('T')
+    // The tab click alone (no second render): the commit that unmounts the table is the last thing that ran.
+    act(() => [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'B')!.click())
+    expect(shownPath()).toBe(shown[0])
+    act(() => button('Next row').click())
+    expect(shownPath()).toBe(shown[1])
+    expect(marked()).toEqual([shown[1]])
+  })
+
+  describe('calendar', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 11, 10, 12, 0))
+    })
+    afterEach(() => vi.useRealTimers())
+    const dated = (name: string, due?: string): IndexRecord => ({ ...note(name, 0, 'todo'), properties: due === undefined ? {} : { due } })
+    // Dec 3 has a bare date before a timed one in row order: the timed card comes first within the day.
+    const CAL = [dated('A', '2026-12-03'), dated('B', '2026-12-03 09:00'), dated('C', '2026-12-01'), dated('D'), dated('E', '2026-12-09 14:00')]
+    const CALENDAR = `views:
+  - type: calendar
+    name: V
+`
+
+    it('a card opens the window; ‹ › go day by day across the month, timed cards first, then "No date"; the current card is marked', () => {
+      const { setRecords } = mount(CALENDAR, {}, host())
+      setRecords(CAL)
+      openItem('calendar', path('C'))
+      expect(marked()).toEqual([path('C')])
+      expect(walk()).toEqual(['C', 'B', 'A', 'E', 'D'].map(path))
+      expect(marked()).toEqual([path('D')])
+    })
+
+    it('in Week, ‹ › go through the week on screen', () => {
+      const { setRecords } = mount(`${CALENDAR}    calendarScale: week\n`, {}, host())
+      setRecords(CAL)
+      openItem('calendar', path('E'))
+      expect(count()).toBe('1 of 2')
+      expect(walk()).toEqual(['E', 'D'].map(path))
+    })
+  })
+})

@@ -1,10 +1,11 @@
-import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { Row } from '../engine'
+import type { Group, Row } from '../engine'
 import { cellNotePinnedAtStart } from '../../editor/table/cellNoteCard'
 import { isNoteKey } from '../../editor/noteKeys'
 import { cssZoom } from '../../lib/cssZoom'
 import { storage } from '../../lib/storage'
+import { TOP_SPOT, type GroupSpot, childSpot, spotKey } from './groupDrag'
 
 /**
  * The table's side of the card (YAZ-4547 D16): one mutable object per folder page, so a step renders the card and
@@ -20,6 +21,65 @@ export interface NoteWindowLink {
 }
 
 export const noteWindowLink = (): NoteWindowLink => ({ rows: [], current: null, show: () => {} })
+
+/** The class of the item the card shows in Board, List, Cards and Calendar (YAZ-4547 D24); the table has its own row class. */
+export const CURRENT_ITEM = 'view-item--current'
+
+/**
+ * The rows Board, List and Cards show, in their order (D24): the groups depth first — each group's direct rows, then
+ * its subgroups, as a Board column reads top to bottom — and a collapsed group's rows left out. No groups: the rows.
+ */
+export function shownRows(groups: readonly Group[] | null, rows: readonly Row[], collapsed: readonly string[]): readonly Row[] {
+  if (groups === null) return rows
+  const shut = new Set(collapsed)
+  const out: Row[] = []
+  const walk = (list: readonly Group[], at: GroupSpot) => {
+    for (const g of list) {
+      if (shut.has(spotKey(g, at))) continue
+      out.push(...(g.children === undefined ? g.rows : (g.direct ?? [])))
+      if (g.children !== undefined) walk(g.children, childSpot(g, at))
+    }
+  }
+  walk(groups, TOP_SPOT)
+  return out
+}
+
+/**
+ * Board, List, Cards and Calendar's side of the card (D24), as TableView's: each render writes the view's order to
+ * the link, and `show` marks the items of `current` under `root` (every `data-hover-item` of that note) and scrolls the
+ * first into view. A step writes the mark on the DOM, so the view does not render for it; the view's own render draws
+ * the same mark from `link.current` (`CURRENT_ITEM`). On a switch of view tab the next view writes the link in its
+ * render, before this one's cleanup runs, so the cleanup clears only what this view wrote.
+ */
+export function useNoteWindowItems(link: NoteWindowLink | undefined, order: readonly Row[], root: RefObject<HTMLElement | null>): void {
+  const wrote = useRef(order)
+  wrote.current = order
+  if (link !== undefined) {
+    link.rows = order
+    link.show = () => {
+      const el = root.current
+      if (el === null) return
+      let shown: HTMLElement | null = null
+      for (const item of el.querySelectorAll<HTMLElement>('[data-hover-item]')) {
+        const on = item.dataset.hoverItem === link.current
+        item.classList.toggle(CURRENT_ITEM, on)
+        if (on) shown ??= item
+      }
+      shown?.scrollIntoView?.({ block: 'nearest' })
+    }
+  }
+  useEffect(
+    () => () => {
+      if (link === undefined || link.rows !== wrote.current) return
+      link.rows = []
+      link.show = () => {}
+    },
+    [link],
+  )
+}
+
+/** ` view-item--current` on the item of the note the card shows, for a view's className. */
+export const currentItemClass = (link: NoteWindowLink | undefined, path: string): string => (link !== undefined && link.current === path ? ` ${CURRENT_ITEM}` : '')
 
 /** An open card: the note it shows now, and its place, size and pin, kept while the app runs (D17): in memory only. */
 export interface NoteWindowMemory {

@@ -1507,6 +1507,16 @@
   box-shadow: inset 2px 0 0 var(--accent), inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
 }
 
+/* The card or row of the note the note window shows in Board, List, Cards and Calendar (YAZ-4547 D24,
+   `CURRENT_ITEM`): the table row's soft fill and an accent ring. */
+.view-board__card.view-item--current,
+.view-list__item.view-item--current,
+.view-card.view-item--current,
+.view-cal__card.view-item--current {
+  background-color: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
 /* The note window (YAZ-4547, `NoteWindow.tsx`): a card over the folder page, in its `section.editor` beside the
    scroller, so it stays put while the page scrolls. The cell-note card's look (`editor/table/table.css`); its head
    buttons share the cell-note card's classes. `NoteWindow` writes its place and size. */

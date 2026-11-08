@@ -615,6 +615,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onOpenFile={onOpenFile}
           onOpenFileRight={folder.openRight}
           onOpenFileBackground={folder.openBackground}
+          onOpenWindow={openWindow}
+          windowLink={windowLink}
           onNotice={folder.onNotice}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
@@ -630,6 +632,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onOpenFile={onOpenFile}
           onOpenFileRight={folder.openRight}
           onOpenFileBackground={folder.openBackground}
+          onOpenWindow={openWindow}
+          windowLink={windowLink}
+          onNotice={folder.onNotice}
           onMoveToDay={onMoveToDay}
           moveError={moveError}
           onNewOnDay={(day) => {
@@ -660,6 +665,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onOpenFile={onOpenFile}
           onOpenFileRight={folder.openRight}
           onOpenFileBackground={folder.openBackground}
+          onOpenWindow={openWindow}
+          windowLink={windowLink}
           onNotice={folder.onNotice}
           onNewInGroup={onNewNote}
           properties={properties}
@@ -684,6 +691,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onOpenFile={onOpenFile}
           onOpenFileRight={folder.openRight}
           onOpenFileBackground={folder.openBackground}
+          onOpenWindow={openWindow}
+          windowLink={windowLink}
           onNotice={folder.onNotice}
           onNewInGroup={onNewNote}
           root={root}
