@@ -4,7 +4,8 @@
  *
  * - Personal, here only: the week start, the folder views' "Preview on hover" (moved from Files & Links, the same
  *   `hoverPreviewIn.folderViews`), the table row band and the note window's pin. The last two follow the table block's
- *   settings (`folderRowBandOn`, `folderWindowPinned`) until they are set.
+ *   settings (`folderRowBandOn`, `folderWindowPinned`) until they are set. "Ask before deleting notes" (YAZ-4592 S26)
+ *   is the row menu's Delete note…, separate from the sidebar's Confirm before deleting.
  * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`); its menus say "from Settings".
  * - Page default: the sidebar's folder page file rows (D37); a folder's ⚙ beats it.
  *
@@ -92,6 +93,8 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         },
         row('rowBand', 'Row band on hover', ON_OFF_OPTIONS, { hint: 'A band on the table row under the mouse. Until you set it, it follows Editor › Tables › Row band.', keywords: ['band', 'highlight', 'hover', 'row'], shown: ({ settings }) => folderRowBandOn(settings) }),
         row('keepWindowPinned', 'Keep the window pinned', ON_OFF_OPTIONS, { hint: 'The note window of a table row stays open on a click outside it. Until you set it, it follows Editor › Cell notes › Keep cell notes open.', keywords: ['note window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
+        // Its own switch (YAZ-4592 S26): the sidebar's Confirm before deleting does not turn it off.
+        row('askBeforeDelete', 'Ask before deleting notes', ON_OFF_OPTIONS, { hint: 'Delete note… in a row’s menu asks first. The note moves to the Trash. The sidebar’s Confirm before deleting does not change this.', keywords: ['delete', 'confirm', 'trash', 'ask'] }),
       ],
     },
     {

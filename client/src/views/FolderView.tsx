@@ -83,6 +83,8 @@ export interface FolderViewProps {
   onOpenFolderPage?: (path: string) => void
   /** A full editor on a note, for the table's note window (YAZ-4547): handed to `ViewsPane` as `FolderHost.renderNoteEditor`. */
   renderNoteEditor?: (path: string) => ReactNode
+  /** App's `trashMany` (YAZ-4592 S26), the sidebar's delete: handed to `ViewsPane` as `FolderHost.trash`. */
+  onDeleteEntries?: (paths: readonly string[]) => Promise<void>
   /** The Page tab's note editor on this folder's `.folder.md` (YAZ-4584 D38), built by `Editor`: handed to `ViewsPane` as `FolderHost.renderPage`. */
   renderPage?: () => ReactNode
   /** The app tab that shows this folder (`Editor`'s `tabId`): handed to `ViewsPane`, whose note window is that tab's (YAZ-4544). */
@@ -166,6 +168,7 @@ export function FolderView({
   onOpenFileBackground,
   onOpenFolderPage,
   renderNoteEditor,
+  onDeleteEntries,
   renderPage,
   tabId,
   viewKey,
@@ -502,6 +505,10 @@ export function FolderView({
     openFolderPage: onOpenFolderPage,
     renderNoteEditor,
     openBackground: onOpenFileBackground,
+    // "Delete note…" and "Duplicate note" (YAZ-4592 S26): the sidebar's delete, and a copy beside the note.
+    trash: onDeleteEntries,
+    duplicate: (note) =>
+      void api.file.duplicate({ path: note }).catch((err: unknown) => onNotice?.(`Can't duplicate: ${err instanceof Error ? err.message : String(err)}`, 'error')),
     onNotice,
     wikilinks: source,
     // The Page's editor reads the file, so it waits for the index to know one (YAZ-4584): a "+ Page" on a folder with none creates it.

@@ -18,10 +18,12 @@ import { holdColResize } from '../../lib/colResize'
 import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
 import { openByGesture } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
-import { rowPage } from '../../links/shortcuts'
+import { isFolderRow, rowPage } from '../../links/shortcuts'
 import { UNFROZE_ROWS, frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 import { FillMenu } from './FillMenu'
+import { filterValueItems, noteItems } from './rowMenuItems'
+import { withFilter } from './filterRows'
 import { cellFillOf, fillIndex, fillPaint, setViewFill } from './fills'
 import { TableHeaderMenu, wrapsColumn } from './TableHeaderMenu'
 import { useViewDefaults } from '../viewDefaults'
@@ -99,6 +101,10 @@ export interface TableViewProps {
   onRetitle: (path: string, title: string) => void
   /** The app's own keys in this vault (`reservedKeys`): the header's "Add column" refuses them (YAZ-4544). */
   reservedKeys: ReadonlySet<string>
+  /** The row menu's "Duplicate note" (YAZ-4592 S26): `FolderHost.duplicate`. Absent: no such item. */
+  onDuplicateNote?: (path: string) => void
+  /** "Delete note…" (YAZ-4592 S26): ViewsPane's `confirmDeleteNotes`, which asks first unless the setting is off. Absent: no such item. */
+  onDeleteNotes?: (paths: readonly string[]) => void
 }
 
 const DEFAULT_WIDTH = 150
@@ -195,7 +201,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, reservedKeys, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, reservedKeys, readOnly = NO_READ_ONLY, hover, onDuplicateNote, onDeleteNotes }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
@@ -207,8 +213,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
-  /** The row right-click's menu: its record, the column key of the cell it was opened on (the fill target, YAZ-4536), and its data row index (the freeze target, YAZ-4537). */
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; record: IndexRecord; column: string; r: number } | null>(null)
+  /**
+   * The row right-click's menu: its record, the column key of the cell it was opened on (the fill target, YAZ-4536), its
+   * data row index (the freeze target, YAZ-4537), and that cell's value (the filter's, YAZ-4592 S25).
+   */
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; record: IndexRecord; column: string; r: number; value: Value } | null>(null)
   /** The header's own menu (YAZ-1513): `key` null = the `#` gutter header. */
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; key: string | null } | null>(null)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
@@ -504,7 +513,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     })
 
   /** Google-Sheets style: right-click selects the data cell, unless a typed editor owns it. */
-  const openRowMenu = (record: IndexRecord) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
+  const openRowMenu = ({ record, values }: Row) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
     if (!(event.target instanceof Element)) return
     if (event.target.closest('[data-editing]') !== null) return
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
@@ -513,7 +522,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     cell.focus()
     // `data-cell` is `row:column`: the column index names the key the fill is for (YAZ-4536), the row index the freeze (YAZ-4537).
     const [r, c] = (cell.dataset.cell ?? '').split(':').map(Number)
-    setRowMenu({ x: event.clientX, y: event.clientY, record, column: keys[c], r })
+    setRowMenu({ x: event.clientX, y: event.clientY, record, column: keys[c], r, value: values[keys[c]] ?? null })
   }
 
   /**
@@ -655,7 +664,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           style={frozenRowStyle}
           {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)), ...dnd.target(line.g, line.at) })}
           {...hover.itemProps(line.row.record.path)}
-          onContextMenu={openRowMenu(line.row.record)}
+          onContextMenu={openRowMenu(line.row)}
         >
           {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}
           {numbered && <td className="view-table__gutter">{line.n}</td>}
@@ -856,6 +865,13 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             onNotice={onNotice}
             onClose={() => setRowMenu(null)}
             extra={[
+              // "Filter by this value" / "Hide this value" (YAZ-4592 S25): one more rule in the view's filters.
+              filterValueItems(rowMenu.column, rowMenu.value, (rule) => {
+                setRowMenu(null)
+                onUpdate((d) => {
+                  d.views[viewIndex].filters = withFilter(d.views[viewIndex].filters, rule)
+                })
+              }),
               <FillMenu
                 key="fill"
                 start={cellFillOf(fills, rowMenu.record.path, rowMenu.column)}
@@ -876,7 +892,22 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   }, count === 0 ? UNFROZE_ROWS : undefined)
                 }}
               />,
-            ]}
+              // A folder row is no note (YAZ-4592 S26): it has neither.
+              isFolderRow(rowMenu.record)
+                ? null
+                : noteItems(
+                    onDuplicateNote &&
+                      (() => {
+                        setRowMenu(null)
+                        onDuplicateNote(rowMenu.record.path)
+                      }),
+                    onDeleteNotes &&
+                      (() => {
+                        setRowMenu(null)
+                        onDeleteNotes([rowMenu.record.path])
+                      }),
+                  ),
+            ].filter((group) => group !== null)}
           />
         )}
         {headerMenu !== null && (

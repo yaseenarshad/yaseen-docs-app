@@ -475,6 +475,7 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   cardTitles: oneOf(FOLDER_PAGE_CHOICES.cardTitles),
   hideWeekends: isBool,
   showFolderPageFiles: isBool,
+  askBeforeDelete: isBool,
 }
 const FOLDER_PAGES_PARTS = Object.keys(FOLDER_PAGES_PART_OK) as (keyof FolderPagesSettings)[]
 const isFolderPages = (v: unknown): v is FolderPagesSettings => isRecord(v) && FOLDER_PAGES_PARTS.every((part) => FOLDER_PAGES_PART_OK[part](v[part]))

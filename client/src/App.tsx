@@ -2955,6 +2955,8 @@ export function App() {
       onOpenFolderPage: openKeptPage,
       // YAZ-4547: a folder table opens a row in a window with the same editor.
       renderNoteEditor,
+      // YAZ-4592 S26: a folder table's "Delete note…" is the sidebar's delete.
+      onDeleteEntries: trashMany,
       onRetitle: requestRetitle,
       sync: scope.sync.status,
       onSyncNow: scope.sync.syncNow,
