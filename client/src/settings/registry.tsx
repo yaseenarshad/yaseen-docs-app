@@ -37,6 +37,7 @@ import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented, Stepper } from './controls'
+import { ProfileControl } from './ProfileControl'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
@@ -61,7 +62,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, COMMENTS_RESOLVED_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -491,6 +492,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     title: 'General',
     groups: [
       {
+        // YAZ-4615 D7: who you are on a comment. Your first comment in a vault puts this card in its people file (D1).
+        title: 'You',
+        items: [
+          {
+            id: 'profile',
+            label: 'Profile',
+            hint: 'Your comments show this name and picture. They go into each vault you comment in, and to its GitHub repo.',
+            keywords: ['name', 'picture', 'photo', 'avatar', 'handle', 'profile', 'comments', 'you'],
+            wide: true,
+            render: ({ settings, onChange }) => <ProfileControl settings={settings} onChange={onChange} />,
+          },
+        ],
+      },
+      {
         title: 'Settings folder',
         items: [
           {
@@ -607,6 +622,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['comments order', 'sort'],
             render: ({ settings, onChange }) => (
               <Segmented options={COMMENTS_ORDER_OPTIONS} value={settings.commentsOrder} onChange={(commentsOrder) => onChange({ ...settings, commentsOrder })} ariaLabel="Comments order" />
+            ),
+          },
+          {
+            // YAZ-4615 D5: where a resolved thread goes.
+            id: 'commentsResolved',
+            label: 'Resolved',
+            hint: 'At the bottom: a folded group under the open comments. In place: in time order, dimmed.',
+            keywords: ['resolved comments', 'resolve', 'done'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={COMMENTS_RESOLVED_OPTIONS} value={settings.commentsResolved} onChange={(commentsResolved) => onChange({ ...settings, commentsResolved })} ariaLabel="Resolved comments" />
+            ),
+          },
+          {
+            // YAZ-4615 D10: one line at the top of each new note, so an agent knows where comments go.
+            id: 'commentsHint',
+            label: 'Add the comment hint to new notes',
+            hint: 'Each new note gets one hidden line that tells an agent how to add a comment.',
+            keywords: ['comment hint', 'agent', 'ai', 'new note', 'yaml'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.commentsHint} onChange={(commentsHint) => onChange({ ...settings, commentsHint })} ariaLabel="Add the comment hint to new notes" />
             ),
           },
         ],
