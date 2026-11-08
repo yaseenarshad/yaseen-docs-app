@@ -1063,9 +1063,9 @@ List (4F, GRO-2140, `view/ListView.tsx`, `.view-list`): `type: list` (Obsidian's
 Every menu on a folder page and its items, top to bottom. A line `—` is a group line (`.ctx-menu__group`). No item shows a key hint. While the folder page is read only (D36) the items stay, a write from them is refused with the banner "This folder page is read only", and only "Move to Other files" and "Move back to the table" go. A note that is read only refuses its own writes (`guardReadOnly`).
 
 **Row right-click** (`view/PageContextMenu.tsx`; the table adds its groups from `view/rowMenuItems.tsx` and `TableView.tsx`). A right-click inside a cell selection opens the selection menu instead.
-- Open (the table and the Other files tray only) · Open in new tab · Copy path · Reveal in Finder · Open in right panel (when the host has one) · Open in mini window ⇧↩ (the 5E card, `NoteWindow.tsx`; the name is D57's, built with 5E1 — before it the item read "Open in a window") — on a folder row, Copy path and Reveal name the directory
+- Open (the table and the Other files tray only) · Open in new tab · Copy path · Reveal in Finder · Open in right panel (when the host has one) · Open in a window (the 5E card, `NoteWindow.tsx`; D57 renames it "Open in mini window ⇧↩" when 5E1 lands) — on a folder row, Copy path and Reveal name the directory
 - — Filter by this value · Hide this value (table; only when a rule can name the value, S25)
-- — Fill cell › · Fill row › (table): No fill — Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Grey, Brown — Custom colour…
+- — Fill cell › · Fill row › (table; the app's one flyout, `components/Flyout.tsx`, YAZ-4544 4F): No fill — Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Grey, Brown — Custom colour…
 - — Freeze up to this row (reads "✓ Frozen up to this row" on the frozen row; off past 10 rows, "At most 10 rows freeze") · Unfreeze rows (off while nothing is frozen) (table)
 - — Duplicate note · Delete note… (table; not on a folder row; Delete asks first, S26)
 - — Move to Other files (any view; a note row, while the tray shows)
@@ -1082,14 +1082,16 @@ Every menu on a folder page and its items, top to bottom. A line `—` is a grou
 - Edit column… · Rename column… · Hide column · Add column to the right…
 - — Sort › · Group › · Text ›
   - Sort: A to Z · Z to A · Option order · Reversed option order (a Select) — Remove sort (when the column sorts)
-  - Group: Group by this column · Add as next group level (not when it is a level already; off at three, "Three levels at most") — Levels: each level, ✓ on this column — Remove this group level (when it is a level)
-  - Text: Wrap text · Clip text (✓ on the current one)
+  - Group: Group by this column · Add as next group level (only while the view is grouped, YAZ-4544 4F; not when the column is a level already, but Folder may be two; off at three, "Three levels at most") — Levels: each level, ✓ on this column — Remove this group level (when it is a level)
+  - Text: Wrap text · Clip text (✓ on what the cells show: the column's own choice, else the view's or Settings' Text in cells, else its kind — one rule with the cells, YAZ-4544 4E)
 - — Freeze up to this column (reads "✓ Frozen up to this column" on the frozen column) · Unfreeze columns (off while nothing is frozen)
 - — Delete column… (off for the built-in keys, with the reason as its tooltip; not where the vault does not use IDs)
 
 **View tab right-click** (`view/ViewTabs.tsx`, no group lines): Rename · Duplicate (off on the Page tab) · Open on this view (✓ on the start view) · View settings… (off on the Page tab) · Export as CSV… · Copy as table (both off on the Page tab) · Delete (off on the last view). The "+" beside the tabs opens "Add view": Table, Board, Calendar, Cards, List, Page (no Page while there is one).
 
-**Group header right-click** (YAZ-4501 2F; `view/GroupHeader.tsx`): Collapse this group / Expand this group · New note in this group.
+**Group header right-click** (YAZ-4604 D55; `view/GroupHeader.tsx`, `view/GroupHeaderMenu.tsx`; Table, Board, List and Cards, every level; no group lines): Collapse this group / Expand this group (by its state, the chevron's toggle) · New note in this group (only where the header shows "+"). In the Table only the header's own content takes it; the empty rest of the group row still shows the system menu.
+
+**The Properties menu's table look** (`view/TableLookSettings.tsx`, a table's Properties popover, YAZ-4544 10A): Row height (Short | Medium | Tall) · Text in cells (By kind | Wrap | Clip), each with the grey "from Settings", or Reset once the view has its own choice.
 
 **The page cog** (`FolderToolbar.tsx`, `editor/PageSettings.tsx`); the fold-all button stands left of it on the Page tab (10D).
 - This folder page: Read only (on at once; off opens "Allow edits?") · Show folder page file · Preview on hover · Show Other files — each Settings / On / Off, where Settings is "Follow Settings › Folder pages"
@@ -1100,7 +1102,7 @@ Every menu on a folder page and its items, top to bottom. A line `—` is a grou
 **Other files tray right-click** (`view/OtherFiles.tsx`): Open · Open in new tab · Copy path · Reveal in Finder — Move back to the table (a note line, while the tray takes moves).
 
 **Settings › Folder pages** (`settings/folderPagesSection.tsx`, defaults in `shared/types.ts`)
-- Personal: Week starts on (Monday | Sunday; Monday) · Preview on hover (On) · Row band on hover (follows Editor › Tables › Row band) · Keep the mini window pinned (D57; follows "Keep cell notes open", else On) · Ask before deleting notes (On)
+- Personal: Week starts on (Monday | Sunday; Monday) · Preview on hover (On) · Row band on hover (follows Editor › Tables › Row band) · Keep the window pinned (follows Editor › Cell notes › Keep cell notes open until it is set; D57 renames it "Keep the mini window pinned" with 5E1) · Ask before deleting notes (On)
 - View defaults: Row height (Short | Medium | Tall; Short) · Row numbers (On) · Text in cells (By kind | Wrap | Clip; By kind) · Group indent (Small | Medium | Large; Medium) · Show empty groups (Off) · Subfolders (Their notes | As rows | Both | Hide; Their notes) · Folders first (On) · Calendar opens in (Month | Week; Month) · Calendar card titles (Clip | Wrap; Clip) · Calendar hides weekends (Off)
 - Page: Show folder page files (Off) · Show Other files (On)
 
