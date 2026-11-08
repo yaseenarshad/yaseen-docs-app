@@ -17,6 +17,7 @@ import { groupAppend, groupLevels, groupOnly, groupRemoveLevel } from './groupLe
 import { FlyoutItem, FlyoutParent, useFlyout } from '../../components/Flyout'
 import { canonicalKey } from './keys'
 import { TextField } from './TextField'
+import { textInCellsOf } from './TableLookSettings'
 
 export interface TableHeaderMenuProps {
   x: number
@@ -89,7 +90,8 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
 export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, reserved, records, wrapKind, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
   const flyout = useFlyout<'sort' | 'group' | 'text'>()
-  const { textInCells } = useViewDefaults()
+  // The view's own Text in cells, else Settings' (YAZ-4544 10A).
+  const textInCells = textInCellsOf(def.views[viewIndex], useViewDefaults())
   /** Once per menu, not per keystroke in its fields: the kind may walk the rows. */
   const typeLabel = useMemo(() => (columnKey === null ? '' : columnTypeLabel(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
   const kind = useMemo(() => (columnKey === null ? null : columnKind(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])

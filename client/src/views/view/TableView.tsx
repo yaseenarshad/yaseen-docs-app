@@ -30,6 +30,7 @@ import { SelectionMenu } from './SelectionMenu'
 import { type Pick, type TableSelection, cellRange, indicesOf, inSelection, parseTsv, pickLine, toTsv, valueFromText } from './tableSelection'
 import type { PropertyWrite } from '../writeProperty'
 import { TableHeaderMenu, wrapKind, wrapsColumn } from './TableHeaderMenu'
+import { textInCellsOf } from './TableLookSettings'
 import { useViewDefaults } from '../viewDefaults'
 import { orderOf } from './DirectionPicker'
 import { TextField } from './TextField'
@@ -306,9 +307,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     [typings, vaultRecords, vaultFolders, resolveLink, root],
   )
   const rowH = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short
-  // Settings › Folder pages › Text in cells (YAZ-4585): a column with no Wrap or Clip of its own. Row height and row
-  // numbers come in `view` already, with Settings filled in (`withDefaults`).
-  const { textInCells } = useViewDefaults()
+  // Text in cells (YAZ-4585, YAZ-4544 10A): a column with no Wrap or Clip of its own follows the view's, else Settings'. Row
+  // height, row numbers and the view's Text in cells come in `view` already, with Settings filled in (`withDefaults`).
+  const defaults = useViewDefaults()
   const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
   const frozen = frozenColumnCount(view.frozenColumns, keys.length)
   const sorts = view.sort ?? []
@@ -418,7 +419,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // Wrap or Clip per column (YAZ-4582 D29): a Wrap column's row grows, a Clip column is one line. With no choice, a
   // chip column wraps and the rest clip, as on `main`. A windowed table clips every cell, so each line is exactly the
   // row height its spacer maths counts.
-  const clipped = keys.map((key, c) => windowed || !wrapsColumn(view, key, wrapKind(typings[c]), textInCells))
+  const clipped = keys.map((key, c) => windowed || !wrapsColumn(view, key, wrapKind(typings[c]), textInCellsOf(view, defaults)))
   const viewH = wrapRef.current?.clientHeight || FALLBACK_VIEWPORT
   const first = windowed ? Math.max(pinned, Math.min(lines.length - 1, Math.floor(scrollTop / rowH) - OVERSCAN)) : pinned
   const count = windowed ? Math.min(lines.length - first, Math.ceil(viewH / rowH) + 2 * OVERSCAN) : lines.length - first

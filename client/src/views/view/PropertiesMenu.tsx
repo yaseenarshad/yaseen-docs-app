@@ -19,6 +19,7 @@ import { cardWidth } from './cardWidth'
 import { CalendarShowBy } from './CalendarView'
 import { hideWeekendsDefault, hidesWeekends } from '../calendar'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
+import { TableLookSettings } from './TableLookSettings'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
 
 export interface PropertiesMenuProps {
@@ -250,6 +251,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
       {view.type === 'table' && (
         <>
           <p className="view-menu__label">Table</p>
+          <TableLookSettings view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           <label className="view-settings-row">
             <span>Frozen columns</span>
             <select

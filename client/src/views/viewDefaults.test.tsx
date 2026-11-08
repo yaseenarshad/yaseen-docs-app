@@ -227,6 +227,52 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
     expect(toggle().checked).toBe(false)
   })
 
+  it('Properties › Row height (YAZ-4544 10A): from Settings with no key; a choice off Settings writes it and the rows follow; Reset removes it', () => {
+    const { el, yaml } = mount(table(), { folderPages: fp({ rowHeight: 'tall' }) })
+    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Row height"]')
+    const hint = () => select().closest('label')!.querySelector('.view-from-settings')
+    const rowH = () => q<HTMLElement>(el, '.view-table').style.getPropertyValue('--view-table-row-h')
+    expect(select().value).toBe('tall')
+    expect(hint()?.textContent).toBe('from Settings')
+    choose(select(), 'medium')
+    expect(yaml()).toContain('rowHeight: medium')
+    expect(rowH()).toBe('44px')
+    expect(hint()?.textContent).toBe('Reset')
+    choose(select(), 'tall')
+    expect(yaml()).not.toContain('rowHeight')
+    choose(select(), 'short')
+    click(hint()!)
+    expect(yaml()).not.toContain('rowHeight')
+    expect(rowH()).toBe('68px')
+  })
+
+  it('Properties › Text in cells (YAZ-4544 10A): a view-wide default under the column’s own choice and over Settings; from Settings and Reset', () => {
+    const clipped = (c: number) => [...el.querySelectorAll<HTMLElement>(`.view-table tbody td[data-cell$=":${c}"]`)].every((td) => td.classList.contains('view-table__cell--clip'))
+    const { el, yaml } = mount(table('    columnWrap:\n      note.status: true\n'))
+    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Text in cells"]')
+    const hint = () => select().closest('label')!.querySelector('.view-from-settings')
+    expect(select().value).toBe('kind')
+    expect(hint()?.textContent).toBe('from Settings')
+    expect([clipped(1), clipped(2)]).toEqual([false, false])
+    choose(select(), 'clip')
+    expect(yaml()).toContain('textInCells: clip')
+    // The view clips the chip column; the Status column's own Wrap still wins.
+    expect([clipped(1), clipped(2)]).toEqual([true, false])
+    expect(hint()?.textContent).toBe('Reset')
+    click(hint()!)
+    expect(yaml()).not.toContain('textInCells')
+    expect([clipped(1), clipped(2)]).toEqual([false, false])
+  })
+
+  it('a view’s Text in cells beats Settings’ (YAZ-4544 10A)', () => {
+    const clipped = (el: ParentNode, c: number) => [...el.querySelectorAll<HTMLElement>(`.view-table tbody td[data-cell$=":${c}"]`)].every((td) => td.classList.contains('view-table__cell--clip'))
+    const { el } = mount(table('    textInCells: wrap\n'), { folderPages: fp({ textInCells: 'clip' }) })
+    expect(clipped(el, 1)).toBe(false)
+    expect(clipped(el, 2)).toBe(false)
+  })
+
   it('Sort and group › Indent and Subfolders: Settings’ value removes the key', () => {
     const { el, yaml } = mount(GROUPED, { folderPages: fp({ groupIndent: 'small', subfolders: 'rows' }) })
     click(q(el, '.view-toolbar [aria-label="Sort"]'))

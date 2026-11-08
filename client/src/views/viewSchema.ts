@@ -49,6 +49,8 @@ export interface ViewDef {
   /** The `#` gutter (YAZ-1513). Absent = shown. */
   rowNumbers?: boolean
   rowHeight?: string
+  /** Text in cells for the whole view (YAZ-4544 10A, D34): `kind` (chip columns wrap), `wrap` or `clip`. A column's `columnWrap` beats it; absent = Settings. */
+  textInCells?: 'kind' | 'wrap' | 'clip'
   /** The step of each nested group level (YAZ-4532 D10): `small` 14px, `medium` 28px, `large` 42px. Absent = medium. */
   groupIndent?: 'small' | 'medium' | 'large'
   image?: string

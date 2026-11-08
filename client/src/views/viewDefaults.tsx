@@ -14,6 +14,7 @@ export const useViewDefaults = (): FolderPagesSettings => useContext(ViewDefault
 /** The view keys that have a Settings default, each with the Settings part it reads; the values are the view's words. */
 const DEFAULTED = {
   rowHeight: 'rowHeight',
+  textInCells: 'textInCells',
   rowNumbers: 'rowNumbers',
   groupIndent: 'groupIndent',
   showEmptyColumns: 'showEmptyGroups',
