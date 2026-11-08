@@ -68,7 +68,12 @@ function mount(text = TABLE, over: Partial<FolderHost> = {}) {
     expect(onChange).toHaveBeenCalledTimes(writes + 1)
     expect(parsed.def).toEqual(parseViews(text).def)
   }
-  return { el, onChange, onNotice, toast, undo, yaml: () => serializeViews(parsed), def: () => parsed.def }
+  /** The def moved under the pane — another window's write echoed, or a gesture of a surface this harness does not drive. */
+  const set = (text: string) => {
+    parsed = parseViews(text)
+    draw()
+  }
+  return { el, onChange, onNotice, toast, undo, set, yaml: () => serializeViews(parsed), def: () => parsed.def }
 }
 
 afterEach(() => {
@@ -191,6 +196,50 @@ describe('the Undo toast for view changes (YAZ-4594 S29)', () => {
     expect(onChange).toHaveBeenCalledTimes(writes + 1)
     const { frozenColumns: _gone, ...unfrozen } = parseViews(TABLE).def.views[0]
     expect(def()).toEqual({ ...parseViews(TABLE).def, views: [unfrozen, parseViews(TABLE).def.views[1]] })
+  })
+
+  describe('a hide\'s Undo puts back that one column against the current list (YAZ-4637 M3, element-wise)', () => {
+    const order = (text: string) => TABLE.replace(`    order:
+      - file.name
+      - note.status
+      - note.priority
+`, text)
+    const firstUndo = (onNotice: ReturnType<typeof vi.fn>) => act(() => (onNotice.mock.calls[0] as [string, string, string, Notice['action']])[3]!.run())
+
+    it('hide A, hide B, Undo A: A shown, B still hidden', () => {
+      const { el, onNotice, def } = mount()
+      rightClick(header(el, 'Priority'))
+      click(item(el, 'Hide column'))
+      rightClick(header(el, 'Status'))
+      click(item(el, 'Hide column'))
+      expect(def().views[0].order).toEqual(['file.name'])
+      firstUndo(onNotice)
+      expect(def().views[0].order).toEqual(['file.name', 'note.priority'])
+    })
+
+    it('hide A, reorder another column, Undo A: A back after its old neighbour, the reorder kept', () => {
+      const { el, onNotice, def, set } = mount()
+      rightClick(header(el, 'Status'))
+      click(item(el, 'Hide column'))
+      // Priority dragged before the Name (the header drag's one `order` write).
+      set(order(`    order:
+      - note.priority
+      - file.name
+`))
+      firstUndo(onNotice)
+      expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
+    })
+
+    it('hide A, another window hides C (the rebase brings it), Undo A: C stays hidden', () => {
+      const { el, onNotice, def, set } = mount()
+      rightClick(header(el, 'Priority'))
+      click(item(el, 'Hide column'))
+      set(order(`    order:
+      - file.name
+`))
+      firstUndo(onNotice)
+      expect(def().views[0].order).toEqual(['file.name', 'note.priority'])
+    })
   })
 
   it('Undo of a view delete after a view was added (M3): the deleted view is back in its place, and the new view stays', () => {

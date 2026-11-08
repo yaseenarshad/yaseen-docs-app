@@ -300,6 +300,36 @@ function namesOf(list: readonly unknown[]): string[] | null {
   return names.every((n): n is string => n !== null) && new Set(names).size === names.length ? names : null
 }
 
+/** A list of unique plain values (the shown columns `order`): each value is its own name; else null. */
+function valuesOf(list: readonly unknown[]): string[] | null {
+  const names = list.map((entry) => (typeof entry === 'string' ? entry : null))
+  return names.every((n): n is string => n !== null) && new Set(names).size === names.length ? names : null
+}
+
+/**
+ * Two lists that both moved, merged element by element (YAZ-4637 M3): the other side's list and order, less the
+ * entries this side removed, plus the entries it added — each after the nearest entry before it in this side's list
+ * that is still there — and each entry on all three sides `merge`d. So an Undo of "hide A" after "hide B" shows A
+ * alone, at its old place where it can, and two windows that each hid a column end with both hidden.
+ */
+function mergeLists(base: readonly unknown[], mine: readonly unknown[], theirs: readonly unknown[], b: string[], m: string[], t: string[], merge: (atBase: unknown, atMine: unknown, atTheirs: unknown) => unknown): unknown[] {
+  const removed = (name: string) => b.includes(name) && !m.includes(name)
+  const out = theirs.filter((_, i) => !removed(t[i]))
+  const outNames = t.filter((name) => !removed(name))
+  m.forEach((name, i) => {
+    if (b.includes(name) || t.includes(name)) return
+    let after = -1
+    for (let j = i - 1; j >= 0 && after === -1; j--) after = outNames.indexOf(m[j])
+    out.splice(after + 1, 0, mine[i])
+    outNames.splice(after + 1, 0, name)
+  })
+  return out.map((entry, i) => {
+    const name = outNames[i]
+    if (!b.includes(name) || !m.includes(name) || !t.includes(name)) return entry
+    return merge(base[b.indexOf(name)], mine[m.indexOf(name)], entry)
+  })
+}
+
 /**
  * THE REBASE of a settings write (YAZ-4596 S38): this page's change, from `base` (the block as it last heard it from
  * disk) to `mine` (the block it means), laid onto `theirs` (the block on disk now — another tab or window may have written it since).
@@ -333,22 +363,12 @@ export function rebaseSettings(base: unknown, mine: unknown, theirs: unknown): u
           return kept ? rebaseSettings(at, others, entry) : rebaseSettings(at, entry, others)
         })
       }
-      // Both sides changed the names (YAZ-4637 M3): disk's list and order, less the views this side removed, plus the
-      // views it added — each after the view before it in this side's list — and each shared view merged.
-      const out: unknown[] = theirs.filter((_, i) => !(b.includes(t[i]) && !m.includes(t[i])))
-      const outNames = t.filter((name) => !(b.includes(name) && !m.includes(name)))
-      m.forEach((name, i) => {
-        if (b.includes(name) || t.includes(name)) return
-        const after = i === 0 ? -1 : outNames.indexOf(m[i - 1])
-        out.splice(after + 1, 0, mine[i])
-        outNames.splice(after + 1, 0, name)
-      })
-      return out.map((entry, i) => {
-        const name = outNames[i]
-        if (!b.includes(name) || !m.includes(name) || !t.includes(name)) return entry
-        return rebaseSettings(base[b.indexOf(name)], mine[m.indexOf(name)], entry)
-      })
+      // Both sides changed the names (YAZ-4637 M3): element by element, each shared view merged.
+      return mergeLists(base, mine, theirs, b, m, t, rebaseSettings)
     }
+    // A list of plain values both sides changed (M3): the shown columns — element by element, never the whole list.
+    const [vb, vm, vt] = [valuesOf(base), valuesOf(mine), valuesOf(theirs)]
+    if (vb !== null && vm !== null && vt !== null) return mergeLists(base, mine, theirs, vb, vm, vt, (_, __, entry) => entry)
   }
   return mine
 }

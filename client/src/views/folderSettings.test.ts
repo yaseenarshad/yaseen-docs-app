@@ -444,6 +444,16 @@ describe('the rebase of a settings write (YAZ-4596 S38): this page\'s change, la
     expect(rebase(onDisk)).toEqual({ columns: { due: { kind: 'date' } }, views: [sorted] })
   })
 
+  it('a list of plain values both sides changed (YAZ-4637 M3, the shown columns): element by element — this side\'s removes and adds on the other side\'s list', () => {
+    const was = ['file.name', 'a', 'b', 'c']
+    // This side puts `b` back (an Undo of its hide) after the other side hid `c` and moved `a` first: `b` after its neighbour `a`, `c` still gone.
+    expect(rebaseSettings(['file.name', 'a', 'c'], was, ['a', 'file.name'])).toEqual(['a', 'b', 'file.name'])
+    // Its neighbour is gone too: the nearest one before it that is still there.
+    expect(rebaseSettings(['file.name', 'c'], was, ['file.name'])).toEqual(['file.name', 'a', 'b'])
+    // This side removed `a` while the other side added `d`: both land.
+    expect(rebaseSettings(was, ['file.name', 'b', 'c'], [...was, 'd'])).toEqual(['file.name', 'b', 'c', 'd'])
+  })
+
   it('both sides changed the views\' names (M3): the other side\'s adds and removes stay, and this side\'s land on them', () => {
     // This side puts X back (an Undo of its delete); the other side added Y meanwhile: both are there, X in its place.
     const X = { type: 'list', name: 'X' }
