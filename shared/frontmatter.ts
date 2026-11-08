@@ -1,4 +1,4 @@
-import { type Document, isMap, isScalar, parse, parseDocument } from 'yaml'
+import { type Document, Scalar, isMap, isScalar, parse, parseDocument } from 'yaml'
 
 /**
  * Frontmatter handling rule (locked in GRO-1961):
@@ -82,7 +82,8 @@ const YAML_OUT = { lineWidth: 0, flowCollectionPadding: false } as const
  * are preserved byte-for-byte (GRO-2141, ruling D4).
  *
  * Values go in as YAML natively (strings, numbers, booleans, null, arrays, plain objects);
- * a `Date` is out of scope — callers pass ISO strings.
+ * a `Date` is out of scope — callers pass ISO strings. A `null` value is written as `key:` with no
+ * value, Obsidian's empty property, as `buildFrontmatter` writes it (YAZ-4551).
  */
 export function setFrontmatterProperty(content: string, key: string, value: unknown): string {
   return setFrontmatterIn(content, [key], value)
@@ -95,11 +96,13 @@ export function setFrontmatterProperty(content: string, key: string, value: unkn
  */
 export function setFrontmatterIn(content: string, path: readonly string[], value: unknown): string {
   const { frontmatter, body } = splitFrontmatter(content)
+  // A null value prints as `key:`: a null scalar keeps an empty source, as a parsed `key:` does (YAZ-4551).
+  const leaf = value === null ? Object.assign(new Scalar(null), { source: '' }) : value
 
   if (frontmatter === '') {
     if (value === undefined) return content
     const doc = parseDocument('')
-    doc.setIn(path, value)
+    doc.setIn(path, leaf)
     return `---\n${doc.toString(YAML_OUT)}---\n${body}`
   }
 
@@ -118,13 +121,13 @@ export function setFrontmatterIn(content: string, path: readonly string[], value
   } else {
     // The deepest map on the way that is not there yet takes the rest of the path as a new map.
     let at = path.length - 1
-    let set: unknown = value
+    let set: unknown = leaf
     for (let i = 1; i < path.length; i++) {
       const held = doc.getIn(path.slice(0, i))
       if (isMap(held)) continue
       if (held != null) throw new FrontmatterWriteError(`"${path.slice(0, i).join('.')}" is not a map of values`)
       at = i - 1
-      set = path.slice(i).reduceRight<unknown>((inner, key) => ({ [key]: inner }), value)
+      set = path.slice(i).reduceRight<unknown>((inner, key) => ({ [key]: inner }), leaf)
       break
     }
     doc.setIn(path.slice(0, at + 1), set)

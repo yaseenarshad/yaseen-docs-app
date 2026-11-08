@@ -111,11 +111,14 @@ function rowsOf(properties: Record<string, unknown>, reserved: ReadonlySet<strin
   return [...held, ...missing.map((key): Row => ({ key, folder: inFolder, raw: undefined, editor: editorFor(key, undefined, decls, folder), chip: null }))]
 }
 
-/** A new key's FIRST value (YAZ-4551 D20): the empty value of the kind it will be read back at. */
+/**
+ * A new key's FIRST value (YAZ-4551 D20): the empty value of the kind it will be read back at. Text starts as `''`;
+ * a number, date, link or select starts as `null` (the YAML `key:` with no value), so it reads and sorts as no value.
+ */
 function seedValue(editor: EditorKind | null): unknown {
   if (editor === 'checkbox') return false
   if (editor === 'list' || editor === 'multi-link' || editor === 'multi-select') return []
-  return ''
+  return editor === 'text' || editor === null ? '' : null
 }
 
 /** A value as the clipboard takes it (YAZ-4551 D21): a list as "a, b", an empty value as ''. */

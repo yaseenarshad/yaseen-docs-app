@@ -1703,8 +1703,30 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     click(btn(el, 'Add'))
     await flush()
     expect((await propertiesStub.get(ROOT)).properties).toEqual({ 'Due Date': { kind: 'date' } })
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\nDue Date: ""'), expectedMtime: 100 })
+    // A date starts as no value, `key:` (YAZ-4551 polish): '' would read as a text value.
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\nDue Date:'), expectedMtime: 100 })
     expect(keysOf(el)).toContain('Due Date')
+  })
+
+  it.each([
+    ['number', 'Score:'],
+    ['date', 'Score:'],
+    ['link', 'Score:'],
+    ['select', 'Score:'],
+    ['text', 'Score: ""'],
+    ['checkbox', 'Score: false'],
+    ['list', 'Score: []'],
+    ['multi-select', 'Score: []'],
+  ])('a new %s property starts as `%s`', async (kind, line) => {
+    readFile.mockResolvedValue(fileOf(TYPED))
+    const el = mount(TYPED, { root: ROOT })
+    expand(el)
+    click(btn(el, 'Add property'))
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Score')
+    setValue(byLabel<HTMLSelectElement>(el, 'New property type'), kind)
+    click(btn(el, 'Add'))
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: TYPED.replace('parent: "[[Home]]"', `parent: "[[Home]]"\n${line}`), expectedMtime: 100 })
   })
 
   it('Enter in the name box adds; Text for a name with no type writes no declaration', async () => {
@@ -1739,7 +1761,7 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
       Status: { kind: 'select', options: ['Ready', 'Later'] },
       'Due Date': { kind: 'date' },
     })
-    expect(value).toEqual({ path: PATH, content: LOCAL_NOTE.replace('    Status: Ready\n', '    Status: Ready\n    Due Date: ""\n'), expectedMtime: 100 })
+    expect(value).toEqual({ path: PATH, content: LOCAL_NOTE.replace('    Status: Ready\n', '    Status: Ready\n    Due Date:\n'), expectedMtime: 100 })
     expect((await propertiesStub.get(ROOT)).properties).toEqual({}) // a folder's property is not vault-wide
   })
 
