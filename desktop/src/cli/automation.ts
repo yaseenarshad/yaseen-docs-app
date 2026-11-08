@@ -34,8 +34,8 @@ Examples:
   # Search one collection and get paths back, without looking at the screen.
   yaseendocs search query --root "/Vaults/Skills" --collection favorites --scope vault --query mochi
   # Read a note with its revision, then replace it only if nobody changed it since.
-  yaseendocs file read --path "/Vaults/Skills/Mochi/Cards.md"
-  yaseendocs file write --path "/Vaults/Skills/Mochi/Cards.md" --revision <revision> --body @new.md
+  yaseendocs file read --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi/Cards.md"
+  yaseendocs file write --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi/Cards.md" --revision <revision> --body @new.md
   # Make a reusable link to the same view.
   yaseendocs navigation link --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi" --sidebar favorites --reveal true
 `

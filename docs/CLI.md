@@ -45,6 +45,8 @@ Check `automation` from `app status` or `version` from `capabilities` before you
 
 ### Name a target
 
+Commands that act inside a vault need its scope: `--root`, `--roots`, or `--workspace`. A path alone is not enough.
+
 - A vault: `--root <path>`, several with `--roots '["/a","/b"]'`, or a saved workspace with `--workspace <id or unique name>`.
 - A page or folder: `--path <absolute path>`, `--id <existing ID>`, or `--name <unique title, alias, or file name>`.
 - A live window or tab: `--window <id>` and `--tab <id>` from `window list` and `window inspect`. These IDs last only while the window is open.
@@ -72,9 +74,9 @@ Navigation replies after the window shows the result (`acknowledged: true`). It 
 ```sh
 yaseendocs search query --root "/Vaults/Skills" --collection favorites --scope vault --query mochi
 yaseendocs search query --workspace "All Folders" --query "" --limit 50 --offset 50   # page through a scope
-yaseendocs file read --path "/Vaults/Skills/Mochi/Cards.md"                              # saved text + revision
+yaseendocs file read --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi/Cards.md"     # saved text + revision
 yaseendocs document live --window <id> --tab <id>                                        # an open editor's buffer
-yaseendocs link incoming --path "/Vaults/Skills/Mochi/Cards.md"
+yaseendocs link incoming --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi/Cards.md"
 yaseendocs window inspect --window <id>
 ```
 
@@ -85,10 +87,10 @@ Search matches titles, aliases, file names, and IDs, with the app's own rules. I
 Every write names the revision it read. A changed file fails with `CONFLICT`, and nothing is written. Read again, merge, and retry.
 
 ```sh
-yaseendocs file write   --path "<note>" --revision <revision> --body @new.md
-yaseendocs file append  --path "<note>" --revision <revision> --body "One more line"
-yaseendocs property set --path "<note>" --revision <revision> --keys '["status"]' --value '"done"'
-yaseendocs comment add  --path "<note>" --revision <revision> --body "Checked by the agent"
+yaseendocs file write   --root "<vault>" --path "<note>" --revision <revision> --body @new.md
+yaseendocs file append  --root "<vault>" --path "<note>" --revision <revision> --body "One more line"
+yaseendocs property set --root "<vault>" --path "<note>" --revision <revision> --keys '["status"]' --value '"done"'
+yaseendocs comment add  --root "<vault>" --path "<note>" --revision <revision> --body "Checked by the agent"
 yaseendocs note create  --root "<vault>" --folder "<folder>" --title "New page"
 yaseendocs daily create --root "<vault>"
 ```
