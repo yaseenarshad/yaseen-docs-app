@@ -1,7 +1,8 @@
 import { commandInput } from './input'
 import { spawn } from 'node:child_process'
+import { connect } from 'node:net'
 import { homedir } from 'node:os'
-import { basename, isAbsolute } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
 import { AUTOMATION_LIMITS, AUTOMATION_VERSION, AutomationFailure, type AutomationRequest } from '@shared/automation'
 import { AUTOMATION_COMMANDS, commandDefinition, validateInput, type CommandSchema } from '@shared/automationCommands'
 import { makeRequest, sendRequest } from '../automation/client'
@@ -80,26 +81,43 @@ async function startApp(profile: string): Promise<void> {
   child.unref()
 }
 
-async function connectionFor(profile: string, start: boolean): Promise<Connection> {
+/** Chromium's single-instance socket in the profile (macOS, Linux): the app answers it from launch, before its CLI connection exists. */
+const holdsLock = (profile: string) => new Promise<boolean>(resolve => {
+  const socket = connect(join(profile, 'SingletonSocket'))
+  socket.once('connect', () => { socket.destroy(); resolve(true) })
+  socket.once('error', () => resolve(false))
+})
+const probe = (connection: Connection, waitMs: number) => sendRequest(connection, makeRequest(connection, 'request.status', { id: 'connection-probe' }), Buffer.alloc(0), waitMs)
+
+/**
+ * A descriptor can survive a crash: probe before considering the app ready, without mutations. Only an app that is
+ * absent (no descriptor, or nothing listens) is started. A slow one is still running: a second launch would only meet
+ * the single-instance lock and take the user's focus (YAZ-4527 P4). An app that holds that lock is starting: wait for it.
+ */
+async function connectionFor(profile: string, start: boolean, waitMs: number): Promise<Connection> {
   try {
     const connection = await readConnection(profile)
-    // A descriptor can survive a crash. Probe before considering the app ready, without mutations.
-    const result = await sendRequest(connection, makeRequest(connection, 'request.status', { id: 'connection-probe' }), Buffer.alloc(0), 1000)
-    if (result.ok) return connection
+    const answer = await probe(connection, waitMs)
+    if (answer.ok) return connection
+    // An app answered and refused this descriptor: it is running, and a launch would not replace it.
+    throw new AutomationFailure(answer.error.code, answer.error.message)
   } catch (error) {
-    if (error instanceof AutomationFailure && error.code === 'UNSAFE_PROFILE') throw error
+    if (!(error instanceof AutomationFailure)) throw error
+    if (error.code === 'WAIT_TIMEOUT') throw new AutomationFailure('WAIT_TIMEOUT', 'Docs is running but did not answer within the wait. No operation was submitted.')
+    if (error.code !== 'NOT_RUNNING') throw error
   }
-  if (!start) throw new AutomationFailure('NOT_RUNNING', 'Docs is not running in this profile. Start it, or pass --start.')
-  await startApp(profile)
-  const deadline = Date.now() + AUTOMATION_LIMITS.waitMs
+  const starting = await holdsLock(profile)
+  if (!starting && !start) throw new AutomationFailure('NOT_RUNNING', 'Docs is not running in this profile. Start it, or pass --start.')
+  if (!starting) await startApp(profile)
+  const deadline = Date.now() + (starting ? waitMs : AUTOMATION_LIMITS.waitMs)
   do {
     await new Promise(done => setTimeout(done, 100))
     try {
       const connection = await readConnection(profile)
-      const result = await sendRequest(connection, makeRequest(connection, 'request.status', { id: 'connection-probe' }), Buffer.alloc(0), 1000)
-      if (result.ok) return connection
+      if ((await probe(connection, 1000)).ok) return connection
     } catch { /* The app has not installed its connection yet. */ }
   } while (Date.now() < deadline)
+  if (starting) throw new AutomationFailure('WAIT_TIMEOUT', 'Docs is running, but its CLI connection was not ready within the wait. No operation was submitted.')
   throw new AutomationFailure('START_TIMEOUT', 'Docs did not become ready. No operation was submitted.')
 }
 
@@ -159,14 +177,16 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
     if (definition.content === 'secret' && body !== '-' && !body?.startsWith('@')) throw new AutomationFailure('INVALID_INPUT', 'Supply secrets through stdin or a private file.')
     const content = body === undefined ? Buffer.alloc(0) : await commandInput(body, io, definition.content === 'secret' ? AUTOMATION_LIMITS.controlBytes : AUTOMATION_LIMITS.contentBytes, definition.content === 'secret')
     if (content.length > AUTOMATION_LIMITS.contentBytes) throw new AutomationFailure('TOO_LARGE', 'The body is too large.')
-    const connection = await connectionFor(profile, start)
+    const connected = Date.now()
+    const connection = await connectionFor(profile, start, waitMs)
     request = { ...makeRequest(connection, name, args), hasContent: body !== undefined }
     if (reference !== undefined) {
       const [session, id, issuedAt, extra] = reference.split('/')
       if (!session || !id || !issuedAt || extra !== undefined || !Number.isFinite(Number(issuedAt))) throw new AutomationFailure('INVALID_INPUT', 'Invalid request reference.')
       request = { ...request, session, id, issuedAt: Number(issuedAt) }
     }
-    const result = await sendRequest(connection, request, content, waitMs)
+    // The probe spends part of the caller's wait.
+    const result = await sendRequest(connection, request, content, Math.max(1, waitMs - (Date.now() - connected)))
     const ref = `${request.session}/${request.id}/${request.issuedAt}`
     io.stdout(`${JSON.stringify({ ...result, request: ref })}\n`)
     return result.ok ? 0 : 1

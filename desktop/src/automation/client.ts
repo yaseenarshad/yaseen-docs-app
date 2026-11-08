@@ -13,13 +13,16 @@ export async function sendRequest(connection: Connection, request: AutomationReq
   const packet = encodePacket(request, content)
   const socket = connect(connection.endpoint)
   const deadline = setTimeout(() => socket.destroy(new AutomationFailure('WAIT_TIMEOUT', `The wait ended. Request ${request.id} may still finish. Inspect its receipt; do not replay the mutation.`)), waitMs)
+  let connected = false
   try {
     const reply = readPacket(socket)
-    socket.once('connect', () => socket.write(packet))
+    socket.once('connect', () => { connected = true; socket.write(packet) })
     const result = await reply
     return JSON.parse(result.content.toString('utf8')) as AutomationResult
   } catch (error) {
     if (error instanceof AutomationFailure) throw error
+    // Nothing listens: the request never reached an app, so this outcome is known.
+    if (!connected && ['ECONNREFUSED', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '')) throw new AutomationFailure('NOT_RUNNING', 'Docs is not running in this profile. Start it, or pass --start.')
     throw new AutomationFailure('CONNECTION_LOST', `No result was received for request ${request.id}. Inspect state before another mutation.`)
   } finally { clearTimeout(deadline); socket.destroy() }
 }
