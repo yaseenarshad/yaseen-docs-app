@@ -815,6 +815,27 @@
   z-index: 4;
 }
 
+/* A cell or row fill (YAZ-4536, `view/fills.ts`): `--view-cell-fill` on the cell, painted as an image over the
+   cell's own background colour, so a frozen cell keeps its opaque `--bg` under the see-through wash. */
+.view-table tbody td.view-table__cell--fill {
+  background-image: linear-gradient(var(--view-cell-fill), var(--view-cell-fill));
+}
+
+/* The row hover band (YAZ-4538, D9): the table block's band (`table.css`, YAZ-4167) on each data row, in its
+   colour and strength (`--table-band-colour`, `--table-band-strength` on `.app`). An inset shadow paints over the
+   cell's background, so the band shows over a fill and over a frozen cell's opaque `--bg`. None when Settings ›
+   Editor › Tables › Row band is Off, and none when the band marks only the caret's row, as in the table block. */
+.app:not([data-table-row-band='off']):not([data-table-band-rows='caret']) .view-table tbody tr:not(.view-table__group):not(.view-table__spacer):hover > td {
+  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
+}
+
+/* "Custom colour…" in a Fill flyout (YAZ-4536, `FillMenu.tsx`): the colour box under the item, as wide as the
+   table block's (`table.css` `.table-colour-box`, 190px less its padding). */
+.view-fill-menu__box .colour-box {
+  width: 166px;
+  margin: 4px 6px 2px;
+}
+
 /* The `#` gutter (YAZ-1513): the always-first, always-sticky column, pinned like a frozen cell at
    left 0 — display position only, so it is muted, right-aligned and never selectable. */
 .view-table .view-table__gutter {

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { api, BridgeRequestError } from '../../api'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 
@@ -13,10 +14,12 @@ interface PageContextMenuProps {
   onOpenBackground?: (path: string) => void
   onNotice?: (message: string) => void
   onClose: () => void
+  /** A surface's own items, in a group after the page actions: the folder table's "Fill cell ›" and "Fill row ›" (YAZ-4536 D12). */
+  extra?: ReactNode
 }
 
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
-export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
+export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose, extra }: PageContextMenuProps) {
   const reveal = (): void => {
     onClose()
     api.shell.reveal({ path }).catch((error: unknown) => {
@@ -28,8 +31,8 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
     })
   }
 
-  return (
-    <ContextMenuSurface x={x} y={y} onClose={onClose}>
+  const actions = (
+    <>
       {onOpen !== undefined && (
         <button
           type="button"
@@ -85,6 +88,24 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
         >
           Open in right panel
         </button>
+      )}
+    </>
+  )
+
+  return (
+    <ContextMenuSurface x={x} y={y} onClose={onClose}>
+      {extra === undefined ? (
+        actions
+      ) : (
+        // The groups' line between them is `.ctx-menu__group + .ctx-menu__group` (app.css).
+        <>
+          <div className="ctx-menu__group" role="group">
+            {actions}
+          </div>
+          <div className="ctx-menu__group" role="group">
+            {extra}
+          </div>
+        </>
       )}
     </ContextMenuSurface>
   )

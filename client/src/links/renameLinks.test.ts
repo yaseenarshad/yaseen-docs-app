@@ -159,6 +159,14 @@ describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
     expect(out).toContain('body [[C]]\n') // the body still rewrote, so the file WAS written
   })
 
+  it('rewrites a view’s `fills[].note`, leaving the fill’s column and colour and the other fills alone (YAZ-4536)', () => {
+    const content =
+      '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n      fills:\n        - note: "[[B]]"\n          column: note.status\n          fill: red\n        - note: "[[A]]"\n          fill: "#00ff00"\n        - 7\n---\n\nbody\n'
+    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    const views = (parseFrontmatter(splitFrontmatter(out).frontmatter).properties.folder_settings as { views: { fills: unknown[] }[] }).views
+    expect(views[0].fills).toEqual([{ note: '[[C]]', column: 'note.status', fill: 'red' }, { note: '[[A]]', fill: '#00ff00' }, 7])
+  })
+
   it('a page with settings but no reference to the renamed file is null — never written, byte-for-byte safe', () => {
     const content =
       '---\nstatus: idea\nfolder_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n  views:\n    - type: outline\n      order: ["[[A]]"]\n---\n\n# Not about B\n'

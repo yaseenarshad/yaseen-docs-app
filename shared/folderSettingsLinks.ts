@@ -55,9 +55,10 @@ export function mapOutlineLinks(outline: string, map: (link: string) => string |
  * too: it comes through here, and the key STRING rides back in the result rather than being spelled
  * anywhere else.
  *
- * The link-bearing leaves are exactly three: every view's [D5] `order` entry (🔒 Q3), every
+ * The link-bearing leaves are exactly four: every view's [D5] `order` entry (🔒 Q3), every
  * outline LINE that is exactly a wikilink (🔒 D2, YAZ-900 — the line rule stays `outlineDoc`'s,
- * never re-spelled here) and every column's belongs-to `target` (🔒 Q2) — the places this
+ * never re-spelled here), every view's `fills[].note` (YAZ-4536) and every column's belongs-to
+ * `target` (🔒 Q2) — the places this
  * vocabulary spells a wikilink. Each string leaf is offered to `map`; `undefined` means LEAVE IT,
  * and a wikilink sitting inside an outline line's PROSE is not a leaf at all. Everything else in the
  * value — unknown view types, extra keys, unusable shapes — rides along verbatim.
@@ -87,6 +88,8 @@ export function mapFolderSettingsLinks(
       if (!isRecord(view)) return view
       const next: Record<string, unknown> = { ...view }
       if (Array.isArray(view.order)) next.order = view.order.map(mapLink)
+      // A cell or row fill names its note by a link (YAZ-4536 D3): a rename keeps the fill on its note.
+      if (Array.isArray(view.fills)) next.fills = view.fills.map((fill: unknown) => (isRecord(fill) && 'note' in fill ? { ...fill, note: mapLink(fill.note) } : fill))
       if (typeof view.outline === 'string') {
         const outline = mapOutlineLinks(view.outline, map)
         if (outline !== undefined) {
