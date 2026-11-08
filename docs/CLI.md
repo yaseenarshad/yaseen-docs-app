@@ -99,11 +99,17 @@ A board write fails with `UNSAVED_LIVE_EDITS` while an open editor holds unsaved
 
 ### Organize
 
-`file rename`, `file retitle`, `file trash`, `file copy`, `folder create`, `tab move`, and `file undo` / `file redo` run the same complete actions as the app. They save open editors first, repair links, and use the window's Undo history. A command that changes several items reports each failure. It never reports a partial result as success.
+`file rename`, `file retitle`, `file trash`, `file copy`, `folder create`, `tab move`, and `file undo` / `file redo` run the same complete actions as the app. They save open editors first, repair links, and use the window's Undo history. A command that changes several items reports each failure. It never reports a partial result as success. `file trash` needs `--confirm true`, as the delete sheet asks. A `file rename` that moves a note out of a folder that holds its values needs `--dropValues true`; without it nothing moves and the error (`CONFIRMATION_REQUIRED`) names the folders.
 
 ### Settings, collections, and folder pages
 
-`settings get/patch`, `collection add/remove/reorder`, `group …`, `workspace …`, `folder read`, `folderView …`, `shortcut …`, and `ids …` change stored state against the latest copy. A command that clears data, or turns a feature off, needs an explicit confirmation input in place of the app's dialog. Settings output never shows a stored secret. `provider status` reports only whether a key is present. `provider set` reads the key from stdin or a private file.
+`settings get/patch`, `collection add/remove/reorder`, `group …`, `workspace …`, `folder read`, `folderView …`, `shortcut …`, and `ids …` change stored state against the latest copy. A command that clears data, or turns a feature off, needs an explicit confirmation input in place of the app's dialog. The CLI asks every time, also when the app's "Ask before deleting" is off:
+
+- `--confirm true`: `folderView remove`, `folderColumn remove`, `session remove`, `comment remove`, `review reset`, `component remove`, `media removePacks`, `file trash`, `ids disable`. Without it the command exits 2 and changes nothing.
+- `group remove --keepItems true|false`: the Delete sheet's two answers. `true` puts each item back at the top level of each list the group showed in; `false` removes the items with it. Both list scopes get the tombstone.
+- `--dropValues true`: `shortcut remove` and `file rename`, only when they would clear folder values.
+
+`icon set` takes a name the app ships. `icon names --query <words>` lists them, as the icon picker does. Settings output never shows a stored secret. `provider status` reports only whether a key is present. `provider set` reads the key from stdin or a private file.
 
 ### Errors and exit codes
 

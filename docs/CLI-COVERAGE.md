@@ -18,30 +18,30 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 | Cross-window tab moves | `tab move` | The GUI's send-tab path: save first, refuse unresolved dirty state, `window:move-to` or `window:pop-out`, emptied windows close. Replies after the source and target renderers acknowledge; closed windows return `SOURCE_CLOSED`, `TARGET_UNAVAILABLE`, or `TARGET_UNACKNOWLEDGED`. |
 | Sidebar state | `navigation open`, `sidebar setCollapsed` | Existing lenses, collection scopes, reveal and expansion; unspecified state stays. |
 | Right panel | `navigation open --panel right`, `rightPanel setOpen`, `window inspect` | The GUI's Open to the right and show/hide actions; one owner per page; acknowledged when the page shows expanded; inspection returns its pages. |
-| Sessions | `session list/save/capture/restore/rename/remove` | Saved strips retain copies and names; restore keeps unrelated windows and tabs. |
+| Sessions | `session list/save/capture/restore/rename/remove` | Saved strips retain copies and names; restore keeps unrelated windows and tabs; remove needs `confirm: true`, as the session list asks. |
 | Metadata search | `search query` | Shared title, alias, filename, and ID matcher; workspace/vault/folder/collection/group scopes; bounded pages. |
 | Saved text and live buffers | `file read`, `document live` | Saved revision by default; live reads require a window and ready tab. |
 | Notes, daily notes, templates | `note create`, `daily find/create`, `template read/write` | Existing naming, templates, ID allocation, calendar rules, and exclusive creation. |
 | Text replacement and append | `file write/append` | Required saved revision; atomic shared writer; durable save log; existing outside-edit handling. |
 | Properties | `property set/remove` | Nested key paths; preserve unrelated YAML and comments; protect human comment ownership; the app's own keys are refused per the vault's ID answer, naming their command. |
-| Comments | `comment list/add/update/remove` | Existing comment format, reply rules, author field, and human ownership checks. |
-| Review and upkeep | `review queue/list/keep/remove/reset/setEnabled` | Existing schedule and review-log format; required revision for edits. |
+| Comments | `comment list/add/update/remove` | Existing comment format, reply rules, author field, and human ownership checks; remove needs `confirm: true`, as the delete sheet asks. |
+| Review and upkeep | `review queue/list/keep/remove/reset/setEnabled` | Existing schedule and review-log format; required revision for edits; reset needs `confirm: true`, as its sheet asks. |
 | Link resolution and note references | `link resolve/outgoing/incoming` | Existing metadata index and resolvers; no full-text index or ID minting on reads. Incoming uses the UI's Linked mentions rule (`shared/backlinks.ts`): folder outlines, view order and link-column targets count. |
 | Create folders | `folder create` | Existing ID-aware folder service; never overwrite. |
-| Rename, move, retitle | `file rename/retitle` | Complete renderer action: flush, link repair, folder values, state repair, and Undo. A new parent in `newPath` is a move. |
+| Rename, move, retitle | `file rename/retitle` | Complete renderer action: flush, link repair, folder values, state repair, and Undo. A new parent in `newPath` is a move. A move that clears folder values needs `dropValues: true`, as the move sheet (D21) asks. |
 | Copy and import | `file copy/importCopy` | Explicit sources and destination; no clipboard changes; existing copy services and free-name rules; report partial results. |
-| Trash and restore | `file trash/history/restore` | System Trash; existing organization history; restore only the latest delete; no permanent delete command. |
+| Trash and restore | `file trash/history/restore` | System Trash; existing organization history; restore only the latest delete; no permanent delete command; trash needs `confirm: true`, as the delete sheet asks. |
 | Organization Undo and Redo | `file undo/redo` | The ⌘Z/⌘⇧Z step function and the window's 20-step session history, shared with the GUI; partial and empty steps are reported. |
 | Favorites and Focus | `collection list/add/remove/reorder` | Explicit vault/workspace list scope; patch latest state under the shared lock. |
-| Collection groups | `group list/create/rename/remove/position/addItems/removeItems/reorderItems` | Existing group IDs, per-Mac files, clocks and tombstones; report partial writes. |
+| Collection groups | `group list/create/rename/remove/position/addItems/removeItems/reorderItems` | Existing group IDs, per-Mac files, clocks and tombstones; report partial writes. Remove is the sidebar's Delete (shared `folderDeletion`): tombstones in both scopes, and `keepItems` answers its sheet. |
 | Global settings | `settings get/patch` | Existing settings validator; patch latest state and flush. |
 | Shared settings folder | `settingsFolder get/set` | Existing other-Mac precedence; explicit existing folder or null; bounded initial synchronization. |
-| Vault labels and number keys | `vault list/patch` | Existing display-name cleanup and unique number-key rules. |
-| Vault declarations and icons | `declaration list/patch/remove`, `icon list/set/remove` | Shared stores; preserve unrelated stored fields and reject malformed files. |
+| Vault labels and number keys | `vault list/patch` | Existing display-name cleanup and unique number-key rules; a key taken from another vault names that vault in `keyFrom`. |
+| Vault declarations and icons | `declaration list/patch/remove`, `icon list/names/set/remove` | Shared stores; preserve unrelated stored fields and reject malformed files. Icon names are the shipped Material set (`icon names` lists the picker's names); `icon set` and icon rules in `settings patch` refuse others. |
 | New note shortcuts | `newPlace list/set` | Patch one of three slots against latest state; require a folder inside the vault. |
 | Review and formatting settings | `vaultConfig read/patch` | Named public files only; validate patches; preserve unrelated fields. |
 | Folder pages | `folder read/setProperty/removeProperty` | Shared folder-settings parse; a read creates nothing; required revision, or null to create `.folder.md`; the app's reserved keys are refused. |
-| Folder views | `folderView add/rename/duplicate/remove/move/setOptions/setDefault` | Shared view-tab rules: free names, one outline, the last view stays, the starting view and collapsed groups follow; options limited to what each view type reads. The live current view is `navigation open --view`, which checks the saved view first and waits for the page to index it. |
+| Folder views | `folderView add/rename/duplicate/remove/move/setOptions/setDefault` | Shared view-tab rules: free names, one outline, the last view stays, the starting view and collapsed groups follow; options limited to what each view type reads; remove needs `confirm: true`, as the delete sheet asks. The live current view is `navigation open --view`, which checks the saved view first and waits for the page to index it. |
 | Folder columns and formulas | `folderColumn set/setLabel/remove`, `folderFormula set` | Shared Properties-menu rules: kind rule, labels, built-in keys refused; delete prunes views and labels, then clears this folder's value in each note, with `confirm: true`, a cleared count, and partial failure; a removed formula drops its view references. |
 | Folder shortcuts | `shortcut list/add/remove` | Shared `also_in` rules; a folder ID is minted only on add; `dropValues` confirms clearing other folders' values. |
 | Vault IDs | `ids state/enable/disable/reletter/backfill/check` | State reads a read-only index entry and never adopts, sweeps, or mints; Settings' actions with typed letters as explicit input; changed, renamed, and left counts; partial failure reported. Legacy `id <page>` is unchanged. |
@@ -53,10 +53,10 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 | Diagram editor actions | `editor save` | draw.io's own actions get no reply over the embed protocol, so none is offered; content changes use `diagram save`. |
 | Image and PDF bytes | `image read/export`, `pdf read/export` | Existing viewer limits; base64 reads; exclusive output files for large results. |
 | Embedded drawing/image assets | `asset read/write/export` | Existing 10 MiB asset limit; required revision or exclusive creation; exact paths. Writes refuse while an open editor holds unsaved edits (`UNSAVED_LIVE_EDITS`). |
-| Components | `component list/read/save/rename/remove/export` | Existing component store, validation and Trash behavior. |
+| Components | `component list/read/save/rename/remove/export` | Existing component store, validation and Trash behavior; remove needs `confirm: true`, as the delete row asks. |
 | Media search and import | `media search/preview/import/drawingIndex/drawing` | Existing providers, filters, cache and library; no keys in results. |
 | Media library and favorite copies | `media library/favorite/unfavorite/recordUse/addWord/removeWord/favoriteCopies/favoriteElements/saveFavoriteElements/favoritesForPanel` | Existing library and durable copies; saved elements retain the first-copy rule. |
-| Icon packs | `media packList/packStatus/downloadPacks/stopPacks/checkPacks/removePacks` | Existing pack service; explicit download/check actions; stop can run during a download. |
+| Icon packs | `media packList/packStatus/downloadPacks/stopPacks/checkPacks/removePacks` | Existing pack service; explicit download/check actions; stop can run during a download; remove needs `confirm: true`, as its sheet asks. |
 | Picture-folder permissions | `pictureFolder list/allow/remove` | Existing real-path and system-folder checks; removing permission never deletes files. |
 | Storage | `storage stats/shrink` | Existing background workers; paged large-file rows; report moved and skipped counts. Shrink skips boards with unsaved live edits, as Settings does, and lists them in `unsavedSkipped`. |
 | Provider credential | `provider status/set/clear` | Presence only; protected input; no secret export. |
