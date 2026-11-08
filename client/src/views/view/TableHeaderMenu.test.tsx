@@ -245,7 +245,12 @@ describe('the header menu (YAZ-1513)', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].rowNumbers).toBe(false)
     expect(yaml()).toContain('rowNumbers: false')
-    expect(el.querySelector('.view-table__gutter')).toBeNull()
+    // The slim strip stays (YAZ-4610 D62); its menu shows the numbers again.
+    expect(q(el, '.view-table thead th.view-table__gutter').textContent).toBe('')
+    rightClick(q(el, '.view-table thead th.view-table__gutter'))
+    expect(menuItems(el)).toEqual(['Show row numbers'])
+    click(item(el, 'Show row numbers'))
+    expect(def().views[0].rowNumbers).toBe(true)
   })
 
   it('Delete column…: asks first — the sheet names the label, the key and the count of notes holding a value; Cancel deletes nothing', () => {

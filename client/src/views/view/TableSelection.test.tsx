@@ -622,3 +622,53 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
     for (const [, writes] of writeValues.mock.calls as unknown as [string, unknown][]) expect(writes).toEqual([{ key: 'num', value: 4 }])
   })
 })
+
+describe('the # column and the headers as handles, the corner selects all (YAZ-4610 D62)', () => {
+  const click = (target: Element, init: MouseEventInit = {}) => act(() => void target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ...init })))
+  const corner = (el: ParentNode) => el.querySelector<HTMLElement>('.view-table thead th.view-table__gutter')!
+
+  it('a plain click on a header selects the column; ⇧-click extends; no render', () => {
+    const { el } = mount(TABLE)
+    down(header(el, 2))
+    click(header(el, 2))
+    expect(selected(el)).toEqual(Array.from({ length: 8 }, (_, r) => `${r}:2`))
+    expect(header(el, 2).hasAttribute('data-selected')).toBe(true)
+    down(header(el, 3), { shiftKey: true })
+    click(header(el, 3), { shiftKey: true })
+    expect(selected(el)).toHaveLength(16)
+    expect(commits).toBe(0)
+  })
+
+  it('a header drag still moves the column (a drag fires no click), and the sort arrow and the resize edge select nothing', () => {
+    const { el, yaml } = mount(TABLE)
+    const fire = (target: Element, type: string) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true })))
+    fire(header(el, 1), 'dragstart')
+    fire(header(el, 3), 'dragover')
+    fire(header(el, 3), 'drop')
+    // Priority moved past Status: the drag is the header's own (YAZ-1548).
+    expect(yaml()).toContain('- file.name\n      - note.status')
+    expect(selected(el)).toEqual([])
+    click(header(el, 0).querySelector('.view-table__resize')!)
+    click(header(el, 0).querySelector('.view-table__sort')!)
+    expect(selected(el)).toEqual([])
+  })
+
+  it('a click on the corner cell selects every cell, as ⌘A', () => {
+    const { el } = mount(TABLE)
+    click(corner(el))
+    expect(selected(el)).toHaveLength(8 * 4)
+    expect(commits).toBe(0)
+  })
+
+  it('with row numbers off, the slim strip selects the row and drags it', () => {
+    const { el } = mount(`${TABLE}    groupBy:
+      property: note.status
+    rowNumbers: false
+`)
+    const strip = gutter(el, 1)
+    expect(strip.textContent).toBe('')
+    expect(strip.getAttribute('draggable')).toBe('true')
+    down(strip)
+    expect(selected(el)).toEqual(['1:0', '1:1', '1:2', '1:3'])
+  })
+})

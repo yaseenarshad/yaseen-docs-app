@@ -1228,13 +1228,13 @@ views:
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].rowNumbers).toBe(false)
     expect(yaml()).toContain('rowNumbers: false')
-    expect(el.querySelector('.view-table__gutter')).toBeNull()
+    expect(el.querySelector('.view-table__gutter--slim')).not.toBeNull() // the slim strip (YAZ-4610 D62)
 
     click(byLabel<HTMLInputElement>(el, 'Row numbers'))
     expect(onChange).toHaveBeenCalledTimes(2)
     expect(def().views[0].rowNumbers).toBeUndefined()
     expect(yaml()).not.toContain('rowNumbers')
-    expect(el.querySelector('.view-table__gutter')).not.toBeNull()
+    expect(el.querySelector('.view-table__gutter--slim')).toBeNull()
 
     click(byText(el, '[role="tab"]', 'Cards'))
     expect(q(el, '.view-popover').querySelector('[aria-label="Row numbers"]')).toBeNull()

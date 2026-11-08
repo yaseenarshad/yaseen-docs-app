@@ -994,6 +994,20 @@
   z-index: 4;
 }
 
+/* The corner selects every cell (YAZ-4610 D62). With row numbers off the gutter is a slim strip with no numbers, still
+   the row's select and drag handle. */
+.view-table thead th.view-table__gutter {
+  cursor: pointer;
+}
+
+.view-table .view-table__gutter--slim {
+  padding: 0;
+}
+
+.view-table tbody tr:hover > td.view-table__gutter.view-table__gutter--slim[draggable='true']::before {
+  left: 1px;
+}
+
 /* A movable row's `#` is its only drag source (YAZ-4603 D53): a ⋮⋮ handle at its left on the row's hover. */
 .view-table tbody td.view-table__gutter[draggable='true'] {
   cursor: grab;

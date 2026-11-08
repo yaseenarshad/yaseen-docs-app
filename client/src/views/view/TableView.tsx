@@ -129,6 +129,8 @@ const OVERSCAN = 10
 const FALLBACK_VIEWPORT = 600
 /** The `#` gutter's fixed width (YAZ-1513): always the first, always-sticky column; frozen offsets start after it. */
 const GUTTER_WIDTH = 44
+/** With row numbers hidden, the `#` gutter stays as a slim strip with no numbers: the row's select and drag handle (YAZ-4610 D62). */
+const SLIM_GUTTER_WIDTH = 12
 /** The header drag's own payload (YAZ-1548) — `ViewTabs`' `VIEW_TAB_MIME` idiom; never `text/plain`, so a stray text drop is not a reorder. */
 const COLUMN_MIME = 'application/x-yaseen-table-column'
 /** The row of the note the note window shows (YAZ-4547). */
@@ -315,11 +317,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
   const frozen = frozenColumnCount(view.frozenColumns, keys.length)
   const sorts = view.sort ?? []
-  /** The `#` gutter is shown unless the view says `rowNumbers: false` (YAZ-1513). */
+  /** The `#` gutter shows its numbers unless the view says `rowNumbers: false` (YAZ-1513); then it is a slim strip (YAZ-4610 D62). */
   const numbered = view.rowNumbers !== false
   /** The gutter's bookkeeping, spelled once (YAZ-1549): its width, and the cells a full-width row spans. */
-  const gutterWidth = numbered ? GUTTER_WIDTH : 0
-  const span = keys.length + (numbered ? 1 : 0)
+  const gutterWidth = numbered ? GUTTER_WIDTH : SLIM_GUTTER_WIDTH
+  const span = keys.length + 1
   // Frozen offsets start AFTER the `#` gutter, which is itself always sticky at left 0 (YAZ-1513).
   let left = gutterWidth
   const frozenLeft = keys.map((key, index) => {
@@ -624,6 +626,23 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     document.addEventListener('mousemove', move)
     document.addEventListener('mouseup', up)
   }
+  /** ⌘A and the corner cell (YAZ-4603 D53, YAZ-4610 D62): every shown cell; the focus goes to the first cell. False with no rows. */
+  const selectAll = (): boolean => {
+    if (flat.length === 0) return false
+    setSelection(ALL_CELLS)
+    if (!wrapRef.current?.contains(document.activeElement)) wrapRef.current?.querySelector<HTMLElement>('tbody td[data-cell]')?.focus({ preventScroll: true })
+    return true
+  }
+  /**
+   * A plain click on a header selects the column (YAZ-4610 D62). A click, not a press: the press stays free for the
+   * header drag (YAZ-1548), and a drag fires no click, so the drag's own threshold keeps the two apart. ⇧ and ⌘ are
+   * the press's (below); the sort arrow and the resize edge keep their own.
+   */
+  const onHeaderClick = (c: number) => (e: ReactMouseEvent<HTMLTableCellElement>): void => {
+    if (e.button !== 0 || e.shiftKey || e.metaKey || e.altKey || e.ctrlKey || (e.target instanceof Element && e.target.closest('button, .view-table__resize') !== null)) return
+    setSelection(pickLine(selRef.current, 'cols', c, 'plain'))
+    wrapRef.current?.querySelector<HTMLElement>(`tbody td[data-cell$=":${c}"]`)?.focus({ preventScroll: true })
+  }
   /** ⇧ or ⌘ on a header picks columns (YAZ-4593); a plain press keeps its own behaviour, and so do the sort arrow and the resize edge. */
   const onHeaderMouseDown = (c: number) => (e: ReactMouseEvent<HTMLTableCellElement>): void => {
     if (e.button !== 0 || !(e.shiftKey || e.metaKey) || (e.target instanceof Element && e.target.closest('button, .view-table__resize') !== null)) return
@@ -868,11 +887,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     }
     const k = e.key.toLowerCase()
     if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || (k !== 'c' && k !== 'v' && k !== 'a' && k !== '\\')) return false
-    if (k === 'a') {
-      if (flat.length === 0) return false
-      setSelection(ALL_CELLS)
-      return true
-    }
+    if (k === 'a') return selectAll()
     const area = areaOf(selRef.current, at)
     if (area === null) return false
     if (k === 'c') copyArea(area)
@@ -1092,19 +1107,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           {...hover.itemProps(line.row.record.path)}
           onContextMenu={openRowMenu(line.row)}
         >
-          {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}
-          {numbered && (
+          {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). Always there: slim with numbers off (D62). */}
+          {
             <td
-              className="view-table__gutter"
+              className={numbered ? 'view-table__gutter' : 'view-table__gutter view-table__gutter--slim'}
               data-row={line.r}
               // The row's only drag source (YAZ-4603 D53), a ⋮⋮ on hover (views.css): onto another group, or the Other
               // files tray, the only target of an ungrouped row (YAZ-4597 D46). A drag across cells selects.
               {...(line.g === null || line.at === null ? trayRowDrag(moveToTray, line.row.record.path) : dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)))}
               onClick={(e) => (e.currentTarget.draggable ? wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${line.r}:0"]`)?.focus({ preventScroll: true }) : undefined)}
             >
-              {line.n}
+              {numbered && line.n}
             </td>
-          )}
+          }
           {keys.map((key, c) => {
             const v = line.row.values[key]
             const { path, title } = line.row.record
@@ -1190,11 +1205,17 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         >
           <thead>
             <tr>
-              {numbered && (
-                <th scope="col" className="view-table__gutter" style={{ width: GUTTER_WIDTH }} onContextMenu={openHeaderMenu(null)}>
-                  #
-                </th>
-              )}
+              {/* The corner selects every cell, as ⌘A (YAZ-4610 D62). */}
+              <th
+                scope="col"
+                className={numbered ? 'view-table__gutter' : 'view-table__gutter view-table__gutter--slim'}
+                style={{ width: gutterWidth }}
+                title="Select all"
+                onClick={selectAll}
+                onContextMenu={openHeaderMenu(null)}
+              >
+                {numbered && '#'}
+              </th>
               {keys.map((key, index) => {
                 const c = canonicalKey(key)
                 // This column's sort rule (YAZ-4590 S19): ▲ or ▼ (views.css draws it), and its place when there are several.
@@ -1212,6 +1233,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     title={c.startsWith('note.') ? settings.columns[c.slice('note.'.length)]?.description : undefined}
                     data-col={index}
                     onMouseDown={onHeaderMouseDown(index)}
+                    onClick={onHeaderClick(index)}
                     onContextMenu={openHeaderMenu(key)}
                     {...headerDrag(index)}
                   >
@@ -1248,7 +1270,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             <tfoot>
               <tr>
                 {/* Keeps the summary cells under their columns; the gutter has nothing to summarise. */}
-                {numbered && <td className="view-table__summary view-table__gutter" />}
+                <td className="view-table__summary view-table__gutter" />
                 {keys.map((key, index) => {
                   const label = propertyLabel(def, key)
                   const kind = summaryKindOf(view, key)
@@ -1374,6 +1396,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             records={records}
             properties={properties}
             folder={{ settings, setColumn, deleteColumn, valueCount }}
+            rowNumbers={numbered}
             onUpdate={onUpdate}
             declareColumn={declareColumn}
             onDeleteColumn={deleteColumn && setConfirmDelete}
