@@ -145,6 +145,16 @@ describe('Open in a window (YAZ-4547)', () => {
     expect(card()!.parentElement).toBe(q('section.editor'))
   })
 
+  it('"Open in a window" again on the open row keeps the card and the row\'s mark (YAZ-4544)', () => {
+    mount(SORTED)
+    openOn('D')
+    openOn('D')
+    expect(shownPath()).toBe(path('D'))
+    expect(currentRows()).toEqual(['D'])
+    openOn('B')
+    expect(currentRows()).toEqual(['B'])
+  })
+
   it('a host with no note editor offers no "Open in a window"', () => {
     mount(SORTED, {}, testFolderHost())
     rightClick(rowCell('A'))
@@ -486,6 +496,17 @@ describe('Open in a window in every folder view (YAZ-4547 D24)', () => {
       expect(marked()).toEqual([shown[3]])
       click(button('Close window'))
       expect(marked()).toEqual([])
+    })
+  }
+
+  for (const type of ['board', 'list', 'cards']) {
+    it(`${type}: "Open in a window" again on the open item keeps its mark (YAZ-4544)`, () => {
+      mount(grouped(type), {}, host())
+      const first = items(type)[0].dataset.hoverItem!
+      openItem(type, first)
+      openItem(type, first)
+      expect(shownPath()).toBe(first)
+      expect(marked()).toEqual([first])
     })
   }
 

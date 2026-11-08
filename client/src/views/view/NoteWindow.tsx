@@ -224,7 +224,10 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
     link.current = path
     link.show()
   }, [memory, link, path])
-  useEffect(
+  // A layout cleanup (YAZ-4544): "Open in a window" on the open row remounts the card (a new key). React runs the old
+  // card's layout cleanup before the new card's layout effect, so the new card marks the row after this clears it. A
+  // passive cleanup ran after the new card's mark and took it off.
+  useLayoutEffect(
     () => () => {
       link.current = null
       link.show()
