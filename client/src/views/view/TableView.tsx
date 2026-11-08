@@ -65,8 +65,8 @@ export interface TableViewProps {
   onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
   /** The last failed move, flagged inline on its row. */
   moveError: { path: string; message: string } | null
-  /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. `at` places the section for the level-aware seed (YAZ-1101). */
-  onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
+  /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers and no "+ New" row. `at` places the section for the level-aware seed (YAZ-1101). null: the ungrouped table's "+ New" row (YAZ-4539). */
+  onNewInGroup?: (group: Group | null, name?: string, at?: GroupSpot) => void
   /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846). */
   root: string
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
@@ -117,8 +117,16 @@ const MAX_FROZEN_ROWS = 10
 /** ...and the frozen lines stop here, group headers included: 10 rows under up to three headers each. */
 const MAX_FROZEN_LINES = 40
 
-/** One display line: a group header row (`depth` = its level, 0 at the top: YAZ-745, YAZ-4531), or a data row with its `data-cell` row index (data rows only), its `#` gutter number `n` (YAZ-1513) and its group (null when ungrouped). `at` places that group for the level-aware drag / "+" (YAZ-1101). */
-type Line = { header: Group; gk: string; depth: number; at: GroupSpot } | { row: Row; r: number; n: number; g: Group | null; gk: string | null; at: GroupSpot | null }
+/**
+ * One display line: a group header row (`depth` = its level, 0 at the top: YAZ-745, YAZ-4531), or a data row with its
+ * `data-cell` row index (data rows only), its `#` gutter number `n` (YAZ-1513) and its group (null when ungrouped).
+ * `at` places that group for the level-aware drag / "+" (YAZ-1101). Or a "+ New" row (YAZ-4539): one row high, but
+ * not a data row; `add` is its group (null at the end of an ungrouped table), `gk` its key.
+ */
+type Line =
+  | { header: Group; gk: string; depth: number; at: GroupSpot }
+  | { row: Row; r: number; n: number; g: Group | null; gk: string | null; at: GroupSpot | null }
+  | { add: Group | null; gk: string; at: GroupSpot | undefined }
 
 /**
  * A data row's sibling key. Fan-out (YAZ-671): the same record can sit in several groups, and the
@@ -288,6 +296,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   let n = 0
   if (groups === null) {
     for (const row of rows) lines.push({ row, r: flat.push(row) - 1, n: ++n, g: null, gk: null, at: null })
+    // The "+ New" row (YAZ-4539, S12) ends the table, wherever the toolbar's New is offered.
+    if (onNewInGroup !== undefined) lines.push({ add: null, gk: '', at: undefined })
   } else {
     // Nested levels (YAZ-745, three since YAZ-4531): the merge rule's direct rows sit right under
     // their group, then one indented section per child — still ONE flat list, so windowing and nav are untouched.
@@ -299,6 +309,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         if (collapsedSet.has(gk)) continue
         for (const row of g.children === undefined ? g.rows : g.direct ?? []) lines.push({ row, r: flat.push(row) - 1, n: ++n, g, gk, at })
         if (g.children !== undefined) walk(g.children, childSpot(g, at))
+        // ...and ends each innermost section, where its header offers the "+" (YAZ-4539).
+        else if (onNewInGroup !== undefined && groupTakesNew(view, at.level)) lines.push({ add: g, gk, at })
       }
     }
     walk(groups, TOP_SPOT)
@@ -504,6 +516,17 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const renderLine = (line: Line, frozenAt?: number) => {
     const frozenRow = frozenAt === undefined ? undefined : ['view-table__row--frozen', frozenAt === pinned - 1 && 'view-table__row--frozen-end']
     const frozenRowStyle = frozenAt === undefined ? undefined : ({ '--view-frozen-i': frozenAt } as CSSProperties)
+    if ('add' in line)
+      // The "+ New" row (YAZ-4539): the group header "+"'s path, so the note gets the filter seed and every group value above it.
+      return (
+        <tr key={`new:${line.gk}`} className={['view-table__new', ...(frozenRow ?? [])].filter(Boolean).join(' ')} style={frozenRowStyle}>
+          <td className="view-table__new-cell" colSpan={span}>
+            <button type="button" className="view-table__new-btn" onClick={() => onNewInGroup?.(line.add, undefined, line.at)}>
+              + New
+            </button>
+          </td>
+        </tr>
+      )
     return (
       'header' in line ? (
         <tr

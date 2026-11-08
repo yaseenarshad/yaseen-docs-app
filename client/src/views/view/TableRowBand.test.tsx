@@ -55,7 +55,7 @@ describe('the row hover band (YAZ-4538)', () => {
     const selector = BAND![1].split('*/').pop()!.replace(':hover', '').trim()
     for (const band of ['all', 'calendar']) {
       const el = mount(band)
-      const dataCells = el.querySelectorAll('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer) > td')
+      const dataCells = el.querySelectorAll('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer):not(.view-table__new) > td')
       expect(dataCells.length).toBeGreaterThan(0)
       // From the document: jsdom misses an `.app` ancestor when the query starts at `.app` itself.
       expect(document.querySelectorAll(selector).length).toBe(dataCells.length)

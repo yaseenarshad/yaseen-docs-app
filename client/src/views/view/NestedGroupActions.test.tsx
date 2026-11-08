@@ -175,7 +175,7 @@ function nestedSections(el: ParentNode): Record<string, string[]> {
       path.push(label)
       current = path.join('/')
       out[current] = []
-    } else if (!tr.classList.contains('view-table__spacer')) {
+    } else if (!tr.classList.contains('view-table__spacer') && !tr.classList.contains('view-table__new')) {
       out[current]?.push(q(tr, '.view-table__name').textContent ?? '')
     }
   }

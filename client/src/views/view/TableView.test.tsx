@@ -167,8 +167,8 @@ function rightClick(el: EventTarget, clientX = 0, clientY = 0): MouseEvent {
 
 const headers = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table th:not(.view-table__gutter)')].map((t) => t.textContent ?? '')
 const links = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__name')].map((b) => b.textContent ?? '')
-/** Data rows only (spacers excluded). */
-const bodyRows = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer)')]
+/** Data rows only (spacers and the "+ New" row excluded). */
+const bodyRows = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer):not(.view-table__new)')]
 const cells = (row: HTMLTableRowElement): HTMLTableCellElement[] => [...row.querySelectorAll<HTMLTableCellElement>('td:not(.view-table__gutter)')]
 
 const box = (top: number, height: number, width = 600): DOMRect => new DOMRect(0, top, width, height)
@@ -906,9 +906,10 @@ describe('windowing', () => {
     expect(links(el).length).toBeGreaterThan(0)
   })
 
-  it('500 rows or fewer render in full, no spacers', () => {
-    const { el } = mount('views:\n  - type: table\n    name: T\n', { records: manyRecords(500) })
-    expect(bodyRows(el)).toHaveLength(500)
+  // 499 notes and the "+ New" row (YAZ-4539) are 500 lines: windowing counts the row.
+  it('500 lines or fewer render in full, no spacers', () => {
+    const { el } = mount('views:\n  - type: table\n    name: T\n', { records: manyRecords(499) })
+    expect(bodyRows(el)).toHaveLength(499)
     expect(el.querySelector('.view-table__spacer')).toBeNull()
   })
 })

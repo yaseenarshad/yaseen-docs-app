@@ -85,7 +85,7 @@ const q = <T extends Element>(el: ParentNode, sel: string): T => {
 }
 /** What each body line shows: a group header's value, or a data row's name; spacers left out. */
 const lineName = (tr: HTMLTableRowElement): string =>
-  tr.classList.contains('view-table__group') ? `[${q(tr, '.view-group__value').textContent}]` : (q(tr, '.view-table__name').textContent ?? '')
+  tr.classList.contains('view-table__group') ? `[${q(tr, '.view-group__value').textContent}]` : tr.classList.contains('view-table__new') ? '+' : (q(tr, '.view-table__name').textContent ?? '')
 const bodyLines = (el: ParentNode) => [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer):not(.view-table__new)')]
 /** The frozen lines, top first, as `name@i` with their sticky index. */
 const frozenLines = (el: ParentNode): string[] =>
@@ -132,7 +132,7 @@ describe('the frozen lines (YAZ-4537)', () => {
     act(() => root?.unmount())
     container?.remove()
     const three = mount(GROUPED(3), { records: GROUPED_RECORDS })
-    expect(frozenLines(three.el)).toEqual(['[A]@0', 'a1@1', 'a2@2', '[B]@3', 'b1@4'])
+    expect(frozenLines(three.el)).toEqual(['[A]@0', 'a1@1', 'a2@2', '+@3', '[B]@4', 'b1@5'])
     expect(frozenEnd(three.el)).toEqual(['b1'])
   })
 
@@ -144,7 +144,8 @@ describe('the frozen lines (YAZ-4537)', () => {
 
   it('more than the rows that show freezes through the last row', () => {
     const { el } = mount(GROUPED(9), { records: GROUPED_RECORDS })
-    expect(frozenLines(el)).toHaveLength(6)
+    // Through b2: the last "+ New" row (YAZ-4539) is not a data row, so it stays out.
+    expect(frozenLines(el)).toHaveLength(7)
     expect(frozenEnd(el)).toEqual(['b2'])
   })
 
@@ -213,7 +214,7 @@ describe('"Freeze up to this row" in the row right-click (YAZ-4537)', () => {
     rightClickRow(el, 'b1')
     click(item(el, 'Freeze up to this row'))
     expect(yaml()).toContain('frozenRows: 3')
-    expect(frozenLines(el).map((l) => l.split('@')[0])).toEqual(['[A]', 'a1', 'a2', '[B]', 'b1'])
+    expect(frozenLines(el).map((l) => l.split('@')[0])).toEqual(['[A]', 'a1', 'a2', '+', '[B]', 'b1'])
   })
 
   it('past the 10th row the item is disabled', () => {

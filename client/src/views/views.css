@@ -825,7 +825,7 @@
    colour and strength (`--table-band-colour`, `--table-band-strength` on `.app`). An inset shadow paints over the
    cell's background, so the band shows over a fill and over a frozen cell's opaque `--bg`. None when Settings ›
    Editor › Tables › Row band is Off, and none when the band marks only the caret's row, as in the table block. */
-.app:not([data-table-row-band='off']):not([data-table-band-rows='caret']) .view-table tbody tr:not(.view-table__group):not(.view-table__spacer):hover > td {
+.app:not([data-table-row-band='off']):not([data-table-band-rows='caret']) .view-table tbody tr:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td {
   box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
 }
 
@@ -1097,6 +1097,27 @@
 .view-table__spacer td {
   padding: 0;
   border: none;
+}
+
+/* The "+ New" row (YAZ-4539, S12): one row high, at the end of the table and of each innermost group. Not a data
+   row, so no band; the button stays at the left edge while the table scrolls sideways, as a group header does. */
+.view-table td.view-table__new-cell {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.view-table__new-btn {
+  position: sticky;
+  left: 8px;
+  padding: 0 6px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+.view-table__new-btn:hover {
+  color: var(--fg);
+  background: var(--bg-side);
 }
 
 /* ---------- grouped table (4C) ---------- */
