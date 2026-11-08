@@ -19,9 +19,15 @@ export type DayKey = string
  * The day a raw value goes on (S3): the date part AS WRITTEN, so a time or a time zone never moves
  * a card to another day — `2026-12-03T23:30Z` is Dec 3 wherever the Mac is. A JS `Date` (a YAML
  * 1.1 timestamp: a bare date parses as UTC midnight) goes on its UTC date. Anything else: no day.
+ * A date no calendar has, `2026-02-30`, is no day either (YAZ-4635 P6): it matches no grid day, so
+ * its card goes to "No date" instead of nowhere. The check: the key reads back as itself.
  */
 export function dayOf(raw: unknown): DayKey | null {
-  if (typeof raw === 'string') return parseIsoDate(raw) === null ? null : raw.trim().slice(0, 10)
+  if (typeof raw === 'string') {
+    if (parseIsoDate(raw) === null) return null
+    const key = raw.trim().slice(0, 10)
+    return addDays(key, 0) === key ? key : null
+  }
   if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw.toISOString().slice(0, 10)
   return null
 }
@@ -102,8 +108,26 @@ export function weekendOf(day: DayKey): 'Sat' | 'Sun' | null {
 /** "Hide weekends" (YAZ-4595 S33): the days of a week row without its Saturday and Sunday, by the weekday, not the column. */
 export const withoutWeekends = (days: readonly DayKey[]): DayKey[] => days.filter((day) => weekendOf(day) === null)
 
-/** The Saturday and Sunday whose cards a Friday shows while weekends hide (YAZ-4595 S33); none for another day. */
-export const weekendAfter = (day: DayKey): DayKey[] => (localDay(day).getDay() === 5 ? [addDays(day, 1), addDays(day, 2)] : [])
+/**
+ * While weekends hide (YAZ-4595 S33): the weekend days each shown weekday of the grid takes, Saturday before Sunday.
+ * One rule for the grid and the mini window's order (YAZ-4635 P3): a Saturday goes to the Friday before it; a Sunday
+ * too, unless that Friday is off the grid — a Sunday-first grid opens on a Sunday — then to the Monday after it. So
+ * every weekend card of the grid lands on a day that shows. `weeks` is the grid WITH its weekends.
+ */
+export function weekendHomes(weeks: readonly (readonly DayKey[])[]): Map<DayKey, DayKey[]> {
+  const grid = new Set(weeks.flat())
+  const homes = new Map<DayKey, DayKey[]>()
+  for (const day of grid) {
+    const weekend = weekendOf(day)
+    if (weekend === null) continue
+    const friday = addDays(day, weekend === 'Sat' ? -1 : -2)
+    const home = grid.has(friday) ? friday : addDays(day, 1)
+    const list = homes.get(home)
+    if (list === undefined) homes.set(home, [day])
+    else list.push(day)
+  }
+  return homes
+}
 
 /**
  * Settings › Folder pages › "Hide weekends" (YAZ-4595 S33): the default of a calendar with no `hideWeekends` key. The

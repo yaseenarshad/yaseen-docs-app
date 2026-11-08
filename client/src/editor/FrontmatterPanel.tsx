@@ -319,6 +319,8 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
       setError(refusal)
       return
     }
+    // A folder's row renames inside that folder's block, never the note's own key (YAZ-4635 P4): a folder with no id has no block.
+    if (folder && chosenId === undefined) return
     const tidy = tidyOf()
     const at = folder && chosenId !== undefined ? [FOLDER_VALUES_KEY, chosenId] : []
     const change: ContentTransform = (content) => tidy(renameFrontmatterKey(content, at, from, to))
@@ -507,7 +509,8 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
         ) : <>
           <div className="ctx-menu__heading" role="presentation">{PROPERTY_LABELS[menuFor(rowMenu.row, rowMenu.anchor, false).definition.kind]} · {rowMenu.row.key}</div>
           {typeable(rowMenu.row.folder) && <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => { setPropertyMenu(menuFor(rowMenu.row, rowMenu.anchor, true)); setRowMenu(null) }}>Change type ›</button>}
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setRowMenu({ ...rowMenu, renaming: true })}>Rename…</button>
+          {/* An empty folder row holds no key of this note to rename (YAZ-4635 P4). */}
+          {rowMenu.row.raw !== undefined && <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setRowMenu({ ...rowMenu, renaming: true })}>Rename…</button>}
           <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => {
             void navigator.clipboard.writeText(copyText(rowMenu.row.raw)).catch((err: unknown) => setError(`Could not copy "${rowMenu.row.key}": ${messageOf(err)}`))
             setRowMenu(null)

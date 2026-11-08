@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_FOLDER_PAGES, type IndexRecord } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
-import { addDays, bucketByDay, calendarDateKey, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendAfter, weekendOf, weekLabel, withoutWeekends } from './calendar'
+import { addDays, bucketByDay, calendarDateKey, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -33,6 +33,14 @@ describe('dayOf (YAZ-4540 S3): the date part as written', () => {
   it('a time does not move the day', () => {
     expect(dayOf('2026-12-03 10:30')).toBe('2026-12-03')
     expect(dayOf('2026-12-03T23:59:59')).toBe('2026-12-03')
+  })
+  it('an impossible date such as 2026-02-30 has no day: its card goes to "No date" (YAZ-4635 P6)', () => {
+    expect(dayOf('2026-02-30')).toBeNull()
+    expect(dayOf('2026-02-30 09:00')).toBeNull()
+    expect(dayOf('2026-04-31T10:00Z')).toBeNull()
+    expect(dayOf('2026-02-28')).toBe('2026-02-28')
+    expect(dayOf('2028-02-29')).toBe('2028-02-29')
+    expect(bucketByDay([row('Odd', { due: '2026-02-30' })], 'due').undated.map((r) => r.record.title)).toEqual(['Odd'])
   })
   it('a time zone does not move the day (2026-12-03T23:30Z goes on Dec 3)', () => {
     expect(dayOf('2026-12-03T23:30Z')).toBe('2026-12-03')
@@ -205,10 +213,37 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     expect(withoutWeekends(weekDays('2026-12-10'))).toEqual(['2026-12-07', '2026-12-08', '2026-12-09', '2026-12-10', '2026-12-11'])
   })
 
-  it('weekendAfter: a Friday takes the Saturday and the Sunday after it, across a year; another day takes none', () => {
-    expect(weekendAfter('2026-12-04')).toEqual(['2026-12-05', '2026-12-06'])
-    expect(weekendAfter('2027-01-01')).toEqual(['2027-01-02', '2027-01-03'])
-    expect(weekendAfter('2026-12-03')).toEqual([])
+  // One rule for the grid and the mini window's order (YAZ-4635 P3): a Saturday goes to the Friday before; a Sunday too, unless
+  // that Friday is off the grid — a Sunday-first grid opens on a Sunday — then it goes to the Monday after. No weekend card is lost.
+  it('weekendHomes, Monday first: each Friday takes the Saturday and the Sunday after it, across a year', () => {
+    const homes = weekendHomes(monthWeeks(2026, 11))
+    expect(homes.get('2026-12-04')).toEqual(['2026-12-05', '2026-12-06'])
+    expect(homes.get('2027-01-01')).toEqual(['2027-01-02', '2027-01-03'])
+    expect(homes.get('2026-12-03')).toBeUndefined()
+    expect([...homes.values()].flat()).toHaveLength(10)
+  })
+
+  it('weekendHomes, Sunday first: the grid\'s first Sunday goes to the Monday after it; every other weekend day to its Friday', () => {
+    // November 2026 starts on a Sunday: the grid opens on Nov 1, whose Friday (Oct 30) is off the grid.
+    const weeks = monthWeeks(2026, 10, true)
+    expect(weeks[0][0]).toBe('2026-11-01')
+    const homes = weekendHomes(weeks)
+    expect(homes.get('2026-11-02')).toEqual(['2026-11-01'])
+    expect(homes.get('2026-11-06')).toEqual(['2026-11-07', '2026-11-08'])
+    expect(homes.get('2026-11-27')).toEqual(['2026-11-28', '2026-11-29'])
+    // Every weekend day of the grid lands once, Saturday before Sunday.
+    expect([...homes.values()].flat().sort()).toEqual(weeks.flat().filter((d) => weekendOf(d) !== null).sort())
+    // Monday first, the same month: Oct 30 is on the grid, so Nov 1 goes there.
+    expect(weekendHomes(monthWeeks(2026, 10)).get('2026-10-30')).toEqual(['2026-10-31', '2026-11-01'])
+  })
+
+  it('weekendHomes in Week: Sunday first, the Sunday goes to Monday and the Saturday to Friday; Monday first, both to Friday', () => {
+    const sundayFirst = weekendHomes([weekDays('2026-11-04', true)])
+    expect(sundayFirst.get('2026-11-02')).toEqual(['2026-11-01'])
+    expect(sundayFirst.get('2026-11-06')).toEqual(['2026-11-07'])
+    const mondayFirst = weekendHomes([weekDays('2026-11-04')])
+    expect(mondayFirst.get('2026-11-06')).toEqual(['2026-11-07', '2026-11-08'])
+    expect(mondayFirst.get('2026-11-02')).toBeUndefined()
   })
 
   it('the Settings default is off; a view key wins over it either way', () => {

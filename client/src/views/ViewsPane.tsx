@@ -21,7 +21,7 @@ import { canonicalKey } from './view/keys'
 import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
 import { ListView } from './view/ListView'
 import { TableView } from './view/TableView'
-import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, noteWindowKey, noteWindowLink, noteWindowMemory, openNoteWindow } from './view/NoteWindow'
+import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, noteWindowKey, noteWindowLink, noteWindowMemory, openNoteWindow, renameNoteWindowView } from './view/NoteWindow'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
@@ -713,6 +713,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     },
     onRename: (i, name) => {
       moveCollapsed(views[i].name, name)
+      // The open mini window follows its view tab too (YAZ-4635 P5).
+      renameNoteWindowView(folderPath, views[i].name, name)
       update((d) => {
         if (d.defaultView === d.views[i].name) d.defaultView = name // the saved START follows (D4)
         d.views[i].name = name

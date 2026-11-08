@@ -247,6 +247,9 @@ describe('moving a note (D44, D46)', () => {
 
     const back = transfer()
     drag(trayLine(el, 'Sales'), 'dragstart', back)
+    // The Page tab's editor inserts the `text/plain` of a drop (YAZ-4635 P2): a tray drag carries none, only its own type.
+    expect(back.types).not.toContain('text/plain')
+    expect(back.types).toHaveLength(1)
     // The tray takes no drop of its own note.
     drag(q(el, '.other-files'), 'drop', back)
     await settle()

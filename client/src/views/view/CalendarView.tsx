@@ -1,6 +1,6 @@
 import { type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { openByKey, openTarget } from '../../lib/openGesture'
-import { type DayKey, bucketByDay, addDays, dayLabel, dayOf, monthStart, monthWeeks, timeFirst, timeOf, todayKey, weekDays, weekendAfter, weekendOf, weekLabel, withoutWeekends } from '../calendar'
+import { type DayKey, bucketByDay, addDays, dayLabel, dayOf, monthStart, monthWeeks, timeFirst, timeOf, todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from '../calendar'
 import { type Row, propertyLabel } from '../engine'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
@@ -42,7 +42,7 @@ export interface CalendarViewProps {
   wrap?: boolean
   /** Settings › Folder pages › Week starts on Sunday (YAZ-4585); else Monday (D11). */
   sundayFirst?: boolean
-  /** "Hide weekends" (YAZ-4595 S33): Monday to Friday only; a weekend note shows on the Friday before, marked Sat or Sun. */
+  /** "Hide weekends" (YAZ-4595 S33): Monday to Friday only; a weekend note shows on the Friday before (the Monday after when that Friday is off the grid, YAZ-4635 P3), marked Sat or Sun. */
   hideWeekends?: boolean
 }
 
@@ -85,17 +85,18 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   /** The card's right-click menu (YAZ-4547 D24), as the board's. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   const { days, undated } = useMemo(() => bucketByDay(rows, dateKey), [rows, dateKey])
-  const weeks = useMemo(() => {
-    const all = scale === 'week' ? [weekDays(anchor, sundayFirst)] : monthWeeks(month.y, month.m, sundayFirst)
-    return hideWeekends ? all.map(withoutWeekends) : all
-  }, [scale, anchor, month.y, month.m, sundayFirst, hideWeekends])
+  // The grid with its weekends; `weeks` is what shows.
+  const allWeeks = useMemo(() => (scale === 'week' ? [weekDays(anchor, sundayFirst)] : monthWeeks(month.y, month.m, sundayFirst)), [scale, anchor, month.y, month.m, sundayFirst])
+  const weeks = useMemo(() => (hideWeekends ? allWeeks.map(withoutWeekends) : allWeeks), [allWeeks, hideWeekends])
   // Each day on screen in its order, the timed cards first in time order (D22), in Month and in Week alike, so the
-  // note window steps exactly as the days show. While weekends hide (YAZ-4595 S33) a Friday also takes its Saturday's
-  // cards, then its Sunday's, each day in that order. Once per rows or page change, not on each dragover.
+  // note window steps exactly as the days show. While weekends hide (YAZ-4595 S33) a weekday also takes the cards of
+  // the weekend days that go to it (`weekendHomes`, YAZ-4635 P3: a Friday its Saturday's then its Sunday's; a Monday
+  // the Sunday whose Friday is off the grid), each day in that order. Once per rows or page change, not on each dragover.
   const dayCards = useMemo(() => {
     const of = (day: DayKey) => (dateKey === null ? [] : timeFirst(days.get(day) ?? [], dateKey))
-    return new Map(weeks.flat().map((day) => [day, hideWeekends ? [...of(day), ...weekendAfter(day).flatMap(of)] : of(day)]))
-  }, [weeks, days, dateKey, hideWeekends])
+    const homes = hideWeekends ? weekendHomes(allWeeks) : null
+    return new Map(weeks.flat().map((day) => [day, homes === null ? of(day) : [...of(day), ...(homes.get(day) ?? []).flatMap(of)]]))
+  }, [allWeeks, weeks, days, dateKey, hideWeekends])
   // The note window (YAZ-4547 D24): day by day across the days on screen, the timed cards first within a day (every
   // card, also those behind "+N more"), then "No date". Once per rows or page change, not on each dragover.
   const windowOrder = useMemo(
@@ -166,7 +167,7 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
     const path = row.record.path
     const locked = readOnly.has(path)
     const time = from === null ? null : timeOf(row.record.properties[dateKey])
-    // A weekend note on its Friday (YAZ-4595 S33) says its day. A drop on that Friday is a drop on its own day: no write.
+    // A weekend note on its Friday or Monday (YAZ-4595 S33, YAZ-4635 P3) says its day. A drop on that day is a drop on its own day: no write.
     const real = from === null ? null : dayOf(row.record.properties[dateKey])
     const weekend = real === null || real === from ? null : weekendOf(real)
     return (

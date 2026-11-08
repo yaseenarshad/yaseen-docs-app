@@ -6,8 +6,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
+import { createPortal } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, type IndexRecord } from '@shared/types'
+import { ContextMenuSurface } from '../../components/ContextMenuSurface'
+import { Popover } from './Popover'
 import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
@@ -229,6 +232,43 @@ describe('Open in mini window (YAZ-4547)', () => {
     expect(currentRows()).toEqual([])
   })
 
+  it('an unpinned card stays on a click in a menu or a popover its editor opened on document.body (YAZ-4635 P1)', () => {
+    // The Properties panel portals its popover and its row menu to document.body (FrontmatterPanel): a click there is a click in the card.
+    const editor = (p: string) => (
+      <div className="stub-editor">
+        {p}
+        {createPortal(
+          <ContextMenuSurface x={0} y={0} onClose={() => {}}>
+            <button type="button" className="ctx-menu__item" role="menuitem">
+              Remove from this note
+            </button>
+          </ContextMenuSurface>,
+          document.body,
+        )}
+        {createPortal(
+          <Popover label="Property due" onClose={() => {}} className="frontmatter-property-menu">
+            <button type="button" className="view-popover__item">
+              Edit property ›
+            </button>
+          </Popover>,
+          document.body,
+        )}
+      </div>
+    )
+    setCellNotePinnedAtStart(false)
+    mount(SORTED, {}, testFolderHost({ renderNoteEditor: editor }))
+    openOn('A')
+    mouseDown(q('.ctx-menu [role="menuitem"]'))
+    draw()
+    expect(card()).not.toBeNull()
+    mouseDown(q('.frontmatter-property-menu .view-popover__item'))
+    draw()
+    expect(card()).not.toBeNull()
+    mouseDown(document.body)
+    draw()
+    expect(card()).toBeNull()
+  })
+
   it('the pin starts from the setting, and Esc closes an unpinned card', () => {
     setCellNotePinnedAtStart(false)
     mount(SORTED)
@@ -369,6 +409,39 @@ describe('Open in mini window (YAZ-4547)', () => {
     draw()
     expect(card()).toBeNull()
     expect(openNoteWindow(noteWindowKey(undefined, '/vault/f', 'T'))).toBeUndefined()
+  })
+
+  it('a rename of the folder keeps the card: its entry moves to the new folder path (YAZ-4635 P5)', () => {
+    // App's `file:renamed` (kind dir) calls `renameNoteWindows`; the tab's folder page then mounts on the new path.
+    mount(SORTED)
+    openOn('B')
+    act(() => root?.unmount())
+    container?.remove()
+    renameNoteWindows('/vault/f', '/vault/g')
+    expect(openNoteWindow(noteWindowKey(undefined, '/vault/f', 'T'))).toBeUndefined()
+    const moved = RECORDS.map((r) => ({ ...r, path: r.path.replace('/vault/f/', '/vault/g/'), folder: 'g' }))
+    mount(SORTED, { folderPath: '/vault/g', records: moved })
+    expect(shownPath()).toBe('/vault/g/B.md')
+    expect(currentRows()).toEqual(['B'])
+  })
+
+  it('a rename of the view tab keeps the card: its entry moves to the new view name (YAZ-4635 P5)', () => {
+    mount(SORTED)
+    openOn('C')
+    rightClick([...document.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'T')!)
+    click(menuItems().find((item) => item.textContent === 'Rename')!)
+    const input = q<HTMLInputElement>('[aria-label="View name"]')
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'Tee')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    draw()
+    expect([...document.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Tee'])
+    expect(shownPath()).toBe(path('C'))
+    expect(currentRows()).toEqual(['C'])
+    expect(openNoteWindow(noteWindowKey(undefined, '/vault/f', 'T'))).toBeUndefined()
+    expect(openNoteWindow(noteWindowKey(undefined, '/vault/f', 'Tee'))?.path).toBe(path('C'))
   })
 
   it('a rename or a delete reaches a card whose tab sleeps: it shows again on the new path, or not at all (YAZ-4544)', () => {
@@ -642,6 +715,17 @@ ${grouped('board').split('\n').slice(1).join('\n').replace('name: V', 'name: B')
       expect(marked()).toEqual([path('E')])
       press(itemOf('calendar', path('C')), {})
       expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(path('C'))
+    })
+
+    it('with weekends hidden, Sunday first, the grid\'s first Sunday is in the order, on its Monday (YAZ-4635 P3)', () => {
+      // November 2026 starts on a Sunday; before, a card dated Nov 1 was in no day and not in the order.
+      vi.setSystemTime(new Date(2026, 10, 10, 12, 0))
+      const { setRecords } = mount(`${CALENDAR}    hideWeekends: true\n`, { folderPages: { ...DEFAULT_FOLDER_PAGES, weekStartsOn: 'sunday' } }, host())
+      setRecords([dated('A', '2026-11-01'), dated('B', '2026-11-02'), dated('C', '2026-11-07'), dated('D', '2026-11-08'), dated('E')])
+      // Monday Nov 2 shows its own card first, then the Sunday's, as a Friday shows its own, then Saturday's, then Sunday's.
+      openItem('calendar', path('B'))
+      expect(count()).toBe('1 of 5')
+      expect(walk()).toEqual(['B', 'A', 'C', 'D', 'E'].map(path))
     })
 
     it('in Week, ‹ › go through the week on screen', () => {

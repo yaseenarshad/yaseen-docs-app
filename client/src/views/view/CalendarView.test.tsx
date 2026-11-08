@@ -158,6 +158,11 @@ describe('calendar grid (YAZ-4540 D11)', () => {
     expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D', 'Busy E'])
   })
 
+  it('an impossible date such as 2026-02-30 sits in "No date" (YAZ-4635 P6)', () => {
+    const { el } = mount(CALENDAR, { records: [...RECORDS, rec('Odd', { due: '2026-02-30' })] })
+    expect(titlesIn(q(el, '.view-cal__tray'))).toEqual(['Nothing', 'Odd'])
+  })
+
   it('a note with no date sits in the "No date" tray below the grid', () => {
     const { el } = mount(CALENDAR)
     expect(titlesIn(q(el, '.view-cal__tray'))).toEqual(['Nothing'])
@@ -512,6 +517,49 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     drag(cardOf(el, 'Sunday'), day(el, '2026-12-02'))
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Sunday.md', 'due', '2026-12-02 09:00')
     expect(mark(el, 'Sunday')).toBeNull()
+  })
+
+  // One rule for the grid and the mini window's order (YAZ-4635 P3): a Saturday goes to the Friday before; a Sunday too, unless
+  // that Friday is off the grid — then to the Monday after. Before, the first Sunday of a Sunday-first grid showed nowhere.
+  describe('every weekend card lands on a shown weekday (YAZ-4635 P3)', () => {
+    // November 2026 starts on a Sunday. Nov 8 is the Sunday of the week that holds the 10th.
+    const november = [rec('First Sunday', { due: '2026-11-01' }), rec('Saturday', { due: '2026-11-07' }), rec('Sunday', { due: '2026-11-08 09:00' }), rec('Weekday', { due: '2026-11-09' })]
+    beforeEach(() => vi.setSystemTime(new Date(2026, 10, 10, 12, 0)))
+    const sunday = { ...DEFAULT_FOLDER_PAGES, weekStartsOn: 'sunday' as const }
+
+    it('Month, Sunday first: the grid\'s first Sunday goes to the Monday after it, marked Sun; the other weekend cards to their Friday', () => {
+      const { el } = mount(HIDE, { records: november, folderPages: sunday })
+      expect(shownDays(el)[0]).toBe('2026-11-02')
+      expect(titlesIn(day(el, '2026-11-02'))).toEqual(['First Sunday'])
+      expect(mark(el, 'First Sunday')).toBe('Sun')
+      expect(titlesIn(day(el, '2026-11-06'))).toEqual(['Saturday', 'Sunday'])
+      expect(titlesIn(q(el, '.view-cal__tray'))).toEqual([])
+      // A drop on its Monday is a drop on its own day: no write.
+      drag(cardOf(el, 'First Sunday'), day(el, '2026-11-02'))
+      expect(write).not.toHaveBeenCalled()
+    })
+
+    it('Month, Monday first: the same Sunday goes to the Friday before it, on the grid\'s first row', () => {
+      const { el } = mount(HIDE, { records: november })
+      expect(titlesIn(day(el, '2026-10-30'))).toEqual(['First Sunday'])
+      expect(mark(el, 'First Sunday')).toBe('Sun')
+      expect(titlesIn(day(el, '2026-11-06'))).toEqual(['Saturday', 'Sunday'])
+    })
+
+    it('Week, Sunday first: the Sunday goes to Monday and the Saturday to Friday; Monday first, both to Friday', () => {
+      const { el } = mount(`${HIDE}    calendarScale: week\n`, { records: november, folderPages: sunday })
+      expect(shownDays(el)).toEqual(['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'])
+      expect(titlesIn(day(el, '2026-11-09'))).toEqual(['Weekday', 'Sunday'])
+      expect(mark(el, 'Sunday')).toBe('Sun')
+      // Nov 14 is a Saturday with no card; its Friday the 13th shows nothing.
+      expect(titlesIn(day(el, '2026-11-13'))).toEqual([])
+      act(() => root?.unmount())
+      container?.remove()
+      const monday = mount(`${HIDE}    calendarScale: week\n`, { records: november })
+      expect(titlesIn(day(monday.el, '2026-11-09'))).toEqual(['Weekday'])
+      click(q(monday.el, '[aria-label="Previous week"]'))
+      expect(titlesIn(day(monday.el, '2026-11-06'))).toEqual(['Saturday', 'Sunday'])
+    })
   })
 
   it('off by default: the full week shows and no card wears a mark', () => {

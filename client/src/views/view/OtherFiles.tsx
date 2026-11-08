@@ -58,6 +58,8 @@ const CLOSED = 'other-files'
 
 /** The note being dragged out of the tray, between its dragstart and its drop or dragend. */
 let fromTray: string | null = null
+/** The tray drag's own payload (YAZ-4635 P2), `ViewTabs`' `VIEW_TAB_MIME` idiom: never `text/plain`, which the Page tab's editor would insert as text on a drop. */
+const TRAY_NOTE_MIME = 'application/x-yaseen-tray-note'
 
 /** The view body as a drop target for a note dragged out of the tray (D46). Nothing while the page takes no moves. */
 export function trayBackTarget(onMoveBack: ((path: string) => void) | null): Record<string, unknown> {
@@ -164,7 +166,7 @@ export function OtherFiles({ root, dir, notes, onOpen, onOpenBackground, onNotic
                       draggable: true,
                       onDragStart: (e: ReactDragEvent) => {
                         fromTray = line.path
-                        e.dataTransfer?.setData('text/plain', line.path)
+                        e.dataTransfer?.setData(TRAY_NOTE_MIME, line.path)
                         if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
                       },
                       onDragEnd: () => {

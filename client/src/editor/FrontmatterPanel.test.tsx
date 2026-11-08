@@ -1603,6 +1603,21 @@ Body
     expect(disk.get(NOOR)).toBe(`---\ntitle: Noor\nin:\n  ${id}:\n    score: 8\n---\nBody\n`)
   })
 
+  it('a folder with no id: its empty rows offer no Rename…, and a rename of one never touches the note\'s own key (YAZ-4635 P4)', () => {
+    // The note holds its own `score`; Hiring (no id yet) declares a `score` column, so the folder's row is empty.
+    const el = mountNote('---\ntitle: Noor\nscore: 1\n---\nBody\n', NOOR, feedOf(folderMd('/vault/Hiring', { columns: { score: { kind: 'number' } } })))
+    expect(shows(row(folderRows(el), 'score'))).toBe('Empty')
+    act(() => void row(folderRows(el), 'score').querySelector('.frontmatter-property-name')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+    const items = [...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)
+    expect(items).toContain('Copy value')
+    expect(items).not.toContain('Rename…')
+    expect(writeFile).not.toHaveBeenCalled()
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    // The note's own row still renames.
+    act(() => void row(ownRows(el), 'score').querySelector('.frontmatter-property-name')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+    expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).toContain('Rename…')
+  })
+
   /** The panel is the note's own frontmatter and nothing else there. The ID vault's half of each row is the tests above, and `typed rows`' Reserved ones. */
   describe('in a vault that does not use IDs (YAZ-2523 V5, V12)', () => {
     /** The folders as such a vault's index hands them out: their saved settings, and no id. */

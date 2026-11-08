@@ -124,14 +124,34 @@ const isAtOrUnder = (path: string, at: string): boolean => path === at || path.s
 /** The mounted cards, told of a rename (`to` its new path) or a delete (`to` null) of a note or a folder (YAZ-4544). */
 const windowListeners = new Set<(from: string, to: string | null) => void>()
 
+/** A key's parts (`noteWindowKey`). */
+const keyParts = (key: string): [string | null, string, string] => JSON.parse(key) as [string | null, string, string]
+
+/** The entries whose key `moves` picks get the key it names (YAZ-4635 P5): the card stays open across a rename of its place. */
+function rekeyNoteWindows(moves: (tabId: string | null, folderPath: string, viewName: string) => string | null): void {
+  for (const [key, memory] of [...openWindows]) {
+    const to = moves(...keyParts(key))
+    if (to === null || to === key) continue
+    openWindows.delete(key)
+    openWindows.set(to, memory)
+  }
+}
+
 /**
  * A rename of a note or a folder (YAZ-4544): App's `file:renamed`, after `carryEditorAcrossRename` retired the
  * editors at the old path. Each card on it, mounted or not, moves to the new path; a mounted card mounts its editor there.
+ * A folder's rename also moves the cards of the folder pages at or under it to their new folder path (YAZ-4635 P5),
+ * so the page that mounts again on the new path finds its card.
  */
 export function renameNoteWindows(oldPath: string, newPath: string): void {
   for (const memory of openWindows.values()) if (isAtOrUnder(memory.path, oldPath)) memory.path = newPath + memory.path.slice(oldPath.length)
+  rekeyNoteWindows((tabId, folderPath, viewName) => (isAtOrUnder(folderPath, oldPath) ? noteWindowKey(tabId ?? undefined, newPath + folderPath.slice(oldPath.length), viewName) : null))
   for (const tell of [...windowListeners]) tell(oldPath, newPath)
 }
+
+/** A view tab of `folderPath` renamed `from` → `to` (YAZ-4635 P5): the cards on it, in every app tab, keep their place under the new name. */
+export const renameNoteWindowView = (folderPath: string, from: string, to: string): void =>
+  rekeyNoteWindows((tabId, folder, viewName) => (folder === folderPath && viewName === from ? noteWindowKey(tabId ?? undefined, folderPath, to) : null))
 
 /** A delete of a note or a folder (YAZ-4544): App's `file:deleted`, after `retireDeletedPath`. Each card on it closes. */
 export function dropNoteWindowsAt(path: string): void {
@@ -277,11 +297,15 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
   }, [host])
 
   // Unpinned, a mousedown outside the card closes it (D17). A hidden tab's card hears none: that click is in another tab.
+  // A menu or a popover on `document.body` is the card's own (YAZ-4635 P1): the Properties panel portals its row menu
+  // and its property popover there, and only a surface opened from the card can be open while the card is — a
+  // mousedown anywhere else closed it first. So a click in one is a click in the card.
   useEffect(() => {
     if (pinned) return
     const onDown = (event: MouseEvent) => {
       const card = cardRef.current
       if (card === null || (event.target instanceof Node && card.contains(event.target))) return
+      if (event.target instanceof Element && event.target.closest('.ctx-menu, .view-popover') !== null) return
       if (card.closest('.tabstack__layer--hidden') !== null) return
       closeRef.current()
     }
