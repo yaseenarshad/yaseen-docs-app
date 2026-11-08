@@ -6,6 +6,7 @@ import { defaultAppState } from '@shared/types'
 import { search, resolveTarget, scopeRoots, readSaved } from './resources'
 import { _evictAll, getIndex, getReadOnlyTree } from '../vaultIndex/live'
 import { subscribe } from '../fs/watchers'
+import { checked } from './contract'
 
 let root: string
 beforeEach(async () => {
@@ -32,11 +33,11 @@ const mutate = async (path: string, type: string, run: () => Promise<void>) => {
 describe('read-only resource queries', () => {
   it('shares search matching, scopes results, resolves existing identities, and never assigns IDs', async () => {
     const state = defaultAppState()
-    expect((await search(state, { root, query: 'Recall' })).items[0].path).toBe(join(root, 'Mochi/cards.md'))
-    expect((await search(state, { root, query: 'TST2' })).items[0].id).toBe('TST-2')
+    expect((await checked('search.query', search(state, { root, query: 'Recall' }))).items[0].path).toBe(join(root, 'Mochi/cards.md'))
+    expect((await checked('search.query', search(state, { root, query: 'TST2' }))).items[0].id).toBe('TST-2')
     expect(await resolveTarget([root], { name: 'Mochi' })).toBe(join(root, 'Mochi'))
     expect(await resolveTarget([root], { id: 'TST-1' })).toBe(join(root, 'Mochi'))
-    expect((await search(state, { root, folder: join(root, 'Mochi'), query: 'no-id' })).items).toEqual([])
+    expect((await checked('search.query', search(state, { root, folder: join(root, 'Mochi'), query: 'no-id' }))).items).toEqual([])
     expect(await readFile(join(root, 'no-id.md'), 'utf8')).toBe('# Leave this alone\n')
     expect(await readdir(join(root, '.yaseendocs'))).toEqual(['ids.json'])
     expect((await readdir(root)).includes('.folder.md')).toBe(false)
@@ -57,10 +58,10 @@ describe('read-only resource queries', () => {
   it('pages distinct matches and includes only Favorites when requested', async () => {
     await writeFile(join(root, '.yaseendocs/favorites.json'), JSON.stringify({ version: 1, favorites: ['Mochi'] }))
     const state = defaultAppState()
-    const all = await search(state, { root, query: '', limit: 1 })
+    const all = await checked('search.query', search(state, { root, query: '', limit: 1 }))
     expect(all.items).toHaveLength(1)
     expect(all.nextOffset).toBe(1)
-    const favorites = await search(state, { root, query: '', collection: 'favorites', scope: 'vault' })
+    const favorites = await checked('search.query', search(state, { root, query: '', collection: 'favorites', scope: 'vault' }))
     expect(favorites.items.map(row => row.path)).toEqual([join(root, 'Mochi'), join(root, 'Mochi/cards.md')])
   })
 

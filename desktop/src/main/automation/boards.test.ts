@@ -8,12 +8,13 @@ import { boardCommand } from './boards'
 import type { LiveEdits } from './liveEdits'
 import { saveDrawingIndexed } from '../documentSaves'
 import { _actAs, _resetMint } from '../vaultIndex/mint'
+import { checked } from './contract'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-cli-board-')); _actAs(root, join(root, 'profile')) })
 afterEach(async () => { _resetMint(); await rm(root, { recursive: true, force: true }) })
 const scene = JSON.stringify({ type: 'excalidraw', version: 2, source: 'test', elements: [], appState: {}, files: {} })
-const run = (kind: string, action: string, path: string, extra: Record<string, unknown> = {}, body = '', liveEdits?: LiveEdits) => boardCommand(defaultAppState(), `${kind}.${action}`, { root, path, ...extra }, Buffer.from(body), undefined, liveEdits)
+const run = (kind: string, action: string, path: string, extra: Record<string, unknown> = {}, body = '', liveEdits?: LiveEdits) => checked(`${kind}.${action}`, boardCommand(defaultAppState(), `${kind}.${action}`, { root, path, ...extra }, Buffer.from(body), undefined, liveEdits))
 
 describe('board CLI adapters', () => {
   it.each([['drawing', 'excalidraw'], ['diagram', 'drawio']])('creates a valid %s without replacing an existing board', async (kind, extension) => {

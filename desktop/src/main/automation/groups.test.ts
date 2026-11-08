@@ -6,6 +6,7 @@ import { defaultAppState, type FocusFolder } from '@shared/types'
 import { groupCommand } from './groups'
 import { getFocusFolders, setFocusFolders } from '../focusFolders'
 import { _actAs, _resetMint } from '../vaultIndex/mint'
+import { checked } from './contract'
 
 let base: string, roots: string[]
 beforeEach(async () => {
@@ -13,7 +14,7 @@ beforeEach(async () => {
   for (const root of roots) { await mkdir(root); await writeFile(join(root, 'Mochi.md'), 'Mochi'); _actAs(root, join(base, 'profile')) }
 })
 afterEach(async () => { _resetMint(); await rm(base, { recursive: true, force: true }) })
-const run = (command: string, extra: Record<string, unknown> = {}) => groupCommand(defaultAppState(), command, { roots, kind: 'favorites', scope: 'workspace', ...extra })
+const run = (command: string, extra: Record<string, unknown> = {}) => checked(command, groupCommand(defaultAppState(), command, { roots, kind: 'favorites', scope: 'workspace', ...extra }))
 const create = async () => (await run('group.create', { name: 'Mochi' }) as { group: FocusFolder }).group
 
 describe('collection group commands', () => {
@@ -27,6 +28,8 @@ describe('collection group commands', () => {
     const listed = await run('group.list') as { items: { resolvedItems: { path: string }[] }[] }
     expect(listed).toMatchObject({ items: [{ id: group.id, name: 'Flashcards', pos: 2 }] })
     expect(listed.items[0].resolvedItems.map(item => item.path).sort()).toEqual(roots.map(root => join(root, 'Mochi.md')).sort())
+    const reversed = [...(listed.items[0] as unknown as FocusFolder).items].reverse()
+    expect(await run('group.reorderItems', { group: group.id, items: reversed })).toMatchObject({ group: { items: reversed } })
     await run('group.remove', { group: group.id })
     expect(await run('group.list')).toMatchObject({ items: [] })
     for (const root of roots) expect((await getFocusFolders(root, 'workspace', 'favorites'))[0].deleted).toBe(true)

@@ -6,6 +6,7 @@ import type { FileOperationTarget } from '@shared/automationNavigation'
 import { boardImageCommand } from './boardImages'
 import { editorCommand } from './editor'
 import type { NavigationHost } from './navigation'
+import { checked } from './contract'
 
 let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'docs-cli-board-image-')) })
@@ -18,7 +19,7 @@ const host = { windows: () => [{ id: 'w1' }], operate: async (_window: string, t
   return target.format === 'pdf' ? { format: 'pdf', svg: '<svg/>', width: 96, height: 48, path: '/v/B.excalidraw', dirty: true } : { format: target.format, data: new Uint8Array([137, 80]), path: '/v/B.excalidraw', dirty: false }
 } } as unknown as NavigationHost
 const print = vi.fn(async () => Buffer.from('%PDF'))
-const run = (args: Record<string, unknown>, command = 'drawing.exportImage') => boardImageCommand(host, command, { window: 'w1', tab: 't1', ...args }, print)
+const run = (args: Record<string, unknown>, command = 'drawing.exportImage') => checked(command, boardImageCommand(host, command, { window: 'w1', tab: 't1', ...args }, print))
 
 describe('live board image export (YAZ-4515)', () => {
   beforeEach(() => { sent.length = 0; print.mockClear() })

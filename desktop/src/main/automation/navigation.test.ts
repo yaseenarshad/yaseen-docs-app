@@ -7,18 +7,19 @@ import { navigationLink, parseNavigationLink } from '@shared/navigationLinks'
 import { _evictAll } from '../vaultIndex/live'
 import { generateNavigationLink, navigate, type NavigationHost } from './navigation'
 import { RendererRequests } from './renderer'
+import { checked } from './contract'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-nav-')); await mkdir(join(root, 'Mochi')); await writeFile(join(root, 'Mochi/card.md'), 'card') })
 afterEach(async () => { _evictAll(); await rm(root, { recursive: true, force: true }) })
 const entry = (id: string, roots: string[]): WindowEntry => ({ id, root: roots[0], roots, tabs: [], file: null, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 1000, height: 800 } })
-const host = (windows: WindowEntry[] = []): NavigationHost => ({ state: () => defaultAppState(), windows: () => windows, open: vi.fn(() => 'new'), raise: vi.fn(), apply: vi.fn(async () => ({ acknowledged: true })), inspect: vi.fn(async () => ({})), operate: vi.fn(async () => ({})), usedWorkspace: vi.fn(async () => {}) })
+const host = (windows: WindowEntry[] = []): NavigationHost => ({ state: () => defaultAppState(), windows: () => windows, open: vi.fn(() => 'new'), raise: vi.fn(), apply: vi.fn(async () => ({ path: null, tab: null, sidebar: 'files', sidebarCollapsed: false, rightPanel: defaultRightPanelIdentity(), acknowledged: true })), inspect: vi.fn(async () => ({})), operate: vi.fn(async () => ({})), usedWorkspace: vi.fn(async () => {}) })
 
 describe('exact context navigation', () => {
   it('validates an exact live tab before raising, with collection and view checks', async () => {
     const app = host([entry('w1', [root])]), path = join(root, 'Mochi')
     app.inspect = vi.fn(async () => ({ tabs: [{ id: 'one', path }, { id: 'two', path }] }))
-    expect(await navigate(app, { window: 'w1', tab: 'two' })).toMatchObject({ window: 'w1', created: false })
+    expect(await checked('navigation.open', navigate(app, { window: 'w1', tab: 'two' }))).toMatchObject({ window: 'w1', created: false })
     expect(app.apply).toHaveBeenLastCalledWith('w1', { tab: 'two', path })
     vi.mocked(app.raise).mockClear()
     await expect(navigate(app, { window: 'w1', tab: 'gone' })).rejects.toMatchObject({ code: 'TAB_NOT_FOUND' })
@@ -31,7 +32,7 @@ describe('exact context navigation', () => {
 
   it('opens a page in the right panel through the same exact-window door and refuses one without a page', async () => {
     const app = host([entry('w1', [root])]), path = join(root, 'Mochi/card.md')
-    expect(await navigate(app, { root, path, panel: 'right', sidebar: 'files' })).toMatchObject({ window: 'w1', created: false })
+    expect(await checked('navigation.open', navigate(app, { root, path, panel: 'right', sidebar: 'files' }))).toMatchObject({ window: 'w1', created: false })
     expect(app.apply).toHaveBeenLastCalledWith('w1', { path, panel: 'right', sidebar: 'files' })
     vi.mocked(app.apply).mockClear()
     await expect(navigate(app, { root, panel: 'right' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
@@ -45,7 +46,7 @@ describe('exact context navigation', () => {
   it('closes an empty start window once a created window applies, and leaves vault windows alone', async () => {
     const app = host([entry('start', []), entry('other', ['/other'])])
     app.manage = vi.fn(async () => ({}))
-    expect(await navigate(app, { root, path: join(root, 'Mochi'), mode: 'new' })).toMatchObject({ window: 'new', created: true, closedStartWindows: ['start'] })
+    expect(await checked('navigation.open', navigate(app, { root, path: join(root, 'Mochi'), mode: 'new' }))).toMatchObject({ window: 'new', created: true, closedStartWindows: ['start'] })
     expect(app.manage).toHaveBeenCalledExactlyOnceWith('start', 'close')
     vi.mocked(app.manage).mockClear()
     app.apply = vi.fn(async () => { throw Object.assign(new Error('no'), { code: 'RENDERER_TIMEOUT' }) })
@@ -55,7 +56,7 @@ describe('exact context navigation', () => {
 
   it('reuses only the most recent exact window and preserves unspecified state', async () => {
     const app = host([entry('unrelated', [root, '/other']), entry('recent', [root]), entry('older', [root])])
-    expect(await navigate(app, { root, path: join(root, 'Mochi') })).toMatchObject({ window: 'recent', created: false })
+    expect(await checked('navigation.open', navigate(app, { root, path: join(root, 'Mochi') }))).toMatchObject({ window: 'recent', created: false })
     expect(app.open).not.toHaveBeenCalled()
     expect(app.raise).toHaveBeenCalledExactlyOnceWith('recent')
     expect(app.apply).toHaveBeenCalledWith('recent', { path: join(root, 'Mochi') })
@@ -84,7 +85,7 @@ describe('exact context navigation', () => {
   it('checks a requested view against the saved folder page and passes its exact name (YAZ-4518)', async () => {
     const app = host([entry('w1', [root])]), path = join(root, 'Mochi')
     await writeFile(join(path, '.folder.md'), '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n    - type: board\n      name: CLI Board\n---\n')
-    await navigate(app, { window: 'w1', path, view: 'cli board' })
+    await checked('navigation.open', navigate(app, { window: 'w1', path, view: 'cli board' }))
     expect(app.apply).toHaveBeenLastCalledWith('w1', { path, view: 'CLI Board' })
     vi.mocked(app.raise).mockClear()
     await expect(navigate(app, { window: 'w1', path, view: 'Missing' })).rejects.toMatchObject({ code: 'NOT_FOUND', details: { views: ['Table', 'CLI Board'] } })
@@ -96,13 +97,13 @@ describe('exact context navigation', () => {
     state.vaultSets = [{ id: 'skills', name: 'Skills', roots: [root, join(root, 'missing')], lastUsed: 0 }]
     app.state = () => state
     await expect(navigate(app, { workspace: 'Skills' })).rejects.toMatchObject({ code: 'MISSING_VAULT' })
-    expect(await navigate(app, { workspace: 'skills', allowPartial: true })).toMatchObject({ roots: [root], missing: [join(root, 'missing')] })
+    expect(await checked('navigation.open', navigate(app, { workspace: 'skills', allowPartial: true }))).toMatchObject({ roots: [root], missing: [join(root, 'missing')] })
     expect(app.usedWorkspace).toHaveBeenCalledWith('skills')
   })
   it('generates lossless navigation-only links and rejects hidden action or secret fields', async () => {
     const target = { roots: [root], path: join(root, 'Mochi'), sidebar: 'favorites' as const, view: 'Cards # ? 日本語' }
     expect(parseNavigationLink(navigationLink(target))).toEqual(target)
-    const generated = await generateNavigationLink(defaultAppState(), { root, name: 'Mochi', mode: 'new' })
+    const generated = await checked('navigation.link', generateNavigationLink(defaultAppState(), { root, name: 'Mochi', mode: 'new' }))
     expect(parseNavigationLink(generated.url)).toEqual({ roots: [root], path: join(root, 'Mochi'), mode: 'new' })
     for (const input of [{ ...target, command: 'file.delete' }, { ...target, token: 'secret' }, { ...target, publish: true }]) {
       expect(parseNavigationLink('yaseendocs://navigate?v=1&request=' + encodeURIComponent(JSON.stringify(input)))).toBeNull()

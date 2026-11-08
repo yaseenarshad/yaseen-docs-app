@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connect } from 'node:net'
 import { AutomationFailure } from '@shared/automation'
+import { validateOutput } from '@shared/automationCommands'
 import { makeRequest, sendRequest } from './client'
 import { descriptorPath, readConnection } from './connection'
 import { startAutomationServer, type AutomationServer } from './server'
@@ -52,7 +53,9 @@ describe('real local socket', () => {
     finish()
     expect(await sendRequest(connection, request)).toEqual({ ok: true, value: { diskSaved: true } })
     expect(calls).toBe(1)
-    expect(await sendRequest(connection, makeRequest(connection, 'request.status', { id: request.id }))).toMatchObject({ ok: true, value: { state: 'completed', result: { ok: true, value: { diskSaved: true } } } })
+    const receipt = await sendRequest(connection, makeRequest(connection, 'request.status', { id: request.id })) as { value: unknown }
+    expect(receipt).toMatchObject({ ok: true, value: { state: 'completed', result: { ok: true, value: { diskSaved: true } } } })
+    validateOutput('request.status', receipt.value)
   })
 
   it('rejects oversized frame headers and redacts unexpected service errors', async () => {

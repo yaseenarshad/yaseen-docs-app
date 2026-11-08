@@ -7,11 +7,12 @@ import { addComment, readComments } from '@shared/comments'
 import { documentCommand } from './documents'
 import { readSaved } from './resources'
 import { writeFile as sharedWrite } from '../fs/file'
+import { checked } from './contract'
 
 let root: string, path: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-cli-write-')); path = join(root, 'Note.md'); await writeFile(path, '---\n# keep this comment\ntitle: Original\ncustom: [one, two]\n---\nBody\n') })
 afterEach(() => rm(root, { recursive: true, force: true }))
-const run = async (command: string, extra: Record<string, unknown> = {}, body = '') => documentCommand(defaultAppState(), command, { root, path, revision: (await readSaved(path)).revision, ...extra }, Buffer.from(body))
+const run = async (command: string, extra: Record<string, unknown> = {}, body = '') => checked(command, documentCommand(defaultAppState(), command, { root, path, revision: (await readSaved(path)).revision, ...extra }, Buffer.from(body)))
 
 describe('the app’s own properties (YAZ-4514, the properties panel’s reserved keys)', () => {
   const ids = (enabled: boolean) => mkdir(join(root, '.yaseendocs'), { recursive: true }).then(() => writeFile(join(root, '.yaseendocs/ids.json'), JSON.stringify({ enabled, letters: 'TST' })))

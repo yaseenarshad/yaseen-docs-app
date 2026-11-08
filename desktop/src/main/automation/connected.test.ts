@@ -8,21 +8,25 @@ import { connectedCommand } from './connected'
 import type { AutomationServices } from './services'
 import type { LiveEdits } from './liveEdits'
 import { boardCommand } from './boards'
+import { checked } from './contract'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'docs-cli-connected-')) })
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
+// The services' real result shapes (shared/types.ts), so the contract check proves what the adapter adds.
+const share = (id: string) => ({ path: join(root, 'Board.excalidraw'), id, url: `https://share.test/b/${id}`, allowDownload: true, sharedAt: 1, updatedAt: 1, sync: { state: 'ok' }, stale: false })
+const off = { state: 'off', url: null, workersDevUrl: null, customDomain: null, accountName: null, workerName: null, bucketName: null, readyAt: null, demo: false }
 const services = () => ({
   credentials: { hasPixabay: vi.fn(async () => true), setPixabay: vi.fn(async () => {}) },
-  sync: { status: vi.fn(async () => ({ state: 'off' })), syncNow: vi.fn(async () => ({ state: 'idle' })), setEnabled: vi.fn(async () => ({ state: 'off' })) },
-  sharing: { list: vi.fn(async () => [{ id: 'one' }, { id: 'two' }]), accounts: vi.fn(async () => [{ id: 'account', name: 'Test' }]), publish: vi.fn(async () => ({ id: 'published' })), disconnect: vi.fn(async () => ({ configured: false })) },
+  sync: { status: vi.fn(async () => ({ root, state: 'off' })), syncNow: vi.fn(async () => ({ root, state: 'synced' })), setEnabled: vi.fn(async () => ({ root, state: 'off', enabled: false })) },
+  sharing: { list: vi.fn(async () => [{ ...share('one'), fileExists: true }, { ...share('two'), fileExists: false }]), accounts: vi.fn(async () => [{ id: 'account', name: 'Test' }]), publish: vi.fn(async () => share('published')), disconnect: vi.fn(async () => off) },
 })
-const run = (service: ReturnType<typeof services>, command: string, args: Record<string, unknown> = {}, body = '', liveEdits?: LiveEdits) => connectedCommand(service as unknown as AutomationServices, defaultAppState(), command, args, Buffer.from(body), liveEdits)
+const run = (service: ReturnType<typeof services>, command: string, args: Record<string, unknown> = {}, body = '', liveEdits?: LiveEdits) => checked(command, connectedCommand(service as unknown as AutomationServices, defaultAppState(), command, args, Buffer.from(body), liveEdits))
 it('uses the shared sync manager and distinguishes offline share listing from remote checking', async () => {
   const service = services()
   await run(service, 'sync.setEnabled', { root, enabled: false })
   expect(service.sync.setEnabled).toHaveBeenCalledExactlyOnceWith(root, false)
-  expect(await run(service, 'share.list', { root, limit: 1 })).toEqual({ items: [{ id: 'one' }], total: 2, nextOffset: 1 })
+  expect(await run(service, 'share.list', { root, limit: 1 })).toMatchObject({ items: [{ id: 'one' }], total: 2, nextOffset: 1 })
   expect(service.sharing.list).toHaveBeenLastCalledWith(root, { check: false })
   await run(service, 'share.check', { root })
   expect(service.sharing.list).toHaveBeenLastCalledWith(root, { check: true })
@@ -66,6 +70,8 @@ it('YAZ-4515: history.restore refuses while a live editor holds unsaved edits of
   await writeFile(path, scene('second')); git('commit', '-qam', 'second')
   const service = services()
   const { items } = await run(service, 'history.list', { root, path }) as { items: { ref: string }[] }
+  expect(await run(service, 'history.read', { root, path, ref: items.at(-1)!.ref })).toMatchObject({ kind: 'drawing', files: {} })
+  expect(await run(service, 'history.export', { root, path, ref: items.at(-1)!.ref, outputFile: join(root, 'First.json') })).toMatchObject({ diskSaved: true })
   const { revision } = await boardCommand(defaultAppState(), 'drawing.read', { root, path }, Buffer.alloc(0)) as { revision: string }
   const open = [{ window: 'w1', path, tabs: ['t1'] }]
   await expect(run(service, 'history.restore', { root, path, ref: items.at(-1)!.ref, revision }, '', async target => target === path ? open : [])).rejects.toMatchObject({ code: 'UNSAVED_LIVE_EDITS', details: { path, open } })

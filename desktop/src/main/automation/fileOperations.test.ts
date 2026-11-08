@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { defaultAppState, defaultRightPanelIdentity, type WindowEntry } from '@shared/types'
-import { commandDefinition, validateInput } from '@shared/automationCommands'
+import { validateOutput } from '@shared/automationCommands'
 import { prepareAutomation } from '../automation'
 import type { NavigationHost } from './navigation'
 
@@ -16,7 +16,7 @@ it.each(['file.undo', 'file.redo'])('%s runs the window’s organization history
   expect(operation.writes).toEqual(['documents', 'navigation'])
   const value = await operation.run()
   expect(navigation.operate).toHaveBeenCalledExactlyOnceWith('w1', { command })
-  validateInput(commandDefinition(command).output, value)
+  validateOutput(command, value)
   await expect(run(navigation, command, { window: 'gone' }).run()).rejects.toMatchObject({ code: 'WINDOW_NOT_FOUND' })
   expect(() => run(navigation, command, { window: 'w1', steps: 2 })).toThrow(/unknown field steps/)
   expect(() => run(navigation, command, {})).toThrow(/missing window/)
