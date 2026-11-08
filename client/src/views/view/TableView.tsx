@@ -44,6 +44,7 @@ import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 import type { FolderHost } from '../ViewsPane'
 import type { NoteWindowLink } from './NoteWindow'
+import { ViewFind } from './viewFind'
 
 export interface TableViewProps {
   /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
@@ -445,6 +446,18 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     },
     [windowLink],
   )
+  // ⌘F (YAZ-4613, D64): a match off a windowed table's mounted slice — scroll to its line, which mounts it. Written at
+  // each render, as the note window's link is; find marks the cell once it mounts.
+  const find = useContext(ViewFind)
+  if (find !== null)
+    find.scrollTo = (path) => {
+      const wrap = wrapRef.current
+      const at = lines.findIndex((l) => 'row' in l && l.row.record.path === path)
+      if (!windowed || wrap === null || at === -1) return
+      const top = Math.max(0, at * rowH - (wrap.clientHeight - rowH) / 2)
+      wrap.scrollTop = top
+      setScrollTop(top)
+    }
 
   const startResize = (key: string) => (e: ReactMouseEvent) => {
     // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.

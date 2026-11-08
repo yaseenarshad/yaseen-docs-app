@@ -39,6 +39,8 @@ import { pageViewIndex } from './pageView'
 import { ViewDefaults, chooseOwn, withDefaults } from './viewDefaults'
 import { csvName, downloadText, shownRows, toCsv, toTsv, viewTable } from './exportView'
 import { copyText } from '../editor/linkMenu'
+import { FindBar } from '../editor/find/FindBar'
+import { ViewFind, useViewFind } from './view/viewFind'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -506,6 +508,26 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const groupKeys = configuredGroups === null ? [] : keysOf(configuredGroups, TOP_SPOT)
   const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
 
+  // ⌘F (YAZ-4613, D64): the note's find bar over the view's rows as shown, the search box's narrowing included. Read at
+  // each search, never at render: the table matches cells, Board, List and Cards a card's fields, Calendar the titles of
+  // the cards on screen (the note window's order). A jump into a collapsed group opens it.
+  const find = useViewFind(
+    paneRef,
+    {
+      source: () => {
+        const kind = view.type === 'table' ? 'table' : view.type === 'calendar' ? 'titles' : ['board', 'list', 'cards'].includes(view.type) ? 'cards' : null
+        if (kind === null) return null
+        const ctx = { resolve, decls: settings.columns, pageFolder, folderTitle: folderPages.title }
+        if (kind === 'titles') return { kind, rows: windowLink.rows, groups: null, keys: [], ctx }
+        return { kind, rows, groups, keys: propertyKeys(def, view, shown, Object.keys(settings.columns)), ctx }
+      },
+      collapsed,
+      expand: (open) => writeCollapsed(collapsed.filter((k) => !open.includes(k))),
+    },
+    [result, needle, view.type],
+    isPage,
+  )
+
   /**
    * The board's optimistic write, shared with the calendar (YAZ-4540 D4): the move shows at once,
    * then ONE guarded write of the note; a failure drops the move (the card snaps back) and flags it.
@@ -694,7 +716,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   }
 
   const pane = (
-    <div ref={paneRef} className="views-pane" onMouseOver={onPillOver} onMouseOut={onPillOut} onClickCapture={onPillClick} onDoubleClickCapture={onPillClick}>
+    <div ref={paneRef} className="views-pane" data-find-host={isPage ? undefined : ''} onMouseOver={onPillOver} onMouseOut={onPillOut} onClickCapture={onPillClick} onDoubleClickCapture={onPillClick}>
       <Toolbar
         def={def}
         view={view}
@@ -717,6 +739,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         folder={folder}
         dateColumns={calendarColumns}
       />
+      {/* ⌘F (YAZ-4613): on the Page tab the note's own find answers. */}
+      {!isPage && <FindBar channel={find.channel} scope="views" hostRef={paneRef} />}
       {createError !== null && (
         <p className="views-pane__error" role="alert">
           Could not create note: {createError}
@@ -729,6 +753,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       )}
       {/* A Number or Date cell's format (YAZ-4591): the views alone read the declarations, never the note window's own panel. */}
       <ColumnDecls.Provider value={folder.settings.columns}>
+      <ViewFind.Provider value={find.link}>
       {isPage ? (
         // The note editor replaces the view body (YAZ-4584 D38): it saves the `.folder.md` body itself, never a settings write.
         <div className="view-page">{folder.renderPage?.()}</div>
@@ -890,6 +915,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           ))}
         </ul>
       )}
+      </ViewFind.Provider>
       </ColumnDecls.Provider>
       {notes.length > 0 && (
         <p className="views-pane__notes" role="note">
