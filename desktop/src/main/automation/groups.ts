@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { AutomationFailure } from '@shared/automation'
-import { folderDeletion, itemOf, mergeFolders, resolveItem, sameItem } from '@shared/collectionFolders'
+import { folderDeletion, folderScopeChange, itemOf, mergeFolders, resolveItem, sameItem } from '@shared/collectionFolders'
 import { MAX_FAVORITES, MAX_FOCUS, MAX_FOLDER_ITEMS, rootOfPath, type AppState, type FocusFolder, type ListScope } from '@shared/types'
 import { getFavorites, updateFavorites } from '../favorites'
 import { getFocus, updateFocus } from '../focus'
@@ -10,6 +10,8 @@ import { absolute, resolveTarget, scopeRoots, unique } from './resources'
 export async function groupCommand(state: AppState, command: string, args: Record<string, unknown>) {
   const { roots } = await scopeRoots(state, args)
   const scope = args.scope as ListScope, kind = args.kind as FolderKind
+  // "Show it in ▸ Vault" in a window of several vaults writes each vault's own list, as the sidebar does (YAZ-4599).
+  if (command === 'group.setScope') return setGroupScope(roots, scope, kind, args.group as string, args.on as boolean)
   if (scope === 'vault' && roots.length !== 1) throw new AutomationFailure('INVALID_INPUT', 'A vault-scoped group needs exactly one vault.')
   if (command === 'group.list') {
     const copies = Object.fromEntries(await Promise.all(roots.map(async root => [root, await getFocusFolders(root, scope, kind, { readOnly: true })])))
@@ -97,4 +99,23 @@ async function removeGroup(roots: string[], scope: ListScope, kind: FolderKind, 
     throw new AutomationFailure('PARTIAL_FAILURE', 'The group is deleted, but a later step failed. Read the lists before another change.', { tombstones: done, error: error instanceof Error ? error.message : String(error) })
   }
   return { roots, kind, scope, group, topLevel: { [scope]: plan.here, [other]: plan.there } as Record<ListScope, string[]>, limitReached, diskSaved: true }
+}
+
+/**
+ * The sidebar's "Show it in ▸ Workspace / Vault" (`folderScopeChange`, D7, YAZ-4599): `scope` is the list to change.
+ * On, the group's copy there comes alive; off, a tombstone goes there. The last place a group shows stays.
+ */
+async function setGroupScope(roots: string[], scope: ListScope, kind: FolderKind, ref: string, on: boolean) {
+  const other: ListScope = scope === 'vault' ? 'workspace' : 'vault'
+  const elsewhere = (await Promise.all(roots.map(root => getFocusFolders(root, other, kind, { readOnly: true })))).flat()
+  const group = await patchFocusFolder(roots, scope, kind, copies => {
+    // The group is found where it shows: this list or the other one, by ID or unique name.
+    const shown = [...mergeFolders(copies), ...elsewhere].filter(folder => !folder.deleted)
+    const byId = [...mergeFolders(copies), ...elsewhere].find(folder => folder.id === ref)
+    const current = byId ?? named([...new Map(shown.map(folder => [folder.id, folder])).values()], ref)
+    const next = folderScopeChange(current, on, stamp(copies), elsewhere.some(folder => folder.id === current.id && !folder.deleted))
+    if (next === null) throw new AutomationFailure('LAST_PLACE', 'A group shows in one list at least. To remove it, use group remove.')
+    return next
+  })
+  return { roots, kind, scope, group, shown: !group.deleted, diskSaved: true }
 }

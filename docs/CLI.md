@@ -9,7 +9,7 @@ yaseendocs app status --json
 yaseendocs request status --id <request-id>
 ```
 
-Each input field is a flag. Complex fields accept JSON; `--input -` reads an input object from stdin. `--input @file.json` reads a file. Commands that accept large content use `--body`, transferred separately from the control frame. Secrets must use stdin or a private file, never a command-line value.
+Each input field is a flag. A text field takes the text as it is; a field that also allows null takes the word `null` as null. Complex fields accept JSON; `--input -` reads an input object from stdin. `--input @file.json` reads a file. Commands that accept large content use `--body`, transferred separately from the control frame. Secrets must use stdin or a private file, never a command-line value.
 
 ## Profiles and startup
 
@@ -99,7 +99,7 @@ A board write fails with `UNSAVED_LIVE_EDITS` while an open editor holds unsaved
 
 ### Organize
 
-`file rename`, `file retitle`, `file trash`, `file copy`, `folder create`, `tab move`, and `file undo` / `file redo` run the same complete actions as the app. They save open editors first, repair links, and use the window's Undo history. A command that changes several items reports each failure. It never reports a partial result as success. `file trash` needs `--confirm true`, as the delete sheet asks. A `file rename` that moves a note out of a folder that holds its values needs `--dropValues true`; without it nothing moves and the error (`CONFIRMATION_REQUIRED`) names the folders.
+`file rename`, `file retitle`, `file move`, `file trash`, `file copy`, `folder create`, `tab move`, and `file undo` / `file redo` run the same complete actions as the app. They save open editors first, repair links, and use the window's Undo history. A command that changes several items reports each failure. It never reports a partial result as success. `file trash` needs `--confirm true`, as the delete sheet asks.
 
 `file rename` gives an item a new name in its folder, as the sidebar's Rename does. To change the folder, use `file move`. `file move` moves items into a folder of the same vault, as a drag does: each keeps its name, and the list is one Undo step. When a move clears other folders' values, it fails with `CONFIRMATION_REQUIRED` and names the folders in `details`. Pass `--dropValues true` to confirm, as the app's Move button does. When an item is in another vault of the window, the whole list runs as the app's Cut and Paste, with no clipboard: folder values follow, but no link is rewritten, and the result says `betweenVaults: true`. Open a window that shows both vaults first. `file copy` asks the same way when a copy will not keep a folder's values. Every organization write returns `history` (the Undo and Redo counts after it) and `diskSaved`.
 
@@ -115,7 +115,7 @@ yaseendocs file undo   --window <id>
 
 - `--confirm true`: `folderView remove`, `folderColumn remove`, `session remove`, `comment remove`, `review reset`, `component remove`, `media removePacks`, `file trash`, `ids disable`. Without it the command exits 2 and changes nothing.
 - `group remove --keepItems true|false`: the Delete sheet's two answers. `true` puts each item back at the top level of each list the group showed in; `false` removes the items with it. Both list scopes get the tombstone.
-- `--dropValues true`: `shortcut remove` and `file rename`, only when they would clear folder values.
+- `--dropValues true`: `shortcut remove`, `file move` and `file copy`, only when they would clear folder values.
 
 `icon set` takes a name the app ships. `icon names --query <words>` lists them, as the icon picker does. Settings output never shows a stored secret. `provider status` reports only whether a key is present. `provider set` reads the key from stdin or a private file.
 

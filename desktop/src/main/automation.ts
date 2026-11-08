@@ -107,7 +107,7 @@ function prepare(context: { profile: string; version: string; packaged?: boolean
     case 'file.rename': case 'file.move': case 'file.retitle': case 'file.trash': case 'file.restore': case 'file.undo': case 'file.redo':
       return { writes: ['documents', 'navigation'], run: () => fileOperation(context.navigation!, request.command, request.args) }
     case 'group.list': case 'group.create': case 'group.rename': case 'group.remove': case 'group.position':
-    case 'group.addItems': case 'group.removeItems': case 'group.reorderItems':
+    case 'group.addItems': case 'group.removeItems': case 'group.reorderItems': case 'group.setScope':
       return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => groupCommand(context.state!(), request.command, request.args) }
     case 'settings.get': case 'settings.patch': case 'vault.list': case 'vault.patch':
     case 'pictureFolder.list': case 'pictureFolder.allow': case 'pictureFolder.remove':
