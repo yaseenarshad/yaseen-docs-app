@@ -476,6 +476,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       onToggle={() => onToggleGroup(line.gk)}
                       onNew={onNewInGroup === undefined || !groupTakesNew(view, line.at.level) ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
                       resolve={resolve}
+                      level={line.at.level}
                     />
                   </td>
                 </tr>

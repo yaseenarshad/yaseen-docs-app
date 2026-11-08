@@ -1,6 +1,7 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, type CSSProperties, type ReactNode } from 'react'
 import { isShortcut } from '../../links/shortcuts'
-import type { ViewSet, ViewDef } from '../viewSchema'
+import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
+import { type ViewSet, type ViewDef, type GroupBySpec, groupByLevels } from '../viewSchema'
 import { type Row, propertyLabel } from '../engine'
 import { ErrorValue, FileValue, LinkValue, type Resolver, type Value, linkText, render } from '../expr'
 import { summarize } from '../summaries'
@@ -92,6 +93,20 @@ function groupValue(v: Value, resolve?: Resolver) {
   return render(v, resolve)
 }
 
+type Colour = keyof typeof HIGHLIGHT_HEX
+
+/**
+ * A group level's header look (YAZ-3742 D5): its `highlight` as a wash of that highlight colour
+ * (`--view-group-hl`, painted at 40% by views.css) and `large` as 14px bold. An unknown colour name
+ * paints nothing. The Sort menu's "Aa" chip wears the same look under its own `base` class, so a
+ * query for the headers' values never finds the chip.
+ */
+export function groupValueLook(spec: GroupBySpec | undefined, base = 'view-group__value'): { className: string; style?: CSSProperties } {
+  const hex = typeof spec?.highlight === 'string' && Object.hasOwn(HIGHLIGHT_HEX, spec.highlight) ? HIGHLIGHT_HEX[spec.highlight as Colour] : undefined
+  const className = [base, hex !== undefined && `${base}--highlight`, spec?.large === true && `${base}--large`].filter(Boolean).join(' ')
+  return hex === undefined ? { className } : { className, style: { '--view-group-hl': hex } as CSSProperties }
+}
+
 export interface GroupHeaderProps {
   def: ViewSet
   view: ViewDef
@@ -109,9 +124,12 @@ export interface GroupHeaderProps {
   onNew?: () => void
   /** The vault's resolver: a group keyed by an id link is headed by that note's title (YAZ-2293 D8). */
   resolve?: Resolver
+  /** The group's `groupBy` level, outer = 0 (the default): its spec gives the header's style (YAZ-3742). */
+  level?: number
 }
 
-export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, resolve }: GroupHeaderProps) {
+export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, resolve, level = 0 }: GroupHeaderProps) {
+  const look = groupValueLook(groupByLevels(view)[level])
   return (
     <div className="view-group">
       <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
@@ -120,7 +138,7 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
         </svg>
       </button>
       {/* A text name too long for the header is cut; the tooltip holds the rest, as a chip's does. */}
-      <span className={`view-group__value${groupKey === null ? ' view-group__value--none' : ''}`} title={typeof groupKey === 'string' ? label : undefined}>
+      <span className={`${look.className}${groupKey === null ? ' view-group__value--none' : ''}`} style={look.style} title={typeof groupKey === 'string' ? label : undefined}>
         {typeof groupKey === 'string' ? label : groupKey === null ? 'No value' : groupValue(groupKey, resolve)}
       </span>
       <span className="view-group__count">{rows.length}</span>

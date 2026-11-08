@@ -299,3 +299,50 @@ describe('Group levels: handles, remove, third level, indent (YAZ-4532)', () => 
     expect(el.querySelector('[aria-label="Group indent"]')).toBeNull()
   })
 })
+
+describe('Group header style chip (YAZ-3742 D5)', () => {
+  const chip = (el: HTMLElement, level: number) => el.querySelector<HTMLButtonElement>(`[aria-label="Style of group level ${level}"]`)!
+  const panel = (el: HTMLElement) => el.querySelector<HTMLElement>('[role="dialog"][aria-label^="Style of group level"]')
+
+  it('each level has an "Aa" chip that opens None, the 8 colours and Large', () => {
+    const { el } = mount({ name: 'Table', type: 'table', groupBy: [{ property: 'note.status' }, { property: 'note.priority' }] })
+    expect(chip(el, 1).textContent).toBe('Aa')
+    expect(chip(el, 2)).not.toBeNull()
+    act(() => chip(el, 1).click())
+    expect(chip(el, 1).getAttribute('aria-expanded')).toBe('true')
+    expect([...panel(el)!.querySelectorAll('[data-highlight]')].map(b => b.getAttribute('data-highlight'))).toEqual(['', 'yellow', 'green', 'blue', 'pink', 'orange', 'purple', 'red', 'gray'])
+    expect(panel(el)!.querySelector('[data-highlight=""]')!.getAttribute('aria-pressed')).toBe('true')
+    expect(panel(el)!.querySelector('[aria-label="Large"]')!.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('a swatch writes `highlight`, Large writes `large`, and None / Large off remove the keys; the other level is untouched', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: [{ property: 'note.status', direction: 'DESC', by: 'value' }, { property: 'note.priority', direction: 'ASC' }] })
+    act(() => chip(el, 1).click())
+    act(() => panel(el)!.querySelector<HTMLButtonElement>('[data-highlight="green"]')!.click())
+    expect(view().groupBy).toEqual([{ property: 'note.status', direction: 'DESC', by: 'value', highlight: 'green' }, { property: 'note.priority', direction: 'ASC' }])
+    expect(panel(el)).not.toBeNull() // stays open for the next choice
+    act(() => panel(el)!.querySelector<HTMLButtonElement>('[aria-label="Large"]')!.click())
+    expect(groupByLevels(view())[0]).toEqual({ property: 'note.status', direction: 'DESC', by: 'value', highlight: 'green', large: true })
+    expect(chip(el, 1).querySelector('.group-style__sample--large')).not.toBeNull() // the chip shows the style
+    act(() => panel(el)!.querySelector<HTMLButtonElement>('[data-highlight=""]')!.click())
+    act(() => panel(el)!.querySelector<HTMLButtonElement>('[aria-label="Large"]')!.click())
+    expect(groupByLevels(view())[0]).toEqual({ property: 'note.status', direction: 'DESC', by: 'value' })
+    expect(groupByLevels(view())[1]).toEqual({ property: 'note.priority', direction: 'ASC' })
+  })
+
+  it('Escape closes the panel and gives the focus back to the chip', () => {
+    const { el } = mount({ name: 'Table', type: 'table', groupBy: { property: 'note.status' } })
+    act(() => chip(el, 1).click())
+    press(panel(el)!, 'Escape')
+    expect(panel(el)).toBeNull()
+    expect(document.activeElement).toBe(chip(el, 1))
+  })
+
+  it('the style stays through a property change and an order change', () => {
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: { property: 'note.status', highlight: 'pink', large: true } })
+    pick(el, 'Group direction', 'Z → A')
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Group by"]')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.priority"]')!.click())
+    expect(view().groupBy).toEqual({ property: 'note.priority', direction: 'DESC', highlight: 'pink', large: true })
+  })
+})

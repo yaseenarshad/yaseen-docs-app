@@ -2,6 +2,7 @@ import { useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { DragHandleIcon } from './icons'
 import { ColumnPicker } from './ColumnPicker'
 import { DirectionPicker, withOrder } from './DirectionPicker'
+import { GroupStylePicker } from './GroupStylePicker'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, type SortSpec, type GroupBySpec, groupByLevels, groupIndentOf, GROUP_INDENTS } from '../viewSchema'
 import { propertyLabel } from '../engine'
@@ -206,7 +207,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
             <button type="button" className="view-rule__remove" aria-label="Remove sort" title="Remove sort" onClick={() => writeSort(sort.filter((_, j) => j !== i), sortRows.ids.filter((_, j) => j !== i))}>
               ×
             </button>
-          </>))}
+          </>, 'sort-menu__level'))}
         </ul>
       )}
       <div className="view-menu__foot">
@@ -225,11 +226,12 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
               onChange={(value) => (value ? setLevel(i, { ...level, property: value, direction: level.direction === 'DESC' ? 'DESC' : 'ASC' }) : writeGroup(levels.slice(0, i), groupRows.ids.slice(0, i)))}
               options={[{ value: '', label: 'None' }, ...options(level.property, above(i))]} />
             <DirectionPicker label={GROUP_DIRECTION_LABELS[i]} spec={level} hasOptions={hasOptions(level.property)} onChange={(patch) => setLevel(i, withOrder({ ...level, property: canonicalKey(level.property) }, patch))} onEditOptions={editOptions(level.property)} />
+            <GroupStylePicker label={`Style of group level ${i + 1}`} spec={level} onChange={(next) => setLevel(i, next)} />
             <button type="button" className="view-rule__remove" aria-label={`Remove group level ${i + 1}: ${propertyLabel(def, level.property)}`} title="Remove group level"
               onClick={() => writeGroup(levels.filter((_, j) => j !== i), groupRows.ids.filter((_, j) => j !== i))}>
               ×
             </button>
-          </>))}
+          </>, 'sort-menu__level'))}
         </ul>
       )}
       {levels.length < MAX_GROUP_LEVELS && (

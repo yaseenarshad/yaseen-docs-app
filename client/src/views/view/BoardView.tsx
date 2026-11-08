@@ -378,6 +378,7 @@ export function BoardView({
                                       : () => onNewInGroup(child, undefined, innerAt)
                                   }
                                   resolve={resolve}
+                                  level={1}
                                 />
                                 {!childCollapsed && cardList(child.rows, child, innerAt, childOver)}
                                 {!childCollapsed && adds[1] && inlineAdd(child, ck, innerAt)}

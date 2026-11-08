@@ -1100,6 +1100,22 @@
   text-overflow: ellipsis;
 }
 
+/* A group level's header style (YAZ-3742 D5): the level's highlight colour as a 40% wash, as the
+   note's highlights are, so the text keeps its own colour in both themes. No vertical padding: the
+   header must keep the row height (S18). */
+.view-group__value--highlight {
+  padding: 0 4px;
+  background: color-mix(in srgb, var(--view-group-hl) 40%, transparent);
+  border-radius: 3px;
+}
+
+/* Large (YAZ-3742 D5): 18px of line fits inside the shortest table row's 21px of content (S18). */
+.view-group__value--large {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
 .view-group__value--none {
   font-weight: 400;
   color: var(--fg-muted);
@@ -1834,5 +1850,18 @@
 }
 .sort-menu > .view-rule__main { grid-template-columns: minmax(0, 1fr) 118px; padding: 0 28px 0 26px; margin-bottom: 6px; }
 .sort-menu > .view-rule__main > .column-picker { grid-column: 1; }
+/* A group level's row has one more column, the "Aa" style chip (YAZ-3742). */
+.sort-menu .view-rule__main.sort-menu__level { grid-template-columns: 18px minmax(0, 1fr) 118px 30px 20px; }
+.group-style { display: contents; }
+.group-style__trigger { display: flex; align-items: center; justify-content: center; width: 100%; height: 30px; padding: 0; color: var(--fg); }
+.group-style__sample { font-size: 12px; font-weight: 600; }
+.group-style__sample--highlight { padding: 0 4px; background: color-mix(in srgb, var(--view-group-hl) 40%, transparent); border-radius: 3px; }
+.group-style__sample--large { font-size: 14px; font-weight: 700; }
+.group-style__panel { grid-row: 2; grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 0; padding: 6px; }
+.group-style__swatch { width: 20px; height: 20px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: color-mix(in srgb, var(--swatch, transparent) 40%, transparent); }
+.group-style__swatch--none { background: linear-gradient(to top right, transparent calc(50% - 1px), var(--fg-muted) 50%, transparent calc(50% + 1px)); }
+.group-style__swatch[aria-pressed='true'] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.group-style__large { margin-left: auto; padding: 2px 8px; font-size: 12px; font-weight: 700; color: var(--fg-muted); border: 1px solid var(--border); border-radius: 4px; }
+.group-style__large[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
 /* Small / Medium / Large under the group levels (YAZ-4532 D10). */
 .sort-menu__indent { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 28px 0 26px; margin-top: 4px; font-size: 12px; color: var(--fg-muted); }
