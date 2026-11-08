@@ -420,6 +420,22 @@
   cursor: default;
 }
 
+/* "from Settings" and its Reset (YAZ-4585, D34): grey and small, after the row's control. */
+.view-from-settings {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.view-from-settings--reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .view-menu__toggle {
   display: inline-flex;
   align-items: center;
@@ -830,9 +846,10 @@
 
 /* The row hover band (YAZ-4538, D9): the table block's band (`table.css`, YAZ-4167) on each data row, in its
    colour and strength (`--table-band-colour`, `--table-band-strength` on `.app`). An inset shadow paints over the
-   cell's background, so the band shows over a fill and over a frozen cell's opaque `--bg`. None when Settings ›
-   Editor › Tables › Row band is Off, and none when the band marks only the caret's row, as in the table block. */
-.app:not([data-table-row-band='off']):not([data-table-band-rows='caret']) .view-table tbody tr:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td {
+   cell's background, so the band shows over a fill and over a frozen cell's opaque `--bg`. Only while Settings ›
+   Folder pages › Row band on hover is on (YAZ-4585: `data-folder-row-band`, which follows the table block's Row band
+   until set), and none when the band marks only the caret's row, as in the table block. */
+.app[data-folder-row-band='on']:not([data-table-band-rows='caret']) .view-table tbody tr:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td {
   box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
 }
 
@@ -1585,7 +1602,7 @@
 }
 
 /* Under the hover band, whose shadow replaces the one above, the edge goes first in the band's own list (YAZ-4544). */
-.app:not([data-table-row-band='off']):not([data-table-band-rows='caret']) .view-table tbody tr.view-table__row--current:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td:first-child {
+.app[data-folder-row-band='on']:not([data-table-band-rows='caret']) .view-table tbody tr.view-table__row--current:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td:first-child {
   box-shadow: inset 2px 0 0 var(--accent), inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
 }
 

@@ -809,6 +809,26 @@ describe('createStore: loading', () => {
     for (const bad of [{ ...allOn, links: 'false' }, noLinks, 'on', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, hoverPreviewIn: bad })).toBe(false)
   })
 
+  it('folderPages (YAZ-4585, D34): every row is valid, each default is the look before, and a broken part costs that part only', async () => {
+    const fp = DEFAULT_SETTINGS.folderPages
+    expect(fp).toEqual({ weekStartsOn: 'monday', rowBand: null, keepWindowPinned: null, rowHeight: 'short', rowNumbers: true, textInCells: 'kind', groupIndent: 'medium', showEmptyGroups: false, subfolders: 'notes', foldersFirst: true, calendarScale: 'month', cardTitles: 'clip', showFolderPageFiles: false })
+    // Each value a Settings row writes is accepted by the channel.
+    const written = { weekStartsOn: 'sunday', rowBand: false, keepWindowPinned: true, rowHeight: 'tall', rowNumbers: false, textInCells: 'clip', groupIndent: 'large', showEmptyGroups: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', showFolderPageFiles: true }
+    expect(isSettings({ ...DEFAULT_SETTINGS, folderPages: written })).toBe(true)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: written }).folderPages).toEqual(written)
+    for (const bad of [{ ...fp, weekStartsOn: 'friday' }, { ...fp, rowBand: 'on' }, { ...fp, subfolders: false }, (({ showFolderPageFiles: _gone, ...rest }) => rest)(fp), 'on', undefined]) {
+      expect(isSettings({ ...DEFAULT_SETTINGS, folderPages: bad })).toBe(false)
+    }
+    // A file from before the page reads the defaults; a broken part reads its default and the others keep their values.
+    const { folderPages: _omitted, ...legacy } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacy }))
+    expect(createStore(file).get().settings.folderPages).toEqual(fp)
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', folderPages: { ...written, rowHeight: 'huge' } } }))
+    const some = createStore(file).get().settings
+    expect(some.folderPages).toEqual({ ...written, rowHeight: 'short' })
+    expect(some.theme).toBe('dark')
+  })
+
   it('hoverOn (YAZ-3403 D7, S36, S37): a place shows the panel only while the master and its own switch are both on', () => {
     const places = { ...DEFAULT_SETTINGS.hoverPreviewIn, links: false }
     expect(hoverOn({ hoverPreview: true, hoverPreviewIn: places }, 'newTab')).toBe(true)

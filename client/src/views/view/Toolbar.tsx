@@ -104,7 +104,15 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
 
   return (
     <div className="view-toolbar">
-      <ViewTabs {...tabs} />
+      {/* "View settings…" (YAZ-4585): that view becomes active, and its Properties menu opens. */}
+      <ViewTabs
+        {...tabs}
+        onSettings={(i) => {
+          tabs.onSelect(i)
+          setOpen('properties')
+          setEditing(null)
+        }}
+      />
       <div className="view-toolbar__actions">
         {/* A calendar's "Show by" sits on the toolbar (YAZ-4540 D11), and again in Properties › Calendar. */}
         {view.type === 'calendar' && (

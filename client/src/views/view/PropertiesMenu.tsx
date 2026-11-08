@@ -18,6 +18,7 @@ import { frozenColumnCount } from './frozenColumns'
 import { cardWidth } from './cardWidth'
 import { CalendarShowBy } from './CalendarView'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
+import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
 
 export interface PropertiesMenuProps {
   def: ViewSet
@@ -59,6 +60,9 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const [detail, setDetail] = useState<string | null>(null)
   /** The drag in flight (YAZ-1207): `from` is an index in `shown`, `to` the insertion slot it would land in. */
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
+  /** Settings › Folder pages (YAZ-4585): `view` has them filled in; `own` is the view as written, for "from Settings". */
+  const defaults = useViewDefaults()
+  const own = def.views[viewIndex] ?? view
   const shown = propertyKeys(def, view, records, Object.keys(folder.settings.columns))
   const keys = allPropertyKeys(def, view, records, folder.settings.columns)
   const filtering = query.trim() !== ''
@@ -239,7 +243,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
         }
       />
       {/* Every view type (YAZ-4579 D30, replacing YAZ-4564 D25's Show / Hide): the same switch the Sort and group menu has. */}
-      <SubfoldersSwitch view={view} viewIndex={viewIndex} onUpdate={onUpdate} />
+      <SubfoldersSwitch view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
       {view.type === 'table' && (
         <>
           <p className="view-menu__label">Table</p>
@@ -272,19 +276,19 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
               checked={view.rowNumbers !== false}
               onChange={(e) =>
                 onUpdate((d) => {
-                  // Shown is the default (YAZ-1513): a shown gutter leaves no key behind.
-                  if (e.target.checked) delete d.views[viewIndex].rowNumbers
-                  else d.views[viewIndex].rowNumbers = false
+                  // Settings' choice leaves no key behind (YAZ-1513: shown, unless Settings › Folder pages says hidden, YAZ-4585).
+                  chooseOwn(d.views[viewIndex], 'rowNumbers', e.target.checked, defaults)
                 })
               }
             />
             Row numbers
+            <FromSettings own={own} viewKey="rowNumbers" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
         </>
       )}
       {/* A Table shows its empty option groups too (YAZ-3940 S11), under the name "Show empty groups". */}
       {(view.type === 'board' || view.type === 'table') && <div className="property-board-setting">
-        <label><span>{view.type === 'board' ? 'Show empty columns' : 'Show empty groups'}</span><input type="checkbox" role="switch" checked={view.showEmptyColumns === true} onChange={e => onUpdate(d => { if (e.target.checked) d.views[viewIndex].showEmptyColumns = true; else delete d.views[viewIndex].showEmptyColumns })} /></label>
+        <label><span>{view.type === 'board' ? 'Show empty columns' : 'Show empty groups'}</span><FromSettings own={own} viewKey="showEmptyColumns" viewIndex={viewIndex} onUpdate={onUpdate} /><input type="checkbox" role="switch" checked={view.showEmptyColumns === true} onChange={e => onUpdate(d => chooseOwn(d.views[viewIndex], 'showEmptyColumns', e.target.checked, defaults))} /></label>
         <small>Include unused options from the grouping property.</small>
       </div>}
       {view.type === 'board' && (
@@ -330,15 +334,15 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
               value={view.cardTitles === 'wrap' ? 'wrap' : 'clip'}
               onChange={(e) =>
                 onUpdate((d) => {
-                  // Clip is the default: it removes the key (YAZ-4558 D23).
-                  if (e.target.value === 'wrap') d.views[viewIndex].cardTitles = 'wrap'
-                  else delete d.views[viewIndex].cardTitles
+                  // Settings' choice removes the key (YAZ-4558 D23: Clip, unless Settings › Folder pages says Wrap, YAZ-4585).
+                  chooseOwn(d.views[viewIndex], 'cardTitles', e.target.value === 'wrap' ? 'wrap' : 'clip', defaults)
                 })
               }
             >
               <option value="clip">Clip …</option>
               <option value="wrap">Wrap</option>
             </select>
+            <FromSettings own={own} viewKey="cardTitles" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
         </>
       )}

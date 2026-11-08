@@ -30,7 +30,7 @@ import { memo, type CSSProperties, type ReactNode, useEffect, useMemo, useRef, u
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
-import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
+import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
 import { SHOW_PAGE_FILE_KEY, showPageFileOf } from '@shared/folderPage'
 import { isReadOnlyProperties, READ_ONLY_KEY } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
@@ -101,6 +101,8 @@ export interface FolderViewProps {
   /** The vault's sync status and the chip's click (`Editor`'s `sync`, `onSyncNow`): the toolbar's sync chip (YAZ-3746 D35). */
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
+  /** Settings › Folder pages (YAZ-4585, D34). Handed to `ViewsPane`. */
+  folderPages?: FolderPagesSettings
 }
 
 /**
@@ -175,6 +177,7 @@ export function FolderView({
   diagramDarkColors,
   sync,
   onSyncNow,
+  folderPages,
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
   const titles = usePathTitles(source)
@@ -534,6 +537,7 @@ export function FolderView({
                 hoverPreview={hoverPreview}
                 previewScope={previewScope}
                 diagramDarkColors={diagramDarkColors}
+                folderPages={folderPages}
               />
             </ViewFolder.Provider>
           </FolderPageChips.Provider>

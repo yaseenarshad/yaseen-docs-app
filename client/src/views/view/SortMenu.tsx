@@ -11,6 +11,7 @@ import type { FolderSettings } from '../folderSettings'
 import { canonicalKey } from './keys'
 import { allPropertyKeys, propertyOptions } from './properties'
 import { FoldersFirstToggle, SubfoldersSwitch } from './SubfoldersSwitch'
+import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
 
 export interface SortMenuProps {
   def: ViewSet
@@ -139,6 +140,8 @@ function ruleRow(rows: RuleRows, i: number, count: number, move: (from: number, 
 
 /** Sort menu (GRO-2135): `view.sort` rows (property, direction, order, remove) and `view.groupBy` beneath. */
 export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, properties, onEditColumn }: SortMenuProps) {
+  const defaults = useViewDefaults()
+  const own = def.views[viewIndex] ?? view
   const listed = allPropertyKeys(def, view, records, settings.columns)
   const keys = listed.includes(FOLDER) ? listed : [...listed, FOLDER]
   const sort = view.sort ?? EMPTY_SORT
@@ -260,20 +263,20 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
             {INDENT_STEPS.map(([step, text]) => (
               <button key={step} type="button" className="view-seg__opt" data-indent={step} aria-pressed={GROUP_INDENTS[step] === groupIndentOf(view)}
                 onClick={() => onUpdate((d) => {
-                  // Medium is the default: it removes the key (YAZ-4532 D10).
-                  if (step === 'medium') delete d.views[viewIndex].groupIndent
-                  else d.views[viewIndex].groupIndent = step
+                  // Settings' indent removes the key (YAZ-4532 D10, YAZ-4585): Medium unless Settings › Folder pages says otherwise.
+                  chooseOwn(d.views[viewIndex], 'groupIndent', step, defaults)
                 })}>
                 {text}
               </button>
             ))}
           </div>
+          <FromSettings own={own} viewKey="groupIndent" viewIndex={viewIndex} onUpdate={onUpdate} />
         </div>
       )}
       {/* The rows themselves (YAZ-4579 D30/D33): the Subfolders switch, as Properties has it, and whether folder rows lead. */}
       <p className="view-menu__label">Subfolders</p>
-      <SubfoldersSwitch view={view} viewIndex={viewIndex} onUpdate={onUpdate} className="sort-menu__indent" text="Show" />
-      <FoldersFirstToggle view={view} viewIndex={viewIndex} onUpdate={onUpdate} className="view-menu__toggle sort-menu__folders-first" />
+      <SubfoldersSwitch view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} className="sort-menu__indent" text="Show" />
+      <FoldersFirstToggle view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} className="view-menu__toggle sort-menu__folders-first" />
     </div>
   )
 }

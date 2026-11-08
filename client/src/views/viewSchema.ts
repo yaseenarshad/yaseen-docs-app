@@ -70,8 +70,9 @@ export interface ViewDef {
    * "Subfolders" (YAZ-4579 D30, replacing YAZ-4564 D25's boolean): `rows` = a row per direct subfolder plus the
    * folder's own notes and shortcuts; `both` = the subfolder rows plus every note below; `hide` = the own notes
    * and shortcuts alone. Absent = "Their notes", every note below and no subfolder row. A stored `false` reads as `hide`.
+   * `notes` is written only where Settings › Folder pages says otherwise (YAZ-4585): absent then follows Settings.
    */
-  subfolders?: 'rows' | 'both' | 'hide' | false
+  subfolders?: 'notes' | 'rows' | 'both' | 'hide' | false
   /** "Folders first" (YAZ-4579 D33): `false` = the subfolder rows sort among the notes. Absent = folder rows first. */
   foldersFirst?: boolean
   [extra: string]: unknown

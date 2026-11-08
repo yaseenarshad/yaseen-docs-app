@@ -65,9 +65,12 @@ export function bucketByDay(rows: readonly Row[], key: string | null): { days: M
   return { days, undated }
 }
 
-/** The weeks of `month` (0-based) in `year`, Monday first (D11), each a row of 7 day keys. */
-export function monthWeeks(year: number, month: number): DayKey[][] {
-  const lead = (new Date(year, month, 1).getDay() + 6) % 7
+/** The days from the week's first day to `date`: Monday first (D11), or Sunday first (Settings › Folder pages, YAZ-4585). */
+const intoWeek = (date: Date, sundayFirst: boolean): number => (sundayFirst ? date.getDay() : (date.getDay() + 6) % 7)
+
+/** The weeks of `month` (0-based) in `year`, Monday first (D11) unless `sundayFirst`, each a row of 7 day keys. */
+export function monthWeeks(year: number, month: number, sundayFirst = false): DayKey[][] {
+  const lead = intoWeek(new Date(year, month, 1), sundayFirst)
   const count = Math.ceil((lead + new Date(year, month + 1, 0).getDate()) / 7)
   return Array.from({ length: count }, (_, w) =>
     Array.from({ length: 7 }, (_, d) => formatDate(new Date(year, month, 1 - lead + w * 7 + d).getTime(), 'YYYY-MM-DD')),
@@ -84,10 +87,10 @@ export const addDays = (day: DayKey, days: number): DayKey => formatDate(localDa
 /** The 1st of the month `months` after the month of `day`: the month grid's ‹ › (YAZ-4558 D22). */
 export const monthStart = (day: DayKey, months: number): DayKey => formatDate(localDay(`${day.slice(0, 8)}01`, 0, months).getTime(), 'YYYY-MM-DD')
 
-/** The 7 days, Monday first, of the week that holds `day` (YAZ-4558 D22). */
-export function weekDays(day: DayKey): DayKey[] {
-  const monday = addDays(day, -((localDay(day).getDay() + 6) % 7))
-  return Array.from({ length: 7 }, (_, i) => addDays(monday, i))
+/** The 7 days, Monday first unless `sundayFirst` (YAZ-4585), of the week that holds `day` (YAZ-4558 D22). */
+export function weekDays(day: DayKey, sundayFirst = false): DayKey[] {
+  const first = addDays(day, -intoWeek(localDay(day), sundayFirst))
+  return Array.from({ length: 7 }, (_, i) => addDays(first, i))
 }
 
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

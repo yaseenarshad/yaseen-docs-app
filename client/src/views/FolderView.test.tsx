@@ -600,7 +600,12 @@ describe('the chrome is the views chrome', () => {
     const el = await mount()
     expect(el.querySelector('[aria-label="Add view"]')).not.toBeNull()
     rightClick(tab(el, 'Page'))
-    expect(texts(el, '.ctx-menu[role="menu"] [role="menuitem"]')).toEqual(['Rename', 'Duplicate', 'Delete'])
+    // YAZ-4585 (D41): "Open on this view" and "View settings…" sit between Duplicate and Delete.
+    expect(texts(el, '.ctx-menu[role="menu"] [role^="menuitem"]')).toEqual(['Rename', 'Duplicate', 'Open on this view', 'View settings…', 'Delete'])
+    // The Page is a document (YAZ-4584 D38): no copy, and no Properties menu for "View settings…" to open.
+    const item = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu[role="menu"] [role^="menuitem"]')].find((b) => b.textContent === label)
+    expect(item('Duplicate')?.disabled).toBe(true)
+    expect(item('View settings…')?.disabled).toBe(true)
     expect(el.querySelector('[aria-label="Filter"]')).toBeNull() // documentView — rows-bearing views offer it
     expect(el.querySelector('[aria-label="Sort"]')).not.toBeNull() // the rest of the toolbar is untouched
     expect(el.querySelector('[aria-label="New note"]')).not.toBeNull()

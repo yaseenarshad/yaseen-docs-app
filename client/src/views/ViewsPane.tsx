@@ -1,7 +1,7 @@
 import { boardOptionGroups } from './boardOptionGroups'
 import { columnTyping, optionOrderFor } from './editorType'
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type IndexRecord, type PropertiesResponse } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type FolderPagesSettings, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
@@ -33,6 +33,7 @@ import { FolderPages, type FolderPagesValue } from './view/GroupHeader'
 import { directlyIn, rowPage, rowsByFolder } from '../links/shortcuts'
 import { onPageTabAsk, takePageTab } from './pageTabRequest'
 import { pageViewIndex } from './pageView'
+import { ViewDefaults, chooseOwn, withDefaults } from './viewDefaults'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -152,6 +153,8 @@ export interface ViewsPaneProps {
   /** What the hover panel needs of a page's vault: App's `boardPreviewScope`. No scope, no hover panel. */
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
+  /** Settings › Folder pages (YAZ-4585, D34): what a view with no key of its own reads, the week start and the note window's pin. */
+  folderPages?: FolderPagesSettings
 }
 
 /**
@@ -205,7 +208,7 @@ const NO_FOLDER_ROWS: IndexRecord[] = []
 /** A folder row has no note to preview (YAZ-4579 D32): the hover panel is the notes', so its dwell never starts. */
 const noHover = (): void => undefined
 
-export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: ViewsPaneProps) {
+export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', folderPages: defaults = DEFAULT_FOLDER_PAGES }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -250,7 +253,10 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * NEVER undefined (YAZ-861): `views` cannot be empty — `folderSettings` and the one mount's
    * `folderViewSet` both fall back to `DEFAULT_VIEWS` — and `index` is clamped into that list.
    */
-  const view = views[index]!
+  const own = views[index]!
+  // Settings › Folder pages (YAZ-4585, D34): every reader below sees the view's own keys, then Settings'. The menus
+  // read `def.views[viewIndex]` for the view as written ("from Settings").
+  const view = useMemo(() => withDefaults(own, defaults), [own, defaults])
   // "Subfolders: As rows / Both" (YAZ-4579 D30/D31): this view's records are the notes and a row per direct subfolder.
   // Every use below reads these — the engine, the menus' columns, a move's raw — so a folder row is a row like a note.
   const withFolders = showsFolderRows(view) && folderRows.length > 0
@@ -278,7 +284,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     folder.renderNoteEditor === undefined
       ? undefined
       : (path: string) => {
-          const { placed, width, height, pinned } = openNoteWindow(windowKey) ?? lastWindow.current ?? noteWindowMemory(path)
+          const { placed, width, height, pinned } = openNoteWindow(windowKey) ?? lastWindow.current ?? noteWindowMemory(path, defaults.keepWindowPinned)
           keepNoteWindow(windowKey, { path, placed, width, height, pinned })
           setOpens((n) => n + 1)
         }
@@ -550,6 +556,13 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       update((d) => d.views.splice(i + 1, 0, { ...structuredClone(d.views[i]), name: freeName(`${d.views[i].name} copy`, taken()) }))
       setActive(i + 1)
     },
+    // "Open on this view" (YAZ-4585, D41): the saved START, set or cleared from the tab's right-click.
+    defaultView: def.defaultView,
+    onSetDefault: (i) =>
+      update((d) => {
+        if (d.defaultView === d.views[i].name) delete d.defaultView
+        else d.defaultView = d.views[i].name
+      }),
     onDelete: (i) => {
       if (views.length <= 1) return
       moveCollapsed(views[i].name, null)
@@ -680,11 +693,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           scale={view.calendarScale === 'week' ? 'week' : 'month'}
           onScale={(scale) =>
             update((d) => {
-              // Month is the default: it removes the key (YAZ-4558 D22).
-              if (scale === 'week') d.views[index].calendarScale = 'week'
-              else delete d.views[index].calendarScale
+              // Settings' scale removes the key (YAZ-4558 D22, YAZ-4585): Month, unless Settings › Folder pages says Week.
+              chooseOwn(d.views[index], 'calendarScale', scale, defaults)
             })
           }
+          sundayFirst={defaults.weekStartsOn === 'sunday'}
           wrap={view.cardTitles === 'wrap'}
         />
       ) : view.type === 'cards' ? (
@@ -775,5 +788,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     </div>
   )
   // The Folder column's chips and the Folder group headers' ↗ read the page's folders (YAZ-4564).
-  return <FolderPages.Provider value={folderPages}>{pane}</FolderPages.Provider>
+  return (
+    <ViewDefaults.Provider value={defaults}>
+      <FolderPages.Provider value={folderPages}>{pane}</FolderPages.Provider>
+    </ViewDefaults.Provider>
+  )
 }

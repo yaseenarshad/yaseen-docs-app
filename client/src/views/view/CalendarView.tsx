@@ -36,14 +36,17 @@ export interface CalendarViewProps {
   onNewOnDay?: (day: DayKey) => void
   /** The tab's `calendarScale` (YAZ-4558 D22): a month grid, or one week of 7 tall days. */
   scale: 'month' | 'week'
-  /** The Month / Week switch: ViewsPane writes `calendarScale` (Month deletes it). */
+  /** The Month / Week switch: ViewsPane writes `calendarScale` (Settings' scale deletes it). */
   onScale: (scale: 'month' | 'week') => void
   /** `cardTitles: wrap` (YAZ-4558 D23): titles take more lines and the day grows; else one line with "…". */
   wrap?: boolean
+  /** Settings › Folder pages › Week starts on Sunday (YAZ-4585); else Monday (D11). */
+  sundayFirst?: boolean
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const SUNDAY_FIRST = ['Sun', ...WEEKDAYS.slice(0, 6)]
 /** Cards a day shows before "+N more" (D11). */
 const DAY_CARDS = 3
 /** Cards the "No date" tray shows before "+N more" (YAZ-4544): a folder with no dates yet renders 20, not 1000, on each drag over. */
@@ -67,7 +70,7 @@ const SCALES = [
  * order; ‹ › step a week. Both scales show the month or the week that holds `anchor`, so the switch
  * keeps the place.
  */
-export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, scale, onScale, wrap = false }: CalendarViewProps) {
+export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, scale, onScale, wrap = false, sundayFirst = false }: CalendarViewProps) {
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
@@ -78,7 +81,7 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   /** The card's right-click menu (YAZ-4547 D24), as the board's. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   const { days, undated } = useMemo(() => bucketByDay(rows, dateKey), [rows, dateKey])
-  const weeks = useMemo(() => (scale === 'week' ? [weekDays(anchor)] : monthWeeks(month.y, month.m)), [scale, anchor, month.y, month.m])
+  const weeks = useMemo(() => (scale === 'week' ? [weekDays(anchor, sundayFirst)] : monthWeeks(month.y, month.m, sundayFirst)), [scale, anchor, month.y, month.m, sundayFirst])
   // Each day on screen in its order, the timed cards first in time order (D22), in Month and in Week alike, so the
   // note window steps exactly as the days show. Once per rows or page change, not on each dragover.
   const dayCards = useMemo(
@@ -220,7 +223,7 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
       </div>
       <div className={`view-cal__grid${isWeek ? ' view-cal__grid--week' : ''}`} role="grid" aria-label={title}>
         <div className="view-cal__week" role="row">
-          {WEEKDAYS.map((d) => (
+          {(sundayFirst ? SUNDAY_FIRST : WEEKDAYS).map((d) => (
             <span key={d} className="view-cal__weekday" role="columnheader">
               {d}
             </span>
