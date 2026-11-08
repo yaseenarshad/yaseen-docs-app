@@ -15,6 +15,7 @@ import { isRecord } from '@shared/guards'
 // `@shared/folderSettingsLinks`, so the main process's ID rewrite walks the same leaves (YAZ-2677).
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import type { ViewDef } from './viewSchema'
+import { PAGE_VIEW_TYPE } from './pageView'
 import { transformFile, writeProperty } from './writeProperty'
 
 /** A column the folder declares — this module's own vocabulary, shaped like `PropertyDecl`. */
@@ -116,14 +117,15 @@ function readViews(raw: unknown, problems: string[], ids: boolean): ViewDef[] {
       problems.push(`${FOLDER_SETTINGS_KEY}.views[${i}] must be a map with a type and a name — skipping it`)
       return
     }
+    let read: Record<string, unknown> = view
     if (view.outline !== undefined && typeof view.outline !== 'string') {
       problems.push(`${FOLDER_SETTINGS_KEY}.views[${i}].outline must be one markdown bullet list — ignoring it`)
       const { outline: _dropped, ...rest } = view
-      views.push(rest as ViewDef)
-      return
+      read = rest
     }
+    // A stored Outline is the Page tab (YAZ-4584 D38); its old `outline` string rides along until it is moved by hand (D39).
     // Unknown view types and extra keys ride along untouched (`ViewDef`'s index signature).
-    views.push(view as ViewDef)
+    views.push((view.type === 'outline' ? { ...read, type: PAGE_VIEW_TYPE } : read) as ViewDef)
   })
   if (views.length === 0) return defaultViews(ids)
   return views

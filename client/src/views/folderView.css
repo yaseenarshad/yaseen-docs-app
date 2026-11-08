@@ -32,3 +32,14 @@
  * page with it. TableView bridges the outer vertical scroll onto the existing header without
  * taking horizontal ownership away from this wrapper (YAZ-1151).
  */
+
+/*
+ * The Page tab (YAZ-4584 D38): the note editor's mount in the view body. The Crepe instance wears
+ * `.editor-instance`, so every note stylesheet applies unchanged. Only the note's page furniture is
+ * undone: `.editor-instance` is app.css's centred content COLUMN (max-width + 48px sides), and
+ * `.folder-view` above already gives the page that column.
+ */
+.folder-page-doc .editor-instance {
+  max-width: none;
+  padding: 0;
+}

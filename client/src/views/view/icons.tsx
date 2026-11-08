@@ -252,6 +252,13 @@ const TYPE_GLYPHS: Record<string, ReactElement> = {
       <path d="M1.75 6.25h12.5M5 1.25V4M11 1.25V4" />
     </>
   ),
+  // The Page tab (YAZ-4584 D38): the folder's own document, a page with lines of text.
+  page: (
+    <>
+      <path d="M4 2h5l3 3v9H4z" />
+      <path d="M9 2v3h3M6 8.5h4M6 11h4" />
+    </>
+  ),
 }
 
 /** Small glyph for a view's `type`; unknown types get a plain frame. */

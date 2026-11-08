@@ -2,9 +2,7 @@ import { boardOptionGroups } from './boardOptionGroups'
 import { columnTyping, optionOrderFor } from './editorType'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type IndexRecord, type PropertiesResponse } from '@shared/types'
-import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
-import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
 import { absFrom, relTo } from '../lib/paths'
@@ -22,11 +20,11 @@ import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
 import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
 import { ListView } from './view/ListView'
-import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
 import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, noteWindowKey, noteWindowLink, noteWindowMemory, openNoteWindow } from './view/NoteWindow'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
+import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY } from './readOnlyRows'
 import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
@@ -98,15 +96,14 @@ export interface FolderHost {
    * `notify`: a move's "Moved to … · Undo" (YAZ-4541 S6) rides its glyph, type and action too.
    */
   onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType, action?: Notice['action']) => void
-  /**
-   * The outline editor's own wikilink surfaces (YAZ-903) — the window's ONE resolve source, its
-   * `[[` picker feed and the click-navigation contract, assembled by the host exactly as
-   * `Editor` assembles them for the note. `nav`'s identity must be STABLE: a new object remounts
-   * the editor, and a remount costs the caret.
-   */
+  /** The window's ONE resolve source: whether the vault uses IDs decides the reserved keys. */
   wikilinks: WikilinkResolveSource
-  wikilinkCandidates?: WikilinkCandidateSource
-  nav?: WikilinkNav
+  /**
+   * The Page tab's body (YAZ-4584 D38): the note editor on the folder's `.folder.md`, built by `Editor`. The
+   * page cog, fold-all and Saved chips go into `switchesHost`, an element of the folder page toolbar; null shows none.
+   * Absent while the folder has no `.folder.md` yet: the Page then shows nothing.
+   */
+  renderPage?: (switchesHost: HTMLElement | null) => ReactNode
 }
 
 export interface ViewsPaneProps {
@@ -153,8 +150,8 @@ export interface ViewsPaneProps {
   /** What the hover panel needs of a page's vault: App's `boardPreviewScope`. No scope, no hover panel. */
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
-  /** Settings › "Folding default" (YAZ-4094 F1), for the outline skin, which has no page cog. */
-  foldingOnByDefault?: boolean
+  /** The folder page toolbar's element that takes the Page tab's cog and chips (YAZ-4584 D38, D35): `FolderHost.renderPage`'s `switchesHost`. */
+  pageSwitchesHost?: HTMLElement | null
 }
 
 /**
@@ -180,7 +177,7 @@ function seedGroup(seed: NewNoteSeed, group: Group, view: ViewDef, level: number
  * One set of views (GRO-2135): the toolbar (view switcher, sort / properties menus, search,
  * count) over the body — the real table for `type: table` (GRO-2136), the board for
  * `type: board` (4D, GRO-2138), the card grid for `type: cards` (4E, GRO-2139), the list for
- * `type: list` (4F, GRO-2140), the outline for `type: outline` (YAZ-820), the month grid for
+ * `type: list` (4F, GRO-2140), the folder's own document for `type: page` (YAZ-4584), the month grid for
  * `type: calendar` (YAZ-4540), a placeholder row list
  * for unknown view types. Only the active tab and the search text are component state —
  * everything else is the file.
@@ -208,7 +205,7 @@ const NO_FOLDER_ROWS: IndexRecord[] = []
 /** A folder row has no note to preview (YAZ-4579 D32): the hover panel is the notes', so its dwell never starts. */
 const noHover = (): void => undefined
 
-export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', foldingOnByDefault }: ViewsPaneProps) {
+export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', pageSwitchesHost = null }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -310,12 +307,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const vaultRecords = folder.vaultRecords
   const vaultFolders = folder.vaultFolders
   const resolve = useMemo(() => pageResolver(vaultRecords, vaultFolders, root, folder.resolveLink), [vaultRecords, vaultFolders, root, folder.resolveLink])
-  /**
-   * The folder's OUTLINE (YAZ-820) is a free-form DOCUMENT, not rows. `propertyKeys` reads
-   * `view.order` and nothing else, so `view.outline`, a string, can not reach the value pass
-   * however long it grows. Everything else the view says (sort, limit, groupBy) still runs.
-   */
-  const isOutline = view.type === 'outline'
+  /** The Page tab (YAZ-4584 D38) is the folder's DOCUMENT, not rows: the toolbar offers no Properties, Filter or Search. */
+  const isPage = view.type === PAGE_VIEW_TYPE
   // A Folder level groups by the folders below the page (YAZ-2541), each headed by its title off the vault's folder records.
   const page = useMemo(() => ({ folder: pageFolder, folders: vaultFolders, vault: folder.vaultName }), [pageFolder, vaultFolders, folder.vaultName])
   // The Folder column and the Folder group headers (YAZ-4564 D26/D27): a folder by the title its group shows (the engine's
@@ -516,9 +509,6 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   /** The `filters` half of that channel ALSO surfaces inside the Filter menu, where it is edited (YAZ-1229). */
   const filterErrors = result.errors.filter((e) => e.where.includes('filters'))
 
-  /** The document every outline tab shows and edits: the FIRST outline view's (YAZ-903). */
-  const outlineIndex = views.findIndex((v) => v.type === 'outline')
-
   // View CRUD lives here since YAZ-1471 (re-ruling 🔒 rule 4, YAZ-819): every gesture is ONE
   // `update` — the same door as sort and columns — and which view is ACTIVE stays session state.
   const taken = () => new Set(views.map((v) => v.name))
@@ -580,7 +570,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         onSetAllGroups={writeCollapsed}
         tabs={tabs}
         properties={properties}
-        documentView={isOutline}
+        documentView={isPage}
         folder={folder}
         dateColumns={calendarColumns}
       />
@@ -594,21 +584,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           Could not load the vault's property declarations: {properties.error}
         </p>
       )}
-      {isOutline ? (
-        <OutlineView
-          outline={views[outlineIndex].outline}
-          wikilinks={folder.wikilinks}
-          wikilinkCandidates={folder.wikilinkCandidates}
-          nav={folder.nav}
-          foldingOn={foldingOnByDefault}
-          // ONE `folder_settings` write, through the same door every config edit uses. It
-          // lands on the FIRST outline view because that is the one the seed was read from.
-          onDocument={(markdown) =>
-            update((d) => {
-              d.views[outlineIndex].outline = markdown
-            })
-          }
-        />
+      {isPage ? (
+        // The note editor replaces the view body (YAZ-4584 D38): it saves the `.folder.md` body itself, never a settings write.
+        <div className="view-page">{folder.renderPage?.(pageSwitchesHost)}</div>
       ) : view.type === 'table' ? (
         <TableView
           hover={viewHover}

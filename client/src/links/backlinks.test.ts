@@ -10,7 +10,7 @@ import { resolverFor } from '../views/engine'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { pathTitles } from '../lib/pageLabel'
 import { linkResolver } from './folderLinks'
-import { MAX_SNIPPETS, SNIPPET_MAX_CHARS, backlinksFor, folderMentionSnippets, mentionSnippets, type MentionSnippet } from './backlinks'
+import { MAX_SNIPPETS, SNIPPET_MAX_CHARS, backlinksFor, mentionSnippets, type MentionSnippet } from './backlinks'
 
 interface RecInit {
   links?: string[]
@@ -127,25 +127,30 @@ describe('backlinksFor (Links D, GRO-2193)', () => {
   })
 })
 
-describe('links from FOLDER pages: a folder\'s settings mention what they link', () => {
+describe('links from FOLDER pages: a folder\'s Page and settings mention what they link', () => {
   const ID = 'k3m9x2pq7abc'
   const TEAM = '/vault/Team'
   const DIRS = ['/vault/Areas', '/vault/Projects', TEAM, '/vault/Work']
   /** The settings record of the folder at `dir`, holding `folder_settings`. */
   const settings = (dir: string, folder_settings: Record<string, unknown>): IndexRecord => ({ ...rec(`${dir}/.folder.md`), properties: { folder_settings } })
-  const outline = (text: string) => ({ views: [{ type: 'outline', name: 'Outline', outline: text }] })
+  /** The record of a folder whose Page (its `.folder.md` body, YAZ-4584 D40) links `links`, as the index reads a note's. */
+  const page = (dir: string, links: string[]): IndexRecord => rec(`${dir}/.folder.md`, { links })
   const NOTES = [rec('/vault/A.md', { links: ['B'] }), { ...rec(B), id: ID }, rec('/vault/Work/Plan.md', { links: ['Team'] })]
   const mentions = (path: string, folders: IndexRecord[], records = NOTES) =>
     backlinksFor(path, records, linkResolver(records, '/vault', DIRS, folders), folders).map((r) => r.path)
 
-  it('a folder\'s outline has a link to a note: that note\'s Linked mentions lists the folder', () => {
-    expect(mentions(B, [settings('/vault/Projects', outline(`- intro\n    - [[${ID}]]`))])).toEqual(['/vault/A.md', '/vault/Projects/.folder.md'])
-    expect(mentions(B, [settings('/vault/Projects', outline('- [[B|the plan]]'))])).toEqual(['/vault/A.md', '/vault/Projects/.folder.md'])
+  it('a folder\'s Page has a link to a note: that note\'s Linked mentions lists the folder (D40)', () => {
+    expect(mentions(B, [page('/vault/Projects', [ID])])).toEqual(['/vault/A.md', '/vault/Projects/.folder.md'])
+    expect(mentions(B, [page('/vault/Projects', ['B'])])).toEqual(['/vault/A.md', '/vault/Projects/.folder.md'])
+  })
+
+  it('an old Outline string is no mention any more: the Page body is the folder\'s document (D40)', () => {
+    expect(mentions(B, [settings('/vault/Projects', { views: [{ type: 'outline', name: 'Outline', outline: '- [[B]]' }] })])).toEqual(['/vault/A.md'])
   })
 
   it('a folder\'s link column has a `target` naming the page, or a view\'s `order` names it: listed the same way', () => {
     const column = settings('/vault/Areas', { columns: { owner: { kind: 'link', target: '[[B]]' } } })
-    const order = settings('/vault/Projects', { views: [{ type: 'outline', name: 'Outline', order: ['[[Elsewhere]]', `[[${ID}]]`] }] })
+    const order = settings('/vault/Projects', { views: [{ type: 'page', name: 'Page', order: ['[[Elsewhere]]', `[[${ID}]]`] }] })
     expect(mentions(B, [column, order])).toEqual(['/vault/A.md', '/vault/Areas/.folder.md', '/vault/Projects/.folder.md'])
   })
 
@@ -158,50 +163,22 @@ describe('links from FOLDER pages: a folder\'s settings mention what they link',
     expect(mentions(B, [keys, settings('/vault/Projects', {}), rec('/vault/Work/.folder.md')])).toEqual(['/vault/A.md'])
   })
 
-  it('a link inside the prose of an outline line counts, as one inside a note\'s body does', () => {
-    const prose = settings('/vault/Team', outline('- see [[B]] inline'))
-    expect(mentions(B, [prose])).toEqual(['/vault/A.md', '/vault/Team/.folder.md'])
-  })
-
-  it('a folder that links to itself is not listed, as a note never lists itself', () => {
-    const own = settings(TEAM, outline('- [[Team]]'))
-    expect(mentions(TEAM, [own])).toEqual(['/vault/Work/Plan.md'])
+  it('a folder whose Page links to itself is not listed, as a note never lists itself', () => {
+    expect(mentions(TEAM, [page(TEAM, ['Team'])])).toEqual(['/vault/Work/Plan.md'])
     // Its links to OTHER pages still count.
-    expect(mentions(B, [settings(TEAM, outline('- [[Team]]\n- [[B]]'))])).toEqual(['/vault/A.md', '/vault/Team/.folder.md'])
+    expect(mentions(B, [page(TEAM, ['Team', 'B'])])).toEqual(['/vault/A.md', '/vault/Team/.folder.md'])
   })
 
   it('one entry per referencing note or folder, path-sorted — a folder by its settings file\'s path', () => {
-    const many = settings('/vault/Work', { columns: { owner: { kind: 'link', target: '[[B]]' } }, views: [{ type: 'outline', name: 'Outline', order: ['[[B]]'], outline: '- [[B]]\n- [[B]]' }] })
+    const many = { ...settings('/vault/Work', { columns: { owner: { kind: 'link', target: '[[B]]' } }, views: [{ type: 'page', name: 'Page', order: ['[[B]]'] }] }), links: ['B', 'B'] }
     const records = [rec('/vault/Work/Zed.md', { links: ['B'] }), rec('/vault/A.md', { links: ['B'] }), rec(B), rec('/vault/Work.md', { links: ['B'] })]
-    expect(mentions(B, [many, settings('/vault/Areas', outline('- [[B]]'))], records)).toEqual([
+    expect(mentions(B, [many, page('/vault/Areas', ['B'])], records)).toEqual([
       '/vault/A.md',
       '/vault/Areas/.folder.md',
       '/vault/Work.md',
       '/vault/Work/.folder.md',
       '/vault/Work/Zed.md',
     ])
-  })
-
-  describe('snippet for a folder entry', () => {
-    const resolve = linkResolver(NOTES, '/vault', DIRS)
-    const shown = (folder: IndexRecord) => folderMentionSnippets(folder, B, resolve, NO_TITLES).map((s) => [s.text, ...s.ranges.map((r) => s.text.slice(r.from, r.to))])
-
-    it('the line of its outline that holds the link — the bullet\'s text, as the page shows it', () => {
-      expect(shown(settings('/vault/Projects', outline(`- intro\n    * see [[${ID}]] first\n- [[Elsewhere]]\n- [[B|the plan]]`)))).toEqual([
-        ['see B first', 'B'],
-        ['the plan', 'the plan'],
-      ])
-    })
-
-    it('every outline of the folder is read, in view order', () => {
-      const two = settings('/vault/Projects', { views: [{ type: 'outline', name: 'One', outline: '- [[B]] one' }, { type: 'table', name: 'Table' }, { type: 'outline', name: 'Two', outline: '- two [[B]]' }] })
-      expect(shown(two).map(([text]) => text)).toEqual(['B one', 'two B'])
-    })
-
-    it('a folder that links only by a view\'s `order` or a column\'s `target` has no snippet', () => {
-      expect(shown(settings('/vault/Projects', { columns: { owner: { kind: 'link', target: '[[B]]' } }, views: [{ type: 'outline', name: 'Outline', order: ['[[B]]'] }] }))).toEqual([])
-      expect(shown(rec('/vault/Projects/.folder.md'))).toEqual([])
-    })
   })
 })
 

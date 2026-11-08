@@ -5,18 +5,16 @@ import { gapCursorPlugin, dropIndicatorState } from '@milkdown/kit/plugin/cursor
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { undo } from '@milkdown/kit/prose/history'
 import { createCrepe } from './createCrepe'
-import { lockToBullets, outlineFeatures } from './outline/bulletsOnly'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 afterEach(async () => {
   for (const { crepe, root } of mounted.splice(0)) { await crepe.destroy(); root.remove() }
 })
 
-async function mount(markdown: string, outline = false) {
+async function mount(markdown: string) {
   const root = document.createElement('div')
   document.body.append(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, ...(outline ? { features: outlineFeatures } : {}) })
-  if (outline) lockToBullets(crepe)
+  const crepe = createCrepe({ root, defaultValue: markdown })
   await crepe.create()
   mounted.push({ crepe, root })
   const view = crepe.editor.ctx.get(editorViewCtx)
@@ -25,8 +23,8 @@ async function mount(markdown: string, outline = false) {
 }
 
 describe('native text caret', () => {
-  it.each([false, true])('does not hide the native caret or paint an overlay (outline=%s)', async (outline) => {
-    const { crepe, root, view } = await mount(outline ? '- Before text after' : 'Before text after', outline)
+  it('does not hide the native caret or paint an overlay', async () => {
+    const { crepe, root, view } = await mount('Before text after')
     let pos = 0
     view.state.doc.descendants((node, start) => { if (node.isText) pos = start + 7 })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))

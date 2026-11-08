@@ -1,7 +1,7 @@
 /**
  * THE BLOCK LOCK OF A TEXT BOX (YAZ-4277 1B, D4). The box editor is the note's `createCrepe`; a box holds only what
- * the canvas draws: lines, bullets (checklists too) and the letter styles of `textRuns`. Three layers, as the folder
- * outline's `bulletsOnly.ts` does, cheapest first:
+ * the canvas draws: lines, bullets (checklists too) and the letter styles of `textRuns`. Three layers, cheapest first
+ * (the folder outline's bullets-only lock had the same shape until YAZ-4584 removed it):
  *
  *  1. OFF: the input rules that would make a block or a mark a box cannot hold — `> ` quote, ``` code, `---` line,
  *     `# ` heading, `` `x` `` inline code (it deletes the backticks), `|2x2| ` table, the image rule. Kept: italic,

@@ -4,11 +4,12 @@ import { dropIndex, insertionSlot } from '../../lib/dragSlot'
 import type { ViewDef } from '../viewSchema'
 import { ConfirmDeleteView } from './ConfirmDeleteView'
 import { ViewTypeIcon } from './icons'
+import { PAGE_VIEW_TYPE, pageViewIndex } from '../pageView'
 import { Popover } from './Popover'
 import { TextField } from './TextField'
 
-/** The kinds "+" offers, in menu order; a kind's label is its type, capitalised. */
-const VIEW_TYPES = ['table', 'board', 'calendar', 'cards', 'list', 'outline'] as const
+/** The kinds "+" offers, in menu order; a kind's label is its type, capitalised. The Page is the folder's own document (YAZ-4584 D38). */
+const VIEW_TYPES = ['table', 'board', 'calendar', 'cards', 'list', PAGE_VIEW_TYPE] as const
 /** This strip's own drag payload (TabBar's `WORKSPACE_PAGE_MIME` idiom); never `text/plain`. */
 const VIEW_TAB_MIME = 'application/x-yaseen-view-tab'
 export const viewTypeLabel = (type: string): string => type.charAt(0).toUpperCase() + type.slice(1)
@@ -46,7 +47,7 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
   const [renaming, setRenaming] = useState<number | null>(null)
   const [adding, setAdding] = useState<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<number | null>(null)
-  const hasOutline = views.some((v) => v.type === 'outline')
+  const hasPage = pageViewIndex(views) !== -1
   // `menu`, `confirm` and `renaming` are INDICES: another window (or a hand edit) can drop views
   // out from under an open one, so derive the view in render — a stale index then renders nothing
   // instead of throwing through a block with no error boundary above it (YAZ-1488).
@@ -143,8 +144,8 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
         {adding !== null && (
           <Popover label="Add view" anchor={adding} className="view-popover--menu" onClose={() => setAdding(null)}>
             <div role="menu">
-              {/* ONE outline per page: ViewsPane reads and writes the FIRST outline view's document, so a second would shadow it. */}
-              {VIEW_TYPES.filter((type) => type !== 'outline' || !hasOutline).map((type) => (
+              {/* At most ONE Page tab per folder (YAZ-4584 D38): the folder has one document, its `.folder.md` body. */}
+              {VIEW_TYPES.filter((type) => type !== PAGE_VIEW_TYPE || !hasPage).map((type) => (
                 <button
                   key={type}
                   type="button"
@@ -181,7 +182,7 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
             type="button"
             role="menuitem"
             className="ctx-menu__item"
-            disabled={menuView.type === 'outline'}
+            disabled={menuView.type === PAGE_VIEW_TYPE}
             onClick={() => {
               onDuplicate(menu.i)
               setMenu(null)

@@ -162,7 +162,7 @@ export type IdChange = ReadonlyMap<string, string> | ((id: string) => string | u
  * its new ID, wherever a file names a note or a folder by its ID —
  *  - a link in the body, in every form: `[[id]]`, `[[id|label]]`, `[[id#heading]]`, `![[id]]`;
  *  - a link that is a property's whole value, in a list, in a folder's values, and in the link
- *    leaves of a folder's settings (a view's order, an outline line, a column's target);
+ *    leaves of a folder's settings (a view's order, a fill's note, a column's target);
  *  - an `also_in` entry;
  *  - a folder-value key: the block `in.<id>` moves to the new ID with its values (never over a
  *    block the new ID already has);

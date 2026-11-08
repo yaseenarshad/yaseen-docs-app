@@ -4891,15 +4891,15 @@ describe('App rename door (⚡ YAZ-888)', () => {
     await act(async () => release())
   })
 
-  it('a FOLDER rename counts the name links to the folder itself — a note\u2019s and another folder\u2019s Outline line — and confirming rewrites both (YAZ-2290 D10)', async () => {
-    const TEAM = '---\nfolder_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[Projects]]\n---\n'
+  it('a FOLDER rename counts the name links to the folder itself — a note\u2019s and another folder\u2019s Page — and confirming rewrites both (YAZ-2290 D10, YAZ-4584 D40)', async () => {
+    const TEAM = '---\nfolder_settings:\n  views:\n    - type: page\n      name: Page\n---\n- [[Projects]]\n'
     const files = { '/v/A.md': { content: 'See [[Projects]].\n', mtime: 1 }, '/v/Team/.folder.md': { content: TEAM, mtime: 1 } }
-    const outline = { views: [{ type: 'outline', name: 'Outline', outline: '- [[Projects]]' }] }
+    const page = { views: [{ type: 'page', name: 'Page' }] }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
       b.bridge.index.mockResolvedValue({
         root: '/v',
         records: [record('/v/A.md', { links: ['Projects'] }), record('/v/Projects/Plan.md')],
-        folders: [record('/v/Team/.folder.md', { properties: { folder_settings: outline } })],
+        folders: [record('/v/Team/.folder.md', { properties: { folder_settings: page }, links: ['Projects'] })],
         generatedAt: 1,
         ids: true,
       })

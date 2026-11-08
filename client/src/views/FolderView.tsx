@@ -38,8 +38,6 @@ import { PageTitle } from '../editor/PageTitle'
 import { usePathTitles } from '../lib/pageLabel'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
-import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from '../links/BacklinksSection'
@@ -78,12 +76,12 @@ export interface FolderViewProps {
   onOpenFolderPage?: (path: string) => void
   /** A full editor on a note, for the table's note window (YAZ-4547): handed to `ViewsPane` as `FolderHost.renderNoteEditor`. */
   renderNoteEditor?: (path: string) => ReactNode
+  /** The Page tab's note editor on this folder's `.folder.md` (YAZ-4584 D38), built by `Editor`: handed to `ViewsPane` as `FolderHost.renderPage`. */
+  renderPage?: (switchesHost: HTMLElement | null) => ReactNode
   /** The app tab that shows this folder (`Editor`'s `tabId`): handed to `ViewsPane`, whose note window is that tab's (YAZ-4544). */
   tabId?: string
   /** The main tab's Back step (`Editor`'s `viewKey`): handed to `ViewsPane`, which shows the view tab this step left (YAZ-4544). */
   viewKey?: string
-  wikilinkCandidates?: WikilinkCandidateSource
-  newNoteFolderFor?: (sourcePath: string) => string
   /** App's `notify`; the views' moves give it their Undo (YAZ-4541 S6). */
   onNotice?: FolderHost['onNotice']
   /** A title commit — the FOLDER's own (D9), or a row's from a table's Name cell (YAZ-2420 🔒 D19) — through App's one rename door. */
@@ -94,8 +92,6 @@ export interface FolderViewProps {
   hoverPreview?: boolean
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
-  /** Settings › "Folding default" (YAZ-4094 F1): a folder's outline has no page cog, so it follows this. Handed to `ViewsPane`. */
-  foldingOnByDefault?: boolean
 }
 
 /**
@@ -141,10 +137,9 @@ export function FolderView({
   onOpenFileBackground,
   onOpenFolderPage,
   renderNoteEditor,
+  renderPage,
   tabId,
   viewKey,
-  wikilinkCandidates,
-  newNoteFolderFor,
   onNotice,
   onRetitle,
   commentsOrder,
@@ -152,7 +147,6 @@ export function FolderView({
   hoverPreview,
   previewScope,
   diagramDarkColors,
-  foldingOnByDefault,
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
   const titles = usePathTitles(source)
@@ -207,27 +201,6 @@ export function FolderView({
       cancelled = true
     }
   }, [file, indexed, revision])
-
-  /**
-   * The outline editor's click navigation (YAZ-903), assembled EXACTLY as `Editor` assembles a
-   * note's own — same contract, same defaults, wired only when the window threads the
-   * background opener. A bare unresolved link creates its page as a note in this folder would
-   * (the settings file stands in as the source). Memoised because the editor remounts on a new
-   * identity (YAZ-901), and every input here is App-stable.
-   */
-  const nav = useMemo<WikilinkNav | undefined>(
-    () =>
-      onOpenFileBackground === undefined
-        ? undefined
-        : {
-            root,
-            createFolder: () => newNoteFolderFor?.(file) ?? '',
-            openCurrent: onOpenFile,
-            openBackground: onOpenFileBackground,
-            onNotice: onNotice ?? (() => undefined),
-          },
-    [root, file, newNoteFolderFor, onOpenFile, onOpenFileBackground, onNotice],
-  )
 
   const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderViewSet(settings, ids)))
   const [settingsError, setSettingsError] = useState<string | null>(null)
@@ -408,8 +381,8 @@ export function FolderView({
     openBackground: onOpenFileBackground,
     onNotice,
     wikilinks: source,
-    wikilinkCandidates,
-    nav,
+    // The Page's editor reads the file, so it waits for the index to know one (YAZ-4584): a "+ Page" on a folder with none creates it.
+    renderPage: record === undefined ? undefined : renderPage,
   }
   const visibleError = settingsError ?? columnError
 
@@ -446,7 +419,6 @@ export function FolderView({
             hoverPreview={hoverPreview}
             previewScope={previewScope}
             diagramDarkColors={diagramDarkColors}
-            foldingOnByDefault={foldingOnByDefault}
           />
         </ViewFolder.Provider>
       </section>

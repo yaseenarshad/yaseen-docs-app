@@ -18,35 +18,16 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { createCrepe } from './createCrepe'
 import { caretIn, emptyTextblockPos, endOf, md, mount, nodePos, posOf, pressKey, runCommand, select, selection, typeText, unmountAll } from './marks/markTestKit'
-import { isBulletsOnly, lockToBullets, outlineFeatures } from './outline/bulletsOnly'
 import { setHeadingFoldAtSelection } from './outline/headingFolding'
 import { toggleOutlineFold } from './outline/outlineFolding'
 import { getZoomedItemPos } from './outline/zoom'
 
 // ---- harness (lifted from lineSelection.test.ts; kept minimal) ----------------------------------
 
-const outlineMounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
-
 afterEach(async () => {
   await unmountAll()
-  for (const m of outlineMounted.splice(0)) {
-    await m.crepe.destroy()
-    m.root.remove()
-  }
 })
-
-/** The folder outline's editor, mounted the way `views/view/OutlineEditor.tsx` does (S23). */
-async function mountOutline(markdown: string): Promise<Crepe> {
-  const root = document.createElement('div')
-  document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, features: outlineFeatures })
-  lockToBullets(crepe)
-  await crepe.create()
-  outlineMounted.push({ crepe, root })
-  return crepe
-}
 
 const shiftDown = (crepe: Crepe) => pressKey(crepe, 'ArrowDown', { shift: true })
 const shiftUp = (crepe: Crepe) => pressKey(crepe, 'ArrowUp', { shift: true })
@@ -375,32 +356,6 @@ describe('04 Edges', () => {
     const { crepe } = await mount('')
     expect(() => shiftDown(crepe)).not.toThrow()
     expect(() => shiftUp(crepe)).not.toThrow()
-  })
-})
-
-// ---- 05 Folder outline --------------------------------------------------------------------------
-
-describe('05 Folder outline (bullets-only editor)', () => {
-  it('S23 three top-level bullets: start of the first, ⇧↓ → start of the second; ⌫ → first gone, doc still bullets-only', async () => {
-    const crepe = await mountOutline('* one\n* two\n* three\n')
-    select(crepe, posOf(crepe, 'one'))
-    expect(shiftDown(crepe)).toBe(true)
-    expect(selection(crepe)).toEqual({ anchor: posOf(crepe, 'one'), head: posOf(crepe, 'two') })
-    backspace(crepe)
-    expect(md(crepe)).toBe('* two\n* three\n')
-    expect(crepe.editor.action((ctx) => isBulletsOnly(ctx.get(editorViewCtx).state.doc))).toBe(true)
-  })
-
-  it('S23-parent (pinned observation) a parent with a child: start of the parent, ⇧↓ (→ child start), ⌫', async () => {
-    const crepe = await mountOutline('* parent\n  * child\n* after\n')
-    select(crepe, posOf(crepe, 'parent'))
-    expect(shiftDown(crepe)).toBe(true)
-    expect(selection(crepe)).toEqual({ anchor: posOf(crepe, 'parent'), head: posOf(crepe, 'child') })
-    backspace(crepe)
-    // OBSERVED: the parent becomes an EMPTY bullet that keeps its kid (`*` / `  * child`), the doc stays bullets-only, caret at the start of "child" — NOT the note editor's D3 lift (S8). Matches the scope's expectation for the folder outline.
-    expect(md(crepe)).toBe('*\n  * child\n* after\n')
-    expect(crepe.editor.action((ctx) => isBulletsOnly(ctx.get(editorViewCtx).state.doc))).toBe(true)
-    expect(selection(crepe)).toEqual({ anchor: posOf(crepe, 'child'), head: posOf(crepe, 'child') })
   })
 })
 

@@ -297,9 +297,11 @@ describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', ()
     expect(q(el, '.backlinks__match').textContent).toBe('Stages')
   })
 
-  it('Linked mentions on a folder\'s page lists the notes AND the folders that link to it; a folder that links to itself is not listed', async () => {
+  it('Linked mentions on a folder\'s page lists the notes AND the folders whose Page links to it, snippets from the Page body; a folder that links to itself is not listed (YAZ-4584 D40)', async () => {
     const TEAM = '/vault/Team'
-    const settings = (dir: string) => rec(`${dir}/.folder.md`, { folder_settings: { views: [{ type: 'outline', name: 'Outline', outline: '- [[Stages]]\n- then on through [[Stages]]' }] } })
+    // A folder's Page is its `.folder.md` body: the index holds its links, the snippets are read from the body alone.
+    const settings = (dir: string) => ({ ...rec(`${dir}/.folder.md`, { folder_settings: { views: [{ type: 'page', name: 'Page' }] } }), links: ['Stages'] })
+    disk.set(`${TEAM}/.folder.md`, { content: '---\ntitle: "[[Stages]] in the frontmatter"\n---\n- [[Stages]]\n- then on through [[Stages]]\n', mtime: 1 })
     const el = await mount()
     const records = [{ ...rec(PLAN), links: ['Stages'] }, rec(LEAD)]
     const folders = [settings(TEAM), settings(STAGES)]
