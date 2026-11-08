@@ -35,7 +35,7 @@ export async function fileOperation(host: NavigationHost, command: string, args:
     if (!paths.length) throw new AutomationFailure('INVALID_INPUT', 'Supply at least one path.')
     // Each item keeps its name, as a drag onto a folder does.
     const moves = await Promise.all(paths.map(async raw => { const oldPath = await target(raw); return { oldPath, newPath: posix.join(targetDir, posix.basename(oldPath)), kind: await kindOf(oldPath) } }))
-    return host.operate(window.id, { command, moves, dropValues: args.dropValues === true })
+    return host.operate(window.id, { command, targetDir, moves, dropValues: args.dropValues === true })
   }
   if (command === 'file.trash') {
     const paths = [...new Set(args.paths as string[])]
