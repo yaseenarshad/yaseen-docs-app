@@ -1892,8 +1892,10 @@ export interface FolderPagesSettings {
   /** A table column with no Wrap or Clip of its own (D29): `kind` wraps the chip kinds and clips the rest. */
   textInCells: (typeof FOLDER_PAGE_CHOICES.textInCells)[number]
   groupIndent: (typeof FOLDER_PAGE_CHOICES.groupIndent)[number]
-  /** A view's "Show empty groups" (its `showEmptyColumns`). */
+  /** A Table's "Show empty groups" (its `showEmptyColumns`). Separate from the Board's (YAZ-4608 C2). */
   showEmptyGroups: boolean
+  /** A Board's "Show empty columns" (its `showEmptyColumns`, YAZ-4608 C2). A stored file without it starts from `showEmptyGroups`. */
+  showEmptyColumns: boolean
   subfolders: (typeof FOLDER_PAGE_CHOICES.subfolders)[number]
   foldersFirst: boolean
   /** "Calendar opens in": Month or Week. */
@@ -1916,6 +1918,7 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   textInCells: 'kind',
   groupIndent: 'medium',
   showEmptyGroups: false,
+  showEmptyColumns: false,
   subfolders: 'notes',
   foldersFirst: true,
   calendarScale: 'month',

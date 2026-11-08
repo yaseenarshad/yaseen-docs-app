@@ -11,7 +11,11 @@ import type { Mutate, ViewDef } from './viewSchema'
 export const ViewDefaults = createContext<FolderPagesSettings>(DEFAULT_FOLDER_PAGES)
 export const useViewDefaults = (): FolderPagesSettings => useContext(ViewDefaults)
 
-/** The view keys that have a Settings default, each with the Settings part it reads; the values are the view's words. */
+/**
+ * The view keys that have a Settings default, each with the Settings part it reads; the values are the view's words.
+ * `showEmptyColumns` is the one key with TWO parts (YAZ-4608 C2): a Board reads "Show empty columns", every other
+ * view "Show empty groups" (`partOf`).
+ */
 const DEFAULTED = {
   rowHeight: 'rowHeight',
   textInCells: 'textInCells',
@@ -27,8 +31,11 @@ const DEFAULTED = {
 export type DefaultedKey = keyof typeof DEFAULTED
 const DEFAULTED_KEYS = Object.keys(DEFAULTED) as DefaultedKey[]
 
-/** The value Settings gives a view key. */
-export const settingsValue = (key: DefaultedKey, defaults: FolderPagesSettings): unknown => defaults[DEFAULTED[key]]
+/** The Settings part a view key reads, by the view's type (C2). */
+const partOf = (key: DefaultedKey, view: Pick<ViewDef, 'type'>): keyof FolderPagesSettings => (key === 'showEmptyColumns' && view.type === 'board' ? 'showEmptyColumns' : DEFAULTED[key])
+
+/** The value Settings gives a view key of this view. */
+export const settingsValue = (key: DefaultedKey, defaults: FolderPagesSettings, view: Pick<ViewDef, 'type'>): unknown => defaults[partOf(key, view)]
 
 /**
  * The view as every reader sees it: each key the view does not set takes Settings' value. A Settings value that is the
@@ -37,8 +44,8 @@ export const settingsValue = (key: DefaultedKey, defaults: FolderPagesSettings):
 export function withDefaults(view: ViewDef, defaults: FolderPagesSettings): ViewDef {
   let out: ViewDef | null = null
   for (const key of DEFAULTED_KEYS) {
-    const value = settingsValue(key, defaults)
-    if (view[key] !== undefined || value === settingsValue(key, DEFAULT_FOLDER_PAGES)) continue
+    const value = settingsValue(key, defaults, view)
+    if (view[key] !== undefined || value === settingsValue(key, DEFAULT_FOLDER_PAGES, view)) continue
     out ??= { ...view }
     ;(out as Record<string, unknown>)[key] = value
   }
@@ -47,7 +54,7 @@ export function withDefaults(view: ViewDef, defaults: FolderPagesSettings): View
 
 /** A menu's choice for `key`: the view's own value, or no key when it equals Settings. */
 export function chooseOwn<K extends DefaultedKey>(view: ViewDef, key: K, value: NonNullable<ViewDef[K]>, defaults: FolderPagesSettings): void {
-  if (value === settingsValue(key, defaults)) delete view[key]
+  if (value === settingsValue(key, defaults, view)) delete view[key]
   else view[key] = value
 }
 

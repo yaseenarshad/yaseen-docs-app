@@ -105,7 +105,9 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('rowNumbers', 'Row numbers', ON_OFF_OPTIONS, { keywords: ['row numbers', 'gutter', '#'] }),
         row('textInCells', 'Text in cells', TEXT_IN_CELLS_OPTIONS, { hint: 'By kind: lists, links and selects wrap; text, numbers and dates are one line. A column can say otherwise.', keywords: ['wrap', 'clip', 'cells', 'text'] }),
         row('groupIndent', 'Group indent', GROUP_INDENT_OPTIONS, { keywords: ['group', 'indent', 'nested'] }),
-        row('showEmptyGroups', 'Show empty groups', ON_OFF_OPTIONS, { hint: 'The options of the grouping column that no note has yet.', keywords: ['empty', 'groups', 'columns'] }),
+        // Two switches, not one (YAZ-4608 C2): a Table's empty groups and a Board's empty columns are separate things.
+        row('showEmptyGroups', 'Show empty groups', ON_OFF_OPTIONS, { hint: 'In a table: the options of the grouping column that no note has yet.', keywords: ['empty', 'groups', 'table'] }),
+        row('showEmptyColumns', 'Show empty columns', ON_OFF_OPTIONS, { hint: 'On a board: a column for each option that no note has yet.', keywords: ['empty', 'columns', 'board'] }),
         row('subfolders', 'Subfolders', SUBFOLDERS_OPTIONS, { keywords: ['subfolders', 'rows', 'hide'] }),
         row('foldersFirst', 'Folders first', ON_OFF_OPTIONS, { hint: 'Subfolder rows before the notes.', keywords: ['folders', 'first', 'sort'] }),
         row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week'] }),

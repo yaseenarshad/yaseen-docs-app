@@ -469,6 +469,7 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   textInCells: oneOf(FOLDER_PAGE_CHOICES.textInCells),
   groupIndent: oneOf(FOLDER_PAGE_CHOICES.groupIndent),
   showEmptyGroups: isBool,
+  showEmptyColumns: isBool,
   subfolders: oneOf(FOLDER_PAGE_CHOICES.subfolders),
   foldersFirst: isBool,
   calendarScale: oneOf(FOLDER_PAGE_CHOICES.calendarScale),
@@ -483,7 +484,10 @@ const isFolderPages = (v: unknown): v is FolderPagesSettings => isRecord(v) && F
 /** The Folder pages settings on load: each valid part is kept, a missing or broken one is its default (a file from before a part existed). */
 export function sanitizeFolderPages(raw: unknown): FolderPagesSettings {
   const src = isRecord(raw) ? raw : {}
-  return Object.fromEntries(FOLDER_PAGES_PARTS.map((part) => [part, FOLDER_PAGES_PART_OK[part](src[part]) ? src[part] : DEFAULT_FOLDER_PAGES[part]])) as unknown as FolderPagesSettings
+  const out = Object.fromEntries(FOLDER_PAGES_PARTS.map((part) => [part, FOLDER_PAGES_PART_OK[part](src[part]) ? src[part] : DEFAULT_FOLDER_PAGES[part]])) as unknown as FolderPagesSettings
+  // One "Show empty groups" fed the Board and the Table before the split (YAZ-4608 C2): a file without the Board's part starts it from the one it has.
+  if (!isBool(src.showEmptyColumns) && isBool(src.showEmptyGroups)) out.showEmptyColumns = src.showEmptyGroups
+  return out
 }
 
 /**

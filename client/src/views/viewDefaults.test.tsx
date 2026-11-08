@@ -126,6 +126,21 @@ describe('withDefaults and chooseOwn (YAZ-4585)', () => {
     expect(view).toEqual({ type: 'table', name: 'T', rowHeight: 'medium' })
   })
 
+  it('C2 (YAZ-4608): a Table’s showEmptyColumns reads "Show empty groups", a Board’s reads "Show empty columns"', () => {
+    const table: ViewDef = { type: 'table', name: 'T' }
+    const board: ViewDef = { type: 'board', name: 'B' }
+    expect(withDefaults(table, fp({ showEmptyGroups: true })).showEmptyColumns).toBe(true)
+    expect(withDefaults(board, fp({ showEmptyGroups: true }))).toBe(board)
+    expect(withDefaults(board, fp({ showEmptyColumns: true })).showEmptyColumns).toBe(true)
+    expect(withDefaults(table, fp({ showEmptyColumns: true }))).toBe(table)
+    // A choice equal to the part the view reads removes the key; the other part does not count.
+    const b: ViewDef = { type: 'board', name: 'B', showEmptyColumns: true }
+    chooseOwn(b, 'showEmptyColumns', true, fp({ showEmptyColumns: true, showEmptyGroups: false }))
+    expect(b).not.toHaveProperty('showEmptyColumns')
+    chooseOwn(b, 'showEmptyColumns', true, fp({ showEmptyGroups: true }))
+    expect(b.showEmptyColumns).toBe(true)
+  })
+
   it('a choice equal to Settings removes the key; any other is written, the built-in value too', () => {
     const v: ViewDef = { type: 'table', name: 'T', groupIndent: 'large' }
     chooseOwn(v, 'groupIndent', 'medium', DEFAULT_FOLDER_PAGES)
@@ -304,6 +319,19 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
     const empty = q<HTMLInputElement>(el, '.view-popover--properties .property-board-setting input')
     expect(empty.checked).toBe(true)
     click(empty)
+    expect(yaml()).toContain('showEmptyColumns: false')
+    act(() => root?.unmount())
+    // A Board reads Settings' "Show empty columns", not "Show empty groups" (YAZ-4608 C2).
+    ;({ el, yaml } = mount('views:\n  - type: board\n    name: B\n    groupBy:\n      property: note.status\n', { folderPages: fp({ showEmptyGroups: true }) }))
+    openView(el)
+    const board = () => q<HTMLInputElement>(el, '.view-popover--properties .property-board-setting input')
+    expect(board().closest('label')?.textContent).toContain('Show empty columns')
+    expect(board().checked).toBe(false)
+    act(() => root?.unmount())
+    ;({ el, yaml } = mount('views:\n  - type: board\n    name: B\n    groupBy:\n      property: note.status\n', { folderPages: fp({ showEmptyColumns: true }) }))
+    openView(el)
+    expect(board().checked).toBe(true)
+    click(board())
     expect(yaml()).toContain('showEmptyColumns: false')
     act(() => root?.unmount())
     ;({ el, yaml } = mount(CALENDAR(), { folderPages: fp({ cardTitles: 'wrap' }) }))

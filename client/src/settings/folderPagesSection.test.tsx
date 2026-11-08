@@ -54,6 +54,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
       ['textInCells', 'Clip', { textInCells: 'clip' }],
       ['groupIndent', 'Large', { groupIndent: 'large' }],
       ['showEmptyGroups', 'On', { showEmptyGroups: true }],
+      ['showEmptyColumns', 'On', { showEmptyColumns: true }], // its own switch (YAZ-4608 C2)
       ['subfolders', 'Both', { subfolders: 'both' }],
       ['foldersFirst', 'Off', { foldersFirst: false }],
       ['calendarScale', 'Week', { calendarScale: 'week' }],
@@ -78,6 +79,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     expect(pressed('folderPages.textInCells')).toBe('By kind')
     expect(pressed('folderPages.groupIndent')).toBe('Medium')
     expect(pressed('folderPages.showEmptyGroups')).toBe('Off')
+    expect(pressed('folderPages.showEmptyColumns')).toBe('Off')
     expect(pressed('folderPages.subfolders')).toBe('Their notes')
     expect(pressed('folderPages.foldersFirst')).toBe('On')
     expect(pressed('folderPages.calendarScale')).toBe('Month')
