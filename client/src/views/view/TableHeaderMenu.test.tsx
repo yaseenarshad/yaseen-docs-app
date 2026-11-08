@@ -13,6 +13,7 @@ import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import { deleteColumnMessage } from './ConfirmDeleteColumn'
 import { insertAfter } from './TableHeaderMenu'
+import viewsCss from '../views.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -399,6 +400,22 @@ describe('freeze, sort and group from the header (YAZ-4534)', () => {
     expect(bodyRow.querySelectorAll('.view-table__frozen-end')).toHaveLength(1)
     expect(ends('.view-table tfoot td:not(.view-table__gutter)')).toEqual([false, true, false])
     expect(el.querySelectorAll('tbody .view-table__frozen-end').length).toBe(el.querySelectorAll('tbody tr:has(td[data-cell])').length)
+  })
+
+  it('the freeze line CSS: 3px in the line colour that does not widen the column — a 1px border and a 2px strip inside it (YAZ-4534 polish)', () => {
+    const rule = (selector: string) => new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(viewsCss)?.[1] ?? ''
+    const end = rule('.view-table .view-table__frozen-end')
+    expect(end).not.toMatch(/border-right-width/)
+    expect(end).toMatch(/border-right-color:\s*color-mix\(in srgb, var\(--border\) 60%, var\(--fg\) 40%\)/)
+    const strip = rule('.view-table .view-table__frozen-end::after')
+    expect(strip).toMatch(/content:\s*''/)
+    expect(strip).toMatch(/position:\s*absolute/)
+    expect(strip).toMatch(/right:\s*0/)
+    expect(strip).toMatch(/width:\s*2px/)
+    expect(strip).toMatch(/background:\s*color-mix\(in srgb, var\(--border\) 60%, var\(--fg\) 40%\)/)
+    expect(strip).toMatch(/pointer-events:\s*none/)
+    // The strip's box is the cell: every frozen cell — header, body and summary — is sticky.
+    expect(rule('.view-table .view-table__frozen')).toMatch(/position:\s*sticky/)
   })
 
   it('no frozen columns → no freeze line', () => {

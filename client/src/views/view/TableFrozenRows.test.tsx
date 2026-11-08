@@ -238,7 +238,7 @@ describe('the frozen lines’ place and look (YAZ-4537)', () => {
     expect(rect.mock.calls.length).toBe(reads)
   })
 
-  it('the CSS: sticky under the header by line, the header’s translate, z-index 2, opaque cells, a 3px line at the end', () => {
+  it('the CSS: sticky under the header by line, the header’s translate, z-index 2, opaque cells, a 3px line at the end that adds no height', () => {
     const rule = (selector: string) => new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(viewsCss)?.[1] ?? ''
     const row = rule('.view-table tbody tr.view-table__row--frozen')
     expect(row).toMatch(/position:\s*relative/)
@@ -248,8 +248,17 @@ describe('the frozen lines’ place and look (YAZ-4537)', () => {
     expect(cell).toMatch(/position:\s*sticky/)
     expect(cell).toMatch(/top:\s*calc\(var\(--view-table-head-h, 0px\) \+ var\(--view-frozen-i, 0\) \* var\(--view-table-row-h, 28px\)\)/)
     expect(rule('.view-table__row--frozen > td')).toMatch(/background-color:\s*var\(--bg\)/)
+    // The 3px line is the cell's 1px border in the line's colour and a 2px strip inside it (YAZ-4534 polish): a 3px
+    // border made the last frozen line 2px taller than the row height windowing counts on.
     const end = rule('.view-table tbody tr.view-table__row--frozen-end > td')
-    expect(end).toMatch(/border-bottom-width:\s*3px/)
+    expect(end).not.toMatch(/border-bottom-width/)
     expect(end).toMatch(/border-bottom-color:\s*color-mix\(in srgb, var\(--border\) 60%, var\(--fg\) 40%\)/)
+    const strip = rule('.view-table tbody tr.view-table__row--frozen-end > td::before')
+    expect(strip).toMatch(/content:\s*''/)
+    expect(strip).toMatch(/position:\s*absolute/)
+    expect(strip).toMatch(/bottom:\s*0/)
+    expect(strip).toMatch(/height:\s*2px/)
+    expect(strip).toMatch(/background:\s*color-mix\(in srgb, var\(--border\) 60%, var\(--fg\) 40%\)/)
+    expect(strip).toMatch(/pointer-events:\s*none/)
   })
 })

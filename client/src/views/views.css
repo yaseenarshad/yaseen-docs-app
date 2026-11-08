@@ -836,10 +836,22 @@
   margin: 4px 6px 2px;
 }
 
-/* The freeze line (YAZ-4534): where the frozen columns end, the table block's 3px line. */
+/* The freeze line (YAZ-4534): where the frozen columns end, the table block's 3px line. The cell keeps its 1px
+   border, in the line's colour, and a 2px strip inside that border adds the rest: a 3px border made the column 2px
+   wider. Every frozen cell is sticky, so the strip is placed in the cell. */
 .view-table .view-table__frozen-end {
-  border-right-width: 3px;
   border-right-color: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+}
+
+.view-table .view-table__frozen-end::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  background: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+  pointer-events: none;
 }
 
 /* Frozen rows (YAZ-4537, D9b / S4): the lines from the top through the Nth data row stay under the header. For the
@@ -863,10 +875,23 @@
   background-color: var(--bg);
 }
 
-/* The freeze line under the last frozen line: the column freeze line's 3px and colour (YAZ-4534). */
+/* The freeze line under the last frozen line: the column freeze line's 3px and colour (YAZ-4534), drawn the same
+   way: the 1px border in the line's colour and a 2px strip inside it. A 3px border made that line 2px taller, and
+   windowing needs every line at exactly one row height. Each cell of a frozen line is sticky. `::before`, because a
+   last frozen column's cell has the column line in its `::after`. */
 .view-table tbody tr.view-table__row--frozen-end > td {
-  border-bottom-width: 3px;
   border-bottom-color: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+}
+
+.view-table tbody tr.view-table__row--frozen-end > td::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+  pointer-events: none;
 }
 
 /* The `#` gutter (YAZ-1513): the always-first, always-sticky column, pinned like a frozen cell at
