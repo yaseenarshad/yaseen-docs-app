@@ -167,8 +167,8 @@ export async function resolveRebase(bin: string, root: string, span: RebaseSpan)
     for (;;) {
       const conflicted = [...new Set(zList(await git(bin, root, ['ls-files', '-z', '--unmerged'])).map((line) => line.slice(line.indexOf('\t') + 1)))]
       if (conflicted.length === 0) return null // stopped for something that is not a conflict
-      // YAZ-3028 D4/D12: a note (or any file sync does not merge) stops the pass as it always did —
-      // checked BEFORE anything is written, so the abort has nothing of ours to undo.
+      // YAZ-3028 D12: a file sync does not merge stops the pass as it always did — checked BEFORE
+      // anything is written, so the abort has nothing of ours to undo. (A note settles: YAZ-4615 D4, D9.)
       if (!conflicted.every(settles)) return null
       for (const rel of conflicted) {
         const settled = await settle(bin, root, rel, copies, () => authorOf(bin, root, span, rel))
@@ -229,7 +229,9 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   if (isMarkdown(rel)) {
     // YAZ-4615 D4, D9: comments by id; the rest kept both ways when both sides changed it.
     const merged = mergeNoteComments(base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8'))
-    if (merged === null) return null
+    // Comments that are not ours to read (a value of the user's own, a block that does not parse):
+    // the whole note is kept both ways, as a board is (D9 — one note never stops the vault's sync).
+    if (merged === null) return keepBoth(root, rel, theirs, mine, copies, author)
     await atomicWrite(abs(root, rel), merged.text)
     const renumbered = merged.renumbered.length === 0 ? {} : { renumbered: merged.renumbered }
     if (merged.copy === undefined) return { staged: [rel], report: { path: rel, author: await author(), clashes: 0, kind: 'note', ...renumbered } }
@@ -245,15 +247,19 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   }
   // A list file that will not parse has no second copy to keep: it is the vault's config, not a board.
   if (!isBoard(rel)) return null
-  // D3: keep both. The remote's at the path (it is already everywhere else); ours beside it.
+  return keepBoth(root, rel, theirs, mine, copies, author)
+}
+
+/** D3: keep both. The remote's at the path (it is already everywhere else); ours beside it. */
+async function keepBoth(root: string, rel: string, theirs: Buffer, mine: Buffer, copies: Map<string, string>, author: () => Promise<string>): Promise<Settled> {
   const copy = copies.get(rel) ?? freeCopyName(root, rel)
   copies.set(rel, copy)
   await atomicWrite(abs(root, rel), theirs)
   await atomicWrite(abs(root, copy), mine)
-  return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy } }
+  return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...(isMarkdown(rel) ? { kind: 'note' as const } : {}) } }
 }
 
-/** Whether sync may settle a conflict on `rel` at all (YAZ-3028 D4): a board, or one of the per-entry list files. Never a note. */
+/** Whether sync may settle a conflict on `rel` at all: a board, a note (YAZ-4615 D4, D9), or one of the per-entry list files. */
 const settles = (rel: string): boolean =>
   isBoard(rel) || isMarkdown(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH || rel === PEOPLE_PATH
 
@@ -276,7 +282,8 @@ function mergeText(rel: string, base: string | null, theirs: string, mine: strin
 function freeCopyName(root: string, rel: string): string {
   const dir = path.posix.dirname(rel)
   const ext = path.posix.extname(rel)
-  const stem = path.posix.basename(rel, ext)
+  // A hidden settings file (`.folder.md`, `.template.md`) gets a copy the sidebar shows: `folder (conflict, …).md`.
+  const stem = path.posix.basename(rel, ext).replace(/^\.+/, '')
   const now = new Date()
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   for (let n = 1; ; n += 1) {

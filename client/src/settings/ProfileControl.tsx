@@ -2,8 +2,11 @@
  * Settings › General › You (YAZ-4615 D1, D7): who you are on a comment — a picture, your name, and
  * the handle your comments carry in `by`. Null until a name is set: then the app signs nothing.
  *
- * The handle follows the name until you edit it yourself. The picture is cropped to a square and
- * scaled to 96 px WebP here, so the profile (and the vault's people file) stays a few KB.
+ * The handle follows the name only until a profile is saved, or until you type one yourself: your
+ * comments carry it, so a rename must never change it. Names and handles are saved when you leave
+ * the field or press Enter, not on each key (each save rewrites your card in every open vault); a
+ * picture is saved when it is chosen. The picture is cropped to a square and scaled to 96 px WebP
+ * here, so the profile (and the vault's people file) stays a few KB.
  */
 import { useEffect, useRef, useState } from 'react'
 import { handleFromName, HANDLE_RE, isCommentProfile, PROFILE_PICTURE_MAX, type CommentProfile, type SettingsState } from '@shared/types'
@@ -38,7 +41,7 @@ interface Draft {
 }
 
 const draftOf = (p: CommentProfile | null): Draft =>
-  p === null ? { name: '', handle: '', ownHandle: false, picture: null } : { name: p.name, handle: p.handle, ownHandle: p.handle !== handleFromName(p.name), picture: p.picture }
+  p === null ? { name: '', handle: '', ownHandle: false, picture: null } : { name: p.name, handle: p.handle, ownHandle: true, picture: p.picture }
 
 /** The profile a draft stands for: null when there is no name, unchanged (undefined) while it is not valid yet. */
 function profileOf(d: Draft): CommentProfile | null | undefined {
@@ -48,7 +51,13 @@ function profileOf(d: Draft): CommentProfile | null | undefined {
 }
 
 export function ProfileControl({ settings, onChange }: { settings: SettingsState; onChange: (next: SettingsState) => void }) {
-  const [draft, setDraft] = useState<Draft>(() => draftOf(settings.profile))
+  const [draft, setDraftState] = useState<Draft>(() => draftOf(settings.profile))
+  // The latest draft, for a save that lands after more typing (a picture still encoding).
+  const latest = useRef(draft)
+  const setDraft = (d: Draft): void => {
+    latest.current = d
+    setDraftState(d)
+  }
   const [error, setError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   // Another window (or Mac, through the settings folder) changed it: follow.
@@ -60,7 +69,7 @@ export function ProfileControl({ settings, onChange }: { settings: SettingsState
     setDraft(draftOf(settings.profile))
   }, [stored, settings.profile])
 
-  const commit = (d: Draft): void => {
+  const save = (d: Draft = latest.current): void => {
     setDraft(d)
     const next = profileOf(d)
     if (next === undefined) return
@@ -82,7 +91,7 @@ export function ProfileControl({ settings, onChange }: { settings: SettingsState
             {draft.picture === null ? 'Choose picture…' : 'Change picture…'}
           </button>
           {draft.picture !== null && (
-            <button type="button" className="btn" onClick={() => commit({ ...draft, picture: null })}>
+            <button type="button" className="btn" onClick={() => save({ ...latest.current, picture: null })}>
               Remove
             </button>
           )}
@@ -100,7 +109,7 @@ export function ProfileControl({ settings, onChange }: { settings: SettingsState
             pictureFrom(file).then(
               (picture) => {
                 setError(null)
-                commit({ ...draft, picture })
+                save({ ...latest.current, picture })
               },
               () => setError("Can't use that picture. Try a PNG or JPEG."),
             )
@@ -116,8 +125,10 @@ export function ProfileControl({ settings, onChange }: { settings: SettingsState
           maxLength={80}
           onChange={(e) => {
             const name = e.currentTarget.value
-            commit({ ...draft, name, handle: draft.ownHandle ? draft.handle : handleFromName(name) })
+            setDraft({ ...draft, name, handle: draft.ownHandle ? draft.handle : handleFromName(name) })
           }}
+          onBlur={() => save()}
+          onKeyDown={(e) => e.key === 'Enter' && save()}
         />
       </label>
       <label className="profile-control__field">
@@ -128,7 +139,9 @@ export function ProfileControl({ settings, onChange }: { settings: SettingsState
           placeholder="your-name"
           maxLength={32}
           aria-invalid={badHandle}
-          onChange={(e) => commit({ ...draft, handle: e.currentTarget.value.toLowerCase(), ownHandle: true })}
+          onChange={(e) => setDraft({ ...draft, handle: e.currentTarget.value.toLowerCase(), ownHandle: true })}
+          onBlur={() => save()}
+          onKeyDown={(e) => e.key === 'Enter' && save()}
         />
       </label>
       {badHandle && <p className="profile-control__error">Use lowercase letters, numbers and single hyphens.</p>}

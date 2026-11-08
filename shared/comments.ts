@@ -1,12 +1,13 @@
-import { COMMENTS_HINT, parseFrontmatter, setFrontmatterProperty, splitFrontmatter, withCommentsHint } from './frontmatter'
+import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 import { textFingerprint } from './reviews'
 
 /**
  * Comments per page (YAZ-1472): a note's comment stream lives ON the note, under the reserved
  * frontmatter key `comments` — a FLAT list of maps (🔒 D1/D2). A reply carries `reply_to: <id>`
  * and a thread is ONE level deep: a reply to a reply is filed under the top-level parent. Who
- * wrote it is whatever the writer declared in `by` (🔒 D3 — the app declares nothing for the
- * person at the keyboard; an agent writes `by: agent`). Pure: no React, no fs. The block writes through
+ * wrote it is the writer's handle in `by` (YAZ-4615 D2: the app signs with your profile's handle,
+ * and writes none without a profile; an agent writes its `--by`, `agent` by default). A comment
+ * can be resolved (`resolved`, `resolved_by`, D3). Pure: no React, no fs. The block writes through
  * `transformFile`, the index drops the key from `properties` (🔒 D5), the Properties panel chips
  * it "Reserved" (🔒 D6).
  *
@@ -44,8 +45,8 @@ export interface PageComment {
   /** YAZ-4615 D3: the handle that resolved it, when the resolver had a profile. */
   resolved_by?: string
   /**
-   * Who left it, declared by the WRITER — the app writes none for the person at the keyboard; an
-   * agent editing the file writes `by: agent`. Never inferred: a file carries no authorship.
+   * Who left it: the writer's handle (YAZ-4615 D2) — your profile's when the app writes it, none
+   * without a profile, `agent` (or the `--by`) from the command. The vault's people file names it.
    */
   by?: string
   [extra: string]: unknown
@@ -160,6 +161,15 @@ export function readComments(content: string): PageComment[] {
   return typed(rawList(content).list)
 }
 
+/** Both at once, from ONE parse (YAZ-4615 item 12): what the block reads on each content change. */
+export function readCommentsAndShape(content: string): { shape: CommentsShape; comments: PageComment[] } {
+  const { shape, list } = rawList(content)
+  return { shape, comments: typed(list) }
+}
+
+/** The list exactly as the bytes hold it (sync's merge asks which numbers a writer really saw). */
+export const rawComments = (content: string): readonly unknown[] => rawList(content).list
+
 export function newCommentId(): string {
   // shared/ compiles against the bare ES2022 lib, so Web Crypto (Chromium and Node alike) is reached through globalThis.
   return (globalThis as unknown as { crypto: { randomUUID(): string } }).crypto.randomUUID().slice(0, 8)
@@ -225,20 +235,20 @@ function writable(content: string): readonly unknown[] {
   if (derived.size === 0) return list
   let out: unknown[] = [...list]
   for (const [i, id] of [...derived].sort((a, b) => a[0] - b[0])) {
-    const { id: _id, n: _n, ...rest } = out[i] as Record<string, unknown>
+    const { id: _id, n: own, ...rest } = out[i] as Record<string, unknown>
     const replyTo = isString(rest.reply_to) ? rest.reply_to : undefined
-    out = out.map((e, j) => (j === i ? { id, n: nextNumber(out.filter((_, k) => k !== i), replyTo), ...rest } : e))
+    const others = out.filter((_, k) => k !== i)
+    // A number the writer gave is kept unless another comment of its run already wears it.
+    const clash = typeof own !== 'number' || typed(others).some((c) => c.reply_to === replyTo && c.n === own)
+    out = out.map((e, j) => (j === i ? { id, n: clash ? nextNumber(others, replyTo) : own, ...rest } : e))
   }
   return out
 }
 
 /** An emptied list deletes the KEY (🔒 D7): no `comments: []` is ever left behind. */
 function write(content: string, list: readonly unknown[]): string {
-  const next = setFrontmatterProperty(content, COMMENTS_KEY, list.length === 0 ? undefined : list)
-  // YAZ-4615 D10: the hint outlives a comment write. yaml drops a block's only comment once its last
-  // key goes, and parts it from a first key with a blank line; put it back where it stood.
-  if (!splitFrontmatter(content).frontmatter.includes(COMMENTS_HINT)) return next
-  return withCommentsHint(next.replace(`${COMMENTS_HINT}\n\n`, `${COMMENTS_HINT}\n`).replace(/^---\r?\n---\r?\n/, ''))
+  // The hint line (YAZ-4615 D10) is kept by the writer itself, `setFrontmatterIn`.
+  return setFrontmatterProperty(content, COMMENTS_KEY, list.length === 0 ? undefined : list)
 }
 
 /** A title is a key only when it says something: blank means none, and none is written as nothing. */
@@ -256,7 +266,7 @@ export function addComment(content: string, body: string, entry: { id: string; a
   const list = writable(content)
   const text = body.trimEnd()
   const title = titleKey(entry.title)
-  // `by` is the writer's declaration (🔒 D3): the UI passes none, the `yaseendocs` command passes its caller's (YAZ-1617).
+  // `by` is the writer's handle (YAZ-4615 D2): the UI passes your profile's, the `yaseendocs` command its caller's --by.
   const by = entry.by === undefined ? {} : { by: entry.by }
   if (entry.replyTo === undefined) return write(content, [...list, { id: entry.id, n: nextNumber(list, undefined), at: entry.at, ...by, ...title, body: text }])
   const index = threading(typed(list))
@@ -326,17 +336,6 @@ export const ownedBy = (comment: Pick<PageComment, 'by'>, by: string): boolean =
   return mine !== '' && typeof comment.by === 'string' && comment.by.trim() === mine
 }
 
-/**
- * For sync's merge (`shared/commentMerge.ts`, YAZ-4615 D4): the list as a write would see it — hand
- * entries given their ids and numbers — or the refusal for `foreign` / `invalid` bytes.
- */
-export const writableComments = (content: string): readonly unknown[] => writable(content)
-
-/** For sync's merge: `content` with `list` as its comments, through the one writer (D7's empty-list rule and D10's hint kept). */
-export const withComments = (content: string, list: readonly unknown[]): string => write(content, list)
-
-/** For sync's merge: whether a raw entry is one the writers act on by id. */
-export const isIdComment = (entry: unknown): entry is PageComment => isComment(entry)
-
-/** For sync's merge: one past the highest number in a run, over a raw list. */
-export const nextCommentNumber = (list: readonly unknown[], replyTo: string | undefined): number => nextNumber(list, replyTo)
+// For sync's merge (`shared/commentMerge.ts`, YAZ-4615 D4): the list as a write sees it (hand entries
+// numbered), the one writer, the by-id test and the run's next number.
+export { writable as writableComments, write as withComments, isComment as isIdComment, nextNumber as nextCommentNumber }

@@ -49,6 +49,14 @@ describe('mergeNoteComments', () => {
     expect(mergeNoteComments(note(one), note(one), note(one, 'Mine\n'))?.text).toContain('Mine\n')
   })
 
+  it('a plain note\'s hint line survives the merge, and a hand-written comment\'s new number is not announced (audit 1, 7)', () => {
+    const hinted = (entries: string) => `---\n# comments: - {by: <name>, body: <text>}\n${entries === '' ? '' : `comments:\n${entries}`}---\nBody\n`
+    const m = mergeNoteComments(hinted(''), hinted(e('b', 1, '2', 'Sam')), hinted('  - {by: claude, body: By hand}\n'))
+    expect(m?.text.startsWith('---\n# comments: - {by: <name>, body: <text>}\ncomments:\n')).toBe(true)
+    expect(m?.renumbered).toEqual([])
+    expect(readComments(m?.text ?? '').map((c) => c.body)).toEqual(['Sam', 'By hand'])
+  })
+
   it('a value of the user\'s own under `comments`, or a block that does not parse, is not ours: null', () => {
     expect(mergeNoteComments(null, '---\ncomments: "mine"\n---\n', note(one))).toBeNull()
     expect(mergeNoteComments(null, note(one), '---\ncomments: [unclosed\n---\n')).toBeNull()

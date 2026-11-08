@@ -376,6 +376,24 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect(a.read('note.md')).toBe('edited\n')
   })
 
+  it('YAZ-4615 D9 (audit 8): a note whose `comments` is a value of the user\'s own keeps both whole files, and sync goes on', async () => {
+    const { a, b } = await twoMachines({ 'odd.md': '---\ncomments: "my own"\n---\nx\n' })
+    await b.write('odd.md', '---\ncomments: "sam"\n---\nx\n')
+    await a.write('odd.md', '---\ncomments: "me"\n---\nx\n')
+    const status = await meet(a, b)
+    const copy = status.merged?.[0]?.copy ?? ''
+    expect(a.read('odd.md')).toBe('---\ncomments: "sam"\n---\nx\n')
+    expect(a.read(copy)).toBe('---\ncomments: "me"\n---\nx\n')
+  })
+
+  it('YAZ-4615 D9 (audit 9): a folder\'s hidden `.folder.md` gets a copy the sidebar shows', async () => {
+    const { a, b } = await twoMachines({ 'f/.folder.md': '---\ntitle: F\n---\nbase\n' })
+    await b.write('f/.folder.md', '---\ntitle: F\n---\nsam\n')
+    await a.write('f/.folder.md', '---\ntitle: F\n---\nme\n')
+    const status = await meet(a, b)
+    expect(status.merged?.[0]?.copy).toMatch(/^f\/folder \(conflict, .+\)\.md$/)
+  })
+
   it('YAZ-4615 D1: the people file merges card by card — the newer card wins', async () => {
     const card = (name: string, updated: string) => ({ name, picture: null, updated })
     const file = (people: Record<string, unknown>) => `${JSON.stringify({ version: 1, people }, null, 2)}\n`

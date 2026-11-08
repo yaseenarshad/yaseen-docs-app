@@ -7,7 +7,7 @@
  * updated when your profile changes. GitHub sync merges it card by card (`mergePeopleFile`): the
  * card with the newer `updated` wins. Pure: no fs, no React.
  */
-import type { CommentProfile } from './types'
+import { PROFILE_PICTURE_MAX, type CommentProfile } from './types'
 
 export const PEOPLE_FILE = 'people.json'
 
@@ -28,8 +28,10 @@ export const EMPTY_PEOPLE: PeopleConfig = { version: 1, people: {} }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-const isCard = (v: unknown): v is PersonCard =>
-  isRecord(v) && typeof v.name === 'string' && (v.picture === null || typeof v.picture === 'string') && typeof v.updated === 'string'
+/** A picture from a synced file is only a small data URL: never a remote address (a tracking pixel) nor megabytes. */
+const isPicture = (v: unknown): boolean => v === null || (typeof v === 'string' && v.startsWith('data:image/') && v.length <= PROFILE_PICTURE_MAX)
+
+const isCard = (v: unknown): v is PersonCard => isRecord(v) && typeof v.name === 'string' && isPicture(v.picture) && typeof v.updated === 'string'
 
 /** The file's value as the app reads it: cards that are not cards are dropped; anything that is not the shape is none. */
 export function parsePeople(value: unknown): PeopleConfig {

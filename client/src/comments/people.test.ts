@@ -12,6 +12,11 @@ describe('people file', () => {
     expect(parsePeople('nope')).toEqual(EMPTY_PEOPLE)
   })
 
+  it('a synced card\'s picture is only a small data URL: a remote address or a huge string is not a card (audit 13)', () => {
+    const people = { a: { name: 'A', picture: 'https://example.com/pixel.png', updated: 'x' }, b: { name: 'B', picture: `data:image/webp;base64,${'A'.repeat(70000)}`, updated: 'x' }, c: { name: 'C', picture: 'data:image/webp;base64,AAAA', updated: 'x' } }
+    expect(Object.keys(parsePeople({ version: 1, people }).people)).toEqual(['c'])
+  })
+
   it('withCard writes your card, and nothing when it already matches', () => {
     const me = { handle: 'yaseen', name: 'Yaseen', picture: null }
     const once = withCard(EMPTY_PEOPLE, me, 't1')

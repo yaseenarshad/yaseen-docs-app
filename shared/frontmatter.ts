@@ -148,8 +148,24 @@ export function setFrontmatterIn(content: string, path: readonly string[], value
     doc.setIn(path.slice(0, at + 1), set)
   }
 
-  const yaml = serializeInner(doc)
+  const yaml = keepHint(frontmatter, serializeInner(doc))
   return `---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
+}
+
+/**
+ * YAZ-4615 D10: the hint stays the block's first line through EVERY write — a comment, a property,
+ * a merge. yaml drops a block's only comment once its last key goes, and parts it from a first key
+ * with a blank line; this puts it back where it stood. A block that never had it is not touched.
+ */
+function keepHint(before: string, yaml: string): string {
+  const hadIt = before.replace(OPEN_FENCE_RE, '').split(/\r?\n/, 1)[0]?.trim() === COMMENTS_HINT
+  if (!hadIt) return yaml
+  const rest = yaml.split('\n')
+  const at = rest.findIndex((line) => line.trim() === COMMENTS_HINT)
+  if (at !== -1) rest.splice(at, 1)
+  while (rest[0] === '') rest.shift()
+  const tail = rest.join('\n')
+  return `${COMMENTS_HINT}\n${tail}`
 }
 
 /**

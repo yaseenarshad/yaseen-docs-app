@@ -1196,16 +1196,22 @@ export function App() {
     () => ({ me: settings.profile, resolvedPlace: settings.commentsResolved, openProfile: openSettings }),
     [settings.profile, settings.commentsResolved, openSettings],
   )
-  // D1: a new name or picture reaches your card in each vault of the window that already has one; a
-  // vault opened later gets it on your next comment there. Runs on a change, not at every launch.
-  const cardFor = useRef(JSON.stringify(settings.profile))
+  // D1 rule 3: your card follows your profile in each vault of the window that already has one —
+  // after a change, and in a vault when it joins the window (it may hold an old card). Each vault is
+  // asked once for each version of the profile; a card that already matches writes nothing.
+  const carded = useRef(new Set<string>())
+  const rootsKey = roots.join('\n')
   useEffect(() => {
-    const text = JSON.stringify(settings.profile)
-    if (text === cardFor.current) return
-    cardFor.current = text
     const me = settings.profile
-    if (me !== null) for (const root of live.current.roots) void saveCard(root, me, true)
-  }, [settings.profile])
+    if (me === null) return
+    const version = JSON.stringify(me)
+    for (const root of rootsKey === '' ? [] : rootsKey.split('\n')) {
+      const key = `${root}\n${version}`
+      if (carded.current.has(key)) continue
+      carded.current.add(key)
+      void saveCard(root, me, true)
+    }
+  }, [settings.profile, rootsKey])
   // Settings › Daily notes › Open template (YAZ-3607 D6): the daily notes folder's hidden `.template.md`, in a tab. A
   // missing one is made empty first. The sidebar hides a "." file, so this is the way to it. Settings closes first.
   // The folder is the one the daily note uses: in the first vault of the window that holds it (`dailyNoteVault`).

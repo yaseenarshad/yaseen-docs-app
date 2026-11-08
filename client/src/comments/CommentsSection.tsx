@@ -28,18 +28,18 @@
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   addComment,
-  commentsShape,
   deleteComment,
   editComment,
   newCommentId,
   nowIso,
   readComments,
+  readCommentsAndShape,
   setResolved,
   threadsOf,
   type CommentThread,
   type PageComment,
 } from '@shared/comments'
-import type { PeopleConfig } from '@shared/people'
+import { cardMatches, type PeopleConfig } from '@shared/people'
 import type { CommentProfile, CommentsOrder, FileResponse } from '@shared/types'
 import { api } from '../api'
 import { relativeTime } from '../lib/relativeTime'
@@ -105,13 +105,17 @@ const NOTICE = {
 /** A declared `by` or `title` counts only when it says something. */
 const nonBlank = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null)
 
-/** D6: you by your profile (so your own row is right before the people file has your card), a teammate by their card, anyone else as a voice. */
+/**
+ * D6: you by your profile (so your own row is right before the people file has your card), a
+ * teammate by their card, `agent` as the violet "AI". Any other handle is a person whose card has
+ * not arrived (D1 rule 6): neutral initials, and no Edit (D8).
+ */
 function writerOf(by: string | null, me: CommentProfile | null, people: PeopleConfig): Writer {
   if (by === null) return { kind: 'none', name: '', picture: null }
   if (me !== null && by === me.handle) return { kind: 'me', name: me.name, picture: me.picture }
+  if (by === 'agent') return { kind: 'agent', name: by, picture: null }
   const card = people.people[by]
-  if (card !== undefined) return { kind: 'person', name: card.name, picture: card.picture }
-  return { kind: 'agent', name: by, picture: null }
+  return { kind: 'person', name: card?.name ?? by, picture: card?.picture ?? null }
 }
 
 /** The name a handle stands for, for "Resolved by …". */
@@ -192,7 +196,10 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
   }, [])
 
   // Item 12: the comment list is read ONCE for each content, not on every render (a fold, the clock).
-  const { shape, chronological } = useMemo(() => ({ shape: commentsShape(snap.content), chronological: threadsOf(readComments(snap.content)) }), [snap.content])
+  const { shape, chronological } = useMemo(() => {
+    const read = readCommentsAndShape(snap.content)
+    return { shape: read.shape, chronological: threadsOf(read.comments) }
+  }, [snap.content])
   // The model's order is by the ROOT's `at`; newest-first is that list read backwards. Replies stay oldest-first: a conversation reads down.
   const newest = order === 'newest'
   const threads = newest ? [...chronological].reverse() : chronological
@@ -232,7 +239,8 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
   const add = async (draft: Draft, replyTo?: string): Promise<boolean> => {
     // D2: signed with your handle when you have a profile; the first comment in a vault puts your card in its people file (D1).
     const ok = await write((fresh) => addComment(fresh, draft.body, { id: newCommentId(), at: nowIso(), replyTo, title: draft.title, by: me?.handle }))
-    if (ok && me !== null && root !== null) void saveCard(root, me)
+    // Only when the vault's card is not yours yet: no IPC read after every comment (audit 16).
+    if (ok && me !== null && root !== null && !cardMatches(people.people[me.handle], me)) void saveCard(root, me)
     return ok
   }
 
@@ -248,6 +256,8 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
     const ok = await write((fresh) => setResolved(fresh, comment.id, reopen ? null : nowIso(), me?.handle))
     if (!ok) return
     if (reopen) return clearUndo()
+    // In place nothing moves, so there is no place to hold (audit 17).
+    if (!bottom) return
     if (undoTimer.current !== null) clearTimeout(undoTimer.current)
     setJustResolved({ id: comment.id, label })
     undoTimer.current = setTimeout(() => setJustResolved(null), UNDO_MS)
@@ -354,7 +364,8 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
                 {doneOpen && doneReplies.map((reply) => item(reply, comment))}
               </>
             )}
-            {!inGroup && <Composer placeholder="Reply…" submitLabel="Reply" saving={saving} collapsible onSubmit={(draft) => add(draft, comment.id)} />}
+            {/* One rule (audit 19): a resolved thread takes no new reply — Reopen it first. */}
+            {!isResolved(comment) && <Composer placeholder="Reply…" submitLabel="Reply" saving={saving} collapsible onSubmit={(draft) => add(draft, comment.id)} />}
           </div>
         )}
         {!threaded && opened && (
@@ -552,7 +563,10 @@ function CommentItem({
           <span className="comments__writer">
             <Avatar name={writer.name} picture={writer.picture} tone={TONE[writer.kind]} />
             <span className="comments__name">{writer.name}</span>
-            {label !== null && <span className="comments__num">{label}</span>}
+            {/* A hand-written entry has no number until the next write (D10): a dot, as an unsigned one shows. */}
+            <span className="comments__num" title={label === null ? 'No number on this comment yet' : `Comment ${label}`}>
+              {label ?? '·'}
+            </span>
           </span>
         )}
         {/* The header text never moves: a title, or the body's first line — the whole comment when that is all there is. */}

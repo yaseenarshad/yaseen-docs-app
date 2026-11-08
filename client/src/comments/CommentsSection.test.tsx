@@ -639,7 +639,7 @@ describe('CommentsSection — numbers (🔒 D15)', () => {
 // ---------- by ----------
 
 describe('CommentsSection — by', () => {
-  it('YAZ-4615 D6: a declared writer with no card is a voice — its name and an "AI" circle lead the row, in the agent colour; without `by`, the number keeps the seat', () => {
+  it('YAZ-4615 D6: `by: agent` is the agent — its name and an "AI" circle lead the row, in the agent colour; without `by`, the number keeps the seat', () => {
     const el = mount(AGENT)
     const [plain, agent] = articles(el)
 
@@ -1053,6 +1053,9 @@ describe('CommentsSection — YAZ-4615 resolve, writers, signing', () => {
     expect(actionOf(sam, 'Edit')).toBeNull()
     expect(actionOf(sam, 'Delete')).not.toBeNull()
     expect(q(mine, '.comments__name')?.textContent).toBe('Yaseen')
-    for (const a of [mine, claude, old]) expect(actionOf(a, 'Edit')).not.toBeNull()
+    // A handle with no card is a person whose card has not arrived (D1 rule 6): neutral initials, no Edit (D8).
+    expect(q(claude, '.comments-avatar--person')?.textContent).toBe('CL')
+    expect(actionOf(claude, 'Edit')).toBeNull()
+    for (const a of [mine, old]) expect(actionOf(a, 'Edit')).not.toBeNull()
   })
 })

@@ -23,13 +23,15 @@ function mount(settings: SettingsState, onChange: (s: SettingsState) => void): H
   return host
 }
 
-function type(input: HTMLInputElement | null, value: string): void {
+/** Type, then leave the field: the control saves on blur (audit 2), never on each key. */
+function type(input: HTMLInputElement | null, value: string, leave = true): void {
   if (input === null) throw new Error('no input')
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
   act(() => {
     setter?.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))
   })
+  if (leave) act(() => void input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
 }
 
 const field = (el: HTMLElement, label: string) => [...el.querySelectorAll('label')].find((l) => l.textContent?.startsWith(label))?.querySelector('input') ?? null
@@ -43,6 +45,15 @@ describe('ProfileControl', () => {
     type(field(el, 'Handle'), 'yaz')
     type(field(el, 'Name'), 'Yaseen A')
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ profile: { handle: 'yaz', name: 'Yaseen A', picture: null } }))
+  })
+
+  it('nothing is saved while you type; a SAVED profile keeps its handle when you rename yourself', () => {
+    const onChange = vi.fn()
+    const el = mount({ ...DEFAULT_SETTINGS, profile: { handle: 'yaseen', name: 'Yaseen', picture: null } }, onChange)
+    type(field(el, 'Name'), 'Yaseen Arshad', false)
+    expect(onChange).not.toHaveBeenCalled()
+    act(() => void field(el, 'Name')?.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ profile: { handle: 'yaseen', name: 'Yaseen Arshad', picture: null } }))
   })
 
   it('a bad handle says how to fix it and saves nothing; an empty name stops signing (null)', () => {

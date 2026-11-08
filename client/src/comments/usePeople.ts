@@ -65,8 +65,11 @@ export async function saveCard(root: string, profile: CommentProfile, onlyIfTher
   try {
     const config = parsePeople(await api.vaultConfig.read(root, PEOPLE_FILE))
     if (onlyIfThere && config.people[profile.handle] === undefined) return
-    const next = withCard(config, profile, nowIso())
-    if (next !== null) await api.vaultConfig.write(root, PEOPLE_FILE, next)
+    if (withCard(config, profile, nowIso()) === null) return
+    // Read once more right before the write and build on THAT: a sync pull that landed meanwhile
+    // keeps a teammate's new card (audit 22). The door has no compare-and-set; this narrows the gap.
+    const fresh = withCard(parsePeople(await api.vaultConfig.read(root, PEOPLE_FILE)), profile, nowIso())
+    if (fresh !== null) await api.vaultConfig.write(root, PEOPLE_FILE, fresh)
   } catch {
     // INVALID_CONFIG (a hand edit, a file half synced) or a vault that went away: leave it.
   }

@@ -18,7 +18,7 @@
  * Null only when a version's comments are not ours to write (`foreign` / `invalid` bytes): the pass
  * then stops as it always did.
  */
-import { COMMENTS_KEY, commentsShape, isIdComment, nextCommentNumber, withComments, writableComments } from './comments'
+import { COMMENTS_KEY, commentsShape, isIdComment, nextCommentNumber, rawComments, withComments, writableComments } from './comments'
 import { setFrontmatterProperty } from './frontmatter'
 
 export interface Renumbered {
@@ -75,7 +75,7 @@ const label = (list: readonly unknown[], e: Entry, n: number): string => {
 }
 
 export function mergeNoteComments(base: string | null, theirs: string, mine: string): NoteMerge | null {
-  if (!ours(theirs) || !ours(mine) || (base !== null && !ours(base))) return null
+  if (!ours(theirs) || !ours(mine) || (base !== null && !ours(base))) return null // resolve.ts keeps both whole files (D9)
   const [b, t, m] = [base === null ? new Map<string, unknown>() : keyed(writableComments(base)), keyed(writableComments(theirs)), keyed(writableComments(mine))]
 
   // Theirs' order first (it is already everywhere else), then what only I have, in my order.
@@ -100,7 +100,9 @@ export function mergeNoteComments(base: string | null, theirs: string, mine: str
     if (was === undefined) mineOnly.add(k)
   }
 
-  // A clashing number goes to my new comment: the next free one in its run.
+  // A clashing number goes to my new comment: the next free one in its run. The notice names only a
+  // number that was in my bytes — one the merge's own numbering gave a hand-written entry nobody saw.
+  const seen = new Set(rawComments(mine).filter((x) => isIdComment(x) && typeof x.n === 'number').map((x) => (x as Entry).id))
   const renumbered: Renumbered[] = []
   for (let i = 0; i < list.length; i++) {
     const e = list[i]
@@ -108,7 +110,7 @@ export function mergeNoteComments(base: string | null, theirs: string, mine: str
     const run = (x: unknown) => isIdComment(x) && x !== e && (x.reply_to ?? undefined) === (e.reply_to ?? undefined)
     if (!list.some((x) => run(x) && (x as Entry).n === e.n)) continue
     const n = nextCommentNumber(list.filter((x) => x !== e), e.reply_to)
-    renumbered.push({ from: label(list, e, e.n), to: label(list, e, n) })
+    if (seen.has(e.id)) renumbered.push({ from: label(list, e, e.n), to: label(list, e, n) })
     list[i] = { ...e, n }
   }
 

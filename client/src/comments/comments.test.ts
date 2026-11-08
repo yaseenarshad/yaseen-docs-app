@@ -21,7 +21,7 @@ import {
   threadsOf,
   type PageComment,
 } from '@shared/comments'
-import { COMMENTS_HINT, withCommentsHint } from '@shared/frontmatter'
+import { COMMENTS_HINT, setFrontmatterProperty, withCommentsHint } from '@shared/frontmatter'
 
 /** The schema from the brief, verbatim — the round-trip target. */
 const NOTE = `---
@@ -403,6 +403,21 @@ describe('YAZ-4615: resolve, ownership, hand-written entries, the hint', () => {
     expect(after.find((c) => c.id === 'b')?.n).toBe(6)
     // An edit through the derived id lands on the hand-written entry.
     expect(readComments(editComment(hand, mine.id, 'Done', at(3), '')).find((c) => c.id === mine.id)?.body).toBe('Done')
+  })
+
+  it('D10: a hand-written number is kept unless it clashes in its run (audit 6)', () => {
+    const kept = readComments(addComment(`---\ncomments:\n  - {by: claude, n: 7, body: Seven}\n---\n`, 'B', { id: 'b', at: at(2) }))
+    expect(kept.find((c) => c.id === 'b')?.n).toBe(8)
+    expect(kept.find((c) => c.body === 'Seven')?.n).toBe(7)
+    const clash = readComments(addComment(`---\ncomments:\n  - {id: a, n: 1, at: "${at(1)}", body: A}\n  - {by: claude, n: 1, body: Also one}\n---\n`, 'B', { id: 'b', at: at(2) }))
+    expect(clash.find((c) => c.body === 'Also one')?.n).toBe(2)
+  })
+
+  it('D10: the hint stays first through a PROPERTY write too — add, and remove the last key (audit 1)', () => {
+    const plain = withCommentsHint('# Hello\n')
+    const withProp = setFrontmatterProperty(plain, 'status', 'draft')
+    expect(withProp).toBe(`---\n${COMMENTS_HINT}\nstatus: draft\n---\n# Hello\n`)
+    expect(setFrontmatterProperty(withProp, 'status', undefined)).toBe(plain)
   })
 
   it('D10: the hint at the top of the block outlives every comment write, the last delete included', () => {
