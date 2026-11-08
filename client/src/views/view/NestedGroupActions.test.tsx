@@ -142,6 +142,8 @@ async function flush(): Promise<void> {
   draw()
 }
 
+/** A table row's `#` cell: its only drag source (YAZ-4603 D53). */
+const gripOf = (el: ParentNode, name: string): HTMLElement => rowOf(el, name).querySelector<HTMLElement>('td.view-table__gutter')!
 function rowOf(el: ParentNode, name: string): HTMLElement {
   const btn = [...el.querySelectorAll<HTMLElement>('.view-table__name')].find((b) => b.textContent === name)
   const tr = btn?.closest<HTMLElement>('tr')
@@ -203,7 +205,7 @@ describe('drag at each level (YAZ-1101)', () => {
 
   it('a drop between inner groups under the same outer writes the inner property only', () => {
     const { el } = mount(NESTED_TABLE)
-    fire(rowOf(el, 'alpha1'), 'dragstart')
+    fire(gripOf(el, 'alpha1'), 'dragstart')
     fire(rowOf(el, 'alpha2'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha1.md', 'proc', 'p2')
     expect(nestedSections(el)['A/p2']).toContain('alpha1')
@@ -211,7 +213,7 @@ describe('drag at each level (YAZ-1101)', () => {
 
   it('🔒 a drop into an inner group under a DIFFERENT outer writes BOTH properties and lands there', async () => {
     const { el, setRecords } = mount(NESTED_TABLE)
-    fire(rowOf(el, 'alpha2'), 'dragstart')
+    fire(gripOf(el, 'alpha2'), 'dragstart')
     fire(rowOf(el, 'beta1'), 'drop')
     expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', [
       { key: 'proc', value: 'p1', prevRaw: 'p2' },
@@ -229,7 +231,7 @@ describe('drag at each level (YAZ-1101)', () => {
 
   it('a drop on an outer header writes the outer property only; the inner value rides along', () => {
     const { el } = mount(NESTED_TABLE)
-    fire(rowOf(el, 'beta1'), 'dragstart')
+    fire(gripOf(el, 'beta1'), 'dragstart')
     fire(headersOf(el, 'A')[0], 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/beta1.md', 'dept', 'A')
     expect(nestedSections(el)['A/p1']).toContain('beta1')
@@ -238,7 +240,7 @@ describe('drag at each level (YAZ-1101)', () => {
   it('inner fan-out keeps D3: a drop swaps the element it left for the one it entered', () => {
     const records = [rec('both', { dept: 'A', proc: ['p1', 'p2'] }), rec('one', { dept: 'A', proc: ['p1'] })]
     const { el } = mount(NESTED_TABLE, { records })
-    fire(rowOf(el, 'one'), 'dragstart')
+    fire(gripOf(el, 'one'), 'dragstart')
     fire(headersOf(el, 'p2')[0], 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/one.md', 'proc', ['p2'])
   })
@@ -311,12 +313,12 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
     expect(headersOf(el, 'A')[0].querySelector('[aria-label^="New note"]')).toBeNull()
     expect(headersOf(el, 'p1')[0].querySelector('[aria-label^="New note"]')).not.toBeNull()
 
-    fire(rowOf(el, 'beta1'), 'dragstart')
+    fire(gripOf(el, 'beta1'), 'dragstart')
     fire(headersOf(el, 'A')[0], 'drop')
     expect(write).not.toHaveBeenCalled()
 
     // cross-outer inner drop: only the writable (inner) property is written
-    fire(rowOf(el, 'alpha2'), 'dragstart')
+    fire(gripOf(el, 'alpha2'), 'dragstart')
     fire(rowOf(el, 'beta1'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', 'proc', 'p1')
   })
@@ -341,7 +343,7 @@ const THREE_RECORDS: IndexRecord[] = [
 describe('three levels (YAZ-4531)', () => {
   it('a Table drop on a level-3 group in another branch writes all three values in ONE move and lands there', () => {
     const { el } = mount(THREE_TABLE, { records: THREE_RECORDS })
-    fire(rowOf(el, 'a1'), 'dragstart')
+    fire(gripOf(el, 'a1'), 'dragstart')
     fire(rowOf(el, 'b3'), 'drop')
     expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/a1.md', [
       { key: 'step', value: 's3', prevRaw: 's1' },
@@ -355,10 +357,10 @@ describe('three levels (YAZ-4531)', () => {
   it('a drop writes only the levels that differ from the row\'s own branch', () => {
     const records = [...THREE_RECORDS, rec('a1b', { dept: 'A', proc: 'p1', step: 's9' })]
     const { el } = mount(THREE_TABLE, { records })
-    fire(rowOf(el, 'a1'), 'dragstart')
+    fire(gripOf(el, 'a1'), 'dragstart')
     fire(rowOf(el, 'a1b'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/a1.md', 'step', 's9')
-    fire(rowOf(el, 'a2'), 'dragstart')
+    fire(gripOf(el, 'a2'), 'dragstart')
     fire(rowOf(el, 'a1b'), 'drop') // A/p2/s2 → A/p1/s9: level 1 matches, so it writes levels 3 and 2 only
     expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/a2.md', [
       { key: 'step', value: 's9', prevRaw: 's2' },

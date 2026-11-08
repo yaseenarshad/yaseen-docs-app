@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
-import { type Modifiers, openByGesture, openTarget } from '../../lib/openGesture'
+import { type Modifiers, openByGesture, openByKey, openTarget } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
 import { rowPage } from '../../links/shortcuts'
 import type { FolderSettings } from '../folderSettings'
@@ -40,7 +40,7 @@ export interface BoardViewProps {
   onOpenFileRight?: (path: string) => void
   /** Open a card's page without replacing the current tab. */
   onOpenFileBackground?: (path: string) => void
-  /** "Open in a window" in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
+  /** "Open in mini window ⇧↩" (D57) and ⇧Enter (YAZ-4605 D56) in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
   onOpenWindow?: (path: string) => void
   /** The card's link: the board writes its order (column by column, top to bottom) and marks the card's note (D24). */
   windowLink?: NoteWindowLink
@@ -273,7 +273,8 @@ export function BoardView({
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget || event.key !== 'Enter') return
             event.preventDefault()
-            openCard(row, event)
+            // ⇧Enter opens the card in the mini window (YAZ-4605 D56); the other Enters as a click.
+            if (!suppressClick.current) openByKey(event, row.record.path, { ...openHandlers, onOpenWindow })
           }}
           onContextMenu={(event) => openCardMenu(event, row)}
         >

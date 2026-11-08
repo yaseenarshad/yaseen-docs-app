@@ -1,4 +1,4 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf, MAX_GROUP_LEVELS } from '../viewSchema'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
@@ -16,7 +16,7 @@ import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { cssZoom } from '../../lib/cssZoom'
 import { holdColResize } from '../../lib/colResize'
 import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
-import { openByGesture } from '../../lib/openGesture'
+import { openByGesture, openByKey } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
 import { isFolderRow, rowPage } from '../../links/shortcuts'
 import { UNFROZE_ROWS, frozenColumnCount } from './frozenColumns'
@@ -26,8 +26,8 @@ import { FillMenu } from './FillMenu'
 import { filterValueItems, noteItems } from './rowMenuItems'
 import { withFilter } from './filterRows'
 import { cellFillOf, fillIndex, fillPaint, setViewFill, setViewFills } from './fills'
-import { SelectionMenu } from './SelectionMenu'
-import { type Pick, type TableSelection, cellRange, indicesOf, inSelection, parseTsv, pickLine, toTsv, valueFromText } from './tableSelection'
+import { ClearFormattingItem, SelectionMenu } from './SelectionMenu'
+import { ALL_CELLS, type Pick, type TableSelection, cellRange, farCorner, indicesOf, inSelection, parseTsv, pickLine, stepRange, toTsv, valueFromText } from './tableSelection'
 import type { PropertyWrite } from '../writeProperty'
 import { TableHeaderMenu, wrapsColumn } from './TableHeaderMenu'
 import { useViewDefaults } from '../viewDefaults'
@@ -63,7 +63,7 @@ export interface TableViewProps {
   onOpenFileRight?: (path: string) => void
   /** A row page action opens without replacing the current tab. */
   onOpenFileBackground?: (path: string) => void
-  /** The row menu's "Open in a window" (YAZ-4547): the card over the folder page. Absent: no such item. */
+  /** The row menu's "Open in mini window" (YAZ-4547, D57) and ⇧Enter on any cell (YAZ-4605 D56): the card over the folder page. Absent: neither. */
   onOpenWindow?: (path: string) => void
   /** The card's link (YAZ-4547 D16): the table hands it its rows in display order, and marks the card's row. */
   windowLink?: NoteWindowLink
@@ -141,6 +141,8 @@ const MAX_FROZEN_ROWS = 10
 const MAX_FROZEN_LINES = MAX_FROZEN_ROWS * (MAX_GROUP_LEVELS + 2)
 /** A selected cell, row number or header (YAZ-4593): an attribute React does not own, so a render never drops it. */
 const SELECTED = 'data-selected'
+/** The step of each arrow key for ⇧+arrow (YAZ-4603 D53): rows, then columns. */
+const STEPS: Record<string, [number, number] | undefined> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }
 
 /**
  * One display line: a group header row (`depth` = its level, 0 at the top: YAZ-745, YAZ-4531), or a data row with its
@@ -583,13 +585,14 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /**
    * A press in the body (YAZ-4593): a row's `#` picks rows (⇧ extends, ⌘ adds or removes one); ⇧ on a cell selects the
    * range from the focused cell; a plain press clears the selection, and a drag from it selects the range it crosses.
-   * In a grouped table a row is a drag source, so a drag there moves the row as before; ⇧-click makes the range.
+   * A drag across cells selects in a grouped table too (YAZ-4603 D53): only the `#` cell is a row's drag source.
    */
   const onBodyMouseDown = (e: ReactMouseEvent<HTMLTableSectionElement>): void => {
     if (e.button !== 0 || !(e.target instanceof Element)) return
     const gutterCell = e.target.closest<HTMLElement>('td[data-row]')
     if (gutterCell !== null) {
-      e.preventDefault()
+      // A movable row's `#` lets the press through, or no drag starts (D53); its click puts the focus back on the row.
+      if (!gutterCell.draggable) e.preventDefault()
       const r = Number(gutterCell.dataset.row)
       setSelection(pickLine(selRef.current, 'rows', r, pickOf(e)))
       wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${r}:0"]`)?.focus({ preventScroll: true })
@@ -669,19 +672,63 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       (error: unknown) => onNotice?.(`Can't paste: ${error instanceof Error ? error.message : String(error)}`),
     )
   }
-  /** ⌘C, ⌘V and Esc (YAZ-4593); with no selection, ⌘C and ⌘V act on the focused cell `at`. True when the key was the table's. */
+  /**
+   * ⌘\ "Clear formatting" (YAZ-4603 D54): the cell fills of the area, the row fills of whole rows and the Wrap / Clip
+   * of whole columns (`columnWrap`, back to the default by kind). ONE view write with Undo (S29); none, and no toast,
+   * when nothing changes. Values and the column setup (formats, widths, group header styles) stay.
+   */
+  const clearFormatting = (sel: TableSelection | null, area: { rows: number[]; cols: number[] }): void => {
+    const notes = area.rows.map((r) => flat[r].record)
+    const targets: { record: IndexRecord; column?: string }[] = notes.flatMap((record) => area.cols.map((c) => ({ record, column: keys[c] })))
+    if (sel?.cols === null) targets.push(...notes.map((record) => ({ record })))
+    const unwrap = sel?.rows === null ? new Set(area.cols.map((c) => canonicalKey(keys[c]))) : null
+    const clear = (d: ViewSet) => {
+      setViewFills(d, viewIndex, targets, null, records, resolveLink)
+      const v = d.views[viewIndex]
+      if (unwrap === null || v.columnWrap === undefined) return
+      const kept = Object.fromEntries(Object.entries(v.columnWrap).filter(([k]) => !unwrap.has(canonicalKey(k))))
+      if (Object.keys(kept).length > 0) v.columnWrap = kept
+      else delete v.columnWrap
+    }
+    // A dry run on a copy: a write that changes nothing is not made.
+    const trial = structuredClone(def)
+    clear(trial)
+    if (JSON.stringify(trial) !== JSON.stringify(def)) onUpdate(clear, 'Cleared formatting')
+  }
+  /**
+   * ⌘C, ⌘V and Esc (YAZ-4593), ⌘A, ⇧+arrows (YAZ-4603 D53) and ⌘\ (D54); with no selection, ⌘C, ⌘V and ⌘\ act on the
+   * focused cell `at`, and ⇧+arrow starts a range there. True when the key was the table's.
+   */
   const selectionKey = (e: KeyboardEvent | ReactKeyboardEvent, at?: { r: number; c: number }): boolean => {
     if (e.key === 'Escape') {
       if (selRef.current === null) return false
       setSelection(null)
       return true
     }
+    const step = STEPS[e.key]
+    if (step !== undefined) {
+      if (!e.shiftKey || e.metaKey || e.altKey || e.ctrlKey || flat.length === 0) return false
+      const next = stepRange(selRef.current, at, step[0], step[1], flat.length, keys.length)
+      setSelection(next)
+      // The far corner shows when it is mounted; the focus stays on the anchor.
+      if (next?.kind === 'cells') {
+        const far = farCorner(next, flat.length, keys.length)
+        wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${far.r}:${far.c}"]`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+      }
+      return true
+    }
     const k = e.key.toLowerCase()
-    if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || (k !== 'c' && k !== 'v')) return false
+    if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || (k !== 'c' && k !== 'v' && k !== 'a' && k !== '\\')) return false
+    if (k === 'a') {
+      if (flat.length === 0) return false
+      setSelection(ALL_CELLS)
+      return true
+    }
     const area = areaOf(selRef.current, at)
     if (area === null) return false
     if (k === 'c') copyArea(area)
-    else pasteInto(area)
+    else if (k === 'v') pasteInto(area)
+    else clearFormatting(selRef.current, area)
     return true
   }
   selectionKeyRef.current = selectionKey
@@ -784,8 +831,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       return
     }
     if (e.key === 'Enter') {
-      if (c === nameCol) {
-        if (flat[r]) openByGesture(e, flat[r].record.path, openHandlers)
+      // A modifier always opens, from any cell (YAZ-4605 D56): ⌘ a background tab, ⌥ the right panel, ⇧ the mini
+      // window. Plain Enter opens from the Name cell and edits any other; ⌃ opens nothing, as before.
+      if (c === nameCol || ((e.metaKey || e.altKey || e.shiftKey) && !e.ctrlKey)) {
+        if (flat[r]) openByKey(e, flat[r].record.path, { ...openHandlers, onOpenWindow })
       } else {
         // Start editing (or toggle the checkbox) through the same delegated control (5B, GRO-2142).
         ;(e.target as HTMLElement).querySelector<HTMLElement>('[data-edit]')?.click()
@@ -823,6 +872,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           onUpdate((d) => setViewFills(d, viewIndex, targets, fill, records, resolveLink), fill === null ? 'Cleared fill' : undefined)
         }}
         onSetValue={(value) => writeCells(area.rows.map((r) => ({ r, c: one, value })))}
+        onClearFormatting={() => clearFormatting(sel, area)}
         onDuplicate={onDuplicateNote && paths.length > 0 ? () => paths.forEach(onDuplicateNote) : undefined}
         onDelete={onDeleteNotes && paths.length > 0 ? () => onDeleteNotes(paths) : undefined}
         onClose={() => setSelMenu(null)}
@@ -862,7 +912,13 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           style={frozenRowStyle}
           {...dnd.target(line.header, line.at)}
         >
-          <td className="view-table__group-cell" colSpan={span} style={{ '--depth': line.depth } as CSSProperties}>
+          <td
+            className="view-table__group-cell"
+            colSpan={span}
+            style={{ '--depth': line.depth } as CSSProperties}
+            // The empty part of a group header row shows no system menu (YAZ-4604); the group menu (2F) is wired at merge.
+            onContextMenu={(e) => e.preventDefault()}
+          >
             <GroupHeader
               def={def}
               view={view}
@@ -883,14 +939,20 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           key={rowKey(line)}
           className={[line.gk !== null && dnd.over === line.gk && 'view-table__row--drop', windowLink?.current === line.row.record.path && CURRENT_ROW, ...(frozenRow ?? [])].filter(Boolean).join(' ') || undefined}
           style={frozenRowStyle}
-          // An ungrouped row drags only onto the Other files tray (YAZ-4597 D46).
-          {...(line.g === null || line.at === null ? trayRowDrag(moveToTray, line.row.record.path) : { ...dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)), ...dnd.target(line.g, line.at) })}
+          {...(line.g !== null && line.at !== null && dnd.target(line.g, line.at))}
           {...hover.itemProps(line.row.record.path)}
           onContextMenu={openRowMenu(line.row)}
         >
           {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}
           {numbered && (
-            <td className="view-table__gutter" data-row={line.r}>
+            <td
+              className="view-table__gutter"
+              data-row={line.r}
+              // The row's only drag source (YAZ-4603 D53), a ⋮⋮ on hover (views.css): onto another group, or the Other
+              // files tray, the only target of an ungrouped row (YAZ-4597 D46). A drag across cells selects.
+              {...(line.g === null || line.at === null ? trayRowDrag(moveToTray, line.row.record.path) : dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)))}
+              onClick={(e) => (e.currentTarget.draggable ? wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${line.r}:0"]`)?.focus({ preventScroll: true }) : undefined)}
+            >
               {line.n}
             </td>
           )}
@@ -1100,13 +1162,21 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   d.views[viewIndex].filters = withFilter(d.views[viewIndex].filters, rule)
                 })
               }),
-              <FillMenu
-                key="fill"
-                start={cellFillOf(fills, rowMenu.record.path, rowMenu.column)}
-                // No fill offers Undo (YAZ-4594 S29).
-                onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, records, resolveLink), fill === null ? 'Cleared fill' : undefined)}
-                onClose={() => setRowMenu(null)}
-              />,
+              <Fragment key="fill">
+                <FillMenu
+                  start={cellFillOf(fills, rowMenu.record.path, rowMenu.column)}
+                  // No fill offers Undo (YAZ-4594 S29).
+                  onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, records, resolveLink), fill === null ? 'Cleared fill' : undefined)}
+                  onClose={() => setRowMenu(null)}
+                />
+                {/* ⌘\ on this one cell (YAZ-4603 D54). */}
+                <ClearFormattingItem
+                  onClear={() => {
+                    setRowMenu(null)
+                    clearFormatting(null, { rows: [rowMenu.r], cols: [keys.indexOf(rowMenu.column)] })
+                  }}
+                />
+              </Fragment>,
               // Row freeze (YAZ-4537), the column menu's pair: on the row where the freeze ends the item reads ✓ and a click unfreezes.
               <FreezeRowItems
                 key="freeze"

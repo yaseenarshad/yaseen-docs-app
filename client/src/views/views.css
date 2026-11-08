@@ -954,6 +954,19 @@
   z-index: 4;
 }
 
+/* A movable row's `#` is its only drag source (YAZ-4603 D53): a ⋮⋮ handle at its left on the row's hover. */
+.view-table tbody td.view-table__gutter[draggable='true'] {
+  cursor: grab;
+}
+
+.view-table tbody tr:hover > td.view-table__gutter[draggable='true']::before {
+  content: '⋮⋮';
+  position: absolute;
+  left: 4px;
+  letter-spacing: -3px;
+  color: var(--fg-muted);
+}
+
 /* The header's own context menu (YAZ-1513): room for the inline rename and the add-column form. */
 .view-header-menu {
   min-width: 200px;

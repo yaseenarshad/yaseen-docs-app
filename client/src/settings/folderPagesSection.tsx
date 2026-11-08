@@ -92,7 +92,7 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
           ),
         },
         row('rowBand', 'Row band on hover', ON_OFF_OPTIONS, { hint: 'A band on the table row under the mouse. Until you set it, it follows Editor › Tables › Row band.', keywords: ['band', 'highlight', 'hover', 'row'], shown: ({ settings }) => folderRowBandOn(settings) }),
-        row('keepWindowPinned', 'Keep the window pinned', ON_OFF_OPTIONS, { hint: 'The note window of a table row stays open on a click outside it. Until you set it, it follows Editor › Cell notes › Keep cell notes open.', keywords: ['note window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
+        row('keepWindowPinned', 'Keep the mini window pinned', ON_OFF_OPTIONS, { hint: 'The mini window of a row stays open on a click outside it. Until you set it, it follows Editor › Cell notes › Keep cell notes open.', keywords: ['mini window', 'note window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
         // Its own switch (YAZ-4592 S26): the sidebar's Confirm before deleting does not turn it off.
         row('askBeforeDelete', 'Ask before deleting notes', ON_OFF_OPTIONS, { hint: 'Delete note… in a row’s menu asks first. The note moves to the Trash. The sidebar’s Confirm before deleting does not change this.', keywords: ['delete', 'confirm', 'trash', 'ask'] }),
       ],

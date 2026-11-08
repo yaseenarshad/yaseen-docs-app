@@ -50,7 +50,35 @@ export function pickLine(sel: TableSelection | null, line: 'rows' | 'cols', at: 
   return line === 'rows' ? { kind: 'rows', rows: set, cols: null, anchor: { r: keep, c: -1 } } : { kind: 'cols', rows: null, cols: set, anchor: { r: -1, c: keep } }
 }
 
-export const inSelection = (sel: TableSelection, r: number, c: number): boolean => (sel.rows === null || sel.rows.has(r)) && (sel.cols === null || sel.cols.has(c))
+/** ⌘A (YAZ-4603 D53): every shown cell, the windowed ones too; the range's anchor is the top-left cell. */
+export const ALL_CELLS: TableSelection = { kind: 'cells', rows: null, cols: null, anchor: { r: 0, c: 0 } }
+
+/** The end of a line of `set` (null: `0..count-1`) away from `anchor`: the end that ⇧+arrow moves. */
+function farEnd(set: ReadonlySet<number> | null, anchor: number, count: number): number {
+  const all = set === null ? [0, count - 1] : [...set]
+  const [min, max] = [Math.min(...all), Math.max(...all)]
+  return anchor === min ? max : min
+}
+
+/**
+ * ⇧+arrow (YAZ-4603 D53): the range grows or shrinks by one cell from its anchor; its far end moves by `dr` rows and
+ * `dc` columns, kept inside the `rows` × `cols` table. Whole rows step up and down and whole columns left and right
+ * as lines; any other step starts from `at`, the focused cell, when there is no cell range. Null: back to one cell.
+ */
+export function stepRange(sel: TableSelection | null, at: { r: number; c: number } | undefined, dr: number, dc: number, rows: number, cols: number): TableSelection | null {
+  const clamp = (i: number, count: number) => Math.max(0, Math.min(count - 1, i))
+  if (sel?.kind === 'rows' && dc === 0) return pickLine(sel, 'rows', clamp(farEnd(sel.rows, sel.anchor.r, rows) + dr, rows), 'shift')
+  if (sel?.kind === 'cols' && dr === 0) return pickLine(sel, 'cols', clamp(farEnd(sel.cols, sel.anchor.c, cols) + dc, cols), 'shift')
+  const anchor = sel?.kind === 'cells' ? sel.anchor : at
+  if (anchor === undefined) return sel
+  const far = sel?.kind === 'cells' ? farCorner(sel, rows, cols) : anchor
+  return cellRange(anchor, { r: clamp(far.r + dr, rows), c: clamp(far.c + dc, cols) })
+}
+
+/** A cell range's corner away from its anchor: where ⇧+arrow moves, and what it scrolls into view. */
+export const farCorner = (sel: TableSelection, rows: number, cols: number): { r: number; c: number } => ({ r: farEnd(sel.rows, sel.anchor.r, rows), c: farEnd(sel.cols, sel.anchor.c, cols) })
+
+export const inSelection =(sel: TableSelection, r: number, c: number): boolean => (sel.rows === null || sel.rows.has(r)) && (sel.cols === null || sel.cols.has(c))
 
 /** A set as a sorted list, null as `0..count-1`; indices past `count` drop (rows that are gone). */
 export function indicesOf(set: ReadonlySet<number> | null, count: number): number[] {

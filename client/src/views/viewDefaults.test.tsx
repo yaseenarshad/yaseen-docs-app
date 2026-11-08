@@ -205,8 +205,8 @@ describe('each reader: no view key → Settings; a view key → the view (YAZ-45
     expect(noteWindowMemory('/a.md').pinned).toBe(cellNotePinnedAtStart())
     const { el } = mount(table(), { folderPages: fp({ keepWindowPinned: false }) })
     rightClick([...el.querySelectorAll('.view-table__name')][0])
-    click(menuItem('Open in a window'))
-    expect(q(document, '.note-window [aria-label="Pin window"]').getAttribute('aria-pressed')).toBe('false')
+    click(menuItem('Open in mini window'))
+    expect(q(document, '.note-window [aria-label="Pin mini window"]').getAttribute('aria-pressed')).toBe('false')
   })
 })
 

@@ -99,7 +99,7 @@ export interface FolderHost {
   openFolderPage?: (dir: string) => void
   /**
    * A full editor on a note, for the table's note window (YAZ-4547 D14): App's, the same editor a tab has. Stable.
-   * Absent: the row menu has no "Open in a window".
+   * Absent: the row menu has no "Open in mini window" (YAZ-4605 D57), and ⇧Enter opens nothing.
    */
   renderNoteEditor?: (path: string) => ReactNode
   /**

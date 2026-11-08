@@ -119,7 +119,7 @@ describe('"Fill cell ›" and "Fill row ›" in the row right-click (YAZ-4536 D1
   it('the menu ends with the two flyouts; each holds No fill, the ten colours and Custom colour…', () => {
     const { el } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":1"]'))
-    expect(items(el).map((b) => b.textContent)).toEqual(['Open', 'Copy path', 'Reveal in Finder', 'Filter by this value', 'Hide this value', 'Fill cell', 'Fill row', 'Freeze up to this row', 'Unfreeze rows'])
+    expect(items(el).map((b) => b.textContent)).toEqual(['Open', 'Copy path', 'Reveal in Finder', 'Filter by this value', 'Hide this value', 'Fill cell', 'Fill row', 'Clear formatting', 'Freeze up to this row', 'Unfreeze rows'])
     click(item(el, 'Fill cell'))
     expect(item(el, 'Fill cell').getAttribute('aria-expanded')).toBe('true')
     const flyout = q(el, '.ctx-menu__sub')

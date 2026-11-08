@@ -439,7 +439,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(groupTitles(el).slice(0, 2)).toEqual(['⌘D', '⌘K'])
     // Then the clicks and drags, one card per gesture (YAZ-3936): Click first, then the modified clicks, then the rest.
     const titles = groupTitles(el)
-    expect(titles.slice(titles.indexOf('Actions with no key'))).toEqual(['Actions with no key', 'Clicks and drags', 'Click', '⌘-click', '⇧-click', '⌥-click', '⌘⇧-click', 'Drag', '/', 'Right-click', 'Double-click', 'Clicks with no gesture'])
+    expect(titles.slice(titles.indexOf('Actions with no key'))).toEqual(['Actions with no key', 'Clicks and drags', 'Click', '⌘-click', '⇧-click', '⌥-click', '⌘⇧-click', 'Drag', '/', '⇧↩', 'Right-click', 'Double-click', 'Clicks with no gesture'])
     expect(rowIds(el)).toEqual(HOTKEY_ROWS)
     // A changeable key is a button (D6); a built-in one is text (D8).
     expect(row(el, 'hotkey-settings')?.querySelector('.hotkeys__key')?.textContent).toBe('⌘,')
