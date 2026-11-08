@@ -248,7 +248,7 @@ describe('the selection right-click (YAZ-4593)', () => {
     const { el } = mount(TABLE)
     drag(el, [0, 1], [1, 2])
     rightClick(cell(el, 1, 1))
-    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill cell', 'Fill row'])
+    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below'])
     // Its own menu, not the row menu.
     expect(items(el)).not.toContain('Open')
   })
@@ -266,7 +266,7 @@ describe('the selection right-click (YAZ-4593)', () => {
     down(gutter(el, 1))
     down(gutter(el, 2), { shiftKey: true })
     rightClick(cell(el, 2, 2))
-    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill cell', 'Fill row', 'Duplicate notes', 'Delete notes…'])
+    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below', 'Duplicate notes', 'Delete notes…'])
     // ViewsPane wires 11C's `onDuplicateNote` / `onDeleteNotes` at merge (YAZ-4592); without them the items are off.
     expect(item(el, 'Delete notes…').disabled).toBe(true)
     expect(item(el, 'Copy').disabled).toBe(false)
@@ -343,5 +343,332 @@ describe('the selection right-click (YAZ-4593)', () => {
     await flush()
     expect(writeValues).toHaveBeenCalledTimes(2)
     expect(writeValues).toHaveBeenCalledWith(AGENCY, [{ key: 'status', value: 'review' }])
+  })
+})
+
+describe('one drag rule, ⇧+arrows and ⌘A (YAZ-4603 D53)', () => {
+  const GROUPED = `${TABLE}    groupBy:
+      property: note.status
+`
+
+  it('a drag across cells selects in a grouped table too, and renders nothing; no row and no cell is a drag source', () => {
+    const { el } = mount(GROUPED)
+    expect(el.querySelectorAll('tbody tr[draggable], tbody td[data-cell][draggable]')).toHaveLength(0)
+    drag(el, [0, 1], [1, 2])
+    expect(selected(el)).toEqual(['0:1', '0:2', '1:1', '1:2'])
+    expect(commits).toBe(0)
+  })
+
+  it('a click on a movable row\'s # still selects the row, and lets the press through so a drag can start', () => {
+    const { el } = mount(GROUPED)
+    const grip = gutter(el, 1)
+    expect(grip.getAttribute('draggable')).toBe('true')
+    let pressed = true
+    act(() => void (pressed = grip.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))))
+    expect(pressed).toBe(true)
+    expect(selected(el)).toEqual(['1:0', '1:1', '1:2', '1:3'])
+    act(() => grip.click())
+    expect(document.activeElement).toBe(cell(el, 1, 0))
+  })
+
+  it('⇧+arrow grows and shrinks the range from its anchor, one cell at a time; a plain arrow clears it', () => {
+    const { el } = mount(TABLE)
+    act(() => cell(el, 1, 1).focus())
+    key(cell(el, 1, 1), 'ArrowDown', { shiftKey: true })
+    expect(selected(el)).toEqual(['1:1', '2:1'])
+    key(cell(el, 1, 1), 'ArrowRight', { shiftKey: true })
+    expect(selected(el)).toEqual(['1:1', '1:2', '2:1', '2:2'])
+    key(cell(el, 1, 1), 'ArrowUp', { shiftKey: true })
+    expect(selected(el)).toEqual(['1:1', '1:2'])
+    // Past the anchor: the range flips to the other side of it.
+    key(cell(el, 1, 1), 'ArrowUp', { shiftKey: true })
+    expect(selected(el)).toEqual(['0:1', '0:2', '1:1', '1:2'])
+    expect(commits).toBe(0)
+    expect(document.activeElement).toBe(cell(el, 1, 1))
+    key(cell(el, 1, 1), 'ArrowDown')
+    expect(selected(el)).toEqual([])
+    expect(document.activeElement).toBe(cell(el, 2, 1))
+  })
+
+  it('⇧+arrow on whole rows extends the rows; back on the anchor it is one row', () => {
+    const { el } = mount(TABLE)
+    down(gutter(el, 2))
+    key(cell(el, 2, 0), 'ArrowDown', { shiftKey: true })
+    expect(new Set(selected(el).map((at) => at!.split(':')[0]))).toEqual(new Set(['2', '3']))
+    expect(gutter(el, 3).hasAttribute('data-selected')).toBe(true)
+    key(cell(el, 2, 0), 'ArrowUp', { shiftKey: true })
+    expect(new Set(selected(el).map((at) => at!.split(':')[0]))).toEqual(new Set(['2']))
+  })
+
+  it('⌘A selects every shown cell, the windowed ones too: ⌘C then copies all 600 rows', async () => {
+    const many = Array.from({ length: 600 }, (_, i): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/n${String(i).padStart(3, '0')}.md`, basename: `n${i}`, name: `n${i}.md`, title: `n${String(i).padStart(3, '0')}`, folder: '', properties: {} }))
+    const { el } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n', { records: many })
+    key(cell(el, 0, 0), 'a', { metaKey: true })
+    const mounted = el.querySelectorAll('td[data-cell]')
+    expect(el.querySelectorAll('td[data-cell][data-selected]')).toHaveLength(mounted.length)
+    expect(commits).toBe(0)
+    key(cell(el, 0, 0), 'c', { metaKey: true })
+    await flush()
+    expect(clip.split('\n')).toHaveLength(600)
+    expect(clip.split('\n')[599]).toBe('n599\t')
+  })
+})
+
+describe('⌘\\ Clear formatting (YAZ-4603 D54)', () => {
+  // Agentic Agency (row 0): a row fill and a Status cell fill; Attribution (row 1): a Priority cell fill. Status wraps, Priority clips.
+  const FORMATTED = `${TABLE}    fills:
+      - note: "[[Agentic Agency]]"
+        fill: red
+      - note: "[[Agentic Agency]]"
+        column: note.status
+        fill: blue
+      - note: "[[Attribution]]"
+        column: note.priority
+        fill: green
+    columnWrap:
+      note.status: true
+      note.priority: false
+`
+  const setup = () => {
+    const onNotice = vi.fn()
+    return { ...mount(FORMATTED, {}, { onNotice }), onNotice }
+  }
+  const fillOf = (el: ParentNode, r: number, c: number) => cell(el, r, c).style.getPropertyValue('--view-cell-fill')
+
+  it('on a cell range: the cells\' fills go in ONE view write with Undo; the row fill, the Wrap / Clip and the values stay', () => {
+    const { el, onChange, onNotice, writeValues, yaml } = setup()
+    drag(el, [0, 1], [1, 2])
+    key(cell(el, 0, 1), '\\', { metaKey: true })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(yaml()).not.toContain('fill: blue')
+    expect(yaml()).not.toContain('fill: green')
+    expect(yaml()).toContain('fill: red')
+    expect(yaml()).toContain('columnWrap:\n      note.status: true\n      note.priority: false')
+    // The row fill shows again on the cell that lost its own.
+    expect(fillOf(el, 0, 2)).toBe('var(--table-fill-red)')
+    expect(fillOf(el, 1, 1)).toBe('')
+    expect(writeValues).not.toHaveBeenCalled()
+    expect(onNotice.mock.lastCall?.[0]).toBe('Cleared formatting')
+    const [, , , action] = onNotice.mock.lastCall as [string, string, string, { run: () => void }]
+    act(() => action.run())
+    expect(yaml()).toContain('fill: blue')
+    expect(yaml()).toContain('fill: green')
+  })
+
+  it('on whole rows: the row fill goes too', () => {
+    const { el, yaml } = setup()
+    down(gutter(el, 0))
+    key(cell(el, 0, 0), '\\', { metaKey: true })
+    expect(yaml()).not.toContain('fill: red')
+    expect(yaml()).not.toContain('fill: blue')
+    expect(yaml()).toContain('fill: green')
+    expect(yaml()).toContain('columnWrap')
+  })
+
+  it('on whole columns: the cell fills in them and their Wrap / Clip go; the other column keeps its own', () => {
+    const { el, yaml } = setup()
+    down(header(el, 2), { shiftKey: true })
+    key(cell(el, 0, 2), '\\', { metaKey: true })
+    expect(yaml()).not.toContain('fill: blue')
+    expect(yaml()).toContain('fill: green')
+    expect(yaml()).toContain('columnWrap:\n      note.priority: false')
+    expect(yaml()).not.toContain('note.status: true')
+  })
+
+  it('with nothing to clear: no write and no toast', () => {
+    const { el, onChange, onNotice } = setup()
+    key(cell(el, 2, 3), '\\', { metaKey: true })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onNotice).not.toHaveBeenCalled()
+  })
+
+  it('"Clear formatting" in the selection menu and in the cell menu (the focused cell only)', () => {
+    const { el, yaml } = setup()
+    rightClick(cell(el, 0, 2))
+    expect(item(el, 'Clear formatting').dataset.hint).toBe('⌘\\')
+    act(() => item(el, 'Clear formatting').click())
+    expect(yaml()).not.toContain('fill: blue')
+    expect(yaml()).toContain('fill: red')
+    drag(el, [1, 1], [1, 2])
+    rightClick(cell(el, 1, 1))
+    act(() => item(el, 'Clear formatting').click())
+    expect(yaml()).not.toContain('fill: green')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+})
+
+describe('the group header row (YAZ-4604)', () => {
+  it('a right-click on its empty part shows no system menu', () => {
+    const { el } = mount(`${TABLE}    groupBy:
+      property: note.status
+`)
+    const td = el.querySelector<HTMLElement>('td.view-table__group-cell')!
+    let shown = true
+    act(() => void (shown = td.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))))
+    expect(shown).toBe(false)
+  })
+})
+
+describe('the fill handle (YAZ-4609 D61)', () => {
+  const COLS = ['num', 'due', 'day', 'week', 'tag']
+  const FILL_TABLE = `views:
+  - type: table
+    name: T
+    order:
+      - file.name
+${COLS.map((k) => `      - note.${k}`).join('\n')}
+    sort:
+      - property: file.name
+        direction: ASC
+`
+  const note = (i: number, properties: Record<string, unknown> = {}): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/f/a${i}.md`, basename: `a${i}`, name: `a${i}.md`, title: `a${i}`, folder: 'f', properties })
+  const NOTES = [note(0, { num: 1, due: '2026-01-30', day: 'Monday', week: 'Week 1', tag: 'x' }), note(1, { num: 3 }), note(2), note(3), note(4)]
+  const handle = (el: ParentNode) => el.querySelector<HTMLElement>('.view-table__fill-handle')
+  /** Press the handle, move over `to`, release there. */
+  function fillTo(el: HTMLElement, to: [number, number]) {
+    down(handle(el)!)
+    move(cell(el, ...to))
+    up(cell(el, ...to))
+  }
+  const writesOf = (writeValues: ReturnType<typeof vi.fn>, path: string) => (writeValues.mock.calls as unknown as [string, unknown][]).filter(([p]) => p === path).map(([, w]) => w)
+
+  it('the handle sits in the corner of the focused cell, then of the selection; placing it renders nothing', () => {
+    const { el } = mount(FILL_TABLE, { records: NOTES })
+    act(() => cell(el, 1, 2).focus())
+    expect(handle(el)?.parentElement).toBe(cell(el, 1, 2))
+    drag(el, [0, 1], [2, 3])
+    expect(handle(el)?.parentElement).toBe(cell(el, 2, 3))
+    expect(cell(el, 2, 3).hasAttribute('data-fill-corner')).toBe(true)
+    expect(commits).toBe(0)
+  })
+
+  it('a drag down marks the target with its outer edges, and continues a number step; ONE write per note, no render', async () => {
+    const { el, writeValues } = mount(FILL_TABLE, { records: NOTES })
+    drag(el, [0, 1], [1, 1])
+    down(handle(el)!)
+    move(cell(el, 3, 1))
+    expect(cell(el, 0, 1).getAttribute('data-fill-target')).toBe('top left right')
+    expect(cell(el, 3, 1).getAttribute('data-fill-target')).toBe('bottom left right')
+    up(cell(el, 3, 1))
+    expect(el.querySelectorAll('[data-fill-target]')).toHaveLength(0)
+    expect(commits).toBe(0)
+    await flush()
+    expect(writeValues).toHaveBeenCalledTimes(2)
+    expect(writesOf(writeValues, NOTES[2].path)).toEqual([[{ key: 'num', value: 5 }]])
+    expect(writesOf(writeValues, NOTES[3].path)).toEqual([[{ key: 'num', value: 7 }]])
+  })
+
+  it('one source row down: a date steps by a day, a weekday and a trailing number by 1, other text repeats', async () => {
+    const { el, writeValues } = mount(FILL_TABLE, { records: NOTES })
+    drag(el, [0, 2], [0, 5])
+    fillTo(el, [2, 2])
+    await flush()
+    expect(writeValues).toHaveBeenCalledTimes(2)
+    expect(writesOf(writeValues, NOTES[1].path)).toEqual([
+      [
+        { key: 'due', value: '2026-01-31' },
+        { key: 'day', value: 'Tuesday' },
+        { key: 'week', value: 'Week 2' },
+        { key: 'tag', value: 'x' },
+      ],
+    ])
+    expect(writesOf(writeValues, NOTES[2].path)[0]).toEqual([
+      { key: 'due', value: '2026-02-01' },
+      { key: 'day', value: 'Wednesday' },
+      { key: 'week', value: 'Week 3' },
+      { key: 'tag', value: 'x' },
+    ])
+  })
+
+  it('a drag right continues each row across the columns', async () => {
+    const records = [note(0, { num: 1, due: 2 }), note(1)]
+    const { el, writeValues } = mount(FILL_TABLE, { records })
+    drag(el, [0, 1], [0, 2])
+    fillTo(el, [0, 4])
+    await flush()
+    // Day and Week hold no numbers, so they are text columns: each new value is typed as its cell's kind.
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(records[0].path, [
+      { key: 'day', value: '3' },
+      { key: 'week', value: '4' },
+    ])
+  })
+
+  it('read-only notes and the Name column are skipped; Undo writes the old values back, one write per note', async () => {
+    const onNotice = vi.fn()
+    const records = NOTES.map((r, i) => (i === 2 ? { ...r, properties: { ...r.properties, readonly: true } } : r))
+    const { el, writeValues, retitle } = mount(FILL_TABLE, { records }, { onNotice })
+    // Name a0, a1 would go on as a2, a3: the Name column is never written.
+    drag(el, [0, 0], [1, 1])
+    fillTo(el, [3, 1])
+    await flush()
+    expect(retitle).not.toHaveBeenCalled()
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(records[3].path, [{ key: 'num', value: 7 }])
+    expect(onNotice).toHaveBeenCalledTimes(1)
+    const [message, , type, action] = onNotice.mock.lastCall as [string, string, string, { run: () => void }]
+    expect([message, type]).toEqual(['Filled 1 cell', 'undo'])
+    writeValues.mockClear()
+    act(() => action.run())
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(records[3].path, [{ key: 'num', value: undefined }])
+  })
+
+  it('a windowed table (600 notes) fills the rows a drag passes', async () => {
+    const many = Array.from({ length: 600 }, (_, i): IndexRecord => ({ ...note(i, i === 0 ? { num: 4 } : {}), title: `n${String(i).padStart(3, '0')}` }))
+    const { el, writeValues } = mount(FILL_TABLE, { records: many })
+    act(() => cell(el, 0, 1).focus())
+    fillTo(el, [20, 1])
+    expect(commits).toBe(0)
+    await flush()
+    expect(writeValues).toHaveBeenCalledTimes(20)
+    for (const [, writes] of writeValues.mock.calls as unknown as [string, unknown][]) expect(writes).toEqual([{ key: 'num', value: 4 }])
+  })
+})
+
+describe('the # column and the headers as handles, the corner selects all (YAZ-4610 D62)', () => {
+  const click = (target: Element, init: MouseEventInit = {}) => act(() => void target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ...init })))
+  const corner = (el: ParentNode) => el.querySelector<HTMLElement>('.view-table thead th.view-table__gutter')!
+
+  it('a plain click on a header selects the column; ⇧-click extends; no render', () => {
+    const { el } = mount(TABLE)
+    down(header(el, 2))
+    click(header(el, 2))
+    expect(selected(el)).toEqual(Array.from({ length: 8 }, (_, r) => `${r}:2`))
+    expect(header(el, 2).hasAttribute('data-selected')).toBe(true)
+    down(header(el, 3), { shiftKey: true })
+    click(header(el, 3), { shiftKey: true })
+    expect(selected(el)).toHaveLength(16)
+    expect(commits).toBe(0)
+  })
+
+  it('a header drag still moves the column (a drag fires no click), and the sort arrow and the resize edge select nothing', () => {
+    const { el, yaml } = mount(TABLE)
+    const fire = (target: Element, type: string) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true })))
+    fire(header(el, 1), 'dragstart')
+    fire(header(el, 3), 'dragover')
+    fire(header(el, 3), 'drop')
+    // Priority moved: the drag is the header's own (YAZ-1548). The live gap (YAZ-4606 4H) places it by layout, which jsdom has none of.
+    expect(yaml()).not.toContain('- file.name\n      - note.priority')
+    expect(selected(el)).toEqual([])
+    click(el.querySelector('.view-table thead .view-table__resize')!)
+    click(el.querySelector('.view-table thead .view-table__sort')!)
+    expect(selected(el)).toEqual([])
+  })
+
+  it('a click on the corner cell selects every cell, as ⌘A', () => {
+    const { el } = mount(TABLE)
+    click(corner(el))
+    expect(selected(el)).toHaveLength(8 * 4)
+    expect(commits).toBe(0)
+  })
+
+  it('with row numbers off, the slim strip selects the row and drags it', () => {
+    const { el } = mount(`${TABLE}    groupBy:
+      property: note.status
+    rowNumbers: false
+`)
+    const strip = gutter(el, 1)
+    expect(strip.textContent).toBe('')
+    expect(strip.getAttribute('draggable')).toBe('true')
+    down(strip)
+    expect(selected(el)).toEqual(['1:0', '1:1', '1:2', '1:3'])
   })
 })

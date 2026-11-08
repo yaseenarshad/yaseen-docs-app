@@ -25,7 +25,8 @@ import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, note
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
-import { NO_READ_ONLY } from './readOnlyRows'
+import { NO_READ_ONLY, writableKey } from './readOnlyRows'
+import { valueHistory } from './view/valueHistory'
 import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
@@ -102,7 +103,7 @@ export interface FolderHost {
   openFolderPage?: (dir: string) => void
   /**
    * A full editor on a note, for the table's note window (YAZ-4547 D14): App's, the same editor a tab has. Stable.
-   * Absent: the row menu has no "Open in a window".
+   * Absent: the row menu has no "Open in mini window" (YAZ-4605 D57), and ⇧Enter opens nothing.
    */
   renderNoteEditor?: (path: string) => ReactNode
   /**
@@ -326,6 +327,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // The open card of this app tab, folder page and view tab is in a module map (`NoteWindow.tsx`, D17, YAZ-4544), so a
   // tab that sleeps and mounts again shows it again on the same note, and another tab on this folder has its own.
   const windowKey = noteWindowKey(tabId, folderPath, view.name)
+  // The page's ⌘Z history of value changes (YAZ-4612 S41), and the toolbar's selection chip the table writes (S46).
+  const history = useMemo(() => valueHistory(folderPath), [folderPath])
+  const selectionChip = useRef<HTMLSpanElement>(null)
   const noteWindow = openNoteWindow(windowKey)
   const openWindow =
     folder.renderNoteEditor === undefined
@@ -618,6 +622,41 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
   }
 
+  /**
+   * "New row below" (YAZ-4611 D63): a note seeded from `row` — the view's filter seed, then the row's values of the
+   * view's sort columns (so it sorts next to the row), then every group level of its branch, as that group's "+" seeds.
+   * It does not open: the table puts its Name cell in title edit. The toast's Undo moves it to the Trash.
+   */
+  const newRowBelow = (row: Row, group: Group | null, at: GroupSpot | null): Promise<string> => {
+    const seed = deriveSeed(def, view)
+    for (const rule of view.sort ?? []) {
+      const key = writableKey(rule.property)
+      const value = key === null ? undefined : row.record.properties[key]
+      if (key !== null && value !== undefined) seed.properties[key] = value
+    }
+    if (group !== null && at !== null) {
+      at.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level))
+      seedGroup(seed, group, view, at.level)
+    }
+    setCreateError(null)
+    return folder.create(seed).then(
+      (path) => {
+        const trash = folder.trash
+        if (trash !== undefined) {
+          const undo = () => void trash([path]).catch((err: unknown) => folder.onNotice?.(`Can't undo: ${err instanceof Error ? err.message : String(err)}`))
+          // One step of the page's history too (S41); its undo trashes the note, so it has no redo.
+          history.push({ undo })
+          folder.onNotice?.('Added a row', 'info', 'undo', { label: 'Undo', run: undo, fades: true })
+        }
+        return path
+      },
+      (err: unknown) => {
+        setCreateError(err instanceof Error ? err.message : String(err))
+        throw err
+      },
+    )
+  }
+
   const writeValue = (path: string, key: string, value: unknown) => folder.writeValues(path, [{ key, value }])
 
   const keys = propertyKeys(def, view, records, Object.keys(folder.settings.columns))
@@ -718,6 +757,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const pane = (
     <div ref={paneRef} className="views-pane" data-find-host={isPage ? undefined : ''} onMouseOver={onPillOver} onMouseOut={onPillOut} onClickCapture={onPillClick} onDoubleClickCapture={onPillClick}>
       <Toolbar
+        selectionChip={view.type === 'table' ? selectionChip : undefined}
         def={def}
         view={view}
         viewIndex={index}
@@ -796,6 +836,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           reservedKeys={reservedKeys(folder.wikilinks.ids)}
           onDuplicateNote={folder.duplicate}
           onDeleteNotes={confirmDeleteNotes}
+          onNewRowBelow={newRowBelow}
+          history={history}
+          selectionChip={selectionChip}
         />
       ) : view.type === 'board' ? (
         <BoardView

@@ -172,6 +172,21 @@
   white-space: nowrap;
 }
 
+/* The selection's Count / Sum / Average (YAZ-4612 S46): a small chip before the count, written by the table. */
+.view-toolbar__selection {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.view-toolbar__selection[hidden] {
+  display: none;
+}
+
 /* ---------- popovers (anchored under their trigger; ctx-menu look) ---------- */
 
 .view-popover {
@@ -866,6 +881,46 @@
   background-color: var(--find-match-active-bg);
 }
 
+/* The fill handle (YAZ-4609 D61), the table block's look (`editor/table/table.css`): a square in the corner of the
+   selection or of the focused cell, and a dashed line on the outer edges of the cells a drag fills. A frozen cell is
+   sticky, so it holds the absolute handle already; any other cell takes `position: relative` while it has one. */
+.view-table tbody td[data-fill-corner]:not(.view-table__frozen),
+.view-table tbody td[data-fill-target]:not(.view-table__frozen) {
+  position: relative;
+}
+
+.view-table__fill-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border: 1px solid var(--bg);
+  background-color: var(--accent);
+  cursor: crosshair;
+}
+
+/* No handle while a cell is being edited (D61). */
+.view-table:has([data-editing]) .view-table__fill-handle {
+  display: none;
+}
+
+.view-table tbody td[data-fill-target]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border: 0 dashed var(--accent);
+  pointer-events: none;
+}
+
+.view-table tbody td[data-fill-target~='top']::before { border-top-width: 2px; }
+.view-table tbody td[data-fill-target~='bottom']::before { border-bottom-width: 2px; }
+.view-table tbody td[data-fill-target~='left']::before { border-left-width: 2px; }
+.view-table tbody td[data-fill-target~='right']::before { border-right-width: 2px; }
+
 /* "Set value ›" on a selection (YAZ-4593): the field a text value is typed in. */
 .view-selection-menu__input {
   width: 180px;
@@ -956,6 +1011,33 @@
 .view-table thead th.view-table__gutter,
 .view-table tfoot td.view-table__gutter {
   z-index: 4;
+}
+
+/* The corner selects every cell (YAZ-4610 D62). With row numbers off the gutter is a slim strip with no numbers, still
+   the row's select and drag handle. */
+.view-table thead th.view-table__gutter {
+  cursor: pointer;
+}
+
+.view-table .view-table__gutter--slim {
+  padding: 0;
+}
+
+.view-table tbody tr:hover > td.view-table__gutter.view-table__gutter--slim[draggable='true']::before {
+  left: 1px;
+}
+
+/* A movable row's `#` is its only drag source (YAZ-4603 D53): a ⋮⋮ handle at its left on the row's hover. */
+.view-table tbody td.view-table__gutter[draggable='true'] {
+  cursor: grab;
+}
+
+.view-table tbody tr:hover > td.view-table__gutter[draggable='true']::before {
+  content: '⋮⋮';
+  position: absolute;
+  left: 4px;
+  letter-spacing: -3px;
+  color: var(--fg-muted);
 }
 
 /* The header's own context menu (YAZ-1513): room for the inline rename and the add-column form. */

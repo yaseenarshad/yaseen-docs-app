@@ -108,6 +108,8 @@ const trayLines = (el: ParentNode): string[][] =>
 const trayLine = (el: ParentNode, name: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('.other-files__line')].find((l) => l.querySelector('.other-files__name')?.textContent === name)!
 const nameCell = (el: ParentNode, name: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-table__name')].find((c) => c.textContent === name)!
 const tableRow = (el: ParentNode, name: string): HTMLElement => nameCell(el, name).closest('tr')!
+/** A row's `#` cell: its only drag source (YAZ-4603 D53). */
+const gripOf = (el: ParentNode, name: string): HTMLElement => tableRow(el, name).querySelector<HTMLElement>('td.view-table__gutter')!
 const rightClick = (target: Element): void => act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
 const menuItems = (el: ParentNode): string[] => [...el.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent ?? '')
 const menuItem = (el: ParentNode, text: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) => b.textContent === text)!
@@ -235,7 +237,7 @@ describe('moving a note (D44, D46)', () => {
   it('drag both ways: a table row onto the tray, and a tray note onto the view body', async () => {
     const el = await mount()
     const out = transfer()
-    drag(tableRow(el, 'Sales'), 'dragstart', out)
+    drag(gripOf(el, 'Sales'), 'dragstart', out)
     expect(out.getData('text/plain')).toBe(SALES)
     drag(q(el, '.other-files'), 'dragover', out)
     drag(q(el, '.other-files'), 'drop', out)
@@ -266,7 +268,7 @@ describe('Read only (D36) blocks moving', () => {
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     rightClick(trayLine(el, 'Sales'))
     expect(menuItems(el)).not.toContain('Move back to the table')
-    expect(tableRow(el, 'Lead Gen').getAttribute('draggable')).toBeNull()
+    expect(gripOf(el, 'Lead Gen').getAttribute('draggable')).toBeNull()
     const dt = transfer()
     dt.setData('text/plain', LEAD)
     drag(q(el, '.other-files'), 'drop', dt)

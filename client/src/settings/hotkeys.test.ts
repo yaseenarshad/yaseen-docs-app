@@ -25,6 +25,8 @@ describe('MOUSE_TIPS', () => {
     expect(tip('Click', 'Board cards')?.label).toMatch(/select/i)
     expect(tip('⌥-click', 'Tables and boards')?.label).toMatch(/right panel/i)
     expect(tip('Drag', '6 dots')?.label).toMatch(/Move block/)
+    // YAZ-4605 D56 / D57: ⇧Enter opens the mini window.
+    expect(tip('⇧↩', 'Tables and boards')?.label).toMatch(/mini window/)
   })
 
   it('every tip is renderable, and its short label is the text before " — "', () => {

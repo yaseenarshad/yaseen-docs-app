@@ -93,7 +93,7 @@ export interface NoteWindowMemory {
 }
 
 /**
- * A new memory on `path`: the pin starts as Settings › Folder pages › "Keep the window pinned" says (YAZ-4585, D34);
+ * A new memory on `path`: the pin starts as Settings › Folder pages › "Keep the mini window pinned" says (YAZ-4585, D34);
  * null there, as Settings › "Keep cell notes open (pinned)" says (5E).
  */
 export const noteWindowMemory = (path: string, pinned: boolean | null = null): NoteWindowMemory => ({ path, placed: null, width: null, height: null, pinned: pinned ?? cellNotePinnedAtStart() })
@@ -178,7 +178,7 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 const stepIndex = (found: number, last: number, dir: -1 | 1): number => (found === -1 ? (dir === 1 ? last : last - 1) : found + dir)
 
 /**
- * Open a row in a window (YAZ-4547, 5E D14-D17): a card over the tab's folder page with a full editor on one note,
+ * Open a row in the mini window (YAZ-4547, 5E D14-D17; the name is YAZ-4605 D57): a card over the tab's folder page with a full editor on one note,
  * and ‹ › through the table's rows. The cell-note card's look and gestures (`editor/table/cellNoteCard.ts`), in React:
  * drag the head, 8 grips, a double click on the head resets, and the pin. It is rendered by the folder page
  * (`ViewsPane`), so it belongs to that tab; its DOM goes beside the page's scroller (`section.editor`), out of the
@@ -227,7 +227,7 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
     link.current = path
     link.show()
   }, [memory, link, path])
-  // A layout cleanup (YAZ-4544): "Open in a window" on the open row remounts the card (a new key). React runs the old
+  // A layout cleanup (YAZ-4544): "Open in mini window" (or ⇧Enter, YAZ-4605 D56) on the open row remounts the card (a new key). React runs the old
   // card's layout cleanup before the new card's layout effect, so the new card marks the row after this clears it. A
   // passive cleanup ran after the new card's mark and took it off.
   useLayoutEffect(
@@ -375,12 +375,12 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
   const title = titleOf(path)
   const keep = (event: ReactMouseEvent) => event.preventDefault()
   const card = (
-    <div ref={cardRef} className="note-window" role="dialog" aria-label={`Window: ${title}`} onKeyDown={onKeyDown}>
+    <div ref={cardRef} className="note-window" role="dialog" aria-label={`Mini window: ${title}`} onKeyDown={onKeyDown}>
       <div className="note-window__head" onMouseDown={onHeadDown} onDoubleClick={reset}>
         <span className="cell-note-card__title" title={title}>
           {title}
         </span>
-        <button type="button" className="cell-note-card__pin" title={pinned ? 'Unpin window' : 'Pin window'} aria-label={pinned ? 'Unpin window' : 'Pin window'} aria-pressed={pinned} onMouseDown={keep} onClick={() => setPinned((memory.pinned = !pinned))}>
+        <button type="button" className="cell-note-card__pin" title={pinned ? 'Unpin mini window' : 'Pin mini window'} aria-label={pinned ? 'Unpin mini window' : 'Pin mini window'} aria-pressed={pinned} onMouseDown={keep} onClick={() => setPinned((memory.pinned = !pinned))}>
           <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <path d="M6 2h4l-.6 4.2L12 9H4l2.6-2.8z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
             <path d="M8 9v5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
@@ -406,7 +406,7 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
         >
           ↗
         </button>
-        <button type="button" className="cell-note-card__close" title="Close window" aria-label="Close window" onMouseDown={keep} onClick={onClose}>
+        <button type="button" className="cell-note-card__close" title="Close mini window" aria-label="Close mini window" onMouseDown={keep} onClick={onClose}>
           ×
         </button>
       </div>

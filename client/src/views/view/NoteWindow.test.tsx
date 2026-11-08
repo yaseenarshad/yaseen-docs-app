@@ -1,5 +1,5 @@
 /**
- * Open a row in a window (YAZ-4547, 5E D14-D17): the folder table's row menu opens a card over the folder page with an
+ * Open a row in the mini window (YAZ-4547, 5E D14-D17): the folder table's row menu opens a card over the folder page with an
  * editor on that note. ‹ › step through the table's visible data rows in display order; the pin keeps the card open
  * on an outside click; the card belongs to its tab's folder page. ViewsPane is mounted in jsdom with a stand-in editor
  * (`renderNoteEditor`); the real `Editor` in the card (twins, Properties panel) is proven in `editor/Editor.test.tsx`.
@@ -122,18 +122,18 @@ const rowCell = (title: string): HTMLElement => [...document.querySelectorAll<HT
 /** Open the card on `title` through the row menu. */
 function openOn(title: string): void {
   rightClick(rowCell(title))
-  click(menuItems().find((item) => item.textContent === 'Open in a window')!)
+  click(menuItems().find((item) => item.textContent === 'Open in mini window')!)
 }
 const currentRows = () => [...document.querySelectorAll('tr.view-table__row--current .view-table__name')].map((c) => c.textContent)
 
-describe('Open in a window (YAZ-4547)', () => {
+describe('Open in mini window (YAZ-4547)', () => {
   it('the row menu item, after "Open in right panel", opens the card on that note; the table marks its row', () => {
     mount(SORTED, {}, testFolderHost({ openRight: vi.fn(), renderNoteEditor: (p) => <div className="stub-editor">{p}</div> }))
     rightClick(rowCell('D'))
     // The page actions end with the two pane opens; the table's Fill items (YAZ-4536) follow in their own group.
     const labels = menuItems().map((item) => item.textContent)
-    expect(labels.slice(labels.indexOf('Open in right panel'), labels.indexOf('Open in right panel') + 2)).toEqual(['Open in right panel', 'Open in a window'])
-    click(menuItems().find((item) => item.textContent === 'Open in a window')!)
+    expect(labels.slice(labels.indexOf('Open in right panel'), labels.indexOf('Open in right panel') + 2)).toEqual(['Open in right panel', 'Open in mini window'])
+    click(menuItems().find((item) => item.textContent === 'Open in mini window')!)
 
     expect(card()).not.toBeNull()
     expect(shownPath()).toBe(path('D'))
@@ -145,7 +145,7 @@ describe('Open in a window (YAZ-4547)', () => {
     expect(card()!.parentElement).toBe(q('section.editor'))
   })
 
-  it('"Open in a window" again on the open row keeps the card and the row\'s mark (YAZ-4544)', () => {
+  it('"Open in mini window" again on the open row keeps the card and the row\'s mark (YAZ-4544)', () => {
     mount(SORTED)
     openOn('D')
     openOn('D')
@@ -155,10 +155,10 @@ describe('Open in a window (YAZ-4547)', () => {
     expect(currentRows()).toEqual(['B'])
   })
 
-  it('a host with no note editor offers no "Open in a window"', () => {
+  it('a host with no note editor offers no "Open in mini window"', () => {
     mount(SORTED, {}, testFolderHost())
     rightClick(rowCell('A'))
-    expect(menuItems().map((item) => item.textContent)).not.toContain('Open in a window')
+    expect(menuItems().map((item) => item.textContent)).not.toContain('Open in mini window')
   })
 
   it('‹ › follow the display order and are disabled at the ends', () => {
@@ -212,13 +212,13 @@ describe('Open in a window (YAZ-4547)', () => {
     mount(SORTED)
     openOn('A')
     // The setting "Keep cell notes open (pinned)" is on by default: the card starts pinned.
-    expect(button('Unpin window').getAttribute('aria-pressed')).toBe('true')
+    expect(button('Unpin mini window').getAttribute('aria-pressed')).toBe('true')
     mouseDown(rowCell('C'))
     draw()
     expect(card()).not.toBeNull()
     mouseDown(card()!.querySelector('.stub-editor')!)
-    click(button('Unpin window'))
-    expect(button('Pin window').getAttribute('aria-pressed')).toBe('false')
+    click(button('Unpin mini window'))
+    expect(button('Pin mini window').getAttribute('aria-pressed')).toBe('false')
     // A click in the card does not close it.
     mouseDown(card()!.querySelector('.stub-editor')!)
     draw()
@@ -233,7 +233,7 @@ describe('Open in a window (YAZ-4547)', () => {
     setCellNotePinnedAtStart(false)
     mount(SORTED)
     openOn('A')
-    expect(button('Pin window').getAttribute('aria-pressed')).toBe('false')
+    expect(button('Pin mini window').getAttribute('aria-pressed')).toBe('false')
     act(() => void card()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     draw()
     expect(card()).toBeNull()
@@ -245,7 +245,7 @@ describe('Open in a window (YAZ-4547)', () => {
     click(button('Open in tab'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(path('A'))
     openOn('A')
-    click(button('Close window'))
+    click(button('Close mini window'))
     expect(card()).toBeNull()
   })
 
@@ -269,7 +269,7 @@ describe('Open in a window (YAZ-4547)', () => {
     mount(SORTED)
     openOn('B')
     click(button('Next row'))
-    click(button('Unpin window'))
+    click(button('Unpin mini window'))
     act(() => root?.unmount())
     container?.remove()
     expect(card()).toBeNull()
@@ -277,9 +277,9 @@ describe('Open in a window (YAZ-4547)', () => {
     expect(shownPath()).toBe(path('D'))
     expect(count()).toBe('2 of 5')
     expect(currentRows()).toEqual(['D'])
-    expect(button('Pin window').getAttribute('aria-pressed')).toBe('false')
+    expect(button('Pin mini window').getAttribute('aria-pressed')).toBe('false')
     // A closed card is gone for good: its entry goes with it.
-    click(button('Close window'))
+    click(button('Close mini window'))
     act(() => root?.unmount())
     container?.remove()
     mount(SORTED)
@@ -318,7 +318,7 @@ describe('Open in a window (YAZ-4547)', () => {
     const cardIn = (tabId: string) => inTab(tabId).querySelector('.note-window')
     const openIn = (tabId: string, title: string) => {
       rightClick([...inTab(tabId).querySelectorAll<HTMLElement>('.view-table__name')].find((c) => c.textContent === title)!)
-      click(menuItems().find((item) => item.textContent === 'Open in a window')!)
+      click(menuItems().find((item) => item.textContent === 'Open in mini window')!)
     }
     openIn('t1', 'A')
     expect(cardIn('t1')?.querySelector('.stub-editor')?.textContent).toBe(path('A'))
@@ -326,7 +326,7 @@ describe('Open in a window (YAZ-4547)', () => {
     openIn('t2', 'C')
     expect(cardIn('t1')?.querySelector('.stub-editor')?.textContent).toBe(path('A'))
     expect(cardIn('t2')?.querySelector('.stub-editor')?.textContent).toBe(path('C'))
-    click(cardIn('t1')!.querySelector('[aria-label="Close window"]')!)
+    click(cardIn('t1')!.querySelector('[aria-label="Close mini window"]')!)
     expect(cardIn('t1')).toBeNull()
     expect(cardIn('t2')?.querySelector('.stub-editor')?.textContent).toBe(path('C'))
     // The right panel's folder page (no tab) is its own place too.
@@ -431,12 +431,12 @@ describe('Open in a window (YAZ-4547)', () => {
         window.dispatchEvent(new MouseEvent('mouseup', { clientX: -400, clientY: 0 }))
       })
       expect(card()!.style.width).toBe('240px')
-      click(button('Unpin window'))
-      click(button('Close window'))
+      click(button('Unpin mini window'))
+      click(button('Close mini window'))
       openOn('C')
       expect(card()!.style.left).toBe(`${1200 - 480 - 12 - 300}px`)
       expect(card()!.style.width).toBe('240px')
-      expect(button('Pin window').getAttribute('aria-pressed')).toBe('false')
+      expect(button('Pin mini window').getAttribute('aria-pressed')).toBe('false')
       act(() => void q('.note-window__head').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
       expect(card()!.style.width).toBe('480px')
       expect(card()!.style.left).toBe(`${1200 - 480 - 12}px`)
@@ -444,7 +444,57 @@ describe('Open in a window (YAZ-4547)', () => {
   })
 })
 
-describe('Open in a window in every folder view (YAZ-4547 D24)', () => {
+/** A keydown on `el`, then a render, as a click here does. */
+function press(el: Element, init: KeyboardEventInit): void {
+  act(() => void el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...init })))
+  draw()
+}
+/** The Rank cell of the row that shows `title`. */
+const rankCell = (title: string): HTMLElement => rowCell(title).parentElement!.querySelector<HTMLElement>('td[data-cell$=":1"]')!
+
+describe('⇧Enter opens the row in the mini window (YAZ-4605 D56)', () => {
+  it('⇧Enter on any cell opens the mini window on that row', () => {
+    mount(SORTED)
+    press(rankCell('D'), { shiftKey: true })
+    expect(shownPath()).toBe(path('D'))
+    expect(count()).toBe('2 of 5')
+    expect(currentRows()).toEqual(['D'])
+  })
+
+  it('with the mini window open, ⇧Enter on another row switches it: "N of M" and the mark follow', () => {
+    mount(GROUPED)
+    press(rowCell('D'), { shiftKey: true })
+    press(rankCell('C'), { shiftKey: true })
+    expect(shownPath()).toBe(path('C'))
+    expect(currentRows()).toEqual(['C'])
+    // The order shown: done (B, D), then todo (A, E, C) by rank.
+    expect(count()).toBe('5 of 5')
+    expect(document.querySelectorAll('.note-window')).toHaveLength(1)
+  })
+
+  it('Enter, ⌘Enter and ⌥Enter: the Name cell opens as before; on another cell plain Enter edits and a modifier opens', () => {
+    const openBackground = vi.fn()
+    const openRight = vi.fn()
+    const { onOpenFile } = mount(SORTED, {}, testFolderHost({ openBackground, openRight, renderNoteEditor: (p) => <div className="stub-editor">{p}</div> }))
+    press(rowCell('A'), {})
+    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(path('A'))
+    press(rowCell('B'), { metaKey: true })
+    press(rowCell('C'), { altKey: true })
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith(path('B'))
+    expect(openRight).toHaveBeenCalledExactlyOnceWith(path('C'))
+    press(rankCell('D'), { metaKey: true })
+    press(rankCell('E'), { altKey: true })
+    expect(openBackground).toHaveBeenLastCalledWith(path('D'))
+    expect(openRight).toHaveBeenLastCalledWith(path('E'))
+    // Plain Enter on the Rank cell edits it and opens nothing.
+    press(rankCell('A'), {})
+    expect(onOpenFile).toHaveBeenCalledTimes(1)
+    expect(rankCell('A').querySelector('[data-editing]')).not.toBeNull()
+    expect(card()).toBeNull()
+  })
+})
+
+describe('Open in mini window in every folder view (YAZ-4547 D24)', () => {
   /** Grouped by status, sorted by name: A todo, B done, C todo, D done, E todo, so the groups' order is not the rows' order. */
   const grouped = (type: string) => `views:
   - type: ${type}
@@ -465,8 +515,8 @@ describe('Open in a window in every folder view (YAZ-4547 D24)', () => {
   function openItem(type: string, p: string): void {
     rightClick(itemOf(type, p))
     const labels = menuItems().map((item) => item.textContent)
-    expect(labels[labels.indexOf('Open in right panel') + 1]).toBe('Open in a window')
-    click(menuItems().find((item) => item.textContent === 'Open in a window')!)
+    expect(labels[labels.indexOf('Open in right panel') + 1]).toBe('Open in mini window')
+    click(menuItems().find((item) => item.textContent === 'Open in mini window')!)
   }
   /** Every note the card shows from where it opened to the end, by ›. */
   function walk(): (string | null)[] {
@@ -494,13 +544,13 @@ describe('Open in a window in every folder view (YAZ-4547 D24)', () => {
       expect(marked()).toEqual([shown[4]])
       click(button('Previous row'))
       expect(marked()).toEqual([shown[3]])
-      click(button('Close window'))
+      click(button('Close mini window'))
       expect(marked()).toEqual([])
     })
   }
 
   for (const type of ['board', 'list', 'cards']) {
-    it(`${type}: "Open in a window" again on the open item keeps its mark (YAZ-4544)`, () => {
+    it(`${type}: "Open in mini window" again on the open item keeps its mark (YAZ-4544)`, () => {
       mount(grouped(type), {}, host())
       const first = items(type)[0].dataset.hoverItem!
       openItem(type, first)
@@ -536,6 +586,28 @@ ${grouped('board').split('\n').slice(1).join('\n').replace('name: V', 'name: B')
     expect(marked()).toEqual([shown[1]])
   })
 
+  /** Where Enter goes in each view: the card itself on the Board, the title button in List and Cards. */
+  const keyTarget = (type: string, p: string): HTMLElement => (type === 'board' ? itemOf(type, p) : itemOf(type, p).querySelector<HTMLElement>('.view-list__title, .view-card__title')!)
+  for (const type of ['board', 'list', 'cards']) {
+    it(`${type}: ⇧Enter opens the mini window, and switches it; ⌘Enter and ⌥Enter open a background tab and the right panel (YAZ-4605 D56)`, () => {
+      const openBackground = vi.fn()
+      const openRight = vi.fn()
+      mount(grouped(type), {}, testFolderHost({ openBackground, openRight, renderNoteEditor: (p) => <div className="stub-editor">{p}</div> }))
+      const shown = items(type).map((i) => i.dataset.hoverItem!)
+      press(keyTarget(type, shown[1]), { shiftKey: true })
+      expect(shownPath()).toBe(shown[1])
+      expect(marked()).toEqual([shown[1]])
+      press(keyTarget(type, shown[3]), { shiftKey: true })
+      expect(shownPath()).toBe(shown[3])
+      expect(count()).toBe('4 of 5')
+      expect(marked()).toEqual([shown[3]])
+      press(keyTarget(type, shown[0]), { metaKey: true })
+      press(keyTarget(type, shown[2]), { altKey: true })
+      expect(openBackground).toHaveBeenCalledExactlyOnceWith(shown[0])
+      expect(openRight).toHaveBeenCalledExactlyOnceWith(shown[2])
+    })
+  }
+
   describe('calendar', () => {
     beforeEach(() => {
       vi.useFakeTimers({ toFake: ['Date'] })
@@ -557,6 +629,19 @@ ${grouped('board').split('\n').slice(1).join('\n').replace('name: V', 'name: B')
       expect(marked()).toEqual([path('C')])
       expect(walk()).toEqual(['C', 'B', 'A', 'E', 'D'].map(path))
       expect(marked()).toEqual([path('D')])
+    })
+
+    it('⇧Enter on a card opens the mini window and switches it; plain Enter still opens the note in this tab (YAZ-4605 D56)', () => {
+      const { setRecords, onOpenFile } = mount(CALENDAR, {}, host())
+      setRecords(CAL)
+      press(itemOf('calendar', path('A')), { shiftKey: true })
+      expect(shownPath()).toBe(path('A'))
+      press(itemOf('calendar', path('E')), { shiftKey: true })
+      expect(shownPath()).toBe(path('E'))
+      expect(count()).toBe('4 of 5')
+      expect(marked()).toEqual([path('E')])
+      press(itemOf('calendar', path('C')), {})
+      expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(path('C'))
     })
 
     it('in Week, ‹ › go through the week on screen', () => {

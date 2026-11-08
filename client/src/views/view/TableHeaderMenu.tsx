@@ -24,6 +24,8 @@ export interface TableHeaderMenuProps {
   y: number
   /** The right-clicked column, or null for the `#` gutter header. */
   columnKey: string | null
+  /** Whether the `#` gutter shows its numbers: its menu then hides them, else shows them (the slim strip, YAZ-4610 D62). */
+  rowNumbers?: boolean
   def: ViewSet
   viewIndex: number
   /** The view's shown keys, in order — what a hide or an insert edits. */
@@ -78,7 +80,7 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
  * Esc cancels); "Hide column" is `setViewOrder` without the key (a table may hide `file.name`,
  * YAZ-1007); "Add column to the right…" is the SAME "+ Add column" form, landing the new key
  * after this column instead of at the end; "Delete column…" (confirm-first, `views/deleteColumn.ts`)
- * is disabled with a tooltip for built-in keys. The `#` header offers only "Hide row numbers".
+ * is disabled with a tooltip for built-in keys. The `#` header offers only "Hide row numbers" ("Show row numbers" on the slim strip, YAZ-4610 D62).
  * A grey "<Type> · <key>" line tops the column menu, and "Edit column…" opens `ColumnDetail` — the
  * Properties menu's own column editor — inside it (YAZ-4533). Freeze / ✓ Frozen / Unfreeze write the same
  * `frozenColumns` the Properties menu writes (YAZ-4534). Sort, Group and Text are flyouts (YAZ-4588 D42), each
@@ -87,7 +89,7 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
  * `columnWrap[<canonical key>]` (`true` Wrap, `false` Clip); the choice its kind (or Settings › Folder pages, YAZ-4585) makes anyway deletes the
  * entry in any spelling, and an empty map.
  */
-export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKeys, reserved, records, wrapKind, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
+export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewIndex, keys, takenKeys, reserved, records, wrapKind, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
   const flyout = useFlyout<'sort' | 'group' | 'text'>()
   // The view's own Text in cells, else Settings' (YAZ-4544 10A).
@@ -108,12 +110,12 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
           role="menuitem"
           onClick={() => {
             onUpdate((d) => {
-              d.views[viewIndex].rowNumbers = false
+              d.views[viewIndex].rowNumbers = !rowNumbers
             })
             onClose()
           }}
         >
-          Hide row numbers
+          {rowNumbers ? 'Hide row numbers' : 'Show row numbers'}
         </button>
       </ContextMenuSurface>
     )

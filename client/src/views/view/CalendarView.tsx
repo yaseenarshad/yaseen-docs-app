@@ -1,5 +1,5 @@
 import { type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { openTarget } from '../../lib/openGesture'
+import { openByKey, openTarget } from '../../lib/openGesture'
 import { type DayKey, bucketByDay, addDays, dayLabel, dayOf, monthStart, monthWeeks, timeFirst, timeOf, todayKey, weekDays, weekendAfter, weekendOf, weekLabel, withoutWeekends } from '../calendar'
 import { type Row, propertyLabel } from '../engine'
 import { NO_READ_ONLY } from '../readOnlyRows'
@@ -22,7 +22,7 @@ export interface CalendarViewProps {
   onOpenFile?: (path: string) => void
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
-  /** "Open in a window" in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
+  /** "Open in mini window ⇧↩" (D57) and ⇧Enter (YAZ-4605 D56) in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
   onOpenWindow?: (path: string) => void
   /** The card's link: the calendar writes its order and marks the card's note (D24). */
   windowLink?: NoteWindowLink
@@ -192,7 +192,8 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget || e.key !== 'Enter') return
           e.preventDefault()
-          onOpenFile?.(path)
+          // The table's Enter keys (YAZ-4605 D56): this tab, ⌘ a background tab, ⌥ the right panel, ⇧ the mini window.
+          openByKey(e, path, { onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow })
         }}
       >
         {time !== null && <span className="view-cal__time">{time}</span>}

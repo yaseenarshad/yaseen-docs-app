@@ -1,4 +1,4 @@
-import { type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { api } from '../../api'
 import { createPreviewCache } from '../../lib/previewCache'
@@ -16,6 +16,7 @@ import { canonicalKey } from './keys'
 import { GroupHeader, rowCell, rowTitle } from './GroupHeader'
 import { type GroupSpot, TOP_SPOT, childSpot, groupTakesNew, spotKey } from './groupDrag'
 import { PageContextMenu } from './PageContextMenu'
+import { openByKey } from '../../lib/openGesture'
 import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
@@ -40,7 +41,7 @@ export interface CardsViewProps {
   /** The card's right-click menu (`PageContextMenu`): its two opens, and where a failed action says so. */
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
-  /** "Open in a window" in the right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
+  /** "Open in mini window ⇧↩" (D57) and ⇧Enter (YAZ-4605 D56) in the right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
   onOpenWindow?: (path: string) => void
   /** The card's link: this view writes the order it shows and marks the card's note (D24). */
   windowLink?: NoteWindowLink
@@ -192,13 +193,20 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     '--view-group-indent': `${groupIndentOf(view)}px`,
   } as CSSProperties
 
+  /** The title's Enter keys (YAZ-4605 D56), the table's: this tab, ⌘ a background tab, ⌥ the right panel, ⇧ the mini window. */
+  const openTitleByKey = (e: ReactKeyboardEvent, path: string): void => {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    openByKey(e, path, { onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow })
+  }
+
   const grid = (shown: readonly Row[]) => (
     <ul className="view-cards__grid">
       {shown.map((row) => (
         <li key={row.record.path} className={`view-card${currentItemClass(windowLink, row.record.path)}`} onContextMenu={(event) => openMenu(event, row)} {...hover.itemProps(row.record.path)}>
           {imageKey !== null && <CardCover root={root} cover={coverOf(row.record, imageKey)} />}
           <div className="view-card__body">
-            <button type="button" className="view-card__title" onClick={() => onOpenFile(row.record.path)}>
+            <button type="button" className="view-card__title" onClick={() => onOpenFile(row.record.path)} onKeyDown={(e) => openTitleByKey(e, row.record.path)}>
               {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
             </button>
             {rest.map((key) => {

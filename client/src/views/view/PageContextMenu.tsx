@@ -14,7 +14,7 @@ interface PageContextMenuProps {
   onOpen?: (path: string) => void
   onOpenRight?: (path: string) => void
   onOpenBackground?: (path: string) => void
-  /** "Open in a window" (YAZ-4547): the card over the folder page. Only the folder table passes it. */
+  /** "Open in mini window ⇧↩" (YAZ-4547, D57; the key is YAZ-4605 D56): the card over the folder page. Every folder view passes it when the host has a note editor. */
   onOpenWindow?: (path: string) => void
   onNotice?: (message: string) => void
   onClose: () => void
@@ -120,12 +120,13 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
           type="button"
           className="ctx-menu__item"
           role="menuitem"
+          data-hint="⇧↩"
           onClick={() => {
             onOpenWindow(path)
             onClose()
           }}
         >
-          Open in a window
+          Open in mini window
         </button>
       )}
     </>

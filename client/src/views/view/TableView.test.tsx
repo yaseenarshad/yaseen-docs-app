@@ -391,7 +391,7 @@ describe('the Name cell (YAZ-2420 D26, table F)', () => {
     expect(openRight).toHaveBeenCalledOnce()
   })
 
-  it('F: a double-click on a Name cell edits the title in place; committing runs the one title edit, and the cell takes the focus back', () => {
+  it('F: a double-click on a Name cell edits the title in place; committing runs the one title edit, and Enter moves the focus down a row (YAZ-4612 S43)', () => {
     const retitle = vi.fn()
     const { el, onOpenFile } = mount(TYPED_BASE, { folder: testFolderHost({ retitle }) })
     doubleClick(nameCell(el))
@@ -399,7 +399,8 @@ describe('the Name cell (YAZ-2420 D26, table F)', () => {
     typeTitle(nameCell(el), '  Agentic: the "agency"/2026  ')
     expect(retitle).toHaveBeenCalledExactlyOnceWith(agentic, 'Agentic: the "agency"/2026')
     expect(nameCell(el).querySelector('input')).toBeNull()
-    expect(document.activeElement).toBe(nameCell(el))
+    // It was the Name cell itself; Enter now moves on, as after any cell's edit (S43).
+    expect(document.activeElement).toBe(el.querySelector('td[data-cell="1:0"]'))
     expect(onOpenFile).not.toHaveBeenCalled()
   })
 
@@ -444,7 +445,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(document.activeElement).toBe(cell)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel', 'Filter by this value', 'Hide this value', 'Fill cell', 'Fill row', 'Freeze up to this row', 'Unfreeze rows'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel', 'Filter by this value', 'Hide this value', 'Fill cell', 'Fill row', 'Clear formatting', 'Freeze up to this row', 'Unfreeze rows', 'New row below'])
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -552,7 +553,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     const event = rightClick(checkbox)
 
     expect(event.defaultPrevented).toBe(true)
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Filter by this value', 'Hide this value', 'Fill cell', 'Fill row', 'Freeze up to this row', 'Unfreeze rows'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Filter by this value', 'Hide this value', 'Fill cell', 'Fill row', 'Clear formatting', 'Freeze up to this row', 'Unfreeze rows', 'New row below'])
   })
 
   it('targets the rendered record when file.name is hidden, grouped, or windowed', () => {
@@ -1016,8 +1017,10 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
       'Hide this value',
       'Fill cell',
       'Fill row',
+      'Clear formatting',
       'Freeze up to this row',
       'Unfreeze rows',
+      'New row below',
     ])
     click([...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Open in new tab')!)
     expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')

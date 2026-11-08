@@ -2251,7 +2251,7 @@ export function hoverOn(settings: Pick<SettingsState, 'hoverPreview' | 'hoverPre
 /** Settings › Folder pages › Row band on hover (YAZ-4585): its own switch, else as the table block's Row band (on unless Off). `data-folder-row-band` on `.app`. */
 export const folderRowBandOn = (settings: Pick<SettingsState, 'folderPages' | 'tableRowBand'>): boolean => settings.folderPages.rowBand ?? settings.tableRowBand !== 'off'
 
-/** Settings › Folder pages › Keep the window pinned (YAZ-4585): its own switch, else as "Keep cell notes open". */
+/** Settings › Folder pages › Keep the mini window pinned (YAZ-4585; the name is YAZ-4605 D57): its own switch, else as "Keep cell notes open". */
 export const folderWindowPinned = (settings: Pick<SettingsState, 'folderPages' | 'tableCellNotePinned'>): boolean => settings.folderPages.keepWindowPinned ?? settings.tableCellNotePinned ?? true
 
 export type DiagramDarkColors = 'adapt' | 'keep'

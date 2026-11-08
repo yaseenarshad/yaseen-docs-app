@@ -74,4 +74,18 @@ describe('edgeScroller (YAZ-3808 D5)', () => {
     expect(strip.scrollLeft).toBe(before)
     expect(frames).toHaveLength(0)
   })
+
+  it('the y axis scrolls up and down (YAZ-4612 S47); a box with no size has no end zone', () => {
+    const column = { scrollTop: 0, scrollHeight: 2000, clientHeight: 400, getBoundingClientRect: () => ({ ...RECT, top: 0, bottom: 400, height: 400 }) } as unknown as HTMLElement
+    const onScroll = vi.fn()
+    const s = edgeScroller(() => column, onScroll, 'y')
+    s.at(420) // past the bottom
+    run(60)
+    expect(column.scrollTop).toBeCloseTo(EDGE_SPEED, 0)
+    expect(onScroll).toHaveBeenCalled()
+    s.stop()
+    const flat = { scrollTop: 0, getBoundingClientRect: () => ({ ...RECT, height: 0 }) } as unknown as HTMLElement
+    edgeScroller(() => flat, undefined, 'y').at(0)
+    expect(frames).toHaveLength(0)
+  })
 })

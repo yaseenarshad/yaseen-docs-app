@@ -193,9 +193,9 @@ describe('a folder row (D31/D32)', () => {
     fire(nameCell(el, 'Users'), {}, 'contextmenu')
     click(menuItem(el, 'Open in right panel'))
     expect(host.openRight).toHaveBeenCalledExactlyOnceWith('/vault/Schema/Users')
-    // Open in a window shows the folder page: the editor a folder tab has, on the directory.
+    // Open in mini window shows the folder page: the editor a folder tab has, on the directory.
     fire(nameCell(el, 'Users'), {}, 'contextmenu')
-    click(menuItem(el, 'Open in a window'))
+    click(menuItem(el, 'Open in mini window'))
     expect(host.renderNoteEditor).toHaveBeenLastCalledWith('/vault/Schema/Users')
     expect(q(el, '.test-window-editor').textContent).toBe('/vault/Schema/Users')
   })

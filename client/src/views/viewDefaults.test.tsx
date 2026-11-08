@@ -141,9 +141,10 @@ describe('each reader: no view key → Settings; a view key → the view (YAZ-45
   })
 
   it('row numbers', () => {
-    expect(mount(table(), { folderPages: fp({ rowNumbers: false }) }).el.querySelector('td.view-table__gutter')).toBeNull()
+    // Off leaves the slim strip with no numbers (YAZ-4610 D62).
+    expect(mount(table(), { folderPages: fp({ rowNumbers: false }) }).el.querySelector('td.view-table__gutter')?.classList.contains('view-table__gutter--slim')).toBe(true)
     act(() => root?.unmount())
-    expect(mount(table('    rowNumbers: true\n'), { folderPages: fp({ rowNumbers: false }) }).el.querySelector('td.view-table__gutter')).not.toBeNull()
+    expect(mount(table('    rowNumbers: true\n'), { folderPages: fp({ rowNumbers: false }) }).el.querySelector('td.view-table__gutter')?.classList.contains('view-table__gutter--slim')).toBe(false)
   })
 
   it('text in cells: Clip clips the chip column too; a column’s own Wrap beats it; By kind is the old rule', () => {
@@ -205,8 +206,8 @@ describe('each reader: no view key → Settings; a view key → the view (YAZ-45
     expect(noteWindowMemory('/a.md').pinned).toBe(cellNotePinnedAtStart())
     const { el } = mount(table(), { folderPages: fp({ keepWindowPinned: false }) })
     rightClick([...el.querySelectorAll('.view-table__name')][0])
-    click(menuItem('Open in a window'))
-    expect(q(document, '.note-window [aria-label="Pin window"]').getAttribute('aria-pressed')).toBe('false')
+    click(menuItem('Open in mini window'))
+    expect(q(document, '.note-window [aria-label="Pin mini window"]').getAttribute('aria-pressed')).toBe('false')
   })
 })
 

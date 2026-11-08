@@ -6,6 +6,9 @@ export function deleteNotesMessage(titles: readonly string[]): string {
   return titles.length === 1 ? `Delete "${titles[0]}"? It moves to the Trash.` : `Delete ${titles.length} notes? They move to the Trash.`
 }
 
+/** A delete of more notes than this asks first whatever the setting says (YAZ-4612 S49). */
+export const ALWAYS_ASK_OVER = 10
+
 /**
  * Delete notes from a folder page (YAZ-4592 S26). `confirmDeleteNotes(paths)` opens the app's confirm sheet, or
  * trashes at once when Settings › Folder pages › "Ask before deleting notes" (`ask`) is off. That setting is its own:
@@ -24,7 +27,8 @@ export function useDeleteNotes(
   if (trash === undefined) return { sheet: null }
   const confirmDeleteNotes = (paths: readonly string[]): void => {
     if (paths.length === 0) return
-    if (ask) setAsking({ paths, text: deleteNotesMessage(paths.map(titleOf)) })
+    // More than 10 notes always ask (YAZ-4612 S49), also with the setting off.
+    if (ask || paths.length > ALWAYS_ASK_OVER) setAsking({ paths, text: deleteNotesMessage(paths.map(titleOf)) })
     else void trash(paths)
   }
   const sheet =
