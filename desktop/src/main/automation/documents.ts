@@ -86,7 +86,7 @@ export async function documentCommand(state: AppState, command: string, args: Re
     case 'comment.update': case 'comment.remove': {
       const target = comments.find(item => item.id === args.comment)
       if (!target) throw new AutomationFailure('NOT_FOUND', 'The comment was not found.')
-      if (target.by === undefined) throw new AutomationFailure('COMMENT_OWNERSHIP', 'This comment was left by a person. Edit or delete it in the app.')
+      if (target.by === undefined || target.by.trim() === '') throw new AutomationFailure('COMMENT_OWNERSHIP', 'This comment was left by a person. Edit or delete it in the app.')
       comment = target.id
       content = command === 'comment.remove' ? deleteComment(content, target.id) : editComment(content, target.id, decodeViewOnlyText(body, path), nowIso(), args.title as string ?? target.title ?? '')
       break

@@ -91,6 +91,13 @@ describe('revision-checked document commands', () => {
     await writeFile(path, addComment(before, 'Human comment', { id: 'human', at: '2026-11-07T00:00:00Z' }))
     await expect(run('comment.update', { comment: 'human' }, 'change')).rejects.toMatchObject({ code: 'COMMENT_OWNERSHIP' })
     await expect(run('comment.remove', { comment: 'human' })).rejects.toMatchObject({ code: 'COMMENT_OWNERSHIP' })
+    // A blank author is a person too, as in the legacy edit and delete (YAZ-4574).
+    const withBlank = addComment(await readFile(path, 'utf8'), 'Blank author', { id: 'blank', at: '2026-11-07T00:00:01Z', by: '  ' })
+    await writeFile(path, withBlank)
+    await expect(run('comment.update', { comment: 'blank' }, 'change')).rejects.toMatchObject({ code: 'COMMENT_OWNERSHIP' })
+    await expect(run('comment.remove', { comment: 'blank' })).rejects.toMatchObject({ code: 'COMMENT_OWNERSHIP' })
+    expect(await readFile(path, 'utf8')).toBe(withBlank)
+    await writeFile(path, addComment(before, 'Human comment', { id: 'human', at: '2026-11-07T00:00:00Z' }))
     await expect(run('comment.add', { replyTo: 'absent' }, 'reply')).rejects.toMatchObject({ code: 'NOT_FOUND' })
     await expect(run('property.remove', { keys: ['comments'] })).rejects.toMatchObject({ code: 'RESERVED_PROPERTY', message: expect.stringContaining('comment add/update/remove') })
     const result = await run('comment.add', {}, 'Agent comment') as { comment: string }

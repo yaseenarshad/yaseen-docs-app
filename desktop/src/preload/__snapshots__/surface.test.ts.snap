@@ -42,6 +42,7 @@ favorites.onChanged/1: on favorites:changed -> listener[[{"id":"0-0-0-0-0","ev":
 favorites.set/3: invoke favorites:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.clip/1: invoke fs:clip ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.clipState/0: invoke fs:clip-state []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.copyTo/1: invoke fs:copy-to ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.delete/1: invoke fs:delete ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.dragOut/1: invoke fs:drag-out ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.droppedHere/1: invoke fs:dropped-here ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
