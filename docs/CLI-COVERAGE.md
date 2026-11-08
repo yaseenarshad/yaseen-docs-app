@@ -22,7 +22,7 @@ Run `yaseendocs capabilities --json` to inspect the current build.
 | Saved text and live buffers | `file read`, `document live` | Saved revision by default; live reads require a window and ready tab. |
 | Notes, daily notes, templates | `note create`, `daily find/create`, `template read/write` | Existing naming, templates, ID allocation, calendar rules, and exclusive creation. |
 | Text replacement and append | `file write/append` | Required saved revision; atomic shared writer; durable save log; existing outside-edit handling. |
-| Properties | `property set/remove` | Nested key paths; preserve unrelated YAML and comments; protect human comment ownership. |
+| Properties | `property set/remove` | Nested key paths; preserve unrelated YAML and comments; protect human comment ownership; the app's own keys are refused per the vault's ID answer, naming their command. |
 | Comments | `comment list/add/update/remove` | Existing comment format, reply rules, author field, and human ownership checks. |
 | Review and upkeep | `review queue/list/keep/remove/reset/setEnabled` | Existing schedule and review-log format; required revision for edits. |
 | Link resolution and note references | `link resolve/outgoing/incoming` | Existing metadata index and resolvers; no full-text index or ID minting on reads. Incoming uses the UI's Linked mentions rule (`shared/backlinks.ts`): folder outlines, view order and link-column targets count. |
