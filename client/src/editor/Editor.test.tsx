@@ -2735,6 +2735,20 @@ describe('automation live Markdown read', () => {
     } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
   })
 
+  it('YAZ-4515: a live read says when the conflict bar is up, so an agent knows why a save stays incomplete', async () => {
+    const el = await mount(FM + BODY)
+    el.classList.add('tabstack__layer'); el.dataset.tab = 'live-conflict'
+    vi.mocked(editorViewOf).mockReturnValue({ ...emptyView(), state: { selection: { anchor: 1, head: 1, from: 1, to: 1 }, doc: { textBetween: () => '' } } } as never)
+    try {
+      expect(readLiveDocument('live-conflict').conflict).toBe(false)
+      type('# Hello\n\nunsaved edit\n')
+      diskHas(FM + '# Someone else\n', 2)
+      await emit({ type: 'change', path: PATH, mtime: 2 })
+      expect(el.querySelector('.conflict-bar')).not.toBeNull()
+      expect(readLiveDocument('live-conflict')).toMatchObject({ dirty: true, conflict: true })
+    } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
+  })
+
   it('YAZ-4515: a Read only note offers only select and save, refuses a replace, and offers the edits again at "Allow edits"', async () => {
     const el = await mount('---\nreadonly: true\n---\nLocked body\n')
     el.classList.add('tabstack__layer'); el.dataset.tab = 'live-locked'

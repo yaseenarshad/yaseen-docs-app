@@ -1038,6 +1038,17 @@ describe('automation live code read', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
+  it('YAZ-4515: a live read says when the conflict bar is up', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-code'
+    await opened('a\n')
+    expect(readLiveDocument('live-code').conflict).toBe(false)
+    type('mine\n')
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    expect(container.querySelector('.conflict-bar')).not.toBeNull()
+    expect(readLiveDocument('live-code')).toMatchObject({ dirty: true, conflict: true })
+  })
+
   it('YAZ-4515: a Read only code tab offers only select and save and refuses a replace; "Allow edits" offers the edits again', async () => {
     container.classList.add('tabstack__layer'); container.dataset.tab = 'live-code'
     readFile.mockResolvedValueOnce(disk('saved\n'))

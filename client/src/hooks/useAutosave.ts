@@ -36,6 +36,8 @@ export interface AutosaveHandle {
    * Returns the unsubscribe.
    */
   onSaveRefused: (listener: (diskMtime: number) => void) => () => void
+  /** The conflict bar shows now (YAZ-4515): for the CLI's live read. */
+  conflicted: () => boolean
 }
 
 /** Owns the Autosave controller for one open file (`path`): debounce, flush on unmount and window close. */
@@ -195,5 +197,7 @@ export function useAutosave(path: string): AutosaveHandle {
     }
   }, [])
 
-  return { status, conflictMtime, attach, keepMine, markReloaded, reportConflict: setConflictMtime, absorbFrontmatterOnly, diskParts, onSaveRefused }
+  const conflicted = useCallback(() => conflictShownRef.current, [])
+
+  return { status, conflictMtime, attach, keepMine, markReloaded, reportConflict: setConflictMtime, absorbFrontmatterOnly, diskParts, onSaveRefused, conflicted }
 }

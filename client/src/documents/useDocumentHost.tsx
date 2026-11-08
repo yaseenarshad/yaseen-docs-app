@@ -105,6 +105,9 @@ export function useDocumentHost(options: DocumentHostOptions) {
   /** A retired host never writes again (a delete, or a rename that moved this path away). */
   const retired = useRef(false)
   const [conflictMtime, setConflictMtime] = useState<number | null>(null)
+  /** For the CLI's live read (YAZ-4515), read only when it asks. */
+  const conflicted = useRef(false)
+  conflicted.current = conflictMtime !== null
   /** The file's read-only switch as the file last said it (see the module doc). */
   const [readOnly, setReadOnlyShown] = useState(options.readOnly === true)
   /** The chip's "Allow edits?" box (YAZ-3076 D4): this tab's own, and gone once read only is. */
@@ -291,7 +294,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
   )
 
   const conflictBar = conflictMtime !== null && <ConflictBar onReload={() => void reload()} onKeepMine={keepMine} />
-  return { hostRef, autosave, retired, start, flush, reload, chips, conflictBar, readOnly }
+  return { hostRef, autosave, retired, start, flush, reload, chips, conflictBar, conflicted, readOnly }
 }
 
 /** The cog's row and the chip's three answers (YAZ-3076 D3, D4). */

@@ -202,6 +202,7 @@ const editorTarget = { window: string(), tab: string(), revision: string('Tab-lo
 const liveState = {
   path: string(), tab: string(), source: { type: 'string', enum: ['live'] } as CommandSchema, kind: { type: 'string', enum: ['markdown', 'text', 'drawing', 'diagram'] } as CommandSchema, revision: string(),
   actions: array(string('An action this tab offers now. Read only drawings offer only view actions; Read only Markdown and code tabs offer only select and save.')), baselineMtime: { type: 'number' } as CommandSchema, dirty: { type: 'boolean' } as CommandSchema,
+  conflict: { type: 'boolean', description: 'The conflict bar shows: the file changed on disk under unsaved edits. A person chooses Reload or Keep mine; editor.save stays incomplete until then.' } as CommandSchema,
   selection: object({ anchor: { type: 'integer' }, head: { type: 'integer' }, text: { type: 'string', maxLength: 10 * 1024 * 1024 }, coordinate: { type: 'string', enum: ['prosemirror', 'utf16'] } }),
 }
 const editorResult = object({ ...liveState, rendererApplied: { type: 'boolean' }, diskSaved: { type: 'boolean' } }, ['path', 'tab', 'source', 'kind', 'revision', 'actions', 'baselineMtime', 'dirty', 'rendererApplied', 'diskSaved'])

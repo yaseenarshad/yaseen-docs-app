@@ -623,7 +623,7 @@ function CrepeHost({
     if (always || now !== from) reportZoom(now, true, getZoomLabelOf(crepe), from)
   }, [reportZoom])
   const autosave = useAutosave(file.path)
-  const { attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused } = autosave
+  const { attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, conflicted } = autosave
   // The user's own edit keeps a preview tab (YAZ-2648 D2), and the signal is the note turning
   // UNSAVED, never `onMarkdownUpdated`: that fires for a silent reload of an outside change too.
   // The autosave turns unsaved only when the editor's text differs from what it last read or
@@ -942,7 +942,7 @@ function CrepeHost({
         offLiveDocument = registerLiveDocument(scroller, () => {
           const parts = diskParts(), bodyNow = getMarkdownForSave(crepe)
           const { selection, doc } = editorViewOf(crepe).state
-          return { path: file.path, kind: 'markdown', content: parts.frontmatter + bodyNow, baselineMtime: controller!.mtime, dirty: bodyNow !== parts.body, selection: { anchor: selection.anchor, head: selection.head, text: doc.textBetween(selection.from, selection.to, '\n'), coordinate: 'prosemirror' } }
+          return { path: file.path, kind: 'markdown', content: parts.frontmatter + bodyNow, baselineMtime: controller!.mtime, dirty: bodyNow !== parts.body, conflict: conflicted(), selection: { anchor: selection.anchor, head: selection.head, text: doc.textBetween(selection.from, selection.to, '\n'), coordinate: 'prosemirror' } }
         }, {
           version: () => `${markdownVersion(crepe)}:${controller!.mtime}`,
           // Read only blocks a person's edits and Undo (YAZ-3076 D2), so the CLI gets none either (YAZ-4560).
@@ -1043,7 +1043,7 @@ function CrepeHost({
       offRefused()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, drawingFeed, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, conflicted, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, drawingFeed, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom])
 
   /**
    * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1), and the cog's on/off rows
