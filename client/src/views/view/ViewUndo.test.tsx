@@ -9,11 +9,12 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { Notice } from '../../lib/notice'
 import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
-import { ViewsPane } from '../ViewsPane'
+import { type FolderHost, ViewsPane } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
+// `getSettings`: a keydown that bubbles to the window reaches the Find bar's listener, which reads the hotkeys.
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined } }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -39,7 +40,7 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 let draw: () => void = () => {}
 
-function mount(text = TABLE) {
+function mount(text = TABLE, over: Partial<FolderHost> = {}) {
   let parsed = parseViews(text)
   const onChange = vi.fn((next: ParsedViews) => {
     parsed = next
@@ -49,7 +50,7 @@ function mount(text = TABLE) {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  const folder = testFolderHost({ onNotice })
+  const folder = testFolderHost({ onNotice, ...over })
   draw = () => act(() => root?.render(<ViewsPane parsed={parsed} onChange={onChange} root="/vault" folderPath="/vault/pillars.md" records={TEST_RECORDS} folder={folder} onOpenFile={vi.fn()} />))
   draw()
   const el = container
@@ -92,6 +93,15 @@ const item = (el: ParentNode, text: string): HTMLElement => {
 const header = (el: ParentNode, label: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-table thead th')].find((t) => t.textContent === label)!
 const rowNamed = (el: ParentNode, name: string): HTMLElement =>
   [...el.querySelectorAll<HTMLElement>('.view-table tbody tr')].find((tr) => tr.querySelector('.view-table__name')?.textContent === name)!
+/** A field's value through React's setter, then its `input` event, as the header menu's tests do. */
+const setValue = (el: HTMLInputElement | HTMLSelectElement, value: string): void => {
+  const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
+  act(() => {
+    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, value)
+    el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }))
+  })
+}
+const press = (el: Element, key: string): void => act(() => void el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
 
 describe('the Undo toast for view changes (YAZ-4594 S29)', () => {
   it('"Hide column" in the column menu: a toast, and Undo shows the column again in one write', () => {
@@ -105,7 +115,7 @@ describe('the Undo toast for view changes (YAZ-4594 S29)', () => {
 
   it('a hide in the Properties menu offers Undo; a show does not', () => {
     const { el, onNotice, toast, undo } = mount()
-    click(q(el, '[aria-label="Properties"]'))
+    click(q(el, '[aria-label="Columns and view"]'))
     const box = q<HTMLInputElement>(el, '[aria-label="Show Priority"]')
     click(box)
     expect(toast()).toBe('Hid Priority')
@@ -180,5 +190,75 @@ describe('the Undo toast for view changes (YAZ-4594 S29)', () => {
     act(() => action!.run())
     expect(onChange).toHaveBeenCalledTimes(writes + 1)
     expect(def()).toEqual(parseViews(TABLE).def)
+  })
+})
+
+describe('the Undo toast also covers rename column, change column type and delete column (YAZ-4608 C6)', () => {
+  it('"Rename column…" in the column menu: a toast names both labels, and Undo puts the label back', () => {
+    const { el, toast, undo, yaml } = mount()
+    rightClick(header(el, 'Priority'))
+    click(item(el, 'Rename column…'))
+    const field = q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Rename Priority"]')
+    setValue(field, 'Prio')
+    press(field, 'Enter')
+    expect(yaml()).toContain('displayName: Prio')
+    expect(toast()).toBe('Renamed Priority to Prio')
+    undo()
+  })
+
+  it('the column editor’s Display name: the same toast; an emptied name reads as the default label', () => {
+    const { el, toast, undo, onNotice } = mount()
+    click(q(el, '[aria-label="Columns and view"]'))
+    click(q(el, '[aria-label="Open Priority"]'))
+    const field = q<HTMLInputElement>(el, '[aria-label="Display name"]')
+    setValue(field, 'Prio')
+    press(field, 'Enter')
+    expect(toast()).toBe('Renamed Priority to Prio')
+    undo()
+    // The same name again changes nothing, so it says nothing.
+    setValue(q<HTMLInputElement>(el, '[aria-label="Display name"]'), '')
+    press(q(el, '[aria-label="Display name"]'), 'Enter')
+    expect(onNotice).toHaveBeenCalledTimes(1)
+  })
+
+  it('a Type change in the column editor: a toast, and Undo writes the declaration that stood before back, against the one it wrote', async () => {
+    const before = { kind: 'select' as const, options: ['a', 'b'] }
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const { el, onNotice } = mount(TABLE, { settings: { columns: { status: before }, views: [], problems: [] }, setColumn })
+    rightClick(header(el, 'Status'))
+    click(item(el, 'Edit column…'))
+    setValue(q<HTMLSelectElement>(el, '.ctx-menu [aria-label="Edit property Status"]'), 'text')
+    await act(async () => {})
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', { kind: 'text' }, before)
+    const [message, icon, type, action] = onNotice.mock.lastCall as [string, string, string, Notice['action']]
+    expect([message, icon, type, action?.label, action?.fades]).toEqual(['Changed Status to Text', 'info', 'undo', 'Undo', true])
+    act(() => action!.run())
+    expect(setColumn).toHaveBeenLastCalledWith('status', before, { kind: 'text' })
+  })
+
+  it('a first declaration’s Undo removes it again through setColumns, with the views as they are', async () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const setColumns = vi.fn()
+    const { el, onNotice, def } = mount(TABLE, { setColumn, setColumns })
+    rightClick(header(el, 'Priority'))
+    click(item(el, 'Edit column…'))
+    setValue(q<HTMLSelectElement>(el, '.ctx-menu [aria-label="Edit property Priority"]'), 'number')
+    await act(async () => {})
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('priority', { kind: 'number' }, undefined)
+    const [message, , , action] = onNotice.mock.lastCall as [string, string, string, Notice['action']]
+    expect(message).toBe('Changed Priority to Number')
+    act(() => action!.run())
+    expect(setColumns).toHaveBeenCalledExactlyOnceWith({}, def().views)
+  })
+
+  it('a refused declaration write says nothing: the inline error is the report', async () => {
+    const setColumn = vi.fn().mockRejectedValue(new Error('changed since opened'))
+    const { el, onNotice } = mount(TABLE, { setColumn })
+    rightClick(header(el, 'Status'))
+    click(item(el, 'Edit column…'))
+    setValue(q<HTMLSelectElement>(el, '.ctx-menu [aria-label="Edit property Status"]'), 'number')
+    await act(async () => {})
+    expect(onNotice).not.toHaveBeenCalled()
+    expect(el.querySelector('.column-detail')?.textContent).toContain('changed since opened')
   })
 })

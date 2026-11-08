@@ -156,7 +156,8 @@ export function Toolbar({ selectionChip, def, view, viewIndex, records, filterEr
         {!documentView &&
           button(
             'properties',
-            'Properties',
+            // "Columns and view" (YAZ-4608 C1): the popover's two tabs, not "Properties".
+            'Columns and view',
             <PropertiesIcon />,
             0,
             <PropertiesMenu key={viewAsks} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder} dateColumns={dateColumns} tabId={tabId} startTab={viewAsks > 0 ? 'view' : undefined} />,

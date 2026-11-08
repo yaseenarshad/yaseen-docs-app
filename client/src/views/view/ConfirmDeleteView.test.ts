@@ -9,16 +9,13 @@ import { describe, expect, it } from 'vitest'
 import { deleteViewMessage } from './ConfirmDeleteView'
 
 describe('deleteViewMessage', () => {
+  // The app's one delete pattern (YAZ-4608 C7): `Delete <thing>? <what happens>.`, the thing in double quotes.
   it("the Page tab says its text stays in the folder (YAZ-4584 D38)", () => {
-    expect(deleteViewMessage({ type: 'page', name: 'Page' })).toBe("Delete the view 'Page'? The page's text stays in the folder — a new Page tab shows it again.")
+    expect(deleteViewMessage({ type: 'page', name: 'Page' })).toBe('Delete the view "Page"? The page\'s text stays in the folder. A new Page tab shows it again.')
   })
 
   it('every other view names its configuration instead', () => {
-    expect(deleteViewMessage({ type: 'table', name: 'Table' })).toBe(
-      "Delete the view 'Table'? Its columns, sort, filters and grouping go with it — the pages themselves stay put.",
-    )
-    expect(deleteViewMessage({ type: 'board', name: 'Kanban' })).toBe(
-      "Delete the view 'Kanban'? Its columns, sort, filters and grouping go with it — the pages themselves stay put.",
-    )
+    expect(deleteViewMessage({ type: 'table', name: 'Table' })).toBe('Delete the view "Table"? Its columns, sort, filters and grouping go with it. The notes stay.')
+    expect(deleteViewMessage({ type: 'board', name: 'Kanban' })).toBe('Delete the view "Kanban"? Its columns, sort, filters and grouping go with it. The notes stay.')
   })
 })

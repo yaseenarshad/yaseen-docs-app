@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { PROPERTY_KINDS, type IndexRecord, type PropertiesResponse, type PropertyFormat, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import type { ColumnDecl, FolderSettings } from '../folderSettings'
@@ -112,6 +112,15 @@ export function columnTypeLabel(key: string, records: readonly IndexRecord[], pr
   return PROPERTY_LABELS[columnKind(key, records, properties, settings)]
 }
 
+/**
+ * The folder doors the column editor and the header menu write through (YAZ-1549): the declarations, one declaration's
+ * write and the delete; since YAZ-4608 C6 the notice too, for the Undo toast of a type change, with `setColumns` for the
+ * Undo of a first declaration (the table hands its `declareColumn`).
+ */
+export type ColumnDoors = Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount' | 'onNotice'> & {
+  setColumns?: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
+}
+
 export interface ColumnDetailProps {
   columnKey: string
   def: ViewSet
@@ -121,7 +130,7 @@ export interface ColumnDetailProps {
   onUpdate: Mutate
   properties: PropertiesResponse | null
   /** The host's AHEAD declarations and the doors a declaration edit and a delete go through (YAZ-1549). */
-  folder: Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount'>
+  folder: ColumnDoors
   /** The column is shown in this view. */
   shown: boolean
   /** The view may hide it (Cards and List keep `file.name`). */
@@ -167,7 +176,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
    * declaration alone moves). The host shows the next edit what just landed; a rejection only shows
    * its text here — the host has already reverted its copy.
    */
-  const writeDeclaration = async (next: ColumnDecl, rename?: { from: string; to: string }) => {
+  const writeDeclaration = async (next: ColumnDecl, rename?: { from: string; to: string }): Promise<boolean> => {
     setSaving(true)
     setError(null)
     try {
@@ -175,13 +184,38 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
       // The rename rides only when there is one (YAZ-4591 S24): every other edit is the three-argument write it always was.
       await (rename === undefined ? folder.setColumn(name, next, base) : folder.setColumn(name, next, base, rename))
       setSaving(false)
+      return true
     } catch (err) {
       setSaving(false)
       setError(err instanceof Error ? err.message : String(err))
+      return false
     }
   }
-  /** The label, through the shared rule (`columnLabel.ts`) the table header's rename uses too (YAZ-1513). */
-  const renameColumn = (next: string) => onUpdate((d) => setDisplayName(d, key, next))
+  // An Undo runs after later renders (YAZ-4594 S29): it goes through the doors and the declarations that are current then.
+  const latest = useRef(folder)
+  latest.current = folder
+  /**
+   * The Type row (YAZ-4608 C6): the declaration write, then the S29 toast. Undo writes the declaration that stood before
+   * back, against the one this wrote; a column declared here for the first time loses its declaration again
+   * (`setColumns` without it — no toast where the doors have none).
+   */
+  const changeKind = async (kind: PropertyKind): Promise<void> => {
+    const before = folder.settings.columns[name]
+    const written = declarationForKind(before, kind)
+    if (!(await writeDeclaration(written))) return
+    if (before === undefined && folder.setColumns === undefined) return
+    const restore = () => {
+      const doors = latest.current
+      if (before !== undefined) void doors.setColumn(name, before, written).catch(() => undefined)
+      else {
+        const { [name]: _gone, ...rest } = doors.settings.columns
+        doors.setColumns?.(rest, def.views)
+      }
+    }
+    folder.onNotice?.(`Changed ${propertyLabel(def, key)} to ${PROPERTY_LABELS[kind]}`, 'info', 'undo', { label: 'Undo', run: restore, fades: true })
+  }
+  /** The label, through the shared rule (`columnLabel.ts`) the table header's rename uses too (YAZ-1513); a rename offers Undo (YAZ-4608 C6). */
+  const renameColumn = (next: string) => onUpdate((d) => setDisplayName(d, key, next), `Renamed ${propertyLabel(def, key)} to ${next.trim() || defaultLabel(key)}`)
 
   const style: CardStyle = view.cardStyle?.[canonicalKey(key)] ?? {}
   /** One cardStyle write (YAZ-1206): flags that fall back to absent delete themselves; an empty entry, then an empty map, deletes too — the YAML default-deletes rule. */
@@ -255,7 +289,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
               className="view-select"
               aria-label={`Edit property ${label}`}
               value={kind ?? ''}
-              onChange={(e) => void writeDeclaration(declarationForKind(decl, e.target.value as PropertyKind))}
+              onChange={(e) => void changeKind(e.target.value as PropertyKind)}
             >
               {kind === undefined && (
                 <option value="" disabled>

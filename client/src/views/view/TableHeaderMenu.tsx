@@ -9,7 +9,7 @@ import { type Mutate, type ViewDef, type ViewSet, MAX_GROUP_LEVELS } from '../vi
 import { useViewDefaults } from '../viewDefaults'
 import type { FolderHost } from '../ViewsPane'
 import { AddColumn } from './AddColumn'
-import { ColumnDetail, columnKind, columnTypeLabel } from './ColumnDetail'
+import { ColumnDetail, type ColumnDoors, columnKind, columnTypeLabel } from './ColumnDetail'
 import { displayNameOf, setDisplayName } from './columnLabel'
 import { setViewOrder, withOrder } from './columnOrder'
 import { UNFROZE_COLUMNS, frozenColumnCount } from './frozenColumns'
@@ -40,8 +40,8 @@ export interface TableHeaderMenuProps {
   wrapKind: string | null | undefined
   /** The vault's property declarations, the type line's and the editor's fallback. */
   properties: PropertiesResponse | null
-  /** The host's AHEAD declarations — spread under a new one — and the doors "Edit column…" writes through (YAZ-4533). */
-  folder: Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount'>
+  /** The host's AHEAD declarations — spread under a new one — and the doors "Edit column…" writes through (YAZ-4533; `ColumnDoors`). */
+  folder: ColumnDoors
   onUpdate: Mutate
   /** `FolderHost.setColumns`: declare on the folder AND show, one write. */
   declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
@@ -190,7 +190,8 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
             autoFocus
             value={displayNameOf(def, key)}
             placeholder={defaultLabel(key)}
-            onCommit={(name) => onUpdate((d) => setDisplayName(d, key, name))}
+            // A rename offers Undo too (YAZ-4608 C6, the S29 toast).
+            onCommit={(name) => onUpdate((d) => setDisplayName(d, key, name), `Renamed ${label} to ${name.trim() || defaultLabel(key)}`)}
             onDone={onClose}
           />
         ) : mode === 'add' ? (
@@ -223,17 +224,6 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
               </button>
               <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('rename')}>
                 Rename column…
-              </button>
-              <button
-                type="button"
-                className="ctx-menu__item"
-                role="menuitem"
-                onClick={() => {
-                  hide()
-                  onClose()
-                }}
-              >
-                Hide column
               </button>
               <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('add')}>
                 Add column to the right…
@@ -298,7 +288,19 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
                 </div>
               </FlyoutParent>
             </div>
+            {/* The view group (YAZ-4608 C8): what shows and what freezes, after the edits and before Delete. */}
             <div className="ctx-menu__group" onMouseEnter={() => flyout.hover(null)}>
+              <button
+                type="button"
+                className="ctx-menu__item"
+                role="menuitem"
+                onClick={() => {
+                  hide()
+                  onClose()
+                }}
+              >
+                Hide column
+              </button>
               <button
                 type="button"
                 className="ctx-menu__item"

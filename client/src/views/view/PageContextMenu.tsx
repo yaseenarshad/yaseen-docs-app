@@ -18,21 +18,23 @@ interface PageContextMenuProps {
   onOpenWindow?: (path: string) => void
   onNotice?: (message: string) => void
   onClose: () => void
-  /** A surface's own items, each entry a group after the page actions: the folder table's "Fill cell ›" and "Fill row ›" (YAZ-4536 D12), then its row freeze (YAZ-4537). */
+  /** A surface's own items, each entry a group after the page actions: the folder table's edit groups, then its view groups (YAZ-4608 C8: open, edit, view, destructive). */
   extra?: ReactNode[]
+  /** The destructive items, the LAST group (YAZ-4608 C8): the table's "Delete note…". After "Move to Other files". */
+  danger?: ReactNode
 }
 
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
-export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose, extra, onOpenWindow }: PageContextMenuProps) {
+export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose, extra, danger, onOpenWindow }: PageContextMenuProps) {
   // A folder row's page is its folder (YAZ-4579 D32): Copy path and Reveal name the directory, not its hidden `.folder.md`.
   const page = rowPage(path)
-  // "Move to Other files" (YAZ-4597 D46): its own group, last, on a note row of a folder page whose tray takes moves.
+  // "Move to Other files" (YAZ-4597 D46): its own group, after the surface's groups and before the destructive one (C8),
+  // on a note row of a folder page whose tray takes moves.
   const moveToTray = useContext(OtherFilesMove)
-  const groups =
-    moveToTray === null || !movesToOtherFiles(path)
-      ? extra
+  const tail: ReactNode[] = [
+    ...(moveToTray === null || !movesToOtherFiles(path)
+      ? []
       : [
-          ...(extra ?? []),
           <button
             key="other-files"
             type="button"
@@ -45,7 +47,10 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
           >
             Move to Other files
           </button>,
-        ]
+        ]),
+    ...(danger === undefined || danger === null ? [] : [danger]),
+  ]
+  const groups = extra === undefined && tail.length === 0 ? undefined : [...(extra ?? []), ...tail]
   const reveal = (): void => {
     onClose()
     api.shell.reveal({ path: page }).catch((error: unknown) => {

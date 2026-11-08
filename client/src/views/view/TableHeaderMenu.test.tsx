@@ -121,14 +121,15 @@ describe('the header menu (YAZ-1513)', () => {
     const { el, onChange } = mount()
     expect(el.querySelector('.ctx-menu')).toBeNull()
     rightClick(th(el, 1))
+    // One order (YAZ-4608 C8): the edits, then the view items (Hide column with the freezes), then Delete last.
     expect(menuItems(el)).toEqual([
       'Edit column…',
       'Rename column…',
-      'Hide column',
       'Add column to the right…',
       'Sort', // YAZ-4588 D42: three flyouts replace the flat sort, group and wrap items
       'Group',
       'Text',
+      'Hide column',
       '✓ Frozen up to this column', // BASE freezes two: Status is the last frozen column
       'Unfreeze columns',
       'Delete column…',
@@ -260,7 +261,7 @@ describe('the header menu (YAZ-1513)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull() // the menu yields to the sheet
     const sheet = q<HTMLElement>(el, '.confirm[role="dialog"]')
     // TEST_RECORDS: five of the eight carry `status`
-    expect(q(sheet, '.confirm__text').textContent).toBe('Delete "Status"? This removes the column from this folder and the "status" value from 5 notes.')
+    expect(q(sheet, '.confirm__text').textContent).toBe('Delete the column "Status"? It goes from this folder, and the "status" value from 5 notes.')
     expect(document.activeElement?.textContent).toBe('Cancel')
     click([...sheet.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Cancel')!)
     expect(el.querySelector('.confirm')).toBeNull()
@@ -268,8 +269,8 @@ describe('the header menu (YAZ-1513)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('Delete a column from a folder: the confirm sheet’s copy is `Delete "<label>"? This removes the column from this folder and the "<key>" value from N notes.` — and nothing more', () => {
-    const lost = (notes: string): string => `Delete "Status"? This removes the column from this folder and the "status" value from ${notes}.`
+  it('Delete a column from a folder: the confirm sheet’s copy is `Delete the column "<label>"? It goes from this folder, and the "<key>" value from N notes.` (YAZ-4608 C7) — and nothing more', () => {
+    const lost = (notes: string): string => `Delete the column "Status"? It goes from this folder, and the "status" value from ${notes}.`
     expect(deleteColumnMessage('Status', 'status', 1)).toBe(lost('1 note'))
     expect(deleteColumnMessage('Status', 'status', 3)).toBe(lost('3 notes'))
     expect(deleteColumnMessage('Status', 'status', 0)).toBe(lost('0 notes'))

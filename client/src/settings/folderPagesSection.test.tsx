@@ -102,6 +102,15 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     expect(pressed('folderPages.keepWindowPinned')).toBe('On')
   })
 
+  it('the two row band rows point at each other (YAZ-4608 C5)', async () => {
+    const items = SETTINGS_SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.items))
+    const hint = (id: string) => String(items.find((item) => item.id === id)!.hint)
+    expect(hint('tableRowBand')).toContain('Folder pages › Row band on hover')
+    expect(hint('folderPages.rowBand')).toContain('Editor › Tables › Row band')
+    await open('Folder pages')
+    expect(row('folderPages.rowBand')?.querySelector('.setting__hint')?.textContent).toContain('Editor › Tables › Row band')
+  })
+
   it('Preview on hover for folder views lives here now, on the same key; Files & Links keeps the other places', async () => {
     await open('Folder pages')
     act(() => button('hoverPreviewIn.folderViews', 'Off').click())

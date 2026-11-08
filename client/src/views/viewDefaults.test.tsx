@@ -80,7 +80,7 @@ const q = <T extends Element>(el: ParentNode, sel: string): T => {
 const click = (el: Element): void => act(() => void el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
 /** The Properties popover on its View tab (YAZ-4607 D59), where the view settings live. */
 const openView = (el: ParentNode): void => {
-  click(q(el, '.view-toolbar [aria-label="Properties"]'))
+  click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
   click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
 }
 const rightClick = (el: Element): void => act(() => void el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))

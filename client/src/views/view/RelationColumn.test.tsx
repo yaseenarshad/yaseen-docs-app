@@ -213,7 +213,7 @@ const options = (el: ParentNode) => [...el.querySelectorAll('[role="option"]')].
 
 /** Open the Properties popover and the relation editor for `key` — the button wears the column's LABEL (YAZ-1513). */
 function openRelation(el: ParentNode, key: string) {
-  click(byLabel(el, 'Properties'))
+  click(byLabel(el, 'Columns and view'))
   click(byLabel(el, `Open ${defaultLabel(key)}`)) // the column's detail (YAZ-1513)
   click(byLabel(el, `Relation for ${defaultLabel(key)}`))
 }
@@ -259,7 +259,7 @@ describe('column menu relation flow', () => {
   it('an existing legacy declaration is the seed: nothing is written before the click, and Make relation writes exactly it', async () => {
     const { setColumn, folder } = aheadHost()
     const { el } = mount(KPI_BASE, { properties: DECLS, folder })
-    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Columns and view'))
     click(byLabel(el, 'Open Funnels'))
     expect(setColumn).not.toHaveBeenCalled()
     click(byLabel(el, 'Relation for Funnels'))
@@ -271,7 +271,7 @@ describe('column menu relation flow', () => {
 
   it('file.* rows never offer a relation; note.* rows do', () => {
     const { el } = mount(KPI_BASE)
-    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Columns and view'))
     click(byLabel(el, 'Open Name'))
     expect(el.querySelector('[aria-label="Relation for Name"]')).toBeNull() // file.name's detail
     click(byLabel(el, 'Back to columns'))

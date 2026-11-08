@@ -164,7 +164,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   // ---------- the two tabs (D59) ----------
   return (
     <div className="view-menu view-menu--tabbed">
-      <div className="view-menu__tabs" role="group" aria-label="Properties tabs">
+      <div className="view-menu__tabs" role="group" aria-label="Columns and view tabs">
         {TABS.map(([id, text]) => (
           <button key={id} type="button" className="view-menu__tab" data-tab={id} aria-pressed={tab === id} onClick={() => pickTab(id)}>
             {text}

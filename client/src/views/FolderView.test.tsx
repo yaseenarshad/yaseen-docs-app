@@ -493,7 +493,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
     const own = rec('/vault/stages/Own.md', { order: 9 }) // a top-level `order` is the note's own: not counted
     const el = await mount(SETTINGS, [...vault(), own]) // Other is no row here and is counted: it holds the field
     openDeleteSheet(el)
-    const text = 'Delete "Order"? This removes the column from this folder and the "order" value from 4 notes.'
+    const text = 'Delete the column "Order"? It goes from this folder, and the "order" value from 4 notes.'
     expect(q(el, '.confirm__text').textContent).toBe(text)
     feed(SETTINGS, [...vault(), own, rec('/vault/stages/New.md', held({ order: 4 }))])
     expect(q(el, '.confirm__text').textContent).toBe(text)
@@ -715,7 +715,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
   it('Page → Default view is ONE whole-key settings write carrying the name', async () => {
     const el = await mount()
     click(tab(el, 'Table')) // the Page offers no Properties menu; switching writes nothing
-    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Columns and view'))
     click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
     setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
     await flush()
@@ -724,7 +724,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
 
   it('the dropdown shows the saved value, and First view clears the key', async () => {
     const el = await mount({ ...SETTINGS, defaultView: 'Table' })
-    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Columns and view'))
     click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
     const select = byLabel<HTMLSelectElement>(el, 'Default view')
     expect(select.value).toBe('Table')
@@ -760,7 +760,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
     const el = await mount()
     feed({ ...SETTINGS, defaultView: 'Table' })
     click(tab(el, 'Table')) // the Page has no Properties button of its own
-    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Columns and view'))
     click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
     expect(byLabel<HTMLSelectElement>(el, 'Default view').value).toBe('Table')
     expect(write).not.toHaveBeenCalled()
@@ -775,7 +775,7 @@ describe('config edits are ONE settings write on the folder', () => {
     const settings = { ...SETTINGS, views }
     const el = await mount(settings)
     selectView(el, name)
-    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Columns and view'))
     const clear = [...el.querySelectorAll<HTMLButtonElement>('.view-menu__action')].find((button) => button.textContent === 'Unselect all')!
     click(clear)
     await flush()
@@ -798,7 +798,7 @@ describe('config edits are ONE settings write on the folder', () => {
     const withBoard = { ...SETTINGS, views: [...SETTINGS.views, BOARD] } // the settings SAY board now (D3)
     const el = await mount(withBoard)
     selectView(el, 'Board')
-    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Columns and view'))
     click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
     const width = byLabel<HTMLInputElement>(el, 'Column width in pixels')
     setValue(width, '400')
@@ -1060,7 +1060,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
   it('carries an in-flight defaultView choice the index has not echoed back yet', async () => {
     const el = await mount()
     click(tab(el, 'Table')) // the Page offers no Properties menu
-    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Columns and view'))
     click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
     setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
     await flush()
@@ -1698,13 +1698,13 @@ describe('each folder has its own properties (D19)', () => {
       const el = await mount(null, OWN, false)
       expect(captured.folder!.deleteColumn).toBeUndefined()
       expect(captured.folder!.valueCount('note.owner')).toBe(0)
-      click(byLabel(el, 'Properties'))
+      click(byLabel(el, 'Columns and view'))
       click(byLabel(el, 'Open Owner'))
       expect(byLabel(el, 'Hide Owner in this view')).toBeDefined()
       expect(el.querySelector('[aria-label="Delete column Owner"]')).toBeNull()
-      click(byLabel(el, 'Properties'))
+      click(byLabel(el, 'Columns and view'))
       rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][5])
-      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Hide column', 'Add column to the right…', 'Sort', 'Group', 'Text', 'Freeze up to this column', 'Unfreeze columns'])
+      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Add column to the right…', 'Sort', 'Group', 'Text', 'Hide column', 'Freeze up to this column', 'Unfreeze columns'])
       click(menuItem(el, 'Hide column'))
       await flush()
       expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Title'])

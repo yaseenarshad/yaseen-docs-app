@@ -133,7 +133,9 @@ describe('the row menu duplicates and deletes a note (YAZ-4592 S26)', () => {
     const duplicate = vi.fn()
     const { el } = mount(TABLE, { duplicate, trash: vi.fn(() => Promise.resolve()) })
     rightClick(cell(el, title, 0))
-    expect(labels(el).slice(-2)).toEqual(['Duplicate note', 'Delete note…'])
+    // Duplicate is an edit item, Delete the last, destructive one (YAZ-4608 C8).
+    expect(labels(el)).toContain('Duplicate note')
+    expect(labels(el).at(-1)).toBe('Delete note…')
     click(item(el, 'Duplicate note'))
     expect(duplicate).toHaveBeenCalledExactlyOnceWith(path)
     expect(el.querySelector('.ctx-menu')).toBeNull()

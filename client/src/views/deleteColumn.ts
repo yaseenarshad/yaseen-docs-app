@@ -26,6 +26,7 @@ import { folderValues, setFolderValue } from '@shared/folderValues'
 import { isRecord } from '@shared/guards'
 import type { IndexRecord } from '@shared/types'
 import { reservedKeys } from '../links/reservedKeys'
+import { propertyLabel } from './engine'
 import type { ColumnDecl } from './folderSettings'
 import { withOrder } from './view/columnOrder'
 import { frozenColumnCount } from './view/frozenColumns'
@@ -169,6 +170,11 @@ export interface DeleteColumnHost {
   folderId: string | undefined
   /** The host's one settings door: declarations, views and labels in ONE write. Resolves when it landed; rejects when it did not. */
   writeSettings: (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>
+  /**
+   * The S29 Undo toast for the settings half (YAZ-4608 C6): `restore` writes the declaration, the views' references
+   * and the label back as they stood, in ONE settings write. The notes' values stay stripped — the confirm said so.
+   */
+  notice?: (message: string, restore: () => Promise<void>) => void
 }
 
 /**
@@ -181,9 +187,11 @@ export async function deleteColumn(key: string, host: DeleteColumnHost): Promise
   if (reason !== null) throw new Error(`Can't delete ${canonicalKey(key)}: ${reason.toLowerCase()}`)
   const bare = bareOf(key)
 
+  const before = { columns: { ...host.columns }, views: structuredClone(host.def.views), properties: structuredClone(host.def.properties) }
   const columns: Record<string, ColumnDecl> = { ...host.columns }
   delete columns[bare]
   await host.writeSettings(columns, pruneColumnFromViews(host.def.views, key), pruneColumnLabel(host.def.properties, key))
+  host.notice?.(`Deleted column ${propertyLabel(host.def, key)}`, () => host.writeSettings(before.columns, before.views, before.properties))
 
   const { folderId } = host
   if (folderId === undefined) return // no id, no values

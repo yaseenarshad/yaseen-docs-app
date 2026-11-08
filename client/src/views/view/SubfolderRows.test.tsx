@@ -150,7 +150,7 @@ describe('the "Subfolders" switch (D30)', () => {
 
   it('Properties › View › Subfolders writes each mode; Their notes removes the key', () => {
     const { el, yaml } = mount(table())
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // View › Rows (YAZ-4607 D59)
     const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]')
     expect([...select().options].map((o) => o.text)).toEqual(['Their notes', 'As rows', 'Both', 'Hide'])
@@ -169,7 +169,7 @@ describe('the "Subfolders" switch (D30)', () => {
     expect(el.querySelector('.view-popover--sort [aria-label="Subfolders"]')).toBeNull()
     // "Folders first" shows only while folder rows do: it changes nothing else.
     expect(el.querySelector('.view-popover--sort [aria-label="Folders first"]')).toBeNull()
-    click(q(el, '.view-toolbar [aria-label="Properties"]'))
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
     choose(q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]'), 'both')
     expect(yaml()).toContain('subfolders: both')

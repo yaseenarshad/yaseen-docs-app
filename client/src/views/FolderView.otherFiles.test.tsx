@@ -171,12 +171,13 @@ describe('what the tray lists (D44, D45)', () => {
 })
 
 describe('moving a note (D44, D46)', () => {
-  it('the row menu ends Duplicate / Delete (YAZ-4592), then "Move to Other files" as its own last group', async () => {
+  it('the row menu ends "Move to Other files" as its own group, then Delete note… last (YAZ-4592; the C8 order of YAZ-4608)', async () => {
     const el = await mount({ onDeleteEntries: vi.fn() })
     rightClick(nameCell(el, 'Lead Gen'))
     const groups = [...el.querySelectorAll('.ctx-menu__group')].map((g) => [...g.querySelectorAll('[role^="menuitem"]')].map((b) => b.textContent))
-    expect(groups.at(-1)).toEqual(['Move to Other files'])
-    expect(groups.at(-2)).toEqual(['Duplicate note', 'Delete note…'])
+    expect(groups.at(-1)).toEqual(['Delete note…'])
+    expect(groups.at(-2)).toEqual(['Move to Other files'])
+    expect(groups.flat()).toContain('Duplicate note')
     expect(groups.flat()).toContain('Filter by this value')
   })
 

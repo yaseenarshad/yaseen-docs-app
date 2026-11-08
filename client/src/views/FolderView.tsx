@@ -589,6 +589,8 @@ export function FolderView({
           records: [...feed.records, ...feed.folders],
           folderId: id,
           writeSettings: commitSettings,
+          // The settings half offers Undo (YAZ-4608 C6): one settings write puts the column back; a refusal shows the banner as any settings write does.
+          notice: (message, restore) => onNotice?.(message, 'info', 'undo', { label: 'Undo', run: () => void restore().catch(() => undefined), fades: true }),
         }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     }),
     valueCount: (key: string) => notesHolding(feed.records, id, key).length + notesHolding(feed.folders, id, key).length,

@@ -1056,7 +1056,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-4167 D16: the band follows the caret's row and the mouse's; a look, never in the file.
             id: 'tableRowBand',
             label: 'Row band',
-            hint: 'A light band across the table row under the caret or the mouse, its first cell in bold.',
+            // The hint names the other home of the band (YAZ-4608 C5); Folder pages › Row band on hover names this one.
+            hint: 'A light band across the table row under the caret or the mouse, its first cell in bold. Folder pages › Row band on hover follows it until you set that.',
             keywords: ['row', 'band', 'highlight', 'mouse', 'caret', 'calendar', 'table'],
             render: ({ settings, onChange }) => (
               <Segmented options={TABLE_ROW_BAND_OPTIONS} value={settings.tableRowBand} onChange={(tableRowBand) => onChange({ ...settings, tableRowBand })} ariaLabel="Row band" />
