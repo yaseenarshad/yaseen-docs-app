@@ -59,6 +59,15 @@ describe('writeFolderColumn', () => {
     expect(settingsWritten()).toEqual({ columns: { Related: { kind: 'link', future: true } } })
   })
 
+  it('writes a description, and an edit without one clears it (YAZ-4590 S23)', async () => {
+    read.mockResolvedValueOnce(file(content({ columns: { Status: base } })))
+    await writeFolderColumn(path, 'Status', { ...base, description: 'Where the page stands' }, base, true)
+    expect(settingsWritten()).toEqual({ columns: { Status: { ...base, description: 'Where the page stands' } } })
+    read.mockResolvedValueOnce(file(content({ columns: { Status: { ...base, description: 'Where the page stands' } } })))
+    await writeFolderColumn(path, 'Status', base, { ...base, description: 'Where the page stands' }, true)
+    expect(settingsWritten()).toEqual({ columns: { Status: base } })
+  })
+
   it.each([
     { ...base, options: ['New'] }, { ...base, optionSort: 'descending' },
     { ...base, kind: 'multi-select' }, { ...base, required: true }, { ...base, target: '[[Page]]' },

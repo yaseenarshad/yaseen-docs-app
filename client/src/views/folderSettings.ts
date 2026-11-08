@@ -85,6 +85,10 @@ function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDec
     if (typeof value.required === 'boolean') column.required = value.required
     else if (value.required !== undefined)
       problems.push(`${FOLDER_SETTINGS_KEY}.columns.${name}.required must be true or false — ignoring it`)
+    // The column's description (YAZ-4590 S23): blank text is no description.
+    if (typeof value.description === 'string') {
+      if (value.description.trim()) column.description = value.description
+    } else if (value.description !== undefined) problems.push(`${FOLDER_SETTINGS_KEY}.columns.${name}.description must be text — ignoring it`)
     if (value.options !== undefined) {
       const options = readPropertyOptions(value.options)
       if (options !== undefined) column.options = options
@@ -269,7 +273,7 @@ export function writeFolderColumn(path: string, key: string, next: PropertyDecl,
     if (currentKnown === desired) return content
     const declaration = { ...current }
     // Removing a known optional setting is intentional; unknown extension metadata survives.
-    for (const field of ['kind', 'target', 'required', 'options', 'optionSort']) delete declaration[field]
+    for (const field of ['kind', 'target', 'required', 'options', 'optionSort', 'description']) delete declaration[field]
     Object.assign(declaration, replacement)
     return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, { ...raw, columns: { ...columns, [key]: declaration } })
   })

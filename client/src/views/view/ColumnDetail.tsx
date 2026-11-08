@@ -219,6 +219,22 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
             )}
           </div>
         )}
+        {/* The description (YAZ-4590 S23): the table header shows it on hover. Blank text removes it. An undeclared column is declared with the kind it shows. */}
+        {isNote && (
+          <div className="column-detail__row">
+            <span>Description</span>
+            <TextField
+              className="view-input"
+              aria-label="Column description"
+              placeholder="What this column holds"
+              value={decl?.description ?? ''}
+              onCommit={(text) => {
+                const { description: _old, ...next } = decl ?? { kind: columnKind(key, records, properties, folder.settings) }
+                void writeDeclaration(text.trim() ? { ...next, description: text.trim() } : next)
+              }}
+            />
+          </div>
+        )}
         {error !== null && (
           <p role="alert" className="view-relation__error">
             {error}

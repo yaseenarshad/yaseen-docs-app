@@ -3365,6 +3365,8 @@ export interface PropertyDecl {
   target?: string
   /** Metadata for the future validation report (report-never-block: gates nothing in v1). */
   required?: boolean
+  /** What the column holds, in words (YAZ-4590 S23): Edit column sets it; the table header shows it on hover. */
+  description?: string
 }
 
 export interface PropertiesResponse {

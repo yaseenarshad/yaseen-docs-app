@@ -136,6 +136,13 @@ describe("columns: the 7 property kinds, report-don't-block", () => {
     expect(settings.problems[0]).toContain('required')
   })
 
+  it('a column keeps its text description; blank text is none, and a non-text one is a problem (YAZ-4590 S23)', () => {
+    const settings = settingsOf({ columns: { owner: { kind: 'text', description: 'Who runs it' }, due: { kind: 'date', description: '  ' }, area: { kind: 'text', description: 7 } } })
+    expect(settings.columns).toEqual({ owner: { kind: 'text', description: 'Who runs it' }, due: { kind: 'date' }, area: { kind: 'text' } })
+    expect(settings.problems).toHaveLength(1)
+    expect(settings.problems[0]).toContain('area.description')
+  })
+
   it('a non-map columns value is a problem and no columns are declared', () => {
     const settings = settingsOf({ columns: ['owner'] })
     expect(settings.columns).toEqual({})

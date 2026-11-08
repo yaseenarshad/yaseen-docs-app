@@ -1099,6 +1099,39 @@
   background: linear-gradient(var(--accent), var(--accent)) right / 2px 100% no-repeat;
 }
 
+/* The sort arrow (YAZ-4590 S19): ▲ or ▼ after the label, and the rule's place when the view has several sorts. The
+   glyph is CSS, so the header's text stays its label. A click flips the rule. */
+.view-table__sort {
+  margin-left: 4px;
+  padding: 0 2px;
+  font: inherit;
+  font-size: 10px;
+  color: var(--accent);
+  vertical-align: 1px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 3px;
+}
+
+.view-table__sort:hover {
+  background: var(--bg-side);
+}
+
+.view-table__sort[data-dir='ASC']::before {
+  content: '▲';
+}
+
+.view-table__sort[data-dir='DESC']::before {
+  content: '▼';
+}
+
+.view-table__sort[data-pos]::after {
+  margin-left: 1px;
+  font-size: 9px;
+  content: attr(data-pos);
+}
+
 .view-table__chip {
   display: inline-block;
   max-width: 100%;
