@@ -113,7 +113,8 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
    */
   const groupHere = write((v) => {
     const [first, ...rest] = groupByLevels(v)
-    const levels = [{ ...first, property: c, direction: 'ASC' as const }, ...rest.filter((l) => canonicalKey(l.property) !== c)]
+    // A later entry with no column (YAZ-4544) stays as it is.
+    const levels = [{ ...first, property: c, direction: 'ASC' as const }, ...rest.filter((l) => typeof l?.property !== 'string' || canonicalKey(l.property) !== c)]
     v.groupBy = levels.length === 1 ? levels[0] : levels
   })
   /** The last frozen column, or not (the table block's ✓ rule, YAZ-3696): a click on ✓ unfreezes. */

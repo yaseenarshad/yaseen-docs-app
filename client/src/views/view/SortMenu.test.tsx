@@ -310,6 +310,21 @@ describe('Group levels: handles, remove, third level, indent (YAZ-4532)', () => 
   })
 })
 
+describe('a group level with no column (YAZ-4544, finding 21)', () => {
+  it('the menu opens, shows the usable level, and an edit keeps the bad entry as it is', () => {
+    const bad = {} as GroupBySpec
+    const { el, view } = mount({ name: 'Table', type: 'table', groupBy: [{ property: 'note.status' }, bad] })
+    expect(el.querySelector('[aria-label="Group by"]')).not.toBeNull()
+    expect(el.querySelector('[aria-label="Remove group level 1: Status"]')).not.toBeNull()
+    expect(el.querySelector('[aria-label^="Remove group level 2"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Then group by"]')).not.toBeNull()
+    pick(el, 'Group direction', 'Z → A')
+    expect(view().groupBy).toEqual([{ property: 'note.status', direction: 'DESC' }, {}])
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Remove group level 1: Status"]')!.click())
+    expect(view().groupBy).toEqual([{}])
+  })
+})
+
 describe('Group header style chip (YAZ-3742 D5)', () => {
   const chip = (el: HTMLElement, level: number) => el.querySelector<HTMLButtonElement>(`[aria-label="Style of group level ${level}"]`)!
   const panel = (el: HTMLElement) => el.querySelector<HTMLElement>('[role="dialog"][aria-label^="Style of group level"]')

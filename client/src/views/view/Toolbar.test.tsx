@@ -1410,6 +1410,14 @@ views:
     expect(views[0].order).toEqual(['file.name', 'note.AI or App'])
   })
 
+  it('the Sort button opens on a view whose groupBy has an entry with no column, and the table still shows (YAZ-4544, finding 21)', () => {
+    const { el, onChange } = mount('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n    groupBy:\n      - property: note.page\n      - {}\n')
+    const pop = openMenu(el, 'Sort')
+    expect(pop.querySelector('[aria-label="Group by"]')).not.toBeNull()
+    expect(el.querySelector('.view-table')).not.toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   it('refuses the app\'s own keys, in the Properties panel\'s words: in an ID vault id too (D19, YAZ-4544)', () => {
     for (const [ids, refused, taken] of [[true, ['id', 'title', 'readonly', 'comments'], []], [false, ['readonly', 'comments'], ['id']]] as const) {
       const setColumns = vi.fn()

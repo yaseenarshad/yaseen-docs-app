@@ -25,6 +25,9 @@ export interface SortMenuProps {
 
 const EMPTY_SORT: SortSpec[] = []
 
+/** A `groupBy` entry that names a column (YAZ-4544): the engine's own test (`shownGroupLevels`). */
+const isLevel = (level: GroupBySpec | undefined): level is GroupBySpec => typeof level?.property === 'string'
+
 /** Folder (YAZ-2541): a place to sort and group by, never a column — and the one property that may group twice, the second level being the next folder down. */
 const FOLDER = 'file.folder'
 
@@ -138,7 +141,11 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
   const listed = allPropertyKeys(def, view, records, settings.columns)
   const keys = listed.includes(FOLDER) ? listed : [...listed, FOLDER]
   const sort = view.sort ?? EMPTY_SORT
-  const levels = groupByLevels(view)
+  // A `groupBy` entry with no column (hand-written YAML) is no level (YAZ-4544): the menu shows the usable levels,
+  // and each write puts the other entries back after them, as they were.
+  const allLevels = groupByLevels(view)
+  const levels = allLevels.filter(isLevel)
+  const unusable = allLevels.filter((l) => !isLevel(l))
   const sortRows = useRuleRows(sort)
   const groupRows = useRuleRows(levels)
 
@@ -170,9 +177,10 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
       keptIds.push(nextIds[i])
     })
     groupRows.expect(kept, keptIds)
+    const written = [...kept, ...unusable]
     onUpdate((d) => {
-      if (kept.length === 0) delete d.views[viewIndex].groupBy
-      else d.views[viewIndex].groupBy = kept.length === 1 ? kept[0] : kept
+      if (written.length === 0) delete d.views[viewIndex].groupBy
+      else d.views[viewIndex].groupBy = written.length === 1 && unusable.length === 0 ? kept[0] : written
     })
   }
   const setLevel = (i: number, level: GroupBySpec) => writeGroup(levels.map((l, j) => (j === i ? level : l)))

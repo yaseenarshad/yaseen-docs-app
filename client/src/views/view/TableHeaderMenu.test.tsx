@@ -392,6 +392,13 @@ describe('freeze, sort and group from the header (YAZ-4534)', () => {
     expect(view(again.def).groupBy).toEqual({ property: 'note.priority', direction: 'ASC', highlight: 'blue' })
   })
 
+  it('Group by this column keeps a later entry with no column as it is (YAZ-4544)', () => {
+    const { el, def } = mount(`${BASE}    groupBy:\n      - property: note.pillar\n      - {}\n`)
+    rightClick(th(el, 1))
+    click(item(el, 'Group by this column'))
+    expect(view(def).groupBy).toEqual([{ property: 'note.status', direction: 'ASC' }, {}])
+  })
+
   it('Freeze up to this column writes frozenColumns; on the last frozen column the item reads ✓ and a click unfreezes', () => {
     const { el, def } = mount() // frozenColumns: 2
     rightClick(th(el, 1))
