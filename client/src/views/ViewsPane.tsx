@@ -25,7 +25,7 @@ import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, note
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
-import { NO_READ_ONLY } from './readOnlyRows'
+import { NO_READ_ONLY, writableKey } from './readOnlyRows'
 import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
@@ -595,6 +595,36 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
   }
 
+  /**
+   * "New row below" (YAZ-4611 D63): a note seeded from `row` — the view's filter seed, then the row's values of the
+   * view's sort columns (so it sorts next to the row), then every group level of its branch, as that group's "+" seeds.
+   * It does not open: the table puts its Name cell in title edit. The toast's Undo moves it to the Trash.
+   */
+  const newRowBelow = (row: Row, group: Group | null, at: GroupSpot | null): Promise<string> => {
+    const seed = deriveSeed(def, view)
+    for (const rule of view.sort ?? []) {
+      const key = writableKey(rule.property)
+      const value = key === null ? undefined : row.record.properties[key]
+      if (key !== null && value !== undefined) seed.properties[key] = value
+    }
+    if (group !== null && at !== null) {
+      at.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level))
+      seedGroup(seed, group, view, at.level)
+    }
+    setCreateError(null)
+    return folder.create(seed).then(
+      (path) => {
+        const trash = folder.trash
+        if (trash !== undefined) folder.onNotice?.('Added a row', 'info', 'undo', { label: 'Undo', run: () => void trash([path]).catch((err: unknown) => folder.onNotice?.(`Can't undo: ${err instanceof Error ? err.message : String(err)}`)), fades: true })
+        return path
+      },
+      (err: unknown) => {
+        setCreateError(err instanceof Error ? err.message : String(err))
+        throw err
+      },
+    )
+  }
+
   const writeValue = (path: string, key: string, value: unknown) => folder.writeValues(path, [{ key, value }])
 
   const keys = propertyKeys(def, view, records, Object.keys(folder.settings.columns))
@@ -770,6 +800,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           reservedKeys={reservedKeys(folder.wikilinks.ids)}
           onDuplicateNote={folder.duplicate}
           onDeleteNotes={confirmDeleteNotes}
+          onNewRowBelow={newRowBelow}
         />
       ) : view.type === 'board' ? (
         <BoardView

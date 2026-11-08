@@ -112,6 +112,8 @@ export interface TableViewProps {
   onDuplicateNote?: (path: string) => void
   /** "Delete note…" (YAZ-4592 S26): ViewsPane's `confirmDeleteNotes`, which asks first unless the setting is off; the selection menu's "Delete notes…" too (YAZ-4593). Absent: no such item, and that one is off. */
   onDeleteNotes?: (paths: readonly string[]) => void
+  /** "New row below" (YAZ-4611 D63): ViewsPane's seeded create; resolves the new note's path. Absent: no such item. */
+  onNewRowBelow?: (row: Row, group: Group | null, at: GroupSpot | null) => Promise<string>
 }
 
 const DEFAULT_WIDTH = 150
@@ -214,7 +216,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, reservedKeys, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, reservedKeys, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
@@ -464,6 +466,42 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     },
     [windowLink],
   )
+
+  /**
+   * "New row below" (YAZ-4611 D63): the new note's path until its row shows; then its Name cell goes into title edit
+   * (Enter retitles, Esc keeps "Untitled") and, in a windowed table, the scroll moves to its line. One path at most.
+   */
+  const newRowRef = useRef<string | null>(null)
+  const [, showNewRow] = useState(0)
+  useEffect(() => {
+    const path = newRowRef.current
+    if (path === null) return
+    const at = lines.findIndex((l) => 'row' in l && l.row.record.path === path)
+    if (at === -1) return
+    newRowRef.current = null
+    setTitleEdit(rowKey(lines[at] as Extract<Line, { row: Row }>))
+    const wrap = wrapRef.current
+    if (windowed && wrap !== null) {
+      const top = Math.max(0, at * rowH - (wrap.clientHeight - rowH) / 2)
+      wrap.scrollTop = top
+      setScrollTop(top)
+    }
+  })
+  /** The item's action on data row `r` (the right-clicked row, or a selection's last). */
+  const newRowBelow =
+    onNewRowBelow === undefined
+      ? undefined
+      : (r: number) => {
+          const line = lines.find((l): l is Extract<Line, { row: Row }> => 'row' in l && l.r === r)
+          if (line === undefined) return
+          onNewRowBelow(line.row, line.g, line.at).then(
+            (path) => {
+              newRowRef.current = path
+              showNewRow((n) => n + 1)
+            },
+            () => {},
+          )
+        }
 
   const startResize = (key: string) => (e: ReactMouseEvent) => {
     // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
@@ -1037,6 +1075,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         }}
         onSetValue={(value) => writeCells(area.rows.map((r) => ({ r, c: one, value })))}
         onClearFormatting={() => clearFormatting(sel, area)}
+        onNewRowBelow={newRowBelow && area.rows.length > 0 ? () => newRowBelow(area.rows.at(-1)!) : undefined}
         onDuplicate={onDuplicateNote && paths.length > 0 ? () => paths.forEach(onDuplicateNote) : undefined}
         onDelete={onDeleteNotes && paths.length > 0 ? () => onDeleteNotes(paths) : undefined}
         onClose={() => setSelMenu(null)}
@@ -1364,6 +1403,21 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   }, count === 0 ? UNFROZE_ROWS : undefined)
                 }}
               />,
+              // Every row offers it, a folder row and a read-only one too (YAZ-4611 D63).
+              newRowBelow && (
+                <button
+                  key="new-below"
+                  type="button"
+                  className="ctx-menu__item"
+                  role="menuitem"
+                  onClick={() => {
+                    setRowMenu(null)
+                    newRowBelow(rowMenu.r)
+                  }}
+                >
+                  New row below
+                </button>
+              ),
               // A folder row is no note (YAZ-4592 S26): it has neither.
               isFolderRow(rowMenu.record)
                 ? null
@@ -1379,7 +1433,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                         onDeleteNotes([rowMenu.record.path])
                       }),
                   ),
-            ].filter((group) => group !== null)}
+            ].filter((group) => group !== null && group !== undefined)}
           />
         )}
         {selMenu !== null && selectionMenu(selMenu)}

@@ -248,7 +248,7 @@ describe('the selection right-click (YAZ-4593)', () => {
     const { el } = mount(TABLE)
     drag(el, [0, 1], [1, 2])
     rightClick(cell(el, 1, 1))
-    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill cell', 'Fill row', 'Clear formatting'])
+    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below'])
     // Its own menu, not the row menu.
     expect(items(el)).not.toContain('Open')
   })
@@ -266,7 +266,7 @@ describe('the selection right-click (YAZ-4593)', () => {
     down(gutter(el, 1))
     down(gutter(el, 2), { shiftKey: true })
     rightClick(cell(el, 2, 2))
-    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill cell', 'Fill row', 'Clear formatting', 'Duplicate notes', 'Delete notes…'])
+    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below', 'Duplicate notes', 'Delete notes…'])
     // ViewsPane wires 11C's `onDuplicateNote` / `onDeleteNotes` at merge (YAZ-4592); without them the items are off.
     expect(item(el, 'Delete notes…').disabled).toBe(true)
     expect(item(el, 'Copy').disabled).toBe(false)

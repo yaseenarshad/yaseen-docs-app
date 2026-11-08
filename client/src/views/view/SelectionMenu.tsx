@@ -19,6 +19,8 @@ interface SelectionMenuProps {
   onSetValue: (value: unknown) => void
   /** ⌘\ "Clear formatting" (YAZ-4603 D54). */
   onClearFormatting: () => void
+  /** "New row below" the last selected row (YAZ-4611 D63); absent: no such item. */
+  onNewRowBelow?: () => void
   /** Absent: the item shows, off (the host has no such action). */
   onDuplicate?: () => void
   onDelete?: () => void
@@ -39,7 +41,7 @@ export function ClearFormattingItem({ onClear }: { onClear: () => void }) {
  * formatting (YAZ-4603 D54), Set value › (one column only), then Duplicate notes and Delete notes… for whole rows.
  * Each action closes the menu.
  */
-export function SelectionMenu({ x, y, rows, setValue, onCopy, onPaste, onClear, onFill, onSetValue, onClearFormatting, onDuplicate, onDelete, onClose }: SelectionMenuProps) {
+export function SelectionMenu({ x, y, rows, setValue, onCopy, onPaste, onClear, onFill, onSetValue, onClearFormatting, onNewRowBelow, onDuplicate, onDelete, onClose }: SelectionMenuProps) {
   const flyout = useFlyout<'value'>()
   const run = (action: () => void) => () => {
     onClose()
@@ -66,6 +68,11 @@ export function SelectionMenu({ x, y, rows, setValue, onCopy, onPaste, onClear, 
           <FlyoutParent label="Set value" open={flyout.open === 'value'} onHover={() => flyout.hover('value')} onOpen={() => flyout.openNow('value')} onCloseFlyout={() => flyout.openNow(null)}>
             <SetValueItems kind={setValue.kind} options={setValue.options} onSet={(value) => run(() => onSetValue(value))()} />
           </FlyoutParent>
+        </div>
+      )}
+      {onNewRowBelow !== undefined && (
+        <div className="ctx-menu__group" role="group">
+          {plain('New row below', onNewRowBelow)}
         </div>
       )}
       {rows && (
