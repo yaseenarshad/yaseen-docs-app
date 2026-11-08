@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
 import { shownListScope, viewIndex, type NavigationInput, type NavigationTarget } from '@shared/automationNavigation'
@@ -65,9 +65,13 @@ export async function scopeRoots(state: AppState, input: Pick<NavigationInput, '
 
 async function resolvePath(roots: readonly string[], input: string): Promise<string> {
   const path = absolute(input)
-  if (!roots.includes(path) && rootOfPath(roots, path) === null) throw new AutomationFailure('OUTSIDE_SCOPE', 'The target is outside the requested vaults.')
+  const root = roots.includes(path) ? path : rootOfPath(roots, path)
+  if (root === null) throw new AutomationFailure('OUTSIDE_SCOPE', 'The target is outside the requested vaults.')
   if (!(await stat(path).then(info => info.isDirectory() || info.isFile(), () => false))) throw new AutomationFailure('NOT_FOUND', 'The target does not exist.')
-  return path
+  // A disk that ignores case finds `mochi` for `Mochi`: take the names below the vault as they are on disk, so the
+  // lists and the sidebar rows match. A link inside the vault that leads out of it keeps the path as given.
+  const [real, base] = await Promise.all([realpath(path), realpath(root)])
+  return real === base ? root : real.startsWith(`${base}/`) ? `${root}${real.slice(base.length)}` : path
 }
 
 /** The paths a Favorites or Focus list shows: its top level and its groups, or one group alone. Reading writes nothing. */

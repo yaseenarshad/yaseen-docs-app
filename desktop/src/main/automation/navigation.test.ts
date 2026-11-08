@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { validateOutput } from '@shared/automationCommands'
@@ -178,6 +178,15 @@ describe('exact context navigation', () => {
     await mkdir(odd)
     await checked(navigate(app, { root, path: odd }))
     expect(app.apply).toHaveBeenLastCalledWith('w1', { path: odd })
+  })
+
+  it('takes the names below the vault as they are on disk, on a disk that ignores case', async () => {
+    const app = host([entry('w1', [root])]), mochi = join(root, 'Mochi')
+    const ignoresCase = await stat(join(root, 'mochi')).then(() => true, () => false)
+    if (!ignoresCase) return
+    await setFavorites(root, [mochi])
+    await checked(navigate(app, { root, path: join(root, 'mochi/CARD.md'), sidebar: 'favorites' }))
+    expect(app.apply).toHaveBeenLastCalledWith('w1', { path: join(mochi, 'card.md'), sidebar: 'favorites' })
   })
 
   it('runs one navigation at a time, so a quick second call sees the first one’s window', async () => {

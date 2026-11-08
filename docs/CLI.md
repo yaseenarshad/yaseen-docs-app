@@ -75,7 +75,7 @@ ds() {
 # ds Mochi --mode new     → the same, in a new window
 ```
 
-Spell the folder as it is on disk: the path is compared with the Favorites list exactly, also on a disk that ignores case.
+On a disk that ignores case (the macOS default), `ds mochi` works too: the CLI takes the names below the vault as they are on disk.
 
 ## Output
 
