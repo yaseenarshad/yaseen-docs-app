@@ -410,6 +410,32 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
 })
 
 
+describe('a drop into a nested group under a fanned-out level (YAZ-4636 T2)', () => {
+  const TAGS_THEN_STATUS = `views:
+  - type: table
+    name: T
+    order:
+      - file.name
+    groupBy:
+      - property: note.tags
+      - property: note.status
+`
+  it('the parent level swaps the element the row left for the one it entered, as the row\'s own level does; the rest of its list survives', () => {
+    const r = { ...listRec('R', 'todo'), properties: { tags: ['a', 'b'], status: 'todo' } }
+    const s = { ...listRec('S', 'done'), properties: { tags: ['c', 'x'], status: 'done' } }
+    const { el } = mount(TAGS_THEN_STATUS, { records: [r, s] })
+    // R shows under a › todo and b › todo, S under c › done and x › done; the first R is the one under a, the first "done" header the one under c.
+    expect([...el.querySelectorAll('.view-table__name')].map((b) => b.textContent)).toEqual(['R', 'R', 'S', 'S'])
+    fire(gripOf(el, 'R'), 'dragstart')
+    fire(headerOf(el, 'done'), 'drop')
+    expect(write).not.toHaveBeenCalled()
+    expect(writeProperties).toHaveBeenCalledExactlyOnceWith('/vault/R.md', [
+      { key: 'status', value: 'done', prevRaw: 'todo' },
+      { key: 'tags', value: ['b', 'c'], prevRaw: ['a', 'b'] },
+    ])
+  })
+})
+
 it('drops onto an unused Select option by writing its exact declared label', async () => {
   const { el } = mount(STATUS_BOARD.replace('    name: B', '    name: B\n    showEmptyColumns: true'), {
     folder: testFolderHost({ settings: { columns: { status: { kind: 'select', options: ['idea', 'Waiting: review'] } }, views: [], problems: [] } }),

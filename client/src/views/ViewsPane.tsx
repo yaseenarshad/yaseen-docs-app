@@ -566,18 +566,24 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     if (key === null || readOnly.has(path)) return
     const props = records.find((r) => r.path === path)?.properties
     const prevRaw = props?.[key]
-    if (swap !== undefined) {
-      // Fan-out (D3): edit the list rather than replace it. Elements are matched with the engine's
-      // own `equals` over `fromYaml` and NO resolver — the exact comparison that decided the
-      // grouping — so we can only ever remove the element that put this row in that group.
-      const list = Array.isArray(prevRaw) ? prevRaw : prevRaw == null ? [] : [prevRaw]
-      const next = swap.remove === null ? [...list] : list.filter((v) => !equals(fromYaml(v), swap.remove))
+    /**
+     * Fan-out (D3): edit the list rather than replace it. Elements are matched with the engine's own `equals` over
+     * `fromYaml` and NO resolver — the exact comparison that decided the grouping — so we can only ever remove the
+     * element that put this row in that group. The row's own level and a fanned-out ancestor level (YAZ-4636 T2) alike.
+     */
+    const swapped = (raw: unknown, { remove, add }: GroupSwap): unknown[] => {
+      const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw]
+      const next = remove === null ? [...list] : list.filter((v) => !equals(fromYaml(v), remove))
       // No resolver: what is written is the STORED link, `[[<id>]]`, not the title the column shows (YAZ-2293 D8).
-      if (swap.add !== null) next.push(render(swap.add))
-      value = next
+      if (add !== null) next.push(render(add))
+      return next
     }
+    if (swap !== undefined) value = swapped(prevRaw, swap)
     const writes: PendingMove = [{ key, value, prevRaw }]
-    for (const write of drop?.ancestors ?? []) writes.push({ ...write, prevRaw: props?.[write.key] })
+    for (const write of drop?.ancestors ?? []) {
+      const was = props?.[write.key]
+      writes.push({ key: write.key, value: write.swap === undefined ? write.value : swapped(was, write.swap), prevRaw: was })
+    }
     // The toast names the group the card went to: a fanned-out drop, the element it added (YAZ-4541 S6).
     const to = swap === undefined ? (value === undefined ? null : fromYaml(value)) : swap.add
     moveValues(path, writes, to === null ? 'No value' : render(to, resolve))

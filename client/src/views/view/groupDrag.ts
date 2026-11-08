@@ -107,13 +107,14 @@ export const spotKey = (group: Group, at: GroupSpot): string =>
  */
 export interface GroupDrop {
   level: number
-  ancestors?: { key: string; value: unknown }[]
+  /** Each differing ancestor level's write: its whole `value`, or — a fanned-out level (YAZ-4636 T2) — the `swap` inside the row's list. */
+  ancestors?: { key: string; value?: unknown; swap?: GroupSwap }[]
 }
 
-type DragState = { path: string; gk: string; key: Value | null; branch: readonly string[] }
+type DragState = { path: string; gk: string; key: Value | null; branch: readonly string[]; values: readonly (Value | null)[] }
 
 export interface GroupDrag {
-  /** The dragged card's path, its source group key, that group's VALUE (the element a swap removes) and the `groupKeyOf` of each group on its branch, outer first. */
+  /** The dragged card's path, its source group key, that group's VALUE (the element a swap removes) and, for each group on its branch, outer first, its `groupKeyOf` and its value. */
   drag: DragState | null
   /** Group key of the hovered drop target (never the source group), inner groups scoped by their ancestors. */
   over: string | null
@@ -172,7 +173,7 @@ export function useGroupDrag(
             onDragStart: (e: ReactDragEvent) => {
               e.dataTransfer?.setData('text/plain', path)
               if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-              setDrag({ path, gk: spotKey(group, at), key: group.key, branch: [...at.ancestors, group].map((g) => groupKeyOf(g.key)) })
+              setDrag({ path, gk: spotKey(group, at), key: group.key, branch: [...at.ancestors, group].map((g) => groupKeyOf(g.key)), values: [...at.ancestors, group].map((g) => g.key) })
             },
             onDragEnd: clear,
           },
@@ -204,7 +205,14 @@ export function useGroupDrag(
             const ancestor = at.ancestors[level]
             const ancestorKey = d.branch[level] === groupKeyOf(ancestor.key) ? null : keys[level] ?? null
             if (ancestorKey === null) continue
-            const raw = ancestor.rows[0]?.record.properties[ancestorKey] ?? (ancestor.optionValue === undefined ? undefined : ancestor.fannedOut ? [ancestor.optionValue] : ancestor.optionValue)
+            // A fanned-out ancestor level (YAZ-4636 T2): the row is in several of its groups, so the level swaps the
+            // element it left for the one it entered, as the row's own level does below; a neighbour's whole list
+            // would drop the row's other elements and add the neighbour's.
+            if (ancestor.fannedOut) {
+              ;(drop.ancestors ??= []).push({ key: ancestorKey, swap: { remove: d.values[level], add: ancestor.key } })
+              continue
+            }
+            const raw = ancestor.rows[0]?.record.properties[ancestorKey] ?? (ancestor.optionValue === undefined ? undefined : ancestor.optionValue)
             if (raw !== undefined) (drop.ancestors ??= []).push({ key: ancestorKey, value: raw })
           }
           // Fanned out (D3): the row is in several groups, so swap the element it left for the

@@ -190,6 +190,24 @@ describe('type to edit, Tab and Enter (S42, S43)', () => {
     key(el.querySelector('input[aria-label="Edit word"]')!, 'Escape')
     expect(document.activeElement).toBe(cell(el, 2, 2))
   })
+
+  it('Enter in a list editor that stays open, then a press on another cell: a later focus on the first cell does not jump a row (YAZ-4636 T9d)', () => {
+    const { el } = mount(TABLE.replace('      - note.word\n', '      - note.word\n      - note.tag\n'), { records: NOTES.map((n) => ({ ...n, properties: { ...n.properties, tag: ['keep'] } })) })
+    act(() => cell(el, 1, 3).focus())
+    key(cell(el, 1, 3), 'Enter')
+    const input = cell(el, 1, 3).querySelector('input')!
+    typeInto(input, 'x')
+    key(input, 'Enter')
+    // The chip is added and the editor stays open.
+    expect(cell(el, 1, 3).querySelector('input')).toBe(input)
+    // The press closes the editor, which hands the focus back to its cell: the focus is there or on the pressed cell,
+    // never on the row below.
+    act(() => cell(el, 0, 1).focus())
+    expect(cell(el, 1, 3).querySelector('input')).toBeNull()
+    expect([cell(el, 0, 1), cell(el, 1, 3)]).toContain(document.activeElement)
+    act(() => cell(el, 1, 3).focus())
+    expect(document.activeElement).toBe(cell(el, 1, 3))
+  })
 })
 
 describe('Delete clears values; the guard rails (S44, S48, S49)', () => {

@@ -1190,7 +1190,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** The cells of each column that move with its header (YAZ-4606): the header, every mounted body cell and the summary cell. */
   const columnCells = (): HTMLElement[] => [...(wrapRef.current?.querySelectorAll<HTMLElement>('thead th[data-col], tbody td[data-cell], tfoot td.view-table__summary:not(.view-table__gutter)') ?? [])]
   const columnOfCell = (el: HTMLElement): string =>
-    el.dataset.col !== undefined ? (keys[Number(el.dataset.col)] ?? '') : el.dataset.cell !== undefined ? (keys[Number(el.dataset.cell.split(':')[1])] ?? '') : (keys[(el as HTMLTableCellElement).cellIndex - (numbered ? 1 : 0)] ?? '')
+    // The gutter cell is always first, numbers or not (YAZ-4610 D62, YAZ-4636 T8): a summary cell's column is one before its index.
+    el.dataset.col !== undefined ? (keys[Number(el.dataset.col)] ?? '') : el.dataset.cell !== undefined ? (keys[Number(el.dataset.cell.split(':')[1])] ?? '') : (keys[(el as HTMLTableCellElement).cellIndex - 1] ?? '')
   // THE COLUMN DRAG (YAZ-4606 D58): the tab bar's live gap, across the table. The grabbed column leaves it, and the other
   // columns part, each moving as one: its header, its mounted body cells and its summary cell.
   const live = useLiveGapReorder<HTMLTableRowElement>({ axis: 'x', keys, onMove: moveColumn, slotAt: columnSlot, roomOf: (c) => widthOf(keys[c]), scroller: () => wrapRef.current, cells: columnCells, keyOfCell: columnOfCell })
@@ -1234,7 +1235,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           .map((_, c) => {
             const shift = live.shiftOf(c)
             if (shift === 0 && !live.lifted(c)) return ''
-            const cells = `${scope} thead th[data-col="${c}"],${scope} tbody td[data-cell$=":${c}"],${scope} tfoot td:nth-child(${c + 1 + (numbered ? 1 : 0)})`
+            const cells = `${scope} thead th[data-col="${c}"],${scope} tbody td[data-cell$=":${c}"],${scope} tfoot td:nth-child(${c + 2})`
             return `${cells}{${shift === 0 ? '' : `transform:${partTransform(shift, 'x')};`}${live.lifted(c) ? 'opacity:0;' : ''}}`
           })
           .join('')
@@ -1313,10 +1314,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const onTableFocus = (e: ReactFocusEvent): void => {
     placeHandle()
     const at = e.target instanceof HTMLElement ? e.target.dataset.cell : undefined
-    if (at === undefined || at !== downAfter.current) return
+    // The editor's own field taking the focus keeps the memory; any OTHER cell's focus forgets it (YAZ-4636 T9d): a
+    // list editor stays open on Enter, and a press elsewhere must not make the cell's next focus jump a row.
+    if (at === undefined) return
+    const down = downAfter.current
     downAfter.current = null
+    if (at !== down) return
     const [r, c] = at.split(':').map(Number)
     wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${r + 1}:${c}"]`)?.focus()
+  }
+  /** The focus leaving the table forgets the Enter too (T9d); between its own cells `onTableFocus` decides. */
+  const onTableBlur = (e: ReactFocusEvent): void => {
+    placeHandle()
+    if (!(e.relatedTarget instanceof Node) || wrapRef.current?.contains(e.relatedTarget) !== true) downAfter.current = null
   }
 
   /** The selection's right-click (YAZ-4593): every action works on the selection it was opened on; Duplicate and Delete on the notes it held then (`paths`). */
@@ -1514,7 +1524,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           onKeyDown={onKeyDown}
           // The fill handle follows the focused cell when there is no selection (D61): placed on the DOM, no render.
           onFocus={onTableFocus}
-          onBlur={placeHandle}
+          onBlur={onTableBlur}
           onKeyDownCapture={onEditorKey}
         >
           <thead>

@@ -262,6 +262,16 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     expect(def().views[0].frozenColumns).toBe(1)
   })
 
+  it('with row numbers off the slim gutter cell is still the first, so the summary cells that part are still the ones after it (YAZ-4636 T8)', () => {
+    const { el } = mount(`${BASE}    rowNumbers: false\n`)
+    fire(ths(el)[2], 'dragstart')
+    fire(ths(el)[0], 'dragover', LEFT)
+    const room = widthAt(el, 2)
+    expect(rules(el)).toContain(`tfoot td:nth-child(2){transform:translateX(${room}px);}`)
+    expect(rules(el)).toContain(`tfoot td:nth-child(3){transform:translateX(${room}px);}`)
+    expect(rules(el)).not.toContain('tfoot td:nth-child(1)')
+  })
+
   it('the slot is read from the layout, not the drawn header: a parted header under the pointer does not move the gap', () => {
     const { el } = mount()
     fire(ths(el)[2], 'dragstart')
