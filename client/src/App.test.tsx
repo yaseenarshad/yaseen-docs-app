@@ -7346,6 +7346,17 @@ describe('App automation restore', () => {
 
 
 describe('App automation tab actions', () => {
+  it('lands a CLI copy as the sidebar’s Paste of a Copy does (YAZ-4527 P6): the tree is read again, and one notice says what landed', async () => {
+    // A vault that does not use IDs: no folder-value pass reads the tree for the copy.
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, b => b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false })))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    const before = bridge.tree.mock.calls.length
+    bridge.file.copyTo.mockResolvedValueOnce({ pasted: [{ from: '/v/a.md', to: '/v/To/a.md', kind: 'file' }], failed: [] })
+    await act(async () => emitAutomation({ id: 'copy-land', action: 'operate', target: { command: 'file.copy', paths: ['/v/a.md'], targetDir: '/v/To', external: false, dropValues: false } }))
+    expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'copy-land', ok: true, value: { pasted: [{ from: '/v/a.md', to: '/v/To/a.md', kind: 'file' }], failed: [], diskSaved: true } })
+    expect(bridge.tree.mock.calls.slice(before)).toContainEqual(['/v'])
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Pasted 1 file (a.md)')
+  })
   it('flushes a copied folder’s dirty descendants and reports partial copy results', async () => {
     const path = '/v/Folder/Note.md'
     const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path] })

@@ -3,12 +3,13 @@ import type { FileOperationTarget } from '@shared/automationNavigation'
 import { api, BridgeRequestError } from '../api'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { vaultDirs } from '../links/folderLinks'
-import { dropFolderValuesAfterCopy, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from '../links/shortcuts'
+import { valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from '../links/shortcuts'
 import type { ViewOnlyCatalog } from '../links/viewOnlyCatalog'
 import { dirtyPaths, flushRenamedDir, flushRenamedPath } from '../lib/renameContinuity'
 import type { DeleteStep, MovedGesture, StepOutcome } from '../lib/moveHistory'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { basename } from '../lib/paths'
+import { fetchTree } from '../lib/treeFeed'
 import type { RenameTo } from '../sidebar/ConfirmRename'
 import { landPaste } from '../sidebar/landPaste'
 
@@ -30,22 +31,27 @@ export interface OrganizeActions {
   renameWithUndo(path: string, to: RenameTo, catalog: ViewOnlyCatalog | null): Promise<{ links: Links } | { error: unknown } | null>
 }
 
-/** The sidebar's Paste of a Copy (YAZ-2420 3E1): it asks first when a copy will not keep a folder's values; dropValues is its Copy button. */
+/**
+ * The sidebar's Paste of a Copy (`runPaste`), with explicit items and neither clipboard: it asks first when a copy will
+ * not keep a folder's values (YAZ-2420 3E1), and dropValues is its Copy button. Then the same refresh and `landPaste`:
+ * one notice, the land sound, and the copies' folder values.
+ */
 async function copyFiles(target: Extract<OrganizeTarget, { command: 'file.copy' }>, actions: OrganizeActions) {
   for (const path of target.paths) { await flushRenamedPath(path); await flushRenamedDir(path) }
   const unsaved = dirtyPaths().filter(path => target.paths.some(source => path === source || path.startsWith(`${source}/`)))
   if (unsaved.length) throw new AutomationFailure('UNSAVED_CHANGES', 'Some source editors could not save. Resolve their save errors before copying.', { paths: unsaved })
-  const { root, wikilinks } = actions.scopeOf(target.targetDir)
-  if (root !== null) {
-    const dirs = vaultDirs(root)
-    const moves = target.paths.flatMap((oldPath): Move[] => oldPath === `${target.targetDir}/${basename(oldPath)}` ? [] : [{ oldPath, newPath: `${target.targetDir}/${basename(oldPath)}`, kind: dirs.includes(oldPath) ? 'dir' : 'file' }])
-    const lost = valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders })
-    if (lost.folders.length > 0 && !target.dropValues) throw new AutomationFailure('CONFIRMATION_REQUIRED', 'The copies will not keep values of other folders. Pass dropValues: true to confirm.', { folders: lost.folders, notes: lost.notes })
-  }
-  const result = await api.file.copyTo({ paths: target.paths, targetDir: target.targetDir, external: target.external })
-  if (root !== null && wikilinks.ids && result.pasted.length > 0) await dropFolderValuesAfterCopy(root, result.pasted.map(({ to }) => to))
-  if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items could not be copied.', { ...result, diskSaved: result.pasted.length > 0 })
-  return { ...result, diskSaved: true }
+  const { root: vault, wikilinks: index } = actions.scopeOf(target.targetDir)
+  if (vault === null) throw new AutomationFailure('OUTSIDE_SCOPE', 'The folder is no longer in this window.')
+  const dirs = vaultDirs(vault)
+  const moves = target.paths.flatMap((oldPath): Move[] => oldPath === `${target.targetDir}/${basename(oldPath)}` ? [] : [{ oldPath, newPath: `${target.targetDir}/${basename(oldPath)}`, kind: dirs.includes(oldPath) ? 'dir' : 'file' }])
+  const lost = valuesLeftBehind({ root: vault, moves, records: index.records, folders: index.folders })
+  if (lost.folders.length > 0 && !target.dropValues) throw new AutomationFailure('CONFIRMATION_REQUIRED', 'The copies will not keep values of other folders. Pass dropValues: true to confirm.', { folders: lost.folders, notes: lost.notes })
+  const res = await api.file.copyTo({ paths: target.paths, targetDir: target.targetDir, external: target.external })
+  // A copy sends no rename broadcast, and the watcher's echo is a courtesy: the tree is asked again. Its answer reaches the sidebar through the feed.
+  fetchTree(vault).catch(() => undefined)
+  await landPaste({ vault, index, before: null, res }, { onNotice: actions.notify, onMoved: actions.recordMoves })
+  if (res.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items could not be copied.', { ...res, diskSaved: res.pasted.length > 0 })
+  return { ...res, diskSaved: true }
 }
 
 /** ⌘Z and ⌘⇧Z: the window's own toasts and history rules run in `replayStep`; the reply only reports them. */

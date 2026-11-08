@@ -369,25 +369,29 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     }
     return res
   })
-  handleWithEvent(CONTRACT.file.copyTo, async (e, req: unknown) => {
-    const { targetDir, paths, external } = requireRequest(req)
+  /**
+   * The explicit items of `fs:copy-to` and `fs:move-to` (YAZ-4502): the target is a folder in a vault of the calling
+   * window, and 1–200 distinct items, each inside its vaults and none a vault itself — unless `outside` (an import) allows any.
+   */
+  const explicitItems = (e: IpcMainInvokeEvent, req: unknown, verb: 'copy' | 'move', outside = false) => {
+    const { targetDir, paths } = requireRequest(req)
     const dir = requireAbsPath(targetDir, 'targetDir'), roots = rootsOfSender(e)
     if (rootOfPath(roots, dir) === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that folder', { path: dir })
-    if (typeof external !== 'boolean') throw new BridgeFailure('BAD_REQUEST', 'choose internal copy or external import')
     const items = [...new Set(requireStringArray(paths, 'paths').map(p => requireAbsPath(p, 'paths')))]
-    if (!items.length || items.length > 200) throw new BridgeFailure('BAD_REQUEST', 'copy between 1 and 200 items')
-    if (!external && items.some(p => roots.includes(p) || rootOfPath(roots, p) === null)) throw new BridgeFailure('BAD_REQUEST', 'an internal copy must name items inside this window’s vaults')
+    if (!items.length || items.length > 200) throw new BridgeFailure('BAD_REQUEST', `${verb} between 1 and 200 items`)
+    if (!outside && items.some(p => roots.includes(p) || rootOfPath(roots, p) === null)) throw new BridgeFailure('BAD_REQUEST', `a ${verb} must name items inside this window’s vaults`)
+    return { dir, items }
+  }
+  handleWithEvent(CONTRACT.file.copyTo, async (e, req: unknown) => {
+    const { external } = requireRequest(req)
+    if (typeof external !== 'boolean') throw new BridgeFailure('BAD_REQUEST', 'choose internal copy or external import')
+    const { dir, items } = explicitItems(e, req, 'copy', external)
     const ids = external ? null : await doorFor(e, req, 'targetDir')
     return pasteEntries({ op: 'copy', paths: items }, { targetDir: dir }, { copy: external ? (from, to) => importCopy(from, to, { freeName: true }) : (from, to) => copyEntry(from, to, ids), move: moveEntry })
   })
   // A Paste of a Cut with explicit items (YAZ-4502): the same `moveEntry` per item, in order, and neither clipboard is read or cleared.
   handleWithEvent(CONTRACT.file.moveTo, async (e, req: unknown) => {
-    const { targetDir, paths } = requireRequest(req)
-    const dir = requireAbsPath(targetDir, 'targetDir'), roots = rootsOfSender(e)
-    if (rootOfPath(roots, dir) === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that folder', { path: dir })
-    const items = [...new Set(requireStringArray(paths, 'paths').map(p => requireAbsPath(p, 'paths')))]
-    if (!items.length || items.length > 200) throw new BridgeFailure('BAD_REQUEST', 'move between 1 and 200 items')
-    if (items.some(p => roots.includes(p) || rootOfPath(roots, p) === null)) throw new BridgeFailure('BAD_REQUEST', 'a move must name items inside this window’s vaults')
+    const { dir, items } = explicitItems(e, req, 'move')
     return pasteEntries({ op: 'cut', paths: items }, { targetDir: dir }, { copy: () => Promise.reject(new BridgeFailure('BAD_REQUEST', 'a move copies nothing')), move: moveEntry })
   })
   /**
