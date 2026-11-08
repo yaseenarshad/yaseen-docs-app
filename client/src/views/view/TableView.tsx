@@ -1,8 +1,7 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf, MAX_GROUP_LEVELS } from '../viewSchema'
-import { titleCandidates } from '../../links/completion'
-import { belongsToTitles } from '../../links/folderLinks'
+import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { type Resolver, type Value, render, typeOf } from '../expr'
 import type { ColumnDecl, FolderSettings } from '../folderSettings'
@@ -279,7 +278,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const bares = useMemo(() => keys.map(writableKey), [keys])
   const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, properties, settings)), [keys, rowRecords, properties, settings])
   /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
-  const titles = useMemo(() => titleCandidates(vaultRecords), [vaultRecords])
+  // The note editor's `[[` rows, notes and folders (YAZ-4601 D49).
+  const titles = useMemo(() => cellLinkCandidates(vaultRecords, vaultFolders, resolveLink, root), [vaultRecords, vaultFolders, resolveLink, root])
   // Relation columns narrow the link picker to the notes in the FOLDER the target names
   // (YAZ-2290 D10: `belongsToTitles`); a target naming no folder falls back to all titles.
   const linkNames = useMemo(

@@ -258,7 +258,7 @@ interface TreeProps {
   shortcuts: ReadonlyMap<string, readonly TreeNode[]>
   /**
    * The folders that list their page file (YAZ-4587, D37), by absolute path (`folderPageRows`): each draws a
-   * "📄 <title> (page)" row first under it. Not a file of the tree: it never drags, renames or deletes, and a
+   * "📄 <title> (folder page)" row first under it (YAZ-4601 D52: it says what the row is). Not a file of the tree: it never drags, renames or deletes, and a
    * click opens the folder page on its Page tab (`onOpenPage`). Absent: no such row.
    */
   pageRows?: ReadonlySet<string>
@@ -469,7 +469,7 @@ function TreeLevel({
             onClick={() => onOpenPage(dirPath, copies ? top : undefined)}
             onContextMenu={(e) => onNodeContextMenu({ type: 'dir', path: dirPath, pageOf: dirPath, top: top ?? dirPath }, e)}
           >
-            <span className="tree__label">📄 {pageLabel(dirPath, true, titles)} (page)</span>
+            <span className="tree__label">📄 {pageLabel(dirPath, true, titles)} (folder page)</span>
           </button>
         </li>
       )}

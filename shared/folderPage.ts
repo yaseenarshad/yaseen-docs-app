@@ -11,3 +11,16 @@ export function showPageFileOf(properties: Readonly<Record<string, unknown>>): b
   const value = properties[SHOW_PAGE_FILE_KEY]
   return typeof value === 'boolean' ? value : undefined
 }
+
+/**
+ * A folder page's own "Preview on hover" (YAZ-4601 D51), stored IN its `.folder.md` as `show_page_file` is:
+ * `hover_preview: true | false`. The cog writes it ("Preview on hover": Settings — no key —, On or Off). It covers the
+ * row hover and the link pill hover on that page. Any other value counts as no key.
+ */
+export const HOVER_PREVIEW_KEY = 'hover_preview'
+
+/** The folder's own hover choice off its `.folder.md` properties: `undefined` follows Settings (`hoverOn(settings, 'folderViews')`). */
+export function hoverPreviewOf(properties: Readonly<Record<string, unknown>>): boolean | undefined {
+  const value = properties[HOVER_PREVIEW_KEY]
+  return typeof value === 'boolean' ? value : undefined
+}

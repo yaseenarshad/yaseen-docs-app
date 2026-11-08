@@ -31,7 +31,7 @@ import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
 import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
-import { SHOW_PAGE_FILE_KEY, showPageFileOf } from '@shared/folderPage'
+import { HOVER_PREVIEW_KEY, SHOW_PAGE_FILE_KEY, hoverPreviewOf, showPageFileOf } from '@shared/folderPage'
 import { isReadOnlyProperties, READ_ONLY_KEY } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -218,6 +218,8 @@ export function FolderView({
   const [pageLocked, setPageLocked] = useAheadKey(record !== undefined && isReadOnlyProperties(record.properties))
   /** The folder's own "Show folder page file" (D37): `undefined` follows Settings. */
   const [showPageFile, setShowPageFile] = useAheadKey(record === undefined ? undefined : showPageFileOf(record.properties))
+  /** The folder's own "Preview on hover" (YAZ-4601 D51): `undefined` follows Settings; it rules the row and pill hovers here. */
+  const [ownHover, setOwnHover] = useAheadKey(record === undefined ? undefined : hoverPreviewOf(record.properties))
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
     chips.set({ readOnly: pageLocked })
@@ -529,6 +531,8 @@ export function FolderView({
         onCancel={() => setAskingUnlock(false)}
         showPageFile={showPageFile}
         onChangeShowPageFile={(next) => setShowPageFile(next, writeOwnKey(SHOW_PAGE_FILE_KEY, next))}
+        hoverPreview={ownHover}
+        onChangeHoverPreview={(next) => setOwnHover(next, writeOwnKey(HOVER_PREVIEW_KEY, next))}
         sync={sync}
         onSyncNow={onSyncNow}
       />
@@ -561,7 +565,7 @@ export function FolderView({
                 properties={properties}
                 onOpenFile={onOpenFile}
                 folder={host}
-                hoverPreview={hoverPreview}
+                hoverPreview={ownHover ?? hoverPreview}
                 previewScope={previewScope}
                 diagramDarkColors={diagramDarkColors}
                 folderPages={folderPages}

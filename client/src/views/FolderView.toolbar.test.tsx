@@ -14,6 +14,7 @@ import { createStore } from '../lib/store'
 import { click, flush, q, rec, renderFolderView, unmountFolderView } from './testFolderView'
 import { FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import type { FolderViewProps } from './FolderView'
+import { hoverPreviewOf } from '@shared/folderPage'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -109,7 +110,8 @@ describe('the folder page toolbar (D35)', () => {
     const el = await mount()
     openCog(el)
     const group = q(el, '.page-settings__menu [role="group"][aria-label="This folder page"]')
-    expect([...group.children].map((c) => c.textContent)).toEqual(['This folder page', 'Read only', 'Show folder page file:', 'SettingsOnOff'])
+    // YAZ-4601 D51 adds "Preview on hover" after "Show folder page file".
+    expect([...group.children].map((c) => c.textContent)).toEqual(['This folder page', 'Read only', 'Show folder page file:', 'SettingsOnOff', 'Preview on hover:', 'SettingsOnOff'])
     expect(pill(el, 'Settings').getAttribute('aria-pressed')).toBe('true')
     // No word counts and no trailing rows: a folder page off its Page tab has only its own group.
     expect(q(el, '.page-settings__menu').textContent).not.toContain('words')
@@ -200,6 +202,36 @@ describe('Show folder page file (D37)', () => {
   })
 })
 
+describe('Preview on hover (YAZ-4601 D51)', () => {
+  const hoverPill = (el: ParentNode, text: string): HTMLButtonElement => button(q(el, '[role="group"][aria-label="Preview on hover"]'), text)
+
+  it('writes `hover_preview` in three states: On is true, Off is false, Settings removes the key', async () => {
+    const el = await mount()
+    openCog(el)
+    const value = () => parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties.hover_preview
+    expect(hoverPill(el, 'Settings').getAttribute('aria-pressed')).toBe('true')
+    click(hoverPill(el, 'On'))
+    await flush()
+    expect(value()).toBe(true)
+    expect(hoverPill(el, 'On').getAttribute('aria-pressed')).toBe('true')
+    click(hoverPill(el, 'Off'))
+    await flush()
+    expect(value()).toBe(false)
+    expect(hoverPill(el, 'Off').getAttribute('aria-pressed')).toBe('true')
+    click(hoverPill(el, 'Settings'))
+    await flush()
+    expect(value()).toBeUndefined()
+    expect(onDisk()).toBe(VIEWS)
+  })
+
+  it('the page\'s own choice is its key; no key, or any other value, follows Settings', () => {
+    expect(hoverPreviewOf({ hover_preview: true })).toBe(true)
+    expect(hoverPreviewOf({ hover_preview: false })).toBe(false)
+    expect(hoverPreviewOf({})).toBeUndefined()
+    expect(hoverPreviewOf({ hover_preview: 'yes' })).toBeUndefined()
+  })
+})
+
 describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar store', () => {
   let root: Root | null = null
   let container: HTMLElement | null = null
@@ -214,7 +246,7 @@ describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar s
     document.body.append(container)
     root = createRoot(container)
     const noop = () => undefined
-    act(() => root!.render(<FolderToolbar store={store} zoom={100} onZoom={noop} readOnly={false} onToggleReadOnly={noop} asking={false} onAsk={noop} onAllow={noop} onCancel={noop} showPageFile={undefined} onChangeShowPageFile={noop} />))
+    act(() => root!.render(<FolderToolbar store={store} zoom={100} onZoom={noop} readOnly={false} onToggleReadOnly={noop} asking={false} onAsk={noop} onAllow={noop} onCancel={noop} showPageFile={undefined} onChangeShowPageFile={noop} hoverPreview={undefined} onChangeHoverPreview={noop} />))
     const onToggleLineNumbers = vi.fn()
     act(() => store.set({ page: { cog: { lineNumbers: true, onToggleLineNumbers, readText: () => 'a b' }, save: 'unsaved' } }))
     expect(q(container, '.save-indicator').textContent).toBe('Unsaved')

@@ -221,7 +221,7 @@ describe('an id link (YAZ-2293 D8)', () => {
       records,
       folder: testFolderHost({ vaultRecords: records }),
     })
-    expect(q(cardOf(el, 'VSL-v1'), '.view-table__chip--link').textContent).toBe('Attribution')
+    expect(q(cardOf(el, 'VSL-v1'), '.view-link-pill').textContent).toBe('Attribution')
     expect([...el.querySelectorAll('.view-group__value')].map((v) => v.textContent)).toEqual(['Agentic Agency', 'Attribution', 'No value'])
   })
 })

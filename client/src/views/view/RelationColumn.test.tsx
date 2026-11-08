@@ -331,7 +331,7 @@ describe('multi-link cells', () => {
 describe('round trip and degradation', () => {
   it('a relation value renders as a link chip, like any wiki-link property today', () => {
     const { el } = mount(KPI_BASE, { properties: DECLS })
-    const chip = q<HTMLElement>(cell(el, 0, 1), '.view-table__chip--link')
+    const chip = q<HTMLElement>(cell(el, 0, 1), '.view-link-pill')
     expect(chip.textContent).toBe('Alice')
   })
 

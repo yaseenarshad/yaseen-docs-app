@@ -2,7 +2,7 @@ import { useContext, useEffect, useRef, useState } from 'react'
 import { type LinkCandidate, matchLinkCandidates, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
-import { ColumnDecls, cellContent } from './GroupHeader'
+import { ColumnDecls, LinkPills, cellContent } from './GroupHeader'
 import { TextField } from './TextField'
 import { createPortal } from 'react-dom'
 import { Popover } from './Popover'
@@ -19,7 +19,11 @@ export interface EditableCellProps {
   /** The inferred editor (`cellEditor`); null renders the plain read-only content. */
   options?: readonly string[]
   editor: EditorKind | null
-  /** Index titles for the link editor's `[[…]]` completion, each with what picking it writes — the note's id, else the title (`titleCandidates`). */
+  /**
+   * What the link, multi-link and text editors' `[[…]]` completion offers, each with what picking it writes. A folder
+   * page's cells: the note editor's rows, notes then folders (`cellLinkCandidates`, YAZ-4601 D49), or a link column's
+   * target folder (`belongsToTitles`); the properties panel: the titles (`titleCandidates`).
+   */
   titles: readonly LinkCandidate[]
   /**
    * The ONE write: the host's own. A folder's views write its block of the note
@@ -59,6 +63,8 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
   const writes = useRef<Promise<void> | null>(null)
   const revision = useRef(0)
   const echoes = useRef<{ revision: number; value: string }[]>([])
+  /** A folder page's text cell completes `[[` (YAZ-4601 D48), as its inline links show as pills; the properties panel's does not. */
+  const textLinks = useContext(LinkPills)
   /** The column's declaration (YAZ-4591): a Number or Date column's format shapes the display; the editor keeps the raw value. */
   const decl = useContext(ColumnDecls)[propKey]
 
@@ -184,7 +190,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
           onCommit={commit}
           onDone={close}
         />
-      ) : editor === 'link' ? (
+      ) : editor === 'link' || (editor === 'text' && textLinks) ? (
         <LinkEditor initial={text} titles={titles} label={label} onCommit={commit} onDone={close} />
       ) : (
         <TextField

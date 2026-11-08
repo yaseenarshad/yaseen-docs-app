@@ -224,7 +224,7 @@ describe('an id link (YAZ-2293 D8)', () => {
 
   it('an indented property row and a group header read as the title too', () => {
     const { el } = mount('views:\n  - type: list\n    name: L\n    indentProperties: true\n    order:\n      - file.name\n      - note.related\n    groupBy:\n      property: note.related\n', props)
-    expect(q(vsl(el), '.view-table__chip--link').textContent).toBe('Attribution')
+    expect(q(vsl(el), '.view-link-pill').textContent).toBe('Attribution')
     expect([...el.querySelectorAll('.view-group__value')].map((v) => v.textContent)).toEqual(['Agentic Agency', 'Attribution', 'No value'])
   })
 })

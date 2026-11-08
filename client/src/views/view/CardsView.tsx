@@ -3,8 +3,8 @@ import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { api } from '../../api'
 import { createPreviewCache } from '../../lib/previewCache'
 import { type ViewSet, type ViewDef, groupIndentOf } from '../viewSchema'
-import { titleCandidates, type LinkCandidate } from '../../links/completion'
-import { belongsToTitles } from '../../links/folderLinks'
+import { type LinkCandidate } from '../../links/completion'
+import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { cellEditor, columnTyping } from '../editorType'
@@ -173,7 +173,8 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     [rest, rowRecords, properties, settings],
   )
   /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
-  const titles = useMemo(() => titleCandidates(vaultRecords), [vaultRecords])
+  // The note editor's `[[` rows, notes and folders (YAZ-4601 D49).
+  const titles = useMemo(() => cellLinkCandidates(vaultRecords, vaultFolders, resolveLink, root), [vaultRecords, vaultFolders, resolveLink, root])
   // Relation columns narrow the link picker to the notes in the FOLDER the target names
   // (YAZ-2290 D10: `belongsToTitles`); a target naming no folder falls back to all titles.
   const linkNames = useMemo(() => {
