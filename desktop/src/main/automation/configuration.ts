@@ -4,15 +4,31 @@ import { patchSettings, readStoredTab, type Store } from '../store'
 import { getFavorites, updateFavorites } from '../favorites'
 import { getFocus, updateFocus } from '../focus'
 import { absolute, resolveTarget, scopeRoots } from './resources'
+import { allowPictureFolder } from '../pictureFolderActions'
 
 const page = <T>(items: readonly T[], args: Record<string, unknown>) => {
   const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
   return { items: items.slice(offset, offset + limit), total: items.length, nextOffset: offset + limit < items.length ? offset + limit : null }
 }
 
-export async function configurationCommand(store: Store, command: string, args: Record<string, unknown>): Promise<unknown> {
+export async function configurationCommand(store: Store, command: string, args: Record<string, unknown>, forgetPicturePick?: (folder: string) => void): Promise<unknown> {
   if (command === 'settings.get') return { settings: store.get().settings }
   if (command === 'vault.list') return page(listVaults(store.get()), args)
+  if (command === 'vault.patch') {
+    const { roots: [root] } = await scopeRoots(store.get(), { root: args.root as string })
+    store.setFolder(root, args.changes as { name?: string | null; key?: number | null })
+    await store.flush()
+    return { root, folder: store.get().folders[root], diskSaved: true }
+  }
+  if (command.startsWith('pictureFolder.')) {
+    if (command === 'pictureFolder.allow') await allowPictureFolder(store, absolute(args.folder as string))
+    else if (command === 'pictureFolder.remove') {
+      const folder = absolute(args.folder as string)
+      store.removePictureFolder(folder); forgetPicturePick?.(folder)
+    }
+    if (command !== 'pictureFolder.list') await store.flush()
+    return { folders: store.get().approvedPictureFolders, ...(command === 'pictureFolder.list' ? {} : { diskSaved: true }) }
+  }
   if (command === 'session.list') return { ...page(store.get().sessions, args), source: 'saved' }
   if (command === 'settings.patch') {
     let next

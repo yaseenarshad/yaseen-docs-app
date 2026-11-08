@@ -14,6 +14,15 @@ export async function fileOperation(host: NavigationHost, command: string, args:
     if (window.roots.includes(path)) throw new AutomationFailure('INVALID_INPUT', 'This operation requires an item inside a vault, not the vault root.')
     return path
   }
+  if (command === 'file.copy' || command === 'file.importCopy') {
+    const targetDir = await resolveTarget(window.roots, { path: args.targetDir as string })
+    if (!(await stat(targetDir)).isDirectory()) throw new AutomationFailure('INVALID_INPUT', 'Copy into an existing folder.')
+    const external = command === 'file.importCopy'
+    const paths = [...new Set(args.paths as string[])]
+    if (!paths.length) throw new AutomationFailure('INVALID_INPUT', 'Supply at least one source path.')
+    const resolved = await Promise.all(paths.map(p => external ? absolute(p) : target(p)))
+    return host.operate(window.id, { command: 'file.copy', paths: resolved, targetDir, external })
+  }
   if (command === 'file.trash') {
     const paths = [...new Set(args.paths as string[])]
     if (!paths.length) throw new AutomationFailure('INVALID_INPUT', 'Supply at least one path.')

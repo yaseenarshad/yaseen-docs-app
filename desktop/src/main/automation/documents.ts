@@ -13,8 +13,9 @@ import { absolute, readSaved, resolveTarget, scopeRoots, type ResourceScope, typ
 import { decodeViewOnlyText, writeFile } from '../fs/file'
 import { revisionOf } from '../fs/revision'
 import { newNote } from '../notes/note'
+import type { SavedCallback } from '../documentSaves'
 
-export async function documentCommand(state: AppState, command: string, args: Record<string, unknown>, body: Buffer, hasContent = body.length > 0): Promise<unknown> {
+export async function documentCommand(state: AppState, command: string, args: Record<string, unknown>, body: Buffer, hasContent = body.length > 0, record?: SavedCallback): Promise<unknown> {
   const { roots } = await scopeRoots(state, args as ResourceScope)
   if (command === 'folder.create') {
     const path = absolute(args.path as string)
@@ -74,5 +75,6 @@ export async function documentCommand(state: AppState, command: string, args: Re
     default: throw new AutomationFailure('UNKNOWN_COMMAND', 'No document adapter exists for this command.')
   }
   const saved = await writeFile({ path, content, expectedRevision: before.revision })
+  await record?.(roots, saved.path)
   return { ...saved, revision: revisionOf(content, saved.mtime), diskSaved: true, rendererMerged: false, changed: content !== before.content, ...(comment ? { comment } : {}) }
 }

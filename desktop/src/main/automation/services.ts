@@ -5,6 +5,9 @@ import type { MediaProviders } from '../media/providers'
 import type { IconPacks } from '../media/iconPacks'
 import type { GitSyncManager } from '../git/manager'
 import type { Sharing } from '../share/sharing'
+import type { ShrinkResult, VaultStorageStats } from '@shared/types'
+import type { SettingsFolder } from '../settingsFolder'
+import type { LanguageHelperActions } from '../ipc/lsp'
 
 /** App-owned services, passed explicitly. The public registry never names an IPC channel. */
 export interface AutomationServices {
@@ -15,4 +18,9 @@ export interface AutomationServices {
   sync: GitSyncManager
   sharing: Sharing
   credentials: { hasPixabay(): Promise<boolean>; setPixabay(value: string | null): Promise<void> }
+  /** Removing permission also forgets any pending picture-folder dialog pick, as Settings does. */
+  forgetPicturePick(folder: string): void
+  storage: { stats(root: string): Promise<VaultStorageStats>; shrink(root: string, skip: readonly string[]): Promise<ShrinkResult> }
+  settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>
+  languageHelpers: LanguageHelperActions
 }

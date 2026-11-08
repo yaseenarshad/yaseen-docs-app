@@ -3,7 +3,7 @@ import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { requireStringArray } from '../fs/validate'
-import type { SettingsFolder } from '../settingsFolder'
+import { chooseSettingsFolder, type SettingsFolder } from '../settingsFolder'
 import { drawingInFront, hotkeyRecording } from '../hotkeyRecording'
 import { isSettings, readCanvasCard, readCanvasFrame, readCanvasKey, type Store } from '../store'
 import { createSystemHotkeys } from '../systemHotkeys'
@@ -79,13 +79,10 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
   // YAZ-3276 D6: a folder with another Mac's file wins (0 is older than every file); an empty folder takes
   // this Mac's settings (now is newer than none). Null keeps the settings and never deletes this Mac's file.
   handle(CONTRACT.state.setSettingsFolder, async (folder: unknown) => {
-    const next = folder === null ? null : requireAbsPath(folder, 'folder')
-    if (next === store.get().settingsFolder) return
-    store.setSettingsFolder(next, next !== null && (await settingsFolder.hasOtherMacs(next)) ? 0 : Date.now())
     // The row asks `state.settingsFolder` right after this answers: wait for the new folder's first read,
     // so `missing` is that folder's, not the old one's (YAZ-3297). At most 2 s: a network folder that hangs
     // must not hang the door; the row then shows what is known, and the next open shows the rest.
-    await Promise.race([settingsFolder.settled(), new Promise((done) => setTimeout(done, 2000))])
+    await chooseSettingsFolder(store, settingsFolder, folder)
   })
   // "Used by macOS" (YAZ-3397 D3): this Mac's keys, read off its plist when the Hotkeys page asks, kept until the file changes.
   const systemHotkeys = createSystemHotkeys()

@@ -1,4 +1,7 @@
 import { assetCommand } from './automation/assets'
+import { storageCommand } from './automation/storage'
+import { settingsFolderCommand } from './automation/settingsFolder'
+import { recordSaved } from './documentSaves'
 import { tabsCommand } from './automation/tabs'
 import { appCommand, type AutomationApp } from './automation/app'
 import { connectedCommand } from './automation/connected'
@@ -33,7 +36,26 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
   if (!hasContent && content.length) throw new AutomationFailure('INVALID_INPUT', 'Content bytes require the body flag.')
   if (definition.contentRequired && !hasContent) throw new AutomationFailure('INVALID_INPUT', 'This command requires a body, including an empty body when intended.')
   if (!definition.content && hasContent) throw new AutomationFailure('INVALID_INPUT', 'This command accepts no content.')
+  const record = async (roots: readonly string[], path: string) => {
+    try {
+      recordSaved(context.store!, roots, path)
+      await context.store!.flush()
+    } catch {
+      throw new AutomationFailure('SAVE_LOG_FAILED', 'The document was saved, but its Recents entry could not be persisted.', { path, diskSaved: true, rendererMerged: false })
+    }
+  }
   switch (request.command) {
+    case 'languageHelper.state': case 'languageHelper.install': case 'languageHelper.cancel':
+      return { writes: request.command === 'languageHelper.install' ? ['language-helpers'] : [], run: async () => {
+        const service = context.services!.languageHelpers
+        if (request.command === 'languageHelper.install') return service.install()
+        if (request.command === 'languageHelper.cancel') await service.cancel()
+        return service.state()
+      } }
+    case 'settingsFolder.get': case 'settingsFolder.set':
+      return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => settingsFolderCommand(context.store!, context.services!, request.command, request.args) }
+    case 'storage.stats': case 'storage.shrink':
+      return { writes: ['storage', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => storageCommand(context.services!, context.state!(), request.command, request.args) }
     case 'asset.read': case 'asset.write': case 'asset.export': case 'image.read': case 'image.export': case 'pdf.read': case 'pdf.export':
       return { writes: ['large-content', ...(definition.effect === 'write' ? ['documents'] : [])], run: () => assetCommand(context.state!(), request.command, request.args, content) }
     case 'window.show': case 'window.close': case 'window.rename':
@@ -41,7 +63,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
         if (!context.navigation?.manage) throw new AutomationFailure('UNAVAILABLE', 'Window management is unavailable in this app instance.')
         return context.navigation.manage(request.args.window as string, request.command.slice(7) as 'show' | 'close' | 'rename', request.args.name as string | null | undefined)
       } }
-    case 'tab.open': case 'tab.blank': case 'tab.close': case 'tab.duplicate': case 'tab.keep': case 'tab.sleep': case 'tab.wake': case 'tab.rename': case 'tab.reorder': case 'sidebar.setCollapsed': case 'session.restore':
+    case 'tab.open': case 'tab.blank': case 'tab.close': case 'tab.duplicate': case 'tab.keep': case 'tab.sleep': case 'tab.wake': case 'tab.rename': case 'tab.reorder': case 'sidebar.setCollapsed': case 'session.restore': case 'session.capture':
       return { writes: ['navigation', 'documents', 'configuration'], run: () => tabsCommand(context.navigation!, context.store!, request.command, request.args) }
     case 'app.diagnostics': case 'app.restart': case 'update.state': case 'update.notes': case 'update.check': case 'update.restart':
       return { writes: definition.effect === 'read' ? [] : ['app-management'], run: () => appCommand(context.app!, request.command) }
@@ -49,6 +71,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
     case 'history.list': case 'history.read': case 'history.export': case 'history.restore':
     case 'share.status': case 'share.accounts': case 'share.setup': case 'share.list': case 'share.check': case 'share.get': case 'share.publish': case 'share.setPermission': case 'share.stop': case 'share.setDomain': case 'share.disconnect':
       return { writes: definition.effect === 'read' ? ['large-content'] : ['large-content', 'connected', 'documents'], run: () => connectedCommand(context.services!, context.state!(), request.command, request.args, content) }
+    case 'media.favoriteCopies': case 'media.favoriteElements': case 'media.favoritesForPanel': case 'media.saveFavoriteElements':
     case 'component.list': case 'component.read': case 'component.save': case 'component.rename': case 'component.remove': case 'component.export':
     case 'media.search': case 'media.import': case 'media.preview': case 'media.library': case 'media.favorite': case 'media.unfavorite': case 'media.recordUse': case 'media.addWord': case 'media.removeWord':
     case 'media.drawingIndex': case 'media.drawing': case 'media.packList': case 'media.packStatus': case 'media.downloadPacks': case 'media.stopPacks': case 'media.checkPacks': case 'media.removePacks':
@@ -64,17 +87,19 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
       return { writes: ['navigation', 'documents'], run: () => editorCommand(context.navigation!, request.command, request.args, content) }
     case 'drawing.create': case 'diagram.create': case 'drawing.setReadOnly': case 'diagram.setReadOnly': case 'drawing.setHoverLinks': case 'drawing.setHoverOutline': case 'drawing.setFoldArrows': case 'drawing.setPictures':
     case 'drawing.read': case 'drawing.save': case 'drawing.export': case 'diagram.read': case 'diagram.save': case 'diagram.export':
-      return { writes: ['large-content', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => boardCommand(context.state!(), request.command, request.args, content) }
+      return { writes: ['large-content', ...(definition.effect === 'read' ? [] : ['documents'])], run: () => boardCommand(context.state!(), request.command, request.args, content, record) }
+    case 'file.copy': case 'file.importCopy':
     case 'file.rename': case 'file.retitle': case 'file.trash': case 'file.restore':
       return { writes: ['documents', 'navigation'], run: () => fileOperation(context.navigation!, request.command, request.args) }
     case 'group.list': case 'group.create': case 'group.rename': case 'group.remove': case 'group.position':
     case 'group.addItems': case 'group.removeItems': case 'group.reorderItems':
       return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => groupCommand(context.state!(), request.command, request.args) }
-    case 'settings.get': case 'settings.patch': case 'vault.list':
+    case 'settings.get': case 'settings.patch': case 'vault.list': case 'vault.patch':
+    case 'pictureFolder.list': case 'pictureFolder.allow': case 'pictureFolder.remove':
     case 'workspace.create': case 'workspace.update': case 'workspace.rename': case 'workspace.remove':
     case 'session.list': case 'session.save': case 'session.rename': case 'session.remove':
     case 'collection.list': case 'collection.add': case 'collection.remove': case 'collection.reorder':
-      return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => configurationCommand(context.store!, request.command, request.args) }
+      return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => configurationCommand(context.store!, request.command, request.args, context.services?.forgetPicturePick) }
     case 'app.status': return { writes: [], run: async () => ({ version: context.version, profile: context.profile, running: true }) }
     case 'navigation.open': return { writes: ['navigation'], run: () => navigate(context.navigation!, request.args as NavigationInput) }
     case 'navigation.link': return { writes: [], run: () => generateNavigationLink(context.state!(), request.args as NavigationInput) }
@@ -99,7 +124,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
     case 'review.list': case 'review.keep': case 'review.remove': case 'review.reset': case 'review.setEnabled':
     case 'file.write': case 'file.append': case 'property.set': case 'property.remove':
     case 'comment.list': case 'comment.add': case 'comment.update': case 'comment.remove': case 'note.create': case 'folder.create':
-      return { writes: definition.effect === 'read' ? [] : ['documents'], run: () => documentCommand(context.state!(), request.command, request.args, content, hasContent) }
+      return { writes: definition.effect === 'read' ? [] : ['documents'], run: () => documentCommand(context.state!(), request.command, request.args, content, hasContent, record) }
     default: throw new AutomationFailure('UNKNOWN_COMMAND', 'This command has no adapter.')
   }
 }

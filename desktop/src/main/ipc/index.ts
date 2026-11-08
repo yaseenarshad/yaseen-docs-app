@@ -76,7 +76,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerFocusFoldersIpc(store)
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)
-  registerStorageIpc(store)
+  const storage = registerStorageIpc(store)
   registerPictureFoldersIpc(store, pickedPictureFolders)
   registerSoundIpc()
   registerHomeIpc()
@@ -84,9 +84,11 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1
   // (the hidden e2e spec of the box; a dev run that shows the download as a packaged app does).
+  let languageHelpers!: AutomationServices['languageHelpers']
   const lsp = registerLspIpc(
     { lspRoot: join(userData, 'lsp'), devCopies: !places.isPackaged && process.env.YASEEN_DOCS_LSP_DOWNLOAD_ONLY !== '1', appPath: places.appPath ?? '' },
     { on: () => store.get().settings.codeLanguageHelpers, subscribe: (listener) => store.onChange((state) => listener(state.settings.codeLanguageHelpers)) },
+    undefined, actions => { languageHelpers = actions },
   )
   // THE one secrets instance (YAZ-3028): `secrets.set`/`has` for the renderer, `read` for main's own callers.
   // It is threaded into the Image Studio's providers (a Pixabay request is built without the key ever leaving
@@ -114,7 +116,8 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
   // `libraryMoves.settled()`: the launch's copy and its marker write are done — what a caller waits on before it lets go of `userData`.
   const sync = registerGithubIpc(store)
-  const automationServices: AutomationServices = { components, media: library.media, copies: library.copies, studio, sync, sharing,
+  const automationServices: AutomationServices = { components, media: library.media, copies: library.copies, studio, sync, sharing, storage, settingsFolder, languageHelpers,
+    forgetPicturePick: folder => { pickedPictureFolders.delete(folder) },
     credentials: {
       hasPixabay: () => secrets.has(PIXABAY_SECRET),
       setPixabay: async value => { await secrets.set(PIXABAY_SECRET, value); void library.copies.backfill() },

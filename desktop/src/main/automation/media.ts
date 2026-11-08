@@ -19,6 +19,14 @@ async function output(path: unknown, bytes: string | Buffer) {
 }
 export async function mediaCommand(services: AutomationServices, command: string, args: Record<string, unknown>, body: Buffer): Promise<unknown> {
   const { components, studio, media, copies } = services
+  if (command === 'media.favoriteCopies') return copies.status()
+  if (command === 'media.favoriteElements') return { itemKey: args.itemKey, fragmentJson: await copies.readElements(args.itemKey as string) }
+  if (command === 'media.favoritesForPanel') return page(await copies.missingForPanel(), args)
+  if (command === 'media.saveFavoriteElements') {
+    if (body.length > MAX_COMPONENT_FRAGMENT_BYTES) throw new AutomationFailure('TOO_LARGE', 'The favorite copy exceeds the 32 MiB fragment limit.')
+    const kept = await copies.saveElements(args.itemKey as string, decodeViewOnlyText(body, 'favorite elements'))
+    return { itemKey: args.itemKey, kept, diskSaved: kept }
+  }
   if (command.startsWith('component.')) {
     const slug = args.slug as string
     switch (command) {

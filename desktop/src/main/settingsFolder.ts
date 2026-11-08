@@ -19,7 +19,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { newestFile, SETTINGS_FILE_RE, settingsFileName, settingsFileText, type SettingsFile } from '@shared/settingsSync'
-import { atomicWrite } from './fs/fsUtils'
+import { atomicWrite, requireAbsPath } from './fs/fsUtils'
 import { otherMacFiles } from './settingsFiles'
 import type { Store } from './store'
 import { createWatchedFolder, type WatchedFolder } from './watchedFolder'
@@ -42,6 +42,16 @@ export interface SettingsFolder {
   flush(): Promise<void>
   /** Stop following the store and the folder (tests; the app keeps one for its life). */
   close(): Promise<void>
+}
+
+/** Settings and automation choose the same source. A slow network folder cannot hold this action forever. */
+export async function chooseSettingsFolder(store: Pick<Store, 'get' | 'setSettingsFolder'>, sync: Pick<SettingsFolder, 'hasOtherMacs' | 'settled'>, folder: unknown): Promise<boolean> {
+  const next = folder === null ? null : requireAbsPath(folder, 'folder')
+  if (next !== store.get().settingsFolder) store.setSettingsFolder(next, next !== null && await sync.hasOtherMacs(next) ? 0 : Date.now())
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([sync.settled().then(() => true), new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 2000) })])
+  } finally { clearTimeout(timer) }
 }
 
 export interface SettingsFolderDeps {

@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { AutomationFailure } from '@shared/automation'
-import { rootOfPath } from '@shared/types'
+import { rootOfPath, sameVaults, type StoredTab } from '@shared/types'
 import type { TabOperation } from '@shared/automationTabs'
 import type { Store } from '../store'
 import { navigate, type NavigationHost } from './navigation'
@@ -23,6 +23,16 @@ export async function tabsCommand(host: NavigationHost, store: Store, command: s
   }
   const window = host.windows().find(window => window.id === args.window)
   if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window is not live.')
+  if (command === 'session.capture') {
+    const snapshot = await host.inspect(window.id, { kind: 'window' }) as { roots: string[]; storedTabs?: StoredTab[] }
+    const current = host.windows().find(item => item.id === window.id)
+    if (!current || !sameVaults(current.roots, window.roots) || !sameVaults(snapshot.roots, window.roots)) throw new AutomationFailure('CONTEXT_CHANGED', 'The window’s vaults changed while its tabs were inspected. Read the window again.')
+    if (!snapshot.storedTabs?.length) throw new AutomationFailure('NO_TABS', 'The live window has no tabs to save.')
+    const saved = store.saveSession(args.name as string, snapshot.storedTabs, window.roots, args.id as string | undefined)
+    if (!saved) throw new AutomationFailure('INVALID_INPUT', 'The session could not be saved. Check its name, replacement ID, and the session limit.')
+    await store.flush()
+    return { window: window.id, session: saved, diskSaved: true }
+  }
   let target: TabOperation
   if (command === 'tab.open') target = { command, path: await resolveTarget(window.roots, args), background: args.background === true, copy: args.copy === true }
   else if (command === 'tab.blank') target = { command }

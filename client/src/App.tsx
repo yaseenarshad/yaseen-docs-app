@@ -43,7 +43,7 @@ import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unless
 import { treeHasPath } from './lib/treeState'
 import { NoticeToast } from './components/NoticeToast'
 import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
-import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
+import { carryEditorAcrossRename, carryEditorsAcrossDirRename, dirtyPaths, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
 import { resolveItem } from './lists/focusFolders'
@@ -1923,7 +1923,7 @@ export function App() {
       if (!now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
       return readLiveDocument(target.tab)
     }
-    return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, tabViews: now.current.tabs.map(tab => ({ tab: tab.id, ...inspectSurface(`view:${tab.id}`) })), sidebar: sidebarLens, sidebarCollapsed }
+    return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, storedTabs: storage.getTabStrip(), tabViews: now.current.tabs.map(tab => ({ tab: tab.id, ...inspectSurface(`view:${tab.id}`) })), sidebar: sidebarLens, sidebarCollapsed }
   }, async target => {
     if (isTabOperation(target)) {
       const result = await operateTabs(target, {
@@ -1938,6 +1938,14 @@ export function App() {
       return result
     }
     if (target.command === 'editor.action') return runEditorAction(target)
+    if (target.command === 'file.copy') {
+      for (const path of target.paths) { await flushRenamedPath(path); await flushRenamedDir(path) }
+      const unsaved = dirtyPaths().filter(path => target.paths.some(source => path === source || path.startsWith(`${source}/`)))
+      if (unsaved.length) throw new AutomationFailure('UNSAVED_CHANGES', 'Some source editors could not save. Resolve their save errors before copying.', { paths: unsaved })
+      const result = await api.file.copyTo({ paths: target.paths, targetDir: target.targetDir, external: target.external })
+      if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items could not be copied.', { ...result, diskSaved: result.pasted.length > 0 })
+      return { ...result, diskSaved: true }
+    }
     if (target.command === 'file.restore') {
       if (replaying.current) throw new AutomationFailure('BUSY', 'An organization history action is still running.')
       const entry = moveHistory.current.inspect().undo.at(-1)

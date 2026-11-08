@@ -39,9 +39,20 @@ it('reports credential presence and redacts failed protected operations', async 
 it('publishes only an explicitly scoped target and passes the requested update ID', async () => {
   const service = services(), path = join(root, 'Board.excalidraw')
   await writeFile(path, '{}')
-  await run(service, 'share.publish', { root, path, shareId: 'existing' }, 'standalone-content')
-  expect(service.sharing.publish).toHaveBeenCalledExactlyOnceWith(root, path, 'standalone-content', 'existing')
+  const content = JSON.stringify({ type: 'excalidraw', elements: [], appState: {}, files: {} })
+  await run(service, 'share.publish', { root, path, shareId: 'existing' }, content)
+  expect(service.sharing.publish).toHaveBeenCalledExactlyOnceWith(root, path, content, 'existing')
   await expect(run(service, 'share.publish', { root, path: '/outside.excalidraw' }, 'x')).rejects.toMatchObject({ code: 'OUTSIDE_SCOPE' })
   await run(service, 'share.disconnect', { root: null, deleteEverything: false })
   expect(service.sharing.disconnect).toHaveBeenCalledExactlyOnceWith(null, false)
+})
+it('refuses a non-standalone drawing and preserves valid embedded bytes unchanged', async () => {
+  const service = services(), path = join(root, 'Picture.excalidraw')
+  await writeFile(path, '{}')
+  const scene = { elements: [{ type: 'image', fileId: 'picture' }] }
+  await expect(run(service, 'share.publish', { root, path }, JSON.stringify(scene))).rejects.toMatchObject({ code: 'INCOMPLETE_CONTENT' })
+  expect(service.sharing.publish).not.toHaveBeenCalled()
+  const content = JSON.stringify({ ...scene, files: { picture: { dataURL: 'data:image/png;base64,AA==' } } })
+  await run(service, 'share.publish', { root, path }, content)
+  expect(service.sharing.publish).toHaveBeenCalledExactlyOnceWith(root, path, content, undefined)
 })

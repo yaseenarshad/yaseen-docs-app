@@ -39,3 +39,12 @@ it('scopes a new tab to its window and sends explicit copy/background flags', as
   expect(host.operate).toHaveBeenCalledExactlyOnceWith('w1', { command: 'tab.open', path, copy: true, background: true })
   await expect(tabsCommand(host, store, 'tab.open', { window: 'w1', path: '/outside/A.md' })).rejects.toMatchObject({ code: 'OUTSIDE_SCOPE' })
 })
+it('captures the live strip with duplicate copies and refuses a changed window context', async () => {
+  const path = join(root, 'A.md'), storedTabs = [{ path }, { path, name: 'Copy', active: true as const }]
+  vi.mocked(host.inspect).mockResolvedValue({ roots: [root], storedTabs })
+  expect(await tabsCommand(host, store, 'session.capture', { window: 'w1', name: 'Captured' })).toMatchObject({ diskSaved: true })
+  expect(store.get().sessions[0].tabs).toEqual(storedTabs)
+  vi.mocked(host.inspect).mockResolvedValue({ roots: ['/changed'], storedTabs })
+  await expect(tabsCommand(host, store, 'session.capture', { window: 'w1', name: 'Wrong context' })).rejects.toMatchObject({ code: 'CONTEXT_CHANGED' })
+  expect(store.get().sessions).toHaveLength(1)
+})

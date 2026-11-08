@@ -8,7 +8,8 @@ import { dirname } from 'node:path'
 import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
 import { serializeBoard, withPicturesOut } from '@shared/drawingAssets'
 import { rootOfPath, type AppState, type BoardKind } from '@shared/types'
-import { loadDrawing, saveDrawing } from '../fs/drawing'
+import { loadDrawing } from '../fs/drawing'
+import { saveDrawingIndexed, type SavedCallback } from '../documentSaves'
 import { loadDiagram, saveDiagram } from '../fs/diagram'
 import { readBoundedRegularFile } from '../fs/boundedRead'
 import { BOARDS } from '../fs/boardDocument'
@@ -16,7 +17,7 @@ import { createDurable, fsCall } from '../fs/fsUtils'
 import { decodeViewOnlyText } from '../fs/file'
 import { absolute, resolveTarget, scopeRoots } from './resources'
 
-export async function boardCommand(state: AppState, command: string, args: Record<string, unknown>, body: Buffer) {
+export async function boardCommand(state: AppState, command: string, args: Record<string, unknown>, body: Buffer, record?: SavedCallback) {
   const [resource, action] = command.split('.')
   const kind = resource as BoardKind
   const { roots } = await scopeRoots(state, args)
@@ -46,8 +47,9 @@ export async function boardCommand(state: AppState, command: string, args: Recor
     const text = decodeViewOnlyText(content, path)
     const expectedRevision = args.revision as string
     const result = kind === 'drawing'
-      ? await saveDrawing({ root, path, json: text, newFiles: [], expectedRevision }, state.approvedPictureFolders)
+      ? await saveDrawingIndexed({ root, path, json: text, newFiles: [], expectedRevision }, state.approvedPictureFolders)
       : await saveDiagram({ root, path, xml: text, expectedRevision })
+    await record?.(roots, result.path)
     return { ...result, diskSaved: true, rendererMerged: false }
   }
   const loaded = kind === 'drawing' ? await loadDrawing({ root, path, includeRevision: true }) : await loadDiagram({ root, path, includeRevision: true })

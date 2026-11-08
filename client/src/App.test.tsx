@@ -483,6 +483,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     // In-app rename (Links E1, GRO-2194) + external repair (E1c, GRO-2242): App subscribes to
     // the renamed push on mount; the banner's Update goes through repairRename.
     file: {
+      copyTo: vi.fn(async (_req: { paths: string[]; targetDir: string; external: boolean }): Promise<import('@shared/types').PasteResponse> => ({ pasted: [], failed: [] })),
       rename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath })),
       // A title edit (YAZ-2420 D16): the name main would build is each test's to say; by default the path stands.
       retitle: vi.fn(async ({ path }: { path: string; title: string }) => ({ oldPath: path, newPath: path, kind: 'file' as 'file' | 'dir' })),
@@ -7196,6 +7197,24 @@ describe('App automation restore', () => {
 
 
 describe('App automation tab actions', () => {
+  it('flushes a copied folder’s dirty descendants and reports partial copy results', async () => {
+    const path = '/v/Folder/Note.md'
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path] })
+    let dirty = true
+    const flush = vi.fn(async () => {})
+    const off = continuity.registerRenameContinuity(path, { flush, capture: () => dirty ? { frontmatter: '', body: 'unsaved' } : null, retire: () => {} })
+    const target = { command: 'file.copy' as const, paths: ['/v/Folder'], targetDir: '/v/To', external: false }
+    try {
+      await act(async () => emitAutomation({ id: 'copy-dirty', action: 'operate', target }))
+      expect(flush).toHaveBeenCalled()
+      expect(bridge.file.copyTo).not.toHaveBeenCalled()
+      expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'copy-dirty', ok: false, error: expect.objectContaining({ code: 'UNSAVED_CHANGES' }) })
+      dirty = false
+      bridge.file.copyTo.mockResolvedValueOnce({ pasted: [{ from: path, to: '/v/To/Note.md', kind: 'file' }], failed: [{ from: '/v/Folder/Other.md', code: 'IO_ERROR', message: 'disk refused' }] })
+      await act(async () => emitAutomation({ id: 'copy-partial', action: 'operate', target }))
+      expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'copy-partial', ok: false, error: expect.objectContaining({ code: 'PARTIAL_FAILURE', details: expect.objectContaining({ diskSaved: true, pasted: [expect.objectContaining({ to: '/v/To/Note.md' })] }) }) })
+    } finally { off() }
+  })
   it('duplicates, names, reorders and closes an exact tab while preserving the source copy', async () => {
     const path = '/v/a.md'
     const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path] })

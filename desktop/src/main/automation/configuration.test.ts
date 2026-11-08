@@ -18,6 +18,17 @@ afterEach(async () => { await store.flush(); _resetMint(); await rm(base, { recu
 const run = (command: string, args: Record<string, unknown>) => configurationCommand(store, command, args)
 
 describe('configuration commands', () => {
+  it('patches vault names and unique number keys and persists picture-folder changes', async () => {
+    await run('vault.patch', { root, changes: { name: 'Notes', key: 3 } })
+    await run('vault.patch', { root: other, changes: { key: 3 } })
+    expect(store.get().folders[root]).toMatchObject({ name: 'Notes', key: null })
+    expect(store.get().folders[other].key).toBe(3)
+    await run('pictureFolder.allow', { folder: join(base, 'Pictures') })
+    expect(JSON.parse(await readFile(join(base, 'profile/state.json'), 'utf8')).approvedPictureFolders).toEqual([join(base, 'Pictures')])
+    await expect(run('pictureFolder.allow', { folder: '/System' })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await run('pictureFolder.remove', { folder: join(base, 'Pictures') })
+    expect(await run('pictureFolder.list', {})).toEqual({ folders: [] })
+  })
   it('patches current settings, preserves unrelated changes, and flushes before success', async () => {
     store.setSettings({ ...store.get().settings, dailyNoteFolder: 'Journal' })
     await run('settings.patch', { changes: { dailyNotes: true } })

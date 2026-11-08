@@ -513,6 +513,8 @@ export const CONTRACT = {
     clip: invoke<[req: FileClipRequest], void>('fs:clip', 1),
     /** Paste INTO `targetDir` (YAZ-1674, D2–D4): per entry, a copy takes a free name, a cut moves through the rename pipeline; read `failed` for the notices. */
     paste: invoke<[req: PasteRequest], PasteResponse>('fs:paste', 1),
+    /** Explicit copy with the same copy services, leaving both app and OS clipboards unchanged. */
+    copyTo: invoke<[req: ImportRequest & { external: boolean }], PasteResponse>('fs:copy-to', 1),
     /** The clipboard now, for a window that mounted after a clip: `{ count, op, paths }`, or null when empty. Never fails. */
     clipState: invoke<[], FileClipState>('fs:clip-state', 0),
     /** Finder's items dropped on a folder (YAZ-3253 D3, D9A): each MOVES in through the paste's move verb, or from another disk is copied; the app clipboard is untouched. */

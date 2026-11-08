@@ -1,5 +1,10 @@
 import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
 import { rootOfPath, type AppState } from '@shared/types'
+import { isDrawing, isDiagram } from '@shared/fileKind'
+import { isRecord } from '@shared/guards'
+import { parseDataUrl, referencedFileIds } from '@shared/drawingAssets'
+import { diagramDocumentError } from '@shared/diagramFile'
+import { parseScene } from '../fs/pictureStore'
 import { boardHistory, boardVersion, restoreBoardVersion } from '../git/history'
 import { decodeViewOnlyText } from '../fs/file'
 import { createDurable, fsCall } from '../fs/fsUtils'
@@ -37,8 +42,11 @@ export async function connectedCommand(services: AutomationServices, state: AppS
   if (command === 'sync.now') return services.sync.syncNow(root)
   if (command === 'sync.setEnabled') return services.sync.setEnabled(root, args.enabled as boolean)
   if (command === 'share.list' || command === 'share.check') return page(await services.sharing.list(root, { check: command === 'share.check' }), args)
-  const path = await resolveTarget(roots, args)
-  if (rootOfPath(roots, path) === null) throw new AutomationFailure('INVALID_INPUT', 'Choose a board inside the vault.')
+  const savedSharePath = ['share.get', 'share.stop', 'share.setPermission'].includes(command) && args.path !== undefined
+  if (savedSharePath && (args.id !== undefined || args.name !== undefined)) throw new AutomationFailure('INVALID_INPUT', 'Choose exactly one path, id, or name target.')
+  const path = savedSharePath ? absolute(args.path as string) : await resolveTarget(roots, args)
+  if (rootOfPath(roots, path) === null || path === root) throw new AutomationFailure('OUTSIDE_SCOPE', 'Choose a board inside the vault.')
+  if (command.startsWith('share.') && !isDrawing(path) && !isDiagram(path)) throw new AutomationFailure('UNSUPPORTED_EXTENSION', 'Sharing requires an Excalidraw drawing or draw.io diagram.')
   if (command === 'history.list') return { path, ...page(await boardHistory(root, path), args) }
   if (command === 'history.restore') {
     await restoreBoardVersion(root, path, args.ref, args.revision as string)
@@ -56,7 +64,20 @@ export async function connectedCommand(services: AutomationServices, state: AppS
     return { path, ref: args.ref, ...value }
   }
   if (command === 'share.get') return { path, share: await services.sharing.get(root, path) }
-  if (command === 'share.publish') return services.sharing.publish(root, path, decodeViewOnlyText(body, path), args.shareId as string | undefined)
+  if (command === 'share.publish') {
+    const content = decodeViewOnlyText(body, path)
+    if (isDiagram(path)) {
+      const error = diagramDocumentError(content)
+      if (error !== null) throw new AutomationFailure('INVALID_INPUT', error)
+    } else {
+      const { scene, elements } = parseScene(content, path, 'BAD_REQUEST')
+      for (const id of referencedFileIds(elements)) {
+        const file = isRecord(scene.files) ? scene.files[id] : undefined
+        if (!isRecord(file) || typeof file.dataURL !== 'string' || parseDataUrl(file.dataURL) === null) throw new AutomationFailure('INCOMPLETE_CONTENT', 'A standalone drawing must include every live image’s embedded bytes.', { fileId: id })
+      }
+    }
+    return services.sharing.publish(root, path, content, args.shareId as string | undefined)
+  }
   if (command === 'share.setPermission') return services.sharing.setPermission(root, path, args.allowDownload as boolean)
   if (command === 'share.stop') { await services.sharing.stop(root, path); return { path, stopped: true } }
   throw new AutomationFailure('UNKNOWN_COMMAND', 'Unknown connected command.')
