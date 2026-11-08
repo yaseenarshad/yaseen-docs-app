@@ -3,6 +3,7 @@ import { columnTyping } from './editorType'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
+import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
@@ -15,6 +16,8 @@ import type { ColumnDecl, FolderSettings } from './folderSettings'
 import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
+import { CalendarView } from './view/CalendarView'
+import { type DayKey, calendarDateKey, dateColumns, dayLabel, movedDate } from './calendar'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
 import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
@@ -79,8 +82,11 @@ export interface FolderHost {
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
   openRight?: (path: string) => void
-  /** Passive notice surface for row actions that fail because a page moved or disappeared. */
-  onNotice?: (message: string) => void
+  /**
+   * Passive notice surface for row actions that fail because a page moved or disappeared. App's
+   * `notify`: a move's "Moved to … · Undo" (YAZ-4541 S6) rides its glyph, type and action too.
+   */
+  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType, action?: Notice['action']) => void
   /**
    * The outline editor's own wikilink surfaces (YAZ-903) — the window's ONE resolve source, its
    * `[[` picker feed and the click-navigation contract, assembled by the host exactly as
@@ -154,7 +160,8 @@ function seedGroup(seed: NewNoteSeed, group: Group, view: ViewDef, level: number
  * One set of views (GRO-2135): the toolbar (view switcher, sort / properties menus, search,
  * count) over the body — the real table for `type: table` (GRO-2136), the board for
  * `type: board` (4D, GRO-2138), the card grid for `type: cards` (4E, GRO-2139), the list for
- * `type: list` (4F, GRO-2140), the outline for `type: outline` (YAZ-820), a placeholder row list
+ * `type: list` (4F, GRO-2140), the outline for `type: outline` (YAZ-820), the month grid for
+ * `type: calendar` (YAZ-4540), a placeholder row list
  * for unknown view types. Only the active tab and the search text are component state —
  * everything else is the file.
  */
@@ -303,6 +310,28 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   const groupKeys = configuredGroups === null ? [] : keysOf(configuredGroups, TOP_SPOT)
   const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
 
+  /**
+   * The board's optimistic write, shared with the calendar (YAZ-4540 D4): the move shows at once,
+   * then ONE guarded write of the note; a failure drops the move (the card snaps back) and flags it.
+   * A move that names where it went (`to`) says "Moved to <to>" once the write lands, with the app's
+   * Undo (YAZ-4541 S6): Undo writes each `prevRaw` back the same way, and says nothing itself.
+   */
+  const moveValues = (path: string, writes: PendingMove, to?: string) => {
+    setMoveError(null)
+    setMoves((m) => ({ ...m, [path]: writes }))
+    folder.writeValues(path, writes).then(
+      () => {
+        if (to === undefined) return
+        const back: PendingMove = writes.map((w) => ({ key: w.key, value: w.prevRaw, prevRaw: w.value }))
+        folder.onNotice?.(`Moved to ${to}`, 'info', 'undo', { label: 'Undo', run: () => moveValues(path, back), fades: true })
+      },
+      (err: unknown) => {
+        setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
+        setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
+      },
+    )
+  }
+
   // A drop on a board column / table section (5C, GRO-2143): optimistic move now, then the host writes
   // every changed key in one guarded transformation (`FolderHost.writeValues`); a failure drops the move (the card snaps back)
   // and flags the card instead. `drop` names
@@ -327,12 +356,22 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
     }
     const writes: PendingMove = [{ key, value, prevRaw }]
     for (const write of drop?.ancestors ?? []) writes.push({ ...write, prevRaw: props?.[write.key] })
-    setMoveError(null)
-    setMoves((m) => ({ ...m, [path]: writes }))
-    folder.writeValues(path, writes).catch((err: unknown) => {
-      setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
-      setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
-    })
+    // The toast names the group the card went to: a fanned-out drop, the element it added (YAZ-4541 S6).
+    const to = swap === undefined ? (value === undefined ? null : fromYaml(value)) : swap.add
+    moveValues(path, writes, to === null ? 'No value' : render(to, resolve))
+  }
+
+  // The calendar (YAZ-4540 D4): its "Show by" column, and a drop on a day — or on "No date" (`null`),
+  // which clears the value. The new day keeps the time the value had (`movedDate`).
+  const calendarColumns = useMemo(
+    () => (view.type === 'calendar' ? dateColumns(def, view, records, properties, folder.settings) : []),
+    [def, view, records, properties, folder.settings],
+  )
+  const dateKey = view.type === 'calendar' ? calendarDateKey(view, calendarColumns) : null
+  const onMoveToDay = (path: string, day: DayKey | null) => {
+    if (dateKey === null || readOnly.has(path)) return
+    const prevRaw = records.find((r) => r.path === path)?.properties[dateKey]
+    moveValues(path, [{ key: dateKey, value: day === null ? undefined : movedDate(prevRaw, day), prevRaw }], day === null ? 'No date' : dayLabel(day))
   }
 
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
@@ -340,9 +379,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   // IN the folder, from its template and that seed alone (YAZ-2290 D4/E1): a group "+" seeds its
   // group — or, grouped by Folder, is born in it. The note opens once the create lands; a failure shows the alert.
   // A `name` means the board's inline add (YAZ-943) — it already named the card and the caller is
-  // mid-typing in the column, so that create STAYS on the board and opens nothing.
-  const onNewNote = (group: Group | null, name?: string, at?: GroupSpot) => {
+  // mid-typing in the column, so that create STAYS on the board and opens nothing. `values` seed
+  // more: a calendar day's "+" seeds its date (YAZ-4540 S10).
+  const onNewNote = (group: Group | null, name?: string, at?: GroupSpot, values?: Record<string, unknown>) => {
     const seed = deriveSeed(def, view)
+    if (values !== undefined) Object.assign(seed.properties, values)
     if (group !== null) {
       // 🔒 YAZ-745: an INNER "+" seeds every ancestor too (YAZ-4531), so the note lands in the very
       // section clicked. The ancestors go FIRST, outer first (YAZ-2541): under Folder then Folder each
@@ -523,6 +564,21 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
           moveError={moveError}
           onNewInGroup={onNewNote}
           resolve={resolve}
+        />
+      ) : view.type === 'calendar' ? (
+        <CalendarView
+          hover={viewHover}
+          readOnly={readOnly}
+          rows={rows}
+          dateKey={dateKey}
+          onOpenFile={onOpenFile}
+          onOpenFileRight={folder.openRight}
+          onOpenFileBackground={folder.openBackground}
+          onMoveToDay={onMoveToDay}
+          moveError={moveError}
+          onNewOnDay={(day) => {
+            if (dateKey !== null) onNewNote(null, undefined, undefined, { [dateKey]: day })
+          }}
         />
       ) : view.type === 'cards' ? (
         <CardsView

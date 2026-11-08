@@ -8,7 +8,7 @@ import { Popover } from './Popover'
 import { TextField } from './TextField'
 
 /** The kinds "+" offers, in menu order; a kind's label is its type, capitalised. */
-const VIEW_TYPES = ['table', 'board', 'cards', 'list', 'outline'] as const
+const VIEW_TYPES = ['table', 'board', 'calendar', 'cards', 'list', 'outline'] as const
 /** This strip's own drag payload (TabBar's `WORKSPACE_PAGE_MIME` idiom); never `text/plain`. */
 const VIEW_TAB_MIME = 'application/x-yaseen-view-tab'
 export const viewTypeLabel = (type: string): string => type.charAt(0).toUpperCase() + type.slice(1)

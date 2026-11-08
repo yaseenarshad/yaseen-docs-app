@@ -4,6 +4,7 @@ import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../vi
 import type { EngineError } from '../engine'
 import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
+import { CalendarShowBy } from './CalendarView'
 import { CollapseAllIcon, ExpandAllIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { FilterMenu } from './FilterMenu'
 import { Popover } from './Popover'
@@ -86,6 +87,13 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
     <div className="view-toolbar">
       <ViewTabs {...tabs} />
       <div className="view-toolbar__actions">
+        {/* A calendar's "Show by" sits on the toolbar (YAZ-4540 D11), and again in Properties › Calendar. */}
+        {view.type === 'calendar' && (
+          <label className="view-cal__show-by">
+            <span>Show by</span>
+            <CalendarShowBy def={def} view={view} viewIndex={viewIndex} records={records} properties={properties} settings={folder.settings} onUpdate={onUpdate} />
+          </label>
+        )}
         {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu settings={folder.settings} properties={properties} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
         {!documentView &&
           button(

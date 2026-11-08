@@ -237,7 +237,7 @@ describe('a folder with no settings file', () => {
   it('the FIRST change writes the whole block into `.folder.md` — the default columns stated with it (E2)', async () => {
     const el = await mount(null)
     click(byLabel(el, 'Add view'))
-    expect(texts(el, '.view-popover--menu [role="menuitem"]')).toEqual(['Table', 'Board', 'Cards', 'List', 'Outline']) // the Outline is the "+" menu's (D5a)
+    expect(texts(el, '.view-popover--menu [role="menuitem"]')).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List', 'Outline']) // the Outline is the "+" menu's (D5a)
     click(menuItem(el, 'Cards'))
     await flush()
     expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', {

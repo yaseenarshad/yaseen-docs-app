@@ -84,7 +84,7 @@ import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
 import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
-import type { NoticeKind, NoticeType } from '../lib/notice'
+import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { VaultLinksContext } from '../links/vaultLinks'
@@ -142,8 +142,8 @@ interface EditorProps {
    * the window's life (a new one makes a new Crepe). Absent → no such rows.
    */
   linkActions?: LinkActions
-  /** Wiki-link create failures surface here (passive link-notice style); App passes `notify`. A drawing's export says where its file landed. */
-  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType) => void
+  /** Wiki-link create failures surface here (passive link-notice style); App passes `notify`. A drawing's export says where its file landed. A folder view's move adds its Undo (YAZ-4541 S6). */
+  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType, action?: Notice['action']) => void
   /**
    * Root-relative folder where a bare unresolved `[[link]]` creates its page (C2-, GRO-2240;
    * YAZ-1643): App passes a STABLE getter over the Files & Links setting (`newNoteBase`) that

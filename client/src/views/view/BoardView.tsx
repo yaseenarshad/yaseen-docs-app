@@ -295,10 +295,9 @@ export function BoardView({
         onKeyDown={(e) => {
           if (e.key === 'Escape') setAdding(null)
           if (e.key !== 'Enter') return
-          const name = adding.name.trim()
-          // An empty Enter is a no-op, not an `Untitled` card: the row is asking for a name.
-          if (name === '') return
-          onNewInGroup(group, name, at)
+          // An empty Enter makes `Untitled`, the same as every other "+" (YAZ-4541 S5): an empty name
+          // lets the host pick it (`Untitled 2`… on a clash), and the add still stays on the board.
+          onNewInGroup(group, adding.name.trim(), at)
           setAdding({ key, name: '' })
         }}
       />

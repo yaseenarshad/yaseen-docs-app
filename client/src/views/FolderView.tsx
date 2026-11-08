@@ -71,7 +71,8 @@ export interface FolderViewProps {
   onOpenFileBackground?: (path: string) => void
   wikilinkCandidates?: WikilinkCandidateSource
   newNoteFolderFor?: (sourcePath: string) => string
-  onNotice?: (message: string) => void
+  /** App's `notify`; the views' moves give it their Undo (YAZ-4541 S6). */
+  onNotice?: FolderHost['onNotice']
   /** A title commit — the FOLDER's own (D9), or a row's from a table's Name cell (YAZ-2420 🔒 D19) — through App's one rename door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => void
   commentsOrder: CommentsOrder
