@@ -1030,7 +1030,7 @@ describe('Appearance (YAZ-3447 S2)', () => {
 
 describe('automation live code read', () => {
   it('reads unsaved code, line breaks, and the explicit tab selection without saving', async () => {
-    container.dataset.tab = 'live-code'
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-code'
     await opened('saved\r\n')
     type('unsaved\ncode\n')
     editor().setSelection({ selectionStartLineNumber: 1, selectionStartColumn: 1, positionLineNumber: 1, positionColumn: 8 })

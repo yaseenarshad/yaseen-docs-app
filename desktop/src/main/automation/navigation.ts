@@ -25,17 +25,18 @@ export function navigate(host: NavigationHost, input: NavigationInput) {
 }
 
 export async function generateNavigationLink(state: AppState, input: NavigationInput) {
-  if (input.window) throw new AutomationFailure('INVALID_INPUT', 'Reusable links need a workspace or vault scope, not an ephemeral window ID.')
+  if (input.window || input.tab) throw new AutomationFailure('INVALID_INPUT', 'Reusable links need a workspace or vault scope, not an ephemeral window ID.')
   const { resolved, target } = await resolveNavigation(state, input)
   const { workspace: _workspace, root: _root, roots: _roots, id: _id, name: _name, ...rest } = input
   return { url: navigationLink({ ...rest, ...target, ...(resolved.workspace ? { workspace: resolved.workspace } : { roots: resolved.roots }) }) }
 }
 
 /** One validator for socket navigation, CLI-generated links, and cold-start link context. */
-export async function resolveNavigation(state: AppState, input: NavigationInput, scope?: Awaited<ReturnType<typeof scopeRoots>>) {
+export async function resolveNavigation(state: AppState, input: NavigationInput, scope?: Awaited<ReturnType<typeof scopeRoots>>, livePath?: string) {
   const resolved = scope ?? await scopeRoots(state, input, input.allowPartial)
-  const path = input.path !== undefined || input.id !== undefined || input.name !== undefined ? await resolveTarget(resolved.roots, input) : undefined
+  const path = livePath ?? (input.path !== undefined || input.id !== undefined || input.name !== undefined ? await resolveTarget(resolved.roots, input) : undefined)
   const target: NavigationTarget = {
+    ...(input.tab === undefined ? {} : { tab: input.tab }),
     ...(path === undefined ? {} : { path }),
     ...(input.sidebar === undefined ? {} : { sidebar: input.sidebar }),
     ...(input.view === undefined ? {} : { view: input.view }),
@@ -56,13 +57,21 @@ export async function resolveNavigation(state: AppState, input: NavigationInput,
 
 async function performNavigation(host: NavigationHost, input: NavigationInput) {
   if (input.window && input.mode === 'new') throw new AutomationFailure('INVALID_INPUT', 'A new window cannot also name an existing window.')
+  if (input.tab !== undefined && (!input.window || [input.path, input.id, input.name, input.group].some(value => value !== undefined))) throw new AutomationFailure('INVALID_INPUT', 'A live tab needs its window and cannot be combined with another target.')
   const live = host.windows()
   const explicit = input.window === undefined ? undefined : live.find(window => window.id === input.window)
   if (input.window && !explicit) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window is not live.')
   const context = input.workspace || input.root || input.roots ? input : { roots: explicit?.roots }
   const resolved = await scopeRoots(host.state(), context, input.allowPartial)
   if (explicit && !sameVaults(explicit.roots, resolved.roots)) throw new AutomationFailure('WINDOW_SCOPE_MISMATCH', 'The target window has different vaults. Its working context was left unchanged.')
-  const { target } = await resolveNavigation(host.state(), { ...input, ...context }, resolved)
+  let livePath: string | undefined
+  if (input.tab !== undefined) {
+    const snapshot = await host.inspect(explicit!.id, { kind: 'window' }) as { tabs?: { id: string; path?: string }[] }
+    const tab = snapshot.tabs?.find(tab => tab.id === input.tab)
+    if (!tab) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
+    livePath = tab.path
+  }
+  const { target } = await resolveNavigation(host.state(), { ...input, ...context }, resolved, livePath)
   // Resolve the context and membership first. The renderer validates the live view after loading it.
   const reuse = input.mode === 'new' ? undefined : explicit ?? live.find(window => sameVaults(window.roots, resolved.roots))
   const window = reuse?.id ?? host.open({ root: resolved.roots[0], roots: resolved.roots, file: null })

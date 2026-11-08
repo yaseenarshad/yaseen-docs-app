@@ -28,7 +28,7 @@ export function registerLiveDocument(host: Element, read: () => LiveDocument, co
   return () => { if (readers.get(host) === entry) readers.delete(host) }
 }
 function registration(tab: string): Registration {
-  const layer = document.querySelector(`[data-tab="${CSS.escape(tab)}"]`)
+  const layer = document.querySelector(`.tabstack__layer[data-tab="${CSS.escape(tab)}"]`)
   const host = layer?.querySelector('.editor-host, .code-editor, .drawing-editor, .drawio-editor')
   const entry = host ? readers.get(host) : undefined
   if (!entry) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'This tab has no ready live document. A sleeping or loading editor is not read from disk as a substitute.')

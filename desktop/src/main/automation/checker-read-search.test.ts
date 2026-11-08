@@ -32,5 +32,5 @@ it('includes candidate paths when an exact name is ambiguous', async () => {
   let failure: any
   try { await resolveTarget([root], { name: 'Match' }) } catch (error) { failure = error }
   console.log(JSON.stringify({ code: failure?.code, message: failure?.message, details: failure?.details }))
-  expect(failure).toMatchObject({ code: 'AMBIGUOUS_TARGET', details: { candidates: expect.arrayContaining([expect.objectContaining({ path: join(root, 'a.md') }), expect.objectContaining({ path: join(root, 'z.md') })]) } })
+  expect(failure).toMatchObject({ code: 'AMBIGUOUS_TARGET', details: { candidates: expect.arrayContaining([join(root, 'a.md'), join(root, 'z.md')]) } })
 })

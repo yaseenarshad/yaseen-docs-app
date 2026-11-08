@@ -22,6 +22,12 @@ export function useAutomationSurface(key: string | null | (() => string | null),
   })
 }
 
+/** Inspection never wakes a sleeping surface or changes its state. */
+export function inspectSurface(key: string): Record<string, unknown> {
+  const surface = surfaces.get(key)
+  return surface?.ready ? { ...surface.inspect(), state: 'ready' } : { state: 'unavailable' }
+}
+
 /** Wait for actual component state, including lazy loading. No polling or synthetic input events. */
 export function waitForSurface(key: string, condition: (surface: AutomationSurface) => boolean = surface => surface.ready): Promise<AutomationSurface> {
   return new Promise((resolve, reject) => {

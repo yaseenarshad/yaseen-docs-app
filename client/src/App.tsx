@@ -2,7 +2,7 @@ import { AutomationFailure } from '@shared/automation'
 import { readLiveDocument, runEditorAction } from './automation/liveDocument'
 import { flushSync } from 'react-dom'
 import { useAutomation } from './automation/useAutomation'
-import { useAutomationSurface, waitForSurface } from './automation/surfaces'
+import { inspectSurface, useAutomationSurface, waitForSurface } from './automation/surfaces'
 import type { ListScope } from '@shared/types'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
@@ -1887,6 +1887,7 @@ export function App() {
   }, [addVault, moveBoardTab])
   useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
   useAutomation(async target => {
+    if (target.tab !== undefined && !now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
     flushSync(() => {
       if (target.scope && (target.sidebar === 'favorites' || target.sidebar === 'focus')) {
         setAutomationScopes(previous => ({ ...previous, [target.sidebar!]: target.scope }))
@@ -1895,11 +1896,12 @@ export function App() {
         if (sidebarCollapsedRef.current) toggleSidebar()
         changeLens(target.sidebar)
       }
-      if (target.path !== undefined) openPage(target.path)
+      if (target.tab !== undefined) activate(target.tab)
+      else if (target.path !== undefined) openPage(target.path)
     })
     const app = await waitForSurface('app', surface => {
       const state = surface.inspect()
-      return (target.path === undefined || state.path === target.path) && (target.sidebar === undefined || (state.sidebar === target.sidebar && state.sidebarCollapsed === false))
+      return (target.tab === undefined || state.tab === target.tab) && (target.path === undefined || state.path === target.path) && (target.sidebar === undefined || (state.sidebar === target.sidebar && state.sidebarCollapsed === false))
     })
     if ((target.path || target.group) && target.reveal !== false && target.sidebar && ['files', 'favorites', 'focus'].includes(target.sidebar)) {
       const sidebar = await waitForSurface('sidebar')
@@ -1919,7 +1921,7 @@ export function App() {
       if (!now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
       return readLiveDocument(target.tab)
     }
-    return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, sidebar: sidebarLens, sidebarCollapsed }
+    return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, tabViews: now.current.tabs.map(tab => ({ tab: tab.id, ...inspectSurface(`view:${tab.id}`) })), sidebar: sidebarLens, sidebarCollapsed }
   }, async target => {
     if (target.command === 'editor.action') return runEditorAction(target)
     if (target.command === 'file.restore') {

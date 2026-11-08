@@ -7,7 +7,7 @@ afterEach(async () => { await unmountAll(); document.querySelectorAll('[data-aut
 
 function layer(tab: string) {
   const layer = document.createElement('div'), host = document.createElement('div')
-  layer.dataset.tab = tab; layer.dataset.automationFixture = ''; host.className = 'editor-host'; layer.append(host); document.body.append(layer)
+  layer.className = 'tabstack__layer'; layer.dataset.tab = tab; layer.dataset.automationFixture = ''; host.className = 'editor-host'; layer.append(host); document.body.append(layer)
   return host
 }
 describe('explicit live editor actions', () => {

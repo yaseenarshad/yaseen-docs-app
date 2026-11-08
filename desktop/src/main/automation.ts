@@ -1,3 +1,7 @@
+import { appCommand, type AutomationApp } from './automation/app'
+import { connectedCommand } from './automation/connected'
+import { mediaCommand } from './automation/media'
+import type { AutomationServices } from './automation/services'
 import { vaultConfiguration } from './automation/vaultConfiguration'
 import { linkCommand } from './automation/links'
 import { noteCommand } from './automation/notes'
@@ -20,7 +24,7 @@ import { readSaved, resolveTarget, scopeRoots, search, type ResourceScope, type 
 import { generateNavigationLink, navigate, type NavigationHost } from './automation/navigation'
 import type { NavigationInput } from '@shared/automationNavigation'
 
-function prepare(context: { profile: string; version: string; state?: () => AppState; navigation?: NavigationHost; store?: Store }, request: AutomationRequest, content: Buffer): Operation {
+function prepare(context: { profile: string; version: string; state?: () => AppState; navigation?: NavigationHost; store?: Store; services?: AutomationServices; app?: AutomationApp }, request: AutomationRequest, content: Buffer): Operation {
   const definition = commandDefinition(request.command)
   validateInput(definition.input, request.args)
   const hasContent = request.hasContent ?? content.length > 0
@@ -28,6 +32,16 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
   if (definition.contentRequired && !hasContent) throw new AutomationFailure('INVALID_INPUT', 'This command requires a body, including an empty body when intended.')
   if (!definition.content && hasContent) throw new AutomationFailure('INVALID_INPUT', 'This command accepts no content.')
   switch (request.command) {
+    case 'app.diagnostics': case 'app.restart': case 'update.state': case 'update.notes': case 'update.check': case 'update.restart':
+      return { writes: definition.effect === 'read' ? [] : ['app-management'], run: () => appCommand(context.app!, request.command) }
+    case 'provider.status': case 'provider.set': case 'provider.clear': case 'sync.status': case 'sync.now': case 'sync.setEnabled':
+    case 'history.list': case 'history.read': case 'history.export': case 'history.restore':
+    case 'share.status': case 'share.accounts': case 'share.setup': case 'share.list': case 'share.check': case 'share.get': case 'share.publish': case 'share.setPermission': case 'share.stop': case 'share.setDomain': case 'share.disconnect':
+      return { writes: definition.effect === 'read' ? ['large-content'] : ['large-content', 'connected', 'documents'], run: () => connectedCommand(context.services!, context.state!(), request.command, request.args, content) }
+    case 'component.list': case 'component.read': case 'component.save': case 'component.rename': case 'component.remove': case 'component.export':
+    case 'media.search': case 'media.import': case 'media.preview': case 'media.library': case 'media.favorite': case 'media.unfavorite': case 'media.recordUse': case 'media.addWord': case 'media.removeWord':
+    case 'media.drawingIndex': case 'media.drawing': case 'media.packList': case 'media.packStatus': case 'media.downloadPacks': case 'media.stopPacks': case 'media.checkPacks': case 'media.removePacks':
+      return { writes: request.command === 'media.stopPacks' ? [] : definition.effect === 'read' ? ['large-content'] : ['large-content', 'media'], run: () => mediaCommand(context.services!, request.command, request.args, content) }
     case 'declaration.list': case 'declaration.patch': case 'declaration.remove': case 'icon.list': case 'icon.set': case 'icon.remove': case 'vaultConfig.read': case 'vaultConfig.patch':
       return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => vaultConfiguration(context.state!(), request.command, request.args) }
     case 'link.resolve': case 'link.outgoing': case 'link.incoming':

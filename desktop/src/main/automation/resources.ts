@@ -25,7 +25,18 @@ export interface TargetInput { path?: string; id?: string; name?: string }
 
 export function unique<T>(values: readonly T[], describe: string): T {
   if (!values.length) throw new AutomationFailure('NOT_FOUND', `${describe} was not found.`)
-  if (values.length !== 1) throw new AutomationFailure('AMBIGUOUS_TARGET', `${describe} is ambiguous. Use its ID or full path.`)
+  if (values.length !== 1) {
+    // Keep only useful identities, never full workspace/group contents. Bound the error frame too.
+    const candidates: unknown[] = []
+    let bytes = 0
+    for (const value of values) {
+      const identity = typeof value === 'string' ? value : { id: (value as { id?: string }).id, name: (value as { name?: string }).name }
+      const size = Buffer.byteLength(JSON.stringify(identity))
+      if (candidates.length >= AUTOMATION_LIMITS.maxPage || bytes + size > 32 * 1024) break
+      candidates.push(identity); bytes += size
+    }
+    throw new AutomationFailure('AMBIGUOUS_TARGET', `${describe} is ambiguous. Use its ID or full path.`, { candidates, total: values.length, truncated: candidates.length < values.length })
+  }
   return values[0]
 }
 
@@ -116,7 +127,18 @@ export async function resolveTarget(roots: readonly string[], input: TargetInput
 export async function search(state: AppState, input: ResourceScope & { query: string; offset?: number; limit?: number }) {
   const { roots, rows } = await scopedCandidates(state, input)
   // Rank once with the UI matcher, then remove alias duplicates before applying the page.
-  const matched = searchRows(rows, input.query, undefined, rows.length)
+  const lists = await Promise.all((['focus', 'favorites'] as const).map(kind => {
+    const scope = roots.length > 1 && state.settings.workspaceLists[kind] ? 'workspace' : 'vault'
+    return collectionPaths(roots, kind, scope)
+  }))
+  const pinned = new Set(lists.flatMap(list => list.paths))
+  const first = new Set(rows.flatMap(row => {
+    for (let end = row.path.length; end > 0; end = row.path.lastIndexOf('/', end - 1)) {
+      if (pinned.has(row.path.slice(0, end))) return [row.path]
+    }
+    return []
+  }))
+  const matched = input.query.trim() === '' ? [] : searchRows(rows, input.query, first, rows.length)
   const byPath = new Map<string, SearchCandidate>()
   for (const row of matched) if (!byPath.has(row.path)) byPath.set(row.path, row)
   const uniqueRows = [...byPath.values()]

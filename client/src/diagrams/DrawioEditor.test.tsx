@@ -401,7 +401,7 @@ describe('read only: a change draw.io queued before the switch landed (YAZ-3116 
 
 describe('automation live diagram', () => {
   it('reads the unsaved XML without flushing and refuses a loading frame', async () => {
-    container.dataset.tab = 'live-diagram'
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-diagram'
     render(); await settle()
     expect(() => readLiveDocument('live-diagram')).toThrow('not ready')
     tapFrame(); drawio({ event: 'init' }); drawio({ event: 'load', xml: XML })

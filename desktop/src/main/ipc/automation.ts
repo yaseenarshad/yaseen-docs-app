@@ -16,7 +16,9 @@ export function registerAutomationIpc(store: Store, windows: WindowManager): Nav
       observed.add(event.sender)
       const id = event.sender.id
       event.sender.once('destroyed', () => requests.closed(id))
-      event.sender.on('did-start-loading', () => requests.setReady(event.sender, false))
+      event.sender.on('did-start-navigation', details => {
+        if (details.isMainFrame && !details.isSameDocument) requests.setReady(event.sender, false)
+      })
     }
     requests.setReady(event.sender, ready)
   })

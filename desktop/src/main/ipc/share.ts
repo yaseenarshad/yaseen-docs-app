@@ -10,7 +10,7 @@ import { DRAWIO_SHARE_DIRS, DRAWIO_SHARE_FILES } from '../drawio/assets'
 import { CLOUDFLARE_API, CLOUDFLARE_TOKEN_PAGE, type AssetFile } from '../share/cloudflare'
 import { shareFsHooks } from '../share/fsHooks'
 import { SHARING_FILE } from '../share/config'
-import { createSharing } from '../share/sharing'
+import { createSharing, type Sharing } from '../share/sharing'
 import workerSource from '../../../../share/worker.js?raw'
 import viewerSource from '../../../../share/viewer/page.js?raw'
 import { broadcastAll } from './broadcast'
@@ -107,7 +107,7 @@ export interface ShareIpcPlaces {
   isPackaged: boolean
 }
 
-export function registerShareIpc(userData: string, secrets: Secrets, where: ShareIpcPlaces): void {
+export function registerShareIpc(userData: string, secrets: Secrets, where: ShareIpcPlaces): Sharing {
   const { apiBase, demoOrigin, tokenPage } = shareEndpoints(where.isPackaged, process.env)
   const sharing = createSharing({
     secrets,
@@ -161,4 +161,5 @@ export function registerShareIpc(userData: string, secrets: Secrets, where: Shar
     const r = strOrNull(root, 'root')
     return sharing.disconnect(r, bool(deleteEverything, 'deleteEverything'))
   })
+  return sharing
 }

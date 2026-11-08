@@ -1,3 +1,4 @@
+import type { AutomationServices } from '../automation/services'
 import { join } from 'node:path'
 import { CONTRACT } from '@shared/ipc'
 import { PIXABAY_SECRET } from '@shared/types'
@@ -57,7 +58,7 @@ export type IpcPlaces = ShareIpcPlaces & {
   appPath?: string
 }
 
-export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
+export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves; automationServices: AutomationServices } {
   const { userData } = places
   registerFsIpc(store, windows)
   // The folder window's pick of an outside pictures folder is what lets the app write there (YAZ-3943 demo round 3).
@@ -102,14 +103,22 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   const components = registerComponentsIpc(store, userData, undefined, (slug) => library.copies.holds(componentItemKey(slug)))
   const library = registerMediaLibraryIpc(store, userData, { macId: places.macId, hasPixabayKey: () => secrets.has(PIXABAY_SECRET), readComponent: (slug) => components.read({ slug }) })
   // The store also carries the icon packs' folder setting (YAZ-4359).
-  registerMediaStudioIpc(userData, secrets, globalThis.fetch, store, library.copies)
+  let studio!: AutomationServices['studio']
+  registerMediaStudioIpc(userData, secrets, globalThis.fetch, store, library.copies, services => { studio = services })
   // A library that moves (YAZ-4364): after the stores re-pointed, the old folder copies and merges into the new one.
   const libraryMoves = followLibraryMoves(store, userData, {
     copy: (from) => copyLibrary(from, { media: library.media, components, copies: library.copies }),
     notice: (message) => windows.appNotice(message),
   })
-  registerShareIpc(userData, secrets, places)
+  const sharing = registerShareIpc(userData, secrets, places)
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
   // `libraryMoves.settled()`: the launch's copy and its marker write are done — what a caller waits on before it lets go of `userData`.
-  return { sync: registerGithubIpc(store), secrets, lsp, libraryMoves }
+  const sync = registerGithubIpc(store)
+  const automationServices: AutomationServices = { components, media: library.media, copies: library.copies, studio, sync, sharing,
+    credentials: {
+      hasPixabay: () => secrets.has(PIXABAY_SECRET),
+      setPixabay: async value => { await secrets.set(PIXABAY_SECRET, value); void library.copies.backfill() },
+    },
+  }
+  return { sync, secrets, lsp, libraryMoves, automationServices }
 }

@@ -15,6 +15,20 @@ const entry = (id: string, roots: string[]): WindowEntry => ({ id, root: roots[0
 const host = (windows: WindowEntry[] = []): NavigationHost => ({ state: () => defaultAppState(), windows: () => windows, open: vi.fn(() => 'new'), raise: vi.fn(), apply: vi.fn(async () => ({ acknowledged: true })), inspect: vi.fn(async () => ({})), operate: vi.fn(async () => ({})), usedWorkspace: vi.fn(async () => {}) })
 
 describe('exact context navigation', () => {
+  it('validates an exact live tab before raising, with collection and view checks', async () => {
+    const app = host([entry('w1', [root])]), path = join(root, 'Mochi')
+    app.inspect = vi.fn(async () => ({ tabs: [{ id: 'one', path }, { id: 'two', path }] }))
+    expect(await navigate(app, { window: 'w1', tab: 'two' })).toMatchObject({ window: 'w1', created: false })
+    expect(app.apply).toHaveBeenLastCalledWith('w1', { tab: 'two', path })
+    vi.mocked(app.raise).mockClear()
+    await expect(navigate(app, { window: 'w1', tab: 'gone' })).rejects.toMatchObject({ code: 'TAB_NOT_FOUND' })
+    await expect(navigate(app, { window: 'w1', tab: 'two', sidebar: 'favorites' })).rejects.toMatchObject({ code: 'NOT_IN_COLLECTION' })
+    await expect(navigate(app, { window: 'w1', tab: 'two', path })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    expect(app.raise).not.toHaveBeenCalled()
+    expect(() => navigationLink({ root, tab: 'two' })).toThrow('live window or tab IDs')
+    expect(parseNavigationLink('yaseendocs://navigate?v=1&request=' + encodeURIComponent(JSON.stringify({ root, tab: 'two' })))).toBeNull()
+  })
+
   it('reuses only the most recent exact window and preserves unspecified state', async () => {
     const app = host([entry('unrelated', [root, '/other']), entry('recent', [root]), entry('older', [root])])
     expect(await navigate(app, { root, path: join(root, 'Mochi') })).toMatchObject({ window: 'recent', created: false })

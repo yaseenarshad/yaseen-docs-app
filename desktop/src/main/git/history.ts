@@ -1,4 +1,6 @@
 import path from 'node:path'
+import { revisionOf, serializeFile } from '../fs/revision'
+import { readBoundedRegularFile } from '../fs/boundedRead'
 import { MAX_DIAGRAM_BYTES, MAX_DRAWING_BYTES, type BoardVersion, type BoardVersionScene } from '@shared/types'
 import { diagramDocumentError } from '@shared/diagramFile'
 import { BOARD_META_KEY, picturesFolderOf, stripEmbeddedScene } from '@shared/drawingAssets'
@@ -102,14 +104,20 @@ export async function boardVersion(root: unknown, rawPath: unknown, ref: unknown
   return { kind: 'drawing', json, files: (await resolveFiles(b.root, stripEmbeddedScene(scene).embedded, elements, picturesFolderOf(scene[BOARD_META_KEY]))).files }
 }
 
-export async function restoreBoardVersion(root: unknown, rawPath: unknown, ref: unknown): Promise<void> {
+export async function restoreBoardVersion(root: unknown, rawPath: unknown, ref: unknown, expectedRevision?: string): Promise<void> {
   const b = await board(root, rawPath)
   if (b === null) throw new BridgeFailure('NOT_FOUND', 'this vault has no git history', { path: String(rawPath) })
   if (isDiagram(b.file)) {
-    await saveDiagram({ root: b.root, path: b.file, xml: await readDiagramVersion(b, ref) })
+    await saveDiagram({ root: b.root, path: b.file, xml: await readDiagramVersion(b, ref), ...(expectedRevision === undefined ? {} : { expectedRevision }) })
     return
   }
   const json = await readVersion(b, ref)
   parseScene(json, b.file, 'IO_ERROR') // never write something that is not a scene over a board
-  await atomicWrite(b.file, json)
+  await serializeFile(b.file, async () => {
+    if (expectedRevision !== undefined) {
+      const current = await readBoundedRegularFile(b.file, MAX_DRAWING_BYTES, 'Drawing is too large.')
+      if (revisionOf(current.data, current.mtime) !== expectedRevision) throw new BridgeFailure('CONFLICT', 'Drawing changed since the supplied revision.', { path: b.file })
+    }
+    await atomicWrite(b.file, json)
+  })
 }

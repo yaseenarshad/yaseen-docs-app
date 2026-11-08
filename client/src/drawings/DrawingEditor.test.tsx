@@ -1124,7 +1124,7 @@ describe('YAZ-3943 demo round 3 — what the confirm box before a picture move s
 
 describe('automation live drawing', () => {
   it('reads the unsaved scene and its image bytes without flushing', async () => {
-    container.dataset.tab = 'live-drawing'
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-drawing'
     render(); await flush(); emit(1, scene())
     const files = { image: { mimeType: 'image/png', dataURL: 'data:image/png;base64,aGk=' } }
     emit(2, scene([{ id: 'unsaved', type: 'image', fileId: 'image' }]), files)

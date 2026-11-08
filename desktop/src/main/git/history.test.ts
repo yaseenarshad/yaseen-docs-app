@@ -4,6 +4,8 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { BoardVersionScene } from '@shared/types'
 import { parseDiagramMetaAttrs } from '@shared/diagramFile'
+import { readBoundedRegularFile } from '../fs/boundedRead'
+import { revisionOf } from '../fs/revision'
 import { boardHistory, boardVersion, restoreBoardVersion } from './history'
 import { makeTwoMachines, REAL_GIT_TIMEOUT_MS, type Machine } from './gitFixture'
 import { syncPass } from './sync'
@@ -43,6 +45,20 @@ const r1 = shape('1')
 const r2 = shape('2')
 
 describe('Version history', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
+  it.each([['b.excalidraw', board([r1]), board([r2])], ['Flow.drawio', diagram('old'), diagram('new')]])('CLI restore guards the saved revision of %s', async (name, original, changed) => {
+    const { a } = await twoMachines({ [name]: original })
+    const [version] = await boardHistory(a.root, name)
+    const file = path.join(a.root, name)
+    const snapshot = await readBoundedRegularFile(file, 1024 * 1024, 'too large')
+    const stale = revisionOf(snapshot.data, snapshot.mtime)
+    await a.write(name, changed)
+    await expect(restoreBoardVersion(a.root, name, version.ref, stale)).rejects.toMatchObject({ code: 'CONFLICT' })
+    expect(a.read(name)).toBe(changed)
+    const current = await readBoundedRegularFile(file, 1024 * 1024, 'too large')
+    await restoreBoardVersion(a.root, name, version.ref, revisionOf(current.data, current.mtime))
+    expect(a.read(name)).toContain(name.endsWith('drawio') ? 'value="old"' : '"id": "1"')
+  })
+
   it('lists versions newest first with who made them; a merge is marked, and "before the merge" is offered', async () => {
     const { a, b } = await twoMachines({ 'b.excalidraw': board([r1, r2]) })
     await b.write('b.excalidraw', board([{ ...r1, x: 7, version: 2, updated: 3000 }, r2]))

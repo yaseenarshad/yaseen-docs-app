@@ -2724,7 +2724,7 @@ describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
 describe('automation live Markdown read', () => {
   it('returns current typing and selection without saving or substituting disk content', async () => {
     const el = await mount('---\ntitle: Original\n---\nSaved body\n')
-    el.dataset.tab = 'live-markdown'
+    el.classList.add('tabstack__layer'); el.dataset.tab = 'live-markdown'
     type('Unsaved body\n')
     const view = { ...emptyView(), state: { selection: { anchor: 1, head: 8, from: 1, to: 8 }, doc: { textBetween: () => 'Unsaved' } } }
     vi.mocked(editorViewOf).mockReturnValue(view as never)

@@ -310,6 +310,7 @@ app.on('browser-window-focus', (_event, win) => {
   for (const root of store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.roots ?? []) gitSync?.notifyFocus(root)
 })
 
+let restartWithoutUpdate = false
 let automationServer: Promise<AutomationServer> | undefined
 let automationNavigation: NavigationHost | undefined
 
@@ -421,7 +422,7 @@ app.whenReady().then(() => {
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
   rebuildMenuOnFocus = applyIfMoved
-  const { sync, secrets, lsp } = registerIpc(store, manager, {
+  const { sync, secrets, lsp, automationServices } = registerIpc(store, manager, {
     userData: app.getPath('userData'),
     // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.
     viewerAssetsDir: viewerAssetsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), mainDir: __dirname, exists: existsSync }),
@@ -446,7 +447,16 @@ app.whenReady().then(() => {
   const navigation = registerAutomationIpc(store, manager)
   automationNavigation = navigation
   automationServer = startAutomationServer(app.getPath('userData'), (request, content) =>
-    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), state: () => store.get(), navigation, store }, request, content))
+    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), state: () => store.get(), navigation, store, services: automationServices, app: {
+      updater,
+      diagnostics: async () => ({ platform: process.platform, architecture: process.arch, version: app.getVersion(), packaged: app.isPackaged, memory: await meter?.report() ?? null }),
+      restart: mode => {
+        if (quitting) return
+        if (mode === 'update') reopenAfterQuit = true
+        else restartWithoutUpdate = true
+        app.quit()
+      },
+    } }, request, content))
   void automationServer.catch(() => console.error('[cli] Could not start the local connection. Check profile permissions.'))
   // The memory meter (YAZ-3737 D1): one `getAppMetrics` each 30 s, in memory only. The rest is read only for a report.
   meter = createMemoryMeter({
@@ -544,7 +554,8 @@ app.on('before-quit', (event) => {
     stopHelpers: () => Promise.all([stopAllLanguageServers(), cancelHelperInstall(), speller.stop()]).then(() => undefined),
     // The swap waits for this process to end (S21, S22): start it last, then exit.
     exit: () => {
-      updater.installOnExit(reopenAfterQuit)
+      if (restartWithoutUpdate) app.relaunch()
+      else updater.installOnExit(reopenAfterQuit)
       app.exit(0)
     },
   })

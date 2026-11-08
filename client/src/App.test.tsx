@@ -4,6 +4,8 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
+import { FolderView } from './views/FolderView'
+import type { WikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
 import type { RendererCommand } from '@shared/automationNavigation'
 import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -166,6 +168,7 @@ vi.mock('./editor/Editor', () => ({
     captured.linkOpeners.push({ path, open: onOpenLink })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
+    if (path === '/v/Automation Folder') return <FolderView path={path} root={root} source={wikilinks as WikilinkResolveSource} onOpenFile={onOpenFile} onRetitle={() => {}} commentsOrder="oldest" onChangeCommentsOrder={() => {}} />
     return (
       <div data-editor data-root={root} data-path={path ?? ''} data-review-settings={reviewSettings === undefined ? 'none' : 'given'}>
         <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
@@ -7095,6 +7098,23 @@ describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
 
 
 describe('App automation navigation acknowledgement', () => {
+  const activeTab = (el: HTMLElement) => el.querySelector<HTMLElement>('.tabbar__tab:has([aria-selected="true"])')?.dataset.tab
+  const tabNames = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map(tab => tab.textContent)
+  it('selects the exact copy of a file and refuses a missing tab without changing the sidebar', async () => {
+    const path = '/v/a.md'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], tabStrip: [{ path, active: true }, { path, name: 'Second copy' }], sidebarCollapsed: true })
+    const ids = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map(tab => tab.dataset.tab!)
+    expect(ids).toHaveLength(2)
+    await act(async () => emitAutomation({ id: 'nav-tab', action: 'navigate', target: { tab: ids[1] } } as RendererCommand))
+    expect(activeTab(el)).toBe(ids[1])
+    expect(tabNames(el)).toEqual(['a', 'Second copy'])
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-tab', ok: true, value: expect.objectContaining({ tab: ids[1], acknowledged: true }) })
+    await act(async () => emitAutomation({ id: 'nav-missing-tab', action: 'navigate', target: { tab: 'gone', sidebar: 'favorites' } } as RendererCommand))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-missing-tab', ok: false, error: expect.objectContaining({ code: 'TAB_NOT_FOUND' }) })
+    expect(activeTab(el)).toBe(ids[1])
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+  })
+
   it('opens the requested page and sidebar before replying', async () => {
     const path = '/v/Mochi.md'
     const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Mochi', mtime: 1 } })
@@ -7114,6 +7134,22 @@ describe('App automation navigation acknowledgement', () => {
 
 
 describe('App automation live inspection', () => {
+  it('reports current and supported views from a real folder tab without changing its selection', async () => {
+    const path = '/v/Automation Folder'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], sidebarCollapsed: true }, {}, b => {
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: [{ type: 'dir', path, name: 'Folder', children: [] }], generatedAt: 1 })
+    })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await act(async () => {})
+    const names = [...el.querySelectorAll('.view-tab__btn')].map(node => node.textContent)
+    expect(names.length).toBeGreaterThan(1)
+    const current = el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent
+    await act(async () => emitAutomation({ id: 'inspect-views', action: 'inspect', target: { kind: 'window' } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'inspect-views', ok: true, value: expect.objectContaining({ tabViews: [expect.objectContaining({ state: 'ready', view: current, views: names })] }) })
+    expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe(current)
+    expect(bridge.writeFile).not.toHaveBeenCalled()
+  })
+
   it('reads current tabs without navigating and reports a missing tab', async () => {
     const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
     await act(async () => emitAutomation({ id: 'inspect-1', action: 'inspect', target: { kind: 'window' } }))

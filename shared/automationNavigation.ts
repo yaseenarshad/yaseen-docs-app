@@ -9,6 +9,7 @@ export interface NavigationInput {
   id?: string
   name?: string
   window?: string
+  tab?: string
   mode?: 'reuse' | 'new'
   sidebar?: SidebarTab
   scope?: ListScope
@@ -20,6 +21,7 @@ export interface NavigationInput {
 
 /** Resolved in main before opening or raising a window. No unresolved name can select an arbitrary item. */
 export interface NavigationTarget {
+  tab?: string
   path?: string
   sidebar?: SidebarTab
   scope?: ListScope
