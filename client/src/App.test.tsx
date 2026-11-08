@@ -3945,6 +3945,21 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
     })
 
+    it('automation: a CLI move that clears values refuses without dropValues, as the sheet asks first; with it the move runs (YAZ-4567)', async () => {
+      const files = moved()
+      const { bridge, el, emitAutomation } = await mountTeam(files)
+      const reply = (id: string) => (bridge.automation.reply.mock.calls as unknown as [{ id: string }][]).map(([r]) => r).find((r) => r.id === id)
+      const move = { command: 'file.rename', path: NOOR, newPath: '/v/Team/Archive/Noor.md', kind: 'file' } as const
+      await act(async () => emitAutomation({ id: 'move-ask', action: 'operate', target: move }))
+      expect(reply('move-ask')).toEqual({ id: 'move-ask', ok: false, error: { code: 'CONFIRMATION_REQUIRED', message: expect.stringContaining('dropValues'), details: { notes: 1, folders: ['/v/Team/Hiring'] } } })
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      expect(el.querySelector('.confirm')).toBeNull()
+      await act(async () => emitAutomation({ id: 'move-yes', action: 'operate', target: { ...move, dropValues: true } }))
+      expect(reply('move-yes')).toMatchObject({ ok: true })
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: NOOR, newPath: '/v/Team/Archive/Noor.md' })
+      expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+    })
+
     it('a move that clears nothing — the same folders show the note before and after; or the note holds no values for the folders it leaves; or its only such block is for a folder the app cannot find: no sheet, the move runs at once, exactly as today', async () => {
       const files = moved()
       const { bridge, el } = await mountTeam(files)

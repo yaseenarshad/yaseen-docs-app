@@ -72,7 +72,7 @@ it('declares notes, reviews, comments, and binary reads', async () => {
   await mkdir(join(root, '.yaseendocs')); await writeFile(join(root, '.yaseendocs/review.json'), '{"enabled":true}')
   const read = async () => (await run('file.read', { root, path: note }) as { revision: string }).revision
   await run('review.setEnabled', { root, path: note, revision: await read(), enabled: true })
-  await run('review.reset', { root, path: note, revision: await read() })
+  await run('review.reset', { root, path: note, revision: await read(), confirm: true })
   await utimes(note, 1_600_000_000, 1_600_000_000) // long overdue
   expect(await run('review.queue', { root })).toMatchObject({ root, items: [{ path: note }] })
   await writeFile(join(root, 'Picture.png'), Buffer.from([137, 80, 78, 71]))
@@ -89,7 +89,8 @@ it('declares notes, reviews, comments, and binary reads', async () => {
 it('declares the media, component, and icon-pack results', async () => {
   const { component } = await run('component.save', { name: 'Card' }, JSON.stringify({ fragmentJson: JSON.stringify({ type: 'excalidraw', elements: [{ id: 'a', type: 'rectangle' }], files: {} }), previewPng: 'data:image/png;base64,iVBORw0KGgo=' })) as { component: { slug: string } }
   expect(await run('component.read', { slug: component.slug })).toMatchObject({ slug: component.slug })
-  for (const command of ['media.favoriteCopies', 'media.packStatus', 'media.downloadPacks', 'media.stopPacks', 'media.checkPacks', 'media.removePacks', 'media.drawingIndex', 'media.packList', 'media.favoritesForPanel']) await run(command)
+  for (const command of ['media.favoriteCopies', 'media.packStatus', 'media.downloadPacks', 'media.stopPacks', 'media.checkPacks', 'media.drawingIndex', 'media.packList', 'media.favoritesForPanel']) await run(command)
+  await run('media.removePacks', { confirm: true })
   await run('media.search', { query: 'home', source: 'iconify' })
   await run('media.preview', { provider: 'iconify', id: 'mdi:home' })
   await run('media.drawing', { id: 'drawing:1' })

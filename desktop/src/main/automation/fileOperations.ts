@@ -34,7 +34,7 @@ export async function fileOperation(host: NavigationHost, command: string, args:
     const newPath = absolute(args.newPath as string)
     await resolveTarget(window.roots, { path: dirname(newPath) })
     if (window.roots.includes(newPath)) throw new AutomationFailure('INVALID_INPUT', 'The destination cannot replace a vault root.')
-    return host.operate(window.id, { command, path, newPath, kind })
+    return host.operate(window.id, { command, path, newPath, kind, ...(args.dropValues === true ? { dropValues: true } : {}) })
   }
   if (command === 'file.retitle') return host.operate(window.id, { command, path, title: args.title as string, kind })
   throw new AutomationFailure('UNKNOWN_COMMAND', 'Unknown file organization command.')

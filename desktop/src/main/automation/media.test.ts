@@ -37,7 +37,10 @@ it('saves, renames, exports and removes a component through the app store', asyn
   await run('component.export', { slug: 'mochi-card', outputFile })
   expect(JSON.parse(await readFile(outputFile, 'utf8'))).toEqual(JSON.parse(fragmentJson))
   await expect(run('component.export', { slug: 'mochi-card', outputFile })).rejects.toMatchObject({ code: 'ALREADY_EXISTS' })
-  await run('component.remove', { slug: 'mochi-card' })
+  // The library's delete row asks first (YAZ-4567): no confirm, no delete.
+  expect(() => run('component.remove', { slug: 'mochi-card' })).toThrow(/missing confirm/)
+  expect(await run('component.list')).toMatchObject({ total: 1 })
+  await run('component.remove', { slug: 'mochi-card', confirm: true })
   expect(await run('component.list')).toMatchObject({ items: [], total: 0 })
 })
 it('keeps library favorites, use words and removal in the same durable store', async () => {

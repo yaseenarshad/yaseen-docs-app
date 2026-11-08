@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { AutomationFailure } from '@shared/automation'
-import { itemOf, mergeFolders, resolveItem, sameItem } from '@shared/collectionFolders'
-import { MAX_FOLDER_ITEMS, type AppState, type FocusFolder, type ListScope } from '@shared/types'
+import { folderDeletion, itemOf, mergeFolders, resolveItem, sameItem } from '@shared/collectionFolders'
+import { MAX_FAVORITES, MAX_FOCUS, MAX_FOLDER_ITEMS, rootOfPath, type AppState, type FocusFolder, type ListScope } from '@shared/types'
+import { getFavorites, updateFavorites } from '../favorites'
+import { getFocus, updateFocus } from '../focus'
 import { getFocusFolders, patchFocusFolder, type FolderKind } from '../focusFolders'
 import { absolute, resolveTarget, scopeRoots, unique } from './resources'
 
@@ -25,21 +27,21 @@ export async function groupCommand(state: AppState, command: string, args: Recor
   })))
   if (command.endsWith('Items') && !items) throw new AutomationFailure('INVALID_INPUT', 'Supply paths or stored item references.')
   if (items && new Set(items.map(item => JSON.stringify([item.vault, item.path]))).size !== items.length) throw new AutomationFailure('INVALID_INPUT', 'A group member cannot be listed twice.')
+  if (command === 'group.remove') return removeGroup(roots, scope, kind, args.group as string, args.keepItems as boolean)
   const group = await patchFocusFolder(roots, scope, kind, copies => {
     const folders = mergeFolders(copies)
-    const at = Math.max(Date.now(), ...Object.values(copies).flat().map(folder => folder.at + 1))
+    const at = stamp(copies)
     if (command === 'group.create') {
       const name = (args.name as string).trim()
       if (!name) throw new AutomationFailure('INVALID_INPUT', 'A group needs a name.')
       return { id: randomUUID(), name, created: at, at, items: [] }
     }
-    const current = folders.find(folder => folder.id === args.group) ?? unique(folders.filter(folder => folder.name.toLowerCase() === String(args.group).toLowerCase()), 'Group')
+    const current = named(folders, args.group as string)
     const next: FocusFolder = { ...current, at }
     if (command === 'group.rename') {
       next.name = (args.name as string).trim()
       if (!next.name) throw new AutomationFailure('INVALID_INPUT', 'A group needs a name.')
-    } else if (command === 'group.remove') next.deleted = true
-    else if (command === 'group.addItems') next.items = [...current.items, ...items!.filter(item => !current.items.some(other => sameItem(item, other)))]
+    } else if (command === 'group.addItems') next.items = [...current.items, ...items!.filter(item => !current.items.some(other => sameItem(item, other)))]
     else if (command === 'group.removeItems') next.items = current.items.filter(item => !items!.some(other => sameItem(item, other)))
     else if (command === 'group.reorderItems') {
       if (items!.length !== current.items.length || current.items.some(item => !items!.some(other => sameItem(item, other)))) throw new AutomationFailure('CONFLICT', 'Reorder must include each current group member exactly once.')
@@ -50,4 +52,49 @@ export async function groupCommand(state: AppState, command: string, args: Recor
     return next
   })
   return { roots, kind, scope, group, diskSaved: true }
+}
+
+const stamp = (copies: Record<string, readonly FocusFolder[]>) => Math.max(Date.now(), ...Object.values(copies).flat().map(folder => folder.at + 1))
+const named = (folders: FocusFolder[], group: string) => folders.find(folder => folder.id === group) ?? unique(folders.filter(folder => folder.name.toLowerCase() === group.toLowerCase()), 'Group')
+
+/**
+ * The sidebar's Delete (`folderDeletion`, D7): the tombstone goes to the named scope, then to the other one; with
+ * `keep`, the items go back to the top level of each list the group showed in. A Focus list keeps MAX_FOCUS for each
+ * vault, as the sidebar does, and `limitReached` says when items left. A step that fails after the first write is
+ * a partial failure: it says what was done.
+ */
+async function removeGroup(roots: string[], scope: ListScope, kind: FolderKind, ref: string, keep: boolean) {
+  const other: ListScope = scope === 'vault' ? 'workspace' : 'vault'
+  const read = kind === 'favorites' ? getFavorites : getFocus, update = kind === 'favorites' ? updateFavorites : updateFocus
+  const lists = async (s: ListScope) => new Set((await Promise.all(roots.map(root => read(root, s)))).flat())
+  const [here, there] = await Promise.all([lists(scope), lists(other)])
+  const theirs = (await Promise.all(roots.map(root => getFocusFolders(root, other, kind, { readOnly: true })))).flat()
+  let plan!: ReturnType<typeof folderDeletion>
+  const group = await patchFocusFolder(roots, scope, kind, copies => {
+    const current = named(mergeFolders(copies), ref)
+    plan = folderDeletion(current, roots, keep, stamp(copies), path => here.has(path), theirs.some(folder => folder.id === current.id && !folder.deleted) ? path => there.has(path) : null)
+    return plan.gone
+  })
+  const done: string[] = [scope]
+  let limitReached = false
+  const putBack = async (s: ListScope, paths: string[]) => {
+    for (const root of roots) {
+      const own = paths.filter(path => rootOfPath(roots, path) === root)
+      if (!own.length) continue
+      await update(root, s, current => {
+        const next = [...current, ...own.filter(path => !current.includes(path))]
+        if (kind === 'focus' && next.length > MAX_FOCUS) limitReached = true
+        return next.slice(0, kind === 'focus' ? MAX_FOCUS : MAX_FAVORITES)
+      })
+    }
+  }
+  try {
+    await patchFocusFolder(roots, other, kind, () => plan.gone)
+    done.push(other)
+    await putBack(scope, plan.here)
+    await putBack(other, plan.there)
+  } catch (error) {
+    throw new AutomationFailure('PARTIAL_FAILURE', 'The group is deleted, but a later step failed. Read the lists before another change.', { tombstones: done, error: error instanceof Error ? error.message : String(error) })
+  }
+  return { roots, kind, scope, group, topLevel: { [scope]: plan.here, [other]: plan.there } as Record<ListScope, string[]>, limitReached, diskSaved: true }
 }

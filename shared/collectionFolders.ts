@@ -73,3 +73,14 @@ export const sameItem = (a: FolderItem, b: FolderItem): boolean => a.vault === b
 /** `list` with `folder` in its place, or after the others. */
 export const upsert = (list: readonly FocusFolder[], folder: FocusFolder): FocusFolder[] =>
   list.some((f) => f.id === folder.id) ? list.map((f) => (f.id === folder.id ? folder : f)) : [...list, folder]
+
+/**
+ * The Delete of a favorite or focus folder (YAZ-4460 F3), for the sidebar and the CLI alike (D7, YAZ-4568): the
+ * tombstone, with no items, goes to both list scopes. With `keep` (the Delete box's "Keep items") each item the window
+ * resolves goes back to the top level of this scope's list, and of the other scope's while the folder shows there
+ * (`inThere` null: it does not), unless it is there already. An item of a vault not open here leaves either way.
+ */
+export function folderDeletion(folder: FocusFolder, roots: readonly string[], keep: boolean, at: number, inHere: (path: string) => boolean, inThere: ((path: string) => boolean) | null): { gone: FocusFolder; here: string[]; there: string[] } {
+  const back = keep ? folder.items.flatMap((item) => { const found = resolveItem(item, roots); return 'path' in found ? [found.path] : [] }) : []
+  return { gone: { ...folder, deleted: true, items: [], at }, here: back.filter((p) => !inHere(p)), there: inThere === null ? [] : back.filter((p) => !inThere(p)) }
+}

@@ -2002,6 +2002,12 @@ export function App() {
       if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some items could not be moved to Trash.', result)
       return result
     }
+    if (target.command === 'file.rename' && target.dropValues !== true) {
+      // The move sheet's question (D21), from the window's own snapshot: the caller answers it with dropValues (YAZ-4567).
+      const { root, wikilinks } = scopeOf(target.path)
+      const lost = root === null ? null : valuesLeftBehind({ root, moves: [{ oldPath: target.path, newPath: target.newPath, kind: target.kind }], records: wikilinks.records, folders: wikilinks.folders })
+      if (lost !== null && lost.folders.length > 0) throw new AutomationFailure('CONFIRMATION_REQUIRED', 'This move clears folder values. Pass dropValues: true to confirm, as the move sheet asks.', { notes: lost.notes, folders: lost.folders })
+    }
     const catalog = await catalogForRename(target.path, target.kind)
     if (catalog === undefined) throw new AutomationFailure('CONTEXT_CHANGED', 'The window context changed or its current file list could not be read.')
     const out = await renameWithUndo(target.path, target.command === 'file.rename' ? { newPath: target.newPath } : { title: target.title }, catalog)

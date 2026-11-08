@@ -11,6 +11,7 @@ import { _evictAll } from '../vaultIndex/live'
 import { folderCommand } from './folders'
 import { readSaved } from './resources'
 import { checked } from './contract'
+import { prepareAutomation } from '../automation'
 
 let root: string, dir: string, state: AppState, saved: string[]
 const store = { get: () => state, setBaseGroups: (r: string, key: string, groups: readonly string[]) => {
@@ -78,14 +79,24 @@ describe('folder pages', () => {
     page = await run('folderView.move', { revision: page.revision, view: 'Table', index: 2 })
     expect(page.views.map((v: any) => v.name)).toEqual(['Kanban', 'Kanban copy', 'Table'])
     await expect(run('folderView.move', { revision: page.revision, view: 'Table', index: 3 })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
-    page = await run('folderView.remove', { revision: page.revision, view: 'Kanban' })
+    page = await run('folderView.remove', { revision: page.revision, view: 'Kanban', confirm: true })
     expect(page).toMatchObject({ defaultView: null, startView: 'Kanban copy' })
     expect(state.folders[root].baseGroups).toEqual({})
-    page = await run('folderView.remove', { revision: page.revision, view: 'Table' })
-    await expect(run('folderView.remove', { revision: page.revision, view: 'Kanban copy' })).rejects.toMatchObject({ code: 'LAST_VIEW' })
+    page = await run('folderView.remove', { revision: page.revision, view: 'Table', confirm: true })
+    await expect(run('folderView.remove', { revision: page.revision, view: 'Kanban copy', confirm: true })).rejects.toMatchObject({ code: 'LAST_VIEW' })
     await expect(run('folderView.rename', { revision: page.revision, view: 'missing', name: 'X' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
     page = await run('folderView.add', { revision: page.revision, type: 'outline' })
     await expect(run('folderView.duplicate', { revision: page.revision, view: 'Outline' })).rejects.toMatchObject({ code: 'UNSUPPORTED' })
+  })
+
+  it('refuses a view delete without confirm, as the delete sheet asks first, and writes nothing (YAZ-4567)', async () => {
+    const page = await run('folderView.add', { revision: null, type: 'outline' })
+    const before = await readFile(join(dir, '.folder.md'), 'utf8')
+    const args = { root, path: dir, revision: page.revision, view: 'Outline' }
+    const request = (extra: Record<string, unknown>) => prepareAutomation({ profile: '/p', version: 'test', state: () => state }, { version: 1, session: 's', token: 't', id: 'r', issuedAt: Date.now(), command: 'folderView.remove', args: { ...args, ...extra } }, Buffer.alloc(0))
+    expect(() => request({})).toThrow(/missing confirm/)
+    expect(() => request({ confirm: false })).toThrow(/confirm: expected one of true/)
+    expect(await readFile(join(dir, '.folder.md'), 'utf8')).toBe(before)
   })
 
   it('sets only the options a view type reads, refusing the whole patch otherwise', async () => {

@@ -38,7 +38,7 @@ export type InspectTarget = { kind: 'history' } | { kind: 'window' } | { kind: '
 export type FileOperationTarget = TabOperation | EditorOperation | BoardExportOperation
   | { command: 'file.copy'; paths: string[]; targetDir: string; external: boolean }
   | { command: 'file.restore' } | { command: 'file.undo' } | { command: 'file.redo' }
-  | { command: 'file.rename'; path: string; newPath: string; kind: 'file' | 'dir' }
+  | { command: 'file.rename'; path: string; newPath: string; kind: 'file' | 'dir'; dropValues?: true }
   | { command: 'file.retitle'; path: string; title: string; kind: 'file' | 'dir' }
   | { command: 'file.trash'; paths: string[] }
 export type RendererCommand = { id: string; action: 'navigate'; target: NavigationTarget } | { id: string; action: 'inspect'; target: InspectTarget } | { id: string; action: 'operate'; target: FileOperationTarget }

@@ -6,6 +6,7 @@ import { createStore } from '../store'
 import { configurationCommand } from './configuration'
 import { _resetMint, _actAs } from '../vaultIndex/mint'
 import { checked } from './contract'
+import { prepareAutomation } from '../automation'
 
 let base: string, root: string, other: string, store: ReturnType<typeof createStore>
 beforeEach(async () => {
@@ -64,7 +65,11 @@ describe('configuration commands', () => {
     const result = await run('session.save', { name: 'Morning', roots: [root], tabs: [tab] }) as { session: { id: string } }
     expect(await run('session.list', {})).toMatchObject({ source: 'saved', items: [{ id: result.session.id, tabs: [tab] }] })
     await expect(run('session.save', { name: 'Invalid', roots: [other], tabs: [tab] })).rejects.toMatchObject({ code: 'OUTSIDE_SCOPE' })
-    await run('session.remove', { id: result.session.id })
+    // The session list asks before a delete (YAZ-4567): without confirm the dispatcher refuses and the session stays.
+    const request = (args: Record<string, unknown>) => prepareAutomation({ profile: '/p', version: 'test', store }, { version: 1, session: 's', token: 't', id: 'r', issuedAt: Date.now(), command: 'session.remove', args }, Buffer.alloc(0))
+    expect(() => request({ id: result.session.id })).toThrow(/missing confirm/)
+    expect(store.get().sessions).toHaveLength(1)
+    await request({ id: result.session.id, confirm: true }).run()
     expect(store.get().sessions).toEqual([])
   })
 })
