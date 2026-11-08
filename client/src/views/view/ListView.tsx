@@ -10,7 +10,7 @@ import { cellEditor, columnTyping } from '../editorType'
 import type { FolderSettings } from '../folderSettings'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, rowTitle } from './GroupHeader'
+import { GroupHeader, rowCell, rowTitle } from './GroupHeader'
 import { type GroupSpot, TOP_SPOT, childSpot, groupTakesNew, spotKey } from './groupDrag'
 import { PageContextMenu } from './PageContextMenu'
 import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
@@ -125,7 +125,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   }, [typings, vaultRecords, vaultFolders, resolveLink, root])
   const editable = (row: Row, key: string) => {
     const bare = bareOf(key)
-    if (bare === null) return cellContent(row.values[key], resolve)
+    if (bare === null) return rowCell(row, key, resolve)
     return (
       <EditableCell
         propKey={bare}

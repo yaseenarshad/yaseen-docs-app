@@ -33,7 +33,7 @@ vi.mock('../api', async (importOriginal) => {
 import { alsoIn } from '@shared/alsoIn'
 import { parseFrontmatter, setFrontmatterIn, splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
-import { addShortcut, dropFolderValuesAfterMove, dropStaleFolderValues, folderRows, foldersById, foldersShowing, isShortcut, removeShortcut, restoreFolderValues, rowsByFolder, valuesLeftBehind, valuesLeftByShortcut, type Move } from './shortcuts'
+import { addShortcut, directlyIn, dropFolderValuesAfterMove, dropStaleFolderValues, folderRows, foldersById, foldersShowing, isShortcut, removeShortcut, restoreFolderValues, rowsByFolder, valuesLeftBehind, valuesLeftByShortcut, type Move } from './shortcuts'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -218,6 +218,15 @@ describe('a row is a shortcut where it does not live under the folder', () => {
     expect(isShortcut(rec('/vault/Projects/Deep/B.md'), 'Projects')).toBe(false)
     expect(isShortcut(rec('/vault/Projects/Deep/Deeper/C.md'), 'Projects')).toBe(false)
     expect(isShortcut(rec('/vault/Projects/A.md'), 'Projects/Deep')).toBe(true)
+  })
+})
+
+describe('"Notes in subfolders: Hide" keeps a row directly in the folder (YAZ-4564 D25)', () => {
+  it('a note directly in the folder and a shortcut stay; a note in a subfolder, at any depth, goes', () => {
+    expect(directlyIn(rec('/vault/Projects/A.md'), 'Projects')).toBe(true)
+    expect(directlyIn(rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] }), 'Projects')).toBe(true)
+    expect(directlyIn(rec('/vault/Projects/Deep/B.md'), 'Projects')).toBe(false)
+    expect(directlyIn(rec('/vault/Projects/Deep/Deeper/C.md'), 'Projects')).toBe(false)
   })
 })
 

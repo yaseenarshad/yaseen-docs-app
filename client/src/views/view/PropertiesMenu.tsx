@@ -237,6 +237,24 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
           )
         }
       />
+      {/* Every view type (YAZ-4564 D25): Hide keeps the notes directly in the folder and its shortcuts. Show is the default: it removes the key. */}
+      <label className="view-settings-row">
+        <span>Notes in subfolders</span>
+        <select
+          className="view-select"
+          aria-label="Notes in subfolders"
+          value={view.subfolders === false ? 'hide' : 'show'}
+          onChange={(e) =>
+            onUpdate((d) => {
+              if (e.target.value === 'hide') d.views[viewIndex].subfolders = false
+              else delete d.views[viewIndex].subfolders
+            })
+          }
+        >
+          <option value="show">Show</option>
+          <option value="hide">Hide</option>
+        </select>
+      </label>
       {view.type === 'table' && (
         <>
           <p className="view-menu__label">Table</p>

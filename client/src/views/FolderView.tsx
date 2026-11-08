@@ -69,6 +69,8 @@ export interface FolderViewProps {
   onOpenFile: (path: string) => void
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
+  /** A subfolder's page in a new tab (YAZ-4564 D26/D27): App's `openKeptPage`, the sidebar's "Open folder page" door. Handed to `ViewsPane` as `FolderHost.openFolderPage`. */
+  onOpenFolderPage?: (path: string) => void
   /** A full editor on a note, for the table's note window (YAZ-4547): handed to `ViewsPane` as `FolderHost.renderNoteEditor`. */
   renderNoteEditor?: (path: string) => ReactNode
   /** The app tab that shows this folder (`Editor`'s `tabId`): handed to `ViewsPane`, whose note window is that tab's (YAZ-4544). */
@@ -129,6 +131,7 @@ export function FolderView({
   onOpenFile,
   onOpenFileRight,
   onOpenFileBackground,
+  onOpenFolderPage,
   renderNoteEditor,
   tabId,
   viewKey,
@@ -378,6 +381,7 @@ export function FolderView({
       if (!locked.has(note)) onRetitle(note, title, 'file')
     },
     openRight: onOpenFileRight,
+    openFolderPage: onOpenFolderPage,
     renderNoteEditor,
     openBackground: onOpenFileBackground,
     onNotice,

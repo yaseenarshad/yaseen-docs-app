@@ -393,6 +393,16 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
     expect(groupedNames(el)).toEqual({ stages: ['Lead Gen', 'Sales'], archive: ['Old'], '2019': ['Older'] })
     expect(texts(el, '.view-group__count')).toEqual(['2', '2', '1'])
   })
+
+  it('"Open folder page ↗" on a subfolder’s group opens its page through the host’s door (YAZ-4564 D27)', async () => {
+    const onOpenFolderPage = vi.fn()
+    const el = renderFolderView({ path: STAGES, source, onOpenFile, onOpenFolderPage })
+    feed({ views: [BY_FOLDER] })
+    await flush()
+    expect(el.querySelector('[aria-label="Open folder page stages"]')).toBeNull() // the page's own group
+    click(q(el, '[aria-label="Open folder page archive"]'))
+    expect(onOpenFolderPage).toHaveBeenCalledWith('/vault/stages/archive')
+  })
 })
 
 describe('a shortcut is a row too (D2/D4)', () => {
@@ -1308,7 +1318,7 @@ describe('each folder has its own properties (D19)', () => {
     expect(orders(await open('/vault/Sub'))).toEqual({ Outsider: '70' }) // the shortcut's home
   })
 
-  it('A folder’s table: which values — only that folder’s block, plus the built-in file columns (name, folder, tags, dates, links) unchanged', async () => {
+  it('A folder’s table: which values — only that folder’s block, plus the built-in file columns (name, folder, tags, dates, links)', async () => {
     const lead: IndexRecord = {
       ...rec(LEAD, { id: 'n0tehasan1dx', secret: 'own', also_in: [ARCHIVE_ID], in: { [STAGES_ID]: { order: 2, extra: 'here' }, [ARCHIVE_ID]: { elsewhere: 1 } } }),
       tags: ['topic'],
@@ -1323,7 +1333,7 @@ describe('each folder has its own properties (D19)', () => {
     feed({ columns: SETTINGS.columns, views: [{ type: 'table', name: 'Table', order: ['file.name', 'file.folder', 'file.tags', 'file.links', 'file.mtime', 'note.secret', 'note.id', 'note.elsewhere'] }] }, [lead])
     await flush()
     const shown = [1, 2, 3, 4, 5, 6, 7].map((column) => cell(el, 'Lead Gen', column).textContent)
-    expect(shown.slice(0, 3)).toEqual(['stages', 'topic', 'Sales'])
+    expect(shown.slice(0, 3)).toEqual(['', 'topic', 'Sales']) // a note directly in the page's folder has an empty Folder cell (YAZ-4564 D26)
     expect(shown[3]).toContain('2026')
     expect(shown.slice(4)).toEqual(['Empty', 'Empty', 'Empty']) // the note's own field, its id, another folder's value: none is this folder's
   })

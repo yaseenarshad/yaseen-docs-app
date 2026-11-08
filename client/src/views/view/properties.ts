@@ -10,7 +10,7 @@ import { canonicalKey } from './keys'
  * `view.order` round-trips), then `file.name` + every note key seen or declared on the folder
  * (YAZ-895 — a DECLARED column is offerable before any note carries a value for it; since
  * YAZ-1549 `propertyKeys` itself shows it by default), then "File name" (`file.basename`,
- * YAZ-2420 🔒 D18) and the formulas; de-duplicated by canonical key.
+ * YAZ-2420 🔒 D18), Folder (`file.folder`, a column since YAZ-4564 D26) and the formulas; de-duplicated by canonical key.
  * Where the vault uses IDs never the note's own keys (`id` and the rest): the rows hold a folder's
  * values (D19), not those. In a vault that does not use IDs the rows are the notes' own properties
  * (YAZ-2523 🔒 V12).
@@ -35,6 +35,7 @@ export function allPropertyKeys(
   // The read-only switch is no auto-shown column (YAZ-3130 nit), but a reader may still show it.
   if (records.some((r) => READ_ONLY_KEY in r.properties)) add(`note.${READ_ONLY_KEY}`)
   add('file.basename')
+  add('file.folder')
   for (const name of Object.keys(def.formulas ?? {})) add(`formula.${name}`)
   return out
 }

@@ -10,7 +10,7 @@ import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, rowTitle, summaryKindOf } from './GroupHeader'
+import { GroupHeader, rowCell, rowTitle, summaryKindOf } from './GroupHeader'
 import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
@@ -644,7 +644,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     onCommit={(next) => onWriteValue(line.row.record.path, bares[c]!, next)}
                   />
                 ) : (
-                  cellContent(v, resolve)
+                  rowCell(line.row, key, resolve)
                 )}
               </td>
             )

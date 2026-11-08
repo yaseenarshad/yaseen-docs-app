@@ -13,7 +13,7 @@ import type { FolderSettings } from '../folderSettings'
 import { cardWidth } from './cardWidth'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, rowTitle } from './GroupHeader'
+import { GroupHeader, rowCell, rowTitle } from './GroupHeader'
 import { type GroupSpot, TOP_SPOT, childSpot, groupTakesNew, spotKey } from './groupDrag'
 import { PageContextMenu } from './PageContextMenu'
 import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
@@ -207,7 +207,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                   <span className="view-card__prop-name">{propertyLabel(def, key)}</span>
                   <span className="view-card__prop-value">
                     {bare === null ? (
-                      cellContent(row.values[key], resolve)
+                      rowCell(row, key, resolve)
                     ) : (
                       <EditableCell
                         propKey={bare}

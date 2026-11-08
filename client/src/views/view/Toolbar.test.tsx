@@ -1041,14 +1041,14 @@ describe('sort menu', () => {
     return [...pop.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => option.dataset.value)
   }
 
-  it('Folder is offered — once — as a Sort property, a Group by and a Then group by, and nowhere else: the Properties menu has no "Show Folder" (YAZ-2541)', () => {
+  it('Folder is offered — once — as a Sort property, a Group by and a Then group by (YAZ-2541), and as a column in Properties (YAZ-4564 D26)', () => {
     const { el } = mount()
     const pop = openMenu(el, 'Sort')
     expect(optionValues(pop, 'Sort property').filter((v) => v === 'file.folder')).toHaveLength(1)
     expect(optionValues(pop, 'Group by').filter((v) => v === 'file.folder')).toHaveLength(1)
     chooseColumn(pop, 'Group by', 'note.status')
     expect(optionValues(pop, 'Then group by').filter((v) => v === 'file.folder')).toHaveLength(1)
-    expect(openMenu(el, 'Properties').querySelector('[aria-label="Show Folder"]')).toBeNull()
+    expect(openMenu(el, 'Properties').querySelectorAll('[aria-label="Show Folder"]')).toHaveLength(1)
   })
 
   it('a view whose hand-written `order` already names `file.folder` still lists Folder once (YAZ-2541)', () => {
@@ -1124,7 +1124,7 @@ views:
     expect(select.disabled).toBe(false)
     click(select)
 
-    const order = ['status', 'file.name', 'note.owner', 'note.priority', 'file.basename', 'formula.Score']
+    const order = ['status', 'file.name', 'note.owner', 'note.priority', 'file.basename', 'file.folder', 'formula.Score'] // Folder is a column since YAZ-4564 D26
     expect(def()).toEqual({ ...before, views: [{ ...before.views[0], order }, before.views[1]] })
     expect(parseViews(yaml()).def).toEqual(def())
     expect([...pop.querySelectorAll<HTMLInputElement>('input[aria-label^="Show "]')].every((input) => input.checked)).toBe(true)
@@ -1165,7 +1165,7 @@ views:
     click(byLabel(el, 'Properties'))
     const reopened = openMenu(el, 'Properties')
     click(byText(reopened, 'button', 'Select all'))
-    expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status', 'file.basename'])
+    expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status', 'file.basename', 'file.folder'])
     expect(def().views[0].frozenColumns).toBeUndefined()
     expect(parseViews(yaml()).def).toEqual(def())
     expect(el.querySelector(type === 'table' ? '.view-table__name' : '.view-board__title')).not.toBeNull()
@@ -1180,7 +1180,7 @@ views:
     expect(def().views[0].order).toEqual([])
     expect(select.disabled).toBe(false)
     click(select)
-    expect(def().views[0].order).toEqual(['file.name', 'file.basename'])
+    expect(def().views[0].order).toEqual(['file.name', 'file.basename', 'file.folder'])
     expect(select.disabled).toBe(true)
     click(select)
     expect(onChange).toHaveBeenCalledTimes(2)
@@ -1722,7 +1722,7 @@ views:
     const pop = openMenu(el, 'Properties')
     const rows = [...pop.querySelectorAll<HTMLElement>('.view-prop')]
     const keyed = rows.map((row) => row.querySelector('.view-prop__name small')?.textContent ?? null)
-    expect(keyed).toEqual(['file.name', 'note.name', null, null])
+    expect(keyed).toEqual(['file.name', 'note.name', null, null, null])
   })
 })
 

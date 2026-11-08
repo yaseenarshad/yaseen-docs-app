@@ -28,7 +28,7 @@ const EMPTY_SORT: SortSpec[] = []
 /** A `groupBy` entry that names a column (YAZ-4544): the engine's own test (`shownGroupLevels`). */
 const isLevel = (level: GroupBySpec | undefined): level is GroupBySpec => typeof level?.property === 'string'
 
-/** Folder (YAZ-2541): a place to sort and group by, never a column — and the one property that may group twice, the second level being the next folder down. */
+/** Folder (YAZ-2541): a place to sort and group by — a column too since YAZ-4564 D26 — and the one property that may group twice, the second level being the next folder down. */
 const FOLDER = 'file.folder'
 
 /** Each group level's picker and order-menu names, outer first (YAZ-4532). */

@@ -1271,9 +1271,26 @@
   border-radius: 4px;
 }
 
-.view-group__new:hover {
+.view-group__new:hover,
+.view-group__open:hover {
   color: var(--fg);
   background: var(--bg-side);
+}
+
+/* "Open folder page ↗" on a Folder group (YAZ-4564 D27). */
+.view-group__open {
+  flex: none;
+  padding: 0 4px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+/* The Folder column's chip is a button (YAZ-4564 D26). */
+.view-folder-chip {
+  border: 0;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
 }
 
 .view-group__summary {

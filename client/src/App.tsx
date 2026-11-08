@@ -2951,6 +2951,8 @@ export function App() {
       viewOnlyLinks: scope.viewOnlyLinks,
       properties: scope.properties,
       onOpenFileRight: openRight,
+      // YAZ-4564: a folder page's Folder chips and ↗ open a subfolder's page as the sidebar's "Open folder page" does.
+      onOpenFolderPage: openKeptPage,
       // YAZ-4547: a folder table opens a row in a window with the same editor.
       renderNoteEditor,
       onRetitle: requestRetitle,

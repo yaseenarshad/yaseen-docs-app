@@ -69,7 +69,9 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   const [pendingConj, setPendingConj] = useState<Conjunction>('and')
   const group = toGroup(view.filters)
   const conj = group.items.length ? group.conj : pendingConj
-  const keys = [...allPropertyKeys(def, view, records, folder.settings.columns), ...FILE_EXTRAS]
+  // Folder is a menu key too since YAZ-4564 D26: each extra once.
+  const listed = allPropertyKeys(def, view, records, folder.settings.columns)
+  const keys = [...listed, ...FILE_EXTRAS.filter((k) => !listed.includes(k))]
   /** The column's rung of the typing ladder (D4), the same one the table's cell editors read. */
   const typingOf = (property: string): ColumnTyping => columnTyping(property, records, properties, folder.settings)
 

@@ -66,6 +66,8 @@ export interface ViewDef {
   calendarScale?: 'month' | 'week'
   /** A calendar's card titles (YAZ-4558 D23): `wrap` = the full title on more lines. Absent = clip, one line with "…". */
   cardTitles?: 'clip' | 'wrap'
+  /** "Notes in subfolders" (YAZ-4564 D25): `false` = Hide, only the notes directly in the folder and its shortcuts. Absent = Show. */
+  subfolders?: boolean
   [extra: string]: unknown
 }
 

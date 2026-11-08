@@ -63,6 +63,49 @@ export const rowTitle = (row: Row): ReactNode => <RowTitle row={row} />
 /** The folder whose rows the skins are drawing, as the index names it; null (no folder host) marks nothing. */
 export const ViewFolder = createContext<string | null>(null)
 
+/**
+ * The page's folders for the Folder column and the Folder group headers (YAZ-4564 D26/D27), from `ViewsPane`:
+ * the page's folder as the index names it, a folder's title as its Folder group is headed, and the door that
+ * opens a folder's page in a new tab (absent: nothing opens). Null outside a folder page.
+ */
+export interface FolderPagesValue {
+  folder: string
+  title: (dir: string) => string
+  open?: (dir: string) => void
+}
+export const FolderPages = createContext<FolderPagesValue | null>(null)
+
+/** The `file.folder` column (YAZ-4564 D26): every view draws its cell here, the rest through `cellContent`. */
+export const rowCell = (row: Row, key: string, resolve?: Resolver): ReactNode =>
+  canonicalKey(key) === 'file.folder' ? <FolderCell row={row} value={row.values[key]} resolve={resolve} /> : cellContent(row.values[key], resolve)
+
+/**
+ * Empty for a note directly in the page's folder; else the chip of the folder the note lives in, by the title
+ * its Folder group shows. A click opens that folder's page; the vault root has no page, so its chip opens nothing.
+ */
+function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?: Resolver }) {
+  const pages = useContext(FolderPages)
+  if (pages === null) return <>{cellContent(value, resolve)}</>
+  const dir = row.record.folder
+  if (dir === pages.folder) return null
+  const title = pages.title(dir)
+  const open = pages.open
+  if (open === undefined || dir === '') return <span className="view-table__chip" title={title}>{title}</span>
+  return (
+    <button
+      type="button"
+      className="view-table__chip view-table__chip--link view-folder-chip"
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation() // a board card's click opens the card
+        open(dir)
+      }}
+    >
+      {title}
+    </button>
+  )
+}
+
 function RowTitle({ row }: { row: Row }) {
   const folder = useContext(ViewFolder)
   return (
@@ -132,6 +175,13 @@ export interface GroupHeaderProps {
 export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, resolve, level = 0 }: GroupHeaderProps) {
   // `level` counts the levels that group (YAZ-4544): an entry with no property is none.
   const look = groupValueLook(shownGroupLevels(view)[level])
+  // A Folder level's group (YAZ-4564 D27) opens that folder's page; the page's own folder and the vault root have none.
+  const pages = useContext(FolderPages)
+  const open = pages?.open
+  const openFolder =
+    open !== undefined && typeof groupKey === 'string' && groupKey !== '' && groupKey !== pages?.folder && shownGroupLevels(view)[level]?.property === 'file.folder'
+      ? () => open(groupKey)
+      : undefined
   return (
     <div className="view-group">
       <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
@@ -144,6 +194,11 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
         {typeof groupKey === 'string' ? label : groupKey === null ? 'No value' : groupValue(groupKey, resolve)}
       </span>
       <span className="view-group__count">{rows.length}</span>
+      {openFolder !== undefined && (
+        <button type="button" className="view-group__open" aria-label={`Open folder page ${label}`} title="Open folder page" onClick={openFolder}>
+          ↗
+        </button>
+      )}
       {onNew !== undefined && (
         <button type="button" className="view-group__new" aria-label={`New note in group ${label}`} title="New note" onClick={onNew}>
           <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>

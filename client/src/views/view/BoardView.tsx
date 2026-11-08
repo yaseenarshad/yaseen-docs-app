@@ -8,7 +8,7 @@ import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import type { Resolver } from '../expr'
 import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, rowTitle } from './GroupHeader'
+import { GroupHeader, rowCell, rowTitle } from './GroupHeader'
 import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
@@ -222,7 +222,7 @@ export function BoardView({
     return (
       <div key={key} className={`view-board__prop${styleClasses(style)}`}>
         {style.hideLabel !== true && <span className="view-board__prop-name">{propertyLabel(def, key)}</span>}
-        <span className="view-board__prop-value">{cellContent(row.values[key], resolve)}</span>
+        <span className="view-board__prop-value">{rowCell(row, key, resolve)}</span>
       </div>
     )
   }

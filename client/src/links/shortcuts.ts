@@ -98,6 +98,9 @@ export const folderRows = (records: readonly IndexRecord[], folders: readonly In
 /** Whether a row `folder` shows is there by a shortcut: it does not live under it. */
 export const isShortcut = (record: IndexRecord, folder: string): boolean => !inFolder(record.folder, folder)
 
+/** Whether a row `folder` shows is directly in it or there by a shortcut, not in a subfolder: what "Notes in subfolders: Hide" keeps (YAZ-4564 D25). */
+export const directlyIn = (record: IndexRecord, folder: string): boolean => record.folder === folder || isShortcut(record, folder)
+
 const propertiesOf = (content: string): Record<string, unknown> => parseFrontmatter(splitFrontmatter(content).frontmatter).properties
 
 /**

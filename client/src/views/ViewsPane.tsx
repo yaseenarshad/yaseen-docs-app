@@ -7,7 +7,7 @@ import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
-import { relTo } from '../lib/paths'
+import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeViews, updateViews } from './viewSchema'
 import { type Group, type Row, propertyKeys, runView } from './engine'
@@ -31,6 +31,8 @@ import { NO_READ_ONLY } from './readOnlyRows'
 import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
+import { FolderPages, type FolderPagesValue } from './view/GroupHeader'
+import { directlyIn } from '../links/shortcuts'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -84,6 +86,8 @@ export interface FolderHost {
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
   openRight?: (path: string) => void
+  /** A folder's page in a new tab, by its absolute path (YAZ-4564 D26/D27): the sidebar's "Open folder page" door. Absent: the Folder chips and ↗ open nothing. */
+  openFolderPage?: (dir: string) => void
   /**
    * A full editor on a note, for the table's note window (YAZ-4547 D14): App's, the same editor a tab has. Stable.
    * Absent: the row menu has no "Open in a window".
@@ -279,7 +283,12 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     })
   }, [records])
 
-  const shown = useMemo(() => (Object.keys(moves).length === 0 ? records : applyMoves(records, moves)), [records, moves])
+  // The page the views belong to, as the index names its folder (YAZ-2541).
+  const pageFolder = relTo(root, folderPath)
+  // "Notes in subfolders: Hide" (YAZ-4564 D25): this view narrows the folder's set, as its filters do.
+  const hideSubfolders = view.subfolders === false
+  const inView = useMemo(() => (hideSubfolders ? records.filter((r) => directlyIn(r, pageFolder)) : records), [records, hideSubfolders, pageFolder])
+  const shown = useMemo(() => (Object.keys(moves).length === 0 ? inView : applyMoves(inView, moves)), [inView, moves])
   // YAZ-2290 D4: a folder's rows are the notes IN it, so the engine's own rows-are-the-vault
   // resolver would miss every link pointing outside them — inject the whole-vault one, WITH the
   // root (YAZ-846), so an absolute-path link target resolves, and with the folders behind the
@@ -293,9 +302,19 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * however long it grows. Everything else the view says (sort, limit, groupBy) still runs.
    */
   const isOutline = view.type === 'outline'
-  // The page the views belong to, as the index names its folder (YAZ-2541): a Folder level groups by
-  // the folders below it, each headed by its title off the vault's folder records.
-  const page = useMemo(() => ({ folder: relTo(root, folderPath), folders: vaultFolders, vault: folder.vaultName }), [root, folderPath, vaultFolders, folder.vaultName])
+  // A Folder level groups by the folders below the page (YAZ-2541), each headed by its title off the vault's folder records.
+  const page = useMemo(() => ({ folder: pageFolder, folders: vaultFolders, vault: folder.vaultName }), [pageFolder, vaultFolders, folder.vaultName])
+  // The Folder column and the Folder group headers (YAZ-4564 D26/D27): a folder by the title its group shows (the engine's
+  // `labelOf`), and its page through the host's door. One map per folder snapshot; nothing here runs on a keystroke.
+  const openFolderPage = folder.openFolderPage
+  const folderPages = useMemo<FolderPagesValue>(() => {
+    const titles = new Map<string, string>([...vaultFolders.map((f) => [f.folder, f.title] as const), ['', folder.vaultName]])
+    return {
+      folder: pageFolder,
+      title: (dir) => titles.get(dir) ?? dir.slice(dir.lastIndexOf('/') + 1),
+      open: openFolderPage === undefined ? undefined : (dir) => openFolderPage(absFrom(root, dir)),
+    }
+  }, [vaultFolders, folder.vaultName, pageFolder, openFolderPage, root])
   // A Select column's options in the column editor's order (YAZ-3940): its sorts and groups follow them. One typing
   // per key for these records (YAZ-4544): a run that the view's def starts reads no record for it again.
   const settings = folder.settings
@@ -514,7 +533,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     },
   }
 
-  return (
+  const pane = (
     <div ref={paneRef} className="views-pane">
       <Toolbar
         def={def}
@@ -736,4 +755,6 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       <CardPreviewHost store={itemHover.store} cardOf={(_, path) => ({ root: null, name: records.find((r) => r.path === path)?.title ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
     </div>
   )
+  // The Folder column's chips and the Folder group headers' ↗ read the page's folders (YAZ-4564).
+  return <FolderPages.Provider value={folderPages}>{pane}</FolderPages.Provider>
 }
