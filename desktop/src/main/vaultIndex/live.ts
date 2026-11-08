@@ -29,6 +29,8 @@ interface Entry {
   idle?: NodeJS.Timeout
   /** Live scans the watcher has started but not finished — `getIndex` drains these before it answers (YAZ-986). */
   inFlight: Set<Promise<unknown>>
+  /** The latest `add`/`change` of each path whose read is in flight: a read lands only while its event is still the latest, so an `unlink` or a newer `change` that came meanwhile wins. Empty when no read is in flight. */
+  reads: Map<string, object>
   /** What the cold-start reconcile found (GRO-2223); dropped with the entry on idle eviction. */
   coldDiff?: ColdStartDiff
   /** Every folder the build walked into: the ones a yes would write to (`wouldWrite`). */
@@ -60,23 +62,28 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
   switch (ev.type) {
     case 'add':
     case 'change': {
+      if (!isDrawing(ev.path) && !isMarkdown(ev.path)) return
+      // A read lands only while its event is the path's latest (`reads`): one that started before the file went, or changed again, would put back what was there.
+      const token = {}
+      entry.reads.set(ev.path, token)
+      const latest = (): boolean => entry.reads.get(ev.path) === token && entry.reads.delete(ev.path)
       if (isDrawing(ev.path)) {
-        const read = readBoard(root, entry, ev.path).finally(() => entry.inFlight.delete(read))
+        const read = readBoard(root, entry, ev.path, latest).finally(() => entry.inFlight.delete(read))
         entry.inFlight.add(read)
         return
       }
-      if (!isMarkdown(ev.path)) return
       const held = entry.records.get(ev.path)?.id
       const scan = scanFile(root, ev.path)
         .then(
           (record) => {
+            if (!latest()) return
             entry.records.set(ev.path, record)
             // The diary notes each link to an ID this Mac made, with the time (YAZ-2677 R27).
             if (entry.writable && entry.ids) see(root, record, Date.now())
             // Every other indexed note is known to hold what it holds; this one, what it held before.
             void sweep(root, entry, [record], (p) => (p === ev.path ? held : entry.records.get(p)?.id))
           },
-          () => entry.records.delete(ev.path),
+          () => latest() && entry.records.delete(ev.path),
         )
         .finally(() => {
           entry.inFlight.delete(scan)
@@ -94,6 +101,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       if (entry.boards.delete(ev.path)) boardsChanged?.(root)
       const id = isFolderSettingsPath(ev.path) ? entry.records.get(ev.path)?.id : undefined
       entry.records.delete(ev.path)
+      entry.reads.delete(ev.path)
       entry.waits.delete(ev.path)
       schedulePersist(root, entry.records)
       if (entry.writable && id !== undefined) void restoreFolderId(root, ev.path, id)
@@ -103,6 +111,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       const prefix = ev.path + path.sep
       for (const p of entry.records.keys()) if (p.startsWith(prefix)) entry.records.delete(p)
       for (const p of entry.waits.keys()) if (p.startsWith(prefix)) entry.waits.delete(p)
+      for (const p of entry.reads.keys()) if (p.startsWith(prefix)) entry.reads.delete(p)
       // The windows read the index again for a folder that went (`useIndex`): its boards go with it, with no word.
       for (const p of entry.boards.keys()) if (p.startsWith(prefix)) entry.boards.delete(p)
       entry.dirs = entry.dirs.filter((dir) => dir !== ev.path && !dir.startsWith(prefix))
@@ -149,8 +158,9 @@ async function boardIdsAt(boards: readonly string[]): Promise<BoardIds[]> {
 }
 
 /** The board at `file` as its head says now; the windows hear of a change of its ID (`onBoardIds`). */
-async function readBoard(root: string, entry: Entry, file: string): Promise<void> {
+async function readBoard(root: string, entry: Entry, file: string, latest: () => boolean): Promise<void> {
   const ids = await boardIdAt(file)
+  if (!latest()) return
   const { id } = ids
   if (!learnFormer(entry, ids) && entry.boards.get(file) === id) return
   if (id === undefined) entry.boards.delete(file)
@@ -304,7 +314,7 @@ async function adoptExistingIds(root: string, entry: Entry): Promise<void> {
 
 async function build(root: string, readOnly = false): Promise<Entry> {
   const dirs: string[] = []
-  const entry: Entry = { writable: !readOnly, records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), kept: new Map(), boards: new Map(), formerIds: new Map() }
+  const entry: Entry = { writable: !readOnly, records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), reads: new Map(), dirs, ids: false, waits: new Map(), kept: new Map(), boards: new Map(), formerIds: new Map() }
   const files: string[] = []
   const boards: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
