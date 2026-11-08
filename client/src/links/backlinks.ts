@@ -14,6 +14,7 @@
  * A FOLDER's page mentions what its settings record links by the rename engine's rule
  * (`referenceTargets`: its own link properties, a view's `order` entry, a link column's `target`),
  * and any link in an outline line, prose included. Its entry is that record, sorted by its path.
+ * The rule is `@shared/backlinks`, which the CLI's `link incoming` shares (YAZ-4502).
  *
  * Context snippets are read ON DEMAND (`fs:read` per shown entry, `mentionSnippets` below) —
  * the index stores no positions, and nothing is read until the section is expanded. A folder's
@@ -22,24 +23,9 @@
 import { isViewOnly } from '@shared/fileKind'
 import type { IndexRecord } from '@shared/types'
 import { WIKILINK_RE, idLinkTitle, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import { pathTitles, type PathTitles } from '../lib/pageLabel'
-import { dirname } from '../lib/paths'
-import { folderSettings } from '../views/folderSettings'
-import { parseOutline } from '../views/outlineDoc'
+import type { PathTitles } from '../lib/pageLabel'
 import { maskCode } from '@shared/linkRewrite'
-import { referenceTargets } from './renameLinks'
-
-/**
- * Records whose links/embeds resolve to `path`, then the settings records of the folders whose
- * settings link it, path-sorted; `path` itself — a note, or a folder's own page — never counts.
- */
-function referencing(path: string, records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink): IndexRecord[] {
-  const mentions = (target: string): boolean => resolve(target) === path
-  return [
-    ...records.filter((r) => r.path !== path && [...r.links, ...r.embeds].some(mentions)),
-    ...folders.filter((f) => dirname(f.path) !== path && ([...referenceTargets(f)].some(mentions) || folderMentionSnippets(f, path, resolve, pathTitles(records, folders), 1).length > 0)),
-  ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-}
+import { outlineBullets, referencing } from '@shared/backlinks'
 
 /**
  * Referencing sets per RESOLVER identity, then per path — `resolverFor`'s WeakMap idiom.
@@ -268,7 +254,5 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
  * order. None when it links only by a view's `order` or a column's `target`.
  */
 export function folderMentionSnippets(settings: IndexRecord, target: string, resolve: ResolveLink, titles: PathTitles, limit?: number): MentionSnippet[] {
-  // The vault's kind decides only the views of a folder that saved none, and those hold no outline.
-  const bullets = folderSettings(settings, false).views.flatMap((view) => (view.outline === undefined ? [] : parseOutline(view.outline).map((line) => line.text)))
-  return mentionSnippets(bullets.join('\n'), target, resolve, titles, limit)
+  return mentionSnippets(outlineBullets(settings).join('\n'), target, resolve, titles, limit)
 }
