@@ -2724,15 +2724,25 @@ describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
 describe('automation live Markdown read', () => {
   // Checker (YAZ-4510 round 2): the real serializer writes `# H\ntext\n` back as `# H\n\ntext\n` with no edit.
   // Autosave treats the tab as clean (nothing is written), so the live read must not say dirty.
+  // YAZ-4580: the serializer's form is there when the editor is created, so it is the autosave's baseline too.
   it('checker: an unedited note whose saved text is not in the serializer form reads as clean', async () => {
+    // The editor's own round trip, no user edit.
+    createCrepeMock.mockImplementationOnce((opts) => ({ md: '# H\n\ntext\n', onMarkdownUpdated: opts.onMarkdownUpdated, create: () => Promise.resolve(), destroy: () => Promise.resolve() }) as never)
     const el = await mount('# H\ntext\n')
     el.classList.add('tabstack__layer'); el.dataset.tab = 'live-unedited'
-    crepe().md = '# H\n\ntext\n' // the editor's own round trip, no user edit and no update event
     vi.mocked(editorViewOf).mockReturnValue({ ...emptyView(), state: { selection: { anchor: 1, head: 1, from: 1, to: 1 }, doc: { textBetween: () => '' } } } as never)
     try {
       await pastDebounce()
       expect(writeFile).not.toHaveBeenCalled()
-      expect(readLiveDocument('live-unedited')).toMatchObject({ dirty: false })
+      const live = readLiveDocument('live-unedited')
+      expect(live).toMatchObject({ dirty: false })
+      // `editor save` agrees: nothing to write is a finished save, not SAVE_INCOMPLETE.
+      await expect(runEditorAction({ command: 'editor.action', tab: 'live-unedited', revision: live.revision, edit: { action: 'save' } })).resolves.toMatchObject({ dirty: false, diskSaved: true })
+      expect(writeFile).not.toHaveBeenCalled()
+      type('# H\n\ntext edited\n')
+      expect(readLiveDocument('live-unedited').dirty).toBe(true)
+      type('# H\n\ntext\n')
+      expect(readLiveDocument('live-unedited').dirty).toBe(false)
     } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
   })
 

@@ -142,6 +142,25 @@ describe('Autosave', () => {
     expect(statuses.at(-1)).toBe('saved')
   })
 
+  it('unsaved(content) is the save rule as a pure read: baseline, pending, in flight and a conflict (YAZ-4580)', async () => {
+    let finish!: () => void
+    const { a, save } = setup((content) => (content === 'b' ? new Promise((r) => (finish = () => r({ mtime: 200 }))) : Promise.reject(new SaveConflict(300))))
+    expect(a.unsaved('base\n')).toBe(false)
+    expect(a.unsaved('edited\n')).toBe(true)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(save).not.toHaveBeenCalled() // the read schedules nothing
+    a.update('b')
+    expect(a.unsaved('b')).toBe(true) // pending
+    void a.flush()
+    expect(a.unsaved('b')).toBe(true) // in flight
+    finish()
+    await a.settled()
+    expect(a.unsaved('b')).toBe(false)
+    a.update('c')
+    await a.flush()
+    expect(a.unsaved('b')).toBe(true) // a conflict blocks the save
+  })
+
   it('dispose() ignores further updates', async () => {
     const { a, save } = setup()
     a.dispose()

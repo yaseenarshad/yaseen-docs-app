@@ -67,6 +67,14 @@ export class Autosave<C = string> {
   }
 
   /**
+   * `content` is not all on disk by this controller's own rule (YAZ-4580): it differs from the last content
+   * loaded or saved, or a save is pending, in flight or blocked. A pure read: it schedules nothing, unlike `update`.
+   */
+  unsaved(content: C): boolean {
+    return content !== this.baseline || !this.isClean()
+  }
+
+  /**
    * Resolves once no save is in flight. Watcher events for our own write can arrive
    * before the `writeFile` response (slow rename on network filesystems), so callers
    * must wait for the in-flight save to settle before comparing mtimes for echo suppression.
