@@ -42,6 +42,17 @@ describe('exact context navigation', () => {
     expect(parseNavigationLink(navigationLink({ root, path, panel: 'right' }))).toEqual({ root, path, panel: 'right' })
   })
 
+  it('closes an empty start window once a created window applies, and leaves vault windows alone', async () => {
+    const app = host([entry('start', []), entry('other', ['/other'])])
+    app.manage = vi.fn(async () => ({}))
+    expect(await navigate(app, { root, path: join(root, 'Mochi'), mode: 'new' })).toMatchObject({ window: 'new', created: true, closedStartWindows: ['start'] })
+    expect(app.manage).toHaveBeenCalledExactlyOnceWith('start', 'close')
+    vi.mocked(app.manage).mockClear()
+    app.apply = vi.fn(async () => { throw Object.assign(new Error('no'), { code: 'RENDERER_TIMEOUT' }) })
+    await expect(navigate(app, { root, mode: 'new' })).rejects.toBeTruthy()
+    expect(app.manage).not.toHaveBeenCalled()
+  })
+
   it('reuses only the most recent exact window and preserves unspecified state', async () => {
     const app = host([entry('unrelated', [root, '/other']), entry('recent', [root]), entry('older', [root])])
     expect(await navigate(app, { root, path: join(root, 'Mochi') })).toMatchObject({ window: 'recent', created: false })

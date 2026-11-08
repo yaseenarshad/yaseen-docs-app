@@ -84,5 +84,8 @@ async function performNavigation(host: NavigationHost, input: NavigationInput) {
   host.raise(window)
   const applied = await host.apply(window, target)
   if (resolved.workspace) await host.usedWorkspace(resolved.workspace)
-  return { window, roots: resolved.roots, missing: resolved.missing, created: !reuse, applied }
+  // A start window holds no vault and nothing to save. Once the new window applies, it is not left behind (a cold start opens one).
+  const closedStartWindows = reuse ? [] : live.filter(entry => entry.roots.length === 0).map(entry => entry.id)
+  for (const id of closedStartWindows) await host.manage?.(id, 'close')
+  return { window, roots: resolved.roots, missing: resolved.missing, created: !reuse, applied, closedStartWindows }
 }
