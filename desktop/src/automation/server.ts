@@ -64,15 +64,17 @@ export async function startAutomationServer(profile: string, prepare: (request: 
     socket.on('error', () => {})
     socket.setTimeout(AUTOMATION_LIMITS.waitMs, () => socket.destroy())
     void (async () => {
-      let reserved = 0
+      let reserved = 0, checked: AutomationRequest | undefined
       try {
+        // The control frame is checked once, before its content is read; the content is reserved until the reply.
         const packet = await readPacket(socket, (control, bytes) => {
-          validate(control, connection)
+          checked = validate(control, connection)
           if (contentInFlight + bytes > AUTOMATION_LIMITS.inFlightContentBytes) throw new AutomationFailure('BUSY', 'Too much content is in flight. No request was accepted.')
           reserved = bytes
           contentInFlight += reserved
         })
-        const request = validate(packet.control, connection)
+        const request = checked as AutomationRequest | undefined
+        if (!request) throw new AutomationFailure('BAD_REQUEST', 'Expected a request object.')
         if (request.command === 'request.status') {
           validateInput(commandDefinition('request.status').input, request.args)
           if (packet.content.length) throw new AutomationFailure('INVALID_INPUT', 'Receipt inspection accepts no content.')

@@ -27,27 +27,21 @@ export function registerAutomationIpc(store: Store, windows: WindowManager): Nav
     if (!reply.ok && (!reply.error || typeof reply.error.code !== 'string' || typeof reply.error.message !== 'string')) return
     requests.reply(event.sender.id, reply)
   })
+  const findWindow = (id: string) => BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && windows.idFor(win.webContents) === id)
+  const liveWindow = (id: string) => {
+    const window = findWindow(id)
+    if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window is not live.')
+    return window
+  }
   return {
     state: () => store.get(), windows: () => windows.automationWindows(),
     open: options => windows.openAutomationWindow(options),
     raise: id => { windows.showWindow(id) },
-    apply: async (id, target) => {
-      const window = BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && windows.idFor(win.webContents) === id)
-      if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window closed.')
-      return requests.navigate(window.webContents, target)
-    },
-    inspect: async (id, target) => {
-      const window = BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && windows.idFor(win.webContents) === id)
-      if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window closed.')
-      return requests.inspect(window.webContents, target)
-    },
-    operate: async (id, target) => {
-      const window = BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && windows.idFor(win.webContents) === id)
-      if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window closed.')
-      return requests.operate(window.webContents, target)
-    },
+    apply: async (id, target) => requests.navigate(liveWindow(id).webContents, target),
+    inspect: async (id, target) => requests.inspect(liveWindow(id).webContents, target),
+    operate: async (id, target) => requests.operate(liveWindow(id).webContents, target),
     closeStartWindow: async id => {
-      const window = BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && windows.idFor(win.webContents) === id)
+      const window = findWindow(id)
       if (!window) return false
       // A start window holds nothing to save. Wait until it is gone, so the caller's next read sees one window (YAZ-4565).
       const closed = new Promise<void>(done => { window.once('closed', () => done()); setTimeout(done, 5000).unref() })
@@ -56,8 +50,7 @@ export function registerAutomationIpc(store: Store, windows: WindowManager): Nav
       return true
     },
     manage: async (id, action, name) => {
-      const window = BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && windows.idFor(win.webContents) === id)
-      if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window is not live.')
+      liveWindow(id)
       if (action === 'show') { windows.showWindow(id); return { window: id, shown: true } }
       if (action === 'rename') {
         if (!windows.setName(id, name ?? null)) throw new AutomationFailure('INVALID_INPUT', 'The window name could not be set.')

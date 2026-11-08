@@ -10,7 +10,6 @@ export interface Operation {
 interface Entry {
   fingerprint: string
   issuedAt: number
-  contentBytes: number
   receipt: AutomationReceipt
   operation: Operation
   promise: Promise<AutomationResult>
@@ -31,13 +30,12 @@ function canonical(value: unknown): string {
   return JSON.stringify(value)
 }
 
-/** Four active operations, bounded queue and small receipts. No timers or persistent replay journal. */
+/** Four active operations, bounded queue and small receipts. No timers or persistent replay journal. The server bounds the content in flight. */
 export class RequestQueue {
   private readonly entries = new Map<string, Entry>()
   private readonly queue: Entry[] = []
   private readonly locked = new Set<string>()
   private active = 0
-  private contentBytes = 0
   private closing = false
   private forgottenThrough = 0
   private drained: (() => void)[] = []
@@ -61,7 +59,6 @@ export class RequestQueue {
       return Promise.resolve(existing.receipt.result ?? { ok: true, value: existing.receipt })
     }
     if (request.issuedAt <= this.forgottenThrough) throw new AutomationFailure('UNKNOWN_REQUEST', 'The receipt may have expired. Inspect state before another mutation.')
-    if (this.contentBytes + content.length > AUTOMATION_LIMITS.inFlightContentBytes) throw new AutomationFailure('BUSY', 'Too much content is in flight. No request was accepted.')
     // Count queued work independently: requests blocked on a resource must not exceed the queue bound.
     const operation = prepare()
     const waiting = this.queue.flatMap(entry => entry.operation.writes)
@@ -69,8 +66,7 @@ export class RequestQueue {
     if (!canStart && this.queue.length >= AUTOMATION_LIMITS.queued) throw new AutomationFailure('BUSY', 'The request queue is full. No request was accepted.')
     let resolve!: Entry['resolve']
     const promise = new Promise<AutomationResult>(done => { resolve = done })
-    const entry: Entry = { fingerprint, issuedAt: request.issuedAt, contentBytes: content.length, receipt: { id: request.id, state: 'queued' }, operation, promise, resolve }
-    this.contentBytes += content.length
+    const entry: Entry = { fingerprint, issuedAt: request.issuedAt, receipt: { id: request.id, state: 'queued' }, operation, promise, resolve }
     this.entries.set(request.id, entry)
     this.queue.push(entry)
     this.pump()
@@ -120,7 +116,6 @@ export class RequestQueue {
   }
 
   private complete(entry: Entry, result: AutomationResult): void {
-    this.contentBytes -= entry.contentBytes
     entry.operation.writes.forEach(key => this.locked.delete(key))
     this.active--
     let bytes: Buffer
