@@ -23,7 +23,7 @@
  *
  * Feed: the window's ONE `WikilinkResolveSource`, so the view costs no fetch or watcher of its own.
  */
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
@@ -69,6 +69,8 @@ export interface FolderViewProps {
   onOpenFile: (path: string) => void
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
+  /** A full editor on a note, for the table's note window (YAZ-4547): handed to `ViewsPane` as `FolderHost.renderNoteEditor`. */
+  renderNoteEditor?: (path: string) => ReactNode
   wikilinkCandidates?: WikilinkCandidateSource
   newNoteFolderFor?: (sourcePath: string) => string
   /** App's `notify`; the views' moves give it their Undo (YAZ-4541 S6). */
@@ -123,6 +125,7 @@ export function FolderView({
   onOpenFile,
   onOpenFileRight,
   onOpenFileBackground,
+  renderNoteEditor,
   wikilinkCandidates,
   newNoteFolderFor,
   onNotice,
@@ -369,6 +372,7 @@ export function FolderView({
       if (!locked.has(note)) onRetitle(note, title, 'file')
     },
     openRight: onOpenFileRight,
+    renderNoteEditor,
     openBackground: onOpenFileBackground,
     onNotice,
     wikilinks: source,

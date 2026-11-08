@@ -33,6 +33,7 @@ import { NO_READ_ONLY, READ_ONLY_TIP, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 import type { FolderHost } from '../ViewsPane'
+import type { NoteWindowLink } from './NoteWindow'
 
 export interface TableViewProps {
   /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
@@ -54,6 +55,10 @@ export interface TableViewProps {
   onOpenFileRight?: (path: string) => void
   /** A row page action opens without replacing the current tab. */
   onOpenFileBackground?: (path: string) => void
+  /** The row menu's "Open in a window" (YAZ-4547): the card over the folder page. Absent: no such item. */
+  onOpenWindow?: (path: string) => void
+  /** The card's link (YAZ-4547 D16): the table hands it its rows in display order, and marks the card's row. */
+  windowLink?: NoteWindowLink
   /** Passive reporting for a stale or failed OS action. */
   onNotice?: (message: string) => void
   /** A drop on another section: `groupBy.property = value` (undefined deletes) via ViewsPane (5C, GRO-2143); `drop` says which LEVEL, and carries the outer's write on a cross-outer inner drop (YAZ-1101). */
@@ -105,6 +110,8 @@ const FALLBACK_VIEWPORT = 600
 const GUTTER_WIDTH = 44
 /** The header drag's own payload (YAZ-1548) — `ViewTabs`' `VIEW_TAB_MIME` idiom; never `text/plain`, so a stray text drop is not a reorder. */
 const COLUMN_MIME = 'application/x-yaseen-table-column'
+/** The row of the note the note window shows (YAZ-4547). */
+const CURRENT_ROW = 'view-table__row--current'
 
 /** One display line: a group header row (`depth` = its level, 0 at the top: YAZ-745, YAZ-4531), or a data row with its `data-cell` row index (data rows only), its `#` gutter number `n` (YAZ-1513) and its group (null when ungrouped). `at` places that group for the level-aware drag / "+" (YAZ-1101). */
 type Line = { header: Group; gk: string; depth: number; at: GroupSpot } | { row: Row; r: number; n: number; g: Group | null; gk: string | null; at: GroupSpot | null }
@@ -142,7 +149,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
@@ -284,6 +291,37 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const visible = lines.slice(first, first + count)
   /** The roving-tabindex entry: the first data row in the mounted slice. */
   const firstDataRow = visible.find((l): l is Extract<Line, { row: Row }> => 'row' in l)?.r
+  // The note window (YAZ-4547 D16): the rows it steps through, read at its step, and the mark of its row. A step writes
+  // the mark on the DOM, so the table does not render for it; a render of the table draws the same mark from `current`.
+  if (windowLink !== undefined) {
+    windowLink.rows = flat
+    windowLink.show = () => {
+      const wrap = wrapRef.current
+      if (wrap === null) return
+      const current = windowLink.current
+      let shown: HTMLElement | null = null
+      for (const tr of wrap.querySelectorAll<HTMLElement>('tbody > tr[data-hover-item]')) {
+        const on = tr.dataset.hoverItem === current
+        tr.classList.toggle(CURRENT_ROW, on)
+        if (on) shown ??= tr
+      }
+      if (current === null) return
+      if (shown !== null) shown.scrollIntoView?.({ block: 'nearest' })
+      else if (windowed) {
+        // Windowed out of the mounted slice: scroll the wrap to the row's line, which mounts it.
+        const at = lines.findIndex((l) => 'row' in l && l.row.record.path === current)
+        if (at !== -1) wrap.scrollTop = Math.max(0, at * rowH - (wrap.clientHeight - rowH) / 2)
+      }
+    }
+  }
+  useEffect(
+    () => () => {
+      if (windowLink === undefined) return
+      windowLink.rows = []
+      windowLink.show = () => {}
+    },
+    [windowLink],
+  )
 
   const startResize = (key: string) => (e: ReactMouseEvent) => {
     // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
@@ -485,7 +523,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               ) : (
                 <tr
                   key={rowKey(line)}
-                  className={line.gk !== null && dnd.over === line.gk ? 'view-table__row--drop' : undefined}
+                  className={[line.gk !== null && dnd.over === line.gk && 'view-table__row--drop', windowLink?.current === line.row.record.path && CURRENT_ROW].filter(Boolean).join(' ') || undefined}
                   {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)), ...dnd.target(line.g, line.at) })}
                   {...hover.itemProps(line.row.record.path)}
                   onContextMenu={openRowMenu(line.row.record)}
@@ -621,6 +659,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             onOpen={onOpenFile}
             onOpenRight={onOpenFileRight}
             onOpenBackground={onOpenFileBackground}
+            onOpenWindow={onOpenWindow}
             onNotice={onNotice}
             onClose={() => setRowMenu(null)}
             extra={

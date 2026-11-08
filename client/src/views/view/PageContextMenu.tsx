@@ -12,6 +12,8 @@ interface PageContextMenuProps {
   onOpen?: (path: string) => void
   onOpenRight?: (path: string) => void
   onOpenBackground?: (path: string) => void
+  /** "Open in a window" (YAZ-4547): the card over the folder page. Only the folder table passes it. */
+  onOpenWindow?: (path: string) => void
   onNotice?: (message: string) => void
   onClose: () => void
   /** A surface's own items, in a group after the page actions: the folder table's "Fill cell ›" and "Fill row ›" (YAZ-4536 D12). */
@@ -19,7 +21,7 @@ interface PageContextMenuProps {
 }
 
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
-export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose, extra }: PageContextMenuProps) {
+export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose, extra, onOpenWindow }: PageContextMenuProps) {
   const reveal = (): void => {
     onClose()
     api.shell.reveal({ path }).catch((error: unknown) => {
@@ -87,6 +89,19 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
           }}
         >
           Open in right panel
+        </button>
+      )}
+      {onOpenWindow !== undefined && (
+        <button
+          type="button"
+          className="ctx-menu__item"
+          role="menuitem"
+          onClick={() => {
+            onOpenWindow(path)
+            onClose()
+          }}
+        >
+          Open in a window
         </button>
       )}
     </>

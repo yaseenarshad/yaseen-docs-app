@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
@@ -269,6 +269,21 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
   const openFile = useCallback((to: string) => navigate(path, to), [navigate, path])
   return <RetainedEditor {...props} path={path} onOpenFile={openFile} />
 }
+
+/**
+ * App's newest editor props for a path, for the note window of a folder table (YAZ-4547 D14). A context, so
+ * `renderNoteEditor` stays one function for the window's life: no folder page renders again for it.
+ */
+const NoteWindowEditorProps = createContext<((path: string) => Omit<ComponentProps<typeof Editor>, 'path'>) | null>(null)
+
+/** The note window's editor: the editor a tab has, with all its parts (Properties, comments); memo, as a tab's is. */
+function NoteWindowEditor({ path }: { path: string }) {
+  const propsFor = useContext(NoteWindowEditorProps)
+  return propsFor === null ? null : <RetainedEditor {...propsFor(path)} path={path} />
+}
+
+/** `FolderHost.renderNoteEditor` (YAZ-4547): one function, so it never renders a folder page again. */
+const renderNoteEditor = (path: string) => <NoteWindowEditor path={path} />
 
 /**
  * A new window's boot tab starts with the page view main gave it (YAZ-2951 D5), when that tab shows
@@ -2929,6 +2944,8 @@ export function App() {
       viewOnlyLinks: scope.viewOnlyLinks,
       properties: scope.properties,
       onOpenFileRight: openRight,
+      // YAZ-4547: a folder table opens a row in a window with the same editor.
+      renderNoteEditor,
       onRetitle: requestRetitle,
       sync: scope.sync.status,
       onSyncNow: scope.sync.syncNow,
@@ -2983,6 +3000,13 @@ export function App() {
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }
   }
+
+  /**
+   * The note window's editor props (YAZ-4547): a tab's. A link in the card opens in a background tab, as in a
+   * review's layer, so the card stays on its note. Not the right panel's one owner per file: the note's tabs stay open,
+   * and the twin rule (`lib/twinEditors.ts`) keeps the two copies in step.
+   */
+  const noteWindowEditorProps = (path: string) => ({ ...editorPropsFor(path), onOpenFile: openBackground, onOpenFileBackground: openBackground, onOpenLinkBackground: openBackgroundCopy })
 
   // While a review is open (YAZ-2322) the main pane shows ITS note, not the active tab's page.
   // The tabs, their history and the right panel are not touched: closing the review uncovers them.
@@ -3143,6 +3167,7 @@ export function App() {
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
     <VaultLinksContext.Provider value={vaultLinks}>
+    <NoteWindowEditorProps.Provider value={noteWindowEditorProps}>
     <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
@@ -3614,6 +3639,7 @@ export function App() {
         />
       )}
     </div>
+    </NoteWindowEditorProps.Provider>
     </VaultLinksContext.Provider>
     </IconsContext.Provider>
   )

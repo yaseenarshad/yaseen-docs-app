@@ -880,6 +880,9 @@ export function setCellNotePinnedAtStart(on: boolean): void {
   pinnedAtStart = on
 }
 
+/** Whether a new card starts pinned: the folder table's note window reads it too (YAZ-4547). */
+export const cellNotePinnedAtStart = (): boolean => pinnedAtStart
+
 /** The new cell note template (Settings › Editor › Tables › New cell note starts with), as Markdown; App sets it. */
 let template = ''
 
