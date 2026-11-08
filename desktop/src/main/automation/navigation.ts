@@ -17,6 +17,8 @@ export interface NavigationHost {
   operate(id: string, target: FileOperationTarget): Promise<unknown>
   usedWorkspace(id: string): Promise<void>
   manage?(id: string, action: 'show' | 'close' | 'rename', name?: string | null): Promise<unknown>
+  /** Close a window with no vault and resolve once it is gone; false when it was already gone (YAZ-4565). */
+  closeStartWindow?(id: string): Promise<boolean>
 }
 
 const navigationChains = new WeakMap<NavigationHost, Promise<unknown>>()
@@ -84,8 +86,9 @@ async function performNavigation(host: NavigationHost, input: NavigationInput) {
   host.raise(window)
   const applied = await host.apply(window, target)
   if (resolved.workspace) await host.usedWorkspace(resolved.workspace)
-  // A start window holds no vault and nothing to save. Once the new window applies, it is not left behind (a cold start opens one).
-  const closedStartWindows = reuse ? [] : live.filter(entry => entry.roots.length === 0).map(entry => entry.id)
-  for (const id of closedStartWindows) await host.manage?.(id, 'close')
+  // A start window holds no vault and nothing to save. A new window replaces it, as opening a folder from it does in the
+  // app; a cold start opens one. The reply waits until it is gone. One that a concurrent call already closed is skipped.
+  const closedStartWindows: string[] = []
+  if (!reuse) for (const entry of live.filter(entry => entry.roots.length === 0)) if (await host.closeStartWindow?.(entry.id)) closedStartWindows.push(entry.id)
   return { window, roots: resolved.roots, missing: resolved.missing, created: !reuse, applied, closedStartWindows }
 }

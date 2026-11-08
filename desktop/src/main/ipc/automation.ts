@@ -46,6 +46,15 @@ export function registerAutomationIpc(store: Store, windows: WindowManager): Nav
       if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window closed.')
       return requests.operate(window.webContents, target)
     },
+    closeStartWindow: async id => {
+      const window = BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && windows.idFor(win.webContents) === id)
+      if (!window) return false
+      // A start window holds nothing to save. Wait until it is gone, so the caller's next read sees one window (YAZ-4565).
+      const closed = new Promise<void>(done => { window.once('closed', () => done()); setTimeout(done, 5000).unref() })
+      windows.closeWindow(id)
+      await closed
+      return true
+    },
     manage: async (id, action, name) => {
       const window = BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && windows.idFor(win.webContents) === id)
       if (!window) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window is not live.')
