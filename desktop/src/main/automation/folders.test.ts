@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { VIEW_OPTIONS } from '@shared/folderViews'
@@ -33,8 +33,8 @@ beforeEach(async () => {
 afterEach(async () => { _evictAll(); await removeVault(root) })
 
 it('declares closed input and output schemas for every folder and ID command', () => {
-  const unit = AUTOMATION_COMMANDS.filter(command => /^(folder|folderView|shortcut|ids)\./.test(command.name) && command.name !== 'folder.create')
-  expect(unit.map(command => command.name)).toHaveLength(19)
+  const unit = AUTOMATION_COMMANDS.filter(command => /^(folder|folderView|folderColumn|folderFormula|shortcut|ids)\./.test(command.name) && command.name !== 'folder.create')
+  expect(unit.map(command => command.name)).toHaveLength(23)
   for (const command of unit) {
     expect(command.input.additionalProperties, command.name).toBe(false)
     expect(command.output.additionalProperties, command.name).toBe(false)
@@ -114,6 +114,61 @@ describe('folder pages', () => {
     await expect(run('folder.setProperty', { revision: page.revision, name: 'Owner', value: 1 })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
     page = await run('folder.removeProperty', { revision: page.revision, name: 'owner' })
     expect(page.properties).toEqual({})
+  })
+})
+
+describe('folder columns and formulas (YAZ-4518)', () => {
+  it('declares and changes a column with the kind rule, and refuses built-in keys', async () => {
+    let page = await run('folderColumn.set', { revision: null, key: 'priority', definition: { kind: 'select', options: ['High', 'Low'], target: ' ignored ' } })
+    expect(page).toMatchObject({ created: true, column: 'priority', columns: { status: { kind: 'select' }, priority: { kind: 'select', options: ['High', 'Low'] } } })
+    expect(page.columns.priority.target).toBeUndefined()
+    page = await run('folderColumn.set', { revision: page.revision, key: 'priority', definition: { kind: 'link', target: ' Projects ', options: ['High'] } })
+    expect(page.columns.priority).toEqual({ kind: 'link', target: 'Projects' })
+    await expect(run('folderColumn.set', { revision: 'stale', key: 'priority', definition: { kind: 'text' } })).rejects.toMatchObject({ code: 'CONFLICT' })
+    for (const key of ['title', 'also_in', 'file.name', 'formula.x', 'Bad Key']) await expect(run('folderColumn.set', { revision: page.revision, key, definition: { kind: 'text' } })).rejects.toMatchObject({ code: 'RESERVED_PROPERTY' })
+    page = await run('folderColumn.setLabel', { revision: page.revision, key: 'priority', label: 'Priority level' })
+    expect(page.labels).toEqual({ priority: { displayName: 'Priority level' } })
+    page = await run('folderColumn.setLabel', { revision: page.revision, key: 'note.priority', label: null })
+    expect(page.labels).toEqual({})
+  })
+
+  it('deletes a column everywhere: declaration, views and label first, then each note’s value', async () => {
+    await writeFile(join(dir, '.folder.md'), '---\nid: TST-3\nfolder_settings:\n  columns:\n    priority:\n      kind: number\n  properties:\n    priority:\n      displayName: P\n  views:\n    - type: table\n      name: Table\n      order: [file.name, note.priority]\n      sort:\n        - property: note.priority\n          direction: DESC\n---\n')
+    const note = (name: string) => join(dir, name)
+    await writeFile(note('a.md'), '---\nid: TST-4\nin:\n  TST-3:\n    priority: 2\n    status: open\n---\nA\n')
+    await writeFile(note('b.md'), '---\nid: TST-5\nin:\n  TST-3:\n    priority: 1\n---\nB\n')
+    const read = await run('folder.read')
+    await expect(run('folderColumn.remove', { revision: read.revision, key: 'file.name', confirm: true })).rejects.toMatchObject({ code: 'RESERVED_PROPERTY' })
+    const removed = await run('folderColumn.remove', { revision: read.revision, key: 'priority', confirm: true })
+    expect(removed).toMatchObject({ column: 'priority', cleared: 2, failed: [], columns: {}, labels: {}, views: [{ type: 'table', name: 'Table', order: ['file.name'] }] })
+    expect(removed.views[0].sort).toBeUndefined()
+    expect(await readFile(note('a.md'), 'utf8')).toBe('---\nid: TST-4\nin:\n  TST-3:\n    status: open\n---\nA\n')
+    expect(await readFile(note('b.md'), 'utf8')).not.toContain('priority')
+    expect(() => validateInput(commandDefinition('folderColumn.remove').input, { root, path: dir, revision: removed.revision, key: 'x', confirm: false })).toThrow()
+  })
+
+  it('reports the notes that kept their value as a partial failure', async () => {
+    await writeFile(join(dir, '.folder.md'), '---\nid: TST-3\nfolder_settings:\n  columns:\n    priority:\n      kind: number\n  views:\n    - type: table\n      name: Table\n---\n')
+    const locked = join(dir, 'Locked'); await mkdir(locked)
+    await writeFile(join(dir, 'a.md'), '---\nid: TST-4\nin:\n  TST-3:\n    priority: 2\n---\n')
+    await writeFile(join(locked, 'c.md'), '---\nid: TST-6\nin:\n  TST-3:\n    priority: 3\n---\n')
+    const read = await run('folder.read')
+    await chmod(locked, 0o555)
+    try {
+      await expect(run('folderColumn.remove', { revision: read.revision, key: 'priority', confirm: true })).rejects.toMatchObject({ code: 'PARTIAL_FAILURE', details: { cleared: 1, failed: [{ path: join(locked, 'c.md') }], columns: {} } })
+    } finally { await chmod(locked, 0o755) }
+    expect(await readFile(join(dir, 'a.md'), 'utf8')).not.toContain('priority')
+    expect(await readFile(join(locked, 'c.md'), 'utf8')).toContain('priority: 3')
+  })
+
+  it('sets a formula and removes it with every reference', async () => {
+    let page = await run('folderFormula.set', { revision: null, name: 'score', expression: 'priority * 2' })
+    expect(page).toMatchObject({ formula: 'score', formulas: { score: 'priority * 2' } })
+    page = await run('folderView.setOptions', { revision: page.revision, view: 'Table', changes: { order: ['file.name', 'formula.score'], sort: [{ property: 'formula.score', direction: 'ASC' }] } })
+    page = await run('folderFormula.set', { revision: page.revision, name: 'score', expression: null })
+    expect(page.formulas).toEqual({})
+    expect(page.views[0]).toEqual({ type: 'table', name: 'Table', order: ['file.name'] })
+    await expect(run('folderFormula.set', { revision: page.revision, name: '2bad', expression: 'x' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
   })
 })
 

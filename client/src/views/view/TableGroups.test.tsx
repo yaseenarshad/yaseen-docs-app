@@ -82,7 +82,12 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
     )
   draw()
   const el = container
-  return { el, onChange, onOpenFile, yaml: () => serializeViews(parsed) }
+  /** An outside edit of the file: the page is handed a new def, as the folder host does when disk wins. */
+  const setText = (next: string) => {
+    parsed = parseViews(next)
+    draw()
+  }
+  return { el, onChange, onOpenFile, setText, yaml: () => serializeViews(parsed) }
 }
 
 function unmount(): void {
@@ -338,6 +343,23 @@ describe('collapse', () => {
     click(el.querySelector('.confirm__btn--danger') as HTMLElement)
     expect(groupStore.has('/vault|/vault/pillars.md::Grid')).toBe(false)
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::Grid', [])
+  })
+})
+
+describe('outside view renames (YAZ-4518)', () => {
+  it('reads the moved entry after an outside rename, and a later view of the old name starts open', () => {
+    const { el, setText } = mount(TWO_VIEWS)
+    click(toggleOf(el, 'idea'))
+    expect(toggleOf(el, 'idea').getAttribute('aria-expanded')).toBe('false')
+    // The CLI renames T → Grid: main moves the stored entry, then the page receives the renamed file.
+    groupStore.delete('/vault|/vault/pillars.md::T')
+    groupStore.set('/vault|/vault/pillars.md::Grid', ['v:idea'])
+    setText(TWO_VIEWS.replace('name: T\n', 'name: Grid\n'))
+    expect(toggleOf(el, 'idea').getAttribute('aria-expanded')).toBe('false')
+    // A view named T again: nothing of the old T is left in the page.
+    groupStore.delete('/vault|/vault/pillars.md::Grid')
+    setText(TWO_VIEWS)
+    expect(toggleOf(el, 'idea').getAttribute('aria-expanded')).toBe('true')
   })
 })
 

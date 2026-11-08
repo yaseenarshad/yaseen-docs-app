@@ -2,15 +2,16 @@ import { stat } from 'node:fs/promises'
 import { basename, dirname, relative } from 'node:path'
 import { AutomationFailure } from '@shared/automation'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
-import { folderSettingsOf, folderSettingsValue } from '@shared/folderSettings'
+import { columnChange, folderSettingsOf, folderSettingsValue } from '@shared/folderSettings'
+import { canonicalKey, declarationForKind, notesHolding, pruneColumnFromViews, pruneColumnLabel, setDisplayName, undeletableReason } from '@shared/folderColumns'
 import { addView, deleteView, duplicateView, moveView, renameView, setViewOptions, uniqueViewName, ViewOptionError, type ViewSet } from '@shared/folderViews'
-import { FOLDER_VALUES_KEY } from '@shared/folderValues'
+import { FOLDER_VALUES_KEY, setFolderValue } from '@shared/folderValues'
 import { foldersById } from '@shared/folderRecords'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY } from '@shared/noteId'
 import { reservedKeys } from '@shared/reservedKeys'
 import { dropStaleFolderValues, foldersShowing, heldFolderId, idsUnder, isShortcut, valuesLeftByShortcut, withShortcut, withoutShortcut, type ContentTransform } from '@shared/shortcuts'
-import { PROPERTY_NAME, folderSettingsPath, rootOfPath, type AppState } from '@shared/types'
+import { PROPERTY_NAME, folderSettingsPath, rootOfPath, type AppState, type PropertyDecl } from '@shared/types'
 import { isMarkdown } from '@shared/fileKind'
 import { createDurable, fsCall } from '../fs/fsUtils'
 import { writeFile } from '../fs/file'
@@ -80,7 +81,7 @@ const viewChange = (ids: boolean, mutate: (d: ViewSet) => void): ContentTransfor
   const settings = folderSettingsOf(parseFrontmatter(splitFrontmatter(content).frontmatter).properties, ids)
   const d: ViewSet = structuredClone({ views: settings.views, defaultView: settings.defaultView, properties: settings.properties, formulas: settings.formulas })
   mutate(d)
-  return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, folderSettingsValue({ ...settings, views: d.views, defaultView: d.defaultView }))
+  return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, folderSettingsValue({ ...settings, views: d.views, defaultView: d.defaultView, properties: d.properties, formulas: d.formulas }))
 }
 
 /** Each view's collapsed groups are app state keyed by its name (`ViewsPane.moveCollapsed`): a rename carries them, a delete drops them. */
@@ -217,11 +218,71 @@ export async function savedViewName(roots: readonly string[], dir: string, name:
   return views[viewIndex(views, name)].name
 }
 
+const FORMULA_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/** One note's value of the deleted column leaves this folder's block, against fresh bytes, retried once on a conflict; quiet, as the UI's strip is. */
+async function stripValue(path: string, folderId: string, key: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    const file = await readSaved(path)
+    const content = setFolderValue(file.content, folderId, key, undefined)
+    if (content === file.content) return
+    try { await writeFile({ path, content, expectedMtime: file.mtime }); await indexWrote(path); return }
+    catch (error) { if ((error as { code?: string }).code !== 'CONFLICT' || attempt > 0) throw error }
+  }
+}
+
+/** The Properties menu's column edits (YAZ-1513, YAZ-1549) and a named formula, through the shared column rules. */
+async function columnCommand(page: Page, command: string, args: Record<string, unknown>, record: SavedCallback) {
+  if (command === 'folderFormula.set') {
+    const name = args.name as string, expression = args.expression as string | null
+    if (!FORMULA_NAME.test(name)) throw new AutomationFailure('INVALID_INPUT', 'A formula name is letters, digits and underscores, not starting with a digit.')
+    if (expression !== null && expression.trim() === '') throw new AutomationFailure('INVALID_INPUT', 'Supply an expression, or null to remove the formula.')
+    return { ...await writePage(page, args.revision, viewChange(page.ids, d => {
+      const formulas = { ...d.formulas }
+      if (expression !== null) formulas[name] = expression
+      else {
+        delete formulas[name]
+        // A removed formula leaves no reference behind: the column delete's own pruning.
+        d.views = pruneColumnFromViews(d.views, `formula.${name}`)
+        d.properties = pruneColumnLabel(d.properties, `formula.${name}`)
+      }
+      d.formulas = Object.keys(formulas).length ? formulas : undefined
+    }), record), formula: name }
+  }
+  const key = args.key as string
+  if (command === 'folderColumn.setLabel') return { ...await writePage(page, args.revision, viewChange(page.ids, d => setDisplayName(d, key, (args.label as string | null) ?? '')), record), column: key }
+  const bare = canonicalKey(key).slice('note.'.length)
+  const reason = undeletableReason(key) ?? (reservedKeys(page.ids).has(bare) ? 'Built-in column' : null)
+  if (reason !== null || !PROPERTY_NAME.test(bare)) throw new AutomationFailure('RESERVED_PROPERTY', `${canonicalKey(key)} is not a folder column the app lets you ${command === 'folderColumn.set' ? 'declare' : 'delete'}.`)
+  if (command === 'folderColumn.set') {
+    const definition = args.definition as PropertyDecl
+    // "+ Add column" and the Type select's one kind rule: fields of another kind never ride along.
+    const next = declarationForKind({ ...definition, ...(definition.target === undefined ? {} : { target: definition.target.trim() }) }, definition.kind)
+    try { return { ...await writePage(page, args.revision, columnChange(bare, next, describe(page).columns[bare], page.ids), record), column: bare } }
+    // The shared rule refuses an invalid definition with a plain error; a write's own failures keep their codes.
+    catch (error) { throw (error as { code?: string }).code === undefined ? new AutomationFailure('INVALID_INPUT', (error as Error).message) : error }
+  }
+  // "Delete column…" (YAZ-1513): settings first, awaited; then this folder's value leaves each note holding it.
+  const result = await writePage(page, args.revision, content => {
+    const settings = folderSettingsOf(parseFrontmatter(splitFrontmatter(content).frontmatter).properties, page.ids)
+    const { [bare]: _gone, ...columns } = settings.columns
+    return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, folderSettingsValue({ ...settings, columns, views: pruneColumnFromViews(settings.views, key), properties: pruneColumnLabel(settings.properties, key) }))
+  }, record)
+  const folderId = heldFolderId(page.content)
+  const holding = folderId === undefined ? [] : notesHolding((await getIndex(page.root, { readOnly: true })).records, folderId, key)
+  const outcomes = await Promise.allSettled(holding.map(note => stripValue(note.path, folderId!, bare)))
+  const failed = outcomes.flatMap((outcome, i) => outcome.status === 'rejected' ? [{ path: holding[i].path, reason: String((outcome.reason as Error)?.message ?? outcome.reason) }] : [])
+  const report = { ...result, column: bare, cleared: holding.length - failed.length, failed }
+  if (failed.length) throw new AutomationFailure('PARTIAL_FAILURE', `The column left the folder, but ${failed.length} of ${holding.length} notes kept its value.`, report)
+  return report
+}
+
 export async function folderCommand(state: AppState, store: Pick<Store, 'get' | 'setBaseGroups'>, command: string, args: Record<string, unknown>, record: SavedCallback): Promise<unknown> {
   // The folder is named by path or folder ID: `name` is the view's or the property's here.
   const page = await pageOf(state, { workspace: args.workspace, root: args.root, roots: args.roots, path: args.path, id: args.id } as ResourceScope & TargetInput)
   if (command === 'folder.read') return describe(page)
   if (command.startsWith('folderView.')) return viewCommand(store, page, command, args, record)
   if (command.startsWith('shortcut.')) return shortcutCommand(page, command, args, record)
+  if (command.startsWith('folderColumn.') || command === 'folderFormula.set') return columnCommand(page, command, args, record)
   return propertyCommand(page, command, args, record)
 }

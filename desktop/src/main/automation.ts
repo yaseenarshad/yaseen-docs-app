@@ -55,6 +55,7 @@ function prepare(context: { profile: string; version: string; packaged?: boolean
   if (request.command.startsWith('editor.')) return { writes: ['navigation', 'documents'], run: () => editorCommand(context.navigation!, request.command, request.args, content) }
   switch (request.command) {
     case 'folder.read': case 'folder.setProperty': case 'folder.removeProperty': case 'shortcut.list': case 'shortcut.add': case 'shortcut.remove':
+    case 'folderColumn.set': case 'folderColumn.setLabel': case 'folderColumn.remove': case 'folderFormula.set':
     case 'folderView.add': case 'folderView.rename': case 'folderView.duplicate': case 'folderView.remove': case 'folderView.move': case 'folderView.setOptions': case 'folderView.setDefault':
       return { writes: definition.effect === 'read' ? [] : ['documents', 'configuration'], run: () => folderCommand(context.state!(), context.store!, request.command, request.args, record) }
     case 'ids.state': case 'ids.enable': case 'ids.disable': case 'ids.reletter': case 'ids.backfill': case 'ids.check':

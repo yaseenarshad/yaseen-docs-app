@@ -59,6 +59,10 @@ export interface ViewSet {
   [extra: string]: unknown
 }
 
+/** A view's grouping levels, outer first, whichever form `groupBy` is written in. */
+export const groupByLevels = (view: ViewDef): GroupBySpec[] =>
+  Array.isArray(view.groupBy) ? view.groupBy : view.groupBy ? [view.groupBy] : []
+
 /** The kinds "+" offers, in menu order; a kind's label is its type, capitalised. */
 export const VIEW_TYPES = ['table', 'board', 'cards', 'list', 'outline'] as const
 export const viewTypeLabel = (type: string): string => type.charAt(0).toUpperCase() + type.slice(1)

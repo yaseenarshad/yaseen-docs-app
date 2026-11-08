@@ -5,6 +5,7 @@ import { getFavorites, updateFavorites } from '../favorites'
 import { getFocus, updateFocus } from '../focus'
 import { absolute, resolveTarget, scopeRoots } from './resources'
 import { allowPictureFolder } from '../pictureFolderActions'
+import { serializeFile } from '../fs/revision'
 
 const page = <T>(items: readonly T[], args: Record<string, unknown>) => {
   const offset = args.offset as number ?? 0, limit = args.limit as number ?? 50
@@ -78,31 +79,35 @@ export async function configurationCommand(store: Store, command: string, args: 
     await store.flush()
     return { session: result, diskSaved: true }
   }
-  if (command.startsWith('collection.')) {
-    const { roots: [root] } = await scopeRoots(store.get(), { root: args.root as string })
-    const kind = args.kind as 'favorites' | 'focus', scope = args.scope as ListScope
-    const read = kind === 'favorites' ? getFavorites : getFocus
-    if (command === 'collection.list') return { root, kind, scope, ...page(await read(root, scope), args) }
-    const raw = (args.paths as string[]).map(absolute)
-    const paths = [...new Set(raw)]
-    if (command === 'collection.reorder' && paths.length !== raw.length) throw new AutomationFailure('INVALID_INPUT', 'Reordering requires every member exactly once.')
-    // Removal also accepts a stale entry. Add and order must point to real members of this vault.
-    if (command !== 'collection.remove') for (const path of paths) await resolveTarget([root], { path })
-    const update = kind === 'favorites' ? updateFavorites : updateFocus
-    const items = await update(root, scope, current => {
-      if (command === 'collection.add') {
-        const next = [...new Set([...current, ...paths])]
-        if (next.length > (kind === 'favorites' ? MAX_FAVORITES : MAX_FOCUS)) throw new AutomationFailure('LIMIT_EXCEEDED', 'The collection is full. No items were added.')
-        return next
-      }
-      if (command === 'collection.remove') return current.filter(path => !paths.includes(path))
-      if (command === 'collection.reorder') {
-        if (paths.length !== current.length || current.some(path => !paths.includes(path))) throw new AutomationFailure('CONFLICT', 'Reordering requires every current member exactly once. Read the collection again.')
-        return paths
-      }
-      throw new AutomationFailure('UNKNOWN_COMMAND', 'Unknown collection operation.')
-    })
-    return { root, kind, scope, items, diskSaved: true }
-  }
+  // Changes of one list run in call order: validation awaits the disk, so the list lock alone would take them in completion order.
+  if (command.startsWith('collection.') && command !== 'collection.list') return serializeFile(`collection:${absolute(args.root as string)}:${args.kind}:${args.scope}`, () => collectionCommand(store, command, args))
+  if (command.startsWith('collection.')) return collectionCommand(store, command, args)
   throw new AutomationFailure('UNKNOWN_COMMAND', 'No configuration adapter exists for this command.')
+}
+
+async function collectionCommand(store: Store, command: string, args: Record<string, unknown>): Promise<unknown> {
+  const { roots: [root] } = await scopeRoots(store.get(), { root: args.root as string })
+  const kind = args.kind as 'favorites' | 'focus', scope = args.scope as ListScope
+  const read = kind === 'favorites' ? getFavorites : getFocus
+  if (command === 'collection.list') return { root, kind, scope, ...page(await read(root, scope), args) }
+  const raw = (args.paths as string[]).map(absolute)
+  const paths = [...new Set(raw)]
+  if (command === 'collection.reorder' && paths.length !== raw.length) throw new AutomationFailure('INVALID_INPUT', 'Reordering requires every member exactly once.')
+  // Removal also accepts a stale entry. Add and order must point to real members of this vault.
+  if (command !== 'collection.remove') for (const path of paths) await resolveTarget([root], { path })
+  const update = kind === 'favorites' ? updateFavorites : updateFocus
+  const items = await update(root, scope, current => {
+    if (command === 'collection.add') {
+      const next = [...new Set([...current, ...paths])]
+      if (next.length > (kind === 'favorites' ? MAX_FAVORITES : MAX_FOCUS)) throw new AutomationFailure('LIMIT_EXCEEDED', 'The collection is full. No items were added.')
+      return next
+    }
+    if (command === 'collection.remove') return current.filter(path => !paths.includes(path))
+    if (command === 'collection.reorder') {
+      if (paths.length !== current.length || current.some(path => !paths.includes(path))) throw new AutomationFailure('CONFLICT', 'Reordering requires every current member exactly once. Read the collection again.')
+      return paths
+    }
+    throw new AutomationFailure('UNKNOWN_COMMAND', 'Unknown collection operation.')
+  })
+  return { root, kind, scope, items, diskSaved: true }
 }
