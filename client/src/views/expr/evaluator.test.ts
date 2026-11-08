@@ -508,6 +508,12 @@ describe('link and regex methods', () => {
 })
 
 describe('file methods', () => {
+  it('a record with no file yet (times 0, the row of a folder with no `.folder.md`) has no Created or Modified, never 1970 (YAZ-3746 2D)', () => {
+    const none = scope({}, { file: new FileValue({ ...record, ctime: 0, mtime: 0 }) })
+    expect(ev('file.ctime', none)).toBeNull()
+    expect(ev('file.mtime', none)).toBeNull()
+  })
+
   it('hasTag is case-insensitive, nested-aware and # tolerant', () => {
     expect(ev('file.hasTag("tag")')).toBe(false)
     expect(ev('file.hasTag("book")')).toBe(true)

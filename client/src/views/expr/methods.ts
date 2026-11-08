@@ -30,8 +30,9 @@ const FILE_FIELDS: Record<string, (r: FileRecordLike) => Value> = {
   kind: r => (r.name === FOLDER_SETTINGS_FILE ? 'folder' : 'note'),
   ext: r => r.ext,
   size: r => r.size,
-  ctime: r => new DateValue(r.ctime, true),
-  mtime: r => new DateValue(r.mtime, true),
+  // 0 = no file yet: the row of a folder with no `.folder.md` (YAZ-4579 D31) has no dates, never 1970 (YAZ-3746 2D).
+  ctime: r => (r.ctime === 0 ? null : new DateValue(r.ctime, true)),
+  mtime: r => (r.mtime === 0 ? null : new DateValue(r.mtime, true)),
   tags: r => [...r.tags],
   links: r => r.links.map(l => new LinkValue(l)),
   embeds: r => r.embeds.map(l => new LinkValue(l)),
