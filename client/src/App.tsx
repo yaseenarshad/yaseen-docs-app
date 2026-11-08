@@ -1966,8 +1966,7 @@ export function App() {
     if (target.command === 'editor.action') return runEditorAction(target)
     if (target.command === 'board.export') return exportLiveImage(target)
     return operateFiles(target, {
-      scopeOf, notify, recordMoves, historyCounts, latestStep: () => moveHistory.current.inspect().undo.at(-1), popLatest: () => void moveHistory.current.undo(),
-      replaying, putBackStep, replayStep, trashMany, planMoves, runMoves, catalogForRename, renameWithUndo,
+      scopeOf, notify, recordMoves, historyCounts, replayStep, trashMany, planMoves, runMoves, catalogForRename, renameWithUndo,
     })
   })
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
@@ -2640,11 +2639,16 @@ export function App() {
    * on the undo list with what it cleared this time. One that moved nothing stays on the redo list,
    * as an undo does (audit 21).
    *
-   * One door for the keys, the toasts' buttons and the CLI's `file undo` / `file redo` (YAZ-4502):
-   * `busy` while one runs, null with nothing on the list, else what the step did.
+   * One door for the keys, the toasts' buttons and the CLI's `file undo` / `file redo` / `file restore` (YAZ-4502):
+   * `busy` while one runs, null with nothing on the list (or, with `only`, when the newest step is not a delete),
+   * else what the step did. An undone delete also answers the items that came back.
    */
-  const replayStep = useCallback((verb: 'undo' | 'redo'): Promise<StepOutcome & { step: 'move' | 'rename' | 'delete' }> | 'busy' | null => {
+  const replayStep = useCallback((verb: 'undo' | 'redo', only?: 'delete'): Promise<StepOutcome & { step: 'move' | 'rename' | 'delete'; restored?: DeleteStep['items'] }> | 'busy' | null => {
     if (replaying.current) return 'busy'
+    if (only !== undefined) {
+      const newest = moveHistory.current.inspect()[verb].at(-1)
+      if (newest === undefined || isMoveStep(newest) || newest.step !== only) return null
+    }
     const entry = verb === 'undo' ? moveHistory.current.undo() : moveHistory.current.redo()
     if (entry === undefined) return null
     replaying.current = true
@@ -2652,7 +2656,7 @@ export function App() {
       try {
         // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
         if (!isMoveStep(entry)) {
-          const outcome = entry.step === 'rename' ? await replayRename(entry, verb) : verb === 'undo' ? await putBackStep(entry).then(({ restored, failed }) => ({ done: restored.length, failed })) : await deleteAgain(entry)
+          const outcome = entry.step === 'rename' ? await replayRename(entry, verb) : verb === 'undo' ? await putBackStep(entry).then(({ restored, failed }) => ({ done: restored.length, failed, restored })) : await deleteAgain(entry)
           return { step: entry.step, ...outcome }
         }
         const run = await runMoves(verb === 'undo' ? invertMoves(entry.moves) : entry.moves, { record: false })

@@ -6,7 +6,7 @@ import { vaultDirs } from '../links/folderLinks'
 import { dropFolderValuesAfterCopy, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from '../links/shortcuts'
 import type { ViewOnlyCatalog } from '../links/viewOnlyCatalog'
 import { dirtyPaths, flushRenamedDir, flushRenamedPath } from '../lib/renameContinuity'
-import { isMoveStep, type DeleteStep, type MovedGesture, type StepOutcome, type UndoStep } from '../lib/moveHistory'
+import type { DeleteStep, MovedGesture, StepOutcome } from '../lib/moveHistory'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { basename } from '../lib/paths'
 import type { RenameTo } from '../sidebar/ConfirmRename'
@@ -21,11 +21,8 @@ export interface OrganizeActions {
   notify(text: string, kind?: NoticeKind, type?: NoticeType): void
   recordMoves(gesture: MovedGesture, text: string, skipped: boolean): void
   historyCounts(): { undo: number; redo: number }
-  latestStep(): UndoStep | undefined
-  popLatest(): void
-  replaying: { current: boolean }
-  putBackStep(entry: DeleteStep): Promise<{ restored: DeleteStep['items']; failed: string[] }>
-  replayStep(verb: 'undo' | 'redo'): Promise<StepOutcome & { step: 'move' | 'rename' | 'delete' }> | 'busy' | null
+  /** ⌘Z and ⌘⇧Z; with `only`, null unless the newest step is a delete. */
+  replayStep(verb: 'undo' | 'redo', only?: 'delete'): Promise<StepOutcome & { step: 'move' | 'rename' | 'delete'; restored?: DeleteStep['items'] }> | 'busy' | null
   trashMany(paths: readonly string[]): Promise<{ went: unknown[]; failed: string[] }>
   planMoves(list: readonly Move[]): { root: string; moves: Move[]; lost: LeftBehind } | 'between' | null
   runMoves(moves: Move[]): Promise<{ moves: Move[]; cleared: ClearedValues[]; failed: string[]; links: Links }>
@@ -56,25 +53,22 @@ async function replayHistory(verb: 'undo' | 'redo', actions: OrganizeActions) {
   const run = actions.replayStep(verb)
   if (run === 'busy') throw new AutomationFailure('BUSY', 'An organization history action is still running.')
   if (run === null) throw new AutomationFailure(verb === 'undo' ? 'NOTHING_TO_UNDO' : 'NOTHING_TO_REDO', `This window has no organization step to ${verb}.`)
-  const result = { ...(await run), history: actions.historyCounts() }
+  const { restored: _restored, ...outcome } = await run
+  const result = { ...outcome, history: actions.historyCounts() }
   if (result.done === 0) throw new AutomationFailure('HISTORY_STEP_FAILED', `The ${verb} changed nothing. Inspect file history before another step.`, result)
   if (result.failed.length > 0 || (result.links?.skipped ?? 0) > 0) throw new AutomationFailure('PARTIAL_FAILURE', `Part of the ${verb} failed.`, { ...result, diskSaved: true })
   return { ...result, diskSaved: true }
 }
 
-/** The undo of the latest step, only when it is a delete. */
+/** The undo of the latest step, only when it is a delete: ⌘Z's own delete branch. */
 async function restoreDelete(actions: OrganizeActions) {
-  if (actions.replaying.current) throw new AutomationFailure('BUSY', 'An organization history action is still running.')
-  const entry = actions.latestStep()
-  if (!entry || isMoveStep(entry) || entry.step !== 'delete') throw new AutomationFailure('NO_DELETE_TO_RESTORE', 'The latest organization step is not a restorable delete. Inspect file history first.')
-  actions.popLatest()
-  actions.replaying.current = true
-  try {
-    const restored = await actions.putBackStep(entry)
-    const result = { ...restored, history: actions.historyCounts(), diskSaved: restored.restored.length > 0 }
-    if (result.failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some Trash items could not be restored.', result)
-    return result
-  } finally { actions.replaying.current = false }
+  const run = actions.replayStep('undo', 'delete')
+  if (run === 'busy') throw new AutomationFailure('BUSY', 'An organization history action is still running.')
+  if (run === null) throw new AutomationFailure('NO_DELETE_TO_RESTORE', 'The latest organization step is not a restorable delete. Inspect file history first.')
+  const { restored = [], failed } = await run
+  const result = { restored, failed, history: actions.historyCounts(), diskSaved: restored.length > 0 }
+  if (failed.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some Trash items could not be restored.', result)
+  return result
 }
 
 async function trashFiles(paths: string[], actions: OrganizeActions) {
