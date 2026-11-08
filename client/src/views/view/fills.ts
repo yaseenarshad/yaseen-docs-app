@@ -75,23 +75,31 @@ export function noteLinkOf(record: IndexRecord, resolveLink: ResolveLink): strin
  * folder's `records`, so the list never holds more than the folder's notes times its columns (D3).
  */
 export function setViewFill(d: ViewSet, viewIndex: number, record: IndexRecord, column: string | undefined, fill: string | null, records: readonly IndexRecord[], resolveLink: ResolveLink): void {
+  setViewFills(d, viewIndex, [{ record, column }], fill, records, resolveLink)
+}
+
+/** The same write for several cells or rows at once (YAZ-4593: a fill on a selection): one pass over the list. */
+export function setViewFills(d: ViewSet, viewIndex: number, targets: readonly { record: IndexRecord; column?: string }[], fill: string | null, records: readonly IndexRecord[], resolveLink: ResolveLink): void {
   const view = d.views[viewIndex]
   const here = new Set(records.map((r) => r.path))
-  const slot = column === undefined ? ROW : canonicalKey(column)
   const checked = cellColor(fill)
-  const made: ViewFill | null = checked === null ? null : { note: noteLinkOf(record, resolveLink), ...(column === undefined ? {} : { column }), fill: checked }
+  /** Each target's `path` + slot → its new entry (null: no fill), in the targets' order. */
+  const made = new Map<string, ViewFill | null>()
+  for (const { record, column } of targets)
+    made.set(`${record.path}\n${column === undefined ? ROW : canonicalKey(column)}`, checked === null ? null : { note: noteLinkOf(record, resolveLink), ...(column === undefined ? {} : { column }), fill: checked })
   // A changed fill keeps its place in the list, so the YAML changes one line.
-  let placed = false
+  const placed = new Set<string>()
   const kept: unknown[] = []
   for (const entry of Array.isArray(view.fills) ? view.fills : []) {
     const read = readFill(entry, resolveLink)
     if (read === null || !here.has(read.path)) continue
-    const same = read.path === record.path && read.slot === slot
-    if (!same) kept.push(entry)
-    else if (!placed && made !== null) kept.push(made)
-    placed ||= same
+    const at = `${read.path}\n${read.slot}`
+    const next = made.get(at)
+    if (next === undefined) kept.push(entry)
+    else if (!placed.has(at) && next !== null) kept.push(next)
+    if (next !== undefined) placed.add(at)
   }
-  if (!placed && made !== null) kept.push(made)
+  for (const [at, next] of made) if (!placed.has(at) && next !== null) kept.push(next)
   if (kept.length > 0) view.fills = kept
   else delete view.fills
 }

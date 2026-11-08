@@ -24,7 +24,10 @@ import { PageContextMenu } from './PageContextMenu'
 import { FillMenu } from './FillMenu'
 import { filterValueItems, noteItems } from './rowMenuItems'
 import { withFilter } from './filterRows'
-import { cellFillOf, fillIndex, fillPaint, setViewFill } from './fills'
+import { cellFillOf, fillIndex, fillPaint, setViewFill, setViewFills } from './fills'
+import { SelectionMenu } from './SelectionMenu'
+import { type Pick, type TableSelection, cellRange, indicesOf, inSelection, parseTsv, pickLine, toTsv, valueFromText } from './tableSelection'
+import type { PropertyWrite } from '../writeProperty'
 import { TableHeaderMenu, wrapsColumn } from './TableHeaderMenu'
 import { useViewDefaults } from '../viewDefaults'
 import { orderOf } from './DirectionPicker'
@@ -95,15 +98,17 @@ export interface TableViewProps {
   valueCount: (key: string) => number
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
+  /** A bulk write on a selection (YAZ-4593): several values of one note in ONE guarded write, `FolderHost.writeValues`. */
+  onWriteValues: FolderHost['writeValues']
   /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
   /** The Name cell's commit (YAZ-2420 🔒 D19): the row's new title, through `FolderHost.retitle`. */
   onRetitle: (path: string, title: string) => void
   /** The app's own keys in this vault (`reservedKeys`): the header's "Add column" refuses them (YAZ-4544). */
   reservedKeys: ReadonlySet<string>
-  /** The row menu's "Duplicate note" (YAZ-4592 S26): `FolderHost.duplicate`. Absent: no such item. */
+  /** The row menu's "Duplicate note" (YAZ-4592 S26): `FolderHost.duplicate`; the selection menu's "Duplicate notes" calls it once per note (YAZ-4593). Absent: no such item, and that one is off. */
   onDuplicateNote?: (path: string) => void
-  /** "Delete note…" (YAZ-4592 S26): ViewsPane's `confirmDeleteNotes`, which asks first unless the setting is off. Absent: no such item. */
+  /** "Delete note…" (YAZ-4592 S26): ViewsPane's `confirmDeleteNotes`, which asks first unless the setting is off; the selection menu's "Delete notes…" too (YAZ-4593). Absent: no such item, and that one is off. */
   onDeleteNotes?: (paths: readonly string[]) => void
 }
 
@@ -133,6 +138,8 @@ const MAX_FROZEN_ROWS = 10
  * "+ New" row (YAZ-4539), so 10 rows always fit, at three levels with one row in each group.
  */
 const MAX_FROZEN_LINES = MAX_FROZEN_ROWS * (MAX_GROUP_LEVELS + 2)
+/** A selected cell, row number or header (YAZ-4593): an attribute React does not own, so a render never drops it. */
+const SELECTED = 'data-selected'
 
 /**
  * One display line: a group header row (`depth` = its level, 0 at the top: YAZ-745, YAZ-4531), or a data row with its
@@ -201,7 +208,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, reservedKeys, readOnly = NO_READ_ONLY, hover, onDuplicateNote, onDeleteNotes }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, reservedKeys, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
@@ -512,16 +519,193 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       else delete v.summaries
     })
 
-  /** Google-Sheets style: right-click selects the data cell, unless a typed editor owns it. */
+  /**
+   * The selection (YAZ-4593, S27 / S28): in a ref, and marked on the mounted cells by `paintSelection` as
+   * `data-selected`, an attribute React does not own. A change of selection renders nothing, so a drag across 600
+   * rows draws no cell again; a render (a scroll that mounts rows) marks the cells again in one pass.
+   */
+  const selRef = useRef<TableSelection | null>(null)
+  /** Whether a mark may be on the DOM: with none and no selection, a render skips the pass. */
+  const painted = useRef(false)
+  /** The selection's right-click, with the selection it was opened on. */
+  const [selMenu, setSelMenu] = useState<{ x: number; y: number; sel: TableSelection } | null>(null)
+  const paintSelection = (): void => {
+    const wrap = wrapRef.current
+    const sel = selRef.current
+    if (wrap === null || (sel === null && !painted.current)) return
+    painted.current = sel !== null
+    for (const td of wrap.querySelectorAll<HTMLElement>('tbody td[data-cell]')) {
+      const [r, c] = td.dataset.cell!.split(':').map(Number)
+      td.toggleAttribute(SELECTED, sel !== null && inSelection(sel, r, c))
+    }
+    for (const td of wrap.querySelectorAll<HTMLElement>('tbody td[data-row]')) td.toggleAttribute(SELECTED, sel?.kind === 'rows' && sel.rows!.has(Number(td.dataset.row)))
+    for (const th of wrap.querySelectorAll<HTMLElement>('thead th[data-col]')) th.toggleAttribute(SELECTED, sel?.kind === 'cols' && sel.cols!.has(Number(th.dataset.col)))
+  }
+  useLayoutEffect(paintSelection)
+  /** ⌘C, ⌘V and Esc while the focus fell to the page (a windowed scroll unmounted the focused cell). Set only while there is a selection. */
+  const pageKeys = useRef<((e: KeyboardEvent) => void) | null>(null)
+  const selectionKeyRef = useRef<(e: KeyboardEvent) => boolean>(() => false)
+  const setSelection = (next: TableSelection | null): void => {
+    selRef.current = next
+    paintSelection()
+    if (next !== null && pageKeys.current === null) {
+      pageKeys.current = (e) => {
+        if (!e.defaultPrevented && e.target === document.body && selectionKeyRef.current(e)) e.preventDefault()
+      }
+      document.addEventListener('keydown', pageKeys.current)
+    } else if (next === null && pageKeys.current !== null) {
+      document.removeEventListener('keydown', pageKeys.current)
+      pageKeys.current = null
+    }
+  }
+  useEffect(
+    () => () => {
+      if (pageKeys.current !== null) document.removeEventListener('keydown', pageKeys.current)
+    },
+    [],
+  )
+
+  /** The `data-cell` of the cell an event is in, inside this table; null elsewhere. */
+  const cellAt = (target: EventTarget | null): { r: number; c: number } | null => {
+    const td = target instanceof Element ? target.closest<HTMLElement>('td[data-cell]') : null
+    if (td === null || wrapRef.current?.contains(td) !== true) return null
+    const [r, c] = td.dataset.cell!.split(':').map(Number)
+    return { r, c }
+  }
+  const pickOf = (e: ReactMouseEvent): Pick => (e.shiftKey ? 'shift' : e.metaKey ? 'meta' : 'plain')
+  /** A selection's rows and columns, or the focused cell `at` when there is no selection. */
+  const areaOf = (sel: TableSelection | null, at?: { r: number; c: number }): { rows: number[]; cols: number[] } | null =>
+    sel !== null ? { rows: indicesOf(sel.rows, flat.length), cols: indicesOf(sel.cols, keys.length) } : at === undefined ? null : { rows: [at.r], cols: [at.c] }
+
+  /**
+   * A press in the body (YAZ-4593): a row's `#` picks rows (⇧ extends, ⌘ adds or removes one); ⇧ on a cell selects the
+   * range from the focused cell; a plain press clears the selection, and a drag from it selects the range it crosses.
+   * In a grouped table a row is a drag source, so a drag there moves the row as before; ⇧-click makes the range.
+   */
+  const onBodyMouseDown = (e: ReactMouseEvent<HTMLTableSectionElement>): void => {
+    if (e.button !== 0 || !(e.target instanceof Element)) return
+    const gutterCell = e.target.closest<HTMLElement>('td[data-row]')
+    if (gutterCell !== null) {
+      e.preventDefault()
+      const r = Number(gutterCell.dataset.row)
+      setSelection(pickLine(selRef.current, 'rows', r, pickOf(e)))
+      wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${r}:0"]`)?.focus({ preventScroll: true })
+      return
+    }
+    const at = cellAt(e.target)
+    if (at === null || e.target.closest('[data-editing]') !== null) return
+    if (e.shiftKey) {
+      e.preventDefault()
+      const sel = selRef.current
+      setSelection(cellRange(sel?.kind === 'cells' ? sel.anchor : cellAt(document.activeElement) ?? at, at))
+      return
+    }
+    setSelection(null)
+    let last = at
+    const move = (ev: MouseEvent) => {
+      const over = cellAt(ev.target)
+      if (over === null || (over.r === last.r && over.c === last.c)) return
+      last = over
+      setSelection(cellRange(at, over))
+      window.getSelection()?.removeAllRanges()
+    }
+    const up = () => {
+      document.removeEventListener('mousemove', move)
+      document.removeEventListener('mouseup', up)
+    }
+    document.addEventListener('mousemove', move)
+    document.addEventListener('mouseup', up)
+  }
+  /** ⇧ or ⌘ on a header picks columns (YAZ-4593); a plain press keeps its own behaviour, and so do the sort arrow and the resize edge. */
+  const onHeaderMouseDown = (c: number) => (e: ReactMouseEvent<HTMLTableCellElement>): void => {
+    if (e.button !== 0 || !(e.shiftKey || e.metaKey) || (e.target instanceof Element && e.target.closest('button, .view-table__resize') !== null)) return
+    e.preventDefault()
+    setSelection(pickLine(selRef.current, 'cols', c, pickOf(e)))
+    wrapRef.current?.querySelector<HTMLElement>(`tbody td[data-cell$=":${c}"]`)?.focus({ preventScroll: true })
+  }
+
+  /** A cell as text (YAZ-4593 ⌘C): what it renders, the Name cell's title. */
+  const cellText = (row: Row, c: number): string => (c === nameCol ? row.record.title : render(row.values[keys[c]] ?? null, resolve))
+  const copyArea = (area: { rows: number[]; cols: number[] }): void => {
+    const text = toTsv(area.rows.map((r) => area.cols.map((c) => cellText(flat[r], c))))
+    navigator.clipboard.writeText(text).catch((error: unknown) => onNotice?.(`Can't copy: ${error instanceof Error ? error.message : String(error)}`))
+  }
+  /**
+   * The bulk write (YAZ-4593): the cells' values grouped into ONE guarded write per note. A read-only note, the Name
+   * column and a column no view writes are skipped, and so is a value the note already has.
+   */
+  const writeCells = (cells: Iterable<{ r: number; c: number; value: unknown }>): void => {
+    const byPath = new Map<string, PropertyWrite[]>()
+    for (const { r, c, value } of cells) {
+      const row = flat[r]
+      const bare = bares[c]
+      if (row === undefined || bare == null || readOnly.has(row.record.path)) continue
+      if (JSON.stringify(row.record.properties[bare] ?? null) === JSON.stringify(value)) continue
+      const writes = byPath.get(row.record.path)
+      if (writes === undefined) byPath.set(row.record.path, [{ key: bare, value }])
+      else writes.push({ key: bare, value })
+    }
+    for (const [path, writes] of byPath) onWriteValues(path, writes).catch((error: unknown) => onNotice?.(`Can't write: ${error instanceof Error ? error.message : String(error)}`))
+  }
+  /** ⌘V (YAZ-4593): the clipboard's tab-separated text, from the area's top-left cell, each text as a value of its cell's kind. */
+  const pasteInto = (area: { rows: number[]; cols: number[] }): void => {
+    navigator.clipboard.readText().then(
+      (text) => {
+        const cells: { r: number; c: number; value: unknown }[] = []
+        parseTsv(text).forEach((line, i) =>
+          line.forEach((t, j) => {
+            const [r, c] = [area.rows[0] + i, area.cols[0] + j]
+            const bare = bares[c]
+            if (flat[r] === undefined || bare == null) return
+            const value = valueFromText(t, cellEditor(flat[r].record.properties[bare], typings[c]) ?? 'text')
+            if (value !== undefined) cells.push({ r, c, value })
+          }),
+        )
+        writeCells(cells)
+      },
+      (error: unknown) => onNotice?.(`Can't paste: ${error instanceof Error ? error.message : String(error)}`),
+    )
+  }
+  /** ⌘C, ⌘V and Esc (YAZ-4593); with no selection, ⌘C and ⌘V act on the focused cell `at`. True when the key was the table's. */
+  const selectionKey = (e: KeyboardEvent | ReactKeyboardEvent, at?: { r: number; c: number }): boolean => {
+    if (e.key === 'Escape') {
+      if (selRef.current === null) return false
+      setSelection(null)
+      return true
+    }
+    const k = e.key.toLowerCase()
+    if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || (k !== 'c' && k !== 'v')) return false
+    const area = areaOf(selRef.current, at)
+    if (area === null) return false
+    if (k === 'c') copyArea(area)
+    else pasteInto(area)
+    return true
+  }
+  selectionKeyRef.current = selectionKey
+
+  /** Google-Sheets style: right-click selects the data cell, unless a typed editor owns it. Inside the selection it opens the selection's menu (YAZ-4593). */
   const openRowMenu = ({ record, values }: Row) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
     if (!(event.target instanceof Element)) return
     if (event.target.closest('[data-editing]') !== null) return
+    const sel = selRef.current
+    const gutterCell = event.target.closest<HTMLElement>('td[data-row]')
+    if (gutterCell !== null && sel?.kind === 'rows' && sel.rows!.has(Number(gutterCell.dataset.row))) {
+      event.preventDefault()
+      setSelMenu({ x: event.clientX, y: event.clientY, sel })
+      return
+    }
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
     if (cell === null) return
     event.preventDefault()
     cell.focus()
     // `data-cell` is `row:column`: the column index names the key the fill is for (YAZ-4536), the row index the freeze (YAZ-4537).
     const [r, c] = (cell.dataset.cell ?? '').split(':').map(Number)
+    if (sel !== null && inSelection(sel, r, c)) {
+      setRowMenu(null)
+      setSelMenu({ x: event.clientX, y: event.clientY, sel })
+      return
+    }
+    setSelection(null)
     setRowMenu({ x: event.clientX, y: event.clientY, record, column: keys[c], r, value: values[keys[c]] ?? null })
   }
 
@@ -592,6 +776,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const at = (e.target as HTMLElement).dataset.cell
     if (at === undefined) return
     const [r, c] = at.split(':').map(Number)
+    if (selectionKey(e, { r, c })) {
+      e.preventDefault()
+      return
+    }
     if (e.key === 'Enter') {
       if (c === nameCol) {
         if (flat[r]) openByGesture(e, flat[r].record.path, openHandlers)
@@ -604,9 +792,39 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const move = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key]
     if (move === undefined) return
     e.preventDefault()
+    setSelection(null)
     const nr = Math.max(0, Math.min(flat.length - 1, r + move[0]))
     const nc = Math.max(0, Math.min(keys.length - 1, c + move[1]))
     wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${nr}:${nc}"]`)?.focus()
+  }
+
+  /** The selection's right-click (YAZ-4593): every action works on the selection it was opened on. */
+  const selectionMenu = ({ x, y, sel }: { x: number; y: number; sel: TableSelection }) => {
+    const area = areaOf(sel)!
+    const one = area.cols.length === 1 ? area.cols[0] : -1
+    const typing = one === -1 || bares[one] === null ? undefined : typings[one]
+    // A folder row is no note (YAZ-4592 S26): the selection's Duplicate and Delete skip it, and are off with no note.
+    const paths = area.rows.map((r) => flat[r].record).filter((record) => !isFolderRow(record)).map((record) => record.path)
+    return (
+      <SelectionMenu
+        x={x}
+        y={y}
+        rows={sel.kind === 'rows'}
+        setValue={typing === undefined ? null : { kind: typing?.assigned ?? typing?.dominant ?? 'text', options: typing?.options }}
+        onCopy={() => copyArea(area)}
+        onPaste={() => pasteInto(area)}
+        onClear={() => writeCells(area.rows.flatMap((r) => area.cols.map((c) => ({ r, c, value: null }))))}
+        onFill={(target, fill) => {
+          const targets = area.rows.flatMap((r) => (target === 'row' ? [{ record: flat[r].record }] : area.cols.map((c) => ({ record: flat[r].record, column: keys[c] }))))
+          // No fill offers Undo, as the row menu's (YAZ-4594 S29).
+          onUpdate((d) => setViewFills(d, viewIndex, targets, fill, records, resolveLink), fill === null ? 'Cleared fill' : undefined)
+        }}
+        onSetValue={(value) => writeCells(area.rows.map((r) => ({ r, c: one, value })))}
+        onDuplicate={onDuplicateNote && paths.length > 0 ? () => paths.forEach(onDuplicateNote) : undefined}
+        onDelete={onDeleteNotes && paths.length > 0 ? () => onDeleteNotes(paths) : undefined}
+        onClose={() => setSelMenu(null)}
+      />
+    )
   }
 
   const spacer = (at: string, h: number) => (
@@ -667,7 +885,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           onContextMenu={openRowMenu(line.row)}
         >
           {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}
-          {numbered && <td className="view-table__gutter">{line.n}</td>}
+          {numbered && (
+            <td className="view-table__gutter" data-row={line.r}>
+              {line.n}
+            </td>
+          )}
           {keys.map((key, c) => {
             const v = line.row.values[key]
             const { path, title } = line.row.record
@@ -770,6 +992,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     style={{ width: widthOf(key), ...frozenStyle(index) }}
                     // The column's description on hover (YAZ-4590 S23).
                     title={c.startsWith('note.') ? settings.columns[c.slice('note.'.length)]?.description : undefined}
+                    data-col={index}
+                    onMouseDown={onHeaderMouseDown(index)}
                     onContextMenu={openHeaderMenu(key)}
                     {...headerDrag(index)}
                   >
@@ -796,7 +1020,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               })}
             </tr>
           </thead>
-          <tbody>
+          <tbody onMouseDown={onBodyMouseDown}>
             {head.map((line, i) => renderLine(line, i))}
             {first > pinned && spacer('top', (first - pinned) * rowH)}
             {visible.map((line) => renderLine(line))}
@@ -910,6 +1134,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             ].filter((group) => group !== null)}
           />
         )}
+        {selMenu !== null && selectionMenu(selMenu)}
         {headerMenu !== null && (
           <TableHeaderMenu
             x={headerMenu.x}
