@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Profiler, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { PROPERTY_NAME, type IndexRecord, type PropertyDecl, type PropertiesResponse } from '@shared/types'
+import { type IndexRecord, type PropertyDecl, type PropertiesResponse } from '@shared/types'
 import { FrontmatterPanel, type FrontmatterPanelProps } from './FrontmatterPanel'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { TEST_RECORDS } from '../views/testRecords'
@@ -64,7 +64,7 @@ parent: "[[Home]]"
 Body line
 `
 
-/** TYPED plus a name the registry's grammar rejects — an accepted edge, never a workaround UI. */
+/** TYPED plus a name with spaces and capitals — an ordinary name since YAZ-4551 D19. */
 const LADDER = TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\nNot A Key: whatever')
 
 /** Values no typed editor can hold, beside an ordinary flag. */
@@ -464,8 +464,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(editorOf(el, 'due')).toBe('date')
     expect(editorOf(el, 'tags')).toBe('chips')
     expect(editorOf(el, 'parent')).toBe('link')
-    // 🔒 A name the registry's grammar rejects can hold no declaration: plain text.
-    expect(PROPERTY_NAME.test('Not A Key')).toBe(false)
+    // Any name is a property name (YAZ-4551 D19): "Not A Key" is typed by its value, like any other.
     expect(editorOf(el, 'Not A Key')).toBe('text')
   })
 
@@ -507,15 +506,15 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     })
   })
 
-  it('adds a key — the registry rejects a bad name in its OWN words, and a duplicate outright', async () => {
+  it('adds a key — an empty name says "Type a property name", and a duplicate is refused outright', async () => {
     readFile.mockResolvedValue(fileOf(TYPED))
     const el = mount(TYPED)
     expand(el)
     click(btn(el, 'Add property'))
 
-    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Bad Name')
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), '   ')
     click(btn(el, 'Add'))
-    expect(errorLine(el)?.textContent).toBe(`property names are snake_case (${String(PROPERTY_NAME)})`)
+    expect(errorLine(el)?.textContent).toBe('Type a property name')
     expect(writeFile).not.toHaveBeenCalled()
 
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'status')
@@ -524,14 +523,14 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(writeFile).not.toHaveBeenCalled()
 
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'author')
-    setValue(byLabel<HTMLInputElement>(el, 'New property value'), 'Cal Newport')
     click(btn(el, 'Add'))
     await flush()
 
+    // No value is asked for (YAZ-4551 D20): the key starts with its kind's empty value.
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(writeFile).toHaveBeenCalledWith({
       path: PATH,
-      content: TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\nauthor: Cal Newport'),
+      content: TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\nauthor: ""'),
       expectedMtime: 100,
     })
     // The form closes and the row is there, counted.
@@ -540,21 +539,24 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(header(el)?.getAttribute('aria-label')).toBe('Properties (7)')
   })
 
-  it("a new key's first value is shaped by its DECLARED kind, not by the text", async () => {
+  it("a new key starts on its DECLARED kind: the type list shows it, the first value is that kind's empty one, and no declaration is written again", async () => {
     readFile.mockResolvedValue(fileOf(TYPED))
-    const el = mount(TYPED, { properties: declaring({ rating: { kind: 'number' } }) })
+    const el = mount(TYPED, { root: ROOT, properties: declaring({ rating: { kind: 'number' }, topics: { kind: 'list' } }) })
     expand(el)
     click(btn(el, 'Add property'))
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'rating')
-    setValue(byLabel<HTMLInputElement>(el, 'New property value'), '5')
+    expect(byLabel<HTMLSelectElement>(el, 'New property type')?.value).toBe('number')
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'topics')
+    expect(byLabel<HTMLSelectElement>(el, 'New property type')?.value).toBe('list')
     click(btn(el, 'Add'))
     await flush()
 
     expect(writeFile).toHaveBeenCalledWith({
       path: PATH,
-      content: TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\nrating: 5'),
+      content: TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\ntopics: []'),
       expectedMtime: 100,
     })
+    expect((await propertiesStub.get(ROOT)).properties).toEqual({})
   })
 
   it('deletes a key through the same one-key write, leaving every other byte alone', async () => {
@@ -1382,10 +1384,9 @@ Body
     click(btn(el, 'Add'))
     expect(errorLine(el)?.textContent).toBe('"old_field" is already a property of this page')
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'aliases')
-    setValue(byLabel<HTMLInputElement>(el, 'New property value'), 'N')
     click(btn(el, 'Add'))
     await flush()
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: CONTENT.replace('    old_field: left behind\n', '    old_field: left behind\n    aliases: N\n'), expectedMtime: 100 })
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: CONTENT.replace('    old_field: left behind\n', '    old_field: left behind\n    aliases: ""\n'), expectedMtime: 100 })
     expect(names(folderRows(el))).toEqual(['Status', 'old_field', 'aliases', 'score'])
   })
 
@@ -1396,10 +1397,9 @@ Body
     expect(keysOf(el)).toEqual(['id', 'aliases', 'Status', 'also_in'])
     click(btn(el, 'Add property'))
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'author')
-    setValue(byLabel<HTMLInputElement>(el, 'New property value'), 'Cal')
     click(btn(el, 'Add'))
     await flush()
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: loose, content: CONTENT.replace('---\nBody', 'author: Cal\n---\nBody'), expectedMtime: 100 })
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: loose, content: CONTENT.replace('---\nBody', 'author: ""\n---\nBody'), expectedMtime: 100 })
   })
 
   it('A value in a folder’s block for a column the folder no longer has: shown as a plain row under that folder, editable and removable', async () => {
@@ -1510,11 +1510,10 @@ Body
     expect(written()).toBe(bytes.replace('owner: Yasin', 'owner: Noor'))
     click(btn(el, 'Add property'))
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'team')
-    setValue(byLabel<HTMLInputElement>(el, 'New property value'), 'People')
     readFile.mockResolvedValue({ path: own, content: written(), mtime: 100, size: 1 })
     click(btn(el, 'Add'))
     await flush()
-    expect(written()).toBe(bytes.replace('owner: Yasin', 'owner: Noor').replace(/---\n$/, 'team: People\n---\n'))
+    expect(written()).toBe(bytes.replace('owner: Yasin', 'owner: Noor').replace(/---\n$/, 'team: ""\n---\n'))
   })
 
   it('The raw YAML mode: shows the whole frontmatter, `in:` included, as written', () => {
@@ -1595,17 +1594,16 @@ Body
     it('Add property adds to the note itself, at the top level, under `title` or `id` as under any name; `comments` is still refused', async () => {
       const bytes = `---\nStatus: mine\n${BLOCKS}---\nBody\n`
       const el = mountNote(bytes, NOOR, plainFeed())
-      const add = async (name: string, value: string): Promise<void> => {
+      const add = async (name: string): Promise<void> => {
         click(btn(el, 'Add property'))
         setValue(byLabel<HTMLInputElement>(el, 'New property name'), name)
-        setValue(byLabel<HTMLInputElement>(el, 'New property value'), value)
         click(btn(el, 'Add'))
         await flush()
       }
-      await add('title', 'Noor Khan')
-      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: bytes.replace('---\nBody', 'title: Noor Khan\n---\nBody'), expectedMtime: 100 })
-      await add('id', 'noor-1')
-      expect(written()).toBe(bytes.replace('---\nBody', 'id: noor-1\n---\nBody'))
+      await add('title')
+      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: bytes.replace('---\nBody', 'title: ""\n---\nBody'), expectedMtime: 100 })
+      await add('id')
+      expect(written()).toBe(bytes.replace('---\nBody', 'id: ""\n---\nBody'))
       click(btn(el, 'Add property'))
       setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'comments')
       click(btn(el, 'Add'))
@@ -1669,3 +1667,165 @@ describe('a read-only note (YAZ-3076 D2, S23)', () => {
     expect(btn(el, 'Save')).not.toBeNull()
   })
 })
+
+describe('FrontmatterPanel — any name, a type when you add, a real right-click (YAZ-4551)', () => {
+  const contextMenu = (target: Element | null): MouseEvent => {
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 30, clientY: 40 })
+    act(() => void target?.dispatchEvent(event))
+    return event
+  }
+  const menuItems = (): string[] => [...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent ?? '')
+  const menuItem = (text: string): HTMLButtonElement => {
+    const b = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((n) => n.textContent === text)
+    if (b === undefined) throw new Error(`no menu item ${text}`)
+    return b
+  }
+
+  it('a note’s "Due Date" with a date value gets the date editor (D19: no name gate)', () => {
+    const el = mount('---\nDue Date: 2026-12-01\nAI or App: App\n---\nBody\n')
+    expand(el)
+    expect(editorOf(el, 'Due Date')).toBe('date')
+    expect(editorOf(el, 'AI or App')).toBe('text')
+  })
+
+  it('Add asks for a name and a type, no value: "Due Date" as a Date writes an empty value and the declaration in properties.json', async () => {
+    readFile.mockResolvedValue(fileOf(TYPED))
+    const el = mount(TYPED, { root: ROOT })
+    expand(el)
+    click(btn(el, 'Add property'))
+    expect(byLabel(el, 'New property value')).toBeNull()
+    expect(byLabel<HTMLInputElement>(el, 'New property name')?.placeholder).toBe('Property name')
+    const type = byLabel<HTMLSelectElement>(el, 'New property type')!
+    expect(type.value).toBe('text')
+    expect([...type.options].map((o) => o.textContent)).toEqual(['Text', 'Number', 'Date', 'Checkbox', 'List', 'Link', 'Multi-link', 'Select', 'Multi-select'])
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Due Date')
+    setValue(type, 'date')
+    click(btn(el, 'Add'))
+    await flush()
+    expect((await propertiesStub.get(ROOT)).properties).toEqual({ 'Due Date': { kind: 'date' } })
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\nDue Date: ""'), expectedMtime: 100 })
+    expect(keysOf(el)).toContain('Due Date')
+  })
+
+  it('Enter in the name box adds; Text for a name with no type writes no declaration', async () => {
+    readFile.mockResolvedValue(fileOf(TYPED))
+    const el = mount(TYPED, { root: ROOT })
+    expand(el)
+    click(btn(el, 'Add property'))
+    const name = byLabel<HTMLInputElement>(el, 'New property name')!
+    setValue(name, 'Yaseen')
+    press(name, 'Enter')
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\nYaseen: ""'), expectedMtime: 100 })
+    expect((await propertiesStub.get(ROOT)).properties).toEqual({})
+  })
+
+  it('a property added under "Properties from <folder>" writes its type as that folder’s column, then the empty value in the folder’s block', async () => {
+    const wikilinks = folderFeed({ Status: { kind: 'select', options: ['Ready', 'Later'] } })
+    const folderBytes = `---\nid: ${FOLDER_ID}\nfolder_settings:\n  columns:\n    Status:\n      kind: select\n      options: [Ready, Later]\n  views:\n    - type: board\n      name: Board\n---\n`
+    readFile.mockImplementation(async (path: string) => (path === FOLDER ? { path, content: folderBytes, mtime: 300, size: 1 } : fileOf(LOCAL_NOTE)))
+    const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
+    expand(el)
+    click(btn(el, 'Add property'))
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Due Date')
+    setValue(byLabel<HTMLSelectElement>(el, 'New property type'), 'date')
+    click(btn(el, 'Add'))
+    await flush()
+    await flush()
+    expect(writeFile).toHaveBeenCalledTimes(2)
+    const [column, value] = writeFile.mock.calls.map((c) => c[0])
+    expect(column.path).toBe(FOLDER)
+    expect((parseFrontmatter(splitFrontmatter(column.content).frontmatter).properties.folder_settings as { columns: unknown }).columns).toEqual({
+      Status: { kind: 'select', options: ['Ready', 'Later'] },
+      'Due Date': { kind: 'date' },
+    })
+    expect(value).toEqual({ path: PATH, content: LOCAL_NOTE.replace('    Status: Ready\n', '    Status: Ready\n    Due Date: ""\n'), expectedMtime: 100 })
+    expect((await propertiesStub.get(ROOT)).properties).toEqual({}) // a folder's property is not vault-wide
+  })
+
+  it('a right-click is no native menu: it closes the popover and opens "<Type> · <name>", Change type ›, Rename…, Copy value, Remove from this note', () => {
+    const el = mount(TYPED, { root: ROOT })
+    expand(el)
+    click(byLabel(el, 'Configure status'))
+    expect(document.querySelector('.frontmatter-property-menu')).not.toBeNull()
+    const event = contextMenu(byLabel(el, 'Configure status'))
+    expect(event.defaultPrevented).toBe(true)
+    expect(document.querySelector('.frontmatter-property-menu')).toBeNull()
+    expect(document.querySelector('.ctx-menu .ctx-menu__heading')?.textContent).toBe('Text · status')
+    expect(menuItems()).toEqual(['Change type ›', 'Rename…', 'Copy value', 'Remove from this note'])
+    press(document.body, 'Escape')
+    contextMenu(byLabel(el, 'Configure pages'))
+    expect(document.querySelector('.ctx-menu .ctx-menu__heading')?.textContent).toBe('Number · pages')
+  })
+
+  it('Change type › opens the same definition editor; for a note field Save writes properties.json, and nothing in the note', async () => {
+    const el = mount(TYPED, { root: ROOT })
+    expand(el)
+    contextMenu(byLabel(el, 'Configure status'))
+    click(menuItem('Change type ›'))
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    expect(document.querySelector('.frontmatter-property-menu__scope')?.textContent).toBe('In every note of this vault')
+    click(byLabel(el, 'Property type: Text'))
+    click(buttonNamed(el, 'Number'))
+    click(buttonNamed(document.querySelector('.frontmatter-property-menu__actions')!, 'Save'))
+    await flush()
+    expect((await propertiesStub.get(ROOT)).properties).toEqual({ status: { kind: 'number' } })
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('"Edit property ›" in the left-click popover shows for a note field too; with no vault root it does not (nowhere to save)', () => {
+    const el = mount(TYPED, { root: ROOT })
+    expand(el)
+    click(byLabel(el, 'Configure status'))
+    expect(buttonNamed(el, 'Edit property ›')).not.toBeNull()
+  })
+
+  it('Rename… moves the key in this note only — one write; the value and the key’s place stay', async () => {
+    readFile.mockResolvedValue(fileOf(TYPED))
+    const el = mount(TYPED, { root: ROOT })
+    expand(el)
+    contextMenu(byLabel(el, 'Configure due'))
+    click(menuItem('Rename…'))
+    const field = byLabel<HTMLInputElement>(el, 'Rename due')!
+    expect(field.value).toBe('due')
+    setValue(field, 'Due Date')
+    press(field, 'Enter')
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: TYPED.replace('due: 2024-05-01', 'Due Date: 2024-05-01'), expectedMtime: 100 })
+    expect(keysOf(el)).toEqual(['status', 'pages', 'done', 'Due Date', 'tags', 'parent'])
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('Rename… refuses a name the note holds already, and writes nothing', () => {
+    const el = mount(TYPED, { root: ROOT })
+    expand(el)
+    contextMenu(byLabel(el, 'Configure due'))
+    click(menuItem('Rename…'))
+    const field = byLabel<HTMLInputElement>(el, 'Rename due')!
+    setValue(field, 'status')
+    press(field, 'Enter')
+    expect(errorLine(el)?.textContent).toBe('"status" is already a property of this page')
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('Copy value puts the value on the clipboard (a list as "a, b"); Remove from this note removes the key', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    readFile.mockResolvedValue(fileOf(TYPED))
+    const el = mount(TYPED, { root: ROOT })
+    expand(el)
+    contextMenu(byLabel(el, 'Configure status'))
+    click(menuItem('Copy value'))
+    expect(writeText).toHaveBeenLastCalledWith('draft')
+    contextMenu(byLabel(el, 'Configure tags'))
+    click(menuItem('Copy value'))
+    expect(writeText).toHaveBeenLastCalledWith('a, b')
+    expect(writeFile).not.toHaveBeenCalled()
+
+    contextMenu(byLabel(el, 'Configure pages'))
+    click(menuItem('Remove from this note'))
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: TYPED.replace('pages: 12\n', ''), expectedMtime: 100 })
+  })
+})
+

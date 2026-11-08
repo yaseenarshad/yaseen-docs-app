@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import type { PropertiesResponse } from '@shared/types'
+import { type PropertiesResponse, isPropertyName } from '@shared/types'
 import { failure, until } from '../fs/testFixture'
 import { activeConfigWatcherRoots, VAULT_CONFIG_DIR } from '../vaultConfig'
 import { getProperties, removeProperty, setProperty, subscribeProperties } from './index'
@@ -119,13 +119,28 @@ describe('setProperty', () => {
     expect((await getProperties(root)).properties).toEqual({ related: { kind: 'link', target: 'kpi' }, unit: { kind: 'text' } })
   })
 
-  it('rejects bad property names (grammar ^[a-z][a-z0-9_]*$) and writes nothing', async () => {
+  it('rejects a name that is not one (D19: empty, a space at an end, a line break) with "Type a property name", and writes nothing', async () => {
     const root = await makeRoot()
-    for (const bad of ['Foo', 'foo-bar', '1x', '', 'füü', 'foo bar']) {
-      expect((await failure(setProperty(root, bad, { kind: 'text' }))).code).toBe('BAD_REQUEST')
+    for (const bad of ['', ' a', 'a ', 'a\nb', 'a\rb']) {
+      const err = await failure(setProperty(root, bad, { kind: 'text' }))
+      expect(err.code).toBe('BAD_REQUEST')
+      expect(err.message).toBe('Type a property name')
     }
     expect((await failure(setProperty(root, 42 as never, { kind: 'text' }))).code).toBe('BAD_REQUEST')
     expect(await readdir(root)).toEqual([]) // no dotfolder from rejected mutations
+  })
+
+  it('accepts any other name as typed (YAZ-4551 D19): spaces, capitals, accents', async () => {
+    const root = await makeRoot()
+    for (const name of ['Due Date', 'Yaseen', 'AI or App', 'füü', 'foo-bar', '1x']) await setProperty(root, name, { kind: 'date' })
+    expect(Object.keys((await getProperties(root)).properties)).toEqual(['Due Date', 'Yaseen', 'AI or App', 'füü', 'foo-bar', '1x'])
+    await removeProperty(root, 'Due Date')
+    expect((await getProperties(root)).properties['Due Date']).toBeUndefined()
+  })
+
+  it('isPropertyName: a string, not empty, equal to its trim, with no line break', () => {
+    for (const name of ['Due Date', 'Yaseen', 'AI or App', 'status']) expect(isPropertyName(name)).toBe(true)
+    for (const name of ['', ' a', 'a ', 'a\nb', 'a\rb', 42, null, undefined]) expect(isPropertyName(name)).toBe(false)
   })
 
   it("accepts 'page_type' like any other name — the identity rule died with the type system (YAZ-836)", async () => {

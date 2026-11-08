@@ -3337,10 +3337,13 @@ export const PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'li
 export type PropertyKind = (typeof PROPERTY_KINDS)[number]
 
 /**
- * Property-name grammar (GRO-2200 R4): snake_case. Enforced at the properties write boundary
- * (`desktop/src/main/properties/`) — one definition so no mirror can drift from it.
+ * The ONE property-name rule (YAZ-4551 D19): any name, as typed — "Due Date", "Yaseen". A name is
+ * a string, not empty, with no space at either end and no line break. The properties write
+ * boundary (`desktop/src/main/properties/`), the note's Properties panel and "+ Add column" hold it.
  */
-export const PROPERTY_NAME = /^[a-z][a-z0-9_]*$/
+export function isPropertyName(name: unknown): name is string {
+  return typeof name === 'string' && name !== '' && name === name.trim() && !/[\r\n]/.test(name)
+}
 
 /**
  * Folder-name grammar (GRO-2226, GRO-2204 audit fold-in): root-relative, '/'-separated

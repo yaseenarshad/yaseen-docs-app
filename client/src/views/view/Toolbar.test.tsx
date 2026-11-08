@@ -1382,18 +1382,43 @@ views:
     expect(pop.querySelector('[aria-label="Column name"]')).toBeNull() // collapsed again
   })
 
-  it('an invalid or already-taken column name says so and writes nothing', () => {
+  it('an empty or already-shown column name says so and writes nothing', () => {
+    const setColumns = vi.fn()
+    const { el, onChange } = mount('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - note.status\n', { folder: testFolderHost({ setColumns }) })
+    const pop = openMenu(el, 'Properties')
+    click(byText(pop, 'button', '+ Add column'))
+    setValue(byLabel(pop, 'Column name'), '   ')
+    click(byLabel(pop, 'Save column'))
+    expect(q(pop, '[role="alert"]').textContent).toBe('Type a name')
+    setValue(byLabel(pop, 'Column name'), 'status')
+    click(byLabel(pop, 'Save column'))
+    expect(q(pop, '[role="alert"]').textContent).toBe('status is already a column')
+    expect(setColumns).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('any name is a column name, as typed (YAZ-4535, D19): "AI or App" is the key', () => {
     const setColumns = vi.fn()
     const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
     const pop = openMenu(el, 'Properties')
     click(byText(pop, 'button', '+ Add column'))
-    setValue(byLabel(pop, 'Column name'), 'Budget!')
+    setValue(byLabel(pop, 'Column name'), 'AI or App')
     click(byLabel(pop, 'Save column'))
-    expect(q(pop, '[role="alert"]').textContent).toContain('lower case')
-    setValue(byLabel(pop, 'Column name'), 'status')
+    const [columns, views] = setColumns.mock.calls[0] as [Record<string, unknown>, ViewDef[]]
+    expect(columns).toEqual({ 'AI or App': { kind: 'text' } })
+    expect(views[0].order).toEqual(['file.name', 'note.AI or App'])
+  })
+
+  it('S1: a note property of the same name is SHOWN, not declared again — one order write', () => {
+    const setColumns = vi.fn()
+    const { el, onChange } = mount(undefined, { folder: testFolderHost({ setColumns }) })
+    const pop = openMenu(el, 'Properties')
+    click(byText(pop, 'button', '+ Add column'))
+    setValue(byLabel(pop, 'Column name'), 'status') // TEST_RECORDS hold `status`; the Table shows only Name
     click(byLabel(pop, 'Save column'))
-    expect(q(pop, '[role="alert"]').textContent).toContain('already')
     expect(setColumns).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(pop.querySelector('[aria-label="Column name"]')).toBeNull()
   })
 
   it('the target is offered for link kinds only, and lands in the declaration', () => {

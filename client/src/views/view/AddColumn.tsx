@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { PROPERTY_NAME } from '@shared/types'
+import { isPropertyName } from '@shared/types'
 import type { ColumnDecl } from '../folderSettings'
 import { PropertyDefinitionEditor } from './PropertyDefinitionEditor'
 import { declarationForKind } from './declarationForKind'
@@ -8,7 +8,11 @@ import { canonicalKey } from './keys'
 export interface AddColumnProps {
   /** Every key the menu already offers — the folder's DECLARED columns among them (YAZ-895). */
   taken: readonly string[]
+  /** The view's shown keys: a taken name that is not among them is SHOWN, not refused (YAZ-4535 S1). */
+  shown: readonly string[]
   onSave: (name: string, column: ColumnDecl) => void
+  /** S1: show the existing column `key` (as `taken` spells it) — no declaration, no twin. */
+  onShow: (key: string) => void
   /** Start on the form rather than the "+ Add column" button (the header menu's "Add column to the right…", YAZ-1513). */
   autoOpen?: boolean
   /** Offered as a Cancel button when given; the form also closes on its own after a save. */
@@ -17,11 +21,12 @@ export interface AddColumnProps {
 
 /**
  * "+ Add column" (YAZ-896): declare a column on the FOLDER — the typing ladder's top rung
- * (🔒 Q8) — and show it, in one `folder_settings` write (🔒 D3). A name that is not a
- * property name, or one the menu already offers, is refused inline and nothing is written. It
+ * (🔒 Q8) — and show it, in one `folder_settings` write (🔒 D3). Any name is the key, as typed
+ * (YAZ-4535, D19: `isPropertyName`). A name the folder has already — a note property or a declared
+ * column — is SHOWN when the view hides it (S1: no twin), and refused when the view shows it. It
  * lived inside `PropertiesMenu.tsx` until YAZ-1513 gave the table header a second doorway to it.
  */
-export function AddColumn({ taken, onSave, autoOpen = false, onCancel }: AddColumnProps) {
+export function AddColumn({ taken, shown, onSave, onShow, autoOpen = false, onCancel }: AddColumnProps) {
   const [open, setOpen] = useState(autoOpen)
   const [name, setName] = useState('')
   const [definition, setDefinition] = useState<ColumnDecl>({ kind: 'text' })
@@ -36,18 +41,22 @@ export function AddColumn({ taken, onSave, autoOpen = false, onCancel }: AddColu
 
   const save = () => {
     const key = name.trim()
-    if (!PROPERTY_NAME.test(key)) {
-      setError('Use lower case letters, digits and _, starting with a letter')
+    if (!isPropertyName(key)) {
+      setError('Type a name')
       return
     }
-    if (taken.some((k) => canonicalKey(k) === canonicalKey(key))) {
+    const c = canonicalKey(key)
+    const existing = taken.find((k) => canonicalKey(k) === c)
+    if (existing !== undefined && shown.some((k) => canonicalKey(k) === c)) {
       setError(`${key} is already a column`)
       return
     }
-    // The one kind rule (YAZ-1549): a target typed under a link kind never rides into a non-link
-    // declaration after a kind switch, and a choice kind is born with its option list.
-    const column = declarationForKind({ ...definition, target: definition.target?.trim() }, definition.kind)
-    onSave(key, column)
+    if (existing !== undefined) onShow(existing)
+    else {
+      // The one kind rule (YAZ-1549): a target typed under a link kind never rides into a non-link
+      // declaration after a kind switch, and a choice kind is born with its option list.
+      onSave(key, declarationForKind({ ...definition, target: definition.target?.trim() }, definition.kind))
+    }
     setOpen(false)
     setName('')
     setDefinition({ kind: 'text' })

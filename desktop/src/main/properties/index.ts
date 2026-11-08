@@ -1,5 +1,5 @@
 import type { PropertiesResponse, PropertyDecl, PropertyKind } from '@shared/types'
-import { PROPERTY_KINDS, PROPERTY_NAME } from '@shared/types'
+import { PROPERTY_KINDS, isPropertyName } from '@shared/types'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { isRecord } from '@shared/guards'
 import { BridgeFailure, createRootChain, requireAbsPath, requireDir } from '../fs/fsUtils'
@@ -29,9 +29,8 @@ export const PROPERTIES_FILE = 'properties.json'
 // ---------- input validation (strict at the IPC boundary: a write is config, not content) ----------
 
 function requirePropertyName(name: unknown): string {
-  if (typeof name !== 'string' || !PROPERTY_NAME.test(name)) {
-    throw new BridgeFailure('BAD_REQUEST', `property names are snake_case (${String(PROPERTY_NAME)})`, { path: String(name) })
-  }
+  // Any name, as typed (YAZ-4551 D19).
+  if (!isPropertyName(name)) throw new BridgeFailure('BAD_REQUEST', 'Type a property name', { path: String(name) })
   return name
 }
 
