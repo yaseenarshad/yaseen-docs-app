@@ -26,11 +26,13 @@
  *
  * Feed: the window's ONE `WikilinkResolveSource`, so the view costs no fetch or watcher of its own.
  */
-import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
-import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type PropertiesResponse } from '@shared/types'
+import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
+import { SHOW_PAGE_FILE_KEY, showPageFileOf } from '@shared/folderPage'
+import { isReadOnlyProperties, READ_ONLY_KEY } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
@@ -38,6 +40,9 @@ import { PageTitle } from '../editor/PageTitle'
 import { usePathTitles } from '../lib/pageLabel'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
+import { createStore } from '../lib/store'
+import { stepZoomByKey } from '../editor/DocumentZoom'
+import { ZOOM_EVENT } from '../editor/zoomRequest'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
@@ -52,7 +57,8 @@ import { folderSettings, writeFolderSettings, writeFolderColumn, type FolderSett
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
 import { createNote } from './scaffold'
 import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
-import { writeFolderValues, writeProperties } from './writeProperty'
+import { writeFolderValues, writeProperties, writeProperty } from './writeProperty'
+import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { ViewFolder } from './view/GroupHeader'
 import type { PreviewScope } from '../tabs/cardPreview'
 import './views.css'
@@ -96,6 +102,26 @@ export interface FolderViewProps {
   diagramDarkColors?: DiagramDarkColors
   /** Settings › "Folding default" (YAZ-4094 F1): a folder's outline has no page cog, so it follows this. Handed to `ViewsPane`. */
   foldingOnByDefault?: boolean
+  /** The vault's sync status and the chip's click (`Editor`'s `sync`, `onSyncNow`): the toolbar's sync chip (YAZ-3746 D35). */
+  sync?: GithubSyncStatus | null
+  onSyncNow?: () => void
+}
+
+/**
+ * A `.folder.md` key the cog writes (YAZ-3746 D36, D37): shown at once, then the index's value again once the index
+ * echoes the write, or the write fails.
+ */
+function useAheadKey<T>(indexed: T): [T, (next: T, write: Promise<unknown>) => void] {
+  const [ahead, setAhead] = useState<{ value: T } | null>(null)
+  useEffect(() => {
+    if (ahead !== null && Object.is(ahead.value, indexed)) setAhead(null)
+  }, [ahead, indexed])
+  const set = (next: T, write: Promise<unknown>): void => {
+    const mine = { value: next }
+    setAhead(mine)
+    write.catch(() => setAhead((now) => (now === mine ? null : now)))
+  }
+  return [ahead === null ? indexed : ahead.value, set]
 }
 
 /**
@@ -153,6 +179,8 @@ export function FolderView({
   previewScope,
   diagramDarkColors,
   foldingOnByDefault,
+  sync,
+  onSyncNow,
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
   const titles = usePathTitles(source)
@@ -184,6 +212,39 @@ export function FolderView({
   )
   /** The read-only notes (YAZ-3076 D6), read off each note's OWN properties before `shown` swaps in the folder's values; a folder row's off its `.folder.md` (D32). */
   const locked = useMemo(() => readOnlyPaths([...rows, ...subfolders]), [rows, subfolders])
+
+  // ---------- The toolbar (YAZ-3746 D35) ----------
+  /** The toolbar's store: the save state of the folder's own writes, the Page tab's part, and the lock for the Page tab. */
+  const [chips] = useState(() => createStore<FolderChipsState>({ save: 'saved', page: null, readOnly: false }))
+  /** The folder page is read only (D36): `readonly: true` in its `.folder.md`. The notes inside keep their own rule. */
+  const [pageLocked, setPageLocked] = useAheadKey(record !== undefined && isReadOnlyProperties(record.properties))
+  /** The folder's own "Show folder page file" (D37): `undefined` follows Settings. */
+  const [showPageFile, setShowPageFile] = useAheadKey(record === undefined ? undefined : showPageFileOf(record.properties))
+  const [askingUnlock, setAskingUnlock] = useState(false)
+  useEffect(() => {
+    chips.set({ readOnly: pageLocked })
+    if (!pageLocked) setAskingUnlock(false)
+  }, [chips, pageLocked])
+  /** Per app tab and never stored, as a note's (D35). */
+  const [zoom, setZoom] = useState(100)
+  /** The folder's writes in flight, and whether one of them failed: the save chip says 'saving' until all settle. */
+  const writing = useRef({ count: 0, failed: false })
+  const hostRef = useRef<HTMLDivElement>(null)
+  const ready = feed.resolve !== null && settings !== null
+  // This page owns ⌘+ / ⌘− / ⌘0 while focus is in its section, as a note does (YAZ-1710). A note inside it (the Page
+  // tab) claims them first.
+  useEffect(() => {
+    const section = hostRef.current?.closest('.editor')
+    if (!ready || !section) return
+    const onZoomKey = (event: Event) => {
+      if (event.defaultPrevented) return
+      event.preventDefault()
+      const step = (event as CustomEvent<ZoomStep>).detail
+      setZoom((now) => (step === 0 ? 100 : stepZoomByKey(now, step) ?? now))
+    }
+    section.addEventListener(ZOOM_EVENT, onZoomKey)
+    return () => section.removeEventListener(ZOOM_EVENT, onZoomKey)
+  }, [ready])
 
   /**
    * The settings file's own BYTES (D9), which the properties panel and the comments read as a note's
@@ -286,16 +347,45 @@ export function FolderView({
   const resolveLink = feed.resolve
   if (resolveLink === null || settings === null || liveSettings === null || parsed === null) return null
 
+  /** One of the folder's own writes (D35): the save chip says "Saving…" while any is in flight, then "Saved" or "Save failed". */
+  const track = <T,>(write: Promise<T>): Promise<T> => {
+    const w = writing.current
+    w.count += 1
+    chips.set({ save: 'saving' })
+    const settle = (failed: boolean) => {
+      w.count -= 1
+      w.failed ||= failed
+      if (w.count > 0) return
+      chips.set({ save: w.failed ? 'error' : 'saved' })
+      w.failed = false
+    }
+    write.then(() => settle(false), () => settle(true))
+    return write
+  }
+  /** A key of the folder's own `.folder.md` that the cog sets (D36, D37); `undefined` removes it. */
+  const writeOwnKey = (key: string, value: unknown): Promise<unknown> => {
+    setSettingsError(null)
+    const write = track(writeProperty(file, key, value))
+    write.catch((err: unknown) => setSettingsError(err instanceof Error ? err.message : String(err)))
+    return write
+  }
+  /** Read only refuses every settings write (D36): the banner says why. */
+  const refuseLocked = (): boolean => {
+    if (pageLocked) setSettingsError(FOLDER_READ_ONLY_TIP)
+    return pageLocked
+  }
+
   /**
    * The declarations' ONE write (YAZ-895/1549): ahead first, then disk; a refusal puts the ahead copy
    * back, shows the banner and REJECTS — so a caller that must not go on (a column delete's note
    * strips) does not.
    */
   const commitSettings = (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']): Promise<void> => {
+    if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
     setSettingsError(null)
     const before = aheadRef.current
     setAhead(columns)
-    return writeFolderSettings(file, { ...settings, columns, views, properties, defaultView: parsed.def.defaultView }).then(
+    return track(writeFolderSettings(file, { ...settings, columns, views, properties, defaultView: parsed.def.defaultView })).then(
       () => undefined,
       (err: unknown) => {
         setAhead(before)
@@ -307,6 +397,7 @@ export function FolderView({
 
   /** Every config change (sort, columns, widths, summaries…) is ONE settings write (🔒 D3). */
   const onChange = (next: ParsedViews): void => {
+    if (refuseLocked()) return
     setParsed(next)
     setSettingsError(null)
     // What this write will stamp as when the index returns it (YAZ-1241) — formulas ride unchanged;
@@ -314,7 +405,7 @@ export function FolderView({
     pending.current.push(stampOf({ views: next.def.views, formulas: settings.formulas, properties: next.def.properties, defaultView: next.def.defaultView }))
     // The AHEAD columns, never the snapshot's: the whole block is written, and a folder's first
     // column write is not in the index until its file is (D1).
-    writeFolderSettings(file, { ...liveSettings, views: next.def.views, properties: next.def.properties, defaultView: next.def.defaultView }).catch((err: unknown) =>
+    track(writeFolderSettings(file, { ...liveSettings, views: next.def.views, properties: next.def.properties, defaultView: next.def.defaultView })).catch((err: unknown) =>
       setSettingsError(err instanceof Error ? err.message : String(err)),
     )
   }
@@ -361,9 +452,10 @@ export function FolderView({
     // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
     // stood before and rejects to the caller, whose inline text is the report.
     setColumn: (key, next, base) => {
+      if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
       const before = aheadRef.current
       setAhead({ ...liveSettings.columns, [key]: next })
-      return writeFolderColumn(file, key, next, base, ids).catch((err: unknown) => {
+      return track(writeFolderColumn(file, key, next, base, ids)).catch((err: unknown) => {
         setAhead(before)
         throw err
       })
@@ -417,42 +509,67 @@ export function FolderView({
     // The note editor's own scroller and blocks in a note's order (D9) — title and properties, the
     // views where the body would be, the comments — so the page lines up with a note's column and
     // the table's sticky header finds the scroller it bridges to (YAZ-1151).
-    <div className="editor-host">
-      <div className="page-header">
-        <PageTitle path={path} kind="dir" titles={titles} onRetitle={(title) => onRetitle(path, title, 'dir')} />
-        {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} />}
+    <>
+      <FolderToolbar
+        store={chips}
+        zoom={zoom}
+        onZoom={setZoom}
+        readOnly={pageLocked}
+        // As a note's cog (YAZ-3076 D4): off turns it on at once; on opens the chip's "Allow edits?" box.
+        onToggleReadOnly={() => (pageLocked ? setAskingUnlock(true) : setPageLocked(true, writeOwnKey(READ_ONLY_KEY, true)))}
+        asking={askingUnlock}
+        onAsk={() => setAskingUnlock(true)}
+        onAllow={() => {
+          setAskingUnlock(false)
+          setPageLocked(false, writeOwnKey(READ_ONLY_KEY, undefined))
+        }}
+        onCancel={() => setAskingUnlock(false)}
+        showPageFile={showPageFile}
+        onChangeShowPageFile={(next) => setShowPageFile(next, writeOwnKey(SHOW_PAGE_FILE_KEY, next))}
+        sync={sync}
+        onSyncNow={onSyncNow}
+      />
+      <div ref={hostRef} className="editor-host" style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
+        <div className="page-header">
+          {/* Read only (D36) locks the title and the folder's own properties, as a note's does. */}
+          <PageTitle path={path} kind="dir" titles={titles} readOnly={pageLocked} onRetitle={(title) => onRetitle(path, title, 'dir')} />
+          {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} readOnly={pageLocked} />}
+        </div>
+        <section className="folder-view">
+          {visibleError !== null && (
+            <p className="views-pane__error" role="alert">
+              Could not update the folder: {visibleError}
+            </p>
+          )}
+          {/* The Page tab (10D) hands the toolbar its part through `FolderPageChips` (YAZ-3746 D35). */}
+          <FolderPageChips.Provider value={chips}>
+            {/* The skins mark a row that is here by a shortcut (D2): they are told which folder "here" is. */}
+            <ViewFolder.Provider value={folder}>
+              <ViewsPane
+                parsed={parsed}
+                onChange={onChange}
+                root={root}
+                folderPath={path}
+                tabId={tabId}
+                viewKey={viewKey}
+                records={shown}
+                folderRows={shownSubfolders}
+                readOnly={locked}
+                properties={properties}
+                onOpenFile={onOpenFile}
+                folder={host}
+                hoverPreview={hoverPreview}
+                previewScope={previewScope}
+                diagramDarkColors={diagramDarkColors}
+                foldingOnByDefault={foldingOnByDefault}
+              />
+            </ViewFolder.Provider>
+          </FolderPageChips.Provider>
+        </section>
+        {disk !== null && <MemoCommentsSection file={disk} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />}
+        {/* The notes and folders that link to the FOLDER (D10): its path is what such a link resolves to. */}
+        <MemoBacklinksSection path={path} source={source} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
       </div>
-      <section className="folder-view">
-        {visibleError !== null && (
-          <p className="views-pane__error" role="alert">
-            Could not update the folder: {visibleError}
-          </p>
-        )}
-        {/* The skins mark a row that is here by a shortcut (D2): they are told which folder "here" is. */}
-        <ViewFolder.Provider value={folder}>
-          <ViewsPane
-            parsed={parsed}
-            onChange={onChange}
-            root={root}
-            folderPath={path}
-            tabId={tabId}
-            viewKey={viewKey}
-            records={shown}
-            folderRows={shownSubfolders}
-            readOnly={locked}
-            properties={properties}
-            onOpenFile={onOpenFile}
-            folder={host}
-            hoverPreview={hoverPreview}
-            previewScope={previewScope}
-            diagramDarkColors={diagramDarkColors}
-            foldingOnByDefault={foldingOnByDefault}
-          />
-        </ViewFolder.Provider>
-      </section>
-      {disk !== null && <MemoCommentsSection file={disk} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />}
-      {/* The notes and folders that link to the FOLDER (D10): its path is what such a link resolves to. */}
-      <MemoBacklinksSection path={path} source={source} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
-    </div>
+    </>
   )
 }

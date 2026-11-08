@@ -3885,6 +3885,11 @@ body.drag-held iframe {
   background: var(--border);
 }
 
+/* A line with nothing under it (a folder page's cog off its Page tab, YAZ-3746 D35): no line. */
+.page-settings__menu > .page-settings__divider:last-child {
+  display: none;
+}
+
 /* The in-note menus' line between groups (the bullet's and the link's, `renderMenu`) spaces as the app menus'
    (`.ctx-menu__group + .ctx-menu__group`): 4px above and below (YAZ-3727 D21). */
 .ctx-menu--editor > .document-zoom__divider {

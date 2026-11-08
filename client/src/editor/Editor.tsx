@@ -48,15 +48,13 @@ import './softBreaks.css'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { noteOutsideGlow, notePageSwitches, setNoteOutsideGlow, setNotePageSwitch, type PageSwitchKey } from '@shared/pageSwitches'
 import { isNoteReadOnly, setNoteReadOnly } from '@shared/readOnly'
-import { SaveIndicator } from './SaveIndicator'
-import { SyncIndicator } from './SyncIndicator'
-import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
+import { stepZoomByKey } from './DocumentZoom'
 import { FoldAllButton } from './FoldAllButton'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './outline/foldAllHotkeys'
 import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
 import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
-import { ReadOnlyChip } from './ReadOnlyChip'
+import { StatusChips } from './StatusChips'
 import { NoteMenu } from './noteMenu'
 import { ZOOM_EVENT } from './zoomRequest'
 import { onGoToNowRequest, takeGoToNow } from './table/goToNowRequest'
@@ -291,7 +289,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     if (inTree === 'dir') {
       return (
         <section className="editor">
-          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenFolderPage={onOpenFolderPage} renderNoteEditor={renderNoteEditor} tabId={tabId} viewKey={viewKey} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} previewScope={previewScope} diagramDarkColors={diagramDarkColors} foldingOnByDefault={foldingOnByDefault} />
+          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenFolderPage={onOpenFolderPage} renderNoteEditor={renderNoteEditor} tabId={tabId} viewKey={viewKey} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} previewScope={previewScope} diagramDarkColors={diagramDarkColors} foldingOnByDefault={foldingOnByDefault} sync={sync} onSyncNow={onSyncNow} />
         </section>
       )
     }
@@ -1180,7 +1178,8 @@ function CrepeHost({
   return (
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
-      <div className="status-chips">
+      {/* The toolbar a folder page shares (YAZ-3746 D35): this note's fold-all button and cog, then the shared chips. */}
+      <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={readOnly ? { asking: askingUnlock, onAsk: () => setAskingUnlock(true), onAllow: () => { setAskingUnlock(false); void setReadOnly(false) }, onCancel: () => setAskingUnlock(false) } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
         {/* Collapse all / Expand all (YAZ-3938 D1): the ⌘⇧U / ⌘⇧I command, left of the cog. */}
         {/* Folding off (YAZ-4094 F1): nothing on the page can fold, so the button goes. */}
         {foldingOn && <FoldAllButton
@@ -1195,11 +1194,7 @@ function CrepeHost({
           keys={{ collapse: 'note.foldAll', expand: 'note.unfoldAll' }}
         />}
         <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} guideLines={guideLinesOn} onToggleGuideLines={toggleGuideLines} folding={foldingOn} onToggleFolding={toggleFolding} bulletThreading={threadingOn} onToggleBulletThreading={toggleThreading} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContentsOn ? changeTocSource : undefined} outsideGlow={pageGlow} appGlow={outsideChangeGlow} onChangeOutsideGlow={changeOutsideGlow} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
-        <DocumentZoom value={documentZoom} onChange={changeZoom} />
-        {readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={() => setAskingUnlock(true)} onAllow={() => { setAskingUnlock(false); void setReadOnly(false) }} onCancel={() => setAskingUnlock(false)} />}
-        {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
-        <SaveIndicator status={autosave.status} />
-      </div>
+      </StatusChips>
       {/* The one-line note of outside changes (YAZ-3704 D6) takes the conflict bar's place and hides while it shows. */}
       {autosave.conflictMtime !== null ? (
         <div className="conflict-bar" role="alert">

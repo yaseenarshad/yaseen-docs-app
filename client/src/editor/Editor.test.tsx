@@ -2183,13 +2183,15 @@ describe('the page settings cog (YAZ-2643)', () => {
     expect(el.querySelector('.page-settings')).toBeNull()
   })
 
-  it('a folder page has no cog (S11)', async () => {
+  // Changed by YAZ-3746 D35 (it was S11's "a folder page has no cog"): a folder page has the note page's toolbar, its own cog first.
+  it('a folder page has the toolbar: cog, zoom pill, sync chip, save chip, before its scroller (YAZ-3746 D35)', async () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [{ type: 'dir', name: 'Projects', path: `${r}/Projects`, children: [] }], generatedAt: 1 }))
     const source = createWikilinkResolveSource()
     act(() => source.update(() => null, [], [])) // the first index snapshot: an empty vault, no folder settings
-    const el = await open('/cog-folders/Projects', { root: '/cog-folders', wikilinks: source })
+    const el = await open('/cog-folders/Projects', { root: '/cog-folders', wikilinks: source, sync: { root: '/cog-folders', state: 'synced' }, onSyncNow: noop })
     expect(el.querySelector('.folder-view')).not.toBeNull()
-    expect(el.querySelector('.page-settings')).toBeNull()
+    expect([...el.querySelector('section.editor')!.children].map((c) => c.className)).toEqual(['status-chips', 'editor-host'])
+    expect([...el.querySelector('.status-chips')!.children].map((chip) => chip.className.split(' ')[0])).toEqual(['page-settings', 'document-zoom', 'sync-indicator', 'save-indicator'])
   })
 
   it('the switch sets `data-line-numbers` on the scroller and clears it again; the Crepe is never recreated (S6)', async () => {
