@@ -711,6 +711,44 @@ describe('runView: Name is the title, File name its own column (YAZ-2420 D18)', 
   })
 })
 
+describe('runView: subfolder rows (YAZ-4579 D31/D33)', () => {
+  const note = (path: string, title: string): IndexRecord => ({ ...TEST_RECORDS[0], path: `/vault/${path}`, name: path.slice(path.lastIndexOf('/') + 1), basename: title, title, folder: 'Schema', properties: {} })
+  /** A subfolder's row: its `.folder.md`, titled as the folder, `folder` = the page. */
+  const folderRow = (dir: string): IndexRecord => ({ ...note(`Schema/${dir}/.folder.md`, dir), basename: '.folder' })
+  /** In the order ViewsPane hands them: the notes, then the folder rows. */
+  const records = [note('Schema/Apple.md', 'Apple'), note('Schema/Zoo.md', 'Zoo'), folderRow('Users'), folderRow('Orders')]
+  const table = (view: Partial<ViewDef>): ViewResult => {
+    const v: ViewDef = { type: 'table', name: 'T', ...view }
+    return runView({ views: [v] }, v, records)
+  }
+  const titles = (r: ViewResult): string[] => r.rows.map(row => row.record.title)
+  const byName: Partial<ViewDef> = { sort: [{ property: 'file.name', direction: 'ASC' }] }
+
+  it('`file.kind` is `folder` for a folder row and `note` for a note, under the label "Kind"; a filter on it keeps one kind', () => {
+    expect(table({ order: ['file.name', 'file.kind'] }).rows.map(row => row.values['file.kind'])).toEqual(['folder', 'folder', 'note', 'note'])
+    expect(titles(table({ filters: 'file.kind == "folder"' }))).toEqual(['Users', 'Orders'])
+    expect(titles(table({ filters: 'file.kind == "note"' }))).toEqual(['Apple', 'Zoo'])
+    expect(defaultLabel('file.kind')).toBe('Kind')
+  })
+
+  it('Folders first (D33), the default: folder rows before the notes, each part in the view’s sort — or, with none, as handed in', () => {
+    expect(titles(table(byName))).toEqual(['Orders', 'Users', 'Apple', 'Zoo'])
+    expect(titles(table({ sort: [{ property: 'file.name', direction: 'DESC' }] }))).toEqual(['Users', 'Orders', 'Zoo', 'Apple'])
+    expect(titles(table({}))).toEqual(['Users', 'Orders', 'Apple', 'Zoo'])
+  })
+
+  it('`foldersFirst: false`: the folder rows sort among the notes by the view’s sort alone', () => {
+    expect(titles(table({ ...byName, foldersFirst: false }))).toEqual(['Apple', 'Orders', 'Users', 'Zoo'])
+    expect(titles(table({ foldersFirst: false }))).toEqual(['Apple', 'Zoo', 'Users', 'Orders'])
+  })
+
+  it('folders first holds inside each group, and before a limit cuts', () => {
+    const grouped = table({ ...byName, groupBy: { property: 'file.folder', direction: 'ASC' } })
+    expect(grouped.groups!.map(g => g.rows.map(row => row.record.title))).toEqual([['Orders', 'Users', 'Apple', 'Zoo']])
+    expect(titles(table({ ...byName, limit: 1 }))).toEqual(['Orders'])
+  })
+})
+
 describe('targetBasename (YAZ-2241)', () => {
   it('names the basename of EVERY note a target resolves to without aliases, whatever its spelling', () => {
     // The rename detector skips a file whose basename no link names; that is only sound if every

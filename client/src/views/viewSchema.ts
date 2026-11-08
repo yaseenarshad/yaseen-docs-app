@@ -66,10 +66,28 @@ export interface ViewDef {
   calendarScale?: 'month' | 'week'
   /** A calendar's card titles (YAZ-4558 D23): `wrap` = the full title on more lines. Absent = clip, one line with "…". */
   cardTitles?: 'clip' | 'wrap'
-  /** "Notes in subfolders" (YAZ-4564 D25): `false` = Hide, only the notes directly in the folder and its shortcuts. Absent = Show. */
-  subfolders?: boolean
+  /**
+   * "Subfolders" (YAZ-4579 D30, replacing YAZ-4564 D25's boolean): `rows` = a row per direct subfolder plus the
+   * folder's own notes and shortcuts; `both` = the subfolder rows plus every note below; `hide` = the own notes
+   * and shortcuts alone. Absent = "Their notes", every note below and no subfolder row. A stored `false` reads as `hide`.
+   */
+  subfolders?: 'rows' | 'both' | 'hide' | false
+  /** "Folders first" (YAZ-4579 D33): `false` = the subfolder rows sort among the notes. Absent = folder rows first. */
+  foldersFirst?: boolean
   [extra: string]: unknown
 }
+
+/** A view's "Subfolders" switch (YAZ-4579 D30): `notes` (absent, or a value the app does not know) is "Their notes". */
+export type SubfoldersMode = 'notes' | 'rows' | 'both' | 'hide'
+
+export const subfoldersOf = (view: ViewDef): SubfoldersMode =>
+  view.subfolders === false || view.subfolders === 'hide' ? 'hide' : view.subfolders === 'rows' || view.subfolders === 'both' ? view.subfolders : 'notes'
+
+/** Whether the view shows a row per direct subfolder (YAZ-4579 D31). */
+export const showsFolderRows = (view: ViewDef): boolean => subfoldersOf(view) === 'rows' || subfoldersOf(view) === 'both'
+
+/** Whether the view keeps only the notes directly in the folder and its shortcuts (YAZ-4564 D25): the notes in subfolders are hidden. */
+export const hidesSubfolderNotes = (view: ViewDef): boolean => subfoldersOf(view) === 'rows' || subfoldersOf(view) === 'hide'
 
 /** A view's grouping levels, outer first, whichever form `groupBy` is written in. */
 export const groupByLevels = (view: ViewDef): GroupBySpec[] =>

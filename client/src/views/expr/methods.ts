@@ -1,4 +1,4 @@
-import { inFolder } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, inFolder } from '@shared/types'
 import { formatDate, relativeDate, startOfDay } from './dates'
 import { ArgError } from './ops'
 import {
@@ -26,6 +26,8 @@ const FILE_FIELDS: Record<string, (r: FileRecordLike) => Value> = {
   basename: r => r.basename,
   path: r => r.path,
   folder: r => r.folder,
+  // A folder page's subfolder row is the folder's `.folder.md` (YAZ-4579 D31): `folder`; every other record is a `note`.
+  kind: r => (r.name === FOLDER_SETTINGS_FILE ? 'folder' : 'note'),
   ext: r => r.ext,
   size: r => r.size,
   ctime: r => new DateValue(r.ctime, true),

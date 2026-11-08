@@ -1,6 +1,6 @@
 import { vaultNoteId } from '@shared/noteId'
 import { READ_ONLY_KEY } from '@shared/readOnly'
-import { type IndexRecord, inFolder } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, type IndexRecord, inFolder } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, type SortSpec, shownGroupLevels } from './viewSchema'
 import {
   DateValue, DurationValue, ErrorValue, type Expr, FileValue, LinkValue, type Resolver, type Scope, type Value,
@@ -419,6 +419,9 @@ function compareBy(spec: SortSpec | GroupBySpec, resolve: Resolver, optionOrder:
   }
 }
 
+/** A subfolder's row (YAZ-4579 D31): its record is the folder's `.folder.md` (`links/shortcuts.ts` `isFolderRow`). */
+const isFolderEntry = (e: Entry): boolean => e.row.record.name === FOLDER_SETTINGS_FILE
+
 const byPath = (a: Entry, b: Entry): number => (a.row.record.path < b.row.record.path ? -1 : a.row.record.path > b.row.record.path ? 1 : 0)
 
 // ---------- grouping ----------
@@ -471,6 +474,7 @@ const FILE_FIELD_LABELS: Readonly<Record<string, string>> = {
   'file.basename': 'File name',
   'file.path': 'Path',
   'file.folder': 'Folder',
+  'file.kind': 'Kind',
   'file.ext': 'Extension',
   'file.size': 'Size',
   'file.ctime': 'Created',
@@ -547,6 +551,14 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
       }
       return byPath(a, b)
     })
+  }
+
+  // Folders first (YAZ-4579 D33): the subfolder rows before the notes, each part in the view's order. A
+  // stable split, and only where a folder row is: a page without one costs one pass of name checks.
+  if (view.foldersFirst !== false && entries.some(isFolderEntry)) {
+    const folders = entries.filter(isFolderEntry)
+    const notes = entries.filter(e => !isFolderEntry(e))
+    entries.splice(0, entries.length, ...folders, ...notes)
   }
 
   // limit

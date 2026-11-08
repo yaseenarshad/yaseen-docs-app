@@ -33,7 +33,7 @@ vi.mock('../api', async (importOriginal) => {
 import { alsoIn } from '@shared/alsoIn'
 import { parseFrontmatter, setFrontmatterIn, splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
-import { addShortcut, directlyIn, dropFolderValuesAfterMove, dropStaleFolderValues, folderRows, foldersById, foldersShowing, isShortcut, removeShortcut, restoreFolderValues, rowsByFolder, valuesLeftBehind, valuesLeftByShortcut, type Move } from './shortcuts'
+import { addShortcut, directlyIn, dropFolderValuesAfterMove, dropStaleFolderValues, folderRows, foldersById, foldersShowing, isFolderRow, isShortcut, removeShortcut, restoreFolderValues, rowPage, rowsByFolder, subfolderRows, valuesLeftBehind, valuesLeftByShortcut, type Move } from './shortcuts'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -227,6 +227,35 @@ describe('"Notes in subfolders: Hide" keeps a row directly in the folder (YAZ-45
     expect(directlyIn(rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] }), 'Projects')).toBe(true)
     expect(directlyIn(rec('/vault/Projects/Deep/B.md'), 'Projects')).toBe(false)
     expect(directlyIn(rec('/vault/Projects/Deep/Deeper/C.md'), 'Projects')).toBe(false)
+  })
+})
+
+describe('subfolders as rows (YAZ-4579 D31)', () => {
+  /** The Files tree's folders, absolute (`vaultDirs`): Projects/Plain has no `.folder.md`. */
+  const DIRS = ['/vault/Areas', '/vault/Projects', '/vault/Projects/Deep', '/vault/Projects/Deep/Deeper', '/vault/Projects/Plain']
+
+  it('the DIRECT subfolders only, in path order: each its own `.folder.md` record, with `folder` = the parent', () => {
+    const rows = subfolderRows('/vault', 'Projects', DIRS, NESTED)
+    expect(rows.map((r) => r.path)).toEqual(['/vault/Projects/Deep/.folder.md', '/vault/Projects/Plain/.folder.md'])
+    expect(rows[0]).toEqual({ ...settings('Projects/Deep', DEEP_ID), folder: 'Projects' })
+  })
+
+  it('a folder with no `.folder.md` is an empty stand-in at the path its first write creates, titled by its directory', () => {
+    const plain = subfolderRows('/vault', 'Projects', DIRS, NESTED)[1]
+    expect(plain).toMatchObject({ path: '/vault/Projects/Plain/.folder.md', name: '.folder.md', title: 'Plain', folder: 'Projects', properties: {} })
+    expect(plain.id).toBeUndefined()
+  })
+
+  it('a settings record the tree does not list yet is a row too; the vault root’s subfolders are its top folders', () => {
+    expect(subfolderRows('/vault', 'Projects', [], NESTED).map((r) => r.path)).toEqual(['/vault/Projects/Deep/.folder.md'])
+    expect(subfolderRows('/vault', '', DIRS, NESTED).map((r) => r.folder)).toEqual(['', ''])
+  })
+
+  it('the kind marker is the file name, and a folder row’s page is its directory', () => {
+    expect(isFolderRow(settings('Projects/Deep'))).toBe(true)
+    expect(isFolderRow(rec('/vault/Projects/A.md'))).toBe(false)
+    expect(rowPage('/vault/Projects/Deep/.folder.md')).toBe('/vault/Projects/Deep')
+    expect(rowPage('/vault/Projects/A.md')).toBe('/vault/Projects/A.md')
   })
 })
 
@@ -441,6 +470,12 @@ describe('a folder’s values leave the note when the note leaves the folder (D2
       expect(tidy('/vault/Projects/N.md', note, twins)).toBe(note)
     })
 
+    it('a subfolder’s `.folder.md` keeps its parent’s block — and every folder above — and loses the block of a folder that does not hold it (YAZ-4579 D31)', () => {
+      const file = `---\nid: ${DEEP_ID}\n${blocks(PROJECTS_ID, AREAS_ID)}---\n`
+      expect(tidy('/vault/Projects/Deep/.folder.md', file)).toBe(`---\nid: ${DEEP_ID}\n${blocks(PROJECTS_ID)}---\n`)
+      expect(tidy('/vault/Projects/Deep/Deeper/.folder.md', `---\n${blocks(DEEP_ID, PROJECTS_ID)}---\n`)).toBe(`---\n${blocks(DEEP_ID, PROJECTS_ID)}---\n`)
+    })
+
     it('a note outside the vault, and one whose frontmatter will not parse, are left as they are', () => {
       const note = `---\n${blocks(PROJECTS_ID)}---\n`
       expect(tidy('/elsewhere/N.md', note)).toBe(note)
@@ -508,6 +543,19 @@ describe('a folder’s values leave the note when the note leaves the folder (D2
       // Only the note that holds a stale block is read or written: decided on the snapshot.
       expect(vi.mocked(api.readFile).mock.calls.map(([path]) => path)).toEqual(['/vault/Areas/Deep/Deeper/N.md'])
       expect(vi.mocked(api.writeFile).mock.calls.map(([req]) => req.path)).toEqual(['/vault/Areas/Deep/Deeper/N.md'])
+    })
+
+    it('a subfolder moved to another parent: its `.folder.md` drops the old parent’s block, as a note does (YAZ-4579 D31)', async () => {
+      // `Projects/Deep` moves under Areas: Projects no longer holds it, so its row there and its values go.
+      put('/vault/Areas/Deep/.folder.md', PROJECTS_ID)
+      const deep = { ...settings('Projects/Deep', DEEP_ID), properties: { in: { [PROJECTS_ID]: { order: 1 } } } }
+      const cleared = await move('/vault/Projects/Deep', '/vault/Areas/Deep', 'dir', [], [...FOLDERS, deep])
+      expect(inOf('/vault/Areas/Deep/.folder.md')).toEqual([])
+      expect(cleared).toEqual([{ path: '/vault/Projects/Deep/.folder.md', values: { [PROJECTS_ID]: { order: 1 } } }])
+      // A rename under the same parent keeps it: nothing is read or written.
+      vi.mocked(api.readFile).mockClear()
+      await move('/vault/Projects/Deep', '/vault/Projects/Shallow', 'dir', [], [...FOLDERS, deep])
+      expect(api.readFile).not.toHaveBeenCalled()
     })
 
     it('a pure rename, or a move under the same folders above, writes NOTHING — and reads nothing', async () => {

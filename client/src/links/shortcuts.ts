@@ -13,8 +13,8 @@ import { ALSO_IN_KEY, alsoIn, alsoInEntries } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, withoutStaleFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from '@shared/noteId'
-import { folderSettingsPath, inFolder, type IndexRecord } from '@shared/types'
-import { basename, dirname, relTo } from '../lib/paths'
+import { FOLDER_SETTINGS_FILE, folderSettingsPath, inFolder, isFolderSettingsPath, type IndexRecord } from '@shared/types'
+import { absFrom, basename, dirname, relTo } from '../lib/paths'
 import { takeNoteId } from '../views/scaffold'
 import { transformFile, type ContentTransform } from '../views/writeProperty'
 
@@ -100,6 +100,55 @@ export const isShortcut = (record: IndexRecord, folder: string): boolean => !inF
 
 /** Whether a row `folder` shows is directly in it or there by a shortcut, not in a subfolder: what "Notes in subfolders: Hide" keeps (YAZ-4564 D25). */
 export const directlyIn = (record: IndexRecord, folder: string): boolean => record.folder === folder || isShortcut(record, folder)
+
+/**
+ * Whether a row is a SUBFOLDER's (YAZ-4579 D31): its record is the folder's `.folder.md`, which the
+ * index never hands out as a note (D8), so the file name is the kind marker. By the name, never the
+ * path: the engine asks it of every row.
+ */
+export const isFolderRow = (record: Pick<IndexRecord, 'name'>): boolean => record.name === FOLDER_SETTINGS_FILE
+
+/** The page a row opens (YAZ-4579 D32): a folder row's is its folder, by the directory path a folder tab holds (D3); a note's is the note. */
+export const rowPage = (path: string): string => (isFolderSettingsPath(path) ? dirname(path) : path)
+
+/** The parent of a folder as the index names it ('' for one in the root). */
+const parentOf = (folder: string): string => folder.slice(0, Math.max(0, folder.lastIndexOf('/')))
+
+/**
+ * The DIRECT subfolders of `folder` (as the index names it) as rows, in path order (YAZ-4579 D31):
+ * each the subfolder's own `.folder.md` record, or, while it has none, an empty stand-in at the path
+ * its first write creates (`readForWrite`). Its `folder` is the PARENT, so it sits among the
+ * page's own notes; its properties are the file's own, for the host to read its values from.
+ * `dirs` are the Files tree's (absolute, `vaultDirs`): a folder with no `.folder.md` is known only there.
+ */
+export function subfolderRows(root: string, folder: string, dirs: readonly string[], folders: readonly IndexRecord[]): IndexRecord[] {
+  const held = new Map(folders.map((record) => [record.folder, record]))
+  const children = new Set<string>()
+  const add = (rel: string): void => {
+    if (rel !== '' && rel !== folder && parentOf(rel) === folder) children.add(rel)
+  }
+  for (const dir of dirs) add(relTo(root, dir))
+  for (const record of folders) add(record.folder)
+  return [...children].sort().map((rel) => {
+    const own = held.get(rel) ?? {
+      path: folderSettingsPath(absFrom(root, rel)),
+      name: FOLDER_SETTINGS_FILE,
+      basename: '.folder',
+      title: basename(rel),
+      folder: rel,
+      ext: 'md',
+      size: 0,
+      ctime: 0,
+      mtime: 0,
+      properties: {},
+      aliases: [],
+      tags: [],
+      links: [],
+      embeds: [],
+    }
+    return { ...own, folder }
+  })
+}
 
 const propertiesOf = (content: string): Record<string, unknown> => parseFrontmatter(splitFrontmatter(content).frontmatter).properties
 
@@ -219,7 +268,8 @@ function staleAfterMove({ root, oldPath, newPath, kind, records, folders }: Move
     const path = moved(folder.path)
     return path === folder.path ? folder : { ...folder, path, folder: dirname(relTo(root, path)) }
   })
-  const stale = records.flatMap((record) => {
+  // A subfolder's `.folder.md` holds its values for its parent like a note does (YAZ-4579 D31): it moves with its folder.
+  const stale = [...records, ...folders].flatMap((record) => {
     const path = moved(record.path)
     if (path === record.path) return []
     const kept = withoutLeftFolders(record.properties, dirname(relTo(root, path)), after)
