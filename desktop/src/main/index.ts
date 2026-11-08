@@ -447,7 +447,7 @@ app.whenReady().then(() => {
   const navigation = registerAutomationIpc(store, manager)
   automationNavigation = navigation
   automationServer = startAutomationServer(app.getPath('userData'), (request, content) =>
-    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), state: () => store.get(), navigation, store, services: automationServices, app: {
+    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), packaged: app.isPackaged, state: () => store.get(), navigation, store, services: automationServices, app: {
       updater,
       diagnostics: async () => ({ platform: process.platform, architecture: process.arch, version: app.getVersion(), packaged: app.isPackaged, memory: await meter?.report() ?? null }),
       restart: mode => {

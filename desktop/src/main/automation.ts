@@ -26,7 +26,7 @@ import { documentCommand } from './automation/documents'
 import { BridgeFailure } from './fs/fsUtils'
 import { FrontmatterWriteError } from '@shared/frontmatter'
 import { CommentsShapeError } from '@shared/comments'
-import { AutomationFailure, type AutomationRequest } from '@shared/automation'
+import { AutomationFailure, type AutomationRequest, AUTOMATION_VERSION } from '@shared/automation'
 import { commandDefinition, validateInput } from '@shared/automationCommands'
 import type { Operation } from '../automation/requests'
 import type { AppState } from '@shared/types'
@@ -34,7 +34,7 @@ import { readSaved, resolveTarget, scopeRoots, search, type ResourceScope, type 
 import { generateNavigationLink, navigate, type NavigationHost } from './automation/navigation'
 import type { NavigationInput } from '@shared/automationNavigation'
 
-function prepare(context: { profile: string; version: string; state?: () => AppState; navigation?: NavigationHost; store?: Store; services?: AutomationServices; app?: AutomationApp }, request: AutomationRequest, content: Buffer): Operation {
+function prepare(context: { profile: string; version: string; packaged?: boolean; state?: () => AppState; navigation?: NavigationHost; store?: Store; services?: AutomationServices; app?: AutomationApp }, request: AutomationRequest, content: Buffer): Operation {
   const definition = commandDefinition(request.command)
   validateInput(definition.input, request.args)
   const hasContent = request.hasContent ?? content.length > 0
@@ -114,7 +114,7 @@ function prepare(context: { profile: string; version: string; state?: () => AppS
     case 'session.list': case 'session.save': case 'session.rename': case 'session.remove':
     case 'collection.list': case 'collection.add': case 'collection.remove': case 'collection.reorder':
       return { writes: definition.effect === 'read' ? [] : ['configuration'], run: () => configurationCommand(context.store!, request.command, request.args, context.services?.forgetPicturePick) }
-    case 'app.status': return { writes: [], run: async () => ({ version: context.version, profile: context.profile, running: true }) }
+    case 'app.status': return { writes: [], run: async () => ({ version: context.version, automation: AUTOMATION_VERSION, packaged: context.packaged === true, profile: context.profile, running: true }) }
     case 'navigation.open': return { writes: ['navigation'], run: () => navigate(context.navigation!, request.args as NavigationInput) }
     case 'navigation.link': return { writes: [], run: () => generateNavigationLink(context.state!(), request.args as NavigationInput) }
     case 'file.history': return { writes: [], run: () => context.navigation!.inspect(request.args.window as string, { kind: 'history' }) }

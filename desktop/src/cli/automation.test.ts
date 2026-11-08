@@ -37,7 +37,7 @@ describe('actual CLI process', () => {
     const result = await run('app', 'status', '--json')
     expect(result.code).toBe(0)
     const data = JSON.parse(result.stdout)
-    expect(data).toMatchObject({ ok: true, value: { profile, version: 'test', running: true } })
+    expect(data).toMatchObject({ ok: true, value: { profile, version: 'test', automation: 1, packaged: false, running: true } })
     const again = await run('app', 'status', '--request', data.request)
     expect(JSON.parse(again.stdout)).toEqual(data)
   })
