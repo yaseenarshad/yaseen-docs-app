@@ -4,6 +4,7 @@ import { GroupLevelStepsContext } from '../groupLevelSteps'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
 import { type EngineError, propertyKeys, propertyLabel } from '../engine'
+import { pageColumnKeys } from '../folderSettings'
 import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
 import { ColumnDetail } from './ColumnDetail'
@@ -115,7 +116,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
   )
   const groupsLabel = allCollapsed ? 'Expand all groups' : 'Collapse all groups'
   /** The view's shown columns, for the column editor's "Hide in this view" (the Properties menu's rule). */
-  const shownKeys = () => propertyKeys(def, view, records, Object.keys(folder.settings.columns))
+  const shownKeys = () => propertyKeys(def, view, records, pageColumnKeys(folder.settings))
 
   const button = (menu: Menu, label: string, icon: ReactNode, badge: number, body: ReactNode, extraClass?: string) => (
     <div className="view-toolbar__menu">

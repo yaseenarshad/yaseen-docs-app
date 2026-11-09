@@ -6,6 +6,7 @@ import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/type
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import type { FolderHost } from '../ViewsPane'
 import { propertyKeys, propertyLabel } from '../engine'
+import { pageColumnKeys } from '../folderSettings'
 import { canonicalKey } from './keys'
 import { AddColumn } from './AddColumn'
 import { canHideColumn, setViewOrder, withOrder } from './columnOrder'
@@ -17,6 +18,7 @@ import { ViewFolder } from './GroupHeader'
 import { ownerName } from '../columnInheritance'
 import { declarationForKind } from './declarationForKind'
 import { ViewSettings } from './ViewSettings'
+import { ColumnMark, columnMark } from './ColumnMark'
 
 export { normalizeBoardWidth } from './ViewSettings'
 
@@ -91,7 +93,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const [detail, setDetail] = useState<string | null>(null)
   /** Settings › Folder pages (YAZ-4585): `view` has them filled in; `own` is the view as written, for "from Settings". */
   const own = def.views[viewIndex] ?? view
-  const shown = propertyKeys(def, view, records, Object.keys(folder.settings.columns))
+  const shown = propertyKeys(def, view, records, pageColumnKeys(folder.settings))
   const keys = allPropertyKeys(def, view, records, folder.settings.columns)
   const filtering = query.trim() !== ''
   const matches = keys.filter(key => matchesColumn(query, propertyLabel(def, key), key))
@@ -178,6 +180,11 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   /** "Add to this folder" (C4): the field becomes a column of this folder, of the kind it shows, and shows in this view, in one write. */
   const addToFolder = (key: string) => {
     const name = canonicalKey(key).slice('note.'.length)
+    // A subfolder's column (YAZ-4713 C11): its agreed definition, options and all, becomes this folder's own; then it shows.
+    if (folder.settings.fromBelow?.includes(name)) {
+      void folder.setColumn(name, folder.settings.columns[name], undefined).then(() => writeOrder([...shown, key]), () => undefined)
+      return
+    }
     const kind = kindOf(key)
     folder.setColumns(
       { ...folder.settings.columns, [name]: declarationForKind({ kind }, kind) },
@@ -197,6 +204,13 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
       )}
     </>
   )
+  /** A shown row's mark (C11), as the table header draws it. */
+  const markOf = (key: string) => {
+    const c = canonicalKey(key)
+    if (!c.startsWith('note.')) return null
+    const bare = c.slice('note.'.length)
+    return columnMark(folder.sources, bare, folder.settings.columns[bare]?.separate === true)
+  }
   /** One column row: the grip (shown rows, no search), the kind glyph, the label, its type, a › on hover, then the switch (an other property: its buttons). */
   const row = (key: string) => {
     const on = isShown(key)
@@ -238,6 +252,8 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
             <span className="view-prop__name">
               {label}
               {(labelCounts.get(label) ?? 0) > 1 && <small>{canonicalKey(key)}</small>}
+              {/* Where a shown column comes from (YAZ-4713 C11): Columns ⚙ names the folder; the hidden rows say it in their parts. */}
+              {on && markOf(key) !== null && <ColumnMark mark={markOf(key)!} withName />}
             </span>
             <span className="view-prop__type">{typeOf(key)}</span>
             <span className="view-prop__chevron" aria-hidden="true">›</span>

@@ -4,6 +4,7 @@
  * On, Off, or Settings — no key, which follows Settings › Folder pages). The sidebar reads it for that folder
  * and every folder below it; the nearest rule wins. Any other value counts as no key. Pure: no fs, no DOM.
  */
+import { FOLDER_PAGE_CHOICES, type FolderPagesSettings } from './types'
 export const SHOW_PAGE_FILE_KEY = 'show_page_file'
 
 /** The folder's own choice off its `.folder.md` properties: `undefined` follows Settings. */
@@ -84,4 +85,17 @@ export const INHERIT_COLUMNS_KEY = 'inherit_columns'
 export function inheritColumnsOf(properties: Readonly<Record<string, unknown>>): boolean | undefined {
   const value = properties[INHERIT_COLUMNS_KEY]
   return typeof value === 'boolean' ? value : undefined
+}
+
+/**
+ * A folder page's own "Show where columns come from" (YAZ-4713 C11), `column_marks: icon | name | off` in its
+ * `.folder.md`: the column header's mark (`FolderPagesSettings.columnMarks`). No key follows Settings › Folder pages
+ * (`icon` by default). Any other value counts as no key.
+ */
+export const COLUMN_MARKS_KEY = 'column_marks'
+
+/** The folder's own choice off its `.folder.md` properties: `undefined` follows Settings. */
+export function columnMarksOf(properties: Readonly<Record<string, unknown>>): FolderPagesSettings['columnMarks'] | undefined {
+  const value = properties[COLUMN_MARKS_KEY]
+  return FOLDER_PAGE_CHOICES.columnMarks.find((choice) => choice === value)
 }

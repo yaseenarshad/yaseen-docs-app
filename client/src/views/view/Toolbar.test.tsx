@@ -1772,21 +1772,21 @@ views:
     expect(byLabel<HTMLButtonElement>(pop, 'Hide Status in this view').disabled).toBe(true) // already hidden
   })
 
-  it('the actions row (YAZ-1513): Delete column… asks first with the label, key and member count; Cancel deletes nothing; Delete calls the ONE door', () => {
+  it('the actions row (YAZ-1513): Delete column… asks first with the label and the folder; Cancel deletes nothing; "Delete column and clear N values" calls the ONE door (YAZ-4713 C7)', () => {
     const deleteColumn = vi.fn(async () => {})
     const { el, onChange } = mount(undefined, { folder: testFolderHost({ deleteColumn }) })
     const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     click(byLabel(pop, 'Delete column Status'))
     const sheet = q<HTMLElement>(pop, '.confirm[role="dialog"]')
-    expect(q(sheet, '.confirm__text').textContent).toBe('Delete the column "Status"? It goes from this folder, and the "status" value from 5 notes.')
+    expect(q(sheet, '.confirm__text').textContent).toBe('Delete the column "Status"? It goes from vault and every page under it.')
     click([...sheet.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Cancel')!)
     expect(pop.querySelector('.confirm')).toBeNull()
     expect(deleteColumn).not.toHaveBeenCalled()
     expect(el.querySelector('.view-popover')).not.toBeNull() // the sheet's Cancel never reaches the popover
     click(byLabel(pop, 'Delete column Status'))
-    click([...pop.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete')!)
-    expect(deleteColumn).toHaveBeenCalledExactlyOnceWith('note.status')
+    click([...pop.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete column and clear 5 values')!)
+    expect(deleteColumn).toHaveBeenCalledExactlyOnceWith('note.status', true)
     expect(onChange).not.toHaveBeenCalled()
     expect(byLabel(pop, 'Show Status')).toBeDefined() // back on the list
   })

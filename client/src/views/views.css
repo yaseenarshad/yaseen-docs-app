@@ -3287,3 +3287,31 @@
   list-style: none;
   pointer-events: none;
 }
+
+/* The column header's mark (YAZ-4713 C11): inline after the name, so it clips with it and never widens the column. */
+.view-column-mark {
+  margin-left: 4px;
+  color: var(--fg-muted);
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+.view-column-mark__icon {
+  vertical-align: -1px;
+}
+
+.view-column-mark__name {
+  margin-left: 3px;
+  font-size: 0.85em;
+}
+
+/* Edit column's line on where a column comes from (YAZ-4713 C6): the words, then the move. */
+.column-detail__source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 6px;
+  color: var(--fg-muted);
+  font-size: 0.92em;
+}

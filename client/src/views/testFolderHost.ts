@@ -23,6 +23,14 @@ export function testFolderHost(over: Partial<FolderHost> = {}): FolderHost {
     settings,
     // Every declared column is the folder's own (YAZ-4713 C2) unless a test says otherwise.
     columns: Object.fromEntries(Object.entries(settings.columns).map(([key, decl]) => [key, { decl, owner: '' }])),
+    // Every column is this folder's own (C6, C11): no owner line, no header mark.
+    sources: {
+      folderName: 'vault',
+      marks: 'icon',
+      of: () => ({}),
+      here: () => Promise.reject(new Error('this test did not expect "Change on this folder only"')),
+      useParent: () => Promise.reject(new Error('this test did not expect "Use <parent>\'s"')),
+    },
     vaultRecords: TEST_RECORDS,
     vaultFolders: [],
     vaultName: 'vault',

@@ -1870,6 +1870,7 @@ export const FOLDER_PAGE_CHOICES = {
   subfolders: ['notes', 'rows', 'both', 'hide'],
   calendarScale: ['month', 'week'],
   cardTitles: ['clip', 'wrap'],
+  columnMarks: ['icon', 'name', 'off'],
 } as const
 
 /**
@@ -1911,6 +1912,12 @@ export interface FolderPagesSettings {
   confirmChanges: boolean
   showOtherFiles: boolean
   inheritColumns: boolean
+  /**
+   * "Show where columns come from" (YAZ-4713 C11): the column header's mark — `icon` (↳ from a parent folder, ↑ from a
+   * subfolder, a lock for a separate value; the folder's name on hover), `name` (the icon and the folder's name in small
+   * text), `off`. A folder's `column_marks` beats it.
+   */
+  columnMarks: (typeof FOLDER_PAGE_CHOICES.columnMarks)[number]
 }
 
 export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
@@ -1934,6 +1941,7 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   confirmChanges: true,
   showOtherFiles: true,
   inheritColumns: true,
+  columnMarks: 'icon',
 }
 
 export interface SettingsState {

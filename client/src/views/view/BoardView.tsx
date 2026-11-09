@@ -4,7 +4,7 @@ import type { IndexRecord } from '@shared/types'
 import { type Modifiers, openByGesture, openByKey, openTarget } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
 import { rowPage } from '../../links/shortcuts'
-import type { FolderSettings } from '../folderSettings'
+import { pageColumnKeys, type FolderSettings } from '../folderSettings'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import type { Resolver } from '../expr'
@@ -250,7 +250,7 @@ export function BoardView({
     )
   }
 
-  const keys = propertyKeys(def, view, records, Object.keys(settings.columns))
+  const keys = propertyKeys(def, view, records, pageColumnKeys(settings))
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const styleOf = (key: string) => view.cardStyle?.[canonicalKey(key)] ?? {}
   /** The card's ROWS (YAZ-1217): each ordered key starts a line, `join` appends it to the one being built — so a join with no line yet is a harmless no-op. */

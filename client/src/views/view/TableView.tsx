@@ -4,7 +4,7 @@ import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentO
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { type Resolver, type Value, fromYaml, render, typeOf } from '../expr'
-import type { ColumnDecl, FolderSettings } from '../folderSettings'
+import { pageColumnKeys, type ColumnDecl, type FolderSettings } from '../folderSettings'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { fillSeries } from '../../editor/table/fillSeries'
@@ -42,6 +42,7 @@ import { useViewDefaults } from '../viewDefaults'
 import { orderOf } from './DirectionPicker'
 import { TextField } from './TextField'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
+import { ColumnMark, columnMark } from './ColumnMark'
 import { partTransform } from '../../lib/liveGap'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import { allPropertyKeys } from './properties'
@@ -105,7 +106,9 @@ export interface TableViewProps {
   /** `FolderHost.setColumns` (YAZ-1513): the header menu's "Add column to the right…" declares through it. */
   declareColumn: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
   /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. Absent → the menu has no such item. */
-  deleteColumn?: (key: string) => Promise<void>
+  deleteColumn?: FolderHost['deleteColumn']
+  /** `FolderHost.sources` (YAZ-4713 C6, C7, C11): the header icons, Edit column's owner line, and which columns may be deleted here. */
+  sources?: FolderHost['sources']
   /** `FolderHost.valueCount`: the number that confirm states. */
   valueCount: (key: string) => number
   /** `FolderHost.separate` (YAZ-4713 C3): Edit column's "Separate value on this page". Absent where the vault does not use IDs. */
@@ -263,7 +266,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, separate, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, sources, valueCount, separate, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /**
    * The wrap's scroll width when a column resize starts, in px (YAZ-3746 13W), 0 when none is held. views.css draws a
@@ -346,7 +349,17 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     }
   }, [])
 
-  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
+  const keys = useMemo(() => propertyKeys(def, view, records, pageColumnKeys(settings)), [def, view, records, settings])
+  /** Each header's mark (YAZ-4713 C11): where the column comes from, or none; all none while the switch is off. */
+  const marks = useMemo(
+    () => keys.map((key) => {
+      const c = canonicalKey(key)
+      if (sources === undefined || sources.marks === 'off' || !c.startsWith('note.')) return null
+      const bare = c.slice('note.'.length)
+      return columnMark(sources, bare, settings.columns[bare]?.separate === true)
+    }),
+    [keys, sources, settings],
+  )
   const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
@@ -1804,6 +1817,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     {...headerDrag(index)}
                   >
                     {propertyLabel(def, key)}
+                    {marks[index] !== null && <ColumnMark mark={marks[index]!} withName={sources?.marks === 'name'} />}
                     {rule !== undefined && (
                       <button
                         type="button"
@@ -2040,7 +2054,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             records={records}
             wrapKind={headerMenu.key === null ? null : wrapKind(typings[keys.indexOf(headerMenu.key)])}
             properties={properties}
-            folder={{ settings, setColumn, setColumns: declareColumn, deleteColumn, valueCount, separate, onNotice }}
+            folder={{ settings, setColumn, setColumns: declareColumn, deleteColumn, sources, valueCount, separate, onNotice }}
             rowNumbers={numbered}
             onUpdate={onUpdate}
             declareColumn={declareColumn}
@@ -2068,12 +2082,13 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           <ConfirmDeleteColumn
             columnKey={confirmDelete}
             def={def}
+            folderName={sources?.folderName ?? 'this folder'}
             count={valueCount}
             onCancel={() => setConfirmDelete(null)}
-            onConfirm={() => {
+            onConfirm={(clear) => {
               const gone = confirmDelete
               setConfirmDelete(null)
-              void deleteColumn(gone)
+              void deleteColumn(gone, clear)
             }}
           />
         )}

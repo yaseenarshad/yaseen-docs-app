@@ -33,7 +33,8 @@ describe('columns flow down (YAZ-4713 C2)', () => {
 
   it('the nearest declaration of a key wins: Orders’ own Domain options on the Orders page; Schema keeps its own', () => {
     const override = { domain: { kind: 'select' as const, options: ['Orders only'] } }
-    expect(pageColumns(override, 'schema/orders', FOLDERS, true, true).domain).toEqual({ decl: override.domain, owner: 'schema/orders' })
+    // C6: Orders' own over Schema's names Schema, for "Use Schema's".
+    expect(pageColumns(override, 'schema/orders', FOLDERS, true, true).domain).toEqual({ decl: override.domain, owner: 'schema/orders', over: 'schema' })
     expect(pageColumns({ domain: domain as never }, 'schema', FOLDERS, true, true).domain.owner).toBe('schema')
   })
 

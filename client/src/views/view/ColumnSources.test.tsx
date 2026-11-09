@@ -42,6 +42,8 @@ function mount(over: Partial<FolderHost> = {}, status: ColumnDecl = STATUS) {
     settings: { columns, views: [], problems: [] },
     columns: { status: { decl: status, owner: '' }, pillar: { decl: PILLAR, owner: 'schema' } },
     vaultFolders: [SCHEMA],
+    // This page is Desserts (the copy names the folder, YAZ-4713 1B); Pillar comes from Schema (C6).
+    sources: { ...testFolderHost().sources, folderName: 'Desserts', of: (key) => (key === 'pillar' ? { from: 'Schema' } : {}) },
     ...over,
   })
   container = document.createElement('div')
@@ -120,15 +122,15 @@ describe('Columns ⚙: where each hidden column comes from (YAZ-4713 C4)', () =>
   })
 })
 
-describe('Edit column › "Separate value on this page" (YAZ-4713 C3, 1B)', () => {
+describe('Edit column › "Separate value for <folder>" (YAZ-4713 C3, 1B)', () => {
   const openDetail = (el: ParentNode): HTMLElement => {
     click(byLabel(openColumns(el), 'Open Status'))
     return q(el, '.column-detail')
   }
-  const switchOf = (detail: ParentNode): HTMLInputElement => byLabel(detail, 'Separate value on this page for Status') as HTMLInputElement
+  const switchOf = (detail: ParentNode): HTMLInputElement => byLabel(detail, 'Separate value for Desserts for Status') as HTMLInputElement
 
   it('is not offered where the vault does not use IDs (the host has no door)', () => {
-    expect(openDetail(mount().el).querySelector('[aria-label="Separate value on this page for Status"]')).toBeNull()
+    expect(openDetail(mount().el).querySelector('[aria-label="Separate value for Desserts for Status"]')).toBeNull()
   })
 
   it('on: at once, no ask; this page’s values start empty', async () => {
@@ -148,10 +150,10 @@ describe('Edit column › "Separate value on this page" (YAZ-4713 C3, 1B)', () =
     const detail = openDetail(el)
     expect(switchOf(detail).checked).toBe(true)
     act(() => switchOf(detail).click())
-    expect(q(el, '.confirm__text').textContent).toBe("12 notes have a value on this page. 9 fill an empty note field or match it. 3 differ from the note's value.")
+    expect(q(el, '.confirm__text').textContent).toBe("12 notes have a Desserts value. 9 fill an empty note field or match it. 3 differ from the note's value.")
     expect(q(el, '.confirm__status--error').textContent).toContain('only one stays')
-    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(["Use this page's values", 'Cancel', "Keep the notes' values"])
-    await act(async () => click([...el.querySelectorAll<HTMLElement>('.confirm__btn')].find((b) => b.textContent === "Use this page's values")!))
+    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Use the Desserts values', 'Cancel', "Keep the notes' values"])
+    await act(async () => click([...el.querySelectorAll<HTMLElement>('.confirm__btn')].find((b) => b.textContent === 'Use the Desserts values')!))
     expect(set).toHaveBeenCalledExactlyOnceWith('status', separate, false, 'page')
     expect(el.querySelector('.confirm__text')).toBeNull()
   })
@@ -169,5 +171,32 @@ describe('Edit column › "Separate value on this page" (YAZ-4713 C3, 1B)', () =
     expect(el.querySelector('.confirm__status--error')).toBeNull() // nothing differs: no warning
     click([...el.querySelectorAll<HTMLElement>('.confirm__btn')].find((b) => b.textContent === 'Cancel')!)
     expect(set).toHaveBeenCalledOnce()
+  })
+})
+
+describe('Edit column on a column from a parent folder (YAZ-4713 C6, C7)', () => {
+  const openDetail = (el: ParentNode, label: string): HTMLElement => {
+    click(byLabel(openColumns(el), `Open ${label}`))
+    return q(el, '.column-detail')
+  }
+
+  it('names the owner; "Change on this folder only" declares it here; Delete is not offered', async () => {
+    const here = vi.fn(async () => undefined)
+    const { el } = mount({ sources: { ...testFolderHost().sources, folderName: 'Orders', of: (key) => (key === 'pillar' ? { from: 'Schema' } : {}), here } })
+    const detail = openDetail(el, 'Pillar')
+    expect(q(detail, '.column-detail__source-text').textContent).toBe('From Schema. A change here shows on every page under Schema.')
+    expect(detail.querySelector('[aria-label="Delete column Pillar"]')).toBeNull()
+    await act(async () => click([...detail.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent === 'Change on this folder only')!))
+    expect(here).toHaveBeenCalledExactlyOnceWith('pillar')
+  })
+
+  it('this folder\'s own over a parent\'s: "Use Schema\'s" removes the override; own columns keep Delete', async () => {
+    const useParent = vi.fn(async () => undefined)
+    const { el } = mount({ sources: { ...testFolderHost().sources, folderName: 'Orders', of: (key) => (key === 'status' ? { over: 'Schema' } : {}), useParent } })
+    const detail = openDetail(el, 'Status')
+    expect(q(detail, '.column-detail__source-text').textContent).toBe('Changed on Orders only.')
+    expect(detail.querySelector('[aria-label="Delete column Status"]')).toBeNull()
+    await act(async () => click([...detail.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent === "Use Schema's")!))
+    expect(useParent).toHaveBeenCalledExactlyOnceWith('status')
   })
 })

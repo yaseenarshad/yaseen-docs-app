@@ -9,7 +9,7 @@ import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { cellEditor, columnTyping } from '../editorType'
 import type { Resolver } from '../expr'
-import type { FolderSettings } from '../folderSettings'
+import { pageColumnKeys, type FolderSettings } from '../folderSettings'
 import { cardWidth } from './cardWidth'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
@@ -159,7 +159,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     event.preventDefault()
     setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, title: row.record.title })
   }
-  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
+  const keys = useMemo(() => propertyKeys(def, view, records, pageColumnKeys(settings)), [def, view, records, settings])
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = useMemo(() => keys.filter((k) => k !== nameKey), [keys, nameKey])
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;

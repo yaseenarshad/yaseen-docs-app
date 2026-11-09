@@ -9,7 +9,7 @@ import { type Mutate, type ViewDef, type ViewSet, MAX_GROUP_LEVELS } from '../vi
 import { chooseOwn, useViewDefaults } from '../viewDefaults'
 import type { FolderHost } from '../ViewsPane'
 import { AddColumn } from './AddColumn'
-import { ColumnDetail, type ColumnDoors, columnKind, columnTypeLabel } from './ColumnDetail'
+import { ColumnDetail, type ColumnDoors, columnKind, columnTypeLabel, deletableHere } from './ColumnDetail'
 import { displayNameOf, setDisplayName } from './columnLabel'
 import { setViewOrder, withOrder } from './columnOrder'
 import { UNFROZE_COLUMNS, frozenColumnCount } from './frozenColumns'
@@ -355,7 +355,8 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
                 Unfreeze columns
               </button>
             </div>
-            {onDeleteColumn && (
+            {/* Only this folder's own column (YAZ-4713 C7): a parent folder's is hidden here, never deleted. */}
+            {onDeleteColumn && deletableHere(folder, key) && (
               <div className="ctx-menu__group" onMouseEnter={() => flyout.hover(null)}>
                 <button
                   type="button"

@@ -104,10 +104,10 @@ function FormatRows({ decl, label, onChange }: { decl: ColumnDecl; label: string
 
 const notes = (n: number): string => `${n} ${n === 1 ? 'note' : 'notes'}`
 
-/** The turn-off ask's numbers (YAZ-4713 1B): "12 notes have a value on this page. 9 fill an empty note field or match it. 3 differ from the note's value." */
-export function unshareMessage({ total, fill, differ }: SeparateCounts): string {
+/** The turn-off ask's numbers (YAZ-4713 1B), named by the folder: "12 notes have a Desserts value. 9 fill an empty note field or match it. 3 differ from the note's value." */
+export function unshareMessage({ total, fill, differ }: SeparateCounts, folderName: string): string {
   const have = total === 1 ? 'has' : 'have'
-  const parts = [`${notes(total)} ${have} a value on this page.`]
+  const parts = [`${notes(total)} ${have} a ${folderName} value.`]
   if (fill > 0) parts.push(`${fill} ${fill === 1 ? 'fills' : 'fill'} an empty note field or ${fill === 1 ? 'matches' : 'match'} it.`)
   if (differ > 0) parts.push(`${differ} ${differ === 1 ? 'differs' : 'differ'} from the note's value.`)
   return parts.join(' ')
@@ -123,6 +123,15 @@ export function columnKind(key: string, records: readonly IndexRecord[], propert
   return decl?.kind ?? typing?.assigned ?? typing?.dominant ?? 'text'
 }
 
+/**
+ * May this page delete the column (YAZ-4713 C7)? Only its folder's own: a column from a parent folder is hidden here,
+ * never deleted, and this folder's own over a parent's goes back with "Use <parent>'s". A subfolder's is not a column here.
+ */
+export function deletableHere(folder: Pick<ColumnDoors, 'sources'>, key: string): boolean {
+  const source = folder.sources?.of(bare(canonicalKey(key)))
+  return source?.from === undefined && source?.over === undefined && source?.below === undefined
+}
+
 /** The type word the header menu's top line shows (YAZ-4533): `file.*` and `formula.*` read as the detail's Type row reads them. */
 export function columnTypeLabel(key: string, records: readonly IndexRecord[], properties: PropertiesResponse | null, settings: FolderSettings): string {
   const c = canonicalKey(key)
@@ -136,7 +145,7 @@ export function columnTypeLabel(key: string, records: readonly IndexRecord[], pr
  * write and the delete; since YAZ-4608 C6 the notice too, for the Undo toast of a type change, with `setColumns` for the
  * Undo of a first declaration (the table hands its `declareColumn`).
  */
-export type ColumnDoors = Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount' | 'onNotice' | 'separate'> & {
+export type ColumnDoors = Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount' | 'onNotice' | 'separate'> & Partial<Pick<FolderHost, 'sources'>> & {
   /** As `FolderHost.setColumns`: no `views` means the host's live def (YAZ-4637 M3). */
   setColumns?: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
 }
@@ -292,7 +301,22 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
   const choice = kind === 'select' || kind === 'multi-select'
   const linkKind = kind === 'link' || kind === 'multi-link'
   const reason = undeletableReason(key)
-  const { deleteColumn } = folder
+  const deleteColumn = deletableHere(folder, key) ? folder.deleteColumn : undefined
+  /** Where the column comes from (C6): a parent folder's, this folder's own over a parent's, or a subfolder's. */
+  const source = isNote ? folder.sources?.of(name) ?? {} : {}
+  const folderName = folder.sources?.folderName ?? 'this folder'
+  /** C6: "Change on this folder only" and "Use <parent>'s", each one declaration write; a refusal shows inline. */
+  const move = async (run: (key: string) => Promise<unknown>): Promise<void> => {
+    setSaving(true)
+    setError(null)
+    try {
+      await run(name)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }
   const observed = [...new Set(records.flatMap((r) => {
     const value = r.properties[name]
     return (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === 'string' && v.trim() !== '')
@@ -329,6 +353,33 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         />
       </div>
       <fieldset className="column-detail__rows" disabled={saving}>
+        {/* YAZ-4713 C6: a parent folder's column is edited on that folder, unless it is changed on this folder only. */}
+        {source.from !== undefined && folder.sources !== undefined && (
+          <div className="column-detail__source" role="note">
+            <span className="column-detail__source-text">
+              From {source.from}. A change here shows on every page under {source.from}.
+            </span>
+            <button type="button" className="view-menu__action" onClick={() => void move(folder.sources!.here)}>
+              Change on this folder only
+            </button>
+          </div>
+        )}
+        {source.over !== undefined && folder.sources !== undefined && (
+          <div className="column-detail__source" role="note">
+            <span className="column-detail__source-text">Changed on {folderName} only.</span>
+            {/* A separate column is turned off first: its values are asked about there (1B). */}
+            {decl?.separate !== true && (
+              <button type="button" className="view-menu__action" onClick={() => void move(folder.sources!.useParent)}>
+                Use {source.over}'s
+              </button>
+            )}
+          </div>
+        )}
+        {source.below !== undefined && (
+          <div className="column-detail__source" role="note">
+            <span className="column-detail__source-text">From {source.below}. A change here makes it a column of {folderName}.</span>
+          </div>
+        )}
         <div className="column-detail__row">
           <RowLabel icon="key">Key</RowLabel>
           <code className="column-detail__key">{c}</code>
@@ -391,12 +442,12 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         {/* "Separate value on this page" (YAZ-4713 C3): vaults with IDs only — the page's block is named by its id. */}
         {isNote && folder.separate !== undefined && (
           <div className="column-detail__row">
-            <RowLabel icon="lock">Separate value on this page</RowLabel>
+            <RowLabel icon="lock">Separate value for {folderName}</RowLabel>
             <input
               type="checkbox"
               className="view-switch"
-              aria-label={`Separate value on this page for ${label}`}
-              title="This page keeps its own value for each note. Other pages show the note's one value."
+              aria-label={`Separate value for ${folderName} for ${label}`}
+              title={`${folderName} keeps its own value for each note. Other pages show the note's one value.`}
               checked={decl?.separate === true}
               onChange={toggleSeparate}
             />
@@ -461,7 +512,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
       {unsharing !== null && (
         <ConfirmSheet
           labelId="confirm-unshare-column-text"
-          text={unshareMessage(unsharing)}
+          text={unshareMessage(unsharing, folderName)}
           confirmLabel="Keep the notes' values"
           keys="contained"
           focusConfirm
@@ -469,7 +520,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
           onCancel={() => setUnsharing(null)}
           other={
             <button type="button" className="confirm__btn confirm__btn--other" onClick={() => answerUnshare('page')}>
-              Use this page's values
+              Use the {folderName} values
             </button>
           }
         >
@@ -484,13 +535,14 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         <ConfirmDeleteColumn
           columnKey={deleting}
           def={def}
+          folderName={folderName}
           count={folder.valueCount}
           onCancel={() => setDeleting(null)}
-          onConfirm={() => {
+          onConfirm={(clear) => {
             const gone = deleting
             setDeleting(null)
             onLeave()
-            void deleteColumn(gone)
+            void deleteColumn(gone, clear)
           }}
         />
       )}

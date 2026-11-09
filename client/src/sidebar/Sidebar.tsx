@@ -12,14 +12,13 @@ import { pageName, useAllPathTitles } from '../lib/pageLabel'
 import { absFrom, basename, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences, linkingNotes } from '../links/renameLinks'
-import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind, type Move } from '../links/shortcuts'
+import { addShortcut, removeShortcut, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
 import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
-import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
 import { levelLinesHover } from './levelLinesHover'
 import { threadPath } from './threadPath'
@@ -801,8 +800,6 @@ export function Sidebar({
   const infoPath = infoPopover?.path ?? null
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
-  // The "Remove shortcut" that would clear values, waiting on its sheet (D21); null when it is closed.
-  const [confirmingShortcut, setConfirmingShortcut] = useState<{ path: string; dir: string; lost: LeftBehind } | null>(null)
   // The folder "Add note shortcut" is picking a note for (YAZ-2290 D2); null when the picker is closed.
   const [pickingShortcut, setPickingShortcut] = useState<string | null>(null)
   const seenRevealId = useRef<number | null>(null)
@@ -1423,7 +1420,7 @@ export function Sidebar({
     [confirmingDelete, onDeleteEntries, onChangeSettings, settings],
   )
 
-  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete)
+  const { clip, clipTo, pasteInto, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -1485,7 +1482,7 @@ export function Sidebar({
 
   // The row goes when the index says so, as it came; only a refusal is said.
   const removeShortcutRow = (path: string, dir: string): void =>
-    void removeShortcut(dir, path, vaultOf(dir).index.folders, rootOf(dir)).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+    void removeShortcut(dir, path, vaultOf(dir).index.folders).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
 
   // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): every favorite of the
   // window in the tab's order (D1), every focus item of the window by the same rule (YAZ-2702 Decision 3), or the vault rows of Files (D5).
@@ -2182,13 +2179,8 @@ export function Sidebar({
               onReviewFolder,
               onSetReview,
               onAddShortcut: setPickingShortcut,
-              // A removal that would clear a folder's values asks first (D21), by the window's own snapshot.
-              onRemoveShortcut: (path, dir) => {
-                const { index } = vaultOf(dir)
-                const lost = valuesLeftByShortcut(dir, path, index.records, index.folders)
-                if (lost.folders.length === 0) removeShortcutRow(path, dir)
-                else setConfirmingShortcut({ path, dir, lost })
-              },
+              // A removal clears no value (YAZ-4713 C9): it runs at once, with no sheet.
+              onRemoveShortcut: (path, dir) => removeShortcutRow(path, dir),
               onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir', top: menu.top })),
               onChangeIcon: (paths) => setIconPicker({ ...pickerAt(paths[0], menu), path: paths[0], kind: menu.rowKind === 'dir' ? 'folder' : 'file', scope: { paths } }),
               onResetIcon: (paths) => pickIcons(paths, null),
@@ -2248,19 +2240,6 @@ export function Sidebar({
       )}
       <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={hoverHere} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} float={previewFloat} onClose={closePreview} />
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
-      {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} copy={pendingPaste.copy} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
-      {confirmingShortcut !== null && (
-        <ConfirmMove
-          shortcut={confirmingShortcut}
-          lost={confirmingShortcut.lost}
-          titles={titles}
-          onConfirm={() => {
-            setConfirmingShortcut(null)
-            removeShortcutRow(confirmingShortcut.path, confirmingShortcut.dir)
-          }}
-          onCancel={() => setConfirmingShortcut(null)}
-        />
-      )}
       {pickingShortcut !== null && (
         <ShortcutPicker
           folder={relTo(rootOf(pickingShortcut), pickingShortcut)}

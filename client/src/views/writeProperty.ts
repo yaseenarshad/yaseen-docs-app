@@ -100,16 +100,6 @@ export async function writeProperty(path: string, key: string, value: unknown, r
 }
 
 /**
- * Change fields of ONE folder's block of a note (D19, `shared/folderValues.ts`) in one guarded
- * whole-file transformation: every value a folder's views or the panel's folder rows write. In the
- * same write the note drops the values of the folders that no longer show it (D20): `tidy`,
- * `dropStaleFolderValues` for this note.
- */
-export function writeFolderValues(path: string, folderId: string, writes: readonly PropertyWrite[], tidy: ContentTransform): Promise<{ mtime: number }> {
-  return transformFile(path, (content) => tidy(writes.reduce((next, { key, value }) => setFolderValue(next, folderId, key, value), content)))
-}
-
-/**
  * A folder page's values for one note (YAZ-4713 C1/C3), in ONE guarded whole-file transformation: each key is the
  * note's own top-level field, or, when its column is separate on this page, a field of this page's block (`pageId`).
  * Every cell edit, paste, fill, Undo, board drag and calendar drag of a folder page comes through here.

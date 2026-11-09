@@ -151,8 +151,10 @@ const removeProperty = (el: HTMLElement, key: string) => {
 /** Where the folder the note at PATH lives in keeps its settings (YAZ-2290 D1), and that folder's id. */
 const FOLDER = '/vault/.folder.md'
 const FOLDER_ID = 'w7x8y9z0a1b2'
-/** The note's value for that folder's Status: in the folder's block of `in` (D19). */
+/** An old per-page value (D19) for that folder's Status, in the folder's block of `in`: no row reads it unless the column is separate (YAZ-4713 C3). */
 const LOCAL_NOTE = `---\nin:\n  ${FOLDER_ID}:\n    Status: Ready\n---\nOriginal note body\n`
+/** The note's value for that folder's Status as the note's own field (YAZ-4713 C1). */
+const FIELD_NOTE = `---\nStatus: Ready\n---\nOriginal note body\n`
 /** The window's feed after its first snapshot, of a vault that uses IDs (YAZ-2523); `columns` undefined = the folder has no settings file. */
 const folderFeed = (columns?: Record<string, PropertyDecl>) => {
   const source = createWikilinkResolveSource()
@@ -718,23 +720,20 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect([...r.querySelectorAll('.view-table__chip')].map((chip) => chip.textContent)).toEqual(['Areas', 'a1b2c3d4e5f6'])
   })
 
-  it('ONE folder is in force at a time: the columns of a folder it is a SHORTCUT in are listed only once that folder is picked', () => {
+  it('the note’s fields are typed by the page of the folder it LIVES in (YAZ-4713 C2, C8); a folder it is a shortcut in adds no column of its own', () => {
     const el = mount(SHORTCUT_NOTE, { root: ROOT, wikilinks: shortcutFeed() })
     expand(el)
-    // Its own key, then the living folder's two columns — Areas' `owner` is not merged in.
+    // Its own key, then the living folder's two columns as empty rows — Areas' `owner` is not merged in.
     expect(keysOf(el)).toEqual(['also_in', 'Status', 'effort'])
     expect(editorOf(el, 'effort')).toBe('number')
-    setValue(el.querySelector<HTMLSelectElement>('.frontmatter-property-context select'), '/vault/Areas')
-    expect(keysOf(el)).toEqual(['also_in', 'effort', 'owner'])
-    expect(editorOf(el, 'effort')).toBe('text')
+    expect(el.querySelector('.frontmatter-property-context select')).toBeNull() // no "Properties from"
   })
 
-  it('is typed by the folder the note LIVES in (YAZ-2290): its definition for uppercase Status, and only the note’s value for that folder is written', async () => {
+  it('is typed by the folder the note LIVES in (YAZ-2290): its definition for uppercase Status, and the note’s own field is written (YAZ-4713 C1)', async () => {
     const wikilinks = folderFeed({ Status: { kind: 'select', options: ['Ready', 'Later'] } })
-    readFile.mockResolvedValue(fileOf(LOCAL_NOTE))
-    const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
+    readFile.mockResolvedValue(fileOf(FIELD_NOTE))
+    const el = mount(FIELD_NOTE, { root: ROOT, wikilinks })
     expand(el)
-    expect(el.querySelector('.frontmatter-property-context select')).toBeNull() // one folder, nothing to choose
     expect(rowOf(el, 'Status').querySelector('.property-choice-chip')?.textContent).toBe('Ready')
     expect(byLabel(el, 'Type of Status')).toBeNull()
     expect(byLabel(el, 'Delete Status')).toBeNull()
@@ -743,13 +742,13 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent?.startsWith('Later'))!
     click(option)
     await flush()
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: LOCAL_NOTE.replace('Status: Ready', 'Status: Later'), expectedMtime: 100 })
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: FIELD_NOTE.replace('Status: Ready', 'Status: Later'), expectedMtime: 100 })
   })
 
   it("the folder's columns the note has no value for are EMPTY rows — nothing is written until one is filled in, and then only that key (E1)", async () => {
     const wikilinks = folderFeed({ Status: { kind: 'select', options: ['Ready', 'Later'] }, effort: { kind: 'number' }, owner: { kind: 'text' } })
-    readFile.mockResolvedValue(fileOf(LOCAL_NOTE))
-    const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
+    readFile.mockResolvedValue(fileOf(FIELD_NOTE))
+    const el = mount(FIELD_NOTE, { root: ROOT, wikilinks })
     expect(header(el)?.textContent).toBe('1') // the count is the values the note HOLDS, never the empty rows
     expand(el)
     expect(keysOf(el)).toEqual(['Status', 'effort', 'owner'])
@@ -763,7 +762,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     setValue(input, '3')
     press(input, 'Enter')
     await flush()
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: LOCAL_NOTE.replace('    Status: Ready\n', '    Status: Ready\n    effort: 3\n'), expectedMtime: 100 })
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: FIELD_NOTE.replace('Status: Ready\n', 'Status: Ready\neffort: 3\n'), expectedMtime: 100 })
   })
 
   it('a folder with no settings file has no column (YAZ-4713 C5): no empty row, and nothing is written', () => {
@@ -872,208 +871,95 @@ describe('FrontmatterPanel — the app\'s own names are refused as new propertie
   })
 })
 
-/** The panel says which folder its fields come from, and one folder is in force at a time. */
-describe('FrontmatterPanel — "Properties from"', () => {
+/** Add property works like a database (YAZ-4713 C8): the value is the note's field, and "Column on" picks the folder page that shows it. */
+describe('FrontmatterPanel — "Column on" and the columns of the note’s page (YAZ-4713 C8)', () => {
   const NOTE = '/vault/A/B/C/Note.md'
-  const AREAS = '/vault/Areas'
-  const HEALTH_ID = 'h4j5k6m7n8p9'
   const A_ID = 'a2b3c4d5e6f7'
   const B_ID = 'b3c4d5e6f7g8'
   /** A/B and A saved settings; C saved none. */
   const B_COLUMNS: Record<string, PropertyDecl> = { effort: { kind: 'number' }, owner: { kind: 'text' } }
   const A_COLUMNS: Record<string, PropertyDecl> = { effort: { kind: 'text' }, priority: { kind: 'text' } }
   const nested = () => feedOf(folderMd('/vault/A', { columns: A_COLUMNS, id: A_ID }), folderMd('/vault/A/B', { columns: B_COLUMNS, id: B_ID }), folderMd('/vault/A/B/C'))
-  const mountAt = (path: string, content: string, wikilinks = nested(), properties?: PropertiesResponse): HTMLElement => {
+  const mountAt = (path: string, content: string, wikilinks = nested()): HTMLElement => {
+    readFile.mockImplementation(async (p: string) => ({ path: p, content: p === path ? content : '', mtime: 100, size: 1 }))
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    act(() => root?.render(<FrontmatterPanel file={{ path, content, mtime: 100 }} root={ROOT} wikilinks={wikilinks} properties={properties} />))
+    act(() => root?.render(<FrontmatterPanel file={{ path, content, mtime: 100 }} root={ROOT} wikilinks={wikilinks} />))
     expand(container)
     return container
   }
-  const from = (el: HTMLElement) => el.querySelector('.frontmatter-property-context')
-  const picker = (el: HTMLElement) => el.querySelector<HTMLSelectElement>('.frontmatter-property-context select')
-  const choices = (el: HTMLElement) => [...(picker(el)?.options ?? [])].map((option) => option.textContent)
-  const pick = (el: HTMLElement, dir: string) => setValue(picker(el), dir)
-
-  it('a note in a folder, no folder above it, no shortcuts: reads "Properties from <that folder’s name>" — plain text, nothing to choose', () => {
-    const el = mountAt('/vault/Projects/Note.md', 'Body\n', feedOf(folderMd('/vault/Projects')))
-    expect(from(el)?.textContent).toBe('Properties from Projects')
-    expect(el.querySelector('select')).toBeNull()
-  })
-
-  it('E: a folder is named by its title: "Properties from", each choice, "In …" and what `also_in` reads as; two choices with one title read as their paths (YAZ-2420 D14)', () => {
-    const one = mountAt('/vault/upwork-2026/Note.md', 'Body\n', feedOf(folderMd('/vault/upwork-2026', { title: 'Upwork 2026', columns: { status: { kind: 'select', options: ['Todo'] } } })))
-    expect(from(one)?.textContent).toBe('Properties from Upwork 2026')
-    click(byLabel(one, 'Configure status'))
-    click(buttonNamed(one, 'Edit property ›'))
-    expect(document.querySelector('.frontmatter-property-menu__scope')?.textContent).toBe('In Upwork 2026')
-    act(() => root?.unmount())
-    container?.remove()
-
-    const wikilinks = feedOf(folderMd('/vault/a', { id: A_ID, title: 'Hiring' }), folderMd('/vault/a/b', { title: 'Upwork 2026' }), folderMd('/vault/areas', { id: HEALTH_ID, title: 'Hiring' }))
-    const el = mountAt('/vault/a/b/Note.md', `---\nalso_in:\n  - ${HEALTH_ID}\n---\nBody\n`, wikilinks)
-    expect(choices(el)).toEqual(['Upwork 2026', 'a', 'areas'])
-    expect([...rowOf(el, 'also_in').querySelectorAll('.view-table__chip')].map((chip) => chip.textContent)).toEqual(['Hiring'])
-  })
-
-  it('a note with folders above it: a dropdown — the folder it lives in and each folder above it, nearest first; the vault root is not a choice', () => {
-    const el = mountAt(NOTE, 'Body\n')
-    expect(from(el)?.textContent).toMatch(/^Properties from /)
-    expect(choices(el)).toEqual(['C', 'B', 'A'])
-    expect([...picker(el)!.options].map((option) => option.value)).toEqual(['/vault/A/B/C', '/vault/A/B', '/vault/A'])
-  })
-
-  it('a note that is a shortcut in other folders: those folders, and the folders above them, are choices too, after the ones above — each folder once', () => {
-    const wikilinks = feedOf(folderMd('/vault/A', { id: A_ID }), folderMd('/vault/A/B'), folderMd(`${AREAS}/Health`, { id: HEALTH_ID }))
-    const el = mountAt('/vault/A/B/Note.md', `---\nalso_in:\n  - ${HEALTH_ID}\n  - ${A_ID}\n---\nBody\n`, wikilinks)
-    expect(choices(el)).toEqual(['B', 'A', 'Health', 'Areas'])
-    // The words are the dropdown's name.
-    expect(picker(el)?.labels[0].textContent).toMatch(/^Properties from /)
-    expect(picker(el)?.hasAttribute('aria-label')).toBe(false)
-  })
-
-  it('two choices with the same name read as their paths from the root; a name only one has stays bare', () => {
-    const wikilinks = feedOf(folderMd('/vault/A', { id: A_ID }), folderMd('/vault/A/Health'), folderMd(`${AREAS}/Health`, { id: HEALTH_ID }))
-    const el = mountAt('/vault/A/Health/Note.md', `---\nalso_in:\n  - ${HEALTH_ID}\n---\nBody\n`, wikilinks)
-    expect(choices(el)).toEqual(['A/Health', 'A', 'Areas/Health', 'Areas'])
-  })
-
-  it('a note in A/B/C where only A/B and A have saved settings: A/B is chosen first; C and A can be picked', () => {
-    const el = mountAt(NOTE, 'Body\n')
-    expect(picker(el)?.value).toBe('/vault/A/B')
-    expect(keysOf(el)).toEqual(['effort', 'owner'])
-    pick(el, '/vault/A/B/C')
-    expect(keysOf(el)).toEqual([]) // nothing saved there: no column (YAZ-4713 C5)
-    pick(el, '/vault/A')
-    expect(keysOf(el)).toEqual(['effort', 'priority'])
-  })
-
-  it('no folder in the list has saved settings: the folder the note lives in is chosen; it has no column (YAZ-4713 C5)', () => {
-    const el = mountAt(NOTE, 'Body\n', feedOf(folderMd('/vault/A'), folderMd('/vault/A/B'), folderMd('/vault/A/B/C')))
-    expect(choices(el)).toEqual(['C', 'B', 'A'])
-    expect(picker(el)?.value).toBe('/vault/A/B/C')
-    expect(keysOf(el)).toEqual([])
-  })
-
-  it('picking another folder: the rows are typed and listed by THAT folder’s columns — its unfilled columns are empty rows — and nothing is written', async () => {
-    const el = mountAt(NOTE, `---\nin:\n  ${B_ID}:\n    effort: 3\n---\nBody\n`)
-    expect(keysOf(el)).toEqual(['effort', 'owner'])
-    expect(editorOf(el, 'effort')).toBe('number')
-    expect(rowOf(el, 'effort').querySelector('.property-empty')).toBeNull() // B's value: 3
-    pick(el, '/vault/A')
-    expect(keysOf(el)).toEqual(['effort', 'priority'])
-    expect(rowOf(el, 'effort').querySelector('.property-empty')).not.toBeNull() // A holds none
-    expect(editorOf(el, 'effort')).toBe('text')
-    expect(rowOf(el, 'priority').querySelector('[data-edit]')).not.toBeNull()
-    press(el.querySelector('.view-cell-edit__input'), 'Escape')
+  const columnOn = (el: HTMLElement) => byLabel<HTMLSelectElement>(el, 'Column on')
+  const choices = (el: HTMLElement) => [...(columnOn(el)?.options ?? [])].map((option) => option.textContent)
+  const add = async (el: HTMLElement, name: string, on?: string): Promise<void> => {
+    click(btn(el, 'Add property'))
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), name)
+    if (on !== undefined) setValue(columnOn(el), on)
+    click(btn(el, 'Add'))
     await flush()
-    expect(readFile).not.toHaveBeenCalled()
-    expect(writeFile).not.toHaveBeenCalled()
-  })
-
-  it('the choice is not saved anywhere: remounting the panel chooses again by the rule, and a change of the note’s path resets it', async () => {
-    const wikilinks = nested()
-    const stored = JSON.stringify({ ...localStorage })
-    let el = mountAt(NOTE, 'Body\n', wikilinks)
-    pick(el, '/vault/A')
-    expect(picker(el)?.value).toBe('/vault/A')
-    // The editor mounts one panel per note (keyed by its path).
-    act(() => root?.render(<FrontmatterPanel key="other" file={{ path: '/vault/A/B/C/Other.md', content: 'Body\n', mtime: 100 }} root={ROOT} wikilinks={wikilinks} />))
-    expand(el)
-    expect(picker(el)?.value).toBe('/vault/A/B')
-    pick(el, '/vault/A')
-    act(() => root?.unmount())
-    el.remove()
-    el = mountAt(NOTE, 'Body\n', wikilinks)
-    expect(picker(el)?.value).toBe('/vault/A/B')
     await flush()
-    expect(writeFile).not.toHaveBeenCalled()
-    expect(JSON.stringify({ ...localStorage })).toBe(stored)
+  }
+  const saved = (path: string): Record<string, unknown> | undefined => {
+    const write = writeFile.mock.calls.map((c) => c[0]).find((w) => w.path === path)
+    return write === undefined ? undefined : ((parseFrontmatter(splitFrontmatter(write.content).frontmatter).properties.folder_settings as { columns: Record<string, unknown> }).columns)
+  }
+
+  it('the rows are the note’s fields, typed by its page’s columns — its folder’s over its parents’, nearest first (C2) — then the columns it holds no value for; no "Properties from"', () => {
+    const el = mountAt(NOTE, '---\neffort: 3\n---\nBody\n')
+    expect(el.querySelector('.frontmatter-property-context')).toBeNull()
+    expect(keysOf(el)).toEqual(['effort', 'owner', 'priority'])
+    expect(editorOf(el, 'effort')).toBe('number') // A/B's, the nearest
+    expect(rowOf(el, 'priority').querySelector('.frontmatter-panel__key')?.getAttribute('title')).toBe('Column on A')
+    expect(header(el)?.textContent).toBe('1')
   })
 
-  it('a field of the note’s own is typed by the lower rungs, else its own value — never by the chosen folder — and is listed before the folder’s rows', () => {
-    const el = mountAt(NOTE, '---\ncount: 3\ndue: 2026-01-01\n---\nBody\n', nested(), declaring({ due: { kind: 'date' } }))
-    expect(keysOf(el)).toEqual(['count', 'due', 'effort', 'owner'])
-    expect(editorOf(el, 'count')).toBe('number') // its own value
-    expect(editorOf(el, 'due')).toBe('date') // the legacy declaration
+  it('"Column on" lists the note’s folder (the default), each folder above it — not the vault root — and "No column"', () => {
+    const el = mountAt(NOTE, 'Body\n')
+    click(btn(el, 'Add property'))
+    expect(choices(el)).toEqual(['Column on C', 'Column on B', 'Column on A', 'No column'])
+    expect(columnOn(el)?.value).toBe('A/B/C')
   })
 
-  it('"Edit property" saves the definition to the CHOSEN folder’s `.folder.md`, and the popup says "In <chosen folder’s name>"', async () => {
-    const chosen = '/vault/A/.folder.md'
-    const bytes = '---\nfolder_settings:\n  columns:\n    effort:\n      kind: text\n    priority:\n      kind: text\n  views:\n    - type: board\n      name: Board\n---\n'
-    readFile.mockResolvedValue({ path: chosen, content: bytes, mtime: 444, size: bytes.length })
-    const el = mountAt(NOTE, `---\nin:\n  ${B_ID}:\n    effort: 3\n---\nBody\n`)
-    pick(el, '/vault/A')
-    click(byLabel(el, 'Configure effort'))
+  it('adding `owner` with "Column on A": the field is the note’s own, and A’s `.folder.md` declares the column — a plain Text too', async () => {
+    const el = mountAt(NOTE, 'Body\n')
+    await add(el, 'reviewer', 'A')
+    expect(saved('/vault/A/.folder.md')).toMatchObject({ reviewer: { kind: 'text' } })
+    expect(writeFile.mock.calls.at(-1)![0]).toEqual({ path: NOTE, content: '---\nreviewer: ""\n---\nBody\n', expectedMtime: 100 })
+  })
+
+  it('"No column" writes only the field', async () => {
+    const el = mountAt(NOTE, 'Body\n')
+    await add(el, 'reviewer', '')
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOTE, content: '---\nreviewer: ""\n---\nBody\n', expectedMtime: 100 })
+  })
+
+  it('"Edit property" on a field a parent folder defines saves that folder’s column: "In A"', async () => {
+    const el = mountAt(NOTE, '---\npriority: P1\n---\nBody\n')
+    click(byLabel(el, 'Configure priority'))
     click(buttonNamed(el, 'Edit property ›'))
     expect(document.querySelector('.frontmatter-property-menu__scope')?.textContent).toBe('In A')
-    click(byLabel(el, 'Property type: Text'))
-    click(buttonNamed(el, 'Number'))
-    click(buttonNamed(document.querySelector('.frontmatter-property-menu__actions')!, 'Save'))
-    await flush()
-    expect(readFile).toHaveBeenCalledExactlyOnceWith(chosen)
-    expect(writeFile).toHaveBeenCalledTimes(1)
-    expect(writeFile.mock.calls[0][0].path).toBe(chosen)
-    expect((parseFrontmatter(splitFrontmatter(writeFile.mock.calls[0][0].content).frontmatter).properties.folder_settings as { columns: unknown }).columns).toEqual({ effort: { kind: 'number' }, priority: { kind: 'text' } })
   })
 
-  it('a note at the vault’s top level: "Properties from" the vault itself — the only choice is the root, by the vault folder’s name — and "Edit property" saves to `<vault>/.folder.md`', async () => {
-    const bytes = '---\nfolder_settings:\n  columns:\n    Status:\n      kind: select\n  views:\n    - type: board\n      name: Board\n---\n'
-    readFile.mockResolvedValue({ path: FOLDER, content: bytes, mtime: 444, size: bytes.length })
-    const el = mountAt(PATH, LOCAL_NOTE, feedOf(folderMd(ROOT, { columns: { Status: { kind: 'select' } } }), folderMd('/vault/A')))
-    expect(from(el)?.textContent).toBe('Properties from vault')
-    expect(el.querySelector('select')).toBeNull()
-    click(byLabel(el, 'Configure Status'))
-    click(buttonNamed(el, 'Edit property ›'))
-    expect(document.querySelector('.frontmatter-property-menu__scope')?.textContent).toBe('In vault')
-    click(byLabel(el, 'Property type: Select'))
-    click(buttonNamed(el, 'Multi-select'))
-    click(buttonNamed(document.querySelector('.frontmatter-property-menu__actions')!, 'Save'))
-    await flush()
-    expect(writeFile.mock.calls.map(([write]) => write.path)).toEqual([FOLDER])
-  })
-
-  // Changed by YAZ-3746 2D: a subfolder's own page shows its values for its PARENT (D31), as a note does.
-  it('a folder’s own panel: "Folder fields" with its own rows (not its own columns), then "Properties from <parent>" with the parent’s columns', () => {
-    const el = mountAt('/vault/A/B/.folder.md', `---\nowner: Yasin\nin:\n  ${A_ID}:\n    effort: high\n---\n`)
-    expect(from(el)?.textContent).toBe('Properties from A')
-    expect(el.querySelector('.frontmatter-panel__own')?.textContent).toBe('Folder fields')
-    expect(keysOf(el)).toEqual(['owner', 'effort', 'priority'])
-    expect(rowOf(el, 'effort').querySelector('.frontmatter-panel__value')?.textContent).toBe('high')
-  })
-
-  it('a subfolder’s value for its parent is written in its own `.folder.md`, in the parent’s block, when a parent view shows it as a row (YAZ-3746 2D)', async () => {
+  it('a folder’s own panel: its own fields, typed by its parent’s page when a parent view shows subfolders as rows (YAZ-3746 2D, D31); the value is its own top-level key', async () => {
     const own = '/vault/A/B/.folder.md'
     const bytes = `---\nid: ${B_ID}\nowner: Yasin\n---\n`
-    readFile.mockResolvedValue({ path: own, content: bytes, mtime: 100, size: bytes.length })
     const a = folderMd('/vault/A', { columns: A_COLUMNS, id: A_ID })
-    const rows = { ...a, properties: { folder_settings: { columns: A_COLUMNS, views: [{ type: 'table', name: 'T', subfolders: 'rows' }] } } }
-    const el = mountAt(own, bytes, feedOf(rows, folderMd('/vault/A/B', { columns: B_COLUMNS, id: B_ID })))
-    expect(from(el)?.textContent).toBe('Properties from A')
+    const rowsOfA = { ...a, properties: { folder_settings: { columns: A_COLUMNS, views: [{ type: 'table', name: 'T', subfolders: 'rows' }] } } }
+    const el = mountAt(own, bytes, feedOf(rowsOfA, folderMd('/vault/A/B', { columns: B_COLUMNS, id: B_ID })))
+    expect(keysOf(el)).toEqual(['id', 'owner', 'effort', 'priority'])
+    expect(columnOn(el)).toBeNull()
     click(rowOf(el, 'priority').querySelector('[data-edit]'))
     setValue(byLabel<HTMLInputElement>(el, 'Edit priority'), 'P1')
     press(byLabel(el, 'Edit priority'), 'Enter')
     await flush()
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: own, content: `---\nid: ${B_ID}\nowner: Yasin\nin:\n  ${A_ID}:\n    priority: P1\n---\n`, expectedMtime: 100 })
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: own, content: `---\nid: ${B_ID}\nowner: Yasin\npriority: P1\n---\n`, expectedMtime: 100 })
   })
 
-  it('a subfolder that is no row of its parent (no view shows it, no values held): no "Properties from"', () => {
-    const el = mountAt('/vault/A/B/.folder.md', '---\nowner: Yasin\n---\n')
-    expect(from(el)).toBeNull()
-    expect(keysOf(el)).toEqual(['owner'])
-  })
-
-  it('the vault root’s own panel has no parent: no "Properties from"', () => {
-    const el = mountAt('/vault/.folder.md', '---\nowner: Yasin\n---\n')
-    expect(from(el)).toBeNull()
-    expect(keysOf(el)).toEqual(['owner'])
-  })
-
-  it('the raw YAML surface has no rows to type, so it names no folder', () => {
-    const el = mountAt(NOTE, 'Body\n')
-    toRaw(el)
-    expect(from(el)).toBeNull()
+  it('a subfolder that is no row of its parent, and the vault root’s own panel: their own fields alone', () => {
+    expect(keysOf(mountAt('/vault/A/B/.folder.md', '---\nowner: Yasin\n---\n'))).toEqual(['owner'])
+    act(() => root?.unmount())
+    container?.remove()
+    expect(keysOf(mountAt('/vault/.folder.md', '---\nowner: Yasin\n---\n'))).toEqual(['owner'])
   })
 })
 
@@ -1283,425 +1169,119 @@ describe('FrontmatterPanel — a stored id link reads as the note title (YAZ-229
  * block named by the folder's id. One list (D23): "Note fields" and the note's own rows, then a
  * line, "Properties from <folder>" and that folder's rows — and every edit goes where its row lives.
  */
-describe('FrontmatterPanel — each folder has its own properties (D19)', () => {
+describe('FrontmatterPanel — a page’s own values, and values no page shows (YAZ-4713 C3, C9)', () => {
   const NOOR = '/vault/Hiring/Noor.md'
   const HIRING_ID = '3y7505rsr6fd'
   const TASKS_ID = 'mzf9cjhn02vm'
-  /** Hiring declares a Status and a score; Tasks, where the note is a shortcut, a Status of its own and an owner. */
+  const ARCHIVE_ID = 'a7ch1ve00001'
+  /** Hiring declares a Status and a score; Tasks, where the note is a shortcut, keeps its own Status (C3) and declares an owner. */
   const HIRING: Record<string, PropertyDecl> = { Status: { kind: 'select', options: ['Applied', 'Interview'] }, score: { kind: 'number' } }
-  const TASKS: Record<string, PropertyDecl> = { Status: { kind: 'text' }, owner: { kind: 'text' } }
-  const feedD19 = () => feedOf(folderMd('/vault/Hiring', { columns: HIRING, id: HIRING_ID }), folderMd('/vault/Tasks', { columns: TASKS, id: TASKS_ID }))
+  const TASKS: Record<string, PropertyDecl> = { Status: { kind: 'text', separate: true } as PropertyDecl, owner: { kind: 'text' } }
+  const feed = () => feedOf(folderMd('/vault/Archive', { id: ARCHIVE_ID }), folderMd('/vault/Hiring', { columns: HIRING, id: HIRING_ID, title: 'Hiring' }), folderMd('/vault/Tasks', { columns: TASKS, id: TASKS_ID, title: 'Tasks' }))
   const CONTENT = `---
 id: k3m9x2pq7abc
 aliases: [Noor]
-Status: mine
+Status: Interview
 also_in:
   - ${TASKS_ID}
 in:
-  ${HIRING_ID}:
-    Status: Interview
-    old_field: left behind
   ${TASKS_ID}:
     Status: 2-Todo
+  ${ARCHIVE_ID}:
+    Status: Old
 ---
 Body
 `
-  const mountNote = (content = CONTENT, path = NOOR, wikilinks = feedD19()): HTMLElement => {
-    readFile.mockResolvedValue({ path, content, mtime: 100, size: content.length })
+  const mountNote = (content = CONTENT, wikilinks = feed()): HTMLElement => {
+    readFile.mockResolvedValue({ path: NOOR, content, mtime: 100, size: content.length })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    act(() => root?.render(<FrontmatterPanel file={{ path, content, mtime: 100 }} root={ROOT} wikilinks={wikilinks} />))
+    act(() => root?.render(<FrontmatterPanel file={{ path: NOOR, content, mtime: 100 }} root={ROOT} wikilinks={wikilinks} />))
     expand(container)
     return container
   }
-  const from = (el: HTMLElement) => el.querySelector<HTMLElement>('.frontmatter-property-context')
-  /** "Note fields": the heading over the note's own rows. */
-  const ownHeading = (el: HTMLElement) => el.querySelector<HTMLElement>('.frontmatter-panel__own')
-  const before = (a: Node, b: Node): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
-  /** The note's own rows: the ones above "Properties from" (all of them when no folder shows the note). */
-  const ownRows = (el: HTMLElement) => rows(el).filter((r) => from(el) === null || before(r, from(el)!))
-  /** The chosen folder's rows: the ones under it. */
-  const folderRows = (el: HTMLElement) => rows(el).filter((r) => from(el) !== null && before(from(el)!, r))
-  const names = (list: HTMLLIElement[]) => list.map((r) => r.dataset.key)
-  const row = (list: HTMLLIElement[], key: string): HTMLLIElement => {
-    const found = list.find((r) => r.dataset.key === key)
-    if (found === undefined) throw new Error(`no row for ${key}`)
-    return found
-  }
-  const shows = (r: HTMLLIElement) => r.querySelector('.frontmatter-panel__value')?.textContent
-  const edit = async (r: HTMLLIElement, value: string): Promise<void> => {
-    click(r.querySelector('[data-edit]'))
-    const input = r.querySelector<HTMLInputElement>('input')
-    setValue(input, value)
-    press(input, 'Enter')
-    await flush()
-  }
-  const removeRow = async (r: HTMLLIElement): Promise<void> => {
-    click(r.querySelector('.frontmatter-property-name'))
-    click(buttonNamed(document.body, 'Remove from this note'))
-    await flush()
-  }
   const written = (): string => writeFile.mock.calls.at(-1)![0].content
+  const kept = (el: HTMLElement) => [...el.querySelectorAll('.frontmatter-panel__kept .frontmatter-panel__key')].map((k) => k.textContent)
 
-  it('A note that several folders show: the search bar, then "Note fields" with the note’s own fields, then a line and "Properties from" with the choice of folders, then the chosen folder’s columns — filled and unfilled (D23)', () => {
+  it('the shared value and a page’s own value, each clearly named: "Status" and "Status · Tasks" (Yaseen, 2026-11-08); `in` is no row', () => {
     const el = mountNote()
-    expect(names(ownRows(el))).toEqual(['id', 'aliases', 'Status', 'also_in'])
-    expect(from(el)?.textContent).toMatch(/^Properties from /)
-    expect(el.querySelector<HTMLSelectElement>('.frontmatter-property-context select')?.value).toBe('/vault/Hiring')
-    expect(names(folderRows(el))).toEqual(['Status', 'old_field', 'score'])
-    expect(shows(row(ownRows(el), 'Status'))).toBe('mine') // the note's own
-    expect(shows(row(folderRows(el), 'Status'))).toBe('Interview') // Hiring's
-    expect(shows(row(folderRows(el), 'score'))).toBe('Empty')
-    // The order on the page: the search bar, then ONE list — its first line the heading of the note's own rows.
-    const list = el.querySelector('.frontmatter-panel__rows')!
-    expect(before(el.querySelector('.column-search')!, list)).toBe(true)
-    expect(list.firstElementChild).toBe(ownHeading(el))
-    expect(ownHeading(el)?.textContent).toBe('Note fields')
-    expect(from(el)?.parentElement).toBe(list)
-    // The line is "Properties from"'s own top edge, drawn only under a note field.
-    expect(from(el)?.previousElementSibling?.classList.contains('frontmatter-panel__row')).toBe(true)
-    expect(el.querySelectorAll('.frontmatter-panel__rows')).toHaveLength(1)
-  })
-
-  it('A note that one folder shows: "Properties from <folder>" is plain text, with no choice; the rest is the same', () => {
-    const el = mountNote(CONTENT.replace(`also_in:\n  - ${TASKS_ID}\n`, ''))
-    expect(from(el)?.textContent).toBe('Properties from Hiring')
-    expect(from(el)?.querySelector('select')).toBeNull()
-    expect(names(ownRows(el))).toEqual(['id', 'aliases', 'Status'])
-    expect(names(folderRows(el))).toEqual(['Status', 'old_field', 'score'])
-  })
-
-  it('A note no folder shows: no "Note fields" heading, no line and no "Properties from" — only its own fields', () => {
-    const el = mountNote(CONTENT, '/elsewhere/Noor.md')
-    expect(from(el)).toBeNull()
-    expect(ownHeading(el)).toBeNull()
-    expect(names(rows(el))).toEqual(['id', 'aliases', 'Status', 'also_in'])
-  })
-
-  it('The chosen folder has no columns and the note has no values for it: "Note fields" and its rows, then "Properties from" with nothing under it', () => {
-    const bare = feedOf(folderMd('/vault/Hiring', { columns: {}, id: HIRING_ID }))
-    const el = mountNote('---\nid: k3m9x2pq7abc\naliases: [Noor]\n---\nBody\n', NOOR, bare)
-    expect(names(ownRows(el))).toEqual(['id', 'aliases'])
-    expect(from(el)?.textContent).toBe('Properties from Hiring')
-    expect(folderRows(el)).toHaveLength(0)
-    expect(el.querySelector('.frontmatter-panel__rows')?.lastElementChild).toBe(from(el))
-  })
-
-  it('Searching filters both groups: "Note fields" shows only when a note field matches; "Properties from" stays in place', () => {
-    const el = mountNote()
-    const search = el.querySelector<HTMLInputElement>('.column-search input')
-    setValue(search, 'score')
-    expect(names(rows(el))).toEqual(['score'])
-    expect(ownHeading(el)).toBeNull()
-    expect(el.querySelector('.frontmatter-panel__rows')?.firstElementChild).toBe(from(el))
-    setValue(search, 'alias')
-    expect(names(ownRows(el))).toEqual(['aliases'])
-    expect(names(folderRows(el))).toEqual([])
-    expect(ownHeading(el)).not.toBeNull()
-    expect(from(el)).not.toBeNull()
-    setValue(search, 'status')
-    expect(names(ownRows(el))).toEqual(['Status'])
-    expect(names(folderRows(el))).toEqual(['Status'])
-  })
-
-  it('the count is the fields the note holds — its own, and its values for the chosen folder; `in` is not one', () => {
-    const el = mountNote()
-    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (6)') // id, aliases, Status, also_in + Hiring's Status, old_field
-    setValue(el.querySelector<HTMLSelectElement>('.frontmatter-property-context select'), '/vault/Tasks')
+    // Then, apart, the value of a page that does not show the note (C9).
+    expect(keysOf(el)).toEqual(['id', 'aliases', 'Status', 'also_in', 'score', 'Status · Tasks', 'Status · Archive'])
+    expect(rows(el).find((r) => r.querySelector('.frontmatter-panel__key')?.textContent === 'Status · Tasks')?.querySelector('.frontmatter-panel__value')?.textContent).toBe('2-Todo')
     expect(header(el)?.getAttribute('aria-label')).toBe('Properties (5)')
   })
 
-  it('Pick another folder in the dropdown: the folder part shows that folder’s columns and values; the note’s own fields do not change', () => {
+  it('an edit of "Status · Tasks" writes Tasks’ block; an edit of "Status" the note’s own field', async () => {
     const el = mountNote()
-    const own = ownRows(el).map((r) => r.outerHTML)
-    setValue(el.querySelector<HTMLSelectElement>('.frontmatter-property-context select'), '/vault/Tasks')
-    expect(names(folderRows(el))).toEqual(['Status', 'owner'])
-    expect(shows(row(folderRows(el), 'Status'))).toBe('2-Todo')
-    expect(shows(row(folderRows(el), 'owner'))).toBe('Empty')
-    expect(ownRows(el).map((r) => r.outerHTML)).toEqual(own)
-    expect(writeFile).not.toHaveBeenCalled()
-  })
-
-  it('Edit a value under "Properties from <folder>": written to that folder’s block', async () => {
-    const el = mountNote()
-    await edit(row(folderRows(el), 'score'), '8')
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: CONTENT.replace('    old_field: left behind\n', '    old_field: left behind\n    score: 8\n'), expectedMtime: 100 })
-    // The panel's own belief of disk moved with it.
-    toRaw(el)
-    expect(area(el)?.value).toContain('    score: 8')
-  })
-
-  it('Edit one of the note’s own fields: written at the top level, as today', async () => {
-    const el = mountNote()
-    await edit(row(ownRows(el), 'Status'), 'yours')
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: CONTENT.replace('Status: mine', 'Status: yours'), expectedMtime: 100 })
-    expect(shows(row(folderRows(el), 'Status'))).toBe('Interview')
-  })
-
-  it('Add a property while a folder is chosen: added to that folder’s block', async () => {
-    const el = mountNote()
-    click(btn(el, 'Add property'))
-    // Taken is asked of the FOLDER's block: the note's own `aliases` is no clash, Hiring's `old_field` is.
-    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'old_field')
-    click(btn(el, 'Add'))
-    expect(errorLine(el)?.textContent).toBe('"old_field" is already a property of this page')
-    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'aliases')
-    click(btn(el, 'Add'))
+    const separate = rows(el).find((r) => r.querySelector('.frontmatter-panel__key')?.textContent === 'Status · Tasks')!
+    click(separate.querySelector('[data-edit]'))
+    setValue(separate.querySelector<HTMLInputElement>('input'), '3-Doing')
+    press(separate.querySelector('input'), 'Enter')
     await flush()
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: CONTENT.replace('    old_field: left behind\n', '    old_field: left behind\n    aliases: ""\n'), expectedMtime: 100 })
-    expect(names(folderRows(el))).toEqual(['Status', 'old_field', 'aliases', 'score'])
+    expect(written()).toBe(CONTENT.replace('Status: 2-Todo', 'Status: 3-Doing'))
   })
 
-  it('Add a property with no folder — a note outside any vault: it has no "Properties from", and the property is added at the top level, as today', async () => {
-    const loose = '/elsewhere/Loose.md'
-    const el = mountNote(CONTENT, loose) // the feed is the vault's: no folder of it shows this note
-    expect(from(el)).toBeNull()
-    expect(keysOf(el)).toEqual(['id', 'aliases', 'Status', 'also_in'])
-    click(btn(el, 'Add property'))
-    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'author')
-    click(btn(el, 'Add'))
-    await flush()
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: loose, content: CONTENT.replace('---\nBody', 'author: ""\n---\nBody'), expectedMtime: 100 })
-  })
-
-  it('A value in a folder’s block for a column the folder no longer has: shown as a plain row under that folder, editable and removable', async () => {
+  it('"Values from pages that do not show this note" (C9): Archive’s value, with Clear — which removes only it', async () => {
     const el = mountNote()
-    const old = row(folderRows(el), 'old_field')
-    expect(chipIn(old)).toBeNull()
-    expect(shows(old)).toBe('left behind')
-    await edit(old, 'kept')
-    expect(written()).toBe(CONTENT.replace('old_field: left behind', 'old_field: kept'))
-    readFile.mockResolvedValue({ path: NOOR, content: written(), mtime: 100, size: 1 })
-    await removeRow(row(folderRows(el), 'old_field'))
-    expect(written()).toBe(CONTENT.replace('    old_field: left behind\n', ''))
-    expect(names(folderRows(el))).toEqual(['Status', 'score'])
-  })
-
-  it('Remove a value under a folder: removed from that folder’s block only', async () => {
-    const el = mountNote()
-    await removeRow(row(folderRows(el), 'Status'))
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: CONTENT.replace('    Status: Interview\n', ''), expectedMtime: 100 })
-    expect(shows(row(folderRows(el), 'Status'))).toBe('Empty') // still Hiring's column: an empty row
-    expect(shows(row(ownRows(el), 'Status'))).toBe('mine')
-  })
-
-  it('removing the last value under a folder takes its block, and `in` with the last block', async () => {
-    const one = `---\ntitle: Noor\nin:\n  ${HIRING_ID}:\n    score: 8\n---\nBody\n`
-    const el = mountNote(one)
-    await removeRow(row(folderRows(el), 'score'))
-    expect(written()).toBe('---\ntitle: Noor\n---\nBody\n')
-  })
-
-  describe('a folder’s values leave the note when the note leaves the folder (D20)', () => {
-    const ARCHIVE_ID = 'a7ch1ve00001'
-    const GONE_ID = 'n0f01der0000'
-    /** Noor was moved into Hiring outside the app: it still holds Archive's values, and a deleted folder's. */
-    const STALE = `  ${ARCHIVE_ID}:\n    Status: Old\n`
-    const MOVED = CONTENT.replace('\nin:\n', `\nin:\n${STALE}  ${GONE_ID}:\n    Status: Lost\n`)
-    const feedD20 = () => feedOf(folderMd('/vault/Archive', { id: ARCHIVE_ID }), folderMd('/vault/Hiring', { columns: HIRING, id: HIRING_ID }), folderMd('/vault/Tasks', { columns: TASKS, id: TASKS_ID }))
-
-    it('reading a note, or opening its panel, never removes a block: nothing is written', async () => {
-      const el = mountNote(MOVED, NOOR, feedD20())
-      setValue(el.querySelector<HTMLSelectElement>('.frontmatter-property-context select'), '/vault/Tasks')
-      await flush()
-      expect(writeFile).not.toHaveBeenCalled()
-      toRaw(el)
-      expect(area(el)?.value).toContain(STALE)
-    })
-
-    it('a properties-panel edit of a folder value removes, in the SAME save, the blocks of folders that exist and do not show the note; the folders that show it, and one the app cannot find, keep theirs', async () => {
-      const el = mountNote(MOVED, NOOR, feedD20())
-      await edit(row(folderRows(el), 'score'), '8')
-      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: MOVED.replace(STALE, '').replace('    old_field: left behind\n', '    old_field: left behind\n    score: 8\n'), expectedMtime: 100 })
-      // The panel's own belief of disk moved with it.
-      toRaw(el)
-      expect(area(el)?.value).not.toContain(ARCHIVE_ID)
-    })
-
-    it('an edit of one of the note’s own fields does the same', async () => {
-      const el = mountNote(MOVED, NOOR, feedD20())
-      await edit(row(ownRows(el), 'Status'), 'yours')
-      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: MOVED.replace(STALE, '').replace('Status: mine', 'Status: yours'), expectedMtime: 100 })
-    })
-
-    it('the write the removal rides on is refused: nothing is removed, and the panel says so', async () => {
-      const el = mountNote(MOVED, NOOR, feedD20())
-      writeFile.mockRejectedValueOnce(new Error('disk full'))
-      await edit(row(ownRows(el), 'Status'), 'yours')
-      toRaw(el)
-      expect(area(el)?.value).toContain(STALE)
-      expect(area(el)?.value).toContain('Status: mine')
-    })
-  })
-
-  it('The `in` key itself: reserved — not a row, and not addable as a property name', () => {
-    const el = mountNote()
-    expect(keysOf(el)).not.toContain('in')
-    click(btn(el, 'Add property'))
-    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'in')
-    click(btn(el, 'Add'))
-    expect(errorLine(el)?.textContent).toBe("in is the app's own property — it is set where it belongs, not here")
-    expect(writeFile).not.toHaveBeenCalled()
-  })
-
-  it('`in` is no row with no folder either: a note the panel has no folder for shows its own fields alone', () => {
-    const el = mount(CONTENT, { wikilinks: feedOf() })
-    expand(el)
-    expect(keysOf(el)).toEqual(['id', 'aliases', 'Status', 'also_in'])
-    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (4)')
-  })
-
-  it('A note at the vault’s top level: its values go in the block of the vault’s own `.folder.md` id, like any folder', async () => {
-    const top = '---\ntitle: Deep Work\n---\nBody\n'
-    const el = mountNote(top, PATH, feedOf(folderMd(ROOT, { columns: { effort: { kind: 'number' } }, id: FOLDER_ID })))
-    expect(from(el)?.textContent).toBe('Properties from vault')
-    await edit(row(folderRows(el), 'effort'), '3')
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: `---\ntitle: Deep Work\nin:\n  ${FOLDER_ID}:\n    effort: 3\n---\nBody\n`, expectedMtime: 100 })
-  })
-
-  it('A folder’s own panel (the panel on a folder’s page): unchanged — the folder’s own properties are the top level of its `.folder.md`', async () => {
-    const own = '/vault/Hiring/.folder.md'
-    const bytes = `---\nid: ${HIRING_ID}\nowner: Yasin\nfolder_settings:\n  columns:\n    score:\n      kind: number\n---\n`
-    const el = mountNote(bytes, own)
-    expect(from(el)).toBeNull()
-    expect(keysOf(el)).toEqual(['id', 'owner'])
-    click(rowOf(el, 'owner').querySelector('[data-edit]'))
-    setValue(byLabel<HTMLInputElement>(el, 'Edit owner'), 'Noor')
-    press(byLabel(el, 'Edit owner'), 'Enter')
+    expect(el.querySelector('.frontmatter-panel__kept .frontmatter-property-context')?.textContent).toBe('Values from pages that do not show this note')
+    expect(kept(el)).toEqual(['Status · Archive'])
+    click(byLabel(el, 'Clear Status · Archive'))
     await flush()
-    expect(written()).toBe(bytes.replace('owner: Yasin', 'owner: Noor'))
-    click(btn(el, 'Add property'))
-    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'team')
-    readFile.mockResolvedValue({ path: own, content: written(), mtime: 100, size: 1 })
-    click(btn(el, 'Add'))
-    await flush()
-    expect(written()).toBe(bytes.replace('owner: Yasin', 'owner: Noor').replace(/---\n$/, 'team: ""\n---\n'))
+    expect(written()).toBe(CONTENT.replace(`  ${ARCHIVE_ID}:\n    Status: Old\n`, ''))
   })
 
-  it('The raw YAML mode: shows the whole frontmatter, `in:` included, as written', () => {
+  it('an edit never drops a block (C9): a page the note left keeps its value until it is cleared', async () => {
     const el = mountNote()
-    toRaw(el)
-    expect(area(el)?.value).toBe(CONTENT.slice(4, CONTENT.indexOf('\n---\n')))
-    expect(area(el)?.value).toContain(`in:\n  ${HIRING_ID}:\n    Status: Interview`)
-  })
-
-  it('a folder with no id shows its columns empty; the first value written there gives the folder its id first — the path its first shortcut uses — then writes', async () => {
-    const note = '---\ntitle: Noor\n---\nBody\n'
-    const disk = new Map<string, string>([[NOOR, note]])
-    const el = mountNote(note, NOOR, feedOf(folderMd('/vault/Hiring', { columns: { score: { kind: 'number' } } })))
-    readFile.mockImplementation(async (path) => {
-      const content = disk.get(path)
-      if (content === undefined) throw new BridgeRequestError('NOT_FOUND', 'path does not exist')
-      return { path, content, mtime: 100, size: content.length }
-    })
-    writeFile.mockImplementation(async ({ path, content }) => {
-      disk.set(path, content)
-      return { path, mtime: 200, size: content.length }
-    })
-    expect(shows(row(folderRows(el), 'score'))).toBe('Empty')
-    await edit(row(folderRows(el), 'score'), '8')
+    const scoreRow = rowOf(el, 'score')
+    click(scoreRow.querySelector('[data-edit]'))
+    setValue(scoreRow.querySelector<HTMLInputElement>('input'), '4')
+    press(scoreRow.querySelector('input'), 'Enter')
     await flush()
-    expect(writeFile.mock.calls.map(([request]) => request.path)).toEqual(['/vault/Hiring/.folder.md', NOOR])
-    const id = /^id: (\S+)$/m.exec(disk.get('/vault/Hiring/.folder.md')!)![1]
-    expect(disk.get(NOOR)).toBe(`---\ntitle: Noor\nin:\n  ${id}:\n    score: 8\n---\nBody\n`)
+    expect(written()).toBe(CONTENT.replace('---\nBody', 'score: 4\n---\nBody'))
   })
 
-  it('a folder with no id: its empty rows offer no Rename…, and a rename of one never touches the note\'s own key (YAZ-4635 P4)', () => {
-    // The note holds its own `score`; Hiring (no id yet) declares a `score` column, so the folder's row is empty.
-    const el = mountNote('---\ntitle: Noor\nscore: 1\n---\nBody\n', NOOR, feedOf(folderMd('/vault/Hiring', { columns: { score: { kind: 'number' } } })))
-    expect(shows(row(folderRows(el), 'score'))).toBe('Empty')
-    act(() => void row(folderRows(el), 'score').querySelector('.frontmatter-property-name')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
-    const items = [...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)
-    expect(items).toContain('Copy value')
-    expect(items).not.toContain('Rename…')
-    expect(writeFile).not.toHaveBeenCalled()
-    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    // The note's own row still renames.
-    act(() => void row(ownRows(el), 'score').querySelector('.frontmatter-property-name')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
-    expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).toContain('Rename…')
+  it('a separate column on a page with no id: its row shows empty beside the shared one, and nothing is kept elsewhere', () => {
+    const tasks = { ...folderMd('/vault/Tasks', { columns: TASKS, title: 'Tasks' }), id: undefined }
+    const bytes = '---\nStatus: Interview\n---\nBody\n'
+    const el = mountNote(bytes, feedOf(folderMd('/vault/Hiring', { columns: { Status: { kind: 'text', separate: true } as PropertyDecl }, title: 'Hiring' }), tasks))
+    expect(keysOf(el)).toEqual(['Status', 'Status · Hiring'])
+    expect(kept(el)).toEqual([])
   })
 
-  /** The panel is the note's own frontmatter and nothing else there. The ID vault's half of each row is the tests above, and `typed rows`' Reserved ones. */
   describe('in a vault that does not use IDs (YAZ-2523 V5, V12)', () => {
-    /** The folders as such a vault's index hands them out: their saved settings, and no id. */
     const unnumbered = (): IndexRecord[] => [folderMd('/vault/Archive'), folderMd('/vault/Hiring', { columns: HIRING }), folderMd('/vault/Tasks', { columns: TASKS })]
     const plainFeed = () => {
       const source = createWikilinkResolveSource()
       source.update(() => null, [], unnumbered())
       return source
     }
-    /** A note of a vault that used IDs once: every key the app owned there, and two folders' blocks. */
     const BLOCKS = CONTENT.slice(CONTENT.indexOf('\nin:\n') + 1, CONTENT.indexOf('---\nBody'))
     const PLAIN = CONTENT.replace('aliases: [Noor]\n', 'title: Noor Khan\naliases: [Noor]\n').replace('---\nBody', 'comments: []\nreviews: []\n---\nBody')
 
-    it('no "Properties from", no "Note fields" heading and no folder rows, though the note holds `in:` blocks and its folder saved settings: the rows are the note\u2019s own frontmatter, `title` and `in` among them, each counted', () => {
-      const el = mountNote(PLAIN, NOOR, plainFeed())
-      expect(from(el)).toBeNull()
-      expect(ownHeading(el)).toBeNull()
-      expect(keysOf(el)).toEqual(['id', 'title', 'aliases', 'Status', 'also_in', 'in', 'comments', 'reviews'])
+    it('no page’s own rows and no kept values: the note’s own frontmatter, `title` and `in` among them, then its page’s columns it holds no value for', () => {
+      const el = mountNote(PLAIN, plainFeed())
+      expect(keysOf(el)).toEqual(['id', 'title', 'aliases', 'Status', 'also_in', 'in', 'comments', 'reviews', 'score'])
+      expect(kept(el)).toEqual([])
       expect(header(el)?.getAttribute('aria-label')).toBe('Properties (8)')
     })
 
-    it('`id`, `title` and `also_in` are ordinary: each has its editor and its menu, and `also_in` reads as written; `in` is a value no editor holds, like any map; `comments` and `reviews` are still Reserved', () => {
-      const el = mountNote(PLAIN, NOOR, plainFeed())
-      for (const key of ['id', 'title', 'also_in']) {
-        expect(chipIn(rowOf(el, key))).toBeNull()
-        expect(rowOf(el, key).querySelector('[data-edit]')).not.toBeNull()
-        expect(byLabel(rowOf(el, key), `Configure ${key}`)).not.toBeNull()
-      }
+    it('`id`, `title` and `also_in` are ordinary; `in` is a value no editor holds; `comments` and `reviews` are still Reserved', () => {
+      const el = mountNote(PLAIN, plainFeed())
+      for (const key of ['id', 'title', 'also_in']) expect(rowOf(el, key).querySelector('[data-edit]')).not.toBeNull()
       expect(rowOf(el, 'also_in').querySelector('.frontmatter-panel__value')?.textContent).toBe(TASKS_ID)
       expect(chipIn(rowOf(el, 'in'))).toBe('YAML')
-      for (const key of ['comments', 'reviews']) {
-        expect(chipIn(rowOf(el, key))).toBe('Reserved')
-        expect(rowOf(el, key).querySelector('[data-edit]')).toBeNull()
-      }
+      for (const key of ['comments', 'reviews']) expect(chipIn(rowOf(el, key))).toBe('Reserved')
     })
 
-    it('an edit of `id` or of `title` writes that one line, and removing `also_in` only its own lines: the `in:` blocks stay byte for byte', async () => {
-      const el = mountNote(PLAIN, NOOR, plainFeed())
-      await edit(rowOf(el, 'id'), 'noor-1')
-      expect(written()).toBe(PLAIN.replace('id: k3m9x2pq7abc', 'id: noor-1'))
-      await edit(rowOf(el, 'title'), 'Noor K')
+    it('an edit writes that one line: the `in:` blocks stay byte for byte', async () => {
+      const el = mountNote(PLAIN, plainFeed())
+      click(rowOf(el, 'title').querySelector('[data-edit]'))
+      setValue(rowOf(el, 'title').querySelector<HTMLInputElement>('input'), 'Noor K')
+      press(rowOf(el, 'title').querySelector('input'), 'Enter')
+      await flush()
       expect(written()).toBe(PLAIN.replace('title: Noor Khan', 'title: Noor K'))
-      await removeRow(rowOf(el, 'also_in'))
-      expect(written()).toBe(PLAIN.replace(`also_in:\n  - ${TASKS_ID}\n`, ''))
-      expect(writeFile.mock.calls.every(([request]) => request.path === NOOR && request.content.includes(BLOCKS))).toBe(true)
-    })
-
-    it('Add property adds to the note itself, at the top level, under `title` or `id` as under any name; `comments` is still refused', async () => {
-      const bytes = `---\nStatus: mine\n${BLOCKS}---\nBody\n`
-      const el = mountNote(bytes, NOOR, plainFeed())
-      const add = async (name: string): Promise<void> => {
-        click(btn(el, 'Add property'))
-        setValue(byLabel<HTMLInputElement>(el, 'New property name'), name)
-        click(btn(el, 'Add'))
-        await flush()
-      }
-      await add('title')
-      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: bytes.replace('---\nBody', 'title: ""\n---\nBody'), expectedMtime: 100 })
-      await add('id')
-      expect(written()).toBe(bytes.replace('---\nBody', 'id: ""\n---\nBody'))
-      click(btn(el, 'Add property'))
-      setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'comments')
-      click(btn(el, 'Add'))
-      expect(errorLine(el)?.textContent).toBe("comments is the app's own property — it is set where it belongs, not here")
-      expect(writeFile).toHaveBeenCalledTimes(2)
-    })
-
-    it('a vault that stops using IDs while the panel is open: the folder rows go, and the next edit leaves every `in:` block as it is — one an ID vault would have dropped too (V13)', async () => {
-      const ARCHIVE_ID = 'a7ch1ve00001'
-      // Noor holds Archive's values, and Archive does not show it: the block an ID vault drops at the next write (D20).
-      const stale = CONTENT.replace('\nin:\n', `\nin:\n  ${ARCHIVE_ID}:\n    Status: Old\n`)
-      const source = feedOf(folderMd('/vault/Archive', { id: ARCHIVE_ID }), folderMd('/vault/Hiring', { columns: HIRING, id: HIRING_ID }), folderMd('/vault/Tasks', { columns: TASKS, id: TASKS_ID }))
-      const el = mountNote(stale, NOOR, source)
-      expect(from(el)).not.toBeNull()
-      // The same settings files, not a byte moved: only the vault's answer changed.
-      act(() => source.update(() => null, [], unnumbered()))
-      expect(from(el)).toBeNull()
-      expect(keysOf(el)).toEqual(['id', 'aliases', 'Status', 'also_in', 'in'])
-      await edit(rowOf(el, 'Status'), 'yours')
-      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: stale.replace('Status: mine', 'Status: yours'), expectedMtime: 100 })
+      expect(written()).toContain(BLOCKS)
     })
   })
 })
@@ -1820,11 +1400,11 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     expect((await propertiesStub.get(ROOT)).properties).toEqual({})
   })
 
-  it('a property added under "Properties from <folder>" writes its type as that folder’s column, then the empty value in the folder’s block', async () => {
+  it('a property added with "Column on <folder>" (the default) writes its type as that folder’s column, then the empty value as the note’s own field (YAZ-4713 C8)', async () => {
     const wikilinks = folderFeed({ Status: { kind: 'select', options: ['Ready', 'Later'] } })
     const folderBytes = `---\nid: ${FOLDER_ID}\nfolder_settings:\n  columns:\n    Status:\n      kind: select\n      options: [Ready, Later]\n  views:\n    - type: board\n      name: Board\n---\n`
-    readFile.mockImplementation(async (path: string) => (path === FOLDER ? { path, content: folderBytes, mtime: 300, size: 1 } : fileOf(LOCAL_NOTE)))
-    const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
+    readFile.mockImplementation(async (path: string) => (path === FOLDER ? { path, content: folderBytes, mtime: 300, size: 1 } : fileOf(FIELD_NOTE)))
+    const el = mount(FIELD_NOTE, { root: ROOT, wikilinks })
     expand(el)
     click(btn(el, 'Add property'))
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Due Date')
@@ -1839,7 +1419,7 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
       Status: { kind: 'select', options: ['Ready', 'Later'] },
       'Due Date': { kind: 'date' },
     })
-    expect(value).toEqual({ path: PATH, content: LOCAL_NOTE.replace('    Status: Ready\n', '    Status: Ready\n    Due Date:\n'), expectedMtime: 100 })
+    expect(value).toEqual({ path: PATH, content: FIELD_NOTE.replace('Status: Ready\n', 'Status: Ready\nDue Date:\n'), expectedMtime: 100 })
     expect((await propertiesStub.get(ROOT)).properties).toEqual({}) // a folder's property is not vault-wide
   })
 

@@ -36,8 +36,8 @@ import { memo, type CSSProperties, type ReactNode, useCallback, useEffect, useMe
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
-import { DEFAULT_FOLDER_PAGES, folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
-import { CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, INHERIT_COLUMNS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY, confirmChangesOf, hoverLinksOf, hoverPreviewOf, hoverRowsOf, inheritColumnsOf, showOtherFilesOf, showPageFileOf } from '@shared/folderPage'
+import { DEFAULT_FOLDER_PAGES, folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type IndexRecord, type PropertiesResponse, type ZoomStep } from '@shared/types'
+import { COLUMN_MARKS_KEY, CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, INHERIT_COLUMNS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY, columnMarksOf, confirmChangesOf, hoverLinksOf, hoverPreviewOf, hoverRowsOf, inheritColumnsOf, showOtherFilesOf, showPageFileOf } from '@shared/folderPage'
 import { exactLinkTarget } from '@shared/linkRewrite'
 import { isReadOnlyProperties, READ_ONLY_KEY } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
@@ -58,14 +58,14 @@ import { columnReservedKeys, reservedKeyText } from '../links/reservedKeys'
 import { vaultDirs } from '../links/folderLinks'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
-import { folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
+import { folderSettings, rewriteFolderViews, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
 import { renameNotice, renameOptionInFilters, renameOptionInNotes, restoreInPaths, type ValueHome } from './renameOption'
 import { createNote } from './scaffold'
 import { propertyLabel } from './engine'
 import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
 import { writeProperties, writeProperty, writeRouted } from './writeProperty'
-import { pageColumns } from './columnInheritance'
+import { ownerName, pageColumns, takesFrom, type ColumnSources } from './columnInheritance'
 import { mergeSeparateValues, restoreSeparateValues, separateCounts, separateHolders, type SeparateKeep } from './separateValues'
 import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { ViewFolder } from './view/GroupHeader'
@@ -320,6 +320,9 @@ export function FolderView({
   /** The folder's own "Show parent folders' columns" (YAZ-4713 C12): `undefined` follows Settings › Folder pages (on by default). */
   const [ownInherit, setOwnInherit] = useAheadKey(record === undefined ? undefined : inheritColumnsOf(record.properties))
   const inheritOn = ownInherit ?? (folderPages ?? DEFAULT_FOLDER_PAGES).inheritColumns
+  /** The folder's own "Show where columns come from" (C11): `undefined` follows Settings › Folder pages (on by default). */
+  const [ownMarks, setOwnMarks] = useAheadKey(record === undefined ? undefined : columnMarksOf(record.properties))
+  const marks = ownMarks ?? (folderPages ?? DEFAULT_FOLDER_PAGES).columnMarks
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
     chips.set({ readOnly: pageLocked })
@@ -389,7 +392,24 @@ export function FolderView({
   /** The folder's own live declarations, for a delete's Undo that runs later (YAZ-4637 M3): the host's `settings` are the page's columns (YAZ-4713 C2). */
   const latestOwnColumns = useRef<Record<string, ColumnDecl>>({})
   /** This render's declaration door, for a rename's Undo (YAZ-4637 M5). */
-  const latestDeclaration = useRef<(key: string, next: ColumnDecl, base: ColumnDecl | undefined, rename?: { from: string; to: string }) => Promise<unknown>>(() => Promise.resolve())
+  const latestDeclaration = useRef<(key: string, next: ColumnDecl, base: ColumnDecl | undefined, rename?: { from: string; to: string }, here?: boolean) => Promise<unknown>>(() => Promise.resolve())
+  /**
+   * Inherited declarations AHEAD of the index (YAZ-4713 C6): an edit written to the owner's `.folder.md` shows here at
+   * once, as `ahead` does for the folder's own. An entry goes when the owner's record echoes it (the same declaration, or
+   * a record at or past the write's mtime), and a refused write puts back what stood before.
+   */
+  const [aheadParents, setAheadParents] = useState<Readonly<Record<string, { owner: string; decl: ColumnDecl; mtime?: number }>>>({})
+  useEffect(() => {
+    const keys = Object.keys(aheadParents)
+    if (keys.length === 0) return
+    const gone = keys.filter((key) => {
+      const { owner, decl, mtime } = aheadParents[key]
+      const record = feed.folders.find((r) => r.folder === owner)
+      const onDisk = record === undefined ? undefined : folderSettings(record, ids).columns[key]
+      return (onDisk !== undefined && declStamp(onDisk) === declStamp(decl)) || (mtime !== undefined && record?.mtime !== undefined && record.mtime >= mtime)
+    })
+    if (gone.length > 0) setAheadParents(Object.fromEntries(Object.entries(aheadParents).filter(([key]) => !gone.includes(key))))
+  }, [aheadParents, feed.folders, ids])
   const setAhead = (next: Record<string, ColumnDecl> | null): void => {
     aheadRef.current = next
     setAheadState(next)
@@ -425,12 +445,41 @@ export function FolderView({
     [settings, ahead, aheadOther],
   )
   /** The page's columns (YAZ-4713 C2): its own live declarations over its parent folders', each with the folder that owns it. Once per snapshot. */
-  const columns = useMemo(() => (liveSettings === null ? null : pageColumns(liveSettings.columns, folder, feed.folders, ids, inheritOn)), [liveSettings, folder, feed.folders, ids, inheritOn])
-  /** What the views read (C2): the settings with the page's columns in place of the folder's own. Every write still states the folder's own. */
-  const pageSettings = useMemo(
-    () => (liveSettings === null || columns === null ? null : { ...liveSettings, columns: Object.fromEntries(Object.entries(columns).map(([key, { decl }]) => [key, decl])) }),
-    [liveSettings, columns],
-  )
+  const columns = useMemo(() => {
+    if (liveSettings === null) return null
+    const page = pageColumns(liveSettings.columns, folder, feed.folders, ids, inheritOn)
+    for (const [key, { owner, decl }] of Object.entries(aheadParents)) if (page[key]?.owner === owner) page[key] = { ...page[key], decl }
+    return page
+  }, [liveSettings, folder, feed.folders, ids, inheritOn, aheadParents])
+  /**
+   * The keys a subfolder below defines and no folder on this page's chain does (C11, locked 2026-11-08): the names of
+   * the subfolders that define each, and its definition when they all agree. A view that shows such a key through
+   * "Other properties" types it by that definition (none when they differ), and its header says "From Desserts".
+   */
+  const belowColumns = useMemo(() => {
+    const out: Record<string, { names: string[]; decl?: ColumnDecl }> = {}
+    if (columns === null) return out
+    const stamps = new Map<string, Set<string>>()
+    const vaultName = storage.vaultName(root)
+    for (const record of [...feed.folders].sort((a, b) => (a.folder < b.folder ? -1 : 1))) {
+      if (record.folder === folder || !inFolder(record.folder, folder)) continue
+      for (const [key, { separate: _own, ...decl }] of Object.entries(folderSettings(record, ids).columns)) {
+        if (key in columns) continue
+        ;(out[key] ??= { names: [], decl }).names.push(ownerName(feed.folders, record.folder, vaultName))
+        stamps.set(key, (stamps.get(key) ?? new Set()).add(declStamp(decl)))
+      }
+    }
+    for (const [key, seen] of stamps) if (seen.size > 1) delete out[key].decl
+    return out
+  }, [columns, feed.folders, folder, ids, root])
+  /** What the views read (C2): the settings with the page's columns in place of the folder's own, and the subfolders' agreed definitions to type by (C11). Every write still states the folder's own. */
+  const pageSettings = useMemo(() => {
+    if (liveSettings === null || columns === null) return null
+    const page: Record<string, ColumnDecl> = Object.fromEntries(Object.entries(columns).map(([key, { decl }]) => [key, decl]))
+    const fromBelow = Object.keys(belowColumns).filter((key) => belowColumns[key].decl !== undefined)
+    for (const key of fromBelow) page[key] = belowColumns[key].decl!
+    return { ...liveSettings, columns: page, ...(fromBelow.length > 0 && { fromBelow }) }
+  }, [liveSettings, columns, belowColumns])
   /** The keys this page keeps its own value for (C3), as one string so a new settings object with the same switches remaps no row. Vaults with IDs only. */
   const separateKeys = ids && liveSettings !== null ? Object.keys(liveSettings.columns).filter((key) => liveSettings.columns[key].separate === true).join('\n') : ''
   const separate = useMemo(() => new Set(separateKeys === '' ? [] : separateKeys.split('\n')), [separateKeys])
@@ -581,16 +630,56 @@ export function FolderView({
    * rejects to the caller, whose inline text is the report. With `rename`, the views' filters on the old label follow
    * it in the same write (YAZ-4637 M5). The host's `setColumn` and a rename's Undo both come through here.
    */
-  const writeDeclaration = (key: string, next: ColumnDecl, base: ColumnDecl | undefined, rename?: { from: string; to: string }): Promise<{ mtime: number }> => {
+  const writeDeclaration = (key: string, next: ColumnDecl, base: ColumnDecl | undefined, rename?: { from: string; to: string }, here = false): Promise<{ mtime: number }> => {
     if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
+    const filters = rename === undefined ? undefined : (views: unknown) => renameOptionInFilters(views, key, rename.from, rename.to)
+    // YAZ-4713 C6: an inherited column is its owner's — the edit goes to the owner's `.folder.md`, and every page under
+    // the owner shows it — unless "Change on this folder only" (`here`) declares it in this folder's own file.
+    const owner = here ? folder : columns[key]?.owner ?? folder
+    // A subfolder's column shown here (C11) is no column of this folder yet: the edit declares it here.
+    const ownBase = key in columns ? base : undefined
+    const written = owner === folder ? writeOwnDeclaration(key, next, ownBase, filters) : writeOwnerDeclaration(owner, key, next, base, filters)
+    // An option rename follows the definition (C6): the filters of the pages below the owner that take this column from it too.
+    return rename === undefined || separate.has(key) ? written : written.then(async (result) => {
+      await renameFiltersBelow(owner, key, rename.from, rename.to)
+      return result
+    })
+  }
+  const writeOwnDeclaration = (key: string, next: ColumnDecl, base: ColumnDecl | undefined, filters: ((views: unknown) => unknown) | undefined): Promise<{ mtime: number }> => {
     const before = aheadRef.current
     setAhead({ ...liveSettings.columns, [key]: next })
-    const filters = rename === undefined ? undefined : (views: unknown) => renameOptionInFilters(views, key, rename.from, rename.to)
     return track(aheadWrite(writeFolderColumn(file, key, next, base, ids, filters))).catch((err: unknown) => {
       setAhead(before)
       throw err
     })
   }
+  /** C6: the owner's file, ahead first (`aheadParents`). A read-only owner page refuses it, as its own page would (D36). */
+  const writeOwnerDeclaration = (owner: string, key: string, next: ColumnDecl, base: ColumnDecl | undefined, filters: ((views: unknown) => unknown) | undefined): Promise<{ mtime: number }> => {
+    const record = feed.folders.find((r) => r.folder === owner)
+    if (record !== undefined && isReadOnlyProperties(record.properties)) return Promise.reject(new Error(`${nameOf(owner)}'s folder page is read only`))
+    const before = aheadParents[key]
+    setAheadParents((now) => ({ ...now, [key]: { owner, decl: next } }))
+    const write = track(writeFolderColumn(folderSettingsPath(absFrom(root, owner)), key, next, base, ids, filters))
+    write.then(
+      ({ mtime }) => setAheadParents((now) => (now[key]?.decl === next ? { ...now, [key]: { ...now[key], mtime } } : now)),
+      () =>
+        setAheadParents((now) => {
+          const { [key]: _mine, ...rest } = now
+          return before === undefined ? rest : { ...rest, [key]: before }
+        }),
+    )
+    return write
+  }
+  /** The renamed option in the filters of every `.folder.md` below `owner` whose page takes `key` from it (C6). One quiet write each; a failure is the banner's. */
+  const renameFiltersBelow = async (owner: string, key: string, from: string, to: string): Promise<void> => {
+    const cache = new Map<string, boolean>()
+    const below = feed.folders.filter((r) => r.folder !== owner && inFolder(r.folder, owner) && takesFrom(feed.folders, ids, r.folder, owner, key, cache))
+    const results = await Promise.allSettled(below.map((r) => track(rewriteFolderViews(r.path, (views, labels) => ({ views: renameOptionInFilters(views, key, from, to), properties: labels })))))
+    const failed = results.filter((r) => r.status === 'rejected').length
+    if (failed > 0) setColumnError(`Could not rename "${from}" in the filters of ${failed} ${failed === 1 ? 'folder page' : 'folder pages'}`)
+  }
+  /** A folder's name as the UI says it (C6, C11): its title, else its directory's name; the vault's at the root. */
+  const nameOf = (dir: string): string => ownerName(feed.folders, dir, storage.vaultName(root))
   /**
    * S24 (YAZ-4591): the renamed option in every note that holds it — the note's own field (YAZ-4713 C1) of every row of
    * the column's owner folder and of each subfolder row below it; for a separate column (C3), this page's block of each
@@ -630,17 +719,17 @@ export function FolderView({
     const { separate: _was, ...shared } = decl
     const base = liveSettings.columns[key]
     if (on) {
-      await writeDeclaration(key, { ...shared, separate: true }, base)
+      await writeDeclaration(key, { ...shared, separate: true }, base, undefined, true)
       return
     }
-    await writeDeclaration(key, shared, base)
+    await writeDeclaration(key, shared, base, undefined, true)
     if (id === undefined) return // a page with no id holds no values of its own
     const pageId = id
     const holders = separateHolders([...feed.records, ...feed.folders], pageId, key).filter((r) => !locked.has(r.path))
     const { changed, failed } = await track(mergeSeparateValues(holders.map((r) => r.path), pageId, key, keep))
     if (failed > 0) setColumnError(`Could not move this page's "${key}" value into ${failed} ${failed === 1 ? 'note' : 'notes'}`)
     const undo = () =>
-      void latestDeclaration.current(key, { ...shared, separate: true }, shared).then(
+      void latestDeclaration.current(key, { ...shared, separate: true }, shared, undefined, true).then(
         () => track(restoreSeparateValues(changed, pageId, key)),
         (err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error'),
       )
@@ -686,9 +775,59 @@ export function FolderView({
   /** The tray takes moves while it shows and the page is not read only (D36). */
   const trayMoves = trayOn && !pageLocked
 
+  /**
+   * Whose value a delete of this folder's column clears, and where it is (YAZ-4713 C7). A shared column: the note's own
+   * field (C1) in the notes under this folder (shortcuts too) and the subfolder `.folder.md`s (D31) — less those under a
+   * subfolder that defines the key itself, whose page shows that definition. A separate column (C3): this page's block
+   * in every indexed note. A read-only note is never cleared, and is not counted.
+   */
+  const valueScope = (key: string): { records: IndexRecord[]; home: ValueHome } => {
+    const writable = (r: IndexRecord) => !isReadOnlyProperties(r.properties)
+    if (separate.has(key)) return { records: id === undefined ? [] : [...feed.records, ...feed.folders].filter(writable), home: { block: id ?? '' } }
+    const cache = new Map<string, boolean>()
+    // A subfolder row's value shows on its parent's page, so its `.folder.md` asks from the folder above it.
+    const parentOf = (dir: string) => (dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '')
+    const subfolderFiles = feed.folders.filter((r) => r.folder !== folder && inFolder(r.folder, folder))
+    return {
+      records: [...rows.filter((r) => writable(r) && takesFrom(feed.folders, ids, r.folder, folder, key, cache)), ...subfolderFiles.filter((r) => writable(r) && takesFrom(feed.folders, ids, parentOf(r.folder), folder, key, cache))],
+      home: null,
+    }
+  }
+  /** C7: the `.folder.md`s below this folder whose page takes `key` from it, less read-only pages (D36): their views lose the column too. */
+  const foldersBelowTaking = (key: string): IndexRecord[] => {
+    const bare = key.replace(/^note\./, '')
+    const cache = new Map<string, boolean>()
+    return feed.folders.filter((r) => r.folder !== folder && inFolder(r.folder, folder) && !isReadOnlyProperties(r.properties) && takesFrom(feed.folders, ids, r.folder, folder, bare, cache))
+  }
+
+  /** Where each column comes from (YAZ-4713 C6, C11), and Edit column's two moves for an inherited column. */
+  const sources: ColumnSources = {
+    folderName: nameOf(folder),
+    marks,
+    of: (key) => {
+      const column = columns[key]
+      if (column === undefined) return belowColumns[key] === undefined ? {} : { below: belowColumns[key].names.join(', ') }
+      if (column.owner !== folder) return { from: nameOf(column.owner) }
+      return column.over === undefined ? {} : { over: nameOf(column.over) }
+    },
+    // "Change on this folder only": the definition the page shows becomes this folder's own; the note values stay one (C1).
+    here: (key) => (columns[key] === undefined ? Promise.resolve() : writeDeclaration(key, columns[key].decl, liveSettings.columns[key], undefined, true)),
+    // "Use <parent>'s": this folder's declaration goes; the views keep the column, which now shows the parent's definition.
+    useParent: async (key) => {
+      const mine = liveSettings.columns[key]
+      const parent = columns[key]?.over
+      if (mine === undefined || parent === undefined) return
+      const { [key]: _gone, ...rest } = liveSettings.columns
+      await commitSettings(rest, parsed.def.views, parsed.def.properties)
+      const undo = () => void latestDeclaration.current(key, mine, undefined, undefined, true).catch((err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error'))
+      onNotice?.(`${propertyLabel(parsed.def, `note.${key}`)} uses ${nameOf(parent)}'s again`, 'info', 'undo', { label: 'Undo', run: undo, fades: true })
+    },
+  }
+
   const host: FolderHost = {
     settings: pageSettings,
     columns,
+    sources,
     vaultRecords: feed.records,
     vaultFolders: feed.folders,
     vaultName: storage.vaultName(root),
@@ -758,22 +897,24 @@ export function FolderView({
     // the field in this folder's block. Not offered where the vault does not use IDs (YAZ-2523 🔒 V11):
     // a column there is the notes' own property, and is hidden instead.
     ...(ids && {
-      deleteColumn: (key: string) =>
+      deleteColumn: (key: string, clear = true) =>
         deleteColumnEverywhere(key, {
           columns: liveSettings.columns,
           def: parsed.def,
-          // A subfolder's `.folder.md` holds its values for this folder as a note does (YAZ-4579 D31): it is stripped too.
-          records: [...feed.records, ...feed.folders],
-          folderId: id,
+          ...valueScope(key),
+          below: foldersBelowTaking(key),
           writeSettings: commitSettings,
           // The settings half offers Undo (YAZ-4608 C6): one settings write puts the column back; a refusal shows the banner as any settings write does.
           // Its values back too (YAZ-3746 13AY); a note it could not write back is said in the column banner.
           notice: (message, restore) => onNotice?.(message, 'info', 'undo', { label: 'Undo', run: () => void restore().catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))), fades: true }),
           // The Undo runs later (YAZ-4637 M3): it inverts the delete on the live declarations and def current then.
           current: () => ({ columns: latestOwnColumns.current, def: latestParsed.current.def, writeSettings: latestCommit.current ?? commitSettings }),
-        }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
+        }, clear).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     }),
-    valueCount: (key: string) => notesHolding(feed.records, id, key).length + notesHolding(feed.folders, id, key).length,
+    valueCount: (key: string) => {
+      const { records, home } = valueScope(key.replace(/^note\./, ''))
+      return notesHolding(records, home, key).length
+    },
     // "Separate value on this page" (YAZ-4713 C3): only where the vault uses IDs — the page's block is named by its id.
     ...(ids && {
       separate: {
@@ -834,6 +975,8 @@ export function FolderView({
         onChangeShowOtherFiles={(next) => setShowOtherFiles(next, writeOwnKey(SHOW_OTHER_FILES_KEY, next))}
         inheritColumns={ownInherit}
         onChangeInheritColumns={(next) => setOwnInherit(next, writeOwnKey(INHERIT_COLUMNS_KEY, next))}
+        columnMarks={ownMarks}
+        onChangeColumnMarks={(next) => setOwnMarks(next, writeOwnKey(COLUMN_MARKS_KEY, next))}
         sync={sync}
         onSyncNow={onSyncNow}
       />

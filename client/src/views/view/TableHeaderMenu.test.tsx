@@ -12,7 +12,7 @@ import { type ParsedViews, type ViewSet, parseViews, serializeViews } from '../v
 import { type FolderHost, ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
-import { deleteColumnMessage } from './ConfirmDeleteColumn'
+import { deleteColumnLabel, deleteColumnMessage } from './ConfirmDeleteColumn'
 import { insertAfter } from './TableHeaderMenu'
 import viewsCss from '../views.css?inline'
 
@@ -267,14 +267,15 @@ describe('the header menu (YAZ-1513)', () => {
     expect(def().views[0].rowNumbers).toBeUndefined()
   })
 
-  it('Delete column…: asks first — the sheet names the label, the key and the count of notes holding a value; Cancel deletes nothing', () => {
+  it('Delete column…: asks first — the sheet names the label and the folder; the buttons clear the N values or keep them (C7); Cancel deletes nothing', () => {
     const { el, deleteColumn, onChange } = mount()
     rightClick(th(el, 1))
     click(item(el, 'Delete column…'))
     expect(el.querySelector('.ctx-menu')).toBeNull() // the menu yields to the sheet
     const sheet = q<HTMLElement>(el, '.confirm[role="dialog"]')
     // TEST_RECORDS: five of the eight carry `status`
-    expect(q(sheet, '.confirm__text').textContent).toBe('Delete the column "Status"? It goes from this folder, and the "status" value from 5 notes.')
+    expect(q(sheet, '.confirm__text').textContent).toBe('Delete the column "Status"? It goes from vault and every page under it.')
+    expect([...sheet.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(expect.arrayContaining(['Delete column and clear 5 values', 'Keep the values in the notes', 'Cancel']))
     expect(document.activeElement?.textContent).toBe('Cancel')
     click([...sheet.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Cancel')!)
     expect(el.querySelector('.confirm')).toBeNull()
@@ -282,20 +283,46 @@ describe('the header menu (YAZ-1513)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('Delete a column from a folder: the confirm sheet’s copy is `Delete the column "<label>"? It goes from this folder, and the "<key>" value from N notes.` (YAZ-4608 C7) — and nothing more', () => {
-    const lost = (notes: string): string => `Delete the column "Status"? It goes from this folder, and the "status" value from ${notes}.`
-    expect(deleteColumnMessage('Status', 'status', 1)).toBe(lost('1 note'))
-    expect(deleteColumnMessage('Status', 'status', 3)).toBe(lost('3 notes'))
-    expect(deleteColumnMessage('Status', 'status', 0)).toBe(lost('0 notes'))
+  it('Delete a column from a folder: the sheet names the folder, and the main button the values it clears (YAZ-4713 C7)', () => {
+    expect(deleteColumnMessage('Status', 'Schema')).toBe('Delete the column "Status"? It goes from Schema and every page under it.')
+    expect(deleteColumnLabel(1)).toBe('Delete column and clear 1 value')
+    expect(deleteColumnLabel(3)).toBe('Delete column and clear 3 values')
+    expect(deleteColumnLabel(0)).toBe('Delete column')
   })
 
   it('Delete column…: confirming hands the key to FolderHost.deleteColumn — the ONE function — and closes the sheet', () => {
     const { el, deleteColumn } = mount()
     rightClick(th(el, 1))
     click(item(el, 'Delete column…'))
-    click([...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete')!)
-    expect(deleteColumn).toHaveBeenCalledExactlyOnceWith('note.status')
+    click([...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent?.startsWith('Delete column'))!)
+    expect(deleteColumn).toHaveBeenCalledExactlyOnceWith('note.status', true)
     expect(el.querySelector('.confirm')).toBeNull()
+    rightClick(th(el, 1))
+    click(item(el, 'Delete column…'))
+    click([...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Keep the values in the notes')!)
+    expect(deleteColumn).toHaveBeenLastCalledWith('note.status', false)
+  })
+
+  it('a column from a parent folder offers Hide, not Delete (YAZ-4713 C7); its header shows ↳ with "From Schema" (C11)', () => {
+    const sources = { ...testFolderHost().sources, of: (key: string) => (key === 'status' ? { from: 'Schema' } : {}) }
+    const { el } = mount(BASE, {}, { sources })
+    const mark = th(el, 1).querySelector('.view-column-mark')!
+    expect(mark.getAttribute('title')).toBe('From Schema')
+    expect(mark.getAttribute('data-mark')).toBe('parent')
+    rightClick(th(el, 1))
+    expect([...el.querySelectorAll('.ctx-menu__item')].map((b) => b.textContent)).not.toContain('Delete column…')
+  })
+
+  it('header marks (C11): a separate column shows the lock; "Icon and folder name" adds the name; Off shows none', () => {
+    const settings = { columns: { status: { kind: 'text' as const, separate: true as const } }, views: [], problems: [] }
+    const named = mount(BASE, {}, { settings, sources: { ...testFolderHost().sources, folderName: 'Desserts', marks: 'name' } })
+    const mark = th(named.el, 1).querySelector('.view-column-mark')!
+    expect(mark.getAttribute('title')).toBe('Separate value for Desserts')
+    expect(mark.textContent).toBe('Desserts')
+    act(() => root?.unmount())
+    container?.remove()
+    const off = mount(BASE, {}, { settings, sources: { ...testFolderHost().sources, marks: 'off' } })
+    expect(th(off.el, 1).querySelector('.view-column-mark')).toBeNull()
   })
 
   it('Delete column… is disabled with the tooltip on file.name — hide it instead', () => {

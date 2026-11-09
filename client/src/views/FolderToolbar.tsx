@@ -14,7 +14,7 @@
  * toolbar alone, never the views.
  */
 import { createContext, useSyncExternalStore, type ReactNode } from 'react'
-import type { GithubSyncStatus } from '@shared/types'
+import type { FolderPagesSettings, GithubSyncStatus } from '@shared/types'
 import { PageSettings, type PageSettingsProps, type PageSwitch } from '../editor/PageSettings'
 import { StatusChips } from '../editor/StatusChips'
 import type { SaveStatus } from '../lib/autosave'
@@ -56,7 +56,7 @@ export const FOLDER_READ_ONLY_TIP = 'This folder page is read only'
 const SAVE_RANK: Record<SaveStatus, number> = { saved: 0, unsaved: 1, saving: 2, error: 3 }
 const worse = (a: SaveStatus, b: SaveStatus): SaveStatus => (SAVE_RANK[a] >= SAVE_RANK[b] ? a : b)
 
-export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, confirmChanges, onChangeConfirmChanges, sync, onSyncNow }: {
+export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, sync, onSyncNow }: {
   store: Store<FolderChipsState>
   zoom: number
   onZoom: (zoom: number) => void
@@ -85,6 +85,9 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
   /** The folder's own "Show parent folders' columns" (YAZ-4713 C12): `undefined` follows Settings. */
   inheritColumns: boolean | undefined
   onChangeInheritColumns: (next: boolean | undefined) => void
+  /** The folder's own "Show where columns come from" (YAZ-4713 C11): `undefined` follows Settings. Absent: no row. */
+  columnMarks?: FolderPagesSettings['columnMarks'] | undefined
+  onChangeColumnMarks?: (next: FolderPagesSettings['columnMarks'] | undefined) => void
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
 }) {
@@ -99,7 +102,17 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
       { label: 'Off', on: value === false, onPick: () => onChange(false) },
     ],
   })
-  const switches = [choiceRow('Show folder page file', showPageFile, onChangeShowPageFile), choiceRow('Preview rows on hover', hoverRows, onChangeHoverRows), choiceRow('Preview links on hover', hoverLinks, onChangeHoverLinks), choiceRow('Show Other files', showOtherFiles, onChangeShowOtherFiles), choiceRow("Show parent folders' columns", inheritColumns, onChangeInheritColumns), ...(onChangeConfirmChanges === undefined ? [] : [choiceRow('Confirm changes', confirmChanges, onChangeConfirmChanges)])]
+  /** C11's three marks, with Settings first as every row here. */
+  const marksRow = (value: FolderPagesSettings['columnMarks'] | undefined, onChange: (next: FolderPagesSettings['columnMarks'] | undefined) => void): PageSwitch => ({
+    label: 'Show where columns come from',
+    choices: [
+      { label: 'Settings', on: value === undefined, onPick: () => onChange(undefined), title: 'Follow Settings › Folder pages' },
+      { label: 'Icon', on: value === 'icon', onPick: () => onChange('icon') },
+      { label: 'Icon and folder name', on: value === 'name', onPick: () => onChange('name') },
+      { label: 'Off', on: value === 'off', onPick: () => onChange('off') },
+    ],
+  })
+  const switches = [choiceRow('Show folder page file', showPageFile, onChangeShowPageFile), choiceRow('Preview rows on hover', hoverRows, onChangeHoverRows), choiceRow('Preview links on hover', hoverLinks, onChangeHoverLinks), choiceRow('Show Other files', showOtherFiles, onChangeShowOtherFiles), choiceRow("Show parent folders' columns", inheritColumns, onChangeInheritColumns), ...(onChangeColumnMarks === undefined ? [] : [marksRow(columnMarks, onChangeColumnMarks)]), ...(onChangeConfirmChanges === undefined ? [] : [choiceRow('Confirm changes', confirmChanges, onChangeConfirmChanges)])]
   return (
     <StatusChips zoom={zoom} onZoom={onZoom} readOnly={readOnly ? { asking, onAsk, onAllow, onCancel } : null} sync={sync} onSyncNow={onSyncNow} save={page === null ? save : worse(save, page.save)}>
       {page?.foldAll}

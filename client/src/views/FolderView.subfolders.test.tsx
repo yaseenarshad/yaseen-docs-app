@@ -179,11 +179,11 @@ describe('in a vault that uses IDs: the values are the subfolder’s `.folder.md
     expect(api.writeFile).not.toHaveBeenCalled()
   })
 
-  // Today's delete strips the page's block (D19); YAZ-4713 subissue 3 (C7) moves it to the notes' fields.
-  it('Delete column strips the subfolder’s `.folder.md` too, and the confirm count includes it', async () => {
-    disk.set(ARCHIVE_FILE, `---\nid: ${ARCHIVE_ID}\nin:\n  ${STAGES_ID}:\n    order: 3\n---\n`)
-    disk.set(LEAD, `---\nin:\n  ${STAGES_ID}:\n    order: 2\n---\n`)
-    await mount(true, { in: { [STAGES_ID]: { order: 3 } } }, { in: { [STAGES_ID]: { order: 2 } } })
+  // YAZ-4713 C7: the delete clears the notes' own fields — a subfolder row's is its `.folder.md`'s top-level key (D31).
+  it('Delete column clears the subfolder’s `.folder.md` too, and the confirm count includes it', async () => {
+    disk.set(ARCHIVE_FILE, `---\nid: ${ARCHIVE_ID}\norder: 3\n---\n`)
+    disk.set(LEAD, `---\norder: 2\n---\n`)
+    await mount(true, { order: 3 }, { order: 2 })
     expect(captured.folder!.valueCount('note.order')).toBe(2)
     await act(async () => captured.folder!.deleteColumn!('order'))
     expect(propertiesOf(ARCHIVE_FILE)).toEqual({ id: ARCHIVE_ID })

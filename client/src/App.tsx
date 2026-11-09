@@ -20,12 +20,11 @@ import { requestBoardCommand } from './documents/boardCommand'
 import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
-import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
+import type { Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
 import { dropIndex } from './lib/dragSlot'
-import { transformFile } from './views/writeProperty'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
@@ -66,7 +65,6 @@ import { setEnterKeepsStyle } from './editor/enterKeepsStyle'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
 import type { CodeSettingsPatch } from './code/codeSettings'
-import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { QuickLook } from './search/QuickLook'
@@ -162,7 +160,7 @@ export const GLOW_MAX_MS = 10_000
 const TAKE_GLOW_MS = 200
 
 /** One rename through the pipeline (`applyRename`): what it did, or why main refused it. */
-type RenameOutcome = { move: Move; cleared: ClearedValues[]; links: RenameRewriteSummary } | { error: unknown }
+type RenameOutcome = { move: Move; links: RenameRewriteSummary } | { error: unknown }
 
 /** Why one move of a list did not run (S11): a name that is taken, else main's own words. */
 const moveFailure = (name: string, err: unknown): string =>
@@ -2249,7 +2247,7 @@ export function App() {
       if (to.title === undefined && overEdge(live.current.roots, oldPath, to.newPath)) {
         try {
           const { newPath, kind } = await api.file.rename({ oldPath, newPath: to.newPath })
-          return { move: { oldPath, newPath, kind }, cleared: [], links: { updated: 0, skipped: 0 } }
+          return { move: { oldPath, newPath, kind }, links: { updated: 0, skipped: 0 } }
         } catch (error) {
           return { error }
         }
@@ -2271,8 +2269,7 @@ export function App() {
       } catch (error) {
         return { error }
       }
-      // A note that left a folder leaves that folder's values behind (D20).
-      const cleared = await dropFolderValuesAfterMove({ root: r, oldPath, newPath, kind, records, folders })
+      // A move removes nothing from a note (YAZ-4713 C9): its values are its own fields, and a page's own values stay too.
       const hasMovedViewFile = viewOnlyCatalog?.entries.some((entry) =>
         kind === 'dir' ? entry.path.startsWith(`${oldPath}/`) : entry.path === oldPath,
       ) ?? false
@@ -2288,7 +2285,7 @@ export function App() {
         title: to.title,
         ...(hasMovedViewFile ? { viewOnlyCatalog } : {}),
       })
-      return { move: { oldPath, newPath, kind }, cleared, links: summary }
+      return { move: { oldPath, newPath, kind }, links: summary }
     },
     [scopeOf],
   )
@@ -2337,10 +2334,9 @@ export function App() {
    * gesture in the app arrives here as (oldPath, to, kind) — the sidebar's inline rename, its
    * drag-move, the page title and a table's Name cell — so the rule is asked ONCE, here, and no
    * surface reimplements it: a changed NAME confirms first (the rename chains into the file on
-   * disk and then into every note that links to it); a MOVE asks only when it would clear a
-   * folder's values (D21, `valuesLeftBehind` over the window's own snapshot) and otherwise runs
-   * silently (a confirm on every drag would be hostile, and bare links keep resolving across a
-   * move anyway). A title edit (YAZ-2420 🔒 D16) changes the name and never the folder: it
+   * disk and then into every note that links to it); a MOVE runs silently — it clears no value
+   * (YAZ-4713 C9, so D21's sheet is gone), a confirm on every drag would be hostile, and bare links
+   * keep resolving across a move anyway). A title edit (YAZ-2420 🔒 D16) changes the name and never the folder: it
    * confirms, and is never a move. With "Ask before renaming" off (YAZ-2420 3C1) a changed name
    * runs unasked, through the same pipeline; the move's question is not that setting's.
    *
@@ -2350,8 +2346,6 @@ export function App() {
    * cancels the request.
    */
   const [pendingRename, setPendingRename] = useState<{ root: string; oldPath: string; kind: 'file' | 'dir'; viewOnlyCatalog: ViewOnlyCatalog | null; to: RenameTo; count: number } | null>(null)
-  // A move gesture waiting on its D21 sheet (YAZ-3250 D1): one sheet for the whole list, one row or many.
-  const [pendingMoves, setPendingMoves] = useState<{ root: string; moves: Move[]; lost: LeftBehind } | null>(null)
   const renameRootGeneration = useRef(0)
   /**
    * A move gesture done (YAZ-3255 D10, D11): onto the undo list, and its toast with Undo — `runMoves`'s, a Paste of a Cut's, a move in from Finder's.
@@ -2366,7 +2360,6 @@ export function App() {
   useLayoutEffect(() => {
     renameRootGeneration.current++
     setPendingRename(null)
-    setPendingMoves(null)
     setDragOutAsk(null)
     // The undo list speaks for the vaults it was made in (audit 2): a vault that left takes its moves along.
     moveHistory.current = createMoveHistory()
@@ -2406,7 +2399,7 @@ export function App() {
    * file list of each vault (`catalogForRename`) is read once for the gesture, and each move puts its
    * items at their new place in it (audit 6). A move over a vault's edge rewrites nothing and reads
    * none (S40). A move that fails leaves the rest to run, and ONE notice says the whole list (S11). A
-   * change to the window's vaults stops what is left. It answers what moved and what D20 cleared.
+   * change to the window's vaults stops what is left. It answers what moved.
    *
    * A move gesture goes on the window's undo list and says "Moved N items" with Undo (YAZ-3255 D10,
    * D11). An undo and a redo run through here too, with `record` off: they say their own toast, and
@@ -2415,7 +2408,7 @@ export function App() {
   const runMoves = useCallback(
     async (moves: readonly Move[], { record = true }: { record?: boolean } = {}): Promise<MovesRun> => {
       const generation = renameRootGeneration.current
-      const done: MovedGesture = { moves: [], cleared: [] }
+      const done: MovedGesture = { moves: [] }
       const names: NamedItem[] = []
       const failed: string[] = []
       let again = 0
@@ -2444,7 +2437,6 @@ export function App() {
         done.moves.push(out.move)
         // By kind and by name on disk (YAZ-3293 D23): a move keeps the item's file name.
         names.push(onDisk(oldPath, kind))
-        done.cleared.push(...out.cleared)
         links.updated += out.links.updated
         links.skipped += out.links.skipped
       }
@@ -2549,8 +2541,7 @@ export function App() {
 
   /**
    * ⌘Z (YAZ-3255 D10, S33): the newest gesture moves back, all its items, newest first, through
-   * `runMoves` — so links follow — and then the folder values its moves cleared come back on each
-   * note's path before the move (`restoreFolderValues`). What moved back goes on the redo list. One
+   * `runMoves` — so links follow. A move clears no value (YAZ-4713 C9), so none has to come back. What moved back goes on the redo list. One
    * that moved nothing stays on the undo list, so the next ⌘Z tries again — unless every item moved
    * again (audit 21). One undo or redo runs at a time; a key during one is taken and does nothing.
    * False with nothing to undo.
@@ -2565,10 +2556,7 @@ export function App() {
         // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'undo') : putBackStep(entry))
         const back = await runMoves(invertMoves(entry.moves), { record: false })
-        // Only a note whose move went back gets its blocks: its path is the move's own, or under a folder that went back.
-        const returned = (path: string): boolean => back.moves.some((move) => move.newPath === path || (move.kind === 'dir' && path.startsWith(`${move.newPath}/`)))
-        for (const { path, values } of entry.cleared) if (returned(path)) await transformFile(path, restoreFolderValues(values), true).catch(() => undefined) // quiet (YAZ-3235 D1)
-        if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves), cleared: [] })
+        if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves) })
         else if (back.failed.length > back.again) moveHistory.current.redone(entry)
         // The names in the order of the gesture it undoes, as its own toast said them (YAZ-3274 D22): the moves ran newest first.
         const text = replayNotice('undo', [...back.names].reverse(), back.failed, back.links)
@@ -2590,8 +2578,7 @@ export function App() {
 
   /**
    * ⌘⇧Z (YAZ-3255 D10 amended, S37): the newest undone gesture runs forward again through
-   * `runMoves`, with no D21 sheet. Its moves clear the values again (D20), and the gesture goes back
-   * on the undo list with what it cleared this time. One that moved nothing stays on the redo list,
+   * `runMoves`, and the gesture goes back on the undo list with what moved this time. One that moved nothing stays on the redo list,
    * as an undo does (audit 21). False with nothing to redo.
    */
   const redoMove = useCallback((): boolean => {
@@ -2603,7 +2590,7 @@ export function App() {
       try {
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'redo') : deleteAgain(entry))
         const run = await runMoves(entry.moves, { record: false })
-        if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves, cleared: run.cleared })
+        if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves })
         else if (run.failed.length > run.again) moveHistory.current.undone(entry)
         const text = replayNotice('redo', run.names, run.failed, run.links)
         if (run.moves.length === 0) {
@@ -2624,8 +2611,7 @@ export function App() {
 
   /**
    * The door for a list of moves (YAZ-3250 D1): a drop of two or more rows, and the pure move one
-   * drag makes (`requestRename`). D21 asks ONCE for the whole list, judged on the window's own
-   * snapshot (`valuesLeftBehind`); a list that clears nothing runs at once. A move into the folder
+   * drag makes (`requestRename`). It runs at once: a move clears no value (YAZ-4713 C9). A move into the folder
    * the item is already in is no move (S7). All moves stay in one vault (YAZ-2602 R11).
    */
   const requestMoves = useCallback(
@@ -2633,22 +2619,13 @@ export function App() {
       const moves = list.filter((move) => move.newPath !== move.oldPath)
       const first = moves[0]
       if (first === undefined) return
-      const { root, wikilinks } = scopeOf(first.oldPath)
+      const { root } = scopeOf(first.oldPath)
       if (root === null) return
       if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return notify(BETWEEN_VAULTS)
-      const lost = valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders })
-      if (lost.folders.length > 0) return setPendingMoves({ root, moves, lost })
       await runMoves(moves)
     },
     [scopeOf, runMoves, notify],
   )
-
-  /** The move sheet's Move: the list runs as it does unasked, unless its vault left the window. Its Cancel moves nothing (S10). */
-  const confirmMoves = useCallback(() => {
-    if (pendingMoves === null) return
-    setPendingMoves(null)
-    if (pendingMoves.root === scopeOf(pendingMoves.moves[0].oldPath).root) void runMoves(pendingMoves.moves)
-  }, [pendingMoves, scopeOf, runMoves])
 
   const requestRename = useCallback(
     async (oldPath: string, to: RenameTo, kind: TreeNode['type']): Promise<void> => {
@@ -3596,8 +3573,6 @@ export function App() {
           onCancel={() => setPendingRename(null)}
         />
       )}
-      {/* The move sheet (D21) asks once for a whole move gesture, one row or many (YAZ-3250 D1). */}
-      {pendingMoves !== null && <ConfirmMove moves={pendingMoves.moves} lost={pendingMoves.lost} titles={titles} onConfirm={confirmMoves} onCancel={() => setPendingMoves(null)} />}
       {/* Another window's tab of a vault this window does not show (YAZ-3637 D6): add the vault, then the tab moves here. */}
       {takeAsk !== null && (
         <ConfirmSheet

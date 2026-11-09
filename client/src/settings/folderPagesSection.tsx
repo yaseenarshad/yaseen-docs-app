@@ -16,6 +16,12 @@ import { Segmented } from './controls'
 import { ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsCtx, SettingsSection } from './registry'
 
+/** YAZ-4713 C11: the column header's mark. */
+const COLUMN_MARKS_OPTIONS: readonly Option<FolderPagesSettings['columnMarks']>[] = [
+  { label: 'Icon', value: 'icon' },
+  { label: 'Icon and folder name', value: 'name' },
+  { label: 'Off', value: 'off' },
+]
 const WEEK_START_OPTIONS: readonly Option<FolderPagesSettings['weekStartsOn']>[] = [
   { label: 'Sunday', value: 'sunday' },
   { label: 'Monday', value: 'monday' },
@@ -134,6 +140,7 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('showFolderPageFiles', 'Show folder page files', ON_OFF_OPTIONS, { hint: "Each folder's page file in the sidebar, first under its folder. A folder's ⚙ can say otherwise.", keywords: ['sidebar', 'page file', '.folder.md'] }),
         row('showOtherFiles', 'Show Other files', ON_OFF_OPTIONS, { hint: "A tray at the foot of each folder page: the folder's files that are not notes, and the notes moved out of its views. A folder's ⚙ can say otherwise.", keywords: ['other files', 'tray', 'pdf', 'image', 'drawing'] }),
         row('inheritColumns', "Show parent folders' columns", ON_OFF_OPTIONS, { hint: "A folder page shows the columns of the folders above it too. A folder's ⚙ can say otherwise.", keywords: ['columns', 'parent', 'inherit', 'properties', 'schema'] }),
+        row('columnMarks', 'Show where columns come from', COLUMN_MARKS_OPTIONS, { hint: "A tiny mark after a column's name: ↳ when a parent folder defines it, ↑ when a subfolder does, a lock when the folder keeps its own value. A folder's ⚙ can say otherwise.", keywords: ['columns', 'icon', 'parent', 'subfolder', 'inherit', 'lock', 'separate'] }),
       ],
     },
   ],

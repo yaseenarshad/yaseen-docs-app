@@ -30,6 +30,12 @@ export type ColumnDecl = PropertyDecl & {
 
 export interface FolderSettings {
   columns: Record<string, ColumnDecl>
+  /**
+   * A folder PAGE's keys in `columns` that only type a field (YAZ-4713 C11): a subfolder below defines them, so a view
+   * that shows one through "Other properties" types it by that definition, but none is one of this page's columns
+   * (`pageColumnKeys`). Never read from or written to a file.
+   */
+  fromBelow?: readonly string[]
   /** View NAME a fresh open starts on (YAZ-1104) — undefined (or a stale name) means the first view. */
   defaultView?: string
   /**
@@ -53,6 +59,12 @@ export interface FolderSettings {
   otherFiles?: string[]
   /** Human one-liners a surface can show. Never thrown, never written back. */
   problems: string[]
+}
+
+/** The page's columns (YAZ-4713 C2, C4): the keys a view shows before it orders its own — never a key that only types a subfolder's field (`fromBelow`). */
+export function pageColumnKeys(settings: Pick<FolderSettings, 'columns' | 'fromBelow'>): string[] {
+  const keys = Object.keys(settings.columns)
+  return settings.fromBelow === undefined || settings.fromBelow.length === 0 ? keys : keys.filter((key) => !settings.fromBelow!.includes(key))
 }
 
 /**
@@ -414,4 +426,26 @@ export function writeFolderColumn(path: string, key: string, next: ColumnDecl, b
     Object.assign(declaration, replacement)
     return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, { ...raw, columns: { ...columns, [key]: declaration }, ...(nextViews === undefined ? {} : { views: nextViews }) })
   })
+}
+
+/**
+ * Another folder's views and labels, rewritten against fresh bytes (YAZ-4713 C6, C7): `edit` gets the stored `views`
+ * and `properties` and hands back the ones to store (`undefined` removes the key). Nothing else in the file moves, and
+ * the same bytes come back when `edit` changes nothing. Resolves with what the file held before, for an Undo.
+ */
+export async function rewriteFolderViews(path: string, edit: (views: unknown, properties: unknown) => { views: unknown; properties: unknown }): Promise<{ views: unknown; properties: unknown }> {
+  let before: { views: unknown; properties: unknown } = { views: undefined, properties: undefined }
+  await transformFile(path, (content) => {
+    const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
+    if (parsed.error) throw new FrontmatterWriteError(parsed.error)
+    const raw = parsed.properties[FOLDER_SETTINGS_KEY]
+    if (!isRecord(raw)) return content
+    before = { views: raw.views, properties: raw.properties }
+    const next = edit(raw.views, raw.properties)
+    if (sameValue(next.views, raw.views) && sameValue(next.properties, raw.properties)) return content
+    const out: Record<string, unknown> = { ...raw, views: next.views, properties: next.properties }
+    for (const key of ['views', 'properties']) if (out[key] === undefined) delete out[key]
+    return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, out)
+  }, true)
+  return before
 }

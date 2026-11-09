@@ -7,7 +7,7 @@ import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { type Resolver, render } from '../expr'
 import { cellEditor, columnTyping } from '../editorType'
-import type { FolderSettings } from '../folderSettings'
+import { pageColumnKeys, type FolderSettings } from '../folderSettings'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, rowCell, rowTitle } from './GroupHeader'
@@ -100,7 +100,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
     event.preventDefault()
     setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, title: row.record.title })
   }
-  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
+  const keys = useMemo(() => propertyKeys(def, view, records, pageColumnKeys(settings)), [def, view, records, settings])
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
   const nameIsPrimary = primary === undefined || canonicalKey(primary) === 'file.name'

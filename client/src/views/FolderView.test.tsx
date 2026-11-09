@@ -468,12 +468,6 @@ describe('a shortcut is a row too (D2/D4)', () => {
     const folders = [{ ...rec(`${dir}/.folder.md`, { folder_settings: { columns, views: [TABLE] } }), id: 'z8y7x6w5v4t3' }, { ...rec(SETTINGS_FILE, { folder_settings: SETTINGS }), id: STAGES_ID }]
     act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
   }
-  /** The records with each `order` in this folder's block: what today's column delete strips (D19; YAZ-4713 subissue 3 moves it to note fields). */
-  const blocks = (records: IndexRecord[]): IndexRecord[] =>
-    records.map((r) => {
-      const { order, ...rest } = r.properties
-      return order === undefined ? r : { ...r, properties: inBlock({ order }, rest) }
-    })
   const openDeleteSheet = (el: HTMLElement): void => {
     selectView(el, 'Table')
     rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][1]) // `order`: Other, Lead Gen, Sales and Old all carry it
@@ -491,39 +485,51 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(writeValues).toHaveBeenCalledExactlyOnceWith(OTHER, [{ key: 'order', value: 9 }], SHARED, undefined) // a number: stages' own declaration
   })
 
-  it('Delete a column from a folder: that field is removed from THAT folder’s block in every indexed note that has it — a note under it at any depth, a shortcut, and a note it no longer shows', async () => {
-    await mount(SETTINGS, blocks(vault())) // no shortcut: Other is no row here, yet still holds an `order` for this folder
+  it('Delete column and clear (YAZ-4713 C7): the field leaves every note under the folder that holds it — at any depth, and a shortcut — and a note the folder does not show keeps it', async () => {
+    await mount(SETTINGS, shortcut())
     await act(async () => captured.folder!.deleteColumn!('order'))
     expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES, DEEP])
     const strip = transform.mock.calls[0][1]
-    const other = `---\ntitle: mine\norder: 5\nin:\n  z8y7x6w5v4t3:\n    order: 4\n  ${STAGES_ID}:\n    order: 7\n---\n`
-    // Nothing else is touched: the note's own `order`, and another folder's.
-    expect(strip(other)).toBe('---\ntitle: mine\norder: 5\nin:\n  z8y7x6w5v4t3:\n    order: 4\n---\n')
-  })
-
-  it('another folder showing the note with a column of the same name keeps nothing here: each folder’s value is its own', async () => {
-    await mount(SETTINGS, blocks(shortcut()))
-    feedWith('/vault/stages/archive', { order: { kind: 'text' } }, blocks(shortcut()))
+    // The note's own field goes; a separate page's block (C3) is not this column's value.
+    expect(strip(`---\ntitle: mine\norder: 5\nin:\n  z8y7x6w5v4t3:\n    order: 4\n---\n`)).toBe('---\ntitle: mine\nin:\n  z8y7x6w5v4t3:\n    order: 4\n---\n')
+    transform.mockClear()
+    await mount(SETTINGS, vault()) // no shortcut: Other is no row here, and keeps its `order`
     await act(async () => captured.folder!.deleteColumn!('order'))
-    expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES, DEEP])
+    expect(transform.mock.calls.map(([path]) => path)).toEqual([LEAD, SALES, DEEP])
   })
 
-  it('a note that cannot be written is reported in the column banner; the others are still stripped', async () => {
+  it('"Keep the values in the notes" (C7): the column goes, and no note is written', async () => {
+    await mount(SETTINGS, shortcut())
+    await act(async () => captured.folder!.deleteColumn!('order', false))
+    expect(transform.mock.calls.map(([path]) => path)).not.toContain(LEAD)
+  })
+
+  it('a subfolder that defines the key itself keeps its notes’ values: its page shows its own definition (C7)', async () => {
+    await mount(SETTINGS, shortcut())
+    feedWith('/vault/stages/archive', { order: { kind: 'text' } })
+    await act(async () => captured.folder!.deleteColumn!('order'))
+    expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES])
+  })
+
+  it('a note that cannot be written is reported in the column banner; the others are still cleared', async () => {
     transform.mockRejectedValueOnce(new Error('frontmatter is not valid YAML'))
-    const el = await mount(SETTINGS, blocks(shortcut()))
+    const el = await mount(SETTINGS, shortcut())
     await act(async () => captured.folder!.deleteColumn!('order'))
     expect(q(el, '[role="alert"]').textContent).toContain('Could not remove "order" from 1 note: Other (frontmatter is not valid YAML)')
     expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES, DEEP])
   })
 
-  it('Delete a column from a folder: the confirm sheet gives that count — the notes holding the field in this folder’s block — taken once, when the sheet opens', async () => {
-    const own = rec('/vault/stages/Own.md', { order: 9 }) // a top-level `order` is the note's own: not counted
-    const el = await mount(SETTINGS, [...blocks(vault()), own]) // Other is no row here and is counted: it holds the field
+  it('the confirm sheet names the folder and counts the notes under it holding the field, taken once, when the sheet opens (C7)', async () => {
+    const own = rec('/vault/stages/Own.md', { order: 9 })
+    const el = await mount(SETTINGS, [...vault(), own]) // Other is no row here: not counted
     openDeleteSheet(el)
-    const text = 'Delete the column "Order"? It goes from this folder, and the "order" value from 4 notes.'
-    expect(q(el, '.confirm__text').textContent).toBe(text)
-    feed(SETTINGS, [...blocks(vault()), own, rec('/vault/stages/New.md', inBlock({ order: 4 }))])
-    expect(q(el, '.confirm__text').textContent).toBe(text)
+    const text = q(el, '.confirm__text').textContent
+    expect(text).toMatch(/^Delete the column "Order"\? It goes from .+ and every page under it\.$/)
+    const main = () => [...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)
+    expect(main()).toContain('Delete column and clear 4 values')
+    expect(main()).toContain('Keep the values in the notes')
+    feed(SETTINGS, [...vault(), own, rec('/vault/stages/New.md', { order: 4 })])
+    expect(main()).toContain('Delete column and clear 4 values')
   })
 
   it('a cell edit on a row from a subfolder writes that note, in the OPENED folder’s block', async () => {
@@ -1523,6 +1529,91 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(cell(el, 'Orders table', 1).textContent).toContain('Billing')
   })
 
+  describe('Schema declares Domain; Orders, below it, shows it (YAZ-4713 C6, C7)', () => {
+    const SCHEMA = '/vault/schema'
+    const ORDERS = '/vault/schema/orders'
+    const TABLE_NOTE = '/vault/schema/orders/Orders table.md'
+    const domain = { kind: 'select' as const, options: ['Billing', 'Payments'] }
+    const schemaFile = '---\nfolder_settings:\n  columns:\n    domain:\n      kind: select\n      options: [Billing, Payments]\n  views:\n    - type: table\n      name: Table\n---\n'
+    const ordersFile = '---\nfolder_settings:\n  views:\n    - type: table\n      name: Orders\n      sort:\n        - property: note.domain\n          direction: ASC\n---\n'
+    const open = async (path: string): Promise<void> => {
+      const folders = [
+        { ...rec(`${SCHEMA}/.folder.md`, { folder_settings: { columns: { domain }, views: [{ type: 'table', name: 'Table' }] } }), id: SUB_ID },
+        { ...rec(`${ORDERS}/.folder.md`, { folder_settings: { views: [{ type: 'table', name: 'Orders', sort: [{ property: 'note.domain', direction: 'ASC' }] }] } }), id: ARCHIVE_ID },
+      ]
+      const records = [rec(TABLE_NOTE, { title: 'Orders table', domain: 'Billing' })]
+      unmountFolderView()
+      renderNoAsk({ path, source, onOpenFile })
+      act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
+      await flush()
+    }
+    beforeEach(() => {
+      disk.set(`${SCHEMA}/.folder.md`, schemaFile)
+      disk.set(`${ORDERS}/.folder.md`, ordersFile)
+      disk.set(TABLE_NOTE, '---\ntitle: Orders table\ndomain: Billing\n---\n')
+    })
+
+    it('C6: an edit of Domain from Orders is written to Schema’s `.folder.md`; Orders’ file is untouched', async () => {
+      await open(ORDERS)
+      expect(captured.folder!.sources.of('domain')).toEqual({ from: expect.any(String) })
+      await act(async () => void (await captured.folder!.setColumn('domain', { ...domain, options: ['Billing', 'Payments', 'Refunds'] }, domain)))
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('Refunds')
+      expect(disk.get(`${ORDERS}/.folder.md`)).toBe(ordersFile)
+      // Ahead of the index: the page shows the edit at once.
+      expect(captured.folder!.settings.columns.domain).toEqual({ ...domain, options: ['Billing', 'Payments', 'Refunds'] })
+    })
+
+    it('C6: "Change on this folder only" declares Domain in Orders’ file; Schema is unchanged; the note keeps its one value', async () => {
+      await open(ORDERS)
+      await act(async () => void (await captured.folder!.sources.here('domain')))
+      expect(disk.get(`${ORDERS}/.folder.md`)).toContain('domain:')
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toBe(schemaFile)
+      expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n')
+    })
+
+    it('C7: on Orders, Domain offers no Delete; on Schema, Delete with Clear removes the note field and Orders’ sort on it', async () => {
+      await open(ORDERS)
+      expect(captured.folder!.sources.of('domain').from).toBeDefined() // the menus offer Hide only (`deletableHere`)
+      await open(SCHEMA)
+      expect(captured.folder!.valueCount('note.domain')).toBe(1)
+      await act(async () => captured.folder!.deleteColumn!('domain', true))
+      await flush()
+      expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\n---\n')
+      expect(disk.get(`${ORDERS}/.folder.md`)).not.toContain('domain')
+    })
+
+    it('C11: a column only a subfolder defines is typed by it on the parent page but is no column there; two that differ leave it untyped', async () => {
+      const sweet = { kind: 'select' as const, options: ['Low', 'High'] }
+      const show = async (pies: unknown) => {
+        const folders = [
+          { ...rec(`${SCHEMA}/.folder.md`, { folder_settings: { views: [{ type: 'table', name: 'Table' }] } }), id: SUB_ID },
+          { ...rec(`${ORDERS}/.folder.md`, { folder_settings: { columns: { sweetness: sweet }, views: [] } }), id: ARCHIVE_ID },
+          { ...rec(`${SCHEMA}/pies/.folder.md`, { folder_settings: { columns: { sweetness: pies }, views: [] } }), id: 'p1e5p1e5p1e5' },
+        ]
+        unmountFolderView()
+        renderNoAsk({ path: SCHEMA, source, onOpenFile })
+        act(() => source.update(linkResolver([], '/vault', vaultDirs('/vault'), folders), [], folders, true))
+        await flush()
+      }
+      await show(sweet)
+      expect(captured.folder!.columns.sweetness).toBeUndefined() // no column of this page (C4)
+      expect(captured.folder!.settings.columns.sweetness).toEqual(sweet) // but typed by the subfolders' agreed definition
+      expect(captured.folder!.settings.fromBelow).toEqual(['sweetness'])
+      expect(captured.folder!.sources.of('sweetness').below).toMatch(/,/) // both subfolders named
+      await show({ kind: 'text' })
+      expect(captured.folder!.settings.columns.sweetness).toBeUndefined()
+      expect(captured.folder!.sources.of('sweetness').below).toBeDefined()
+    })
+
+    it('C7: Keep leaves every note’s field; Orders’ views still lose the column', async () => {
+      await open(SCHEMA)
+      await act(async () => captured.folder!.deleteColumn!('domain', false))
+      await flush()
+      expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n')
+      expect(disk.get(`${ORDERS}/.folder.md`)).not.toContain('domain')
+    })
+  })
+
   it('C2: the nearest declaration of a key wins, and the folder ⚙ "Show parent folders’ columns" Off shows the folder’s own alone', async () => {
     const parent = { columns: { order: { kind: 'number' }, owner: { kind: 'text' } }, views: [TABLE] }
     const child = { columns: { order: { kind: 'text' } }, views: [{ type: 'table', name: 'Table' }] }
@@ -1538,7 +1629,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       await flush()
     }
     await open()
-    expect(captured.folder!.columns).toEqual({ order: { decl: { kind: 'text' }, owner: 'stages/archive' }, owner: { decl: { kind: 'text' }, owner: 'stages' } })
+    expect(captured.folder!.columns).toEqual({ order: { decl: { kind: 'text' }, owner: 'stages/archive', over: 'stages' }, owner: { decl: { kind: 'text' }, owner: 'stages' } })
     await open({ inherit_columns: false })
     expect(captured.folder!.columns).toEqual({ order: { decl: { kind: 'text' }, owner: 'stages/archive' } })
   })

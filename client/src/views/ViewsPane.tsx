@@ -11,8 +11,8 @@ import { type ViewSet, type ViewDef, type ParsedViews, hidesSubfolderNotes, pars
 import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, levelSteps } from './groupLevelSteps'
 import { type Group, type Row, propertyKeys, propertyLabel, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
-import { type ColumnDecl, type FolderSettings, rebaseSettings } from './folderSettings'
-import type { PageColumn } from './columnInheritance'
+import { type ColumnDecl, type FolderSettings, pageColumnKeys, rebaseSettings } from './folderSettings'
+import type { ColumnSources, PageColumn } from './columnInheritance'
 import type { SeparateCounts, SeparateKeep } from './separateValues'
 import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
@@ -60,6 +60,8 @@ export interface FolderHost {
   settings: FolderSettings
   /** The same columns, each with the folder that owns its definition (root-relative, '' = the vault root): this folder's own, or a parent's. */
   columns: Readonly<Record<string, PageColumn>>
+  /** Where each column comes from, named (YAZ-4713 C6, C11): Edit column's owner line and moves, the header icons, this folder's name. */
+  sources: ColumnSources
   /**
    * "Separate value on this page" (YAZ-4713 C3): this page keeps its own value of the column for each note. Only where
    * the vault uses IDs. `counts` is the turn-off ask's numbers; `set` turns it on or off (`decl` is the column as the
@@ -99,13 +101,14 @@ export interface FolderHost {
    */
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[], labels?: { properties: ViewSet['properties'] }) => void
   /**
-   * "Delete column…" (YAZ-1513): the declaration, every view reference, the label AND the folder's
-   * value for it on every note holding one — `views/deleteColumn.ts`, ONE function behind both menus. Never rejects:
+   * "Delete column…" (YAZ-1513): the declaration, every view reference here and below (YAZ-4713 C7), the label AND —
+   * with `clear` (the default), "Delete column and clear N values" — the value on every note under the folder holding
+   * one — `views/deleteColumn.ts`, ONE function behind both menus. Only this folder's own column. Never rejects:
    * the host reports failures in its own banner. A host whose columns are the notes' own properties
    * has none (YAZ-2523 🔒 V11): the menus then offer no delete, and a column is hidden instead.
    */
-  deleteColumn?: (key: string) => Promise<void>
-  /** How many notes hold the folder's value for a column — the number that delete's confirm states. */
+  deleteColumn?: (key: string, clear?: boolean) => Promise<void>
+  /** How many notes under the folder hold a value for a column (a separate one: this page's block) — the number that delete's confirm states. */
   valueCount: (key: string) => number
   /**
    * The ONE door a view writes a row's values through — a cell edit, a board or section drop — in
@@ -506,7 +509,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const settings = folder.settings
   const optionOrder = useMemo(() => optionOrderFor(shown, properties, settings), [shown, properties, settings])
   const result = useMemo(
-    () => runView(def, view, shown, { resolve, declared: Object.keys(folder.settings.columns), page, optionOrder }),
+    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder }),
     [def, view, shown, resolve, page, optionOrder],
   )
 
@@ -590,7 +593,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         if (kind === null) return null
         const ctx = { resolve, decls: settings.columns, pageFolder, folderTitle: folderPages.title }
         if (kind === 'titles') return { kind, rows: windowLink.rows, groups: null, keys: [], ctx }
-        return { kind, rows, groups, keys: propertyKeys(def, view, shown, Object.keys(settings.columns)), ctx }
+        return { kind, rows, groups, keys: propertyKeys(def, view, shown, pageColumnKeys(settings)), ctx }
       },
       collapsed,
       expand: (open) => writeCollapsed(collapsed.filter((k) => !open.includes(k))),
@@ -780,7 +783,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
 
   const writeValue = (path: string, key: string, value: unknown) => folder.writeValues(path, [{ key, value }])
 
-  const keys = propertyKeys(def, view, records, Object.keys(folder.settings.columns))
+  const keys = propertyKeys(def, view, records, pageColumnKeys(folder.settings))
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = keys.filter((k) => k !== nameKey)
 
@@ -806,7 +809,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     if (v.type === PAGE_VIEW_TYPE) return null
     const all = showsFolderRows(v) && folderRows.length > 0 ? [...noteRecords, ...folderRows] : noteRecords
     const input = hidesSubfolderNotes(v) ? all.filter((r) => directlyIn(r, pageFolder)) : all
-    const declared = Object.keys(settings.columns)
+    const declared = pageColumnKeys(settings)
     const out = runView(def, v, input, { resolve, declared, page, optionOrder })
     const grouped = boardOptionGroups(out.groups, v, (key) => columnTyping(key, input, properties, settings))
     const list = shownRows(out.rows, grouped)
@@ -953,6 +956,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           setColumn={folder.setColumn}
           declareColumn={folder.setColumns}
           deleteColumn={folder.deleteColumn}
+          sources={folder.sources}
           valueCount={folder.valueCount}
           separate={folder.separate}
           onWriteValue={writeValue}

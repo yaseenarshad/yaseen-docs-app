@@ -14,11 +14,9 @@ import { gestureNotice, namedItems, onDisk, unlessFailed, type NoticeKind, type 
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
-import { fetchTree } from '../../lib/treeFeed'
-import { findDirNode, notesAt, treeHasPath } from '../../lib/treeState'
-import { dropFolderValuesAfterMove, dropStaleFolderValues, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
+import { findDirNode, treeHasPath } from '../../lib/treeState'
+import type { Move } from '../../links/shortcuts'
 import { createNote, folderPath } from '../../views/scaffold'
-import { transformFile } from '../../views/writeProperty'
 import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
 import { dragPill, pillLabel } from '../dragPill'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
@@ -567,14 +565,6 @@ export function useFileClipboard(
    * only labels the menu and gates ⌘V: each paste reads the clip FRESH and pastes that one (YAZ-3266, `pasteInto`).
    */
   const [clip, setClip] = useState<FileClipState>(null)
-  /**
-   * The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet
-   * (D21); null when it is closed. `clip` is the clip the sheet asks about: the one a fresh read confirmed (YAZ-3266), and
-   * the one its Move or Copy pastes — never whatever is on the clipboard by then.
-   */
-  const [pendingPaste, setPendingPaste] = useState<{ dir: string; top?: string; moves: Move[]; lost: LeftBehind; copy: boolean; clip: NonNullable<FileClipState> } | null>(null)
-  // The sheet speaks for the clipboard it was asked about: another one ends the question.
-  useEffect(() => setPendingPaste((open) => (open === null || sameClip(open.clip, clip) ? open : null)), [clip])
   /** Pushes seen so far: a read lands only when none came since it began (a push is newer than the read). */
   const pushes = useRef(0)
   /** False once unmounted: a read that answers late writes no state. */
@@ -630,39 +620,26 @@ export function useFileClipboard(
    * notice counts both halves and names the first failure. The target opens (the synthetic-child
    * idiom `startCreate` uses) and the tree refreshes EXPLICITLY: a copy moves nothing, so no
    * `fileRenamed` broadcast repairs it, and the watcher's add echo is a courtesy, not a contract
-   * (`refresh` is idempotent). A CUT is a move: each note it moved leaves the values of the folders
-   * it left behind (D20), judged on the index as it stood before the paste. A COPY's notes keep no
-   * values for the folders that do not show them (YAZ-2420 3E1), judged after it; the original is
-   * never written. The copies are listed off the tree that refresh reads — the index hears of them
-   * only once the watcher has — and a folder it has not heard of yet, the copy of one, keeps its block.
-   * In a vault that does not use IDs a copy is left as it landed (YAZ-2523 🔒 V3): by the data both
-   * branches do nothing there, and the gate on the copy's only saves its two fetches.
+   * (`refresh` is idempotent). A CUT is a move, and a COPY lands as main wrote it: neither removes a
+   * value from a note (YAZ-4713 C9 — a value no page shows is listed in the note's properties, with Clear).
    * The vault is the one `dir` is in (YAZ-2602 S46): a paste from another vault of this window is
    * judged as a paste from another window is.
    */
   const runPaste = useCallback(
     // `top`: the copy of Focus or Favorites the paste came from (YAZ-3131 S21), which opens the folder there too.
-    // `confirmed`: the clip a fresh read answered (YAZ-3266). It decides D20, the undo record and the sound, and main
+    // `confirmed`: the clip a fresh read answered (YAZ-3266). It decides the undo record and the sound, and main
     // pastes only it: another clip on the clipboard by now pastes nothing and fails `CONFLICT`.
     async (dir: string, confirmed: NonNullable<FileClipState>, top?: string) => {
       const { root: vault, index } = vaultOf(dir)
       try {
-        const before = confirmed.op === 'cut' ? { records: index.records, folders: index.folders } : null
         const res = await api.file.paste({ targetDir: dir, expect: { op: confirmed.op, paths: confirmed.paths } })
         openTo(`${dir}/x`, top)
         refresh(vault)
-        // What D20 cleared, for the undo list.
-        const cleared: MovedGesture['cleared'] = []
-        if (before !== null) for (const { from, to, kind } of res.pasted) cleared.push(...(await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })))
-        else if (index.ids) {
-          const [{ tree }, { folders }] = await Promise.all([fetchTree(vault), api.index(vault)])
-          for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(vault, path, folders), true).catch(() => undefined) // quiet (YAZ-3235 D1)
-        }
         // Each item that did not land, by its page name; the titles are read only when one did not.
         const titles = res.failed.length === 0 ? undefined : pathTitles(index.records, index.folders)
         const failed = titles === undefined ? [] : res.failed.map((f) => `${pageName(vault, f.from, titles)} — ${f.message}`)
-        // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves and what they cleared go on the undo list.
-        const gesture: MovedGesture | null = before === null ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared }
+        // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves go on the undo list.
+        const gesture: MovedGesture | null = confirmed.op !== 'cut' ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })) }
         // What landed, by kind and by its name on disk (YAZ-3293 D23): a copy may have a new free name.
         const pasted = res.pasted.map(({ to, kind }) => onDisk(to, kind))
         const text = gestureNotice(res.pasted.length === 0 ? null : `Pasted ${namedItems(pasted)}`, failed, "Couldn't paste")
@@ -689,15 +666,10 @@ export function useFileClipboard(
   )
 
   /**
-   * Paste's one door, the menu's and ⌘V's: a Cut that would clear a folder's values asks first
-   * (D21), by the window's own snapshot, and so does a Copy whose copies would not keep them
-   * (YAZ-2420 3E1); anything else pastes at once. The moves are the clipboard's paths into `dir` —
-   * one already there is no move (main skips a cut, D2; a copy beside its original leaves nothing
-   * behind), and a folder is one the tree holds as a folder. A path outside this vault matches no
-   * record, so it never asks: the index cannot speak for it.
+   * Paste's one door, the menu's and ⌘V's: it pastes at once — a paste clears no value (YAZ-4713 C9), so D21's sheet is gone.
    * The clip is read FRESH first (YAZ-3266), never taken from the window's cached `clip`: the system clipboard can change
    * with no event (text copied in a note), and main pastes what it holds at paste time. That one answer decides the
-   * sheet, D20, the undo record and the sound, and the paste carries it, so main runs that clip or nothing.
+   * undo record and the sound, and the paste carries it, so main runs that clip or nothing.
    */
   const pasteInto = useCallback(
     async (dir: string, top?: string) => {
@@ -708,27 +680,10 @@ export function useFileClipboard(
         return onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
       if (now === null) return onNotice('Nothing to paste', 'info')
-      const moves = now.paths.flatMap((oldPath): Move[] => {
-        const newPath = `${dir}/${basename(oldPath)}`
-        return newPath === oldPath ? [] : [{ oldPath, newPath, kind: dirs.includes(oldPath) ? 'dir' : 'file' }]
-      })
-      const { root: vault, index } = vaultOf(dir)
-      const lost = valuesLeftBehind({ root: vault, moves, records: index.records, folders: index.folders })
-      if (lost.folders.length > 0) return setPendingPaste({ dir, top, moves, lost, copy: now.op === 'copy', clip: now })
       await runPaste(dir, now, top)
     },
-    [vaultOf, dirs, runPaste, readClip, onNotice],
+    [runPaste, readClip, onNotice],
   )
-
-  /**
-   * The sheet's Move or Copy: the paste runs as it does unasked, for the clip the sheet asked about (YAZ-3266). Its
-   * Cancel only closes it — the clipboard stays as it was.
-   */
-  const confirmPaste = useCallback(() => {
-    if (pendingPaste === null) return
-    setPendingPaste(null)
-    void runPaste(pendingPaste.dir, pendingPaste.clip, pendingPaste.top)
-  }, [pendingPaste, runPaste])
 
   /**
    * ⌘V's target (D6, YAZ-1674): beside the FIRST ordered selected row — a dir → into it, a file →
@@ -786,7 +741,7 @@ export function useFileClipboard(
    * opens, the tree reads again (the watcher's echo is a courtesy), and ONE notice counts what
    * landed and names the first item that did not (S19). An item of another open vault says the rule
    * of drags between vaults (S22). Items that come from outside every vault left no folder of it,
-   * so no values are cleared (D20). Copies are not moves: only `moved` goes on the undo list, and
+   * and no value is cleared (YAZ-4713 C9). Copies are not moves: only `moved` goes on the undo list, and
    * its toast has Undo (YAZ-3255 S18, S40).
    */
   const importFiles = useCallback(
@@ -815,7 +770,7 @@ export function useFileClipboard(
           playGestureSound('land')
           onNotice(text, 'paste', unlessFailed('clipboard', failed))
         }
-        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text, failed.length > 0)
+        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })) }, text, failed.length > 0)
       } catch (err: unknown) {
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
@@ -823,7 +778,7 @@ export function useFileClipboard(
     [vaultOf, refresh, openTo, onNotice, onMoved],
   )
 
-  return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null), importFiles }
+  return { clip, clipTo, pasteInto, importFiles }
 }
 
 export function useInlineEdits(
