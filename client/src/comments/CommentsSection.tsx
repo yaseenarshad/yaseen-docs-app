@@ -39,7 +39,7 @@ import {
   type CommentThread,
   type PageComment,
 } from '@shared/comments'
-import { cardMatches, type PeopleConfig } from '@shared/people'
+import { cardMatches, own, type PeopleRead } from '@shared/people'
 import { AGENT_HANDLE, type CommentProfile, type CommentsOrder, type FileResponse } from '@shared/types'
 import { api } from '../api'
 import { relativeTime } from '../lib/relativeTime'
@@ -112,18 +112,21 @@ const nonBlank = (v: unknown): string | null => (typeof v === 'string' && v.trim
  * it. A person's card goes in with their first comment, so a handle with no card is an agent
  * (Yaseen's pick on audit 4, after the checker's round 1).
  */
-function writerOf(by: string | null, me: CommentProfile | null, people: PeopleConfig): Writer {
+function writerOf(by: string | null, me: CommentProfile | null, people: PeopleRead): Writer {
   if (by === null) return { kind: 'none', name: '', picture: null }
   if (me !== null && by === me.handle) return { kind: 'me', name: me.name, picture: me.picture }
-  const card = by === AGENT_HANDLE ? undefined : people.people[by]
-  return card === undefined ? { kind: 'agent', name: by, picture: null } : { kind: 'person', name: card.name, picture: card.picture }
+  if (by === AGENT_HANDLE) return { kind: 'agent', name: by, picture: null }
+  const card = own(people.people, by)
+  if (card !== undefined) return { kind: 'person', name: card.name, picture: card.picture }
+  // A card the file holds but this app cannot show is still a person's: initials, no Edit.
+  return people.handles.has(by) ? { kind: 'person', name: by, picture: null } : { kind: 'agent', name: by, picture: null }
 }
 
 /** The name a handle stands for, for "Resolved by …". */
-const nameOf = (handle: string | undefined, me: CommentProfile | null, people: PeopleConfig): string | null => {
+const nameOf = (handle: string | undefined, me: CommentProfile | null, people: PeopleRead): string | null => {
   const h = nonBlank(handle)
   if (h === null) return null
-  return me !== null && h === me.handle ? me.name : (people.people[h]?.name ?? h)
+  return me !== null && h === me.handle ? me.name : (own(people.people, h)?.name ?? h)
 }
 
 const TONE: Record<Exclude<Writer['kind'], 'none'>, AvatarTone> = { me: 'me', person: 'person', agent: 'agent' }
@@ -241,7 +244,7 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
     // D2: signed with your handle when you have a profile; the first comment in a vault puts your card in its people file (D1).
     const ok = await write((fresh) => addComment(fresh, draft.body, { id: newCommentId(), at: nowIso(), replyTo, title: draft.title, by: me?.handle }))
     // Only when the vault's card is not yours yet: no IPC read after every comment (audit 16).
-    if (ok && me !== null && root !== null && !cardMatches(people.people[me.handle], me)) void saveCard(root, me)
+    if (ok && me !== null && root !== null && !cardMatches(own(people.people, me.handle), me)) void saveCard(root, me)
     return ok
   }
 

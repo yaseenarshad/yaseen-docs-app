@@ -440,6 +440,19 @@ describe('registerFsIpc', () => {
       }
     })
 
+    it('in a vault that uses IDs, a new note also starts with the hint, above its id (YAZ-4615 D10)', async () => {
+      const vault = await open(true)
+      try {
+        const at = (...p: string[]) => path.join(vault, ...p)
+        store.setSettings({ ...store.get().settings, commentsHint: true })
+        expect(await call(CONTRACT.mintNoteId, at('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.createFile, { path: at('meeting-notes-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
+        expect(await readFile(at('meeting-notes-yaz-1.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\nstatus: idea\nid: YAZ-1\n---\nbody\n')
+      } finally {
+        await close(vault)
+      }
+    })
+
     it.each([
       ['said no', false],
       ['has not answered', undefined],

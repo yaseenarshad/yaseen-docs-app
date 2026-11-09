@@ -262,14 +262,18 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
 
 /** Git's own three-way line merge of three texts; null when the same lines changed, or git fails. */
 async function lineMerge(bin: string, root: string, base: string, theirs: string, mine: string): Promise<string | null> {
-  const dir = await mkdtemp(path.join(tmpdir(), 'yaseendocs-merge-'))
+  let dir: string | null = null
   try {
-    const [b, t, m] = ['base', 'theirs', 'mine'].map((name) => path.join(dir, name))
+    dir = await mkdtemp(path.join(tmpdir(), 'yaseendocs-merge-'))
+    const [b, t, m] = ['base', 'theirs', 'mine'].map((name) => path.join(dir as string, name))
     await Promise.all([writeFile(b, base), writeFile(t, theirs), writeFile(m, mine)])
     const res = await git(bin, root, ['merge-file', '-p', '--quiet', t, b, m])
     return res.code === 0 ? res.stdout : null
+  } catch {
+    // No temp folder, or git's answer too large: keep both versions (D9) rather than stop the pass.
+    return null
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    if (dir !== null) await rm(dir, { recursive: true, force: true }).catch(() => undefined)
   }
 }
 

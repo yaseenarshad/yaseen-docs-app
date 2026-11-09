@@ -9,7 +9,8 @@
  * a card this version cannot read — a newer app's shape — is kept as it is, never dropped.
  *
  * Size: one card per person who commented; a picture is at most `PROFILE_PICTURE_MAX` (a 96 px WebP
- * is a few KB). The app shows at most `PEOPLE_MAX` cards; the rest show initials. Pure: no fs, no React.
+ * is a few KB). The app shows at most `PEOPLE_MAX` cards; the rest show initials, as people. Every
+ * lookup by handle reads own keys only (`own`). Pure: no fs, no React.
  */
 import { PROFILE_PICTURE_MAX, type CommentProfile } from './types'
 
@@ -28,7 +29,22 @@ export interface PeopleConfig {
   people: Record<string, PersonCard>
 }
 
-export const EMPTY_PEOPLE: PeopleConfig = { version: 1, people: {} }
+/**
+ * The file as the app reads it: the cards it can show, and every handle the file holds — a card
+ * this version cannot read (a newer shape, a remote picture, one past `PEOPLE_MAX`) is still a
+ * person's, so it shows initials and no Edit (D8), never an agent's violet.
+ */
+export interface PeopleRead extends PeopleConfig {
+  handles: ReadonlySet<string>
+}
+
+export const EMPTY_PEOPLE: PeopleRead = { version: 1, people: {}, handles: new Set() }
+
+/**
+ * The value under a handle, from the record's OWN keys only: a handle such as `constructor` or
+ * `toString` must not find `Object.prototype`'s.
+ */
+export const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined => (Object.hasOwn(record, key) ? record[key] : undefined)
 
 /** The cards the app reads; a vault with more shows initials for the rest (a limit on what grows). */
 export const PEOPLE_MAX = 1000
@@ -40,16 +56,17 @@ const isPicture = (v: unknown): boolean => v === null || (typeof v === 'string' 
 
 const isCard = (v: unknown): v is PersonCard => isRecord(v) && typeof v.name === 'string' && isPicture(v.picture) && typeof v.updated === 'string'
 
-/** The file's value as the app reads it: cards that are not cards are dropped; anything that is not the shape is none. */
-export function parsePeople(value: unknown): PeopleConfig {
+/** The file's value as the app reads it: cards that are not cards are not shown (their handles stay); anything that is not the shape is none. */
+export function parsePeople(value: unknown): PeopleRead {
   if (!isRecord(value) || !isRecord(value.people)) return EMPTY_PEOPLE
   const people: Record<string, PersonCard> = {}
+  const handles = new Set(Object.keys(value.people))
   let n = 0
   for (const [handle, card] of Object.entries(value.people)) {
     if (n >= PEOPLE_MAX) break
     if (isCard(card)) (people[handle] = { name: card.name, picture: card.picture, updated: card.updated }), (n += 1)
   }
-  return { version: 1, people }
+  return { version: 1, people, handles }
 }
 
 /** Every entry of the file as it is, readable or not: what a write builds on. */
@@ -67,7 +84,7 @@ export const cardMatches = (card: PersonCard | undefined, profile: CommentProfil
  * card already matches, so the caller writes nothing.
  */
 export function withCard(file: unknown, profile: CommentProfile, now: string): PeopleConfig | null {
-  const mine = parsePeople({ people: { [profile.handle]: rawPeople(file)[profile.handle] } }).people[profile.handle]
+  const mine = own(parsePeople({ people: { [profile.handle]: own(rawPeople(file), profile.handle) } }).people, profile.handle)
   if (cardMatches(mine, profile)) return null
   return { version: 1, people: { ...(rawPeople(file) as Record<string, PersonCard>), [profile.handle]: cardOf(profile, now) } }
 }
@@ -99,7 +116,7 @@ export function mergePeopleFile(base: string | null, theirs: string, mine: strin
   if (b === null || t === null || m === null) return null
   const people: Record<string, unknown> = {}
   for (const h of new Set([...Object.keys(t), ...Object.keys(m)])) {
-    const [was, their, my] = [b[h], t[h], m[h]]
+    const [was, their, my] = [own(b, h), own(t, h), own(m, h)]
     const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y)
     const pick = same(my, was) ? their : same(their, was) ? my : newer(their, my)
     if (pick !== undefined) people[h] = pick

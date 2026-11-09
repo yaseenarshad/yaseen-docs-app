@@ -4,7 +4,7 @@
  * card in. A file that is not valid JSON is never written over.
  */
 import { createContext, useEffect, useRef, useState } from 'react'
-import { EMPTY_PEOPLE, PEOPLE_FILE, parsePeople, withCard, type PeopleConfig } from '@shared/people'
+import { EMPTY_PEOPLE, own, PEOPLE_FILE, parsePeople, withCard, type PeopleRead } from '@shared/people'
 import { nowIso } from '@shared/comments'
 import type { CommentProfile, CommentsResolvedPlace } from '@shared/types'
 import { api } from '../api'
@@ -26,8 +26,8 @@ const door = (): Partial<typeof api.vaultConfig> | undefined => (api as typeof a
 
 /** One read of a vault's people file, shared by every comment block that shows it. */
 interface Shared {
-  people: PeopleConfig
-  users: Set<(people: PeopleConfig) => void>
+  people: PeopleRead
+  users: Set<(people: PeopleRead) => void>
   stop: () => void
 }
 const shared = new Map<string, Shared>()
@@ -36,17 +36,20 @@ const shared = new Map<string, Shared>()
  * Follows the people file of `root` for `onPeople`; returns the stop. The first block of a vault
  * reads it and follows its changes; the rest share that read, so ten open notes parse it once.
  */
-function follow(root: string, onPeople: (people: PeopleConfig) => void): () => void {
+function follow(root: string, onPeople: (people: PeopleRead) => void): () => void {
   let entry = shared.get(root)
   if (entry === undefined) {
     const made: Shared = { people: EMPTY_PEOPLE, users: new Set(), stop: () => undefined }
+    // Two quick changes start two reads; only the newest may land, whichever answers last.
+    let reads = 0
     // A bridge without the config door (a test's partial one) reads as no people file, never a throw.
     const load = (): void => {
+      const mine = ++reads
       void Promise.resolve()
         .then(() => door()?.read?.(root, PEOPLE_FILE) ?? null)
         .then(parsePeople, () => EMPTY_PEOPLE)
         .then((people) => {
-          if (shared.get(root) !== made) return
+          if (shared.get(root) !== made || mine !== reads) return
           made.people = people
           for (const user of made.users) user(people)
         })
@@ -75,8 +78,8 @@ function follow(root: string, onPeople: (people: PeopleConfig) => void): () => v
 }
 
 /** The people file of the vault at `root`; empty while it loads, when there is none, or when it does not parse. */
-export function usePeople(root: string | null): PeopleConfig {
-  const [people, setPeople] = useState<PeopleConfig>(EMPTY_PEOPLE)
+export function usePeople(root: string | null): PeopleRead {
+  const [people, setPeople] = useState<PeopleRead>(EMPTY_PEOPLE)
   useEffect(() => {
     setPeople(EMPTY_PEOPLE)
     if (root === null) return
@@ -93,7 +96,7 @@ export function usePeople(root: string | null): PeopleConfig {
 export async function saveCard(root: string, profile: CommentProfile, onlyIfThere = false): Promise<void> {
   try {
     const file = await api.vaultConfig.read(root, PEOPLE_FILE)
-    if (onlyIfThere && parsePeople(file).people[profile.handle] === undefined) return
+    if (onlyIfThere && own(parsePeople(file).people, profile.handle) === undefined) return
     if (withCard(file, profile, nowIso()) === null) return
     // Read once more right before the write and build on THAT: a sync pull that landed meanwhile
     // keeps a teammate's new card (audit 22). The door has no compare-and-set; this narrows the gap.

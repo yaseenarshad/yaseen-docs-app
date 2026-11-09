@@ -60,6 +60,26 @@ describe('usePeople', () => {
     expect(seen.every((s) => s.at(-1)?.people.sam?.name === 'Sam R.')).toBe(true)
   })
 
+  it('two quick changes: the newest read lands, even when the older one answers last', async () => {
+    let answer: Array<(v: unknown) => void> = []
+    read.mockResolvedValueOnce({ version: 1, people: { sam: card('Sam 0') } })
+    const seen: PeopleConfig[] = []
+    const Block = () => (seen.push(usePeople('/v')), null)
+    mount(<Block />)
+    await flush()
+    read.mockImplementation(() => new Promise((r) => answer.push(r)))
+    act(() => changed?.({ root: '/v', name: 'people.json' }))
+    act(() => changed?.({ root: '/v', name: 'people.json' }))
+    await flush()
+    const [older, newer] = answer
+    newer({ version: 1, people: { sam: card('Sam 2') } })
+    await flush()
+    older({ version: 1, people: { sam: card('Sam 1') } })
+    await flush()
+    expect(seen.at(-1)?.people.sam?.name).toBe('Sam 2')
+    answer = []
+  })
+
   it('the last block to go stops the follow; the next block reads afresh', async () => {
     read.mockResolvedValue({ version: 1, people: {} })
     const Block = () => (usePeople('/v'), null)

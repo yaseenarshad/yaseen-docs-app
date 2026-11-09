@@ -1,6 +1,6 @@
 /** `shared/people.ts` (YAZ-4615 D1): the vault's people file. */
 import { describe, expect, it } from 'vitest'
-import { EMPTY_PEOPLE, mergePeopleFile, parsePeople, PEOPLE_MAX, withCard } from '@shared/people'
+import { EMPTY_PEOPLE, mergePeopleFile, own, parsePeople, PEOPLE_MAX, withCard } from '@shared/people'
 import { handleFromName, isCommentProfile } from '@shared/types'
 
 const card = (name: string, updated: string) => ({ name, picture: null, updated })
@@ -57,5 +57,19 @@ describe('people file', () => {
   it('the app reads at most PEOPLE_MAX cards (a limit on what grows)', () => {
     const many = Object.fromEntries(Array.from({ length: PEOPLE_MAX + 5 }, (_, i) => [`p${i}`, card(`P${i}`, 't')]))
     expect(Object.keys(parsePeople({ version: 1, people: many }).people)).toHaveLength(PEOPLE_MAX)
+  })
+  it('every handle in the file is known, readable or not; a lookup reads own keys only (6C, 6D)', () => {
+    const read = parsePeople({ version: 1, people: { sam: card('Sam', 't'), lee: { name: 'Lee', picture: 'https://x/p.png', updated: 't' } } })
+    expect(Object.keys(read.people)).toEqual(['sam'])
+    expect([...read.handles]).toEqual(['sam', 'lee'])
+    expect(own(read.people, 'constructor')).toBeUndefined()
+    expect(own(read.people, 'sam')).toEqual(card('Sam', 't'))
+  })
+
+  it('the merge and withCard never read a card from Object.prototype', () => {
+    const me = { handle: 'constructor', name: 'Con', picture: null }
+    expect(withCard({ version: 1, people: {} }, me, 't1')?.people).toEqual({ constructor: card('Con', 't1') })
+    const merged = JSON.parse(mergePeopleFile(file({}), file({ constructor: card('Con', 't1') }), file({ sam: card('Sam', 't1') })) ?? '').people
+    expect(merged).toEqual({ constructor: card('Con', 't1'), sam: card('Sam', 't1') })
   })
 })
