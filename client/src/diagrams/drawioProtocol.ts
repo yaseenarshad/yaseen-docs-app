@@ -21,9 +21,10 @@
  */
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import { HOTKEY_COMMANDS, appKeyId, drawioChordFor, keyFor, parseAccelerator, toAccelerator, type DrawioChord, type HotkeyOverrides } from '@shared/hotkeyBindings'
-import { keyRow, keysOf, stepsAside, type HotkeyAside } from '@shared/keys'
+import { keyRow, keysOf, stepsAside, type HotkeyAside, type MouseMods } from '@shared/keys'
 import { DIAGRAM_ACTIONS, DIAGRAM_EXTRA_CODES, DIAGRAM_KEYS } from '@shared/keys/diagram'
 import type { DiagramDarkColors } from '@shared/types'
+import type { AnchorRect } from '../sidebar/previewPlacement'
 
 /**
  * 🔒 YAZ-1802 D16: the app's "draw.io diagrams in dark mode" setting as draw.io's own
@@ -250,6 +251,51 @@ export type DrawioMessage =
   | { event: 'load'; xml?: string }
   | { event: 'autosave'; xml: string }
   | { event: 'save'; xml: string }
+  | DrawioLinkMessage
+
+/**
+ * The link pills' messages (YAZ-4748, `desktop/drawio-overlay/js/yaseen-links.js`), for `drawioLinkBridge.ts`. Each rect
+ * and point is in the iframe's view; the bridge moves it into the window's. `cellId` is the cell under the pointer.
+ */
+export type DrawioLinkMessage =
+  | { event: 'yaseenLinkLooks'; inners: string[] }
+  | { event: 'yaseenLinkHover'; inner: string | null; rect: AnchorRect | null }
+  | { event: 'yaseenLinkClick'; inner: string; cellId: string | null; mods: MouseMods }
+  | { event: 'yaseenLinkMenu'; inner: string; cellId: string | null; x: number; y: number }
+
+const isString = (value: unknown): value is string => typeof value === 'string'
+const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const isRect = (value: unknown): value is AnchorRect => {
+  const r = value as Record<string, unknown> | null
+  return typeof r === 'object' && r !== null && isNumber(r.left) && isNumber(r.top) && isNumber(r.right) && isNumber(r.bottom)
+}
+const modsOf = (value: unknown): MouseMods | null => {
+  const m = value as Record<string, unknown> | null
+  if (typeof m !== 'object' || m === null) return null
+  const { metaKey, ctrlKey, altKey, shiftKey } = m
+  return [metaKey, ctrlKey, altKey, shiftKey].every((key) => typeof key === 'boolean') ? ({ metaKey, ctrlKey, altKey, shiftKey } as MouseMods) : null
+}
+
+/** A link message of the right shape, or null. */
+function readLinkMessage(msg: Record<string, unknown>): DrawioLinkMessage | null {
+  const { inner, cellId } = msg
+  const cell = cellId === null || isString(cellId) ? cellId : undefined
+  switch (msg.event) {
+    case 'yaseenLinkLooks':
+      return Array.isArray(msg.inners) && msg.inners.every(isString) ? { event: 'yaseenLinkLooks', inners: msg.inners } : null
+    case 'yaseenLinkHover':
+      if (inner === null) return { event: 'yaseenLinkHover', inner: null, rect: null }
+      return isString(inner) && isRect(msg.rect) ? { event: 'yaseenLinkHover', inner, rect: msg.rect } : null
+    case 'yaseenLinkClick': {
+      const mods = modsOf(msg.mods)
+      return isString(inner) && cell !== undefined && mods !== null ? { event: 'yaseenLinkClick', inner, cellId: cell, mods } : null
+    }
+    case 'yaseenLinkMenu':
+      return isString(inner) && cell !== undefined && isNumber(msg.x) && isNumber(msg.y) ? { event: 'yaseenLinkMenu', inner, cellId: cell, x: msg.x, y: msg.y } : null
+    default:
+      return null
+  }
+}
 
 /**
  * One `message` event, if it is the iframe speaking: the right window, the right origin, a JSON
@@ -277,6 +323,6 @@ export function readDrawioMessage(ev: { source: unknown; origin: string; data: u
     case 'save':
       return typeof xml === 'string' ? { event, xml } : null
     default:
-      return null
+      return readLinkMessage(msg as Record<string, unknown>)
   }
 }

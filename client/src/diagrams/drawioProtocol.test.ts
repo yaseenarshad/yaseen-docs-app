@@ -179,3 +179,35 @@ describe('readDrawioMessage — only THAT iframe, only the drawio origin (🔒 Y
     expect(msg('null')).toBeNull()
   })
 })
+
+describe('readDrawioMessage — the link pills’ messages (YAZ-4748)', () => {
+  const frame = {}
+  const msg = (data: Record<string, unknown>) => readDrawioMessage({ source: frame, origin: DRAWIO_ORIGIN, data: JSON.stringify(data) }, frame)
+  const rect = { left: 1, top: 2, right: 3, bottom: 4 }
+  const mods = { metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }
+
+  it('reads each link message of the right shape', () => {
+    expect(msg({ event: 'yaseenLinkLooks', inners: ['YAZ-1', 'Plan'] })).toEqual({ event: 'yaseenLinkLooks', inners: ['YAZ-1', 'Plan'] })
+    expect(msg({ event: 'yaseenLinkHover', inner: 'YAZ-1', rect })).toEqual({ event: 'yaseenLinkHover', inner: 'YAZ-1', rect })
+    expect(msg({ event: 'yaseenLinkHover', inner: null, rect: null })).toEqual({ event: 'yaseenLinkHover', inner: null, rect: null })
+    expect(msg({ event: 'yaseenLinkClick', inner: 'YAZ-1', cellId: 'a', mods })).toEqual({ event: 'yaseenLinkClick', inner: 'YAZ-1', cellId: 'a', mods })
+    expect(msg({ event: 'yaseenLinkClick', inner: 'YAZ-1', cellId: null, mods })).toEqual({ event: 'yaseenLinkClick', inner: 'YAZ-1', cellId: null, mods })
+    expect(msg({ event: 'yaseenLinkMenu', inner: 'YAZ-1', cellId: 'a', x: 5, y: 6 })).toEqual({ event: 'yaseenLinkMenu', inner: 'YAZ-1', cellId: 'a', x: 5, y: 6 })
+  })
+
+  it('drops a link message of the wrong shape', () => {
+    expect(msg({ event: 'yaseenLinkLooks', inners: [1] })).toBeNull()
+    expect(msg({ event: 'yaseenLinkLooks' })).toBeNull()
+    expect(msg({ event: 'yaseenLinkHover', inner: 'YAZ-1' })).toBeNull()
+    expect(msg({ event: 'yaseenLinkHover', inner: 'YAZ-1', rect: { left: 1 } })).toBeNull()
+    expect(msg({ event: 'yaseenLinkClick', inner: 'YAZ-1', cellId: 'a', mods: { metaKey: true } })).toBeNull()
+    expect(msg({ event: 'yaseenLinkClick', inner: 'YAZ-1', mods })).toBeNull()
+    expect(msg({ event: 'yaseenLinkMenu', inner: 'YAZ-1', cellId: 'a', x: 'far', y: 6 })).toBeNull()
+  })
+
+  it('takes them only from THAT iframe on the drawio origin', () => {
+    const data = JSON.stringify({ event: 'yaseenLinkLooks', inners: ['YAZ-1'] })
+    expect(readDrawioMessage({ source: {}, origin: DRAWIO_ORIGIN, data }, frame)).toBeNull()
+    expect(readDrawioMessage({ source: frame, origin: 'https://evil.example', data }, frame)).toBeNull()
+  })
+})

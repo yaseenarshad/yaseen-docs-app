@@ -1,0 +1,130 @@
+/**
+ * The link bridge of a diagram tab (YAZ-4748 D2, D3): the board's `hostLinks` spoken to draw.io's iframe. A fake
+ * `hostLinks` records each call; the frame's box is set, so every rect is seen moving into the window.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, useRef } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import type { DrawingSurfaceLinks } from '../drawings/ExcalidrawSurface'
+import { inWindow, linkOpens, modsKey, useDrawioLinkBridge, wireLook, type DrawioLinkLive } from './drawioLinkBridge'
+import type { DrawioLinkMessage } from './drawioProtocol'
+
+describe('the bridge’s pure parts', () => {
+  it('sends a look with its icon as a data URL, null for no icon, and nothing for an icon not drawn yet', () => {
+    const image = {} as HTMLCanvasElement
+    expect(wireLook({ label: 'Roadmap', icon: { image, url: 'data:image/png;base64,AA' } })).toEqual({ label: 'Roadmap', icon: 'data:image/png;base64,AA' })
+    expect(wireLook({ label: 'Plain', icon: null })).toEqual({ label: 'Plain', icon: null })
+    expect(wireLook({ label: 'Soon' })).toEqual({ label: 'Soon' })
+    expect(wireLook({ label: 'Missing note · YAZ-9', missing: true })).toEqual({ label: 'Missing note · YAZ-9', missing: true })
+    expect(wireLook({ label: 'Folder', folder: true })).toEqual({ label: 'Folder', folder: true })
+    expect(wireLook(null)).toBeNull()
+  })
+
+  it('names the keys that open a link: the default gestures, and the plain click too on a read-only diagram', () => {
+    expect(linkOpens(false, undefined).sort()).toEqual(['M', 'MS'])
+    expect(linkOpens(true, undefined).sort()).toEqual(['', 'M', 'MS'])
+    // A gesture the user moved opens with its new keys only.
+    expect(linkOpens(false, { 'links.backgroundTab': 'Alt+Click' }).sort()).toEqual(['A', 'MS'])
+    expect(modsKey({ metaKey: true, ctrlKey: true, altKey: true, shiftKey: true })).toBe('MCAS')
+  })
+
+  it('moves a rect from the iframe’s view into the window’s', () => {
+    expect(inWindow({ left: 10, top: 20, right: 30, bottom: 40 }, { left: 300, top: 100, right: 900, bottom: 700 })).toEqual({ left: 310, top: 120, right: 330, bottom: 140 })
+  })
+})
+
+describe('useDrawioLinkBridge', () => {
+  let root: Root
+  let container: HTMLElement
+  let posted: Array<Record<string, unknown>>
+  let listener: (() => void) | null
+  let bridge: ReturnType<typeof useDrawioLinkBridge>
+  const hostLinks = {
+    resolve: vi.fn((inner: string) => (inner === 'Gone' ? { label: 'Gone', missing: true } : { label: `Page ${inner}`, icon: null })),
+    subscribe: vi.fn((next: () => void) => {
+      listener = next
+      return () => (listener = null)
+    }),
+    onHover: vi.fn(),
+    onPointerDown: vi.fn(() => true),
+    onContextMenu: vi.fn(() => true),
+  }
+  const links = { hostLinks, openShapeLink: vi.fn() } as unknown as DrawingSurfaceLinks
+
+  function Host({ live, withLinks = true }: { live: DrawioLinkLive; withLinks?: boolean }) {
+    const frame = useRef<HTMLIFrameElement>(null)
+    bridge = useDrawioLinkBridge(withLinks ? links : undefined, frame, (msg) => posted.push(msg), live)
+    return <iframe ref={frame} />
+  }
+  const render = (live: DrawioLinkLive = { readOnly: false, hotkeys: undefined }, withLinks = true) => act(() => root.render(<Host live={live} withLinks={withLinks} />))
+  const send = (msg: DrawioLinkMessage) => act(() => bridge.onMessage(msg))
+
+  beforeEach(() => {
+    posted = []
+    listener = null
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    vi.spyOn(HTMLIFrameElement.prototype, 'getBoundingClientRect').mockReturnValue({ left: 300, top: 100, right: 900, bottom: 700 } as DOMRect)
+  })
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+    vi.restoreAllMocks()
+    vi.clearAllMocks()
+  })
+
+  it('answers the looks asked for, and sends the asked ones again when the window’s links change', () => {
+    render()
+    send({ event: 'yaseenLinkLooks', inners: ['YAZ-1', 'Gone'] })
+    expect(posted).toEqual([{ action: 'yaseenLinkLooks', looks: { 'YAZ-1': { label: 'Page YAZ-1', icon: null }, Gone: { label: 'Gone', missing: true } } }])
+    send({ event: 'yaseenLinkLooks', inners: ['YAZ-2'] })
+    posted = []
+    act(() => listener!())
+    expect(posted).toEqual([{ action: 'yaseenLinkLooks', looks: { 'YAZ-1': { label: 'Page YAZ-1', icon: null }, Gone: { label: 'Gone', missing: true }, 'YAZ-2': { label: 'Page YAZ-2', icon: null } } }])
+  })
+
+  it('tells draw.io which keys open a link once it listens, and again when the diagram turns read only', () => {
+    render()
+    expect(posted).toEqual([])
+    act(() => bridge.ready())
+    expect(posted).toEqual([{ action: 'yaseenLinkOpens', opens: expect.arrayContaining(['M', 'MS']) }])
+    render({ readOnly: true, hotkeys: undefined })
+    expect(posted.at(-1)).toEqual({ action: 'yaseenLinkOpens', opens: expect.arrayContaining(['', 'M', 'MS']) })
+  })
+
+  it('a hover, a click and a right-click reach the board’s host, with every box in the window', () => {
+    render()
+    send({ event: 'yaseenLinkHover', inner: 'YAZ-1', rect: { left: 10, top: 20, right: 60, bottom: 40 } })
+    expect(hostLinks.onHover).toHaveBeenLastCalledWith(expect.objectContaining({ inner: 'YAZ-1', rect: { left: 310, top: 120, right: 360, bottom: 140 } }))
+    send({ event: 'yaseenLinkHover', inner: null, rect: null })
+    expect(hostLinks.onHover).toHaveBeenLastCalledWith(null)
+
+    const mods = { metaKey: true, ctrlKey: false, altKey: false, shiftKey: false }
+    send({ event: 'yaseenLinkClick', inner: 'YAZ-1', cellId: 'a', mods })
+    expect(hostLinks.onPointerDown).toHaveBeenLastCalledWith(expect.objectContaining({ inner: 'YAZ-1', elementId: 'a' }), expect.objectContaining(mods))
+
+    send({ event: 'yaseenLinkMenu', inner: 'YAZ-1', cellId: 'a', x: 15, y: 25 })
+    const [hit, event] = hostLinks.onContextMenu.mock.calls.at(-1) as unknown as [{ replace?: (text: string) => void }, MouseEvent]
+    expect(event).toEqual({ clientX: 315, clientY: 125 })
+    hit.replace!('[[YAZ-2]]')
+    expect(posted.at(-1)).toEqual({ action: 'yaseenLinkReplace', cellId: 'a', inner: 'YAZ-1', text: '[[YAZ-2]]' })
+  })
+
+  it('gives no replace on a read-only diagram, nor for a pill with no cell under it', () => {
+    render({ readOnly: true, hotkeys: undefined })
+    send({ event: 'yaseenLinkMenu', inner: 'YAZ-1', cellId: 'a', x: 0, y: 0 })
+    expect((hostLinks.onContextMenu.mock.calls.at(-1) as unknown as [{ replace?: unknown }])[0].replace).toBeUndefined()
+    render()
+    send({ event: 'yaseenLinkMenu', inner: 'YAZ-1', cellId: null, x: 0, y: 0 })
+    expect((hostLinks.onContextMenu.mock.calls.at(-1) as unknown as [{ replace?: unknown }])[0].replace).toBeUndefined()
+  })
+
+  it('with no link source the pills stay text: nothing is answered and no keys are sent', () => {
+    render(undefined, false)
+    act(() => bridge.ready())
+    send({ event: 'yaseenLinkLooks', inners: ['YAZ-1'] })
+    expect(posted).toEqual([])
+    expect(hostLinks.resolve).not.toHaveBeenCalled()
+  })
+})

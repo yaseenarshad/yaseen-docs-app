@@ -11,6 +11,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import type { DiagramDarkColors } from '@shared/types'
+import { setDiagramReadOnly } from '@shared/readOnly'
 
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
@@ -24,6 +25,8 @@ import { fakeWatch } from '../documents/boardTestKit'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { BROKEN_DIAGRAM_DOCUMENT, DrawioEditor } from './DrawioEditor'
 import { renderDiagramImage } from './renderDiagram'
+import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import type { DrawioEditorProps } from './DrawioEditor'
 
 const load = vi.mocked(api.diagram.load)
 const save = vi.mocked(api.diagram.save)
@@ -395,5 +398,62 @@ describe('read only: a change draw.io queued before the switch landed (YAZ-3116 
     const written = save.mock.calls[0]![0]
     expect(written.expectedMtime).toBe(300)
     expect(written.xml).toBe(EDITED.replace('<mxfile>', '<mxfile yaseendraw-readonly="1">'))
+  })
+})
+
+describe('link pills (YAZ-4748): draw.io asks, the tab answers with the board’s own link host', () => {
+  const linkSource = () => {
+    const source = createWikilinkResolveSource()
+    source.update((target) => (target === 'Known' ? '/vault/Known.md' : null))
+    return source
+  }
+
+  async function openedWith(props: Partial<DrawioEditorProps>): Promise<void> {
+    act(() => root?.render(<DrawioEditor root={ROOT} path={PATH} watch={watch} darkColors="adapt" onNotice={notice} {...props} />))
+    await settle()
+    tapFrame()
+    drawio({ event: 'yaseenReady' })
+    drawio({ event: 'configure' })
+    drawio({ event: 'init' })
+    drawio({ event: 'load', xml: XML })
+  }
+
+  const menuRows = () => [...container.querySelectorAll<HTMLButtonElement>('.ctx-menu--editor .ctx-menu__item')]
+
+  it('at init draw.io learns which keys open a link; it gets the looks it asks for; ⌘-click opens the page behind', async () => {
+    const onOpenLinkBackground = vi.fn()
+    await openedWith({ wikilinks: linkSource(), onOpenLink: vi.fn(), onOpenLinkBackground })
+    expect(posted.find((m) => m.action === 'yaseenLinkOpens')).toEqual({ action: 'yaseenLinkOpens', opens: expect.arrayContaining(['M', 'MS']), _origin: DRAWIO_ORIGIN })
+    drawio({ event: 'yaseenLinkLooks', inners: ['Known', 'Nope'] })
+    const looks = [...posted].reverse().find((m) => m.action === 'yaseenLinkLooks')!.looks as Record<string, { label: string; missing?: boolean }>
+    expect(looks.Known).toMatchObject({ label: 'Known' })
+    expect(looks.Known.missing).toBeUndefined()
+    expect(looks.Nope).toMatchObject({ label: 'Nope', missing: true })
+    drawio({ event: 'yaseenLinkClick', inner: 'Known', cellId: 'a', mods: { metaKey: true, ctrlKey: false, altKey: false, shiftKey: false } })
+    expect(onOpenLinkBackground).toHaveBeenCalledWith('/vault/Known.md')
+  })
+
+  it('right-click opens the one link menu; Remove link sends draw.io the page’s name in place of the link', async () => {
+    await openedWith({ wikilinks: linkSource(), onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn() })
+    drawio({ event: 'yaseenLinkMenu', inner: 'Known', cellId: 'a', x: 40, y: 20 })
+    expect(menuRows().map((row) => row.textContent)).toEqual(expect.arrayContaining(['Open', 'Open in new tab', 'Edit link', 'Remove link']))
+    act(() => menuRows().find((row) => row.textContent === 'Remove link')!.click())
+    expect(posted.at(-1)).toEqual({ action: 'yaseenLinkReplace', cellId: 'a', inner: 'Known', text: 'Known', _origin: DRAWIO_ORIGIN })
+  })
+
+  it('a read-only diagram: a plain click opens, and the menu has no Edit link or Remove link', async () => {
+    load.mockResolvedValue({ path: PATH, xml: setDiagramReadOnly(XML, true), mtime: 100, size: XML.length })
+    await openedWith({ wikilinks: linkSource(), onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn() })
+    expect([...posted].reverse().find((m) => m.action === 'yaseenLinkOpens')!.opens).toContain('')
+    drawio({ event: 'yaseenLinkMenu', inner: 'Known', cellId: 'a', x: 40, y: 20 })
+    const rows = menuRows().map((row) => row.textContent)
+    expect(rows).not.toContain('Edit link')
+    expect(rows).not.toContain('Remove link')
+  })
+
+  it('with no link source the pills stay text: no keys are sent and nothing is answered', async () => {
+    await opened()
+    drawio({ event: 'yaseenLinkLooks', inners: ['Known'] })
+    expect(posted.some((m) => m.action === 'yaseenLinkOpens' || m.action === 'yaseenLinkLooks')).toBe(false)
   })
 })

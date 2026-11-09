@@ -59,6 +59,8 @@ window.ICON_SERVICE_PATH = null;
 
 	/** The one editor this page builds (embed mode has one), for the host's live messages below. */
 	var editorUi = null;
+	/** YAZ-4748: the link pills' answer to the host's messages (`yaseen-links.js`), once the editor exists. */
+	var linkMessage = null;
 	var createUi = EditorUi.prototype.createUi;
 
 	EditorUi.prototype.createUi = function()
@@ -67,6 +69,11 @@ window.ICON_SERVICE_PATH = null;
 		this.hsplitPosition = 0;
 		createUi.apply(this, arguments);
 		installTextScaling(this.editor.graph);
+
+		if (window.yaseenLinks != null)
+		{
+			linkMessage = window.yaseenLinks.installEditor(this, postToHost);
+		}
 	};
 
 	// YAZ-3719 D1: a CLOSED shapes panel has nothing to grab. draw.io keeps its drag strip (`geHsplit`,
@@ -260,6 +267,12 @@ window.ICON_SERVICE_PATH = null;
 		{
 			evt.stopImmediatePropagation();
 			applyReadOnly(msg.value === true);
+		}
+
+		// YAZ-4748: the link pills' messages (`yaseen-links.js`), only once the editor exists, like the ones above.
+		if (msg != null && linkMessage != null && linkMessage(msg))
+		{
+			evt.stopImmediatePropagation();
 		}
 
 		if (msg != null && msg.action == 'yaseenAdaptiveColors')
@@ -658,8 +671,26 @@ window.ICON_SERVICE_PATH = null;
 		});
 	}
 
+	// YAZ-4748: the link pills (`yaseen-links.js`, on this origin) patch draw.io's labels before the editor exists.
+	// A script that will not load costs the pills, never the handshake below.
+	function loadLinks()
+	{
+		return new Promise(function(resolve)
+		{
+			var script = document.createElement('script');
+			script.src = 'js/yaseen-links.js';
+			script.onload = resolve;
+			script.onerror = function()
+			{
+				console.error('Yaseen links', script.src);
+				resolve();
+			};
+			document.head.appendChild(script);
+		});
+	}
+
 	// The handshake (see the header): everything above is in place, the host may configure now.
-	loadFonts().then(function()
+	Promise.all([loadFonts(), loadLinks()]).then(function()
 	{
 		postToHost({event: 'yaseenReady'});
 	});

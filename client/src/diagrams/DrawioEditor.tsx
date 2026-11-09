@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DRAWIO_ORIGIN } from '@shared/drawio'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { boardBaseName } from '@shared/fileKind'
 import { isDiagramReadOnly, setDiagramReadOnly } from '@shared/readOnly'
 import type { DiagramDarkColors } from '@shared/types'
@@ -22,6 +23,9 @@ import type { NoticeKind } from '../lib/notice'
 import { storage } from '../lib/storage'
 import { basename } from '../lib/paths'
 import { useAppliedTheme } from '../lib/theme'
+import { useDrawingLinks, type DrawingLinkProps } from '../drawings/useDrawingLinks'
+import { CardPreviewHost } from '../tabs/cardPreview'
+import { useDrawioLinkBridge } from './drawioLinkBridge'
 import { drawioAdaptiveColors, drawioConfig, drawioFrameUrl, readDrawioMessage } from './drawioProtocol'
 import { renderDiagramImage } from './renderDiagram'
 import './drawioEditor.css'
@@ -38,9 +42,11 @@ const EXPORT_EMPTY = 'This draw.io diagram is empty, so there is no image to exp
  */
 const READY_FALLBACK_MS = 3000
 
-export interface DrawioEditorProps extends DocumentHostProps {
+export interface DrawioEditorProps extends DocumentHostProps, DrawingLinkProps {
   /** 🔒 YAZ-1802 D16: the app's dark-mode colour setting, applied live (see the module doc). */
   darkColors: DiagramDarkColors
+  /** The open gestures of Settings › Hotkeys, for the link pills (YAZ-4748). */
+  hotkeys?: HotkeyOverrides
   /** The window's ONE passive notice: where an exported image landed, or why it did not. */
   onNotice?: (text: string, icon?: NoticeKind) => void
 }
@@ -71,7 +77,7 @@ interface DiagramHostProps extends DrawioEditorProps {
 }
 
 /** Mounts exactly one draw.io iframe for `loaded`; its board document owns everything that writes. */
-function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, onNotice }: DiagramHostProps) {
+function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, onNotice, hotkeys, ...linkProps }: DiagramHostProps) {
   const theme = useAppliedTheme()
   const frameRef = useRef<HTMLIFrameElement>(null)
   /** The URL is fixed at mount: a theme flip is a message, never a reload of the editor. */
@@ -190,6 +196,12 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   })
   const { autosave, retired, start } = board
 
+  // YAZ-4748 D2: the board's own link host, spoken to the iframe by the bridge (`drawioLinkBridge.ts`).
+  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly: board.readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: { ...linkProps, diagramDarkColors: darkColors } })
+  const bridge = useDrawioLinkBridge(links, frameRef, post, { readOnly: board.readOnly, hotkeys })
+  const bridgeNow = useRef(bridge)
+  bridgeNow.current = bridge
+
   // The one message listener: the protocol, in the order drawioProtocol.ts documents.
   useEffect(() => {
     let fallback: ReturnType<typeof setTimeout> | undefined
@@ -212,6 +224,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           syncTheme()
           syncColors()
           syncReadOnly()
+          bridgeNow.current.ready()
           sendLoad(latestXml.current, autosave.current?.mtime ?? loaded.mtime)
           return
         case 'load': {
@@ -239,6 +252,8 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           if (msg.event === 'save') void a.flush()
           return
         }
+        default:
+          bridgeNow.current.onMessage(msg)
       }
     }
     window.addEventListener('message', onMessage)
@@ -276,6 +291,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       {board.conflictBar}
       <DocumentChips store={board.chips} className="drawio-editor__chips" />
       <iframe ref={frameRef} className="drawio-editor__frame" src={src} title={`${boardBaseName(basename(path))} — draw.io`} />
+      <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={darkColors} />
     </div>
   )
 }
