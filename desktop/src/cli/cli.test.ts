@@ -97,7 +97,7 @@ describe('help and usage', () => {
   })
 
   it('the contract names every verb and both rules an agent must know', () => {
-    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs due ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
+    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs mentions ', 'yaseendocs due ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
       expect(HELP).toContain(word)
     }
   })
@@ -127,6 +127,8 @@ describe('help and usage', () => {
       [['id', p, '--jsno'], 'unknown flag: --jsno'],
       [['links'], 'links needs a page'],
       [['links', p, '--jsno'], 'unknown flag: --jsno'],
+      [['mentions'], 'mentions needs a page'],
+      [['mentions', p, '--title', 'x'], 'mentions does not take --title'],
       [['comment', p], '--body is required'],
       [['comment', p, '--body'], '--body needs a value'],
       [['comment', p, '--titel', 'Numbers', '--body', 'x'], 'unknown flag: --titel'],
@@ -536,6 +538,66 @@ describe('links (YAZ-2293)', () => {
     for (const p of [path.join(await vault('no', { 'loose.md': content }, false), 'loose.md'), path.join(await vault('unanswered', { 'loose.md': content }, null), 'loose.md'), await page('loose.md', content)]) {
       expect(await run(['links', p])).toEqual({ code: 1, out: '', err: `${p}'s vault does not use IDs, so there are no ID links to list\n` })
     }
+  })
+})
+
+/**
+ * `mentions` (YAZ-4740 L6): the page's Linked mentions, from the same scan as `links`, resolved and gathered by the
+ * app's own shared code (`@shared/linkResolver`, `@shared/mentions`) — the map the app's section and column read.
+ */
+describe('mentions (YAZ-4740)', () => {
+  /** The app's map over the same files: the index's split of notes and folders, its resolver, its one pass. */
+  const appMap = async (root: string, page: string, letters?: readonly string[]): Promise<string[]> => {
+    const { makeResolver } = await import('@shared/linkResolver')
+    const { mentionsOf } = await import('@shared/mentions')
+    const { scanAll } = await import('../main/vaultIndex/reconcile')
+    const { walk } = await import('../main/vaultIndex/scan')
+    const files: string[] = []
+    await walk(root, files)
+    const all = [...(await scanAll(root, files)).values()].sort((a, b) => (a.path < b.path ? -1 : 1)).map((r) => (letters === undefined ? (({ id: _id, ...rest }) => ({ ...rest, title: rest.name === FOLDER_SETTINGS_FILE ? path.basename(path.dirname(rest.path)) : rest.basename }))(r) : r))
+    const records = all.filter((r) => r.name !== FOLDER_SETTINGS_FILE)
+    const folders = all.filter((r) => r.name === FOLDER_SETTINGS_FILE)
+    const resolve = makeResolver(records.map((record) => ({ record })), root, { folders, letters })
+    return (mentionsOf(records, folders, (t) => resolve(t)?.record.path ?? null).get(page) ?? []).map((r) => r.path)
+  }
+
+  it('a vault with IDs: every note and folder linking to the page — by id, title or alias, body or properties, embeds too — once each, path-sorted', async () => {
+    const root = await vault('ids', {
+      'Schema/total-yaz-1.md': '---\nid: YAZ-1\ntitle: Orders total\naliases: [total]\n---\n',
+      'API/post-orders-yaz-2.md': '---\nid: YAZ-2\ntitle: POST orders\nreads_writes:\n  - "[[YAZ-1]]"\n---\nWrites [[YAZ-1]] and [[Orders total]].\n',
+      'Web/use-orders-yaz-3.md': '---\nid: YAZ-3\ntitle: useOrders\n---\nShows ![[total]].\n',
+      'Web/other-yaz-4.md': '---\nid: YAZ-4\ntitle: Other\n---\nNothing here.\n',
+      [`API/${FOLDER_SETTINGS_FILE}`]: '---\nid: YAZ-5\ntitle: API\n---\nThe routes, around [[YAZ-1]].\n',
+    })
+    const page = path.join(root, 'Schema/total-yaz-1.md')
+    expect(await run(['mentions', page])).toEqual({ code: 0, err: '', out: 'API  API/\nPOST orders  API/post-orders-yaz-2.md\nuseOrders  Web/use-orders-yaz-3.md\n' })
+    const json = JSON.parse((await run(['mentions', page, '--json'])).out) as { title: string; path: string; kind: string }[]
+    expect(json).toEqual([
+      { title: 'API', path: 'API', kind: 'folder' },
+      { title: 'POST orders', path: 'API/post-orders-yaz-2.md', kind: 'note' },
+      { title: 'useOrders', path: 'Web/use-orders-yaz-3.md', kind: 'note' },
+    ])
+    // The app's map over the same vault answers the same pages.
+    expect(json.map((r) => path.join(root, r.kind === 'folder' ? `${r.path}/${FOLDER_SETTINGS_FILE}` : r.path))).toEqual(await appMap(root, page, ['YAZ']))
+    expect(await run(['mentions', path.join(root, 'Web/other-yaz-4.md')])).toEqual({ code: 0, err: '', out: `nothing links to ${path.join(root, 'Web/other-yaz-4.md')}\n` })
+  })
+
+  it('a vault without IDs: a name link resolves as the app resolves it — the shallowest of two notes of one name — and an `id:` is no id', async () => {
+    const root = await vault('plain', {
+      'Total.md': '---\nid: YAZ-1\n---\n',
+      'Deep/Total.md': '',
+      'A.md': 'See [[Total]] and [[YAZ-1]].\n',
+      'Deep/B.md': 'See [[Deep/Total]].\n',
+    }, false)
+    const page = path.join(root, 'Total.md')
+    expect(await run(['mentions', page])).toEqual({ code: 0, err: '', out: 'A  A.md\n' })
+    expect((await run(['mentions', path.join(root, 'Deep/Total.md')])).out).toBe('B  Deep/B.md\n')
+    expect([path.join(root, 'A.md')]).toEqual(await appMap(root, page))
+  })
+
+  it('a page in no vault is refused: exit 1', async () => {
+    const lone = await page('lone.md', '# Lone\n')
+    expect(await run(['mentions', lone])).toEqual({ code: 1, out: '', err: `${lone} is in no vault (no ${VAULT_CONFIG_DIR} folder above it)\n` })
   })
 })
 

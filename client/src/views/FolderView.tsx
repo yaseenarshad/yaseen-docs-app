@@ -422,6 +422,12 @@ export function FolderView({
    */
   const [landed, setLanded] = useState<number | null>(null)
   const aheadWrites = useRef({ count: 0, mtime: 0 })
+  /**
+   * The settings block this page last wrote, until the index echoes its writes (YAZ-4741): the base of its next
+   * settings write. Before the echo the index snapshot lacks this page's own write, so a change back to what the
+   * snapshot holds — the Undo of a delete — would read as no change, and disk would keep the delete. Null: the index leads.
+   */
+  const sent = useRef<FolderSettings | null>(null)
   const aheadWrite = <T extends { mtime: number },>(write: Promise<T>): Promise<T> => {
     const w = aheadWrites.current
     if (w.count === 0) w.mtime = 0
@@ -437,6 +443,7 @@ export function FolderView({
   }
   useEffect(() => {
     const echoed = revision !== undefined && landed !== null && revision >= landed
+    if (echoed) sent.current = null
     if (aheadRef.current !== null && (echoed || indexColumns === columnsStamp(aheadRef.current))) setAhead(null)
     if (aheadOtherRef.current !== null && (echoed || JSON.stringify(aheadOtherRef.current) === indexOther)) setAheadOther(null)
   }, [indexColumns, indexOther, revision, landed])
@@ -582,24 +589,47 @@ export function FolderView({
    * did not change is the base's, so the rebase leaves it to disk: a move to Other files in flight, or an outside
    * column change, is kept either way.
    */
-  const block = (changes: Partial<Pick<FolderSettings, 'columns' | 'otherFiles' | 'views' | 'properties' | 'defaultView'>>): FolderSettings => ({
-    ...settings,
+  const block = (base: FolderSettings, changes: Partial<Pick<FolderSettings, 'columns' | 'otherFiles' | 'views' | 'properties' | 'defaultView'>>): FolderSettings => ({
+    ...base,
     views: parsed.def.views,
     properties: parsed.def.properties,
     defaultView: parsed.def.defaultView,
     ...changes,
   })
+  /**
+   * ONE settings write, rebased (S38) on the newest of the index and this page's own unechoed write (`sent`, YAZ-4741):
+   * `change` builds the block from that base. The block becomes the base of the next write; a refused write gives the
+   * base back.
+   */
+  const sendSettings = (change: (base: FolderSettings) => FolderSettings): Promise<{ mtime: number }> => {
+    const base = sent.current ?? settings
+    const next = change(base)
+    sent.current = next
+    const write = aheadWrite(writeFolderSettings(file, next, base, ids))
+    write.catch(() => {
+      if (sent.current === next) sent.current = base === settings ? null : base
+    })
+    return track(write)
+  }
   const commitSettings = (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']): Promise<void> => {
     if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
     setSettingsError(null)
     const before = aheadRef.current
-    // The caller edited the live copy: what it changed there is this write's; the rest is disk's.
-    const mine = columnsChanged(settings.columns, liveSettings.columns, columns)
     setAhead(columns)
-    return track(aheadWrite(writeFolderSettings(file, block({ columns: mine, views, properties }), settings, ids))).then(
+    // The views this write states are the page's at once, as a view change's are (`onChange`): a view write before the
+    // echo builds on them, and never puts back what this one took out (YAZ-4741).
+    const def = parsed
+    const shown = views === def.def.views && properties === def.def.properties ? null : folderViewSet({ ...settings, views, properties, formulas: def.def.formulas, defaultView: def.def.defaultView }, ids)
+    if (shown !== null) {
+      setParsed(shown)
+      pending.current.push(stampOf({ views, formulas: settings.formulas, properties, defaultView: def.def.defaultView }))
+    }
+    // The caller edited the live copy: what it changed there is this write's; the rest is the base's, so disk's.
+    return sendSettings((base) => block(base, { columns: columnsChanged(base.columns, liveSettings.columns, columns), views, properties })).then(
       () => undefined,
       (err: unknown) => {
         setAhead(before)
+        if (shown !== null) setParsed((now) => (now === shown ? def : now))
         setSettingsError(err instanceof Error ? err.message : String(err))
         throw err
       },
@@ -619,7 +649,7 @@ export function FolderView({
     pending.current.push(stampOf({ views: next.def.views, formulas: settings.formulas, properties: next.def.properties, defaultView: next.def.defaultView }))
     // The columns are the base's (YAZ-4637 M1): this write changed none, so the rebase keeps disk's — a column added a
     // moment ago is on disk, or lands on it when that write retries after this one.
-    track(writeFolderSettings(file, block({ views: next.def.views, properties: next.def.properties, defaultView: next.def.defaultView }), settings, ids)).catch((err: unknown) =>
+    sendSettings((base) => block(base, { views: next.def.views, properties: next.def.properties, defaultView: next.def.defaultView })).catch((err: unknown) =>
       setSettingsError(err instanceof Error ? err.message : String(err)),
     )
     return true
@@ -745,7 +775,7 @@ export function FolderView({
     setSettingsError(null)
     const before = aheadOtherRef.current
     setAheadOther(next)
-    return track(aheadWrite(writeFolderSettings(file, block({ otherFiles: next }), settings, ids))).then(
+    return sendSettings((base) => block(base, { otherFiles: next })).then(
       () => undefined,
       (err: unknown) => {
         setAheadOther(before)
@@ -782,6 +812,8 @@ export function FolderView({
    * in every indexed note. A read-only note is never cleared, and is not counted.
    */
   const valueScope = (key: string): { records: IndexRecord[]; home: ValueHome } => {
+    // A Linked mentions column has no values in the notes (YAZ-4738 L1): its delete clears none, and a same-named field stays.
+    if (columns[key]?.decl.kind === 'mentions') return { records: [], home: null }
     const writable = (r: IndexRecord) => !isReadOnlyProperties(r.properties)
     if (separate.has(key)) return { records: id === undefined ? [] : [...feed.records, ...feed.folders].filter(writable), home: { block: id ?? '' } }
     const cache = new Map<string, boolean>()
@@ -870,6 +902,9 @@ export function FolderView({
     writeValues: guardReadOnly(locked, async (note, writes) => {
       const refused = writes.find(({ key }) => hidden.has(key))
       if (refused !== undefined) throw new Error(reservedKeyText(refused.key))
+      // The backstop of a Linked mentions column (YAZ-4738 L1): the app works it out, and no note holds it.
+      const worked = writes.find(({ key }) => columns[key]?.decl.kind === 'mentions')
+      if (worked !== undefined) throw new Error(`${worked.key} is a Linked mentions column: the app works it out, and no note holds it`)
       return writeRouted(note, writes, separate, writes.some(({ key }) => separate.has(key)) ? id ?? (await folderId(path)) : undefined)
     }),
     // ONE declaration through `writeDeclaration`. An option rename (YAZ-4591 S24) goes on to the notes once the

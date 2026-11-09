@@ -24,39 +24,31 @@ import { isViewOnly } from '@shared/fileKind'
 import type { IndexRecord } from '@shared/types'
 import { WIKILINK_RE, idLinkTitle, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import type { PathTitles } from '../lib/pageLabel'
-import { dirname } from '../lib/paths'
 import { maskCode } from '@shared/linkRewrite'
-import { referenceTargets } from './renameLinks'
+import { mentionsOf } from '@shared/mentions'
 
 /**
- * Records whose links/embeds resolve to `path`, then the settings records of the folders whose
- * settings link it, path-sorted; `path` itself — a note, or a folder's own page — never counts.
+ * The reverse map per RESOLVER identity (YAZ-4738 L5) — `resolverFor`'s WeakMap idiom. ONE pass over the snapshot's
+ * links builds it (`mentionsOf`); every mounted tab's section and every Linked mentions column of the snapshot read it,
+ * so a table of 4,000 rows costs that one pass, never one per row. A refetched index swaps in a NEW resolver and
+ * rebuilds (that IS the live update), and dropped snapshots are collectable. The window's source holds ONE resolver per
+ * snapshot — and per folder list (YAZ-2290 D10), which the records alone cannot tell apart — so its identity is the
+ * whole key.
  */
-function referencing(path: string, records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink): IndexRecord[] {
-  const mentions = (target: string): boolean => resolve(target) === path
-  return [
-    ...records.filter((r) => r.path !== path && [...r.links, ...r.embeds].some(mentions)),
-    ...folders.filter((f) => dirname(f.path) !== path && [...referenceTargets(f)].some(mentions)),
-  ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+const mentionsCache = new WeakMap<ResolveLink, ReadonlyMap<string, readonly IndexRecord[]>>()
+
+/** Path → the notes and folders (as their settings records) that mention it in this snapshot: path-sorted, self excluded, embeds included. */
+export function mentionsMap(records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink): ReadonlyMap<string, readonly IndexRecord[]> {
+  let map = mentionsCache.get(resolve)
+  if (map === undefined) mentionsCache.set(resolve, (map = mentionsOf(records, folders, resolve)))
+  return map
 }
 
-/**
- * Referencing sets per RESOLVER identity, then per path — `resolverFor`'s WeakMap idiom.
- * Every mounted tab's section recomputes on each ready snapshot, so one snapshot must cost one
- * pass per open path; a refetched index swaps in a NEW resolver and recomputes (that IS the live
- * update), and dropped snapshots are collectable. The window's source holds ONE resolver per
- * snapshot — and per folder list (YAZ-2290 D10), which the records alone cannot tell apart — so
- * its identity is the whole key.
- */
-const backlinkCache = new WeakMap<ResolveLink, Map<string, IndexRecord[]>>()
+const NONE: readonly IndexRecord[] = []
 
 /** The notes — and the folders, as their settings records (`folders`) — mentioning `path` in this snapshot: path-sorted, self excluded, embeds included. */
-export function backlinksFor(path: string, records: readonly IndexRecord[], resolve: ResolveLink, folders: readonly IndexRecord[]): IndexRecord[] {
-  let byPath = backlinkCache.get(resolve)
-  if (byPath === undefined) backlinkCache.set(resolve, (byPath = new Map()))
-  let hit = byPath.get(path)
-  if (hit === undefined) byPath.set(path, (hit = referencing(path, records, folders, resolve)))
-  return hit
+export function backlinksFor(path: string, records: readonly IndexRecord[], resolve: ResolveLink, folders: readonly IndexRecord[]): readonly IndexRecord[] {
+  return mentionsMap(records, folders, resolve).get(path) ?? NONE
 }
 
 // ---------- context snippets ----------

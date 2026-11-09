@@ -110,7 +110,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
   // memoised so unrelated re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
-  const bareOf = writableKey
+  const bareOf = (key: string) => writableKey(key, settings.columns)
   const typings = useMemo(
     () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, properties, settings)])),
     [keys, rowRecords, properties, settings],
@@ -208,7 +208,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
           collapsed={isCollapsed}
           onToggle={() => onToggleGroup(gk)}
           // A level a new note cannot take (a `file.*` one) has no "+", as in Table and Board (YAZ-4544).
-          onNew={onNewInGroup === undefined || !groupTakesNew(view, at.level) ? undefined : () => onNewInGroup(g, undefined, at)}
+          onNew={onNewInGroup === undefined || !groupTakesNew(view, at.level, settings.columns) ? undefined : () => onNewInGroup(g, undefined, at)}
           resolve={resolve}
           level={at.level}
         />

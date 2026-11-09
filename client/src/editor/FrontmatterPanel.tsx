@@ -12,7 +12,7 @@ import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, folderBlocks, folderValues, setFolderValue } from '@shared/folderValues'
 import { inheritColumnsOf } from '@shared/folderPage'
 import { TITLE_KEY } from '@shared/noteName'
-import { DEFAULT_FOLDER_PAGES, PROPERTY_KINDS, builtInPrefixRefusal, folderSettingsPath, inFolder, isFolderSettingsPath, isPropertyName, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl, type PropertyKind } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, NOTE_PROPERTY_KINDS, builtInPrefixRefusal, folderSettingsPath, inFolder, isFolderSettingsPath, isPropertyName, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl, type NotePropertyKind } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 import { titleCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
@@ -210,7 +210,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    * The Add form (YAZ-4551 D20, YAZ-4713 C8): a name, a type and "Column on", no value. `kind` null = not chosen, so
    * the list follows the name's own type; `on` undefined = not chosen (the note's folder), null = "No column".
    */
-  const [adding, setAdding] = useState<{ name: string; kind: PropertyKind | null; on?: string | null } | null>(null)
+  const [adding, setAdding] = useState<{ name: string; kind: NotePropertyKind | null; on?: string | null } | null>(null)
   /** The right-click menu (YAZ-4551 D21) at the pointer, on one row; `renaming` = its Rename… field is open. */
   const [rowMenu, setRowMenu] = useState<{ row: Row; x: number; y: number; anchor: HTMLElement; renaming: boolean } | null>(null)
   const [query, setQuery] = useState('')
@@ -295,12 +295,16 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     if (relDir === '') return null
     return folderSettings(folderRecord(folders, absOf(parentOf(relDir))), ids).views.some(showsFolderRows) ? parentOf(relDir) : null
   }, [relDir, own, folders, ids]) // eslint-disable-line react-hooks/exhaustive-deps
-  /** That page's columns, its own over its parent folders' (C2), each with the folder that defines it. */
+  /**
+   * That page's columns, its own over its parent folders' (C2), each with the folder that defines it. A Linked mentions
+   * column is none of the note's fields (YAZ-4738 L1): the section under the note lists its mentions.
+   */
   const pageCols = useMemo(() => {
     if (typingDir === null) return {}
     const record = folderRecord(folders, absOf(typingDir))
     const inherit = (record === undefined ? undefined : inheritColumnsOf(record.properties)) ?? DEFAULT_FOLDER_PAGES.inheritColumns
-    return pageColumns(folderSettings(record, ids).columns, typingDir, folders, ids, inherit)
+    const all = pageColumns(folderSettings(record, ids).columns, typingDir, folders, ids, inherit)
+    return Object.fromEntries(Object.entries(all).filter(([, { decl }]) => decl.kind !== 'mentions'))
   }, [typingDir, folders, ids]) // eslint-disable-line react-hooks/exhaustive-deps
   const typing = useMemo((): FolderSettings => ({ columns: Object.fromEntries(Object.entries(pageCols).map(([key, { decl }]) => [key, decl])), views: [], problems: [] }), [pageCols])
   /**
@@ -425,7 +429,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   }
 
   /** The type a name already has here: its page's column, else the vault's declaration (the ladder's top rungs). */
-  const assignedKind = (name: string): PropertyKind | null => columnTyping(name, NO_RECORDS, decls, typing)?.assigned ?? null
+  const assignedKind = (name: string): NotePropertyKind | null => columnTyping(name, NO_RECORDS, decls, typing)?.assigned ?? null
   /** The `.folder.md` a row's definition is saved in: a separate value's page, else the folder that defines the column (C2). */
   const definitionFile = (row: Row): string | undefined => (row.home !== null ? folderSettingsPath(absOf(row.home.dir)) : row.owner === undefined ? undefined : folderSettingsPath(absOf(row.owner)))
   /** A type can be saved for a column (its folder's `.folder.md`) or, with a vault root, for a note field (`properties.json`). */
@@ -700,9 +704,9 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
                       className="view-select"
                       aria-label="New property type"
                       value={adding.kind ?? assignedKind(adding.name.trim()) ?? 'text'}
-                      onChange={(e) => setAdding({ ...adding, kind: e.currentTarget.value as PropertyKind })}
+                      onChange={(e) => setAdding({ ...adding, kind: e.currentTarget.value as NotePropertyKind })}
                     >
-                      {PROPERTY_KINDS.map((k) => (
+                      {NOTE_PROPERTY_KINDS.map((k) => (
                         <option key={k} value={k}>
                           {PROPERTY_LABELS[k]}
                         </option>

@@ -1,19 +1,19 @@
 import './propertyDefinitionEditor.css'
 import { useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
-import { PROPERTY_KINDS, type PropertyDecl, type PropertyKind } from '@shared/types'
+import { NOTE_PROPERTY_KINDS, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { orderedPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { TextField } from './TextField'
 import { DragHandleIcon } from './icons'
 
 export const PROPERTY_LABELS: Record<PropertyKind, string> = {
   text: 'Text', number: 'Number', date: 'Date', checkbox: 'Checkbox', list: 'List',
-  link: 'Link', 'multi-link': 'Multi-link', select: 'Select', 'multi-select': 'Multi-select',
+  link: 'Link', 'multi-link': 'Multi-link', select: 'Select', 'multi-select': 'Multi-select', mentions: 'Linked mentions',
 }
 export const DESCRIPTIONS: Record<PropertyKind, string> = {
   text: 'Write any text.', number: 'Store a numeric value.', date: 'Choose a calendar date.', checkbox: 'Check or uncheck.',
   list: 'Keep a list of free-form values.', link: 'Link to one page.', 'multi-link': 'Link to multiple pages.',
-  select: 'Choose one option.', 'multi-select': 'Choose multiple options.',
+  select: 'Choose one option.', 'multi-select': 'Choose multiple options.', mentions: 'The notes that link here. Worked out by the app; read only.',
 }
 
 /** Shared monochrome type symbols for definitions and property rows. */
@@ -28,6 +28,7 @@ export function PropertyTypeIcon({ kind }: { kind: PropertyKind }) {
     'multi-link': <><path d="M4 6h10M4 10h7M4 14h5" /><path d="m12 12 2 2 3-4" /></>,
     select: <><circle cx="9" cy="9" r="6" /><path d="m6 8 3 3 3-3" /></>,
     'multi-select': <><path d="M3 4h12M3 9h7M3 14h7" /><path d="m12 12 2 2 3-4" /></>,
+    mentions: <><path d="M15 6H6M9 3 6 6l3 3" /><path d="M3 12h9M9 9l3 3-3 3" /></>,
   }
   return <svg className="property-kind-icon" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{symbols[kind]}</svg>
 }
@@ -130,16 +131,19 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
   </section>
 }
 
-/** Definition-only edits: the host owns scope, persistence, and all note values. */
-export function PropertyDefinitionEditor({ value, onChange, observed = [] }: {
-  value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]
+/**
+ * Definition-only edits: the host owns scope, persistence, and all note values. `kinds`: the types it offers — a note's
+ * field the kinds a note can hold (the default); a folder's new column every kind, Linked mentions too (YAZ-4738).
+ */
+export function PropertyDefinitionEditor({ value, onChange, observed = [], kinds = NOTE_PROPERTY_KINDS }: {
+  value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]; kinds?: readonly PropertyKind[]
 }) {
   const [choosing, setChoosing] = useState(false)
   const [query, setQuery] = useState('')
   const typeButton = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const choice = value.kind === 'select' || value.kind === 'multi-select'
-  const types = PROPERTY_KINDS.filter(kind => `${PROPERTY_LABELS[kind]} ${DESCRIPTIONS[kind]}`.toLowerCase().includes(query.toLowerCase()))
+  const types = kinds.filter(kind => `${PROPERTY_LABELS[kind]} ${DESCRIPTIONS[kind]}`.toLowerCase().includes(query.toLowerCase()))
   const backFromTypes = () => { setChoosing(false); setQuery(''); requestAnimationFrame(() => typeButton.current?.focus()) }
 
   return <div className="property-def" ref={panel} onKeyDown={event => {

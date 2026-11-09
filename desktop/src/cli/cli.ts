@@ -37,7 +37,9 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { dueAt, isInReview, reviewQueue } from '@shared/schedule'
-import { VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type SettingsState } from '@shared/types'
+import { VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type IndexRecord, type SettingsState } from '@shared/types'
+import { makeResolver } from '@shared/linkResolver'
+import { mentionsOf } from '@shared/mentions'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
 import { dailyNote } from '../main/notes/daily'
@@ -48,7 +50,7 @@ import { STATE_FILE, userDataDir } from '../main/userData'
 import { giveId, nextId, readPage } from '../main/vaultIndex/idSweep'
 import { idVault, macId, vaultIds } from '../main/vaultIndex/mint'
 import { scanAll } from '../main/vaultIndex/reconcile'
-import { scanFile, walk } from '../main/vaultIndex/scan'
+import { fileTitle, scanFile, walk } from '../main/vaultIndex/scan'
 
 export interface Io {
   /** The whole of stdin, for `--body -`. */
@@ -66,13 +68,14 @@ export const USAGE = `usage:
   yaseendocs delete   <page.md> <comment>
   yaseendocs id       <page.md>
   yaseendocs links    <page.md> [--json]
+  yaseendocs mentions <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
   yaseendocs --help`
 
-export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, when it is next due for review, the app's list of vaults, and a new note or the day's daily note, from the shell.
+export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, the pages that link to it, when it is next due for review, the app's list of vaults, and a new note or the day's daily note, from the shell.
 
 ${USAGE}
 
@@ -104,6 +107,12 @@ names for it; a file the app did not name is found by its \`id: <id>\` line.
 A folder's values for a page (its columns) are in the page's frontmatter under \`in:\`, in the block
 named by the folder's id, and a folder's id is the \`id\` in \`<folder>/.folder.md\`. \`links\` lists
 those folders after the links, each by id and the title and path of the folder it names now.
+
+\`mentions\` lists every note and folder that links to a page: the page's Linked mentions in the app, in
+a vault with IDs or without. A line is the title and the path of the note, or of the folder with a
+\`/\` after it; a link in a folder's page or settings counts for that folder. \`--json\` gives
+\`title\`, \`path\` (from the vault's folder) and \`kind\` (\`note\` or \`folder\`). A link counts as
+the app counts it: by id, path, title, file name or alias, in the body or the properties.
 
 \`due\` prints the day a page is next up for review. The app works that date out from the page's
 \`reviews:\` log, when the page last changed and the vault's settings, and never writes it into the
@@ -335,6 +344,45 @@ export function dayOf(text: string | undefined, now = new Date()): Date {
   return day
 }
 
+const byPath = (a: IndexRecord, b: IndexRecord): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+
+/**
+ * A scanned record as the app's index hands it out (`vaultIndex/live.ts` `getIndex`): in a vault with IDs, its id as an
+ * ID of that vault (the letters it had before read as the current ones), or none; in a vault without, no id, and the
+ * title its file name gives (YAZ-2523 V12: `title:` is a field like any other there).
+ */
+function asIndexed(r: IndexRecord, letters: readonly string[] | undefined): IndexRecord {
+  const { id: held, ...rest } = r
+  if (letters === undefined) return { ...rest, title: fileTitle(r) }
+  const id = vaultNoteId(held, letters)
+  return id === undefined ? rest : { ...rest, id }
+}
+
+/**
+ * `mentions` (YAZ-4740 L6): every note and folder that links to `page` — its Linked mentions in the app. The same walk
+ * and scan as `links`; resolved by the app's own rule (`@shared/linkResolver`) and gathered by the app's own map
+ * (`@shared/mentions`), so the command and the app list the same pages.
+ */
+async function mentions(page: string, json: boolean, io: Io): Promise<void> {
+  const idRoot = await idVault(dirname(page))
+  const root = idRoot ?? (await vaultRoot(dirname(page)))
+  if (root === null) throw new Error(`${page} is in no vault (no ${VAULT_CONFIG_DIR} folder above it)`)
+  const letters = idRoot === null ? undefined : (await vaultIds(root)).letters
+  const files: string[] = []
+  await walk(root, files)
+  const scanned = [...(await scanAll(root, files)).values()].sort(byPath).map((r) => asIndexed(r, letters))
+  const records = scanned.filter((r) => !isFolderSettingsPath(r.path))
+  const folders = scanned.filter((r) => isFolderSettingsPath(r.path))
+  if (!records.some((r) => r.path === page)) throw new Error(`${page} is not a page of ${root}`)
+  const resolveNote = makeResolver(records.map((record) => ({ record })), root, { folders, letters })
+  const found = mentionsOf(records, folders, (target) => resolveNote(target)?.record.path ?? null).get(page) ?? []
+  const rows = found.map((r) =>
+    isFolderSettingsPath(r.path) ? { title: r.title, path: r.folder, kind: 'folder' as const } : { title: r.title, path: r.folder === '' ? r.name : `${r.folder}/${r.name}`, kind: 'note' as const },
+  )
+  if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
+  else io.stdout(rows.length === 0 ? `nothing links to ${page}\n` : rows.map((r) => `${r.title}  ${r.kind === 'folder' ? `${r.path}/` : r.path}\n`).join(''))
+}
+
 /** `made <path>` or `found <path>`, each other note of the title on stderr (D8); `--json` the whole answer. */
 function report(io: Io, flags: Map<string, string | true>, note: FoundNote): void {
   for (const other of note.others) io.stderr(`warning: also ${other}\n`)
@@ -393,6 +441,13 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
   if (verb === 'vaults') return vaults(flags.has('--json'), io)
   if (verb === 'daily') return daily(args[0], flags, io)
   if (verb === 'new') return newCommand(args[0], flags, io)
+  if (verb === 'mentions') {
+    onlyFlags('mentions', flags, ['--json'])
+    if (args[0] === undefined) throw new Usage('mentions needs a page')
+    const page = resolve(args[0])
+    requireMarkdownFile(page)
+    return mentions(page, flags.has('--json'), io)
+  }
   if (verb === 'due') {
     if (args[0] === undefined) throw new Usage('due needs a page or a folder')
     return due(resolve(args[0]), flags.has('--json'), io)

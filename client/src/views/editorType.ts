@@ -56,8 +56,8 @@ function dominantKind(records: readonly IndexRecord[], bare: string): EditorKind
   return best
 }
 
-/** `PropertyKind` → editor, 1:1 (contract §5; `multi-link` is the chips editor with link suggestions). */
-const DECLARED_KIND: Record<PropertyKind, EditorKind> = {
+/** `PropertyKind` → editor, 1:1 (contract §5; `multi-link` is the chips editor with link suggestions). A Linked mentions column has none: it is read-only (YAZ-4738). */
+const DECLARED_KIND: Record<Exclude<PropertyKind, 'mentions'>, EditorKind> = {
   text: 'text',
   number: 'number',
   date: 'date',
@@ -87,9 +87,11 @@ export function columnTyping(
   // construction — two folders may type the same key differently and neither wins globally,
   // so there is no conflict to resolve here and none may be built.
   const own = settings?.columns[bare]
+  // A Linked mentions column is worked out from the index (YAZ-4738 L1): read-only, like a formula.
+  if (own?.kind === 'mentions') return null
   if (own !== undefined) return { assigned: DECLARED_KIND[own.kind], dominant, target: own.target, options: orderedPropertyOptions(own) }
   const declared = properties?.properties[bare]
-  if (declared !== undefined) return { assigned: DECLARED_KIND[declared.kind], dominant, target: declared.target, options: orderedPropertyOptions(declared) }
+  if (declared !== undefined && declared.kind !== 'mentions') return { assigned: DECLARED_KIND[declared.kind], dominant, target: declared.target, options: orderedPropertyOptions(declared) }
   return { assigned: null, dominant }
 }
 

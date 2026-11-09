@@ -21,9 +21,9 @@ export const OTHER_FILES_KEY = 'other_files'
  * too: it comes through here, and the key STRING rides back in the result rather than being spelled
  * anywhere else.
  *
- * The link-bearing leaves are exactly four: every view's [D5] `order` entry (🔒 Q3), every view's
- * `fills[].note` (YAZ-4536), every column's belongs-to `target` (🔒 Q2) and every `other_files` entry
- * (YAZ-4597 D44) — the places this
+ * The link-bearing leaves are exactly five: every view's [D5] `order` entry (🔒 Q3), every view's
+ * `fills[].note` (YAZ-4536), every column's belongs-to `target` (🔒 Q2), every Linked mentions column's
+ * `from.folder` (YAZ-4739) and every `other_files` entry (YAZ-4597 D44) — the places this
  * vocabulary spells a wikilink. Each string leaf is offered to `map`; `undefined` means LEAVE IT.
  * Everything else in the value — unknown view types, extra keys, unusable shapes, an old Outline's
  * `outline` string (YAZ-4584 D40: the folder's document is its Page, the `.folder.md` body, whose
@@ -62,7 +62,14 @@ export function mapFolderSettingsLinks(
   if (isRecord(raw.columns)) {
     const columns: Record<string, unknown> = {}
     for (const [name, column] of Object.entries(raw.columns)) {
-      columns[name] = isRecord(column) && 'target' in column ? { ...column, target: mapLink(column.target) } : column
+      if (!isRecord(column)) {
+        columns[name] = column
+        continue
+      }
+      const next: Record<string, unknown> = 'target' in column ? { ...column, target: mapLink(column.target) } : column
+      // A Linked mentions column's `from.folder` names its folder by a link (YAZ-4739): a rename keeps it on that folder.
+      if (isRecord(column.from) && 'folder' in column.from) columns[name] = { ...next, from: { ...column.from, folder: mapLink(column.from.folder) } }
+      else columns[name] = next
     }
     value.columns = columns
   }

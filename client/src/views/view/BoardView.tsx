@@ -119,9 +119,9 @@ export function BoardView({
   hover,
 }: BoardViewProps) {
   const levels = shownGroupLevels(view)
-  const levelKeys = levels.map((_, level) => groupByKey(view, level))
+  const levelKeys = levels.map((_, level) => groupByKey(view, level, settings.columns))
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
-  const adds = levels.map((_, level) => groupTakesNew(view, level))
+  const adds = levels.map((_, level) => groupTakesNew(view, level, settings.columns))
   /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES; a fold never plays (13A). */
   const flipRoot = useFlip(collapsed.join('\u001e'))
   // The note window (YAZ-4547 D24): column by column, top to bottom, collapsed sections left out; the board's root

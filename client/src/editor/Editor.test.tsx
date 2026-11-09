@@ -1760,7 +1760,7 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/upwork-2026`)], generatedAt: 1 }))
     readFile.mockResolvedValue({ path: '/titled/upwork-2026/.folder.md', content: '---\ntitle: Upwork 2026\n---\n', mtime: 1, size: 27 })
     const source = createWikilinkResolveSource()
-    act(() => source.update(() => null, [], [{ path: '/titled/upwork-2026/.folder.md', folder: 'upwork-2026', title: 'Upwork 2026', mtime: 1, properties: {} } as IndexRecord]))
+    act(() => source.update(() => null, [], [{ path: '/titled/upwork-2026/.folder.md', folder: 'upwork-2026', title: 'Upwork 2026', mtime: 1, properties: {}, links: [], embeds: [] } as unknown as IndexRecord]))
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)

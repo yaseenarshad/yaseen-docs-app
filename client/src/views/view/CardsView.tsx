@@ -166,8 +166,8 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
   // memoised so unrelated re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bares = useMemo(
-    () => new Map(rest.map((k) => [k, writableKey(k)])),
-    [rest],
+    () => new Map(rest.map((k) => [k, writableKey(k, settings.columns)])),
+    [rest, settings],
   )
   const typings = useMemo(
     () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, properties, settings)])),
@@ -259,7 +259,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
           collapsed={isCollapsed}
           onToggle={() => onToggleGroup(gk)}
           // A level a new note cannot take (a `file.*` one) has no "+", as in Table and Board (YAZ-4544).
-          onNew={onNewInGroup === undefined || !groupTakesNew(view, at.level) ? undefined : () => onNewInGroup(g, undefined, at)}
+          onNew={onNewInGroup === undefined || !groupTakesNew(view, at.level, settings.columns) ? undefined : () => onNewInGroup(g, undefined, at)}
           resolve={resolve}
           level={at.level}
         />

@@ -8,7 +8,7 @@
  * guard is the backstop, never the only lock. Folder-wide actions — a column's rename or delete —
  * do not come here and still reach every note (S55).
  */
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, PropertyDecl } from '@shared/types'
 import { isReadOnlyProperties } from '@shared/readOnly'
 import { reservedKeys } from '../links/reservedKeys'
 import { canonicalKey } from './view/keys'
@@ -24,13 +24,14 @@ const APP_KEYS = reservedKeys(false)
  * The bare note key a view may WRITE for column `key`, or null: a `file.*` / `formula.*` column, or a
  * key the app owns in every vault — `readonly` above all, whose cell would otherwise turn a note read
  * only from a table, and whose board would turn it on or off by a drop (S16, YAZ-3122). Such a column
- * shows its values and offers no editor, no drag and no group "+".
+ * shows its values and offers no editor, no drag and no group "+". So does a Linked mentions column of `columns`
+ * (YAZ-4738 L1): the app works it out, and no note holds it — no paste, fill, clear or drop writes it.
  */
-export function writableKey(key: string): string | null {
+export function writableKey(key: string, columns?: Readonly<Record<string, PropertyDecl>>): string | null {
   const c = canonicalKey(key)
   if (!c.startsWith('note.')) return null
   const bare = c.slice('note.'.length)
-  return APP_KEYS.has(bare) ? null : bare
+  return APP_KEYS.has(bare) || (columns !== undefined && Object.hasOwn(columns, bare) && columns[bare].kind === 'mentions') ? null : bare
 }
 
 /** What a locked cell says when the human tries it, and what a refused write rejects with (S56). */

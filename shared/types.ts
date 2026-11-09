@@ -3446,8 +3446,16 @@ export interface SharePermissionRequest extends ShareBoardRequest {
  * The editor set that exists (5B's `EditorKind`) plus the link/multi-link split. An unknown
  * `kind` string on disk is preserved there and read back as `text` (forward compat).
  */
-export const PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'link', 'multi-link', 'select', 'multi-select'] as const
+export const PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'link', 'multi-link', 'select', 'multi-select', 'mentions'] as const
 export type PropertyKind = (typeof PROPERTY_KINDS)[number]
+
+/**
+ * The kinds a note's own field can have: all but `mentions`, a folder column's Linked mentions (YAZ-4738 L1), which the
+ * app works out from the index and never writes into a note. The vault-wide declarations and the note's Properties
+ * panel offer these.
+ */
+export type NotePropertyKind = Exclude<PropertyKind, 'mentions'>
+export const NOTE_PROPERTY_KINDS: readonly NotePropertyKind[] = PROPERTY_KINDS.filter((kind): kind is NotePropertyKind => kind !== 'mentions')
 
 /**
  * The ONE property-name rule (YAZ-4551 D19): any name, as typed — "Due Date", "Yaseen". A name is
@@ -3492,6 +3500,17 @@ export interface PropertyDecl {
   description?: string
   /** number/date only: how a cell shows the value (YAZ-4591 S21/S22). Display only — the stored value never changes. */
   format?: PropertyFormat
+  /**
+   * mentions only (YAZ-4739 L2): which links count. `column`, a column key: only links held in that field of the linking
+   * note. `folder`, a link to a folder (`[[API]]`): only notes and folders under it. Absent: every link counts.
+   */
+  from?: MentionsFrom
+}
+
+/** A Linked mentions column's narrowing (YAZ-4739 L2): `from: { column?, folder? }` on the column; either or both. */
+export interface MentionsFrom {
+  column?: string
+  folder?: string
 }
 
 /**

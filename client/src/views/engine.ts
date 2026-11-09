@@ -1,10 +1,9 @@
-import { vaultNoteId } from '@shared/noteId'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { FOLDER_SETTINGS_FILE, type IndexRecord, inFolder } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, type SortSpec, shownGroupLevels } from './viewSchema'
 import {
   DateValue, DurationValue, ErrorValue, type Expr, FileValue, LinkValue, type Resolver, type Scope, type Value,
-  compile, equals, evaluate, fromYaml, isTruthy, linkText, render, stripBrackets,
+  compile, equals, evaluate, fromYaml, isTruthy, linkText, render,
 } from './expr'
 import { summarize } from './summaries'
 
@@ -84,6 +83,12 @@ export interface RunOptions {
    * undefined. Given, sorts and groups on that column follow it unless the spec says `by: value`.
    */
   optionOrder?: (property: string) => readonly string[] | undefined
+  /**
+   * The page's Linked mentions columns (YAZ-4738 L1, L3): their keys, and each one's value for a record — the links to
+   * the notes that mention it, worked out from the index. A row reads it under the key, as if the note held it (cells,
+   * filters, search), but no note does. A sort on one sorts by how many there are.
+   */
+  mentions?: { keys: readonly string[]; of: (record: IndexRecord, key: string) => readonly string[] }
 }
 
 /** Value of one property key for one row's scope. */
@@ -100,155 +105,9 @@ const NO_VALUE = 'No value'
 
 // ---------- link resolution (GRO-2132) ----------
 
-const normalise = (s: string) => s.replace(/^\/+|\/+$/g, '').replace(/\.(md|markdown)$/, '').toLowerCase()
-
-/** A link target as the resolver reads it: brackets, `#heading` and `|alias` off, trimmed, lowercased. */
-export const targetKey = (target: string) => stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()
-
-/**
- * A basename as `targetBasename` spells it: lowercased, with the one context-dependent lowercase
- * mapping (Greek final sigma: `ΟΔΟΣ.md` lowercases its Σ to σ, `ΟΔΟΣ` alone to ς) folded away.
- */
-export const basenameKey = (basename: string): string => basename.toLowerCase().replace(/ς/g, 'σ')
-
-/**
- * The `basenameKey` of every note `target` can resolve to without aliases: each path and name match
- * in `makeResolver` ends in that basename. A note whose basename no link spells has no references
- * (YAZ-2241: the rename detector skips those without building a resolver per rename).
- */
-export function targetBasename(target: string): string {
-  const rel = normalise(targetKey(target))
-  return basenameKey(rel.slice(rel.lastIndexOf('/') + 1))
-}
-
-/** `makeResolver` / `resolverFor` knobs; every field is optional and defaults to today's behaviour. */
-export interface ResolverOptions {
-  /**
-   * Consult frontmatter `aliases` (default true, E2 GRO-2214). `false` builds a NAME-ONLY
-   * resolver — the rename engine's referencing-set probe (`links/renameLinks.ts`), which must
-   * not treat an alias-form link as a reference to rewrite: the alias lives in the moved file's
-   * own frontmatter and travels with it.
-   */
-  aliases?: boolean
-  /**
-   * Resolve a target that IS a note's id (default true, YAZ-2293 D5). `false` for the rename
-   * engine's probe too: an id link names the note itself, not its place, so no rename rewrites it.
-   */
-  ids?: boolean
-  /**
-   * The vault's ID letters (`IndexResponse.letters`, YAZ-2677 R5): the current ones, then each it
-   * had before. Given, a target with letters of before finds the note of that number: `[[OLD-12]]`
-   * is `YAZ-12` (S82). Without them an id is found by the letters its record holds.
-   */
-  letters?: readonly string[]
-  /**
-   * The snapshot's folder settings records (YAZ-2478). Given, a pathed target no file path answers
-   * is read as a path of TITLES: `Sub/Page` is the note titled Page in the folder `Sub` names
-   * (`typedFolders`). The rename engine's probe gives them too, and rewrites such a link to the note's id.
-   */
-  folders?: readonly IndexRecord[]
-}
-
-/**
- * The folder a typed segment names inside `parent` (YAZ-2478): the one there with that title, else
- * the one in that directory, else undefined. Folders are as the index names them (root-relative,
- * '' the root, which no segment names) and come off their settings records; case-insensitive.
- */
-export function typedFolders(folders: readonly IndexRecord[]): (parent: string, segment: string) => string | undefined {
-  const byTitle = new Map<string, string>()
-  const byName = new Map<string, string>()
-  for (const { folder, title } of folders) {
-    if (folder === '') continue
-    const typed = `${folder.slice(0, folder.lastIndexOf('/') + 1)}${title}`.toLowerCase()
-    if (!byTitle.has(typed)) byTitle.set(typed, folder)
-    byName.set(folder.toLowerCase(), folder)
-  }
-  return (parent, segment) => {
-    const typed = `${parent === '' ? '' : `${parent}/`}${segment}`.toLowerCase()
-    return byTitle.get(typed) ?? byName.get(typed)
-  }
-}
-
-/**
- * A link target's key (`targetKey`) as the key an id is found under (YAZ-2677 R1, R5): an ID is read
- * in any case, so the key is the id in lowercase; one with letters the vault had before is the key
- * of the same number with the current letters. Any other key is itself.
- */
-export function idKey(key: string, letters?: readonly string[]): string {
-  if (letters === undefined || letters.length < 2) return key
-  return vaultNoteId(key, letters)?.toLowerCase() ?? key
-}
-
-/**
- * Link target → note: the note's own id (YAZ-2293 — first, so a note merely NAMED like an id
- * never captures it; a target that is the id of NO note falls through to the names below, so
- * `[[YAZ-7]]` still opens a note that is only named so: YAZ-2677 R6, S26), absolute path, root-relative path (with or without `.md` / leading slash),
- * TITLE (YAZ-2420 🔒 D17 — a note with no `title:` is titled by its file name), bare basename —
- * duplicates of either resolve to the SHALLOWEST folder (Obsidian's shortest-path rule,
- * GRO-2190), equal depth to the first in the given (path-sorted) order — a pathed target as a
- * path of TITLES (YAZ-2478, `ResolverOptions.folders`), and finally a
- * frontmatter ALIAS (E2, GRO-2214), by the same shallowest-then-first rule, so a real name
- * always beats an alias. Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
- */
-export function makeResolver(files: readonly FileValue[], root?: string, opts: ResolverOptions = {}): Resolver {
-  const byId = new Map<string, FileValue>()
-  const byPath = new Map<string, FileValue>()
-  const byRel = new Map<string, FileValue>()
-  const byTitle = new Map<string, { file: FileValue; depth: number }>()
-  const byBase = new Map<string, { file: FileValue; depth: number }>()
-  const byAlias = new Map<string, { file: FileValue; depth: number }>()
-  /** `<folder>/<title>`, the folder as the index names it, to the first note of that title there; empty with no `folders`. */
-  const byFolderTitle = new Map<string, FileValue>()
-  const typedFolder = typedFolders(opts.folders ?? [])
-  const shallowest = (map: Map<string, { file: FileValue; depth: number }>, key: string, file: FileValue, depth: number) => {
-    const prev = map.get(key)
-    if (prev === undefined || depth < prev.depth) map.set(key, { file, depth })
-  }
-  for (const f of files) {
-    const r = f.record
-    // By the id in lowercase: a target is read in any case (YAZ-2677 R1, S17), and its key is lowercase.
-    const id = opts.ids === false ? undefined : r.id?.toLowerCase()
-    if (id !== undefined && !byId.has(id)) byId.set(id, f)
-    byPath.set(r.path.toLowerCase(), f)
-    const rel = normalise(r.folder ? `${r.folder}/${r.basename}` : r.basename)
-    if (!byRel.has(rel)) byRel.set(rel, f)
-    const depth = r.folder === '' ? 0 : r.folder.split('/').length
-    shallowest(byTitle, r.title.toLowerCase(), f, depth)
-    shallowest(byBase, r.basename.toLowerCase(), f, depth)
-    if (opts.folders !== undefined) {
-      const titled = `${r.folder}/${r.title}`.toLowerCase()
-      if (!byFolderTitle.has(titled)) byFolderTitle.set(titled, f)
-    }
-    if (opts.aliases !== false) for (const alias of r.aliases) shallowest(byAlias, alias.toLowerCase(), f, depth)
-  }
-  const rootKey = root ? `${root.replace(/\/+$/, '').toLowerCase()}/` : null
-  /** A path of titles: its last segment a note's title, the ones before it its folders, from the root down. */
-  const titledPath = (rel: string): FileValue | null => {
-    const segments = rel.split('/')
-    const title = segments.pop()
-    let dir = ''
-    for (const segment of segments) dir = typedFolder(dir, segment)?.toLowerCase() ?? (dir === '' ? segment : `${dir}/${segment}`)
-    return byFolderTitle.get(`${dir}/${title}`) ?? null
-  }
-  const cache = new Map<string, FileValue | null>()
-  return target => {
-    const hit = cache.get(target)
-    if (hit !== undefined) return hit
-    const key = targetKey(target)
-    let found: FileValue | null = null
-    if (key) {
-      found = byId.get(idKey(key, opts.letters)) ?? byPath.get(key) ?? null
-      if (!found) {
-        const rel = normalise(rootKey && key.startsWith(rootKey) ? key.slice(rootKey.length) : key)
-        found = byRel.get(rel) ?? byTitle.get(key)?.file ?? (rel.includes('/') ? titledPath(rel) : byBase.get(rel)?.file ?? null)
-      }
-      // Aliases last: a page named `CAC` always wins the target `CAC` over one merely aliased so.
-      if (!found) found = byAlias.get(key)?.file ?? null
-    }
-    cache.set(target, found)
-    return found
-  }
-}
+// The rule lives in `@shared/linkResolver` (YAZ-4740), so `yaseendocs mentions` resolves as the app does.
+import { makeResolver, type ResolverOptions } from '@shared/linkResolver'
+export { basenameKey, idKey, makeResolver, targetBasename, targetKey, typedFolders, type ResolverOptions } from '@shared/linkResolver'
 
 /** FileValue wrappers per records array identity — `runView` and `resolverFor` share the instances. */
 const filesCache = new WeakMap<readonly IndexRecord[], FileValue[]>()
@@ -517,11 +376,20 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     return v
   }
 
+  // A Linked mentions column (YAZ-4738) reads as a field of the row's note: one copy of the fields per row, only where the page has one.
+  const mentions = opts.mentions !== undefined && opts.mentions.keys.length > 0 ? opts.mentions : undefined
+  const noteOf = (record: IndexRecord): Record<string, unknown> => {
+    if (mentions === undefined) return record.properties
+    const note: Record<string, unknown> = { ...record.properties }
+    for (const key of mentions.keys) note[key] = mentions.of(record, key)
+    return note
+  }
+
   // filters
   const entries: Entry[] = []
   for (let i = 0; i < records.length; i++) {
     // `this` is null: the views are a FOLDER's, and a folder is no record (YAZ-2290).
-    const scope: Scope = { note: records[i].properties, file: files[i], formulas, this: null, resolve }
+    const scope: Scope = { note: noteOf(records[i]), file: files[i], formulas, this: null, resolve }
     if (baseFilter && !baseFilter(scope)) continue
     if (viewFilter && !viewFilter(scope)) continue
     entries.push({ row: { record: records[i], file: files[i], values: {} }, scope, cache: new Map() })
@@ -544,7 +412,10 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   const sort = (view.sort ?? []).filter(s => s && typeof s.property === 'string')
   if (sort.length) {
     const sortValues = new Map<Entry, Value[]>(entries.map(e => [e, sort.map(s => valueOf(e, s.property))]))
-    const sortCompares = sort.map(compareOf)
+    // A Linked mentions column sorts by count (L3): fewest first, ASC.
+    const counted = (s: SortSpec): boolean => mentions !== undefined && mentions.keys.includes(s.property.startsWith('note.') ? s.property.slice(5) : s.property)
+    const count = (v: Value | undefined): number => (Array.isArray(v) ? v.length : 0)
+    const sortCompares = sort.map((s): Compare => (counted(s) ? (a, b) => (s.direction === 'DESC' ? -1 : 1) * (count(a) - count(b)) : compareOf(s)))
     entries.sort((a, b) => {
       const va = sortValues.get(a)!
       const vb = sortValues.get(b)!

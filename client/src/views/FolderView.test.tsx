@@ -1095,11 +1095,12 @@ describe('the declarations ride AHEAD of the index (YAZ-1549)', () => {
     await addSort(el)
     expect(write).toHaveBeenCalledTimes(2)
     expect(rebased(1, echoed).columns).toEqual(echoed.columns)
-    // A column added now rides as THE change: disk's other columns are kept under it.
+    // A column added now rides as THE change: disk's other columns are kept under it. The block is stated over this
+    // page's own last write (YAZ-4741: the echo is not known to be it), and the rebase onto disk keeps disk's `order`.
     act(() => captured.folder!.setColumns({ ...columnsOf(), extra: { kind: 'text' } }))
     await flush()
     expect(write).toHaveBeenCalledTimes(3)
-    expect((write.mock.calls[2][2] as { columns: unknown }).columns).toEqual({ ...echoed.columns, extra: { kind: 'text' } })
+    expect(rebased(2, echoed).columns).toEqual({ ...echoed.columns, extra: { kind: 'text' } })
   })
 
   it('two windows (M1): this one sets a column\'s type while another adds a column — the echo shows both, and a later view write keeps the other\'s column', async () => {
@@ -1822,6 +1823,12 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
+  it('a Linked mentions column is no note field: the write door refuses one (YAZ-4738)', async () => {
+    await mount({ columns: { used_by: { kind: 'mentions' } }, views: [{ type: 'table', name: 'Table' }] }, [rec(LEAD, { order: 2 })])
+    await expect(captured.folder!.writeValues(LEAD, [{ key: 'used_by', value: ['[[Sales]]'] }])).rejects.toThrow('used_by is a Linked mentions column')
+    expect(writeValues).not.toHaveBeenCalled()
+  })
+
   /**
    * Link and Multi-link columns ride the same model (YAZ-4736): the value is the note's own field, the column's `target`
    * comes down with the definition, and a delete, an Undo and a move treat a link like any value. Backlinks and a rename
@@ -1920,6 +1927,34 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       await flush()
       expect(disk.get(NOTE)).toBe('---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
       expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('    points_to:\n      kind: link\n')
+    })
+
+    it('Undo BEFORE the index has seen the delete (YAZ-4741): the column, its place in the view and the link all come back', async () => {
+      disk.set(NOTE, '---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
+      await open(SCHEMA)
+      await act(async () => captured.folder!.deleteColumn!('points_to', true))
+      await flush()
+      expect(disk.get(`${SCHEMA}/.folder.md`)).not.toContain('points_to')
+      const undo = onNotice.mock.calls.find((call) => call[2] === 'undo')
+      // No echo: the index still holds the column, as when a fast click beats it.
+      await act(async () => void (await undo![3].run()))
+      await flush()
+      expect(disk.get(NOTE)).toBe('---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toBe(schemaFile)
+    })
+
+    it('a view change between the delete and its echo keeps the delete (YAZ-4741): the view write builds on the pruned views', async () => {
+      const el = await open(SCHEMA)
+      await act(async () => captured.folder!.deleteColumn!('points_to', false))
+      await flush()
+      expect(disk.get(`${SCHEMA}/.folder.md`)).not.toContain('points_to')
+      // A view write before the echo: the Table tab gets a sort.
+      click(byLabel(el, 'Sort'))
+      click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add sort')!)
+      await flush()
+      const after = disk.get(`${SCHEMA}/.folder.md`)!
+      expect(after).not.toContain('points_to')
+      expect(after).toContain('property: file.name')
     })
 
     it('a link field no folder defines waits under "Other properties"; shown, it reads and edits as a link', async () => {

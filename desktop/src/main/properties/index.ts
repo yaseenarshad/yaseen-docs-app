@@ -1,5 +1,5 @@
 import type { PropertiesResponse, PropertyDecl, PropertyKind } from '@shared/types'
-import { PROPERTY_KINDS, isPropertyName } from '@shared/types'
+import { NOTE_PROPERTY_KINDS, isPropertyName } from '@shared/types'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { isRecord } from '@shared/guards'
 import { BridgeFailure, createRootChain, requireAbsPath, requireDir } from '../fs/fsUtils'
@@ -37,8 +37,8 @@ function requirePropertyName(name: unknown): string {
 /** Known fields only, each type-checked; unknown keys are ignored (the `setFolder` patch posture). */
 function requirePropertyDecl(raw: unknown): PropertyDecl {
   if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'property declaration must be an object')
-  if (typeof raw.kind !== 'string' || !(PROPERTY_KINDS as readonly string[]).includes(raw.kind)) {
-    throw new BridgeFailure('BAD_REQUEST', `'kind' must be one of ${PROPERTY_KINDS.join(', ')}`)
+  if (typeof raw.kind !== 'string' || !(NOTE_PROPERTY_KINDS as readonly string[]).includes(raw.kind)) {
+    throw new BridgeFailure('BAD_REQUEST', `'kind' must be one of ${NOTE_PROPERTY_KINDS.join(', ')}`)
   }
   const decl: PropertyDecl = { kind: raw.kind as PropertyKind }
   if (raw.target !== undefined) {
@@ -68,7 +68,7 @@ function parseDecls(raw: unknown): Record<string, PropertyDecl> {
   for (const [name, decl] of Object.entries(raw)) {
     if (!isRecord(decl)) continue
     // An unknown or missing `kind` string is preserved on disk and read as text (forward compat).
-    const kind = typeof decl.kind === 'string' && (PROPERTY_KINDS as readonly string[]).includes(decl.kind) ? (decl.kind as PropertyKind) : 'text'
+    const kind = typeof decl.kind === 'string' && (NOTE_PROPERTY_KINDS as readonly string[]).includes(decl.kind) ? (decl.kind as PropertyKind) : 'text'
     const clean: PropertyDecl = { kind }
     if (typeof decl.target === 'string') clean.target = decl.target
     if (typeof decl.required === 'boolean') clean.required = decl.required

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { builtInPrefixRefusal, isPropertyName } from '@shared/types'
+import { PROPERTY_KINDS, builtInPrefixRefusal, isPropertyName } from '@shared/types'
 import { reservedKeyText } from '../../links/reservedKeys'
 import type { ColumnDecl } from '../folderSettings'
 import { PropertyDefinitionEditor } from './PropertyDefinitionEditor'
@@ -79,7 +79,7 @@ export function AddColumn({ taken, shown, reserved, onSave, onShow, autoOpen = f
   return (
     <div className="view-relation">
       <input className="view-input" aria-label="Column name" placeholder="Name" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
-      <PropertyDefinitionEditor value={definition} onChange={setDefinition} />
+      <PropertyDefinitionEditor value={definition} onChange={setDefinition} kinds={PROPERTY_KINDS} />
       <button type="button" className="view-menu__action" aria-label="Save column" onClick={save}>
         Save
       </button>

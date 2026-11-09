@@ -1,4 +1,5 @@
 import { isNoteId } from '@shared/noteId'
+import { LINK_VALUE_RE as WIKI_LINK, stripBrackets } from '@shared/linkResolver'
 import { parseIsoDate, renderDate, renderDuration } from './dates'
 
 /** Runtime value model for the Bases expression language (GRO-2131). */
@@ -118,13 +119,8 @@ export function isEmpty(v: Value): boolean {
   return typeOf(v) === 'object' && Object.keys(v).length === 0
 }
 
-const WIKI_LINK = /^\[\[([^\]|]+)(?:\|([^\]]*))?\]\]$/
-
-/** `[[x]]` → `x`, otherwise unchanged. */
-export function stripBrackets(s: string): string {
-  const m = WIKI_LINK.exec(s)
-  return m ? m[1] : s
-}
+// One link-value rule with the resolver (`@shared/linkResolver`, YAZ-4740).
+export { stripBrackets }
 
 const normTarget = (t: string) => stripBrackets(t).replace(/\.md$/i, '').replace(/^\/+|\/+$/g, '').toLowerCase()
 const lastSegment = (t: string) => t.slice(t.lastIndexOf('/') + 1)

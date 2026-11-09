@@ -27,6 +27,35 @@ const ALIGN_OPTIONS = [['auto', 'Auto'], ['left', 'Left'], ['center', 'Center'],
 const NUMBER_LABELS: Record<(typeof NUMBER_STYLES)[number], string> = { plain: 'Plain', grouped: '1,234', currency: 'Currency', percent: 'Percent' }
 const DATE_LABELS: Record<(typeof DATE_STYLES)[number], string> = { iso: '2026-11-07', medium: 'Nov 7, 2026', relative: 'Relative (in 3 days)' }
 
+/** A folder link as `from.folder` stores it (YAZ-4739): `[[API]]`, so a rename keeps it on its folder; typed bare, it gets the brackets. */
+const folderLinkOf = (text: string): string => (text.startsWith('[[') ? text : `[[${text}]]`)
+
+/**
+ * The Linked mentions rows (YAZ-4739 L2): "Only from the column" (a field key, for example "Reads / writes") and "Only
+ * from the folder" (`[[API]]`). Either, both or neither; a blank one is no narrowing, and `from` goes when both are blank.
+ */
+function MentionsFromRows({ decl, label, onChange }: { decl: ColumnDecl; label: string; onChange: (next: ColumnDecl) => void }) {
+  const write = (part: 'column' | 'folder', text: string) => {
+    const from = { ...decl.from }
+    if (text === '') delete from[part]
+    else from[part] = part === 'folder' ? folderLinkOf(text) : text
+    const { from: _old, ...rest } = decl
+    onChange(Object.keys(from).length === 0 ? rest : { ...rest, from })
+  }
+  return (
+    <>
+      <div className="column-detail__row">
+        <RowLabel icon="relation">Only from the column</RowLabel>
+        <TextField className="view-input" aria-label={`Only from the column for ${label}`} placeholder="Any column" value={decl.from?.column ?? ''} onCommit={(text) => write('column', text.trim())} />
+      </div>
+      <div className="column-detail__row">
+        <RowLabel icon="subfolders">Only from the folder</RowLabel>
+        <TextField className="view-input" aria-label={`Only from the folder for ${label}`} placeholder="Any folder, or [[Folder]]" value={decl.from?.folder ?? ''} onCommit={(text) => write('folder', text.trim())} />
+      </div>
+    </>
+  )
+}
+
 /**
  * The Format rows (YAZ-4591 S21/S22). Number: the style, the currency (currency style only) and the
  * decimals ("Auto" = the style's own). Date: the style. The default style with no decimals writes no
@@ -399,8 +428,10 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         )}
         {/* A Number or Date column's display format (YAZ-4591 S21/S22): one declaration write per pick. */}
         {(kind === 'number' || kind === 'date') && decl !== undefined && <FormatRows decl={decl} label={label} onChange={(next) => void writeDeclaration(next)} />}
+        {/* A Linked mentions column's narrowing (YAZ-4739 L2): which links count. Blank is every link. */}
+        {kind === 'mentions' && decl !== undefined && <MentionsFromRows decl={decl} label={label} onChange={(next) => void writeDeclaration(next)} />}
         {/* The relation (YAZ-895): a declared link kind's target inline; any other note key can BECOME one from the legacy seed. */}
-        {isNote && (
+        {isNote && kind !== 'mentions' && (
           <div className="column-detail__row">
             <RowLabel icon="relation">Relation</RowLabel>
             {linkKind && decl !== undefined ? (
@@ -440,7 +471,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
           </div>
         )}
         {/* "Separate value on this page" (YAZ-4713 C3): vaults with IDs only — the page's block is named by its id. */}
-        {isNote && folder.separate !== undefined && (
+        {isNote && folder.separate !== undefined && kind !== 'mentions' && (
           <div className="column-detail__row">
             <RowLabel icon="lock">Separate value for {folderName}</RowLabel>
             <input

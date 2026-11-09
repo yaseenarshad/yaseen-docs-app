@@ -10,7 +10,8 @@ import { resolverFor } from '../views/engine'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { pathTitles } from '../lib/pageLabel'
 import { linkResolver } from './folderLinks'
-import { MAX_SNIPPETS, SNIPPET_MAX_CHARS, backlinksFor, mentionSnippets, type MentionSnippet } from './backlinks'
+import { MAX_SNIPPETS, SNIPPET_MAX_CHARS, backlinksFor, mentionSnippets, mentionsMap, type MentionSnippet } from './backlinks'
+import { referenceTargets } from '@shared/mentions'
 
 interface RecInit {
   links?: string[]
@@ -179,6 +180,42 @@ describe('links from FOLDER pages: a folder\'s Page and settings mention what th
       '/vault/Work/.folder.md',
       '/vault/Work/Zed.md',
     ])
+  })
+})
+
+/**
+ * The reverse map (YAZ-4738 L5) replaced a pass over every note for each note asked about. The old pass is kept here
+ * as the oracle: for every page of a mixed vault, the map answers what it answered.
+ */
+describe('the reverse map answers what the per-note pass did (YAZ-4738 L5)', () => {
+  const dirOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')))
+  /** The pass `backlinksFor` ran before the map, verbatim. */
+  const referencing = (path: string, records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink): IndexRecord[] => {
+    const mentions = (target: string): boolean => resolve(target) === path
+    return [
+      ...records.filter((r) => r.path !== path && [...r.links, ...r.embeds].some(mentions)),
+      ...folders.filter((f) => dirOf(f.path) !== path && [...referenceTargets(f)].some(mentions)),
+    ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  }
+
+  it('the same notes and folders, in the same order, for every note and folder of a small vault', () => {
+    const records = [
+      rec('/vault/A.md', { links: ['B', 'b', 'Sub/Deep'], embeds: ['C'] }),
+      rec(B, { links: ['B', 'CAC', 'Team'] }),
+      rec('/vault/C.md', { aliases: ['CAC'], links: ['/vault/B.md'] }),
+      { ...rec('/vault/Sub/Deep.md', { links: ['YAZ-1', 'Elsewhere'] }) },
+      { ...rec('/vault/Team/Lead.md', { embeds: ['Deep'] }), id: 'YAZ-1' },
+    ]
+    const folders = [
+      { ...rec('/vault/Team/.folder.md', { links: ['Team', 'B'] }), properties: { folder_settings: { columns: { owner: { kind: 'link', target: '[[C]]' } } } } },
+      { ...rec('/vault/Sub/.folder.md'), properties: { folder_settings: { views: [{ type: 'page', name: 'Page', order: ['[[Lead]]', 'file.name'] }] } } },
+    ]
+    const resolve = linkResolver(records, '/vault', ['/vault/Sub', '/vault/Team'], folders)
+    const pages = [...records.map((r) => r.path), '/vault/Sub', '/vault/Team']
+    for (const page of pages) expect(backlinksFor(page, records, resolve, folders)).toEqual(referencing(page, records, folders, resolve))
+    // And not by luck: most pages have mentions.
+    expect(pages.filter((page) => backlinksFor(page, records, resolve, folders).length > 0)).toHaveLength(5)
+    expect(mentionsMap(records, folders, resolve)).toBe(mentionsMap(records, folders, resolve)) // one map per resolver
   })
 })
 

@@ -5,6 +5,7 @@ import { DEFAULT_FOLDER_PAGES, MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors,
 import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
+import { isMentionsColumn, mentionsColumns } from './mentionsColumn'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { type ViewSet, type ViewDef, type ParsedViews, hidesSubfolderNotes, parseViews, serializeViews, shownGroupLevels, showsFolderRows, updateViews } from './viewSchema'
@@ -224,8 +225,8 @@ function seedGroupValue(properties: Record<string, unknown>, group: Group, key: 
 }
 
 /** One group into a new note's seed, for the group's LEVEL: grouped by Folder it is where the note is born, else its value (`seedGroupValue`). */
-function seedGroup(seed: NewNoteSeed, group: Group, view: ViewDef, level: number): void {
-  if (!groupsByFolder(view, level)) seedGroupValue(seed.properties, group, groupByKey(view, level))
+function seedGroup(seed: NewNoteSeed, group: Group, view: ViewDef, level: number, columns: Readonly<Record<string, ColumnDecl>>): void {
+  if (!groupsByFolder(view, level)) seedGroupValue(seed.properties, group, groupByKey(view, level, columns))
   else if (typeof group.key === 'string') seed.folder = group.key
 }
 
@@ -508,9 +509,12 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // per key for these records (YAZ-4544): a run that the view's def starts reads no record for it again.
   const settings = folder.settings
   const optionOrder = useMemo(() => optionOrderFor(shown, properties, settings), [shown, properties, settings])
+  // The page's Linked mentions columns (YAZ-4738): off the snapshot's one reverse map, built once per snapshot.
+  const resolveLink = folder.resolveLink
+  const mentions = useMemo(() => mentionsColumns(settings.columns, vaultRecords, vaultFolders, resolveLink), [settings, vaultRecords, vaultFolders, resolveLink])
   const result = useMemo(
-    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder }),
-    [def, view, shown, resolve, page, optionOrder],
+    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, mentions }),
+    [def, view, shown, resolve, page, optionOrder, mentions],
   )
 
   const configuredGroups = boardOptionGroups(result.groups, view, key => columnTyping(key, shown, properties, folder.settings))
@@ -665,8 +669,15 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // the LEVEL the row landed on (YAZ-1101) and may carry each differing ancestor's write — the level's
   // own first, then the ancestors nearest first, all optimistic as ONE unit so any one failing snaps
   // the whole move back (🔒 YAZ-745, YAZ-4531).
+  /** The view's filter seed for a new note (`deriveSeed`), less any Linked mentions column (YAZ-4738): no note holds one. */
+  const viewSeed = (): NewNoteSeed => {
+    const seed = deriveSeed(def, view)
+    for (const key of Object.keys(seed.properties)) if (isMentionsColumn(folder.settings.columns, key)) delete seed.properties[key]
+    return seed
+  }
+
   const onMoveToGroup = (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => {
-    const key = groupByKey(view, drop?.level ?? 0)
+    const key = groupByKey(view, drop?.level ?? 0, folder.settings.columns)
     // A read-only note never moves, not even optimistically: the move writes a property (YAZ-3076 S53).
     if (key === null || readOnly.has(path)) return
     const props = records.find((r) => r.path === path)?.properties
@@ -716,14 +727,14 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // more: a calendar day's "+" seeds its date (YAZ-4540 S10) and opens the note in the mini window (`open`,
   // YAZ-3746 13G), so the calendar stays; every other "+" opens it in this tab.
   const onNewNote = (group: Group | null, name?: string, at?: GroupSpot, values?: Record<string, unknown>, open: (path: string) => void = onOpenFile) => {
-    const seed = deriveSeed(def, view)
+    const seed = viewSeed()
     if (values !== undefined) Object.assign(seed.properties, values)
     if (group !== null) {
       // 🔒 YAZ-745: an INNER "+" seeds every ancestor too (YAZ-4531), so the note lands in the very
       // section clicked. The ancestors go FIRST, outer first (YAZ-2541): under Folder then Folder each
       // level sets `seed.folder`, and the folder clicked is where the note must be born — so it writes last.
-      at?.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level))
-      seedGroup(seed, group, view, at?.level ?? 0)
+      at?.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level, folder.settings.columns))
+      seedGroup(seed, group, view, at?.level ?? 0, folder.settings.columns)
     }
     setCreateError(null)
     folder
@@ -740,15 +751,15 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * It does not open: the table puts its Name cell in title edit. The toast's Undo moves it to the Trash.
    */
   const newRowBelow = (row: Row, group: Group | null, at: GroupSpot | null): Promise<string> => {
-    const seed = deriveSeed(def, view)
+    const seed = viewSeed()
     for (const rule of view.sort ?? []) {
-      const key = writableKey(rule.property)
+      const key = writableKey(rule.property, folder.settings.columns)
       const value = key === null ? undefined : row.record.properties[key]
       if (key !== null && value !== undefined) seed.properties[key] = value
     }
     if (group !== null && at !== null) {
-      at.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level))
-      seedGroup(seed, group, view, at.level)
+      at.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level, folder.settings.columns))
+      seedGroup(seed, group, view, at.level, folder.settings.columns)
     }
     setCreateError(null)
     const bornAt = Date.now()
@@ -810,7 +821,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     const all = showsFolderRows(v) && folderRows.length > 0 ? [...noteRecords, ...folderRows] : noteRecords
     const input = hidesSubfolderNotes(v) ? all.filter((r) => directlyIn(r, pageFolder)) : all
     const declared = pageColumnKeys(settings)
-    const out = runView(def, v, input, { resolve, declared, page, optionOrder })
+    const out = runView(def, v, input, { resolve, declared, page, optionOrder, mentions })
     const grouped = boardOptionGroups(out.groups, v, (key) => columnTyping(key, input, properties, settings))
     const list = shownRows(out.rows, grouped)
     const ctx = { resolve, decls: settings.columns, pageFolder, folderTitle: folderPages.title }

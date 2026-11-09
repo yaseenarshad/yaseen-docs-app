@@ -848,3 +848,46 @@ describe('an internal copy keeps the stored value (YAZ-4636 T9c)', () => {
     expect(writeValues).toHaveBeenCalledExactlyOnceWith(b.path, [{ key: 'link', value: `[[${ID}]]` }])
   })
 })
+
+/**
+ * A Linked mentions column (YAZ-4738 L1, L3): its cells are the titles of the notes that link to the row, as pills —
+ * three, then "+N" — and nothing the table does writes it: no editor, no paste, no clear.
+ */
+describe('a Linked mentions column is read only (YAZ-4738)', () => {
+  const note = (name: string, init: Partial<IndexRecord> = {}): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/${name}.md`, basename: name, name: `${name}.md`, title: name, folder: '', properties: { status: 'idea' }, links: [], embeds: [], ...init })
+  const hub = note('hub')
+  const lonely = note('lonely')
+  const linking = ['a', 'b', 'c', 'd'].map((name) => note(name, { links: ['hub'] }))
+  const records = [...linking, hub, lonely]
+  const settings = { columns: { used_by: { kind: 'mentions' as const } }, views: [], problems: [] }
+  const VIEW = 'views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.used_by\n      - note.status\n    sort:\n      - property: file.name\n        direction: ASC\n'
+
+  it('shows the linking notes as pills, three then "+1"; a note nobody links to is empty', () => {
+    const { el } = mount(VIEW, { records }, { settings, vaultRecords: records })
+    const cellOf = cell(el, rowOf(el, 'hub'), 1)
+    expect([...cellOf.querySelectorAll('.view-table__chip, .view-link-pill')].map((pill) => pill.textContent)).toEqual(['a', 'b', 'c', '+1'])
+    expect(cellOf.querySelector('.view-mentions__more')!.getAttribute('title')).toBe('d')
+    expect(cell(el, rowOf(el, 'lonely'), 1).textContent).toBe('')
+    expect(cellOf.querySelector('[data-editing], input')).toBeNull()
+  })
+
+  it('a paste, Clear cells and Backspace write nothing into it; the status beside it still takes them', async () => {
+    const { el, writeValues } = mount(VIEW, { records }, { settings, vaultRecords: records })
+    const row = rowOf(el, 'hub')
+    clip = '[[lonely]]\tdone'
+    key(cell(el, row, 1), 'v', { metaKey: true })
+    await flush()
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(hub.path, [{ key: 'status', value: 'done' }])
+    writeValues.mockClear()
+    drag(el, [row, 1], [row, 2])
+    rightClick(cell(el, row, 1))
+    act(() => item(el, 'Clear cells').click())
+    await flush()
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(hub.path, [{ key: 'status', value: null }])
+    writeValues.mockClear()
+    drag(el, [row, 1], [row, 1])
+    key(cell(el, row, 1), 'Backspace')
+    await flush()
+    expect(writeValues).not.toHaveBeenCalled()
+  })
+})

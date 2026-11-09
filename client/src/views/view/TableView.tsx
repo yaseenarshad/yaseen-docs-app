@@ -281,7 +281,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const [titleEdit, setTitleEdit] = useState<string | null>(null)
   // Row drag between sections (5C, GRO-2143); disabled without groups. One write key PER level
   // (YAZ-1101): a level that is not a note property takes no drops and shows no "+".
-  const levelKeys = shownGroupLevels(view).map((_, level) => groupByKey(view, level))
+  const levelKeys = shownGroupLevels(view).map((_, level) => groupByKey(view, level, settings.columns))
   const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
   /** The Other files tray's door (YAZ-4597): null unless the folder page's tray takes moves. */
   const moveToTray = useContext(OtherFilesMove)
@@ -364,7 +364,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
-  const bares = useMemo(() => keys.map(writableKey), [keys])
+  const bares = useMemo(() => keys.map((key) => writableKey(key, settings.columns)), [keys, settings])
   const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, properties, settings)), [keys, rowRecords, properties, settings])
   /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
   // The note editor's `[[` rows, notes and folders (YAZ-4601 D49).
@@ -448,7 +448,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         for (const row of g.children === undefined ? g.rows : g.direct ?? []) lines.push({ row, r: flat.push(row) - 1, n: ++n, g, gk, at })
         if (g.children !== undefined) walk(g.children, childSpot(g, at))
         // ...and ends each innermost section, where its header offers the "+" (YAZ-4539).
-        else if (onNewInGroup !== undefined && groupTakesNew(view, at.level)) lines.push({ add: g, gk, at })
+        else if (onNewInGroup !== undefined && groupTakesNew(view, at.level, settings.columns)) lines.push({ add: g, gk, at })
       }
     }
     walk(groups, TOP_SPOT)
@@ -1648,7 +1648,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               rows={line.header.rows}
               collapsed={collapsedSet.has(line.gk)}
               onToggle={() => onToggleGroup(line.gk)}
-              onNew={onNewInGroup === undefined || !groupTakesNew(view, line.at.level) ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
+              onNew={onNewInGroup === undefined || !groupTakesNew(view, line.at.level, settings.columns) ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
               resolve={resolve}
               level={line.at.level}
             />

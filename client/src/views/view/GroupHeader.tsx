@@ -166,8 +166,22 @@ export const rowCell = (row: Row, key: string, resolve?: Resolver): ReactNode =>
   return cellContent(row.values[key], resolve)
 }
 
+/** The pills a Linked mentions cell shows (YAZ-4738 L3); the rest are "+N", their titles in its tooltip. */
+export const MENTIONS_SHOWN = 3
+
 function NoteCell({ value, name, resolve }: { value: Value; name: string; resolve?: Resolver }) {
   const decl = useContext(ColumnDecls)[name]
+  if (decl?.kind === 'mentions' && Array.isArray(value) && value.length > MENTIONS_SHOWN) {
+    const rest = value.slice(MENTIONS_SHOWN)
+    return (
+      <>
+        {value.slice(0, MENTIONS_SHOWN).map((item, i) => chip(item, i, resolve))}
+        <span className="view-table__chip view-mentions__more" title={rest.map((item) => (item instanceof LinkValue ? linkText(item, resolve) : render(item, resolve))).join('\n')}>
+          +{rest.length}
+        </span>
+      </>
+    )
+  }
   return <>{cellContent(value, resolve, decl)}</>
 }
 

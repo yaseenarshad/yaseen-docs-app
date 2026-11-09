@@ -140,6 +140,11 @@ describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
     expect(out).toContain('folder: roles')
   })
 
+  it('rewrites a Linked mentions column\u2019s `from.folder` (YAZ-4739), and leaves its `from.column`, a field name, alone', () => {
+    const content = '---\nfolder_settings:\n  columns:\n    used_by:\n      kind: mentions\n      from:\n        column: B\n        folder: "[[B]]"\n---\n'
+    expect(rewriteNoteLinks(content, resolvesB, toC)).toBe('---\nfolder_settings:\n  columns:\n    used_by:\n      kind: mentions\n      from:\n        column: B\n        folder: "[[C]]"\n---\n')
+  })
+
   it('the spelling rules are the top level\u2019s, not a second set: alias, heading and pathed forms all follow', () => {
     const content =
       '---\nfolder_settings:\n  columns:\n    a:\n      kind: link\n      target: "[[Sub/B|Bee]]"\n  views:\n    - type: outline\n      order:\n        - "[[ B #H]]"\n---\n\nbody\n'

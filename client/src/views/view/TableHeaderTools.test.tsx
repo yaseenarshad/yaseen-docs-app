@@ -199,3 +199,39 @@ describe('the column description (YAZ-4590 S23)', () => {
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('priority', { kind: 'number', description: 'How urgent' }, undefined)
   })
 })
+
+describe('a Linked mentions column\'s Edit column (YAZ-4739 L2)', () => {
+  const editColumn = (el: HTMLElement) => {
+    fire(th(el, 1), 'contextmenu')
+    act(() => [...el.querySelectorAll<HTMLElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === 'Edit column…')!.click())
+    draw()
+  }
+  const commit = (field: HTMLInputElement, value: string) => {
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(field, value)
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => void field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    draw()
+  }
+
+  it('"Only from the column" and "Only from the folder" each write `from` in ONE setColumn; a folder gets its brackets', () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const { el } = mount(table(), { status: { kind: 'mentions' } }, { setColumn })
+    editColumn(el)
+    // No relation and no separate value for a column no note holds.
+    expect(el.querySelector('.column-detail [aria-label="Link target"], .column-detail [aria-label^="Relation for"]')).toBeNull()
+    commit(q<HTMLInputElement>(el, '.column-detail [aria-label="Only from the column for Status"]'), 'Reads / writes')
+    expect(setColumn).toHaveBeenLastCalledWith('status', { kind: 'mentions', from: { column: 'Reads / writes' } }, { kind: 'mentions' })
+    commit(q<HTMLInputElement>(el, '.column-detail [aria-label="Only from the folder for Status"]'), 'API')
+    expect(setColumn).toHaveBeenLastCalledWith('status', { kind: 'mentions', from: { folder: '[[API]]' } }, { kind: 'mentions' })
+  })
+
+  it('a blank field removes its part alone', () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const { el } = mount(table(), { status: { kind: 'mentions', from: { column: 'calls', folder: '[[API]]' } } }, { setColumn })
+    editColumn(el)
+    commit(q<HTMLInputElement>(el, '.column-detail [aria-label="Only from the column for Status"]'), '')
+    expect(setColumn).toHaveBeenLastCalledWith('status', { kind: 'mentions', from: { folder: '[[API]]' } }, { kind: 'mentions', from: { column: 'calls', folder: '[[API]]' } })
+  })
+})

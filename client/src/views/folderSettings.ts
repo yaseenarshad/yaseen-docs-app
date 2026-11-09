@@ -8,7 +8,7 @@
  * settings key at all is the defaults, with zero problems.
  */
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { PROPERTY_KINDS, type IndexRecord, type PropertyDecl, type PropertyKind } from '@shared/types'
+import { PROPERTY_KINDS, type IndexRecord, type MentionsFrom, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { isRecord } from '@shared/guards'
 // The one reserved key this module owns, and where links live inside it (YAZ-864): both are in
@@ -82,7 +82,7 @@ const KINDS = new Set<string>(PROPERTY_KINDS)
 /** A fresh copy per read: the defaults are handed out to be edited and written back. The Table alone where the vault does not use IDs (YAZ-2523 🔒 V11). */
 const defaultViews = (ids: boolean): ViewDef[] => (ids ? DEFAULT_VIEWS : DEFAULT_VIEWS.filter((view) => view.type === 'table')).map((view) => ({ ...view }))
 
-/** Keys → `{ kind, target?, required?, options?, optionSort?, format?, separate? }`. An unknown kind means the column is ABSENT (typing falls to lower rungs). */
+/** Keys → `{ kind, target?, required?, options?, optionSort?, format?, from?, separate? }`. An unknown kind means the column is ABSENT (typing falls to lower rungs). */
 function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDecl> {
   const columns: Record<string, ColumnDecl> = {}
   if (raw === undefined) return columns
@@ -122,6 +122,17 @@ function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDec
     if (value.format !== undefined) {
       const format = readFormat(column.kind, value.format, problems, `${FOLDER_SETTINGS_KEY}.columns.${name}.format`)
       if (format !== undefined) column.format = format
+    }
+    // A Linked mentions column's narrowing (YAZ-4739 L2): `from: { column?, folder? }`, each text; a bad part costs only that part.
+    if (value.from !== undefined) {
+      const from = isRecord(value.from) ? value.from : {}
+      if (!isRecord(value.from)) problems.push(`${FOLDER_SETTINGS_KEY}.columns.${name}.from must be a map — ignoring it`)
+      const narrowed: MentionsFrom = {}
+      for (const part of ['column', 'folder'] as const) {
+        if (typeof from[part] === 'string' && from[part].trim() !== '') narrowed[part] = from[part]
+        else if (from[part] !== undefined) problems.push(`${FOLDER_SETTINGS_KEY}.columns.${name}.from.${part} must be text — ignoring it`)
+      }
+      if (Object.keys(narrowed).length > 0) column.from = narrowed
     }
     // "Separate value on this page" (YAZ-4713 C3): only `true` is the switch; `false` is the default, written by hand.
     if (value.separate === true) column.separate = true
@@ -422,7 +433,7 @@ export function writeFolderColumn(path: string, key: string, next: ColumnDecl, b
     if (currentKnown === desired && nextViews === raw.views) return content
     const declaration = { ...current }
     // Removing a known optional setting is intentional; unknown extension metadata survives.
-    for (const field of ['kind', 'target', 'required', 'options', 'optionSort', 'description', 'format', 'separate']) delete declaration[field]
+    for (const field of ['kind', 'target', 'required', 'options', 'optionSort', 'description', 'format', 'from', 'separate']) delete declaration[field]
     Object.assign(declaration, replacement)
     return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, { ...raw, columns: { ...columns, [key]: declaration }, ...(nextViews === undefined ? {} : { views: nextViews }) })
   })
