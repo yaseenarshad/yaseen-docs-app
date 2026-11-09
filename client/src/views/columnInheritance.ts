@@ -78,6 +78,24 @@ export function folderName(folders: FolderMap, dir: string, vaultName: string): 
   return folders.get(dir)?.title ?? basename(dir)
 }
 
+/**
+ * D36: a read-only folder page's `.folder.md` takes no column write, from its own page or from any other door (a page
+ * below it, the note's properties panel). The refusal's words, or null when `dir`'s page is not read only.
+ */
+export function readOnlyRefusal(folders: FolderMap, dir: string, vaultName: string): string | null {
+  const record = folders.get(dir)
+  return record !== undefined && isReadOnlyProperties(record.properties) ? `${folderName(folders, dir, vaultName)}'s folder page is read only` : null
+}
+
+/**
+ * An inherited definition as its owner stores it: `decl` (the page's copy, which never carries the switch) with the
+ * owner's own "Separate value for <owner>" (C3) back on. An edit from below compares with and writes this, so the
+ * owner keeps its switch.
+ */
+export function withOwnerSwitch(decl: ColumnDecl, stored: ColumnDecl | undefined): ColumnDecl {
+  return stored?.separate === true ? { ...decl, separate: true } : decl
+}
+
 /** Where one column of a page comes from, in the names the UI says (C6, C11). Neither field: this folder's own column. */
 export interface ColumnSource {
   /** A parent folder defines it: that folder's name ("From Schema"). */

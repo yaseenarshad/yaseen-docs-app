@@ -20,7 +20,7 @@ import { pageResolver } from '../links/folderLinks'
 import { absFrom, dirname, relTo } from '../lib/paths'
 import { reservedKeyText as reservedText, reservedKeys } from '../links/reservedKeys'
 import { folderId, foldersById, foldersShowing } from '../links/shortcuts'
-import { byFolder, folderName, pageColumns, selfAndAncestors } from '../views/columnInheritance'
+import { byFolder, folderName, pageColumns, readOnlyRefusal, selfAndAncestors } from '../views/columnInheritance'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
@@ -188,7 +188,7 @@ export function FrontmatterPanel(props: FrontmatterPanelProps) {
 
 function Panel({ file, root, properties: decls = null, wikilinks, readOnly = false, links, inheritColumns = DEFAULT_FOLDER_PAGES.inheritColumns }: FrontmatterPanelProps) {
   /** The definition popover: `file` is the `.folder.md` whose column it edits (a column's owner, or a separate column's page); none = the vault's `properties.json`. */
-  const [propertyMenu, setPropertyMenu] = useState<{ key: string; home: Home | null; file: string | undefined; scope: string; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; editing: boolean } | null>(null)
+  const [propertyMenu, setPropertyMenu] = useState<{ key: string; home: Home | null; file: string | undefined; dir: string | undefined; scope: string; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; editing: boolean } | null>(null)
   // The panel follows the folder settings FILES (YAZ-2196): every index refetch hands over a new
   // array, and one that moved no `.folder.md` — a save anywhere in the vault — re-renders nothing here.
   // It follows the vault's answer on IDs with them (YAZ-2523 🔒 V5), which moves no file.
@@ -442,8 +442,17 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
 
   /** The type a name already has here: its page's column, else the vault's declaration (the ladder's top rungs). */
   const assignedKind = (name: string): NotePropertyKind | null => columnTyping(name, NO_RECORDS, decls, typing)?.assigned ?? null
-  /** The `.folder.md` a row's definition is saved in: a separate value's page, else the folder that defines the column (C2). */
-  const definitionFile = (row: Row): string | undefined => (row.home !== null ? folderSettingsPath(absOf(row.home.dir)) : row.owner === undefined ? undefined : folderSettingsPath(absOf(row.owner)))
+  /** The folder whose `.folder.md` holds a row's definition: a separate value's page, else the folder that defines the column (C2). */
+  const definitionDir = (row: Row): string | undefined => (row.home !== null ? row.home.dir : row.owner)
+  const definitionFile = (row: Row): string | undefined => {
+    const dir = definitionDir(row)
+    return dir === undefined ? undefined : folderSettingsPath(absOf(dir))
+  }
+  /** D36: a read-only folder page's `.folder.md` takes no column from this panel either, with the folder page's words. */
+  const refuseReadOnly = (dir: string): void => {
+    const refusal = readOnlyRefusal(folderMap, dir, typeof root === 'string' ? storage.vaultName(root) : '')
+    if (refusal !== null) throw new Error(refusal)
+  }
   /** A type can be saved for a column (its folder's `.folder.md`) or, with a vault root, for a note field (`properties.json`). */
   const typeable = (row: Row): boolean => definitionFile(row) !== undefined || (typeof root === 'string' && root !== '')
   /**
@@ -477,7 +486,10 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     const declare = async (): Promise<void> => {
       if (on !== null) {
         const base = folderSettings(folderMap.get(on), ids).columns[name]
-        if (base?.kind !== kind) await writeFolderColumn(folderSettingsPath(absOf(on)), name, declarationForKind(base ?? typing.columns[name], kind), base, ids)
+        if (base?.kind !== kind) {
+          refuseReadOnly(on)
+          await writeFolderColumn(folderSettingsPath(absOf(on)), name, declarationForKind(base ?? typing.columns[name], kind), base, ids)
+        }
       } else if (kind !== (assigned ?? 'text') && typeof root === 'string' && root !== '') await vaultProperties.setProperty(root, name, declarationForKind(decls?.properties[name], kind))
     }
     setSaving(true)
@@ -492,7 +504,8 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     if (!propertyMenu) return
     setSaving(true)
     try {
-      const { key, definition, base, file: settingsFile } = propertyMenu
+      const { key, definition, base, file: settingsFile, dir } = propertyMenu
+      if (dir !== undefined) refuseReadOnly(dir)
       // A column's definition is its folder's; a note field with no column has a vault-wide type (YAZ-4551 D21): `.yaseendocs/properties.json`.
       if (settingsFile !== undefined) await writeFolderColumn(settingsFile, key, definition, base, ids)
       else await vaultProperties.setProperty(root as string, key, definition)
@@ -511,10 +524,12 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   const menuFor = (row: Row, anchor: HTMLElement, editing: boolean) => {
     const column = columnOf(row)
     const settingsFile = definitionFile(row)
+    const dir = definitionDir(row)
     const scope = row.home !== null ? `In ${row.home.name}` : row.owner !== undefined ? `In ${nameOf(row.owner)}` : 'In every note of this vault'
-    // A column a parent defines is edited on its owner (C6): the base is that definition.
+    // A column a parent defines is edited on its owner (C6): the base and the definition are that folder's own, so the
+    // owner's "Separate value" switch (C3), which the page's copy never carries, stays.
     const base = row.home !== null ? column : row.owner === undefined ? undefined : folderSettings(folderMap.get(row.owner), ids).columns[row.key]
-    return { key: row.key, home: row.home, file: settingsFile, scope, anchor, base, definition: column ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing }
+    return { key: row.key, home: row.home, file: settingsFile, dir, scope, anchor, base, definition: base ?? column ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing }
   }
 
   const rowItem = (row: Row) => {

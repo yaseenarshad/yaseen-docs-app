@@ -1740,6 +1740,51 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(disk.get(`${ORDERS}/.folder.md`)).toContain('Orders only')
       expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n') // the note's one value never moved
     })
+
+    // CHECKER (YAZ-4713 round 1): bugs found by the checker. Each test fails at 0f4b998b8.
+    it('CHECKER B1: Schema keeps its own value of Domain (separate on Schema); an edit of Domain from Orders still reaches Schema and keeps the switch', async () => {
+      const separateSchema = schemaFile.replace('      options: [Billing, Payments]\n', '      options: [Billing, Payments]\n      separate: true\n')
+      disk.set(`${SCHEMA}/.folder.md`, separateSchema)
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      expect(captured.folder!.sources.of('domain').from).toBeDefined() // Orders shows Schema's Domain, shared
+      const base = captured.folder!.settings.columns.domain // as Edit column hands it: the page's definition
+      const next = { ...base, options: ['Billing', 'Payments', 'Refunds'] }
+      let error: unknown = null
+      await act(async () => {
+        await captured.folder!.setColumn('domain', next, base).catch((err: unknown) => void (error = err))
+      })
+      expect(error).toBeNull()
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('Refunds')
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('separate: true')
+    })
+
+    it('CHECKER B2: "Separate value for Orders" on, then off, on Schema’s Domain gives Orders Schema’s column back (no hidden copy on Orders)', async () => {
+      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+      write.mockImplementation(real.writeProperty) // the settings door writes the disk too: Off removes Orders' declaration
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      const shown = captured.folder!.settings.columns.domain
+      await act(async () => captured.folder!.separate!.set('domain', shown, true, 'notes'))
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      expect(captured.folder!.settings.columns.domain.separate).toBe(true)
+      await act(async () => captured.folder!.separate!.set('domain', captured.folder!.settings.columns.domain, false, 'notes'))
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      // Expected: Domain is Schema's again, so a later edit on Schema reaches Orders.
+      expect(captured.folder!.sources.of('domain')).toEqual({ from: expect.any(String) })
+    })
+
+    it('1B: Orders’ own Domain ("Changed on Orders only") stays Orders’ own after "Separate value for Orders" goes on, then off', async () => {
+      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+      write.mockImplementation(real.writeProperty)
+      disk.set(`${ORDERS}/.folder.md`, '---\nfolder_settings:\n  columns:\n    domain:\n      kind: select\n      options: [Orders only]\n  views:\n    - type: table\n      name: Orders\n---\n')
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      expect(captured.folder!.sources.of('domain')).toEqual({ over: 'schema' })
+      await act(async () => captured.folder!.separate!.set('domain', captured.folder!.settings.columns.domain, true, 'notes'))
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      await act(async () => captured.folder!.separate!.set('domain', captured.folder!.settings.columns.domain, false, 'notes'))
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      expect(captured.folder!.sources.of('domain')).toEqual({ over: 'schema' })
+      expect(captured.folder!.settings.columns.domain).toEqual({ kind: 'select', options: ['Orders only'] })
+    })
   })
 
   it('C2: the nearest declaration of a key wins, and the folder ⚙ "Show parent folders’ columns" Off shows the folder’s own alone', async () => {

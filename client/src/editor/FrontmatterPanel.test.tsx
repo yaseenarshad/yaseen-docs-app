@@ -15,6 +15,7 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { TEST_RECORDS } from '../views/testRecords'
 import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { settleFileWrites } from '../views/writeProperty'
+import type { ColumnDecl } from '../views/folderSettings'
 
 vi.mock('../api', async (importOriginal) => {
   const { propertiesStub } = await import('../views/propertiesStub')
@@ -951,6 +952,44 @@ describe('FrontmatterPanel — "Column on" and the columns of the note’s page 
     const el = mountAt(NOTE, 'Body\n')
     await add(el, 'reviewer', 'no-column')
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOTE, content: '---\nreviewer: ""\n---\nBody\n', expectedMtime: 100 })
+  })
+
+  // CHECKER (YAZ-4713 round 1): fails at 0f4b998b8.
+  it('CHECKER B3: "Column on A" when A’s folder page is read only (D36): A’s `.folder.md` is not written', async () => {
+    const a = folderMd('/vault/A', { columns: A_COLUMNS, id: A_ID })
+    const locked = { ...a, properties: { ...a.properties, readonly: true } }
+    const A_FILE = '---\nreadonly: true\nfolder_settings:\n  columns:\n    effort:\n      kind: text\n    priority:\n      kind: text\n---\n'
+    const el = mountAt(NOTE, 'Body\n', feedOf(locked, folderMd('/vault/A/B', { columns: B_COLUMNS, id: B_ID }), folderMd('/vault/A/B/C')))
+    readFile.mockImplementation(async (p: string) => ({ path: p, content: p === NOTE ? 'Body\n' : p === '/vault/A/.folder.md' ? A_FILE : '', mtime: 100, size: 1 }))
+    await add(el, 'reviewer', '/A')
+    expect(writeFile.mock.calls.map((c) => c[0].path)).not.toContain('/vault/A/.folder.md')
+    expect(el.querySelector('[role="alert"]')?.textContent).toBe('Could not add "reviewer": A\'s folder page is read only')
+  })
+
+  it('"Edit property" › Save on a field that read-only A defines (D36): A’s `.folder.md` is not written, and the folder page’s words say why', async () => {
+    const a = folderMd('/vault/A', { columns: A_COLUMNS, id: A_ID })
+    const locked = { ...a, properties: { ...a.properties, readonly: true } }
+    const el = mountAt(NOTE, '---\npriority: P1\n---\nBody\n', feedOf(locked, folderMd('/vault/A/B', { columns: B_COLUMNS, id: B_ID }), folderMd('/vault/A/B/C')))
+    click(byLabel(el, 'Configure priority'))
+    click(buttonNamed(el, 'Edit property ›'))
+    click(buttonNamed(document.querySelector('.frontmatter-property-menu__actions')!, 'Save'))
+    await flush()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(document.querySelector('.frontmatter-property-menu [role="alert"]')?.textContent).toBe("Could not save the property: A's folder page is read only")
+  })
+
+  it('"Edit property" › Save on a field A defines with "Separate value for A" on: A keeps its switch (C3)', async () => {
+    const A_SEPARATE: Record<string, ColumnDecl> = { ...A_COLUMNS, priority: { kind: 'text', separate: true } }
+    const A_FILE = '---\nfolder_settings:\n  columns:\n    effort:\n      kind: text\n    priority:\n      kind: text\n      separate: true\n---\n'
+    const el = mountAt(NOTE, '---\npriority: P1\n---\nBody\n', feedOf(folderMd('/vault/A', { columns: A_SEPARATE, id: A_ID }), folderMd('/vault/A/B', { columns: B_COLUMNS, id: B_ID }), folderMd('/vault/A/B/C')))
+    readFile.mockImplementation(async (p: string) => ({ path: p, content: p === '/vault/A/.folder.md' ? A_FILE : '---\npriority: P1\n---\nBody\n', mtime: 100, size: 1 }))
+    click(byLabel(el, 'Configure priority'))
+    click(buttonNamed(el, 'Edit property ›'))
+    click(byLabel(el, 'Property type: Text'))
+    click(buttonNamed(el, 'Number'))
+    click(buttonNamed(document.querySelector('.frontmatter-property-menu__actions')!, 'Save'))
+    await flush()
+    expect(saved('/vault/A/.folder.md')).toMatchObject({ priority: { kind: 'number', separate: true } })
   })
 
   it('"Edit property" on a field a parent folder defines saves that folder’s column: "In A"', async () => {

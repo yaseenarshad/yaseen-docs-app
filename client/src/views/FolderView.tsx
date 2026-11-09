@@ -65,7 +65,7 @@ import { createNote } from './scaffold'
 import { propertyLabel } from './engine'
 import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
 import { writeProperties, writeProperty, writeRouted } from './writeProperty'
-import { byFolder, folderName, foldersTaking, pageColumns, takesFrom, type ColumnSources } from './columnInheritance'
+import { byFolder, folderName, foldersTaking, pageColumns, readOnlyRefusal, takesFrom, withOwnerSwitch, type ColumnSources } from './columnInheritance'
 import { mergeSeparateValues, restoreSeparateValues, separateCounts, separateHolders, type SeparateKeep } from './separateValues'
 import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { ViewFolder } from './view/GroupHeader'
@@ -409,7 +409,8 @@ export function FolderView({
       const { owner, decl, mtime } = aheadParents[key]
       const record = folderMap.get(owner)
       const onDisk = record === undefined ? undefined : folderSettings(record, ids).columns[key]
-      return (onDisk !== undefined && declStamp(onDisk) === declStamp(decl)) || (mtime !== undefined && record?.mtime !== undefined && record.mtime >= mtime)
+      // The page's copy never carries the owner's "Separate value" switch (C3), so the echo is compared without it.
+      return (onDisk !== undefined && declStamp({ ...onDisk, separate: undefined }) === declStamp(decl)) || (mtime !== undefined && record?.mtime !== undefined && record.mtime >= mtime)
     })
     if (gone.length > 0) setAheadParents(Object.fromEntries(Object.entries(aheadParents).filter(([key]) => !gone.includes(key))))
   }, [aheadParents, folderMap, ids])
@@ -716,13 +717,17 @@ export function FolderView({
       throw err
     })
   }
-  /** C6: the owner's file, ahead first (`aheadParents`). A read-only owner page refuses it, as its own page would (D36). */
+  /**
+   * C6: the owner's file, ahead first (`aheadParents`). A read-only owner page refuses it, as its own page would (D36).
+   * `next` and `base` are the page's copies; the owner's own "Separate value" switch (C3) rides back on both.
+   */
   const writeOwnerDeclaration = (owner: string, key: string, next: ColumnDecl, base: ColumnDecl | undefined, filters: ((views: unknown) => unknown) | undefined): Promise<{ mtime: number }> => {
-    const record = folderMap.get(owner)
-    if (record !== undefined && isReadOnlyProperties(record.properties)) return Promise.reject(new Error(`${nameOf(owner)}'s folder page is read only`))
+    const refusal = readOnlyRefusal(folderMap, owner, vaultName)
+    if (refusal !== null) return Promise.reject(new Error(refusal))
+    const stored = folderSettings(folderMap.get(owner), ids).columns[key]
     const before = aheadParents[key]
     setAheadParents((now) => ({ ...now, [key]: { owner, decl: next } }))
-    const write = track(writeFolderColumn(folderSettingsPath(absFrom(root, owner)), key, next, base, ids, filters))
+    const write = track(writeFolderColumn(folderSettingsPath(absFrom(root, owner)), key, withOwnerSwitch(next, stored), base === undefined ? undefined : withOwnerSwitch(base, stored), ids, filters))
     write.then(
       ({ mtime }) => setAheadParents((now) => (now[key]?.decl === next ? { ...now, [key]: { ...now[key], mtime } } : now)),
       () =>
@@ -788,7 +793,8 @@ export function FolderView({
    * reads its block of `in`, which is empty for a new column, and shows at once any value an earlier separate column
    * left there (7A 19). Off: the declaration loses it first; then each note's page value moves into its own field and leaves the block
    * (`separateValues.ts`; `keep` says whose value stays where they differ), and the toast's Undo puts the declaration
-   * and every changed note back.
+   * and every changed note back. When the declaration, less the switch, is the parent's definition, Off removes it: the
+   * page takes the parent's column again (C6), with no copy here that a later edit on the parent would miss.
    */
   const setSeparate = async (key: string, decl: ColumnDecl, on: boolean, keep: SeparateKeep): Promise<void> => {
     const { separate: _was, ...shared } = decl
@@ -797,14 +803,22 @@ export function FolderView({
       await writeDeclaration(key, { ...shared, separate: true }, base, undefined, true)
       return
     }
-    await writeDeclaration(key, shared, base, undefined, true)
+    const parent = columns[key]?.over
+    const parentDecl = parent === undefined ? undefined : folderSettings(folderMap.get(parent), ids).columns[key]
+
+    const toParent = parentDecl !== undefined && declStamp({ ...parentDecl, separate: undefined }) === declStamp(shared)
+    if (toParent) {
+      const { [key]: _gone, ...rest } = liveSettings.columns
+      await commitSettings(rest, parsed.def.views, parsed.def.properties)
+    } else await writeDeclaration(key, shared, base, undefined, true)
+    const after = toParent ? undefined : shared
     if (id === undefined) return // a page with no id holds no values of its own
     const pageId = id
     const holders = separateHolders([...feed.records, ...feed.folders], pageId, key).filter((r) => !locked.has(r.path))
     const { changed, failed } = await track(mergeSeparateValues(holders.map((r) => r.path), pageId, key, keep))
     if (failed > 0) setColumnError(`Could not move the ${nameOf(folder)} value of "${propertyLabel(parsed.def, `note.${key}`)}" into ${failed} ${failed === 1 ? 'note' : 'notes'}`)
     const undo = () =>
-      void latestDeclaration.current(key, { ...shared, separate: true }, shared, undefined, true).then(
+      void latestDeclaration.current(key, { ...shared, separate: true }, after, undefined, true).then(
         () => track(restoreSeparateValues(changed, pageId, key)),
         (err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error'),
       )
