@@ -662,6 +662,22 @@ describe('column resize', () => {
     mouse(window, 'mouseup', 130)
     expect(active()).toEqual([false, false, false, false, false, false])
   })
+
+  it('YAZ-3746 13W: while an edge is held the wrap keeps its scroll width as a runner, and lets it go on release', () => {
+    const { el } = mount(TYPED_BASE)
+    const wrap = q<HTMLElement>(el, '.view-table-wrap')
+    // jsdom lays nothing out: the scroll width is what the table measured at the press.
+    Object.defineProperty(wrap, 'scrollWidth', { value: 1390, configurable: true })
+    expect(wrap.hasAttribute('data-resizing')).toBe(false)
+    expect(wrap.style.getPropertyValue('--view-table-slack')).toBe('')
+    mouse(el.querySelectorAll('.view-table__resize')[1], 'mousedown', 100)
+    mouse(window, 'mousemove', 40)
+    expect(wrap.hasAttribute('data-resizing')).toBe(true)
+    expect(wrap.style.getPropertyValue('--view-table-slack')).toBe('1390px')
+    mouse(window, 'mouseup', 40)
+    expect(wrap.hasAttribute('data-resizing')).toBe(false)
+    expect(wrap.style.getPropertyValue('--view-table-slack')).toBe('')
+  })
 })
 
 describe('vertical header pinning', () => {

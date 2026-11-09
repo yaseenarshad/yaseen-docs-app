@@ -14,6 +14,66 @@ import type { Group, Row } from '../engine'
 import { type CellTextContext, cellText } from '../exportView'
 import { TOP_SPOT, type GroupSpot, childSpot, spotKey } from './groupDrag'
 import { canonicalKey } from './keys'
+import { cssZoom } from '../../lib/cssZoom'
+
+/** The nearest ancestor that scrolls on this axis, or null. */
+function scrollParent(el: HTMLElement, axis: 'x' | 'y'): HTMLElement | null {
+  for (let p = el.parentElement; p !== null; p = p.parentElement) {
+    const style = getComputedStyle(p)
+    const overflow = axis === 'y' ? style.overflowY : style.overflowX
+    if (/(auto|scroll)/.test(overflow) && (axis === 'y' ? p.scrollHeight > p.clientHeight : p.scrollWidth > p.clientWidth)) return p
+  }
+  return null
+}
+
+/** The gap kept between a shown match and what covers it (px on screen). */
+const SHOW_GAP = 6
+
+/**
+ * Shows a match WHOLE with the least scroll, and none when it shows already (YAZ-3746 13BA): `scrollIntoView` counted
+ * the table's sticky header, frozen rows and totals as room, so a match scrolled in from below could stop under the
+ * header. The room here is the scroller's box less the table's sticky parts: below the header and the frozen rows
+ * (and the find bar, where it floats over the match), above the totals row, and right of the frozen columns.
+ */
+export function showWhole(el: HTMLElement): void {
+  const r = el.getBoundingClientRect()
+  const table = el.closest('table')
+  const y = scrollParent(el, 'y')
+  if (y !== null) {
+    const box = y.getBoundingClientRect()
+    let top = box.top
+    let bottom = box.bottom
+    if (table !== null && el.closest('tbody') !== null) {
+      const head = table.tHead?.getBoundingClientRect()
+      if (head !== undefined && head.height > 0) top = Math.max(top, head.bottom)
+      for (const row of table.querySelectorAll<HTMLElement>('tbody tr.view-table__row--frozen')) if (!row.contains(el)) top = Math.max(top, row.getBoundingClientRect().bottom)
+      const foot = table.tFoot?.getBoundingClientRect()
+      if (foot !== undefined && foot.height > 0 && foot.top > top) bottom = Math.min(bottom, foot.top)
+    }
+    // The find bar itself floats over the page's top right: a match under it is covered too.
+    for (const bar of document.querySelectorAll<HTMLElement>('.find-bar')) {
+      const b = bar.getBoundingClientRect()
+      if (b.height > 0 && b.left < r.right && b.right > r.left && b.top < box.top + box.height / 2) top = Math.max(top, b.bottom)
+    }
+    const zoom = cssZoom(y)
+    if (r.top < top + SHOW_GAP) y.scrollTop -= (top + SHOW_GAP - r.top) / zoom
+    else if (r.bottom > bottom - SHOW_GAP) y.scrollTop += Math.min(r.bottom - bottom + SHOW_GAP, r.top - top - SHOW_GAP) / zoom
+  }
+  const x = scrollParent(el, 'x')
+  if (x !== null && !el.classList.contains('view-table__frozen')) {
+    const box = x.getBoundingClientRect()
+    let left = box.left
+    const right = box.right
+    if (table !== null) {
+      const stuck = el.closest('tr')?.querySelectorAll<HTMLElement>('.view-table__frozen, .view-table__gutter')
+      for (const cell of stuck ?? []) left = Math.max(left, cell.getBoundingClientRect().right)
+    }
+    const zoom = cssZoom(x)
+    const at = el.getBoundingClientRect()
+    if (at.left < left + SHOW_GAP) x.scrollLeft -= (left + SHOW_GAP - at.left) / zoom
+    else if (at.right > right - SHOW_GAP) x.scrollLeft += Math.min(at.right - right + SHOW_GAP, at.left - left - SHOW_GAP) / zoom
+  }
+}
 
 /** The pause after a keystroke before the rows are searched (D64: about 120 ms). */
 export const FIND_DEBOUNCE_MS = 120
@@ -157,9 +217,10 @@ export function createViewFinder({ channel, pane, source, link, collapsed, expan
     const closed = m.groups.filter((k) => shut.has(k))
     if (closed.length > 0) return expand(closed)
     const el = elementOf(m)
-    if (el === null) return kind === 'table' ? link.scrollTo?.(m.path) : undefined
+    // A table's line or a board's card not drawn yet (YAZ-3746 13AX): the view draws it, and `onMutate` finishes the jump.
+    if (el === null) return link.scrollTo?.(m.path)
     pending = false
-    el.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    showWhole(el)
   }
 
   /** A mount (a scroll, an opened group, a calendar page) marks the new items and finishes a pending jump. */

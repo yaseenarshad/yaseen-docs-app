@@ -37,7 +37,7 @@ export function groupOnly(v: ViewDef, key: string): void {
   setLevels(v, [own === undefined ? fresh : { ...own, property: c }])
 }
 
-/** "Add as next group level" (YAZ-4588 D42): appends this column; nothing at three levels, or on a repeat other than Folder. */
+/** "Add as next group level" (YAZ-4588 D42): appends this column; nothing at `MAX_GROUP_LEVELS` (five), or on a repeat other than Folder. */
 export function groupAppend(v: ViewDef, key: string): void {
   const c = canonicalKey(key)
   const levels = groupLevels(v)
@@ -48,4 +48,13 @@ export function groupAppend(v: ViewDef, key: string): void {
 /** "Remove this group level" (YAZ-4588 D42): level `index` goes, and the levels below move up. */
 export function groupRemoveLevel(v: ViewDef, index: number): void {
   setLevels(v, groupLevels(v).filter((_, i) => i !== index))
+}
+
+/** "Move up a level" / "Move down a level" (YAZ-3746 13V): level `index` swaps with its neighbour `by` (−1 outer, +1 inner); each keeps its fields. */
+export function groupMoveLevel(v: ViewDef, index: number, by: -1 | 1): void {
+  const levels = groupLevels(v)
+  const to = index + by
+  if (index < 0 || to < 0 || to >= levels.length) return
+  ;[levels[index], levels[to]] = [levels[to], levels[index]]
+  setLevels(v, levels)
 }

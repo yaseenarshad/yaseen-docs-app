@@ -1,4 +1,7 @@
-import { useContext, type ReactNode } from 'react'
+import { Fragment, useContext, type ReactNode } from 'react'
+import { FlyoutParent, MenuFlyout, useFlyout } from '../../components/Flyout'
+import { PageActions } from '../../lib/pageActions'
+import { CopyIcon, EyeIcon, HeartIcon } from './icons'
 import { api, BridgeRequestError } from '../../api'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { rowPage } from '../../links/shortcuts'
@@ -31,28 +34,21 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
   // "Move to Other files" (YAZ-4597 D46): its own group, after the surface's groups and before the destructive one (C8),
   // on a note row of a folder page whose tray takes moves.
   const moveToTray = useContext(OtherFilesMove)
-  const tail: ReactNode[] = [
-    ...(moveToTray === null || !movesToOtherFiles(path)
-      ? []
-      : [
-          <button
-            key="other-files"
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onClose()
-              moveToTray(path)
-            }}
-          >
-            Move to Other files
-          </button>,
-        ]),
-    ...(danger === undefined || danger === null ? [] : [danger]),
-  ]
-  const groups = extra === undefined && tail.length === 0 ? undefined : [...(extra ?? []), ...tail]
-  const reveal = (): void => {
+  const doors = useContext(PageActions)
+  const lists = doors?.listState?.(page) ?? null
+  const flyout = useFlyout<string>()
+  const run = (action: () => void) => () => {
     onClose()
+    action()
+  }
+  /** A main-menu row closes an open flyout as the pointer rests on it; a row INSIDE a flyout must not (YAZ-3746 13BB). */
+  const item = (label: ReactNode, action: () => void, hint?: string, inFlyout = false) => (
+    <button type="button" className="ctx-menu__item" role="menuitem" data-hint={hint} onMouseEnter={inFlyout ? undefined : () => flyout.hover(null)} onClick={run(action)}>
+      {label}
+    </button>
+  )
+  const reveal = (): void => {
+    if (doors?.reveal !== undefined) return doors.reveal(page)
     api.shell.reveal({ path: page }).catch((error: unknown) => {
       onNotice?.(
         error instanceof BridgeRequestError && error.code === 'NOT_FOUND'
@@ -61,99 +57,68 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
       )
     })
   }
+  const copyPath = (): void =>
+    void navigator.clipboard.writeText(page).catch((error: unknown) => {
+      onNotice?.(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`)
+    })
 
+  // YAZ-3746 13AW, after the sidebar's and the tab's menus: the ways to open first, the rarer ones folded into
+  // "Open in ›" (the sidebar's verbs: right panel, new window, VS Code, the default app | Reveal in Finder).
+  // Three sections (YAZ-3746 13AZ): in this app (right panel, new window) | in another app (VS Code, the default app) |
+  // Reveal in Finder.
+  const inApp: ReactNode[] = [
+    ...(onOpenRight === undefined ? [] : [item('Right panel', () => onOpenRight(path), undefined, true)]),
+    ...(doors?.openNewWindow === undefined ? [] : [item('New window', () => doors.openNewWindow!(page), undefined, true)]),
+  ]
+  const otherApps: ReactNode[] = [
+    ...(doors?.openVsCode === undefined ? [] : [item('VS Code', () => doors.openVsCode!(page), undefined, true)]),
+    ...(doors?.openDefault === undefined ? [] : [item('Default app', () => doors.openDefault!(page), undefined, true)]),
+  ]
   const actions = (
     <>
-      {onOpen !== undefined && (
-        <button
-          type="button"
-          className="ctx-menu__item"
-          role="menuitem"
-          onClick={() => {
-            onOpen(path)
-            onClose()
-          }}
-        >
-          Open
-        </button>
-      )}
-      {onOpenBackground !== undefined && (
-        <button
-          type="button"
-          className="ctx-menu__item"
-          role="menuitem"
-          onClick={() => {
-            onOpenBackground(path)
-            onClose()
-          }}
-        >
-          Open in new tab
-        </button>
-      )}
-      <button
-        type="button"
-        className="ctx-menu__item"
-        role="menuitem"
-        onClick={() => {
-          void navigator.clipboard.writeText(page).catch((error: unknown) => {
-            onNotice?.(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`)
-          })
-          onClose()
-        }}
-      >
-        Copy path
-      </button>
-      <button type="button" className="ctx-menu__item" role="menuitem" onClick={reveal}>
-        Reveal in Finder
-      </button>
-      {/* Last on purpose (YAZ-1556): the pane-specific open sits below the page actions every surface shares. */}
-      {onOpenRight !== undefined && (
-        <button
-          type="button"
-          className="ctx-menu__item"
-          role="menuitem"
-          onClick={() => {
-            onOpenRight(path)
-            onClose()
-          }}
-        >
-          Open in right panel
-        </button>
-      )}
-      {onOpenWindow !== undefined && (
-        <button
-          type="button"
-          className="ctx-menu__item"
-          role="menuitem"
-          data-hint="⇧↩"
-          onClick={() => {
-            onOpenWindow(path)
-            onClose()
-          }}
-        >
-          Open in mini window
-        </button>
-      )}
+      {onOpen !== undefined && item('Open', () => onOpen(path))}
+      {onOpenBackground !== undefined && item('Open in new tab', () => onOpenBackground(path))}
+      {onOpenWindow !== undefined && item('Open in mini window', () => onOpenWindow(path), '⇧↩')}
+      <FlyoutParent label="Open in" open={flyout.open === 'open-in'} onHover={() => flyout.hover('open-in')} onOpen={() => flyout.openNow('open-in')} onCloseFlyout={() => flyout.openNow(null)}>
+        {[inApp, otherApps]
+          .filter((section) => section.length > 0)
+          .map((section, i) => (
+            <div key={i} className="ctx-menu__group" role="group">
+              {section}
+            </div>
+          ))}
+        <div className="ctx-menu__group" role="group">
+          {item('Reveal in Finder', reveal, undefined, true)}
+        </div>
+      </FlyoutParent>
     </>
   )
+  // The page itself (13AW, as the tab menu has them): Favorites, Focus, Copy path, then Move to Other files.
+  const pageGroup: ReactNode[] = [
+    ...(lists === null || doors?.toggleFavorite === undefined
+      ? []
+      : [item(<span className="ctx-menu__label"><HeartIcon />{lists.favorite ? 'Remove from favorites' : 'Add to favorites'}</span>, () => doors.toggleFavorite!([page], lists.favorite))]),
+    ...(lists === null || doors?.toggleFocus === undefined
+      ? []
+      : [item(<span className="ctx-menu__label"><EyeIcon />{lists.focus ? 'Remove from focus' : 'Add to focus'}</span>, () => doors.toggleFocus!([page], lists.focus))]),
+    item(<span className="ctx-menu__label"><CopyIcon />Copy path</span>, copyPath),
+    ...(moveToTray === null || !movesToOtherFiles(path) ? [] : [item('Move to Other files', () => moveToTray(path))]),
+  ]
+  const groups = [...(extra ?? []), <Fragment key="page">{pageGroup}</Fragment>, ...(danger === undefined || danger === null ? [] : [danger])]
 
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>
-      {groups === undefined ? (
-        actions
-      ) : (
-        // The groups' line between them is `.ctx-menu__group + .ctx-menu__group` (app.css).
-        <>
-          <div className="ctx-menu__group" role="group">
-            {actions}
+      <MenuFlyout.Provider value={flyout}>
+        {/* The groups' line between them is `.ctx-menu__group + .ctx-menu__group` (app.css). */}
+        <div className="ctx-menu__group" role="group">
+          {actions}
+        </div>
+        {groups.map((group, i) => (
+          <div key={i} className="ctx-menu__group" role="group">
+            {group}
           </div>
-          {groups.map((group, i) => (
-            <div key={i} className="ctx-menu__group" role="group">
-              {group}
-            </div>
-          ))}
-        </>
-      )}
+        ))}
+      </MenuFlyout.Provider>
     </ContextMenuSurface>
   )
 }

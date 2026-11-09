@@ -1,6 +1,7 @@
 import { FOLDER_PAGE_CHOICES, type FolderPagesSettings } from '@shared/types'
 import type { Mutate, ViewDef } from '../viewSchema'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
+import { ChoiceSeg, RowLabel } from './settingRow'
 
 /** A view's Text in cells (YAZ-4544 10A, D34): its own choice, else Settings › Folder pages. A column's own Wrap or Clip beats both (D29). */
 export function textInCellsOf(view: ViewDef, defaults: FolderPagesSettings): FolderPagesSettings['textInCells'] {
@@ -21,25 +22,21 @@ export function TableLookSettings({ view, own, viewIndex, onUpdate }: { view: Vi
   const rowHeight = (FOLDER_PAGE_CHOICES.rowHeight as readonly string[]).includes(view.rowHeight ?? '') ? (view.rowHeight as FolderPagesSettings['rowHeight']) : 'short'
   return (
     <>
-      <label className="view-settings-row">
-        <span>Row height</span>
-        <select className="view-select" aria-label="Row height" value={rowHeight} onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'rowHeight', e.target.value, defaults))}>
-          {FOLDER_PAGE_CHOICES.rowHeight.map((h) => <option key={h} value={h}>{ROW_HEIGHT_LABELS[h]}</option>)}
-        </select>
+      <div className="view-settings-row">
+        <RowLabel icon="rowHeight">Row height</RowLabel>
+        <ChoiceSeg label="Row height" value={rowHeight} options={FOLDER_PAGE_CHOICES.rowHeight.map((h) => [h, ROW_HEIGHT_LABELS[h]] as const)} onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'rowHeight', next, defaults))} />
         <FromSettings own={own} viewKey="rowHeight" viewIndex={viewIndex} onUpdate={onUpdate} />
-      </label>
-      <label className="view-settings-row" title="By kind: lists, links and selects wrap; text, numbers and dates are one line. A column's own Wrap or Clip wins.">
-        <span>Text in cells</span>
-        <select
-          className="view-select"
-          aria-label="Text in cells"
+      </div>
+      <div className="view-settings-row" title="By kind: lists, links and selects wrap; text, numbers and dates are one line. A column's own Wrap or Clip wins.">
+        <RowLabel icon="textInCells">Text in cells</RowLabel>
+        <ChoiceSeg
+          label="Text in cells"
           value={textInCellsOf(view, defaults)}
-          onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'textInCells', e.target.value as FolderPagesSettings['textInCells'], defaults))}
-        >
-          {FOLDER_PAGE_CHOICES.textInCells.map((t) => <option key={t} value={t}>{TEXT_IN_CELLS_LABELS[t]}</option>)}
-        </select>
+          options={FOLDER_PAGE_CHOICES.textInCells.map((t) => [t, TEXT_IN_CELLS_LABELS[t]] as const)}
+          onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'textInCells', next, defaults))}
+        />
         <FromSettings own={own} viewKey="textInCells" viewIndex={viewIndex} onUpdate={onUpdate} />
-      </label>
+      </div>
     </>
   )
 }

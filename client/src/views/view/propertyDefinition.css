@@ -81,7 +81,7 @@
   cursor: pointer;
 }
 
-.property-value-picker__list button.is-active, .property-value-picker__list button:hover {
+.property-value-picker__list button.is-active {
   background: var(--accent-soft);
 }
 

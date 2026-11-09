@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useContext } from 'react'
+import { FlyoutParent, MenuFlyout } from '../../components/Flyout'
 import type { Value } from '../expr'
 import type { FilterNode } from '../viewSchema'
 import { valueFilter } from './filterRows'
@@ -20,6 +21,27 @@ export function filterValueItems(property: string, value: Value, onFilter: (rule
         Hide this value
       </button>
     </>
+  )
+}
+
+/**
+ * "Filter ›" (YAZ-3746 13AW): the same two rules in one flyout of the row menu — "Show only this value" and "Hide this
+ * value" — on the menu's one flyout (`MenuFlyout`). Null when no rule names the value.
+ */
+export function FilterValueParent({ property, value, onFilter }: { property: string; value: Value; onFilter: (rule: FilterNode) => void }) {
+  const flyout = useContext(MenuFlyout)
+  const is = valueFilter(property, value, false)
+  const isNot = valueFilter(property, value, true)
+  if (is === null || isNot === null || flyout === null) return null
+  return (
+    <FlyoutParent label="Filter" open={flyout.open === 'filter'} onHover={() => flyout.hover('filter')} onOpen={() => flyout.openNow('filter')} onCloseFlyout={() => flyout.openNow(null)}>
+      <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => onFilter(is)}>
+        Show only this value
+      </button>
+      <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => onFilter(isNot)}>
+        Hide this value
+      </button>
+    </FlyoutParent>
   )
 }
 

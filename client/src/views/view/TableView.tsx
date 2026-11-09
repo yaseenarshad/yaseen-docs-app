@@ -3,7 +3,7 @@ import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf, MAX_GROUP_LEVELS } from '../viewSchema'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
-import { type Resolver, type Value, render, typeOf } from '../expr'
+import { type Resolver, type Value, fromYaml, render, typeOf } from '../expr'
 import type { ColumnDecl, FolderSettings } from '../folderSettings'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
@@ -27,14 +27,16 @@ import { isFolderRow, rowPage } from '../../links/shortcuts'
 import { MAX_FROZEN_ROWS, UNFROZE_ROWS, frozenColumnCount, frozenGapCover, frozenGapShadow, type FrozenGapCover } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 import { OtherFilesMove, trayRowDrag } from './otherFilesMove'
-import { FillMenu } from './FillMenu'
-import { deleteNoteItem, duplicateNoteItem, filterValueItems } from './rowMenuItems'
+import { FillMenu, type FillTarget } from './FillMenu'
+import { deleteNoteItem, duplicateNoteItem, FilterValueParent } from './rowMenuItems'
 import { withFilter } from './filterRows'
 import { cellFillOf, fillIndex, fillPaint, setViewFill, setViewFills } from './fills'
+import { columnFillOf, setColumnFill } from './columnFill'
 import { ClearFormattingItem, SelectionMenu } from './SelectionMenu'
 import { ALL_CELLS, type Pick, type TableSelection, cellRange, farCorner, indicesOf, inSelection, parseTsv, pickLine, stepRange, toTsv, valueFromText } from './tableSelection'
 import type { PropertyWrite } from '../writeProperty'
 import { TableHeaderMenu, wrapKind, wrapsColumn } from './TableHeaderMenu'
+import { alignClass, columnAlignOf } from './columnAlign'
 import { textInCellsOf } from './TableLookSettings'
 import { useViewDefaults } from '../viewDefaults'
 import { orderOf } from './DirectionPicker'
@@ -50,6 +52,7 @@ import type { ViewHover } from './viewHover'
 import type { FolderHost } from '../ViewsPane'
 import type { NoteWindowLink } from './NoteWindow'
 import { ViewFind } from './viewFind'
+import { CHANGE_CANCELLED, type ChangeAsk, type ConfirmChange } from '../confirmChanges'
 
 export interface TableViewProps {
   /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
@@ -113,6 +116,8 @@ export interface TableViewProps {
   readOnly?: ReadonlySet<string>
   /** The Name cell's commit (YAZ-2420 🔒 D19): the row's new title, through `FolderHost.retitle`. */
   onRetitle: (path: string, title: string) => void
+  /** Confirm changes (YAZ-3746 13AN): asked before a typed cell or a bulk write; absent where the page does not ask. */
+  confirmChange?: ConfirmChange
   /** The app's own keys in this vault (`reservedKeys`): the header's "Add column" refuses them (YAZ-4544). */
   reservedKeys: ReadonlySet<string>
   /** The row menu's "Duplicate note" (YAZ-4592 S26): `FolderHost.duplicate`; the selection menu's "Duplicate notes" calls it once per note (YAZ-4593). Absent: no such item, and that one is off. */
@@ -133,6 +138,17 @@ const MIN_WIDTH = 60
 const MAX_FIT_WIDTH = 600
 /** The Name cell's room for the title that its group indent leaves (YAZ-4544): 60px of title and the cell's two 8px paddings. */
 const NAME_TITLE_ROOM = 60 + 2 * 8
+/**
+ * The first column's room for its value beside the DEEPEST group indent (YAZ-3746 13AL): 120px and the two paddings.
+ * A grouped table's first column is never narrower than every level's indent plus this, so a deep row sits under its
+ * group and its value still reads; the user's own width wins whenever it is wider.
+ */
+const INDENT_VALUE_ROOM = 120 + 2 * 8
+/** The Fill flyouts (YAZ-3746 13AQ): whole columns fill a cell or the column; one cell or a range, all three. */
+const COLUMN_FILLS: readonly FillTarget[] = ['cell', 'column']
+const ALL_FILLS: readonly FillTarget[] = ['cell', 'row', 'column']
+/** A bulk write's ask (YAZ-3746 13AS): its header and its go button, by the gesture. */
+const BULK_ASK: Readonly<Record<string, readonly [string, string]>> = { Clear: ['Clear cells', 'Clear'], 'Paste into': ['Paste', 'Paste'], Fill: ['Fill', 'Fill'], Set: ['Set value', 'Set'] }
 /** `view.rowHeight` presets (Obsidian's names); the value feeds `--view-table-row-h` AND the windowing maths. */
 const ROW_HEIGHTS: Record<string, number> = { short: 28, medium: 44, tall: 68 }
 /** Above this many lines only a scroll-positioned slice is mounted, padded by spacer rows. */
@@ -150,7 +166,7 @@ const COLUMN_MIME = 'application/x-yaseen-table-column'
 const CURRENT_ROW = 'view-table__row--current'
 /**
  * ...and the frozen lines stop here (YAZ-4544): at most, each row brings a header for each level and its own
- * "+ New" row (YAZ-4539), so 10 rows always fit, at three levels with one row in each group.
+ * "+ New" row (YAZ-4539), so 10 rows always fit, at the deepest grouping (`MAX_GROUP_LEVELS`) with one row in each group.
  */
 const MAX_FROZEN_LINES = MAX_FROZEN_ROWS * (MAX_GROUP_LEVELS + 2)
 /** A selected cell, row number or header (YAZ-4593): an attribute React does not own, so a render never drops it. */
@@ -245,8 +261,15 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
+  /**
+   * The wrap's scroll width when a column resize starts, in px (YAZ-3746 13W), 0 when none is held. views.css draws a
+   * zero-height runner that wide (`--view-table-slack`), so the scrollable width never SHRINKS while a column is dragged
+   * narrower: with the table scrolled to its right end, a narrower table clamped `scrollLeft` and every column left of
+   * the edge slid right under the mouse. The runner goes on release, so the scroll settles after the drag, not during.
+   */
+  const [slack, setSlack] = useState(0)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
   /** The data row (`rowKey`) whose title is being edited in its Name cell (YAZ-2420 🔒 D26). */
@@ -263,7 +286,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * The row right-click's menu: its record, the column key of the cell it was opened on (the fill target, YAZ-4536), its
    * data row index (the freeze target, YAZ-4537), and that cell's value (the filter's, YAZ-4592 S25).
    */
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; record: IndexRecord; column: string; r: number; value: Value } | null>(null)
+  /** The one-row menu (a cell's, or the row's `#` with `column` null: the whole row, YAZ-3746 13AI). */
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; record: IndexRecord; column: string | null; r: number; value: Value } | null>(null)
   /** The header's own menu (YAZ-1513): `key` null = the `#` gutter header. */
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; key: string | null } | null>(null)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
@@ -340,7 +364,15 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // Text in cells (YAZ-4585, YAZ-4544 10A): a column with no Wrap or Clip of its own follows the view's, else Settings'. Row
   // height, row numbers and the view's Text in cells come in `view` already, with Settings filled in (`withDefaults`).
   const defaults = useViewDefaults()
-  const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
+  /** Each shown column's fill (YAZ-3746 13AQ), under the rows' and the cells' own. */
+  const columnFills = keys.map((key) => columnFillOf(view, key))
+  /** A grouped table's first column fits its deepest indent and a readable value (13AL); 0 when the view does not group. */
+  const groupLevelCount = shownGroupLevels(view).length
+  const indentFloor = groupLevelCount === 0 ? 0 : groupIndentOf(view) * groupLevelCount + INDENT_VALUE_ROOM
+  const widthOf = (key: string) => {
+    const width = drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH
+    return key === keys[0] ? Math.max(width, indentFloor) : width
+  }
   const frozen = frozenColumnCount(view.frozenColumns, keys.length)
   const sorts = view.sort ?? []
   /** The `#` gutter shows its numbers unless the view says `rowNumbers: false` (YAZ-1513); then it is a slim strip (YAZ-4610 D62). */
@@ -360,10 +392,15 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const frozenClass = (index: number): string | false => isFrozen(index) && (index === frozen - 1 ? 'view-table__frozen view-table__frozen-end' : 'view-table__frozen')
   const frozenStyle = (index: number): CSSProperties | undefined => (isFrozen(index) ? { left: frozenLeft[index] } : undefined)
   /**
-   * The Name cell's indent in px (YAZ-4532 D10): one group indent per level above the row, but never more than the
-   * column's width less the title's room (YAZ-4544), so a deep row in a narrow column still shows its title.
+   * The column that steps in under its groups (YAZ-3746 13AG): the FIRST shown column, Name or not, so a row sits under
+   * its group's name even with Name hidden or moved (YAZ-4532 D10 indented only Name).
    */
-  const nameIndent = (depth: number): number => Math.max(0, Math.min(groupIndentOf(view) * depth, widthOf(keys[nameCol]!) - NAME_TITLE_ROOM))
+  const indentCol = 0
+  /**
+   * That cell's indent in px (YAZ-4532 D10): one group indent per level above the row, but never more than the
+   * column's width less the title's room (YAZ-4544), so a deep row in a narrow column still shows its value.
+   */
+  const nameIndent = (depth: number): number => Math.max(0, Math.min(groupIndentOf(view) * depth, widthOf(keys[indentCol]!) - NAME_TITLE_ROOM))
   /** A body cell's inline style: the frozen offset, a fill (YAZ-4536, painted by views.css) and the Name cell's group depth and indent (YAZ-4532 D10). */
   const cellStyle = (index: number, fill: string | undefined, depth: number | undefined): CSSProperties | undefined => {
     const base = frozenStyle(index)
@@ -450,6 +487,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // chip column wraps and the rest clip, as on `main`. A windowed table clips every cell, so each line is exactly the
   // row height its spacer maths counts.
   const clipped = keys.map((key, c) => windowed || !wrapsColumn(view, key, wrapKind(typings[c]), textInCellsOf(view, defaults)))
+  // Left, Center or Right per column (YAZ-3746 13Y): the class its header, body cells and summary cell carry; none for Auto.
+  const aligned = useMemo(() => keys.map((key) => alignClass(columnAlignOf(view, key))), [keys, view])
   /**
    * The height that shows the table (T6): the wrap's, or the scroller's where that is less — in a folder page the wrap
    * is as tall as the table, and the tab's scroller is the viewport. Zero (jsdom, the first render) falls back.
@@ -576,6 +615,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const x0 = e.clientX
     const zoom = cssZoom(e.currentTarget)
     let width = start
+    // The scrollable width holds for the whole drag (13W): only the dragged column's edge moves.
+    setSlack(wrapRef.current?.scrollWidth ?? 0)
     const move = (ev: MouseEvent) => {
       width = Math.max(MIN_WIDTH, start + (ev.clientX - x0) / zoom)
       setDrag({ key, width })
@@ -585,6 +626,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       window.removeEventListener('mouseup', up)
       holdColResize(false)
       setDrag(null)
+      setSlack(0)
       if (width !== start)
         onUpdate((d) => {
           d.views[viewIndex].columnSize = { ...d.views[viewIndex].columnSize, [key]: width }
@@ -639,7 +681,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** Whether a mark may be on the DOM: with none and no selection, a render skips the pass. */
   const painted = useRef(false)
   /** The selection's right-click, with the selection it was opened on and the notes it held then (YAZ-4636 T7). */
-  const [selMenu, setSelMenu] = useState<{ x: number; y: number; sel: TableSelection; paths: string[] } | null>(null)
+  /** The selection's menu; `r` is the row the right-click was on, for its row freeze (YAZ-3746 13AI). */
+  const [selMenu, setSelMenu] = useState<{ x: number; y: number; sel: TableSelection; paths: string[]; r?: number } | null>(null)
   const paintSelection = (): void => {
     const wrap = wrapRef.current
     const sel = selRef.current
@@ -752,6 +795,15 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * range from the focused cell; a plain press clears the selection, and a drag from it selects the range it crosses.
    * A drag across cells selects in a grouped table too (YAZ-4603 D53): only the `#` cell is a row's drag source.
    */
+  /** A press on the `#` of the only selected row (13T): its row, until the click that clears it. */
+  const rowToggle = useRef<number | null>(null)
+  const onBodyClick = (e: ReactMouseEvent<HTMLTableSectionElement>): void => {
+    const r = rowToggle.current
+    rowToggle.current = null
+    if (r === null || !(e.target instanceof Element)) return
+    const gutterCell = e.target.closest<HTMLElement>('td[data-row]')
+    if (gutterCell !== null && Number(gutterCell.dataset.row) === r) setSelection(null)
+  }
   const onBodyMouseDown = (e: ReactMouseEvent<HTMLTableSectionElement>): void => {
     if (e.button !== 0 || !(e.target instanceof Element)) return
     const gutterCell = e.target.closest<HTMLElement>('td[data-row]')
@@ -759,7 +811,12 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       // A movable row's `#` lets the press through, or no drag starts (D53); its click puts the focus back on the row.
       if (!gutterCell.draggable) e.preventDefault()
       const r = Number(gutterCell.dataset.row)
-      setSelection(pickLine(selRef.current, 'rows', r, pickOf(e)))
+      // The row that already IS the selection (YAZ-3746 13T): the press keeps it, so a row drag still starts from it;
+      // the click that follows with no drag clears it (`onBodyClick`). A drag fires no click.
+      const now = selRef.current
+      const plain = !e.shiftKey && !e.metaKey
+      rowToggle.current = plain && now !== null && now.kind === 'rows' && now.rows?.size === 1 && now.rows.has(r) ? r : null
+      if (rowToggle.current === null) setSelection(pickLine(selRef.current, 'rows', r, pickOf(e)))
       wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${r}:0"]`)?.focus({ preventScroll: true })
       return
     }
@@ -808,12 +865,18 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     return true
   }
   /**
-   * A plain click on a header selects the column (YAZ-4610 D62). A click, not a press: the press stays free for the
+   * A plain click on a header selects the column (YAZ-4610 D62); on the column that is the selection, it clears it (13T). A click, not a press: the press stays free for the
    * header drag (YAZ-1548), and a drag fires no click, so the drag's own threshold keeps the two apart. ⇧ and ⌘ are
    * the press's (below); the sort arrow and the resize edge keep their own.
    */
   const onHeaderClick = (c: number) => (e: ReactMouseEvent<HTMLTableCellElement>): void => {
     if (e.button !== 0 || e.shiftKey || e.metaKey || e.altKey || e.ctrlKey || (e.target instanceof Element && e.target.closest('button, .view-table__resize') !== null)) return
+    // The column that already IS the selection: a second click clears it (YAZ-3746 13T).
+    const now = selRef.current
+    if (now !== null && now.kind === 'cols' && now.cols?.size === 1 && now.cols.has(c)) {
+      setSelection(null)
+      return
+    }
     setSelection(pickLine(selRef.current, 'cols', c, 'plain'))
     wrapRef.current?.querySelector<HTMLElement>(`tbody td[data-cell$=":${c}"]`)?.focus({ preventScroll: true })
   }
@@ -866,6 +929,34 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       if (record === undefined || JSON.stringify(record.properties[bare] ?? null) === JSON.stringify(value ?? null)) map.delete(at)
     }
   }, [records])
+  /**
+   * The cells an undo, a redo or a bulk write rewrote (YAZ-3746 13O; bulk writes since 13AK). Their display follows `lastWritten` from the moment ⌘Z lands,
+   * not from the index's echo of the write (the watcher, the 300 ms refetch debounce and the fetch: about a second).
+   * `undoGen` keys each such cell, so an undo remounts it and the typed value it still showed (`EditableCell`'s
+   * `pending`, which otherwise stays until the index catches up) is forgotten; a key is stable after that, so the
+   * entry's end remounts nothing. A state: an undo renders the table, a commit does not. An entry goes with its
+   * `lastWritten` one; the keys keep at most `LAST_WRITTEN_MAX`, the oldest out — at undo time, when no cell edits.
+   */
+  const [undone, setUndone] = useState<ReadonlySet<string>>(() => new Set())
+  const undoGen = useRef(new Map<string, number>())
+  const showUndone = (writes: ReadonlyMap<string, readonly PropertyWrite[]>): void => {
+    const ats = [...writes].flatMap(([path, w]) => w.map(({ key }) => `${path}\n${key}`))
+    const gen = undoGen.current
+    for (const at of ats) {
+      const n = (gen.get(at) ?? 0) + 1
+      gen.delete(at)
+      gen.set(at, n)
+    }
+    while (gen.size > LAST_WRITTEN_MAX) gen.delete(gen.keys().next().value!)
+    setUndone((s) => new Set([...s, ...ats]))
+  }
+  useEffect(() => {
+    setUndone((s) => {
+      if (s.size === 0) return s
+      const kept = new Set([...s].filter((at) => lastWritten.current.has(at)))
+      return kept.size === s.size ? s : kept
+    })
+  }, [records])
   const planWrites = (cells: Iterable<{ r: number; c: number; value: unknown }>): WritePlan => {
     const byPath = new Map<string, PropertyWrite[]>()
     /** Each note's values before the write, for Undo: one write per note back (undefined deletes the key). */
@@ -904,36 +995,75 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * whole gesture once every write landed (YAZ-4609 D61); its Undo is the step's own (YAZ-4637 T9e), so ⌘Z and ⇧⌘Z
    * agree with it. The step holds its notes as refs (T3): a rename since moves the writes with the note.
    */
-  const commitWrites = (plan: WritePlan, undo?: (count: number) => string): void => {
+  const commitWrites = (plan: WritePlan, undo?: (count: number) => string, verb = 'Change', asked = false): void => {
     if (plan.count === 0) return
+    // Confirm changes (13AN): one ask for the whole gesture, by the focused cell; nothing shows or is written before Change.
+    if (confirmChange !== undefined && !asked) {
+      const anchor = document.activeElement instanceof Element ? document.activeElement.closest('td') : null
+      void confirmChange({ ...planAsk(plan, verb), anchor: anchor ?? wrapRef.current }).then((ok) => ok && commitWrites(plan, undo, verb, true))
+      return
+    }
     const notes = [...plan.byPath].map(([path, writes]) => ({ ref: noteRef(path), writes, before: plan.before.get(path)! }))
     const live = (pick: 'writes' | 'before') => new Map(notes.flatMap((note) => (note.ref.path === null ? [] : [[note.ref.path, note[pick]] as const])))
-    const back = () => void writeNotes(live('before')).catch(() => {})
-    const step: HistoryStep = { undo: back, redo: () => void writeNotes(live('writes')).catch(() => {}), notes: notes.map((note) => note.ref) }
+    const again = (pick: 'writes' | 'before') => () => {
+      const writes = live(pick)
+      showUndone(writes)
+      void writeNotes(writes).catch(() => {})
+    }
+    const back = again('before')
+    const step: HistoryStep = { undo: back, redo: again('writes'), notes: notes.map((note) => note.ref) }
     history?.push(step)
-    writeNotes(live('writes')).then(
+    // The cells show the written values at once (YAZ-3746 13AK), as an undo does (13O): Delete, Clear cells, Paste, Set
+    // value and the fill handle waited for the index's echo of the write, about half a second.
+    const writes = live('writes')
+    showUndone(writes)
+    writeNotes(writes).then(
       () => {
         if (undo !== undefined) onNotice?.(undo(plan.count), 'info', 'undo', { label: 'Undo', run: () => (history === undefined ? back() : void history.undoStep(step)), fades: true })
       },
       () => {},
     )
   }
-  const writeCells = (cells: Iterable<{ r: number; c: number; value: unknown }>, undo?: (count: number) => string): void => commitWrites(planWrites(cells), undo)
+  const writeCells = (cells: Iterable<{ r: number; c: number; value: unknown }>, undo?: (count: number) => string, verb?: string): void => commitWrites(planWrites(cells), undo, verb)
+  /** A column's name for an ask, by its bare key. */
+  const bareLabel = (bare: string): string => {
+    const c = bares.indexOf(bare)
+    return c === -1 ? bare : propertyLabel(def, keys[c])
+  }
+  const titleOfPath = (path: string): string => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+  /** What a bulk write changes, in one sentence (13AN): one cell by name, else a count. */
+  const planAsk = (plan: WritePlan, verb: string): Omit<ChangeAsk, 'anchor' | 'point'> => {
+    if (plan.count === 1) {
+      const [path, [write]] = [...plan.byPath][0]
+      return { kind: bareLabel(write.key), note: titleOfPath(path), from: plan.before.get(path)?.[0]?.value, to: write.value }
+    }
+    const notes = plan.byPath.size
+    const [kind, action] = BULK_ASK[verb] ?? [verb, 'Change']
+    return { kind, action, summary: `${plan.count} cells in ${notes} ${notes === 1 ? 'note' : 'notes'}` }
+  }
   /** A clear awaiting its confirm (S49): more than 50 cells. */
   const [confirmClear, setConfirmClear] = useState<WritePlan | null>(null)
   /** Clear cells (YAZ-4593) and Delete / Backspace (S44): the empty value in each cell; more than 50 cells ask first. */
   const clearArea = (area: { rows: number[]; cols: number[] }): void => {
     const plan = planWrites(area.rows.flatMap((r) => area.cols.map((c) => ({ r, c, value: null }))))
     if (plan.count > CONFIRM_CLEAR_AT) setConfirmClear(plan)
-    else commitWrites(plan)
+    else commitWrites(plan, undefined, 'Clear')
   }
   /** One typed cell's commit, one step of the history (S41): undo writes the value it had — the last one this table wrote when the index is behind (T4). */
-  const commitCell = (path: string, bare: string, next: unknown): Promise<unknown> => {
+  const commitCell = async (path: string, bare: string, next: unknown): Promise<unknown> => {
+    // Confirm changes (13AN): asked by the cell, before anything is written or put on the history.
+    if (confirmChange !== undefined) {
+      const r = flat.findIndex((row) => row.record.path === path)
+      const cell = wrapRef.current?.querySelector(`[data-cell="${r}:${bares.indexOf(bare)}"]`) ?? null
+      const ok = await confirmChange({ kind: bareLabel(bare), note: titleOfPath(path), from: liveValue(path, bare), to: next, anchor: cell })
+      if (!ok) throw CHANGE_CANCELLED
+    }
     const before = liveValue(path, bare)
     const ref = noteRef(path)
     const write = (value: unknown) => {
       if (ref.path === null) return
       noteWritten(ref.path, [{ key: bare, value }])
+      showUndone(new Map([[ref.path, [{ key: bare, value }]]]))
       void onWriteValues(ref.path, [{ key: bare, value }]).catch(failed)
     }
     history?.push({ undo: () => write(before), redo: () => write(next), notes: [ref] })
@@ -1040,7 +1170,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         })
       }
     }
-    writeCells(cells, (written) => `Filled ${written} ${written === 1 ? 'cell' : 'cells'}`)
+    writeCells(cells, (written) => `Filled ${written} ${written === 1 ? 'cell' : 'cells'}`, 'Fill')
   }
   fillStartRef.current = (e: MouseEvent): void => {
     if (e.button !== 0) return
@@ -1098,7 +1228,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             cells.push({ r, c, value })
           }),
         )
-        writeCells(cells)
+        writeCells(cells, undefined, 'Paste into')
         if (notOption > 0) onNotice?.(`${notOption} ${notOption === 1 ? 'cell' : 'cells'} skipped: not an option`)
       },
       (error: unknown) => onNotice?.(`Can't paste: ${error instanceof Error ? error.message : String(error)}`),
@@ -1106,7 +1236,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   }
   /**
    * ⌘\ "Clear formatting" (YAZ-4603 D54): the cell fills of the area, the row fills of whole rows and the Wrap / Clip
-   * of whole columns (`columnWrap`, back to the default by kind). ONE view write with Undo (S29); none, and no toast,
+   * and alignment of whole columns (`columnWrap`, back to the default by kind; `columnAlign`, back to Auto, YAZ-3746 13Y). ONE view write with Undo (S29); none, and no toast,
    * when nothing changes. Values and the column setup (formats, widths, group header styles) stay.
    */
   const clearFormatting = (sel: TableSelection | null, area: { rows: number[]; cols: number[] }): void => {
@@ -1117,15 +1247,21 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const clear = (d: ViewSet) => {
       setViewFills(d, viewIndex, targets, null, resolveLink, true)
       const v = d.views[viewIndex]
-      if (unwrap === null || v.columnWrap === undefined) return
-      const kept = Object.fromEntries(Object.entries(v.columnWrap).filter(([k]) => !unwrap.has(canonicalKey(k))))
-      if (Object.keys(kept).length > 0) v.columnWrap = kept
-      else delete v.columnWrap
+      if (unwrap === null) return
+      // The columns' Wrap / Clip and, since YAZ-3746 13Y, their alignment (`columnAlign`, back to Auto) and, since 13AQ,
+      // their fill (`columnFill`) go the same way.
+      for (const map of ['columnWrap', 'columnAlign', 'columnFill'] as const) {
+        const entries = v[map]
+        if (entries === undefined) continue
+        const kept = Object.fromEntries(Object.entries(entries).filter(([k]) => !unwrap.has(canonicalKey(k))))
+        if (Object.keys(kept).length > 0) (v as Record<string, unknown>)[map] = kept
+        else delete v[map]
+      }
     }
     // A dry run on a copy: a write that changes nothing is not made.
     const trial = structuredClone(def)
     clear(trial)
-    if (JSON.stringify(trial) !== JSON.stringify(def)) onUpdate(clear, 'Cleared formatting')
+    if (JSON.stringify(trial) !== JSON.stringify(def)) onUpdate(clear, 'Cleared formatting', undefined, true)
   }
   /**
    * ⌘C, ⌘V and Esc (YAZ-4593), ⌘A, ⇧+arrows (YAZ-4603 D53) and ⌘\ (D54); with no selection, ⌘C, ⌘V and ⌘\ act on the
@@ -1179,27 +1315,39 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const openRowMenu = ({ record, values }: Row) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
     if (!(event.target instanceof Element)) return
     if (event.target.closest('[data-editing]') !== null) return
+    // Never the page's text menu (Cut / Copy / Paste) on a row (YAZ-3746 13AH): every right-click on it is the table's.
+    event.preventDefault()
     const sel = selRef.current
-    const gutterCell = event.target.closest<HTMLElement>('td[data-row]')
-    if (gutterCell !== null && sel?.kind === 'rows' && sel.rows!.has(Number(gutterCell.dataset.row))) {
-      event.preventDefault()
-      setSelMenu({ x: event.clientX, y: event.clientY, sel, paths: notePathsOf(sel) })
+    const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
+    if (cell === null) {
+      // The row's `#`, its ⋮⋮, or a gap between cells (YAZ-3746 13AC, 13AH): the whole row. Several selected rows keep
+      // their menu; one row gets the same menu as its cells (13AI), for the whole row, and shows selected.
+      const gutterCell = event.currentTarget.querySelector<HTMLElement>('td[data-row]')
+      if (gutterCell === null) return
+      const r = Number(gutterCell.dataset.row)
+      if (sel?.kind === 'rows' && sel.rows!.has(r) && sel.rows!.size > 1) {
+        setRowMenu(null)
+        setSelMenu({ x: event.clientX, y: event.clientY, sel, paths: notePathsOf(sel), r })
+        return
+      }
+      const rows = pickLine(null, 'rows', r, 'plain')
+      if (rows !== null) setSelection(rows)
+      setSelMenu(null)
+      setRowMenu({ x: event.clientX, y: event.clientY, record, column: null, r, value: null })
       return
     }
-    const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
-    if (cell === null) return
-    event.preventDefault()
     cell.focus()
     // `data-cell` is `row:column`: the column index names the key the fill is for (YAZ-4536), the row index the freeze (YAZ-4537).
     const [r, c] = (cell.dataset.cell ?? '').split(':').map(Number)
     if (sel !== null && inSelection(sel, r, c)) {
       setRowMenu(null)
-      setSelMenu({ x: event.clientX, y: event.clientY, sel, paths: notePathsOf(sel) })
+      setSelMenu({ x: event.clientX, y: event.clientY, sel, paths: notePathsOf(sel), r })
       return
     }
     setSelection(null)
     setRowMenu({ x: event.clientX, y: event.clientY, record, column: keys[c], r, value: values[keys[c]] ?? null })
   }
+
 
   /**
    * Header reorder (YAZ-1548): the column at `from` lands at final index `to`. ONE write
@@ -1376,8 +1524,26 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (!(e.relatedTarget instanceof Node) || wrapRef.current?.contains(e.relatedTarget) !== true) downAfter.current = null
   }
 
+  /**
+   * The focus back on the row menu's cell after a fill or ⌘\ from it (YAZ-3746 13N): the menu's button took it at the
+   * press, and the menu is about to unmount, which would leave the focus on the page, where ⌘Z finds no table.
+   */
+  const refocusMenuCell = (): void => {
+    if (rowMenu === null) return
+    wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${rowMenu.r}:${rowMenu.column === null ? 0 : keys.indexOf(rowMenu.column)}"]`)?.focus({ preventScroll: true })
+  }
+
+  /** The one-row menu's cells (YAZ-3746 13AI): its cell, or every column of the row when it came from the row's `#`. */
+  const menuArea = ({ r, column }: { r: number; column: string | null }) => ({ rows: [r], cols: column === null ? keys.map((_, c) => c) : [keys.indexOf(column)] })
+  /** Row freeze (YAZ-4537): the count of rows that stay on top; 0 unfreezes. */
+  const freezeRows = (count: number): void =>
+    onUpdate((d) => {
+      if (count === 0) delete d.views[viewIndex].frozenRows
+      else d.views[viewIndex].frozenRows = count
+    }, count === 0 ? UNFROZE_ROWS : undefined)
+
   /** The selection's right-click (YAZ-4593): every action works on the selection it was opened on; Duplicate and Delete on the notes it held then (`paths`). */
-  const selectionMenu = ({ x, y, sel, paths }: NonNullable<typeof selMenu>) => {
+  const selectionMenu =({ x, y, sel, paths, r }: NonNullable<typeof selMenu>) => {
     const area = areaOf(sel)!
     const one = area.cols.length === 1 ? area.cols[0] : -1
     const typing = one === -1 || bares[one] === null ? undefined : typings[one]
@@ -1390,16 +1556,24 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         onCopy={() => copyArea(area)}
         onPaste={() => pasteInto(area)}
         onClear={() => clearArea(area)}
+        // Whole columns fill as columns (YAZ-3746 13AQ), whole rows as rows; a range of cells offers all three.
+        fillTargets={sel.kind === 'cols' ? COLUMN_FILLS : sel.kind === 'rows' ? undefined : ALL_FILLS}
         onFill={(target, fill) => {
+          // No fill offers Undo, as the row menu's (YAZ-4594 S29); every fill is a ⌘Z step (YAZ-3746 13N).
+          if (target === 'column') {
+            onUpdate((d) => area.cols.forEach((c) => setColumnFill(d.views[viewIndex], keys[c], fill)), fill === null ? 'Cleared fill' : undefined, undefined, true)
+            return
+          }
           const targets = area.rows.flatMap((r) => (target === 'row' ? [{ record: flat[r].record }] : area.cols.map((c) => ({ record: flat[r].record, column: keys[c] }))))
-          // No fill offers Undo, as the row menu's (YAZ-4594 S29).
-          onUpdate((d) => setViewFills(d, viewIndex, targets, fill, resolveLink, true), fill === null ? 'Cleared fill' : undefined)
+          onUpdate((d) => setViewFills(d, viewIndex, targets, fill, resolveLink, true), fill === null ? 'Cleared fill' : undefined, undefined, true)
         }}
-        onSetValue={(value) => writeCells(area.rows.map((r) => ({ r, c: one, value })))}
+        onSetValue={(value) => writeCells(area.rows.map((r) => ({ r, c: one, value })), undefined, 'Set')}
         onClearFormatting={() => clearFormatting(sel, area)}
         onNewRowBelow={newRowBelow && area.rows.length > 0 ? () => newRowBelow(area.rows.at(-1)!) : undefined}
         onDuplicate={onDuplicateNote && paths.length > 0 ? () => paths.forEach(onDuplicateNote) : undefined}
         onDelete={onDeleteNotes && paths.length > 0 ? () => onDeleteNotes(paths) : undefined}
+        // The row menu's freeze, on the row right-clicked (YAZ-3746 13AI: the two menus match where they can).
+        extra={sel.kind === 'rows' && r !== undefined ? <FreezeRowItems row={r} frozen={frozenRows} onFreeze={(count) => { setSelMenu(null); freezeRows(count) }} /> : undefined}
         onClose={() => setSelMenu(null)}
       />
     )
@@ -1491,15 +1665,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             const v = line.row.values[key]
             const { path, title } = line.row.record
             const locked = readOnly.has(path)
-            const fill = cellFillOf(fills, path, key)
+            // A cell's own fill, else its row's, else its column's (YAZ-3746 13AQ).
+            const fill = cellFillOf(fills, path, key) ?? columnFills[c]
+            /** What an undo of this cell wrote, while the index is behind it (YAZ-3746 13O); null for every other cell. */
+            const undoneAt = bares[c] === null ? null : `${path}\n${bares[c]}`
+            const shown = undoneAt !== null && undone.has(undoneAt) && lastWritten.current.has(undoneAt) ? { raw: lastWritten.current.get(undoneAt) } : null
             return (
               <td
                 key={key}
                 // The tests and the end-to-end specs find the Name cell by `view-table__name`; its only style is the group indent (YAZ-4532).
-                className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', frozenClass(c), fill !== undefined && 'view-table__cell--fill', clipped[c] && 'view-table__cell--clip'].filter(Boolean).join(' ') || undefined}
+                className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', c === indentCol && 'view-table__indent', frozenClass(c), fill !== undefined && 'view-table__cell--fill', clipped[c] && 'view-table__cell--clip', aligned[c]].filter(Boolean).join(' ') || undefined}
                 // A fill (YAZ-4536) is a custom property that views.css paints over the cell's base.
                 // The Name cell steps in by one group indent per level above the row (YAZ-4532 D10).
-                style={cellStyle(c, fill, c === nameCol && line.at !== null ? line.at.level + 1 : undefined)}
+                style={cellStyle(c, fill, c === indentCol && line.at !== null ? line.at.level + 1 : undefined)}
                 tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
                 data-cell={`${line.r}:${c}`}
                 // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
@@ -1538,9 +1716,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   </>
                 ) : bares[c] !== null ? (
                   <EditableCell
+                    // An undone cell shows what the undo wrote, at once (YAZ-3746 13O); its key remounts it on each undo.
+                    key={undoneAt === null ? undefined : undoGen.current.get(undoneAt)}
                     propKey={bares[c]}
-                    raw={line.row.record.properties[bares[c]]}
-                    value={v}
+                    raw={shown !== null ? shown.raw : line.row.record.properties[bares[c]]}
+                    value={shown !== null ? fromYaml(shown.raw) : v}
                     editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
                     options={typings[c]?.options}
                     titles={linkNames[c] ?? titles}
@@ -1561,7 +1741,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
 
   return (
     <>
-      <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setPast(scrolledPast(e.currentTarget)) : undefined}>
+      <div
+        ref={wrapRef}
+        className="view-table-wrap"
+        // A held column edge (13W): the runner keeps the scroll width, and no easing while the edge is dragged.
+        data-resizing={drag !== null ? '' : undefined}
+        style={slack > 0 ? ({ '--view-table-slack': `${slack}px` } as CSSProperties) : undefined}
+        onScroll={windowed ? (e) => setPast(scrolledPast(e.currentTarget)) : undefined}
+        // No page text menu (Cut / Copy / Paste) anywhere in the table (YAZ-3746 13AH): a right-click no menu of the
+        // table takes (a gap, the scroll room) opens nothing. A cell being edited keeps it, for its text.
+        onContextMenu={(e) => {
+          if (e.target instanceof Element && e.target.closest('[data-editing], input, textarea, [contenteditable="true"]') === null) e.preventDefault()
+        }}
+      >
         {columnRules !== '' && <style>{columnRules}</style>}
         <table
           className="view-table"
@@ -1598,7 +1790,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   <th
                     key={key}
                     scope="col"
-                    className={frozenClass(index) || undefined}
+                    className={[frozenClass(index), aligned[index]].filter(Boolean).join(' ') || undefined}
                     style={{ width: widthOf(key), ...frozenStyle(index) }}
                     // The column's description on hover (YAZ-4590 S23).
                     title={c.startsWith('note.') ? settings.columns[c.slice('note.'.length)]?.description : undefined}
@@ -1632,7 +1824,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               })}
             </tr>
           </thead>
-          <tbody onMouseDown={onBodyMouseDown}>
+          <tbody onMouseDown={onBodyMouseDown} onClick={onBodyClick}>
             {head.map((line, i) => renderLine(line, i))}
             {first > pinned && spacer('top', (first - pinned) * rowH)}
             {visible.map((line) => renderLine(line))}
@@ -1647,7 +1839,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   const label = propertyLabel(def, key)
                   const kind = summaryKindOf(view, key)
                   return (
-                    <td key={key} className={['view-table__summary', frozenClass(index)].filter(Boolean).join(' ')} style={frozenStyle(index)}>
+                    <td key={key} className={['view-table__summary', frozenClass(index), aligned[index]].filter(Boolean).join(' ')} style={frozenStyle(index)}>
                       <button
                         type="button"
                         className="view-table__summary-btn"
@@ -1702,18 +1894,68 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             onClose={() => setRowMenu(null)}
             // One order in every folder-page menu (YAZ-4608 C8): open, then edit, then view, then destructive last.
             extra={[
+              // The selection menu's first group (YAZ-3746 13AI): on this cell, or on the whole row from its `#`.
+              <Fragment key="clipboard">
+                {(['Copy', 'Paste', 'Clear cells'] as const).map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className="ctx-menu__item"
+                    role="menuitem"
+                    // The keys the table answers (13AW, as the sidebar's menu shows its own).
+                    data-hint={label === 'Copy' ? '⌘C' : label === 'Paste' ? '⌘V' : '⌫'}
+                    onClick={() => {
+                      setRowMenu(null)
+                      const area = menuArea(rowMenu)
+                      if (label === 'Copy') copyArea(area)
+                      else if (label === 'Paste') pasteInto(area)
+                      else clearArea(area)
+                      refocusMenuCell()
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </Fragment>,
               <Fragment key="fill">
                 <FillMenu
-                  start={cellFillOf(fills, rowMenu.record.path, rowMenu.column)}
-                  // No fill offers Undo (YAZ-4594 S29).
-                  onFill={(target, fill) => onUpdate((d) => setViewFill(d, viewIndex, rowMenu.record, target === 'cell' ? rowMenu.column : undefined, fill, resolveLink, true), fill === null ? 'Cleared fill' : undefined)}
+                  start={cellFillOf(fills, rowMenu.record.path, rowMenu.column ?? keys[0])}
+                  // No fill offers Undo (YAZ-4594 S29); every fill is a ⌘Z step (YAZ-3746 13N). From the `#`, "Fill cell"
+                  // fills each cell of the row, as the selection menu's does.
+                  // A cell's menu fills its column too (YAZ-3746 13AQ); the row's `#` fills cells and the row. ONE "Fill ›"
+                  // with a Cell · Row · Column switch (13AW), on the cell from a cell and on the row from the `#`.
+                  targets={rowMenu.column === null ? undefined : ALL_FILLS}
+                  combined={{
+                    initial: rowMenu.column === null ? 'row' : 'cell',
+                    startOf: (target) =>
+                      target === 'column' ? (rowMenu.column === null ? undefined : columnFillOf(view, rowMenu.column)) : cellFillOf(fills, rowMenu.record.path, target === 'cell' ? rowMenu.column ?? keys[0] : '\u0000'),
+                  }}
+                  onFill={(target, fill) => {
+                    const { record, column } = rowMenu
+                    if (target === 'column') {
+                      if (column !== null) onUpdate((d) => setColumnFill(d.views[viewIndex], column, fill), fill === null ? 'Cleared fill' : undefined, undefined, true)
+                      refocusMenuCell()
+                      return
+                    }
+                    onUpdate(
+                      (d) =>
+                        target === 'cell' && column === null
+                          ? setViewFills(d, viewIndex, keys.map((key) => ({ record, column: key })), fill, resolveLink, true)
+                          : setViewFill(d, viewIndex, record, target === 'cell' ? column ?? undefined : undefined, fill, resolveLink, true),
+                      fill === null ? 'Cleared fill' : undefined,
+                      undefined,
+                      true,
+                    )
+                    refocusMenuCell()
+                  }}
                   onClose={() => setRowMenu(null)}
                 />
-                {/* ⌘\ on this one cell (YAZ-4603 D54). */}
+                {/* ⌘\ on this one cell, or the whole row (YAZ-4603 D54). */}
                 <ClearFormattingItem
                   onClear={() => {
                     setRowMenu(null)
-                    clearFormatting(null, { rows: [rowMenu.r], cols: [keys.indexOf(rowMenu.column)] })
+                    clearFormatting(null, menuArea(rowMenu))
+                    refocusMenuCell()
                   }}
                 />
               </Fragment>,
@@ -1743,26 +1985,30 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     )}
                 </Fragment>
               ),
-              // "Filter by this value" / "Hide this value" (YAZ-4592 S25): one more rule in the view's filters.
-              filterValueItems(rowMenu.column, rowMenu.value, (rule) => {
-                setRowMenu(null)
-                onUpdate((d) => {
-                  d.views[viewIndex].filters = withFilter(d.views[viewIndex].filters, rule)
-                })
-              }),
-              // Row freeze (YAZ-4537), the column menu's pair: on the row where the freeze ends the item reads ✓ and a click unfreezes.
-              <FreezeRowItems
-                key="freeze"
-                row={rowMenu.r}
-                frozen={frozenRows}
-                onFreeze={(count) => {
-                  setRowMenu(null)
-                  onUpdate((d) => {
-                    if (count === 0) delete d.views[viewIndex].frozenRows
-                    else d.views[viewIndex].frozenRows = count
-                  }, count === 0 ? UNFROZE_ROWS : undefined)
-                }}
-              />,
+              // The view group (13AW): "Filter ›" (YAZ-4592 S25: one more rule in the view's filters, a cell's only), then
+              // the row freeze (YAZ-4537), the column menu's pair.
+              <Fragment key="view">
+                {rowMenu.column !== null && (
+                  <FilterValueParent
+                    property={rowMenu.column}
+                    value={rowMenu.value}
+                    onFilter={(rule) => {
+                      setRowMenu(null)
+                      onUpdate((d) => {
+                        d.views[viewIndex].filters = withFilter(d.views[viewIndex].filters, rule)
+                      })
+                    }}
+                  />
+                )}
+                <FreezeRowItems
+                  row={rowMenu.r}
+                  frozen={frozenRows}
+                  onFreeze={(count) => {
+                    setRowMenu(null)
+                    freezeRows(count)
+                  }}
+                />
+              </Fragment>,
             ].filter((group) => group !== null && group !== undefined && group !== false)}
             // Destructive, last (C8): a folder row is no note (YAZ-4592 S26), so it has no Delete.
             danger={
@@ -1810,7 +2056,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             onConfirm={() => {
               const plan = confirmClear
               setConfirmClear(null)
-              commitWrites(plan)
+              // The sheet was the ask (13AN): no second one.
+              commitWrites(plan, undefined, 'Clear', true)
             }}
             onCancel={() => setConfirmClear(null)}
           />
@@ -1841,9 +2088,12 @@ function FreezeRowItems({ row, frozen, onFreeze }: { row: number; frozen: number
       <button type="button" className="ctx-menu__item" role="menuitem" disabled={!here && row >= MAX_FROZEN_ROWS} title={!here && row >= MAX_FROZEN_ROWS ? `At most ${MAX_FROZEN_ROWS} rows freeze` : undefined} onClick={() => onFreeze(here ? 0 : row + 1)}>
         {here ? '✓ Frozen up to this row' : 'Freeze up to this row'}
       </button>
-      <button type="button" className="ctx-menu__item" role="menuitem" disabled={frozen === 0} onClick={() => onFreeze(0)}>
-        Unfreeze rows
-      </button>
+      {/* Only while rows are frozen (13AW): a menu hides what does not apply, as the sidebar's does. */}
+      {frozen > 0 && (
+        <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => onFreeze(0)}>
+          Unfreeze rows
+        </button>
+      )}
     </>
   )
 }

@@ -125,6 +125,8 @@ interface EditorProps {
   onOpenFileRight?: (path: string) => void
   /** A folder page's Folder chips and ↗ open a subfolder's page in a new tab (YAZ-4564): App's `openKeptPage`. Only a folder page uses it. */
   onOpenFolderPage?: (path: string) => void
+  /** The mini window's ↗ opens its note in a new tab (YAZ-3746 13I): App's `openNewTabPage`. Only a folder page uses it. */
+  onOpenFileNewTab?: (path: string) => void
   /** A folder's table opens a row in a window with this editor (YAZ-4547): App's, stable. Only a folder page uses it. */
   renderNoteEditor?: (path: string) => ReactNode
   /** A folder table's "Delete note…" (YAZ-4592 S26): App's `trashMany`, the sidebar's delete. Only a folder page uses it. */
@@ -262,8 +264,10 @@ interface EditorProps {
   hoverDrawingLinks?: boolean
   /** Settings › Preview on hover › Linked mentions (YAZ-3403): resting on an entry shows the linking note beside the list. */
   hoverBacklinks?: boolean
-  /** Settings › Preview on hover › Folder views (YAZ-3403): resting on a row or a card of a folder's view shows it beside the item. */
+  /** Settings › Folder pages › Preview rows on hover (YAZ-3403): resting on a row or a card of a folder's view shows it beside the item. */
   hoverFolderViews?: boolean
+  /** Settings › Folder pages › Preview links on hover (demo 13D): resting on a link pill in a cell shows the linked note. */
+  hoverFolderLinks?: boolean
   /** Settings › Folder pages (YAZ-4585, D34): handed to a folder page's `ViewsPane`. */
   folderPages?: FolderPagesSettings
   /** What a hover panel needs of a page's vault (YAZ-3403): App's `boardPreviewScope`. Absent → no hover panel here. */
@@ -280,7 +284,7 @@ interface EditorProps {
   onChangeOutsideListPinned?: (pinned: boolean) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, renderNoteEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, onOpenFileNewTab, renderNoteEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, hoverFolderLinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -299,7 +303,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       )
       return (
         <section className="editor">
-          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenFolderPage={onOpenFolderPage} renderNoteEditor={renderNoteEditor} onDeleteEntries={onDeleteEntries} renderPage={renderPage} tabId={tabId} viewKey={viewKey} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} folderPages={folderPages} previewScope={previewScope} diagramDarkColors={diagramDarkColors} sync={sync} onSyncNow={onSyncNow} />
+          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenFolderPage={onOpenFolderPage} onOpenFileNewTab={onOpenFileNewTab} renderNoteEditor={renderNoteEditor} onDeleteEntries={onDeleteEntries} renderPage={renderPage} tabId={tabId} viewKey={viewKey} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} hoverLinks={hoverFolderLinks} folderPages={folderPages} previewScope={previewScope} diagramDarkColors={diagramDarkColors} sync={sync} onSyncNow={onSyncNow} />
         </section>
       )
     }

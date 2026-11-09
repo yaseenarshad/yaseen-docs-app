@@ -1,4 +1,5 @@
-import { useCallback, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createContext, useCallback, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { cssZoom } from '../lib/cssZoom'
 
 /**
  * The app's ONE menu flyout (YAZ-4544 4F): the sidebar's right-click (`sidebar/ContextMenu.tsx`, YAZ-1674 D7), the
@@ -31,6 +32,19 @@ export function useFlyout<T extends string>() {
   return { open, hover, openNow }
 }
 
+/** A menu's flyout, as `useFlyout` gives it. */
+export interface FlyoutControl {
+  open: string | null
+  hover: (id: string | null) => void
+  openNow: (id: string | null) => void
+}
+
+/**
+ * The menu's ONE flyout controller, for parents that a surface adds to a shared menu (YAZ-3746 13AW: the row menu's
+ * Open in ›, its Fill › and Filter ›): each reads it here, so the menu has one open flyout at a time.
+ */
+export const MenuFlyout = createContext<FlyoutControl | null>(null)
+
 interface FlyoutParentProps {
   /** The row's text (and glyph); its chevron is CSS, so `textContent` stays the bare label. */
   label: ReactNode
@@ -56,8 +70,34 @@ interface FlyoutParentProps {
  */
 export function FlyoutParent({ label, open, onHover, onOpen, onCloseFlyout, onChoose, hint, menuClassName, measureKey, children }: FlyoutParentProps) {
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const rowRef = useRef<HTMLDivElement>(null)
+  const close = useRef(onCloseFlyout)
+  close.current = onCloseFlyout
+  // An open flyout closes when the pointer rests on a plain item of its menu, after the hover wait (YAZ-3746 13AU): a
+  // plain row beside a flyout of its own controller (Fill › in the row menu) closed nothing. Two parents of one menu
+  // share its controller (Fill column › and Text ›), which swaps the one open flyout.
+  useEffect(() => {
+    const row = rowRef.current
+    const menu = row?.parentElement?.closest<HTMLElement>('.ctx-menu')
+    if (!open || row === null || menu === null || menu === undefined) return
+    let timer: number | undefined
+    const over = (e: MouseEvent) => {
+      if (!(e.target instanceof Element)) return
+      if (row.contains(e.target)) return void window.clearTimeout(timer)
+      const item = e.target.closest('.ctx-menu__item')
+      // Another flyout parent swaps the flyout itself, through the menu's one controller.
+      if (item === null || !menu.contains(item) || item.closest('.ctx-menu') !== menu || item.classList.contains('ctx-menu__item--parent')) return
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => close.current(), SWITCH_MS)
+    }
+    menu.addEventListener('mouseover', over)
+    return () => {
+      window.clearTimeout(timer)
+      menu.removeEventListener('mouseover', over)
+    }
+  }, [open])
   return (
-    <div className="ctx-menu__parent" onMouseEnter={onHover}>
+    <div ref={rowRef} className="ctx-menu__parent" onMouseEnter={onHover}>
       <button
         ref={buttonRef}
         type="button"
@@ -102,10 +142,19 @@ function FlyoutMenu({ anchor, className, measureKey, onCloseFlyout, children }: 
     const el = ref.current
     const parent = anchor.current
     if (el === null || parent === null) return
+    // A flyout taller than the window fits it and scrolls (YAZ-3746 13AO), as its menu does.
+    el.style.maxHeight = ''
+    el.style.overflowY = ''
+    if (el.getBoundingClientRect().height > window.innerHeight - 16) {
+      el.style.maxHeight = `${(window.innerHeight - 16) / cssZoom(el)}px`
+      el.style.overflowY = 'auto'
+    }
     const r = el.getBoundingClientRect()
     const p = parent.getBoundingClientRect()
     const left = p.right + r.width > window.innerWidth ? Math.max(0, p.left - r.width) : p.right
-    setPos({ left, top: Math.max(0, Math.min(p.top, window.innerHeight - r.height)) })
+    // Screen px measured, the flyout's own px written: in a zoomed folder page they differ by the zoom (YAZ-3746 13AM).
+    const z = cssZoom(el)
+    setPos({ left: left / z, top: Math.max(0, Math.min(p.top, window.innerHeight - r.height)) / z })
   }, [anchor, measureKey])
 
   // A flyout that closes with the keyboard in it gives the keyboard back to its row.

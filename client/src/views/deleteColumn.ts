@@ -4,7 +4,7 @@
  *
  *  (a) the declaration `folder_settings.columns.<key>` of THIS folder,
  *  (b) every reference the folder's views hold to the key — `order`, `sort`, `groupBy`,
- *      `summaries`, `columnSize`, `columnWrap`, `cardStyle`, a cards `image`, a calendar's `dateProperty`, the cell
+ *      `summaries`, `columnSize`, `columnWrap`, `columnAlign`, `columnFill`, `cardStyle`, a cards `image`, a calendar's `dateProperty`, the cell
  *      `fills` in it, and every filter leaf that names it — and its label under `properties`, so nothing dangles (a
  *      `frozenColumns` prefix loses the column if it held it, then follows the shortened order through the one order
  *      writer, `withOrder`),
@@ -139,7 +139,7 @@ export function pruneColumnFromViews(views: readonly ViewDef[], key: string): Vi
         else next.filters = filters
       }
     }
-    for (const map of ['summaries', 'columnSize', 'columnWrap', 'cardStyle'] as const) {
+    for (const map of ['summaries', 'columnSize', 'columnWrap', 'columnAlign', 'columnFill', 'cardStyle'] as const) {
       const entries = view[map]
       if (entries === undefined || entries === null || typeof entries !== 'object') continue
       const keptEntries = Object.fromEntries(Object.entries(entries).filter(([k]) => !names(k)))
@@ -171,12 +171,17 @@ export interface DeleteColumnHost {
   /** The host's one settings door: declarations, views and labels in ONE write. Resolves when it landed; rejects when it did not. */
   writeSettings: (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>
   /**
-   * The S29 Undo toast for the settings half (YAZ-4608 C6): `restore` writes the declaration, the views' references
-   * and the label back, in ONE settings write. The notes' values stay stripped — the confirm said so.
+   * The S29 Undo toast (YAZ-4608 C6): `restore` writes the declaration, the views' references and the label back, in
+   * ONE settings write, then each note's value back (YAZ-3746 13AY: the values the delete took from the notes, kept at
+   * the delete). It rejects with the notes it could not write back.
    */
   notice?: (message: string, restore: () => Promise<void>) => void
-  /** The declarations and def CURRENT when the Undo runs (YAZ-4637 M3): the restore inverts only the delete on them. Absent: this host's. */
-  current?: () => Pick<DeleteColumnHost, 'columns' | 'def'>
+  /**
+   * The declarations, def and settings door CURRENT when the Undo runs (YAZ-4637 M3): the restore inverts only the delete
+   * on them. The door too (YAZ-3746 13AY): the delete's own door compares against the settings of its render, which
+   * still held the column, so it saw no change and the declaration never came back. Absent: this host's.
+   */
+  current?: () => Pick<DeleteColumnHost, 'columns' | 'def'> & Partial<Pick<DeleteColumnHost, 'writeSettings'>>
 }
 
 /**
@@ -190,6 +195,10 @@ export async function deleteColumn(key: string, host: DeleteColumnHost): Promise
   const bare = bareOf(key)
 
   const before = { columns: { ...host.columns }, views: structuredClone(host.def.views), properties: structuredClone(host.def.properties) }
+  const { folderId } = host
+  // Each note's value, kept before the strip, so the Undo puts it back (YAZ-3746 13AY).
+  const strip = folderId === undefined ? [] : notesHolding(host.records, folderId, key)
+  const values = strip.map((note) => ({ note, value: folderValues(note.properties, folderId)[bare] }))
   const columns: Record<string, ColumnDecl> = { ...host.columns }
   delete columns[bare]
   const pruned = { views: pruneColumnFromViews(host.def.views, key), properties: pruneColumnLabel(host.def.properties, key) }
@@ -201,16 +210,19 @@ export async function deleteColumn(key: string, host: DeleteColumnHost): Promise
     const declaration = before.columns[bare]
     const { [bare]: _gone, ...others } = now.columns
     const labels = rebaseSettings(pruned.properties ?? {}, before.properties ?? {}, now.def.properties ?? {}) as Record<string, { displayName?: string }>
-    return host.writeSettings(
-      declaration === undefined ? others : { ...others, [bare]: declaration },
-      rebaseSettings(pruned.views, before.views, now.def.views) as ViewDef[],
-      Object.keys(labels).length === 0 ? undefined : labels,
-    )
+    return (now.writeSettings ?? host.writeSettings)(
+        declaration === undefined ? others : { ...others, [bare]: declaration },
+        rebaseSettings(pruned.views, before.views, now.def.views) as ViewDef[],
+        Object.keys(labels).length === 0 ? undefined : labels,
+      ).then(async () => {
+        if (folderId === undefined || values.length === 0) return
+        const back = await Promise.allSettled(values.map(({ note, value }) => transformFile(note.path, (content) => setFolderValue(content, folderId, bare, value), true)))
+        const lost = back.flatMap((result, index) => (result.status === 'rejected' ? [values[index]!.note.title] : []))
+        if (lost.length > 0) throw new Error(`Could not put "${bare}" back on ${lost.length} ${lost.length === 1 ? 'note' : 'notes'}: ${lost.join(', ')}`)
+      })
   })
 
-  const { folderId } = host
   if (folderId === undefined) return // no id, no values
-  const strip = notesHolding(host.records, folderId, key)
   const results = await Promise.allSettled(strip.map((note) => transformFile(note.path, (content) => setFolderValue(content, folderId, bare, undefined), true))) // quiet: a tidy-up of each note (YAZ-3235 D1)
   const failed = results.flatMap((result, index) =>
     result.status === 'rejected' ? [{ note: strip[index]!, why: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : [],

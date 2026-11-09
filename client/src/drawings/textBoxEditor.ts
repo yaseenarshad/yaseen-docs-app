@@ -14,7 +14,7 @@
  */
 import type { ComponentProps } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
+import { AllSelection, Plugin, PluginKey, Selection as ProseSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { undo } from '@milkdown/kit/prose/history'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { createCrepe, type ToolbarBuilder } from '../editor/createCrepe'
@@ -22,6 +22,7 @@ import { moreIcon, swatchTile } from '../editor/toolbarButtons'
 import { setPopupLayer, showMoreColour } from '../editor/toolbarHost'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
+import { enterKeepsStyleInBoxes } from '../editor/enterKeepsStyle'
 import { addOutlineFoldSetMeta, outlineCollapsedPositions } from '../editor/outline/outlineFolding'
 import { HIDDEN_IN_CELL } from '../editor/slashMenu'
 import { storage } from '../lib/storage'
@@ -99,6 +100,24 @@ const plainUndo = $shortcut(() => ({
  */
 const noScroll = $prose(() => new Plugin({ key: new PluginKey('textBoxNoScroll'), props: { handleScrollToSelection: () => true } }))
 
+/**
+ * ⌘A in a box selects its letters (YAZ-3746 13AA): the select all of everything (ProseMirror's `AllSelection`) starts
+ * outside the first line, so letters typed over it took no style and a box styled letter by letter lost its bold and
+ * underline ("infra > hi"). From the first letter to the last, typing takes the first letter's style, as over a drag.
+ */
+const selectAllLetters = $prose(
+  () =>
+    new Plugin({
+      key: new PluginKey('textBoxSelectAllLetters'),
+      appendTransaction: (_trs, _old, state) => {
+        if (!(state.selection instanceof AllSelection)) return null
+        const from = ProseSelection.atStart(state.doc).from
+        const to = ProseSelection.atEnd(state.doc).to
+        return from < to ? state.tr.setSelection(TextSelection.create(state.doc, from, to)) : null
+      },
+    }),
+)
+
 type Fields = Readonly<Record<string, unknown>>
 /** Two runs with the same fields (an absent field and an undefined one are the same, as in JSON). */
 const sameRun = (a: Fields, b: Fields) => Object.keys(a).every((key) => a[key] === b[key]) && Object.keys(b).every((key) => a[key] === b[key])
@@ -150,9 +169,9 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
       )
 
       // the note keys as the user set them (YAZ-3564 K4), read as a note reads them: once, as the edit opens
-      const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN, extendToolbar: textColorButtons, hotkeys: storage.getSettings()?.hotkeys })
+      const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN, extendToolbar: textColorButtons, hotkeys: storage.getSettings()?.hotkeys, enterKeepsStyle: enterKeepsStyleInBoxes })
       lockToTextBox(crepe)
-      crepe.editor.use(endKeys).use(plainUndo).use(noScroll).use(textColorPanel).use(report)
+      crepe.editor.use(endKeys).use(plainUndo).use(noScroll).use(selectAllLetters).use(textColorPanel).use(report)
 
       // The toolbar and the `/` menu draw at screen size, over the board: in a layer of their own on the page, with
       // Crepe's look (`milkdown`). Floating UI places them from the selection's box on screen, as in a note.

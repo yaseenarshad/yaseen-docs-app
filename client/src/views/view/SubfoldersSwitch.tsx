@@ -1,5 +1,6 @@
 import { type Mutate, type SubfoldersMode, type ViewDef, showsFolderRows, subfoldersOf } from '../viewSchema'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
+import { RowLabel } from './settingRow'
 
 /** The switch's choices, in its order (YAZ-4579 D30). */
 const MODES: readonly (readonly [SubfoldersMode, string])[] = [
@@ -28,7 +29,7 @@ export function SubfoldersSwitch({ view, own, viewIndex, onUpdate, className = '
   const defaults = useViewDefaults()
   return (
     <label className={className}>
-      <span>Subfolders</span>
+      <RowLabel icon="subfolders">Subfolders</RowLabel>
       <select
         className="view-select"
         aria-label="Subfolders"

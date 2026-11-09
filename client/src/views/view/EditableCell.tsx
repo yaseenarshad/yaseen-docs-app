@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom'
 import { Popover } from './Popover'
 import { SelectValueEditor } from './SelectValueEditor'
 import { READ_ONLY_TIP } from '../readOnlyRows'
+import { CHANGE_CANCELLED } from '../confirmChanges'
 
 /** A text cell's editor completes `[[` (YAZ-4601 D48): on in a folder page's views (`ViewsPane`), off in the properties panel. */
 export const TextLinkPicker = createContext(false)
@@ -100,6 +101,19 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
     ;(el?.closest<HTMLElement>('[data-cell]') ?? el?.querySelector<HTMLElement>('[data-edit]'))?.focus()
   }, [editing])
 
+  // A date cell's editor opens its picker as the edit starts (YAZ-3746 13P): one click or Enter, not a second click on
+  // the field's calendar button. A typed date still commits; Esc closes the picker, then the editor. Only Chromium has
+  // `showPicker`, and it throws without a user gesture — an edit always starts from one — or when a picker is open.
+  useEffect(() => {
+    if (!editing || editor !== 'date') return
+    const input = wrapRef.current?.querySelector('input')
+    try {
+      input?.showPicker?.()
+    } catch {
+      // The field stays, and typing a date works as before.
+    }
+  }, [editing, editor])
+
   if (editor === null) return <>{cellContent(value, resolve, decl)}</>
   if (readOnly) {
     return editor === 'checkbox' ? (
@@ -128,7 +142,8 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
       echoes.current = echoes.current.filter(echo => echo.revision !== turn)
       if (turn !== revision.current) return
       setPending(null)
-      setError(err instanceof Error ? err.message : String(err))
+      // A cancelled ask (Confirm changes, YAZ-3746 13AN): the old value shows again, and nothing is wrong.
+      if (err !== CHANGE_CANCELLED) setError(err instanceof Error ? err.message : String(err))
     })
     writes.current = settled
     void settled.then(() => { if (writes.current === settled) writes.current = null })

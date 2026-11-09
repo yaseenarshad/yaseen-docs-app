@@ -59,16 +59,19 @@ export function chooseOwn<K extends DefaultedKey>(view: ViewDef, key: K, value: 
 }
 
 /**
- * The grey "from Settings" beside a menu row whose view has no key of its own; once it has one, a Reset that removes
- * the key, so the view follows Settings again (D34). `own` is the view as written, never `withDefaults`'.
+ * The slot after a menu row's control (D34, polished in the YAZ-3746 demo): empty while the view follows Settings
+ * (the View tab's footer says where defaults come from); once the view has its own value, an accent ↺ that removes
+ * the key, so the view follows Settings again. The empty slot keeps every control in the same place.
+ * `own` is the view as written, never `withDefaults`'.
  */
 export function FromSettings({ own, viewKey, viewIndex, onUpdate }: { own: ViewDef; viewKey: DefaultedKey; viewIndex: number; onUpdate: Mutate }) {
-  if (own[viewKey] === undefined) return <span className="view-from-settings">from Settings</span>
+  if (own[viewKey] === undefined) return <span className="view-from-settings" aria-hidden="true" />
   return (
     <button
       type="button"
       className="view-from-settings view-from-settings--reset"
-      title="Use the value from Settings › Folder pages"
+      aria-label="Reset to Settings"
+      title="Changed for this view. Click to use the value from Settings › Folder pages."
       onClick={(e) => {
         e.preventDefault()
         onUpdate((d) => {
@@ -76,7 +79,9 @@ export function FromSettings({ own, viewKey, viewIndex, onUpdate }: { own: ViewD
         })
       }}
     >
-      Reset
+      <svg width={13} height={13} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 6.5h7a3.5 3.5 0 0 1 0 7H6M5.5 3.5 2.5 6.5l3 3" />
+      </svg>
     </button>
   )
 }

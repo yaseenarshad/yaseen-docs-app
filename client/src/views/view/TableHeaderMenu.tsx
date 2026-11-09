@@ -13,11 +13,17 @@ import { ColumnDetail, type ColumnDoors, columnKind, columnTypeLabel } from './C
 import { displayNameOf, setDisplayName } from './columnLabel'
 import { setViewOrder, withOrder } from './columnOrder'
 import { UNFROZE_COLUMNS, frozenColumnCount } from './frozenColumns'
-import { groupAppend, groupLevels, groupOnly, groupRemoveLevel } from './groupLevels'
+import { groupAppend, groupLevels, groupMoveLevel, groupOnly, groupRemoveLevel } from './groupLevels'
 import { FlyoutItem, FlyoutParent, useFlyout } from '../../components/Flyout'
 import { canonicalKey } from './keys'
+import { type ColumnAlign, columnAlignOf, setColumnAlign } from './columnAlign'
+import { columnFillOf, setColumnFill } from './columnFill'
+import { FillMenu, type FillTarget } from './FillMenu'
 import { TextField } from './TextField'
 import { textInCellsOf } from './TableLookSettings'
+
+/** The header's one Fill flyout (YAZ-3746 13AQ). */
+const COLUMN_ONLY: readonly FillTarget[] = ['column']
 
 export interface TableHeaderMenuProps {
   x: number
@@ -87,11 +93,14 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
  * ✓ on this column's state: Sort › writes `sort` (one rule on this column, or this column's rule removed),
  * Group › writes `groupBy` (`groupLevels.ts`), and Text › "Wrap text" / "Clip text" (YAZ-4582 D29) write
  * `columnWrap[<canonical key>]` (`true` Wrap, `false` Clip); the choice its kind (or Settings › Folder pages, YAZ-4585) makes anyway deletes the
- * entry in any spelling, and an empty map.
+ * entry in any spelling, and an empty map. Text › also holds the column's alignment (YAZ-3746 13Y): "Auto alignment" /
+ * "Align left" / "Align center" / "Align right", ✓ on the current one, each one write of `columnAlign[<canonical key>]`
+ * through `view/columnAlign.ts` (Auto deletes the entry).
  */
 export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewIndex, keys, takenKeys, reserved, records, wrapKind, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
-  const flyout = useFlyout<'sort' | 'group' | 'text'>()
+  /** The menu's ONE open flyout: Sort, Group, Text and Fill column's (YAZ-3746 13AU). */
+  const flyout = useFlyout<string>()
   // The view's own Text in cells, else Settings' (YAZ-4544 10A).
   const defaults = useViewDefaults()
   const textInCells = textInCellsOf(def.views[viewIndex], defaults)
@@ -161,6 +170,9 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
       if (Object.keys(next).length) v.columnWrap = next
       else delete v.columnWrap
     })
+  /** This column's alignment (YAZ-3746 13Y): null is Auto. A pick is one write through `setColumnAlign`, as Wrap / Clip. */
+  const align = columnAlignOf(view, key)
+  const alignRow = (label: string, next: ColumnAlign | null) => <FlyoutItem label={label} checked={align === next} onSelect={write((v) => setColumnAlign(v, key, next))} />
   /** The last frozen column, or not (the table block's ✓ rule, YAZ-3696): a click on ✓ unfreezes. */
   const frozenHere = index >= 0 && frozen === index + 1
 
@@ -258,25 +270,24 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
                     <FlyoutItem
                       label="Add as next group level"
                       disabled={levels.length >= MAX_GROUP_LEVELS}
-                      tip={levels.length >= MAX_GROUP_LEVELS ? 'Three levels at most' : undefined}
+                      tip={levels.length >= MAX_GROUP_LEVELS ? 'Five levels at most' : undefined}
                       onSelect={write((v) => groupAppend(v, key))}
                     />
                   )}
                 </div>
-                {levels.length > 0 && (
-                  <div className="ctx-menu__group" role="group">
-                    <div className="ctx-menu__heading" role="presentation">
-                      Levels
-                    </div>
-                    {levels.map((l, i) => (
-                      <div key={i} className="ctx-menu__item view-header-menu__level" role="presentation" data-hint={levelKeys[i] === c ? '✓' : undefined}>
-                        {propertyLabel(def, l.property)}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {/* This column's level (YAZ-3746 13V): a heading that says which, then what can be done with it. The old
+                    read-only "Levels" list looked clickable and did nothing. */}
                 {ownLevel !== -1 && (
                   <div className="ctx-menu__group" role="group">
+                    <div className="ctx-menu__heading" role="presentation">
+                      Group level {ownLevel + 1} of {levels.length}
+                    </div>
+                    {levels.length > 1 && (
+                      <>
+                        <FlyoutItem label="Move up a level" disabled={ownLevel === 0} tip={ownLevel === 0 ? 'Already the outer level' : undefined} onSelect={write((v) => groupMoveLevel(v, ownLevel, -1))} />
+                        <FlyoutItem label="Move down a level" disabled={ownLevel === levels.length - 1} tip={ownLevel === levels.length - 1 ? 'Already the inner level' : undefined} onSelect={write((v) => groupMoveLevel(v, ownLevel, 1))} />
+                      </>
+                    )}
                     <FlyoutItem label="Remove this group level" onSelect={write((v) => groupRemoveLevel(v, ownLevel), `Removed group level ${label}`)} />
                   </div>
                 )}
@@ -286,7 +297,27 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
                   <FlyoutItem label="Wrap text" checked={wrapped} onSelect={setWrap(true)} />
                   <FlyoutItem label="Clip text" checked={!wrapped} onSelect={setWrap(false)} />
                 </div>
+                {/* The column's alignment (YAZ-3746 13Y): Auto is today's look, numbers right and the rest left. */}
+                <div className="ctx-menu__group" role="group">
+                  {alignRow('Auto alignment', null)}
+                  {alignRow('Align left', 'left')}
+                  {alignRow('Align center', 'center')}
+                  {alignRow('Align right', 'right')}
+                </div>
               </FlyoutParent>
+            </div>
+            {/* The column's fill (YAZ-3746 13AQ): every cell of it, under a row's and a cell's own fill. */}
+            <div className="ctx-menu__group">
+              <FillMenu
+                flyout={flyout}
+                targets={COLUMN_ONLY}
+                start={columnFillOf(def.views[viewIndex], key)}
+                onFill={(_, fill) => {
+                  onUpdate((d) => setColumnFill(d.views[viewIndex], key, fill), fill === null ? 'Cleared fill' : undefined, undefined, true)
+                  onClose()
+                }}
+                onClose={onClose}
+              />
             </div>
             {/* The view group (YAZ-4608 C8): what shows and what freezes, after the edits and before Delete. */}
             <div className="ctx-menu__group" onMouseEnter={() => flyout.hover(null)}>

@@ -17,8 +17,8 @@ import { ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsCtx, SettingsSection } from './registry'
 
 const WEEK_START_OPTIONS: readonly Option<FolderPagesSettings['weekStartsOn']>[] = [
-  { label: 'Monday', value: 'monday' },
   { label: 'Sunday', value: 'sunday' },
+  { label: 'Monday', value: 'monday' },
 ]
 const ROW_HEIGHT_OPTIONS: readonly Option<FolderPagesSettings['rowHeight']>[] = [
   { label: 'Short', value: 'short' },
@@ -83,12 +83,22 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('weekStartsOn', 'Week starts on', WEEK_START_OPTIONS, { hint: 'The first day of the calendar view.', keywords: ['week', 'monday', 'sunday'] }),
         {
           // Moved from Files & Links › Preview on hover (D34), the same key: that page's master switch still turns every place off.
+          // Two switches since demo 13D (YAZ-4601): the rows' keeps the old key; the links' is `folderLinks`.
           id: 'hoverPreviewIn.folderViews',
-          label: 'Preview on hover',
-          hint: 'Rest the mouse on a row or a card to see the note. The main Preview on hover switch turns every place off.',
-          keywords: [...WORDS, 'hover', 'preview', 'mouse'],
+          label: 'Preview rows on hover',
+          hint: 'Rest the mouse on a row, a card or a line of Other files to see the file. The main Preview on hover switch turns every place off.',
+          keywords: [...WORDS, 'hover', 'preview', 'mouse', 'rows', 'cards'],
           render: ({ settings, onChange }) => (
-            <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreviewIn.folderViews} onChange={(on) => onChange({ ...settings, hoverPreviewIn: { ...settings.hoverPreviewIn, folderViews: on } })} ariaLabel="Preview on hover: Folder views" />
+            <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreviewIn.folderViews} onChange={(on) => onChange({ ...settings, hoverPreviewIn: { ...settings.hoverPreviewIn, folderViews: on } })} ariaLabel="Preview rows on hover: Folder pages" />
+          ),
+        },
+        {
+          id: 'hoverPreviewIn.folderLinks',
+          label: 'Preview links on hover',
+          hint: 'Rest the mouse on a link pill in a cell to see the linked note. The main Preview on hover switch turns every place off.',
+          keywords: [...WORDS, 'hover', 'preview', 'mouse', 'links', 'pill'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreviewIn.folderLinks} onChange={(on) => onChange({ ...settings, hoverPreviewIn: { ...settings.hoverPreviewIn, folderLinks: on } })} ariaLabel="Preview links on hover: Folder pages" />
           ),
         },
         // The hints' "›" stays with the word after it: a no-break space, so the arrow never ends a line (YAZ-4643 S7).
@@ -96,6 +106,8 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('keepWindowPinned', 'Keep the mini window pinned', ON_OFF_OPTIONS, { hint: 'The mini window of a row stays open on a click outside it. Until you set it, it follows Editor ›\u00a0Cell notes ›\u00a0Keep cell notes open.', keywords: ['mini window', 'note window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
         // Its own switch (YAZ-4592 S26): the sidebar's Confirm before deleting does not turn it off.
         row('askBeforeDelete', 'Ask before deleting notes', ON_OFF_OPTIONS, { hint: 'Delete note… in a row’s menu asks first. The note moves to the Trash. The sidebar’s Confirm before deleting does not change this.', keywords: ['delete', 'confirm', 'trash', 'ask'] }),
+        // YAZ-3746 13AN: on by default, so a stray key in a cell never changes a note unasked.
+        row('confirmChanges', 'Confirm changes', ON_OFF_OPTIONS, { hint: 'A change to a note from a folder page (a typed cell, Delete, Paste, a drag to another group or day, a rename) asks first. The ask can pause for a few minutes. A folder’s ⚙ can say otherwise.', keywords: ['confirm', 'changes', 'ask', 'edit', 'lock', 'accident', 'safe', 'double'] }),
       ],
     },
     {

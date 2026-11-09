@@ -1,6 +1,7 @@
 import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Group, Row } from '../engine'
+import { PropertiesOpenMemory } from '../../editor/FrontmatterPanel'
 import { cellNotePinnedAtStart } from '../../editor/table/cellNoteCard'
 import { isNoteKey } from '../../editor/noteKeys'
 import { cssZoom } from '../../lib/cssZoom'
@@ -51,7 +52,7 @@ export function shownRows(groups: readonly Group[] | null, rows: readonly Row[],
  * the same mark from `link.current` (`CURRENT_ITEM`). On a switch of view tab the next view writes the link in its
  * render, before this one's cleanup runs, so the cleanup clears only what this view wrote.
  */
-export function useNoteWindowItems(link: NoteWindowLink | undefined, order: readonly Row[], root: RefObject<HTMLElement | null>): void {
+export function useNoteWindowItems(link: NoteWindowLink | undefined, order: readonly Row[], root: RefObject<HTMLElement | null>, onShow?: (current: string | null) => void): void {
   const wrote = useRef(order)
   wrote.current = order
   if (link !== undefined) {
@@ -66,6 +67,8 @@ export function useNoteWindowItems(link: NoteWindowLink | undefined, order: read
         if (on) shown ??= item
       }
       shown?.scrollIntoView?.({ block: 'nearest' })
+      // A view whose items can hide (the calendar's "+N more", YAZ-3746 13J) hears each step, to reveal the card's item.
+      onShow?.(link.current)
     }
   }
   useEffect(
@@ -118,6 +121,38 @@ export const dropNoteWindow = (key: string): void => void openWindows.delete(key
 /** For tests: no card open anywhere. */
 export const dropAllNoteWindows = (): void => openWindows.clear()
 
+/** A card's place and size, apart from its note and pin. */
+export type NoteWindowBox = Pick<NoteWindowMemory, 'placed' | 'width' | 'height'>
+/**
+ * The place and size of a folder page's last mini window (YAZ-3746 13H), kept across restarts in this window's
+ * localStorage by folder path: every drag, resize and reset writes it, and the next card of that page (in any app tab
+ * or view tab) opens there. Before any: the default, 480 × 440 at the right of the page.
+ */
+const boxKey = (folderPath: string): string => `noteWindow:${folderPath}`
+const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+export function savedNoteWindowBox(folderPath: string): NoteWindowBox | null {
+  try {
+    const raw = localStorage.getItem(boxKey(folderPath))
+    if (raw === null) return null
+    const v: unknown = JSON.parse(raw)
+    if (typeof v !== 'object' || v === null) return null
+    const { placed, width, height } = v as Record<string, unknown>
+    const p = typeof placed === 'object' && placed !== null ? (placed as Record<string, unknown>) : null
+    const x = finite(p?.x)
+    const y = finite(p?.y)
+    return { placed: x !== null && y !== null ? { x, y } : null, width: finite(width), height: finite(height) }
+  } catch {
+    return null
+  }
+}
+export function saveNoteWindowBox(folderPath: string, { placed, width, height }: NoteWindowBox): void {
+  try {
+    localStorage.setItem(boxKey(folderPath), JSON.stringify({ placed, width, height }))
+  } catch {
+    // No storage (a private window, a full quota): the size lasts the session, as before.
+  }
+}
+
 /** `path` is `at` or a file under the folder `at`. */
 const isAtOrUnder = (path: string, at: string): boolean => path === at || path.startsWith(`${at}/`)
 
@@ -167,12 +202,16 @@ interface NoteWindowProps {
   titleOf: (path: string) => string
   /** The card's note, place, size and pin: the card opens on `memory.path` and writes each step there. */
   memory: NoteWindowMemory
+  /** ↗: the note in a new app tab (YAZ-3746 13I); the folder page's tab stays, and this window open on it (13AJ). */
   onOpenInTab: (path: string) => void
   onClose: () => void
+  /** After a drag, a resize or a reset of the card: the memory as it stands, for the folder page to keep (13H). */
+  onPlaced?: (memory: NoteWindowMemory) => void
 }
 
-/** The default width, the gap to the folder page's edges, and the least size a resize leaves (the cell-note card's). */
+/** The default size (480 × 440 since YAZ-3746 13H; the height fit the page before), the gap to the folder page's edges, and the least size a resize leaves (the cell-note card's). */
 const DEFAULT_WIDTH = 480
+const DEFAULT_HEIGHT = 440
 const GAP = 12
 const MIN_WIDTH = 240
 const MIN_HEIGHT = 120
@@ -205,7 +244,7 @@ const stepIndex = (found: number, last: number, dir: -1 | 1): number => (found =
  * views' document zoom. One editor is mounted at a time, keyed by the path: a step saves the note and mounts the next.
  * A drag or a resize writes the card's style only: nothing renders and no layout is read while the pointer moves.
  */
-export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, onClose }: NoteWindowProps) {
+export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, onClose, onPlaced }: NoteWindowProps) {
   const [path, setPath] = useState(memory.path)
   const [pinned, setPinned] = useState(memory.pinned)
   const [host, setHost] = useState<HTMLElement | null>(null)
@@ -215,6 +254,8 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
   const at = useRef(-1)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
+  /** The Properties panel's open state across the card's steps (YAZ-3746 13Q): each note starts as the last one left it. */
+  const propertiesOpen = useRef<boolean | null>(null)
 
   useLayoutEffect(() => {
     const anchor = anchorRef.current
@@ -279,7 +320,7 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
     const width = clamp(memory.width ?? DEFAULT_WIDTH, Math.min(MIN_WIDTH, W), Math.max(MIN_WIDTH, W - 2 * GAP))
     const left = memory.placed === null ? Math.max(0, W - width - GAP) : clamp(memory.placed.x, 0, Math.max(0, W - width))
     const top = memory.placed === null ? GAP : clamp(memory.placed.y, 0, Math.max(0, H - MIN_HEIGHT))
-    const height = clamp(memory.height ?? H - top - GAP, MIN_HEIGHT, Math.max(MIN_HEIGHT, H - top))
+    const height = clamp(memory.height ?? Math.min(DEFAULT_HEIGHT, H - top - GAP), MIN_HEIGHT, Math.max(MIN_HEIGHT, H - top))
     card.style.left = `${left}px`
     card.style.top = `${top}px`
     card.style.width = `${width}px`
@@ -313,7 +354,7 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
     return () => document.removeEventListener('mousedown', onDown, true)
   }, [pinned])
 
-  /** A pointer drag: `move` on each move, the cursor on the whole page until the drop. */
+  /** A pointer drag: `move` on each move, the cursor on the whole page until the drop, then the page keeps the memory (13H). */
   const track = (cursor: string, start: MouseEvent | ReactMouseEvent, move: (dx: number, dy: number) => void) => {
     const zoom = host === null ? 1 : cssZoom(host)
     host?.style.setProperty('--note-window-cursor', cursor)
@@ -323,6 +364,7 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
       window.removeEventListener('mousemove', onMove, true)
       window.removeEventListener('mouseup', onUp, true)
       host?.classList.remove('note-window-tracking')
+      onPlaced?.(memory)
     }
     window.addEventListener('mousemove', onMove, true)
     window.addEventListener('mouseup', onUp, true)
@@ -376,6 +418,7 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
     memory.width = null
     memory.height = null
     place()
+    onPlaced?.(memory)
   }
 
   const onKeyDown = (event: ReactKeyboardEvent) => {
@@ -420,13 +463,11 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
         <button
           type="button"
           className="cell-note-card__step note-window__open"
-          title="Open in tab"
-          aria-label="Open in tab"
+          title="Open in new tab"
+          aria-label="Open in new tab"
           onMouseDown={keep}
-          onClick={() => {
-            onClose()
-            onOpenInTab(path)
-          }}
+          // The window stays (YAZ-3746 13AJ): the note opens in a new tab, and back on this tab the window is where it was.
+          onClick={() => onOpenInTab(path)}
         >
           ↗
         </button>
@@ -435,7 +476,7 @@ export function NoteWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
         </button>
       </div>
       <div key={path} className="note-window__body">
-        {renderEditor(path)}
+        <PropertiesOpenMemory.Provider value={propertiesOpen}>{renderEditor(path)}</PropertiesOpenMemory.Provider>
       </div>
       {GRIPS.map((grip) => (
         <span key={grip.name} className="note-window__grip" data-grip={grip.name} onMouseDown={onGripDown(grip)} />

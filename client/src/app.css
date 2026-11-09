@@ -2724,12 +2724,18 @@ body.drag-held iframe {
 .ctx-menu {
   position: fixed;
   z-index: 40;
+  /* As wide as its longest item wherever it opens (YAZ-3746 13AW): near the window's right edge a fixed box shrank to
+     the room left of the click, its labels wrapped, and the menu ran off the bottom. */
+  width: max-content;
+  max-width: calc(100vw - 16px);
   min-width: 140px;
   padding: 4px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  /* A menu that scrolls (taller than the window, YAZ-3746 13AO) keeps its wheel: at its end the page does not move. */
+  overscroll-behavior: contain;
 }
 
 /* A panel, not a popup (YAZ-1767 D5): the vault switcher's surface hangs off the sidebar header's

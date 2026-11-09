@@ -1,10 +1,11 @@
-import { type ReactNode, type RefObject, useCallback, useState } from 'react'
+import { type ReactNode, useCallback, useContext, useState } from 'react'
+import { ContextMenuSurface } from '../../components/ContextMenuSurface'
+import { GroupLevelStepsContext } from '../groupLevelSteps'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
 import { type EngineError, propertyKeys, propertyLabel } from '../engine'
 import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
-import { CalendarShowBy } from './CalendarView'
 import { ColumnDetail } from './ColumnDetail'
 import { canHideColumn, setViewOrder } from './columnOrder'
 import { canonicalKey } from './keys'
@@ -21,9 +22,9 @@ type Menu = 'filter' | 'sort' | 'properties'
 const NO_COLUMNS: readonly string[] = []
 
 export interface ToolbarProps {
-  /** The table's Count / Sum / Average chip (YAZ-4612 S46): an empty span the table fills on the DOM. Absent: none. */
-  selectionChip?: RefObject<HTMLSpanElement | null>
-  /** A calendar's date columns for "Show by" (`dateColumns`, once in `ViewsPane`, YAZ-4544). */
+  /** A status at the start of the actions: Confirm changes' "Not asking · 4:32 · Resume" (YAZ-3746 13AN). */
+  notice?: ReactNode
+  /** A calendar's date columns for the View tab's "Show by" (`dateColumns`, once in `ViewsPane`, YAZ-4544). */
   dateColumns?: readonly string[]
   def: ViewSet
   view: ViewDef
@@ -72,8 +73,11 @@ export const rowsLabel = (shown: number, total: number, folders?: { shown: numbe
     : `${countLabel(shown - folders.shown, total - folders.total)} · ${countLabel(folders.shown, folders.total, 'folder')}`
 
 /** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
-export function Toolbar({ selectionChip, def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS, tabId }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS, tabId, notice }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
+  /** The ⌃'s right-click (YAZ-3746 13AT): one level at a time, beside all; its click still collapses or expands all. */
+  const levels = useContext(GroupLevelStepsContext)
+  const [foldMenu, setFoldMenu] = useState<{ x: number; y: number } | null>(null)
   /** "Edit option order…" (YAZ-3940): the column the Sort popover shows its column editor on, or null for the menu. */
   const [editing, setEditing] = useState<string | null>(null)
   /**
@@ -92,6 +96,23 @@ export function Toolbar({ selectionChip, def, view, viewIndex, records, filterEr
   // A calendar ignores `groupBy` (YAZ-4540): its levels show nowhere, so they count none.
   const sorts = (view.sort?.length ?? 0) + (view.type === 'calendar' ? 0 : shownGroupLevels(view).length)
   const allCollapsed = allGroupKeys.every((k) => collapsed.includes(k))
+  const foldItem = (label: string, icon: ReactNode, run: (() => void) | undefined) => (
+    <button
+      type="button"
+      className="ctx-menu__item"
+      role="menuitem"
+      disabled={run === undefined}
+      onClick={() => {
+        setFoldMenu(null)
+        run?.()
+      }}
+    >
+      <span className="ctx-menu__label">
+        {icon}
+        {label}
+      </span>
+    </button>
+  )
   const groupsLabel = allCollapsed ? 'Expand all groups' : 'Collapse all groups'
   /** The view's shown columns, for the column editor's "Hide in this view" (the Properties menu's rule). */
   const shownKeys = () => propertyKeys(def, view, records, Object.keys(folder.settings.columns))
@@ -115,7 +136,7 @@ export function Toolbar({ selectionChip, def, view, viewIndex, records, filterEr
         {badge > 0 && <span className="view-toolbar__badge">{badge}</span>}
       </button>
       {open === menu && (
-        <Popover constrainToViewport label={label} onClose={close} className={`view-popover--${menu}`}>
+        <Popover constrainToViewport focusOn="field" label={label} onClose={close} className={`view-popover--${menu}`}>
           {body}
         </Popover>
       )}
@@ -136,13 +157,7 @@ export function Toolbar({ selectionChip, def, view, viewIndex, records, filterEr
         }}
       />
       <div className="view-toolbar__actions">
-        {/* A calendar's "Show by" sits on the toolbar (YAZ-4540 D11), and again in Properties › Calendar. */}
-        {view.type === 'calendar' && (
-          <label className="view-cal__show-by">
-            <span>Show by</span>
-            <CalendarShowBy def={def} view={view} viewIndex={viewIndex} columns={dateColumns} onUpdate={onUpdate} />
-          </label>
-        )}
+        {notice}
         {button('sort', 'Sort', <SortIcon />, sorts, editing === null ? (
           <SortMenu settings={folder.settings} properties={properties} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} onEditColumn={setEditing} />
         ) : (
@@ -160,7 +175,7 @@ export function Toolbar({ selectionChip, def, view, viewIndex, records, filterEr
             'Columns and view',
             <PropertiesIcon />,
             0,
-            <PropertiesMenu key={viewAsks} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder} dateColumns={dateColumns} tabId={tabId} startTab={viewAsks > 0 ? 'view' : undefined} />,
+            <PropertiesMenu key={viewAsks} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder} tabId={tabId} startTab={viewAsks > 0 ? 'view' : undefined} dateColumns={dateColumns} />,
           )}
         {/* An outline is a DOCUMENT, not rows (YAZ-903): there is nothing there to filter. */}
         {!documentView &&
@@ -177,11 +192,29 @@ export function Toolbar({ selectionChip, def, view, viewIndex, records, filterEr
             type="button"
             className="view-toolbar__btn"
             aria-label={groupsLabel}
-            title={groupsLabel}
+            title={levels === null ? groupsLabel : `${groupsLabel} · right-click: one level at a time`}
             onClick={() => onSetAllGroups(allCollapsed ? [] : allGroupKeys)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setFoldMenu({ x: e.clientX, y: e.clientY })
+            }}
           >
             {allCollapsed ? <ExpandAllIcon /> : <CollapseAllIcon />}
           </button>
+        )}
+        {foldMenu !== null && (
+          <ContextMenuSurface x={foldMenu.x} y={foldMenu.y} onClose={() => setFoldMenu(null)}>
+            {levels !== null && (
+              <div className="ctx-menu__group" role="group">
+                {foldItem('Collapse one level', <CollapseAllIcon />, levels.collapseOne)}
+                {foldItem('Expand one level', <ExpandAllIcon />, levels.expandOne)}
+              </div>
+            )}
+            <div className="ctx-menu__group" role="group">
+              {foldItem('Collapse all groups', <CollapseAllIcon />, allCollapsed ? undefined : () => onSetAllGroups(allGroupKeys))}
+              {foldItem('Expand all groups', <ExpandAllIcon />, collapsed.length === 0 ? undefined : () => onSetAllGroups([]))}
+            </div>
+          </ContextMenuSurface>
         )}
         <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label="New note" title="New note" onClick={onNew}>
           <PlusIcon />
@@ -219,7 +252,6 @@ export function Toolbar({ selectionChip, def, view, viewIndex, records, filterEr
           )}
         </div>
         )}
-        {selectionChip !== undefined && <span ref={selectionChip} className="view-toolbar__selection" aria-live="polite" hidden />}
         <span className="view-toolbar__count" aria-live="polite">
           {rowsLabel(shown, total, folders)}
         </span>

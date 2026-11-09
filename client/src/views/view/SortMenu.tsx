@@ -34,8 +34,8 @@ const isLevel = (level: GroupBySpec | undefined): level is GroupBySpec => typeof
 const FOLDER = 'file.folder'
 
 /** Each group level's picker and order-menu names, outer first (YAZ-4532). */
-const GROUP_LABELS = ['Group by', 'Then group by', 'Then group by (level 3)'] as const
-const GROUP_DIRECTION_LABELS = ['Group direction', 'Then group direction', 'Then group direction (level 3)'] as const
+const GROUP_LABELS = ['Group by', 'Then group by', 'Then group by (level 3)', 'Then group by (level 4)', 'Then group by (level 5)'] as const
+const GROUP_DIRECTION_LABELS = ['Group direction', 'Then group direction', 'Then group direction (level 3)', 'Then group direction (level 4)', 'Then group direction (level 5)'] as const
 
 /**
  * Stable row identities of one reorderable rule list: the sorts (GRO-2135) and
@@ -226,7 +226,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
           </>, 'sort-menu__level'))}
         </ul>
       )}
-      {/* "Add group level" (D60) replaces the empty "None" picker: a row on the first free column, gone at three levels. */}
+      {/* "Add group level" (D60) replaces the empty "None" picker: a row on the first free column, gone at `MAX_GROUP_LEVELS` (five, YAZ-3746 13AF). */}
       {nextLevel !== undefined && (
         <div className="view-menu__foot">
           <button type="button" className="view-menu__action" onClick={() => writeGroup([...levels, { property: nextLevel.value, direction: 'ASC' }], [...groupRows.ids, groupRows.newId()])}>

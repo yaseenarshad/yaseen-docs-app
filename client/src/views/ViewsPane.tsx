@@ -7,8 +7,9 @@ import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wiki
 import { pageResolver } from '../links/folderLinks'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { type ViewSet, type ViewDef, type ParsedViews, hidesSubfolderNotes, parseViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
-import { type Group, type Row, propertyKeys, runView } from './engine'
+import { type ViewSet, type ViewDef, type ParsedViews, hidesSubfolderNotes, parseViews, serializeViews, shownGroupLevels, showsFolderRows, updateViews } from './viewSchema'
+import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, levelSteps } from './groupLevelSteps'
+import { type Group, type Row, propertyKeys, propertyLabel, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import { type ColumnDecl, type FolderSettings, rebaseSettings } from './folderSettings'
 import { type NewNoteSeed, deriveSeed } from './newNote'
@@ -21,12 +22,12 @@ import { canonicalKey } from './view/keys'
 import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
 import { ListView } from './view/ListView'
 import { TableView } from './view/TableView'
-import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, noteWindowKey, noteWindowLink, noteWindowMemory, openNoteWindow, renameNoteWindowView } from './view/NoteWindow'
+import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, noteWindowKey, noteWindowLink, noteWindowMemory, openNoteWindow, renameNoteWindowView, saveNoteWindowBox, savedNoteWindowBox } from './view/NoteWindow'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY, writableKey } from './readOnlyRows'
-import { noteRef, valueHistory } from './view/valueHistory'
+import { type HistoryStep, noteRef, valueHistory } from './view/valueHistory'
 import { reservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
@@ -42,6 +43,7 @@ import { csvName, downloadText, shownRows, toCsv, toTsv, viewTable } from './exp
 import { copyText } from '../editor/linkMenu'
 import { FindBar } from '../editor/find/FindBar'
 import { ViewFind, useViewFind } from './view/viewFind'
+import { CHANGE_CANCELLED, useConfirmChanges } from './confirmChanges'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -101,6 +103,8 @@ export interface FolderHost {
   openRight?: (path: string) => void
   /** A folder's page in a new tab, by its absolute path (YAZ-4564 D26/D27): the sidebar's "Open folder page" door. Absent: the Folder chips and ↗ open nothing. */
   openFolderPage?: (dir: string) => void
+  /** A note (or a folder row's page) in a NEW tab (YAZ-3746 13I): the mini window's ↗. Absent: ↗ opens in this tab. */
+  openNewTab?: (path: string) => void
   /**
    * A full editor on a note, for the table's note window (YAZ-4547 D14): App's, the same editor a tab has. Stable.
    * Absent: the row menu has no "Open in mini window" (YAZ-4605 D57), and ⇧Enter opens nothing.
@@ -170,8 +174,14 @@ export interface ViewsPaneProps {
   onOpenFile: (path: string) => void
   /** The folder's bundle (🔒 D3, YAZ-819): every edit of its views is ONE `update` through this adapter's one door. */
   folder: FolderHost
-  /** Settings › Preview on hover › Folder views (YAZ-3403): resting on an item shows the sidebar's panel beside it. */
+  /** "Preview rows on hover" (YAZ-3403; the page's key, else Settings › Folder pages): resting on an item shows the sidebar's panel beside it. */
   hoverPreview?: boolean
+  /** "Preview links on hover" (demo 13D; the page's key, else Settings › Folder pages): resting on a link pill in a cell shows the linked page. */
+  hoverLinks?: boolean
+  /** "Confirm changes" (YAZ-3746 13AN; the page's key, else Settings › Folder pages): a change to a note asks first. */
+  confirmChanges?: boolean
+  /** The ask's "Don't ask on this page": the page's own key, Off. */
+  onConfirmChangesOff?: () => void
   /** What the hover panel needs of a page's vault: App's `boardPreviewScope`. No scope, no hover panel. */
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
@@ -234,7 +244,7 @@ const PILL_HOVER = '\u0000pill'
 /** A folder row has no note to preview (YAZ-4579 D32): the hover panel is the notes', so its dwell never starts. */
 const noHover = (): void => undefined
 
-export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', folderPages: defaults = DEFAULT_FOLDER_PAGES }: ViewsPaneProps) {
+export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, hoverLinks = false, confirmChanges = false, onConfirmChangesOff, previewScope, diagramDarkColors = 'adapt', folderPages: defaults = DEFAULT_FOLDER_PAGES }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -254,9 +264,10 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const [createError, setCreateError] = useState<string | null>(null)
   // The hover panel (YAZ-3403): ONE dwell and ONE panel for every layout (`viewHover.ts`), beside the hovered item.
   // An item is found again by its path, the hovered copy first (a board can show a note twice). Nothing opens while an
-  // inline editor is open: the dwell's end finds no item then.
+  // inline editor is open: the dwell's end finds no item then. Two switches share the one dwell (demo 13D): `hoverPreview`
+  // lets a row's or card's dwell start, `hoverLinks` a pill's; the hook runs while either is on.
   const paneRef = useRef<HTMLDivElement>(null)
-  const itemHover = useCardPreview(hoverPreview, (path) => {
+  const itemHover = useCardPreview(hoverPreview || hoverLinks, (path) => {
     if (paneRef.current?.querySelector('[data-editing]') != null) return null
     if (path === PILL_HOVER) return pillAt.current?.isConnected === true ? pillAt.current : null
     const items = [...(paneRef.current?.querySelectorAll<HTMLElement>(`[data-hover-item="${CSS.escape(path)}"]`) ?? [])]
@@ -271,6 +282,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const pillAt = useRef<HTMLElement | null>(null)
   const pillOf = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? target.closest<HTMLElement>('[data-link-path]') : null)
   const onPillOver = (e: ReactMouseEvent) => {
+    if (!hoverLinks) return
     const pill = pillOf(e.target)
     if (pill === null || pill === pillAt.current) return
     pillAt.current = pill
@@ -285,18 +297,23 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     if (pillOf(to) !== null) return
     const item = to instanceof Element ? to.closest<HTMLElement>('[data-hover-item]') : null
     const path = item?.dataset.hoverItem
-    if (path !== undefined && paneRef.current?.contains(item!) === true && rowPage(path) === path) hoverCard(path, path)
+    if (hoverPreview && path !== undefined && paneRef.current?.contains(item!) === true && rowPage(path) === path) hoverCard(path, path)
   }
   // The note window (YAZ-4547): `opens` mounts a new card per open and renders each open and close; the link to the
   // table; the place, size and pin of the last card closed here, for the next open while this folder page is mounted.
   const [opens, setOpens] = useState(0)
   const windowLink = useMemo(noteWindowLink, [])
   const lastWindow = useRef<NoteWindowMemory | null>(null)
-  const itemProps = useCallback((path: string) => (rowPage(path) !== path ? { 'data-hover-item': path, onMouseEnter: noHover, onMouseLeave: noHover } : { 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard])
+  const itemProps = useCallback((path: string) => (rowPage(path) !== path || !hoverPreview ? { 'data-hover-item': path, onMouseEnter: noHover, onMouseLeave: noHover } : { 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard, hoverPreview])
   const viewHover = useMemo<ViewHover>(() => ({ itemProps }), [itemProps])
   // New records (a sync, another window's edit) can remove or move the item under the panel, and a removed item
   // fires no `mouseleave`: the panel goes.
   useEffect(() => closeItemHover(), [noteRecords, closeItemHover])
+  // A switch turned off closes the panel of its own kind (demo 13D): the hook's own close waits for both to be off.
+  useEffect(() => {
+    const { id, by } = itemHover.store.getState()
+    if (by === 'hover' && (id === PILL_HOVER ? !hoverLinks : !hoverPreview)) closeItemHover()
+  }, [hoverPreview, hoverLinks, itemHover.store, closeItemHover])
   const { def } = parsed
   const views = def.views
   const index = Math.max(0, Math.min(active, views.length - 1))
@@ -340,7 +357,10 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     folder.renderNoteEditor === undefined
       ? undefined
       : (path: string) => {
-          const { placed, width, height, pinned } = openNoteWindow(windowKey) ?? lastWindow.current ?? noteWindowMemory(path, defaults.keepWindowPinned)
+          const open = openNoteWindow(windowKey)
+          const { pinned } = open ?? lastWindow.current ?? noteWindowMemory(path, defaults.keepWindowPinned)
+          // The place and size: the open card's, else the page's last (YAZ-3746 13H, also from before a restart), else the default.
+          const { placed, width, height } = open ?? savedNoteWindowBox(folderPath) ?? lastWindow.current ?? noteWindowMemory(path)
           keepNoteWindow(windowKey, { path, placed, width, height, pinned })
           setOpens((n) => n + 1)
         }
@@ -366,20 +386,29 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * on by the one rebase (`rebaseSettings`), so a later sort, another window's change or a view added since stays —
    * ONE settings write — then runs `after`. A gesture that changed nothing (No fill on a cell with none) or that the
    * host refused (a read-only page, YAZ-4644 E2) says nothing: no toast may offer to undo what did not happen.
+   * Every gesture is also ONE step of the page's ⌘Z history (YAZ-3746 13N for fills; since 13AV every view change:
+   * Wrap / Clip, alignment, a width, a sort, a group level, a hide, a freeze, a view tab), with a redo that lays the
+   * change on again the same way; the toast's Undo is that step (T9e), so ⌘Z and the toast agree. `onHistory: false`
+   * keeps a write off the history.
    */
-  const update = (mutate: (def: ViewSet) => void, undo?: string, after?: () => void) => {
+  const update = (mutate: (def: ViewSet) => void, undo?: string, after?: () => void, onHistory = true) => {
     const before = latest.current.parsed.def
     const next = write(mutate)
-    if (undo === undefined || next === null || JSON.stringify(next) === JSON.stringify(before)) return
-    const restore = () => {
+    if ((undo === undefined && !onHistory) || next === null || JSON.stringify(next) === JSON.stringify(before)) return
+    /** Lays the change from `from` to `to` onto the def current then: `restore` inverts the gesture, the redo repeats it. */
+    const lay = (from: ViewSet, to: ViewSet) => () =>
       write((d) => {
-        const put = structuredClone(rebaseSettings(next, before, d)) as ViewSet
+        const put = structuredClone(rebaseSettings(from, to, d)) as ViewSet
         for (const k of Object.keys(d)) if (!Object.hasOwn(put, k)) delete d[k]
         Object.assign(d, put)
       })
+    const restore = () => {
+      lay(next, before)()
       after?.()
     }
-    folder.onNotice?.(undo, 'info', 'undo', { label: 'Undo', run: restore, fades: true })
+    const step: HistoryStep | null = onHistory ? { undo: restore, redo: lay(before, next) } : null
+    if (step !== null) history.push(step)
+    if (undo !== undefined) folder.onNotice?.(undo, 'info', 'undo', { label: 'Undo', run: step === null ? restore : () => void history.undoStep(step), fades: true })
   }
 
   // 5B's clearing discipline: a pending move holds until the index refetch moves that key off the
@@ -437,6 +466,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const openRowBackground = openBackground === undefined ? undefined : (path: string) => openBackground(rowPage(path))
   const openRight = folder.openRight
   const openRowRight = openRight === undefined ? undefined : (path: string) => openRight(rowPage(path))
+  const openNewTab = folder.openNewTab
+  const openRowNewTab = openNewTab === undefined ? undefined : (path: string) => openNewTab(rowPage(path))
   /**
    * A click on a link pill (YAZ-4601 D47) opens the LINKED page by the note links' rule (⌘ a background tab, ⌥ the right
    * panel) and nothing else: in the capture phase, so the cell under it neither selects nor edits and its card does not
@@ -518,6 +549,17 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     list.flatMap((g) => [spotKey(g, at), ...keysOf(g.children ?? [], childSpot(g, at))])
   const groupKeys = configuredGroups === null ? [] : keysOf(configuredGroups, TOP_SPOT)
   const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
+  // One level at a time (YAZ-3746 13AT, S8): offered while the view has two levels or more, and the store can hold its keys.
+  const nodesOf = (list: readonly Group[], at: GroupSpot): LevelNode[] =>
+    list.map((g) => ({ key: spotKey(g, at), ...(g.children === undefined ? {} : { children: nodesOf(g.children, childSpot(g, at)) }) }))
+  const steps = configuredGroups !== null && allGroupKeys.length > 0 && shownGroupLevels(view).length >= 2 ? levelSteps(nodesOf(configuredGroups, TOP_SPOT), collapsed) : null
+  const levelActions: GroupLevelStepActions | null =
+    steps === null
+      ? null
+      : {
+          ...(steps.collapseOne === null ? {} : { collapseOne: () => writeCollapsed(steps.collapseOne!) }),
+          ...(steps.expandOne === null ? {} : { expandOne: () => writeCollapsed(steps.expandOne!) }),
+        }
 
   // ⌘F (YAZ-4613, D64): the note's find bar over the view's rows as shown, the search box's narrowing included. Read at
   // each search, never at render: the table matches cells, Board, List and Cards a card's fields, Calendar the titles of
@@ -545,14 +587,49 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * A move that names where it went (`to`) says "Moved to <to>" once the write lands, with the app's
    * Undo (YAZ-4541 S6): Undo writes each `prevRaw` back the same way, and says nothing itself.
    */
+  /**
+   * Confirm changes (YAZ-3746 13AN): the page's ask, its card, and the toolbar's pause chip. A drop asks where the
+   * pointer let go; a cell asks by itself (`TableView`); undo never asks.
+   */
+  const { confirm: confirmChange, card: changeAsk, pauseChip } = useConfirmChanges(folderPath, confirmChanges, onConfirmChangesOff)
+  const lastPointer = useRef<{ x: number; y: number } | undefined>(undefined)
+  useEffect(() => {
+    const up = (e: PointerEvent) => void (lastPointer.current = { x: e.clientX, y: e.clientY })
+    const drop = (e: DragEvent) => void (lastPointer.current = { x: e.clientX, y: e.clientY })
+    window.addEventListener('pointerup', up, true)
+    window.addEventListener('drop', drop, true)
+    return () => {
+      window.removeEventListener('pointerup', up, true)
+      window.removeEventListener('drop', drop, true)
+    }
+  }, [])
+  const titleOf = (path: string) => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+  /** A drop that names where it went asks first (13AN); undo's write back (no `to`) does not. */
   const moveValues = (path: string, writes: PendingMove, to?: string) => {
+    if (confirmChange === undefined || to === undefined) return applyMove(path, writes, to)
+    void confirmChange({ kind: 'Move', note: titleOf(path), to, action: 'Move', point: lastPointer.current }).then((ok) => ok && applyMove(path, writes, to))
+  }
+  /** A List or Cards cell's write (13AN): asked by the item; a cancel puts the old value back (`CHANGE_CANCELLED`). */
+  const askedWriteValue = (path: string, key: string, value: unknown): Promise<unknown> => {
+    if (confirmChange === undefined) return writeValue(path, key, value)
+    const anchor = document.activeElement instanceof Element ? document.activeElement.closest('li, .view-card, td') : null
+    const was = records.find((r) => r.path === path)?.properties[key]
+    return confirmChange({ kind: propertyLabel(def, key), note: titleOf(path), from: was, to: value, anchor }).then((ok) => (ok ? writeValue(path, key, value) : Promise.reject(CHANGE_CANCELLED)))
+  }
+  /** A title edit renames the note (13AN): asked first. */
+  const askedRetitle = (path: string, title: string): void => {
+    if (confirmChange === undefined) return folder.retitle(path, title)
+    const anchor = document.activeElement instanceof Element ? document.activeElement.closest('td') : null
+    void confirmChange({ kind: 'Rename', from: titleOf(path), to: title, action: 'Rename', anchor }).then((ok) => ok && folder.retitle(path, title))
+  }
+  const applyMove = (path: string, writes: PendingMove, to?: string) => {
     setMoveError(null)
     setMoves((m) => ({ ...m, [path]: writes }))
     folder.writeValues(path, writes).then(
       () => {
         if (to === undefined) return
         const back: PendingMove = writes.map((w) => ({ key: w.key, value: w.prevRaw, prevRaw: w.value }))
-        folder.onNotice?.(`Moved to ${to}`, 'info', 'undo', { label: 'Undo', run: () => moveValues(path, back), fades: true })
+        folder.onNotice?.(`Moved to ${to}`, 'info', 'undo', { label: 'Undo', run: () => applyMove(path, back), fades: true })
       },
       (err: unknown) => {
         setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
@@ -615,8 +692,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // group — or, grouped by Folder, is born in it. The note opens once the create lands; a failure shows the alert.
   // A `name` means the board's inline add (YAZ-943) — it already named the card and the caller is
   // mid-typing in the column, so that create STAYS on the board and opens nothing. `values` seed
-  // more: a calendar day's "+" seeds its date (YAZ-4540 S10).
-  const onNewNote = (group: Group | null, name?: string, at?: GroupSpot, values?: Record<string, unknown>) => {
+  // more: a calendar day's "+" seeds its date (YAZ-4540 S10) and opens the note in the mini window (`open`,
+  // YAZ-3746 13G), so the calendar stays; every other "+" opens it in this tab.
+  const onNewNote = (group: Group | null, name?: string, at?: GroupSpot, values?: Record<string, unknown>, open: (path: string) => void = onOpenFile) => {
     const seed = deriveSeed(def, view)
     if (values !== undefined) Object.assign(seed.properties, values)
     if (group !== null) {
@@ -630,7 +708,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     folder
       .create(seed, name)
       .then((path) => {
-        if (name === undefined) onOpenFile(path)
+        if (name === undefined) open(path)
       })
       .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
   }
@@ -749,7 +827,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       update((d) => d.views.splice(i + 1, 0, { ...structuredClone(d.views[i]), name: freeName(`${d.views[i].name} copy`, taken()) }))
       setActive(i + 1)
     },
-    // "Open on this view" (YAZ-4585, D41): the saved START, set or cleared from the tab's right-click.
+    // "Make default view" (YAZ-4585 D41, words 13S): the saved START, set or cleared from the tab's right-click.
     defaultView: def.defaultView,
     onSetDefault: (i) =>
       update((d) => {
@@ -784,7 +862,6 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const pane = (
     <div ref={paneRef} className="views-pane" data-find-host={isPage ? undefined : ''} onMouseOver={onPillOver} onMouseOut={onPillOut} onClickCapture={onPillClick} onDoubleClickCapture={onPillClick}>
       <Toolbar
-        selectionChip={view.type === 'table' ? selectionChip : undefined}
         def={def}
         view={view}
         viewIndex={index}
@@ -806,6 +883,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         folder={folder}
         dateColumns={calendarColumns}
         tabId={tabId}
+        notice={pauseChip}
       />
       {/* ⌘F (YAZ-4613): on the Page tab the note's own find answers. */}
       {!isPage && <FindBar channel={find.channel} scope="views" hostRef={paneRef} />}
@@ -860,7 +938,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           valueCount={folder.valueCount}
           onWriteValue={writeValue}
           onWriteValues={folder.writeValues}
-          onRetitle={folder.retitle}
+          onRetitle={askedRetitle}
+          confirmChange={confirmChange}
           reservedKeys={reservedKeys(folder.wikilinks.ids)}
           onDuplicateNote={folder.duplicate}
           onDeleteNotes={confirmDeleteNotes}
@@ -907,7 +986,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onMoveToDay={onMoveToDay}
           moveError={moveError}
           onNewOnDay={(day) => {
-            if (dateKey !== null) onNewNote(null, undefined, undefined, { [dateKey]: day })
+            // The new note opens in the mini window (YAZ-3746 13G); in this tab where the host has no editor for one.
+            if (dateKey !== null) onNewNote(null, undefined, undefined, { [dateKey]: day }, openWindow)
           }}
           scale={view.calendarScale === 'week' ? 'week' : 'month'}
           onScale={(scale) =>
@@ -945,7 +1025,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           vaultFolders={vaultFolders}
           resolve={resolve}
           resolveLink={folder.resolveLink}
-          onWriteValue={writeValue}
+          onWriteValue={askedWriteValue}
         />
       ) : view.type === 'list' ? (
         <ListView
@@ -972,7 +1052,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           vaultFolders={vaultFolders}
           resolve={resolve}
           resolveLink={folder.resolveLink}
-          onWriteValue={writeValue}
+          onWriteValue={askedWriteValue}
         />
       ) : (
         <ul className="view-rows">
@@ -1002,13 +1082,30 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           link={windowLink}
           titleOf={(path) => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')}
           memory={noteWindow}
-          onOpenInTab={openRow}
+          // ↗ opens a new tab (YAZ-3746 13I) and the window stays open on this tab (13AJ); a host without that door opens
+          // in this tab, as before, and the window closes with the page it was on.
+          onOpenInTab={
+            openRowNewTab ??
+            ((path) => {
+              closeWindow()
+              openRow(path)
+            })
+          }
           onClose={closeWindow}
+          onPlaced={(memory) => saveNoteWindowBox(folderPath, memory)}
         />
       )}
       {deleteSheet}
+      {changeAsk}
       {/* A pill's page (YAZ-4601 D47) may be outside the folder: its title is the vault's. */}
       <CardPreviewHost store={itemHover.store} cardOf={(_, path) => ({ root: null, name: (records.find((r) => r.path === path) ?? vaultRecords.find((r) => r.path === path))?.title ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
+      {/* The selection's Count / Sum / Average (YAZ-4612 S46), docked at the bottom right of the visible table, as Sheets
+          shows its sum (YAZ-3746 13X): in the toolbar row it made that row wrap and the page jump at some widths. */}
+      {view.type === 'table' && (
+        <div className="views-pane__selection-dock">
+          <span ref={selectionChip} className="view-toolbar__selection" aria-live="polite" hidden />
+        </div>
+      )}
     </div>
   )
   // The Folder column's chips and the Folder group headers' ↗ read the page's folders (YAZ-4564); the cells show links as pills (YAZ-4601).
@@ -1016,7 +1113,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     <ViewDefaults.Provider value={defaults}>
       <FolderPages.Provider value={folderPages}>
         <LinkPills.Provider value={true}>
-          <TextLinkPicker.Provider value={true}>{pane}</TextLinkPicker.Provider>
+          <TextLinkPicker.Provider value={true}>
+            <GroupLevelStepsContext.Provider value={levelActions}>{pane}</GroupLevelStepsContext.Provider>
+          </TextLinkPicker.Provider>
         </LinkPills.Provider>
       </FolderPages.Provider>
     </ViewDefaults.Provider>

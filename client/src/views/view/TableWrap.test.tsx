@@ -86,11 +86,11 @@ const item = (el: ParentNode, label: string) => {
 function rightClick(target: Element): void {
   act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 20 })))
 }
-/** Right-click a header and open its Text › flyout (YAZ-4588 D42): its rows, the ✓ read from `data-hint`. */
+/** Right-click a header and open its Text › flyout (YAZ-4588 D42): its Wrap / Clip rows (the first group; the Align group follows since YAZ-3746 13Y, `TableAlign.test.tsx`), the ✓ read from `data-hint`. */
 function textMenu(target: Element): string[] {
   rightClick(target)
   act(() => item(document.body, 'Text').click())
-  return [...document.querySelectorAll<HTMLElement>('.ctx-menu__sub [role="menuitem"]')].map((b) => `${b.getAttribute('data-hint') === '✓' ? '✓ ' : ''}${b.textContent}`)
+  return [...document.querySelectorAll<HTMLElement>('.ctx-menu__sub [role="group"]:first-child [role="menuitem"]')].map((b) => `${b.getAttribute('data-hint') === '✓' ? '✓ ' : ''}${b.textContent}`)
 }
 /** The body cells of column `c`, in row order. */
 const column = (el: ParentNode, c: number) => [...el.querySelectorAll<HTMLElement>(`.view-table tbody td[data-cell$=":${c}"]`)]

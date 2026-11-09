@@ -50,10 +50,15 @@ export function flipRect(node: FlipRect, origin: FlipRect, scrollLeft: number, s
 
 const ENTER = 'view-flip-enter'
 
-/** Ref callback for the animated container; its `[data-flip-key]` descendants are what move. */
-export function useFlip(): (el: HTMLElement | null) => void {
+/**
+ * Ref callback for the animated container; its `[data-flip-key]` descendants are what move. `stillKey`: a commit that
+ * changes it is measured but never played — a group folding or unfolding moves every card below it, yet no card moved,
+ * and sliding them while their sections snap drew the cards over the headers (YAZ-3746 13A).
+ */
+export function useFlip(stillKey?: string): (el: HTMLElement | null) => void {
   const root = useRef<HTMLElement | null>(null)
   const prev = useRef<Map<string, FlipRect> | null>(null)
+  const lastStill = useRef(stillKey)
 
   useLayoutEffect(() => {
     const el = root.current
@@ -66,8 +71,10 @@ export function useFlip(): (el: HTMLElement | null) => void {
     }
     const first = prev.current
     prev.current = next
-    // The first commit has nothing to play from; reduced motion never plays at all.
-    if (first === null || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)) return
+    const still = lastStill.current !== stillKey
+    lastStill.current = stillKey
+    // The first commit has nothing to play from; a fold is not motion; reduced motion never plays at all.
+    if (first === null || still || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)) return
     const plan = flipPlan(first, next)
     const entered = new Set(plan.entered)
     for (const node of nodes) {

@@ -1,14 +1,13 @@
 import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, shownGroupLevels } from '../viewSchema'
-import { propertyLabel } from '../engine'
 import { TextField } from './TextField'
-import { MAX_FROZEN_ROWS, UNFROZE_COLUMNS, UNFROZE_ROWS, frozenColumnCount } from './frozenColumns'
 import { cardWidth } from './cardWidth'
-import { CalendarShowBy } from './CalendarView'
 import { hideWeekendsDefault, hidesWeekends } from '../calendar'
 import { markerStyleOf } from './ListView'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
 import { TableLookSettings } from './TableLookSettings'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
+import { ChoiceSeg, RowLabel } from './settingRow'
+import { CalendarShowBy } from './CalendarView'
 
 export interface ViewSettingsProps {
   def: ViewSet
@@ -17,8 +16,6 @@ export interface ViewSettingsProps {
   /** The view as written: whether a value is its own or from Settings (YAZ-4585). */
   own: ViewDef
   viewIndex: number
-  /** The view's shown columns, in order: the "Frozen columns" choices. */
-  shown: readonly string[]
   onUpdate: Mutate
   /** A calendar's date columns for "Show by" (`dateColumns`, once in `ViewsPane`, YAZ-4544). */
   dateColumns: readonly string[]
@@ -36,12 +33,14 @@ const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large
 
 /**
  * The View tab of the Properties popover (YAZ-4607, D59): how THIS view looks, by section, and only the sections its
- * type reads. Rows (a table's look and Row numbers, then Subfolders — moved here from the ⇅ popover by D60), Frozen
- * (a table's columns and rows), Groups (Group indent, D60, where the view indents its groups; Show empty groups),
- * the type's own section (Board, Calendar, List), then Folder › Default view. Every Settings › Folder pages default
- * keeps its grey "from Settings" and Reset (D34). Page-level settings stay in the page cog (D35).
+ * type reads. Rows (a table's look and Row numbers, then Subfolders — moved here from the ⇅ popover by D60), Groups
+ * (Group indent, D60, where the view indents its groups; Show empty groups), the type's own section (Board, Calendar,
+ * List), then Folder › Default view. Frozen columns and rows live only on the header and row right-clicks, and a
+ * calendar's Show by only here, first in Calendar (YAZ-3746 13AD: off the toolbar, over C3 and D11). Each row: an icon and label, then a segmented choice, a switch or a quiet select; a Settings ›
+ * Folder pages default shows the ↺ reset only once this view has its own value (D34). Page-level settings stay in the
+ * page cog (D35).
  */
-export function ViewSettings({ def, view, own, viewIndex, shown, onUpdate, dateColumns }: ViewSettingsProps) {
+export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns }: ViewSettingsProps) {
   const defaults = useViewDefaults()
   const table = view.type === 'table'
   // A calendar's days are its groups (YAZ-4540 D4) and a Board does not indent its groups (YAZ-4544): Table, List
@@ -55,7 +54,7 @@ export function ViewSettings({ def, view, own, viewIndex, shown, onUpdate, dateC
         <>
           <TableLookSettings view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           <label className="view-settings-row">
-            <span>Row numbers</span>
+            <RowLabel icon="rowNumbers">Row numbers</RowLabel>
             <input
               type="checkbox"
               aria-label="Row numbers"
@@ -73,60 +72,10 @@ export function ViewSettings({ def, view, own, viewIndex, shown, onUpdate, dateC
       )}
       {/* Every view type (YAZ-4579 D30): the one Subfolders switch, in View › Rows since D60. */}
       <SubfoldersSwitch view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
-      {table && (
-        <>
-          <p className="view-menu__label">Frozen</p>
-          <label className="view-settings-row">
-            <span>Frozen columns</span>
-            <select
-              className="view-select"
-              aria-label="Frozen columns"
-              value={frozenColumnCount(view.frozenColumns, shown.length)}
-              onChange={(e) =>
-                onUpdate((d) => {
-                  const count = Number(e.target.value)
-                  if (count === 0) delete d.views[viewIndex].frozenColumns
-                  else d.views[viewIndex].frozenColumns = count
-                }, Number(e.target.value) === 0 ? UNFROZE_COLUMNS : undefined)
-              }
-            >
-              <option value={0}>None</option>
-              {shown.map((key, index) => (
-                <option key={key} value={index + 1}>
-                  {index + 1} — through {propertyLabel(def, key)}
-                </option>
-              ))}
-            </select>
-          </label>
-          {/* The row menu's "Freeze up to this row" (YAZ-4537) as a count, the same write (D59). */}
-          <label className="view-settings-row">
-            <span>Frozen rows</span>
-            <select
-              className="view-select"
-              aria-label="Frozen rows"
-              value={frozenColumnCount(view.frozenRows, MAX_FROZEN_ROWS)}
-              onChange={(e) =>
-                onUpdate((d) => {
-                  const count = Number(e.target.value)
-                  if (count === 0) delete d.views[viewIndex].frozenRows
-                  else d.views[viewIndex].frozenRows = count
-                }, Number(e.target.value) === 0 ? UNFROZE_ROWS : undefined)
-              }
-            >
-              <option value={0}>None</option>
-              {Array.from({ length: MAX_FROZEN_ROWS }, (_, i) => (
-                <option key={i + 1} value={i + 1}>
-                  {i + 1} {i === 0 ? 'row' : 'rows'}
-                </option>
-              ))}
-            </select>
-          </label>
-        </>
-      )}
       {(indents || emptyGroups) && <p className="view-menu__label">Groups</p>}
       {indents && (
         <div className="view-settings-row">
-          <span>Group indent</span>
+          <RowLabel icon="groupIndent">Group indent</RowLabel>
           <div className="view-seg" role="group" aria-label="Group indent">
             {INDENT_STEPS.map(([step, text]) => (
               <button key={step} type="button" className="view-seg__opt" data-indent={step} aria-pressed={GROUP_INDENTS[step] === groupIndentOf(view)}
@@ -143,14 +92,14 @@ export function ViewSettings({ def, view, own, viewIndex, shown, onUpdate, dateC
       )}
       {/* A Table shows its empty option groups too (YAZ-3940 S11), under the name "Show empty groups". */}
       {emptyGroups && <div className="property-board-setting">
-        <label className="view-settings-row"><span>{view.type === 'board' ? 'Show empty columns' : 'Show empty groups'}</span><input type="checkbox" role="switch" checked={view.showEmptyColumns === true} onChange={e => onUpdate(d => chooseOwn(d.views[viewIndex], 'showEmptyColumns', e.target.checked, defaults))} /><FromSettings own={own} viewKey="showEmptyColumns" viewIndex={viewIndex} onUpdate={onUpdate} /></label>
+        <label className="view-settings-row"><RowLabel icon="emptyGroups">{view.type === 'board' ? 'Show empty columns' : 'Show empty groups'}</RowLabel><input type="checkbox" role="switch" checked={view.showEmptyColumns === true} onChange={e => onUpdate(d => chooseOwn(d.views[viewIndex], 'showEmptyColumns', e.target.checked, defaults))} /><FromSettings own={own} viewKey="showEmptyColumns" viewIndex={viewIndex} onUpdate={onUpdate} /></label>
         <small>Include unused options from the grouping property.</small>
       </div>}
       {view.type === 'board' && (
         <>
           <p className="view-menu__label">Board</p>
           <label className="view-settings-row">
-            <span>Column width</span>
+            <RowLabel icon="columnWidth">Column width</RowLabel>
             <span className="view-width-setting">
               <TextField
                 className="view-input"
@@ -177,49 +126,38 @@ export function ViewSettings({ def, view, own, viewIndex, shown, onUpdate, dateC
       {view.type === 'calendar' && (
         <>
           <p className="view-menu__label">Calendar</p>
-          <label className="view-settings-row">
-            <span>Show by</span>
-            <CalendarShowBy def={def} view={view} viewIndex={viewIndex} columns={dateColumns} onUpdate={onUpdate} />
-          </label>
+          {/* Show by (YAZ-3746 13AD): the date column the calendar places notes on; only here, no longer on the toolbar. */}
+          {(dateColumns.length > 0 || typeof view.dateProperty === 'string') && (
+            <label className="view-settings-row">
+              <RowLabel icon="showBy">Show by</RowLabel>
+              <CalendarShowBy def={def} view={view} viewIndex={viewIndex} columns={dateColumns} onUpdate={onUpdate} />
+            </label>
+          )}
           {/* The toolbar's Month / Week switch as a setting (D59): the same write as `ViewsPane`'s `onScale`. */}
-          <label className="view-settings-row">
-            <span>Opens in</span>
-            <select
-              className="view-select"
-              aria-label="Opens in"
+          <div className="view-settings-row">
+            <RowLabel icon="opensIn">Opens in</RowLabel>
+            <ChoiceSeg
+              label="Opens in"
               value={view.calendarScale === 'week' ? 'week' : 'month'}
-              onChange={(e) =>
-                onUpdate((d) => {
-                  // Settings' scale removes the key (YAZ-4558 D22, YAZ-4585): Month, unless Settings › Folder pages says Week.
-                  chooseOwn(d.views[viewIndex], 'calendarScale', e.target.value === 'week' ? 'week' : 'month', defaults)
-                })
-              }
-            >
-              <option value="month">Month</option>
-              <option value="week">Week</option>
-            </select>
+              options={[['month', 'Month'], ['week', 'Week']] as const}
+              // Settings' scale removes the key (YAZ-4558 D22, YAZ-4585): Month, unless Settings › Folder pages says Week.
+              onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarScale', next, defaults))}
+            />
             <FromSettings own={own} viewKey="calendarScale" viewIndex={viewIndex} onUpdate={onUpdate} />
-          </label>
-          <label className="view-settings-row">
-            <span>Card titles</span>
-            <select
-              className="view-select"
-              aria-label="Card titles"
+          </div>
+          <div className="view-settings-row">
+            <RowLabel icon="cardTitles">Card titles</RowLabel>
+            <ChoiceSeg
+              label="Card titles"
               value={view.cardTitles === 'wrap' ? 'wrap' : 'clip'}
-              onChange={(e) =>
-                onUpdate((d) => {
-                  // Settings' choice removes the key (YAZ-4558 D23: Clip, unless Settings › Folder pages says Wrap, YAZ-4585).
-                  chooseOwn(d.views[viewIndex], 'cardTitles', e.target.value === 'wrap' ? 'wrap' : 'clip', defaults)
-                })
-              }
-            >
-              <option value="clip">Clip …</option>
-              <option value="wrap">Wrap</option>
-            </select>
+              options={[['clip', 'Clip'], ['wrap', 'Wrap']] as const}
+              // Settings' choice removes the key (YAZ-4558 D23: Clip, unless Settings › Folder pages says Wrap, YAZ-4585).
+              onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'cardTitles', next, defaults))}
+            />
             <FromSettings own={own} viewKey="cardTitles" viewIndex={viewIndex} onUpdate={onUpdate} />
-          </label>
+          </div>
           <label className="view-settings-row">
-            <span>Hide weekends</span>
+            <RowLabel icon="hideWeekends">Hide weekends</RowLabel>
             <input
               type="checkbox"
               aria-label="Hide weekends"
@@ -238,26 +176,22 @@ export function ViewSettings({ def, view, own, viewIndex, shown, onUpdate, dateC
       {view.type === 'list' && (
         <>
           <p className="view-menu__label">List</p>
-          <label className="view-settings-row">
-            <span>Marker style</span>
-            <select
-              className="view-select"
-              aria-label="Marker style"
-              value={markerStyleOf(view)}
-              onChange={(e) =>
+          <div className="view-settings-row">
+            <RowLabel icon="markerStyle">Marker style</RowLabel>
+            <ChoiceSeg
+              label="Marker style"
+              value={markerStyleOf(view) as 'bullet' | 'number' | 'none'}
+              options={[['bullet', 'Bullet'], ['number', 'Number'], ['none', 'None']] as const}
+              onChange={(next) =>
                 onUpdate((d) => {
-                  if (e.target.value === 'bullet') delete d.views[viewIndex].markerStyle
-                  else d.views[viewIndex].markerStyle = e.target.value
+                  if (next === 'bullet') delete d.views[viewIndex].markerStyle
+                  else d.views[viewIndex].markerStyle = next
                 })
               }
-            >
-              <option value="bullet">Bullet</option>
-              <option value="number">Number</option>
-              <option value="none">None</option>
-            </select>
-          </label>
+            />
+          </div>
           <label className="view-settings-row">
-            <span>Indent properties</span>
+            <RowLabel icon="indentProperties">Indent properties</RowLabel>
             <input
               type="checkbox"
               aria-label="Indent properties"
@@ -271,7 +205,7 @@ export function ViewSettings({ def, view, own, viewIndex, shown, onUpdate, dateC
             />
           </label>
           <label className="view-settings-row">
-            <span>Property separator</span>
+            <RowLabel icon="separator">Property separator</RowLabel>
             <TextField
               className="view-input view-settings-row__text"
               aria-label="Property separator"
@@ -290,7 +224,7 @@ export function ViewSettings({ def, view, own, viewIndex, shown, onUpdate, dateC
       {/* The folder-level setting (YAZ-1104) — the saved START, in the def since YAZ-1471: ONE door. */}
       <p className="view-menu__label">Folder</p>
       <label className="view-settings-row">
-        <span>Default view</span>
+        <RowLabel icon="defaultView">Default view</RowLabel>
         <select
           className="view-select"
           aria-label="Default view"
@@ -310,6 +244,7 @@ export function ViewSettings({ def, view, own, viewIndex, shown, onUpdate, dateC
           ))}
         </select>
       </label>
+      <p className="view-settings__foot">Defaults come from Settings › Folder pages. A ↺ marks a value changed for this view.</p>
     </div>
   )
 }

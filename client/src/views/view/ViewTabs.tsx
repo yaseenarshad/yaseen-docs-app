@@ -28,7 +28,7 @@ export interface ViewTabsProps {
   onDelete: (index: number) => void
   /** The saved START (`defaultView`, D4 of YAZ-818): the view a folder page opens on. Absent = the first. */
   defaultView?: string
-  /** "Open on this view" (YAZ-4585, D41): makes the view the START, or clears it when it is. Absent = no item. */
+  /** "Make default view" / "✓ Default view" (YAZ-4585 D41; words YAZ-3746 13S): makes the view the START, or clears it when it is. Absent = no item. */
   onSetDefault?: (index: number) => void
   /** "View settings…" (YAZ-4585, D34): opens the view's Properties menu. Absent = no item. */
   onSettings?: (index: number) => void
@@ -40,7 +40,7 @@ export interface ViewTabsProps {
  * View switcher (GRO-2135), editable again since YAZ-1471 re-ruled 🔒 rule 4 (YAZ-819): tabs
  * reorder by HTML5 drag — the tab bar's own live gap and glide since YAZ-4606 (`useLiveGapReorder`), so the two
  * strips cannot drift apart, with `dataTransfer` guarded for jsdom —
- * right-click opens Rename / Duplicate / ✓ Open on this view / View settings… / Export as CSV… / Copy as table / Delete
+ * right-click opens Rename / Duplicate / Make default view (✓ Default view) / View settings… / Export as CSV… / Copy as table / Delete
  * (YAZ-4585 D41, YAZ-4594 S30), "+" picks a
  * type. Every change is ONE `update` in ViewsPane; which view is active stays session state.
  */
@@ -190,7 +190,7 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
                 setMenu(null)
               }}
             >
-              {menuView.name === defaultView ? '✓ Open on this view' : 'Open on this view'}
+              {menuView.name === defaultView ? '✓ Default view' : 'Make default view'}
             </button>
           )}
           {onSettings !== undefined && (

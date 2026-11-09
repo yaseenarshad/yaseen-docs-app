@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { PROPERTY_KINDS, type IndexRecord, type PropertiesResponse, type PropertyFormat, type PropertyKind } from '@shared/types'
+import { type IndexRecord, type PropertiesResponse, type PropertyFormat, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import type { ColumnDecl, FolderSettings } from '../folderSettings'
 import type { FolderHost } from '../ViewsPane'
@@ -13,8 +13,14 @@ import { declarationForKind } from './declarationForKind'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
 import { PROPERTY_LABELS, PropertyOptionsEditor } from './PropertyDefinitionEditor'
 import { TextField } from './TextField'
+import { ChoiceSeg, RowLabel } from './settingRow'
+import { type ColumnAlign, columnAlignOf, setColumnAlign } from './columnAlign'
+import { TypePicker } from './TypePicker'
 
 const bare = (key: string): string => (key.startsWith('note.') ? key.slice(5) : key)
+
+/** The Align row's choices (YAZ-3746 13Y): `auto` is no `columnAlign` entry. */
+const ALIGN_OPTIONS = [['auto', 'Auto'], ['left', 'Left'], ['center', 'Center'], ['right', 'Right']] as const satisfies readonly (readonly [ColumnAlign | 'auto', string])[]
 
 const NUMBER_LABELS: Record<(typeof NUMBER_STYLES)[number], string> = { plain: 'Plain', grouped: '1,234', currency: 'Currency', percent: 'Percent' }
 const DATE_LABELS: Record<(typeof DATE_STYLES)[number], string> = { iso: '2026-11-07', medium: 'Nov 7, 2026', relative: 'Relative (in 3 days)' }
@@ -35,7 +41,7 @@ function FormatRows({ decl, label, onChange }: { decl: ColumnDecl; label: string
   return (
     <>
       <div className="column-detail__row">
-        <span>Format</span>
+        <RowLabel icon="format">Format</RowLabel>
         <select
           className="view-select"
           aria-label={`Format of ${label}`}
@@ -57,7 +63,7 @@ function FormatRows({ decl, label, onChange }: { decl: ColumnDecl; label: string
       </div>
       {format.style === 'currency' && (
         <div className="column-detail__row">
-          <span>Currency</span>
+          <RowLabel icon="currency">Currency</RowLabel>
           <select className="view-select" aria-label={`Currency of ${label}`} value={format.currency ?? 'USD'} onChange={(e) => write({ ...format, currency: e.target.value })}>
             {[...new Set([...CURRENCIES, format.currency ?? 'USD'])].map((code) => (
               <option key={code} value={code}>
@@ -69,7 +75,7 @@ function FormatRows({ decl, label, onChange }: { decl: ColumnDecl; label: string
       )}
       {number && (
         <div className="column-detail__row">
-          <span>Decimals</span>
+          <RowLabel icon="decimals">Decimals</RowLabel>
           <select
             className="view-select"
             aria-label={`Decimals of ${label}`}
@@ -152,7 +158,8 @@ export interface ColumnDetailProps {
  * (`note.*` only — `file.*` / `formula.*` read as text); Options for Select kinds (the SAME
  * `PropertyOptionsEditor` the definition editor holds — a rename there also renames the option in the notes, YAZ-4591
  * S24); Format for a Number or Date column (YAZ-4591 S21/S22); Relation (a declared link kind's target
- * inline, else "Make relation" seeding a link kind from a legacy vault declaration, YAZ-895); Card
+ * inline, else "Make relation" seeding a link kind from a legacy vault declaration, YAZ-895); Align (TABLE views only,
+ * YAZ-3746 13Y: Auto · Left · Center · Right, the view's `columnAlign` entry through `view/columnAlign.ts`); Card
  * styling (the four `cardStyle` toggles — BOARD views only, the one skin that reads `cardStyle`);
  * and the actions: Hide in this view and Delete column… (`views/deleteColumn.ts`, confirm-first;
  * built-in keys disabled with a tooltip).
@@ -281,29 +288,13 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
       </div>
       <fieldset className="column-detail__rows" disabled={saving}>
         <div className="column-detail__row">
-          <span>Key</span>
+          <RowLabel icon="key">Key</RowLabel>
           <code className="column-detail__key">{c}</code>
         </div>
-        <div className="column-detail__row">
-          <span>Type</span>
+        <div className="column-detail__row column-detail__row--type">
+          <RowLabel icon="type">Type</RowLabel>
           {isNote ? (
-            <select
-              className="view-select"
-              aria-label={`Edit property ${label}`}
-              value={kind ?? ''}
-              onChange={(e) => void changeKind(e.target.value as PropertyKind)}
-            >
-              {kind === undefined && (
-                <option value="" disabled>
-                  Auto
-                </option>
-              )}
-              {PROPERTY_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {PROPERTY_LABELS[k]}
-                </option>
-              ))}
-            </select>
+            <TypePicker kind={kind} label={label} onPick={(next) => void changeKind(next)} />
           ) : (
             <span className="column-detail__value">{c.startsWith('file.') ? 'File field' : 'Formula'}</span>
           )}
@@ -318,7 +309,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         {/* The relation (YAZ-895): a declared link kind's target inline; any other note key can BECOME one from the legacy seed. */}
         {isNote && (
           <div className="column-detail__row">
-            <span>Relation</span>
+            <RowLabel icon="relation">Relation</RowLabel>
             {linkKind && decl !== undefined ? (
               <TextField
                 className="view-input"
@@ -342,7 +333,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         {/* The description (YAZ-4590 S23): the table header shows it on hover. Blank text removes it. An undeclared column is declared with the kind it shows. */}
         {isNote && (
           <div className="column-detail__row">
-            <span>Description</span>
+            <RowLabel icon="description">Description</RowLabel>
             <TextField
               className="view-input"
               aria-label="Column description"
@@ -352,6 +343,18 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
                 const { description: _old, ...next } = decl ?? { kind: columnKind(key, records, properties, folder.settings) }
                 void writeDeclaration(text.trim() ? { ...next, description: text.trim() } : next)
               }}
+            />
+          </div>
+        )}
+        {/* The column's alignment in THIS table view (YAZ-3746 13Y): one `columnAlign` write per pick; Auto deletes the entry. */}
+        {view.type === 'table' && (
+          <div className="column-detail__row column-detail__row--align">
+            <RowLabel icon="align">Align</RowLabel>
+            <ChoiceSeg
+              label={`Align ${label}`}
+              value={columnAlignOf(view, key) ?? 'auto'}
+              options={ALIGN_OPTIONS}
+              onChange={(next) => onUpdate((d) => setColumnAlign(d.views[viewIndex], key, next === 'auto' ? null : next))}
             />
           </div>
         )}
@@ -384,7 +387,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
             onLeave()
           }}
         >
-          Hide in this view
+          <RowLabel icon="eyeOff">Hide in this view</RowLabel>
         </button>
         {deleteColumn && (
           <button
@@ -395,7 +398,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
             title={reason ?? undefined}
             onClick={() => setDeleting(key)}
           >
-            Delete column…
+            <RowLabel icon="trash">Delete column…</RowLabel>
           </button>
         )}
       </div>

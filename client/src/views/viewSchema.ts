@@ -35,7 +35,7 @@ export interface ViewDef {
   filters?: FilterNode
   order?: string[]
   sort?: SortSpec[]
-  /** Ordered levels, outer first; only the first three are honoured (YAZ-745, `MAX_GROUP_LEVELS` since YAZ-4531). The single-object form stays valid. */
+  /** Ordered levels, outer first; only the first five are honoured (YAZ-745, `MAX_GROUP_LEVELS` since YAZ-4531; five since YAZ-3746 13AF). The single-object form stays valid. */
   groupBy?: GroupBySpec | GroupBySpec[]
   showEmptyColumns?: boolean
   limit?: number
@@ -43,6 +43,10 @@ export interface ViewDef {
   columnSize?: Record<string, number>
   /** Wrap or Clip per column (YAZ-4582 D29): `false` under a canonical key clips that column to one line. Absent = Wrap. */
   columnWrap?: Record<string, boolean>
+  /** Left, Center or Right per column (YAZ-3746 13Y), under a canonical key. Absent = Auto: numbers right, the rest left (`view/columnAlign.ts`). */
+  columnAlign?: Record<string, 'left' | 'center' | 'right'>
+  /** A fill per column (YAZ-3746 13AQ), under a canonical key: a colour name or `#rrggbb`; a row's and a cell's fill show over it (`view/columnFill.ts`). */
+  columnFill?: Record<string, string>
   frozenColumns?: number
   /** Frozen rows (YAZ-4537, D9b / S4): the count of DATA rows frozen at the top, at most 10; the group headers above them freeze too. */
   frozenRows?: number
@@ -99,7 +103,7 @@ export const groupByLevels = (view: ViewDef): GroupBySpec[] =>
   Array.isArray(view.groupBy) ? view.groupBy : view.groupBy ? [view.groupBy] : []
 
 /** The most group levels a view honours (YAZ-4531); `groupBy` entries past it are ignored. */
-export const MAX_GROUP_LEVELS = 3
+export const MAX_GROUP_LEVELS = 5
 
 /** The levels the engine groups by: those with a property name, the first `MAX_GROUP_LEVELS` of them. */
 export const shownGroupLevels = (view: ViewDef): GroupBySpec[] =>
@@ -128,9 +132,11 @@ export interface ViewSet {
  * calls `onChange` (the folder host turns it into exactly one `folder_settings`
  * write). It lived in `view/FilterMenu.tsx` until YAZ-846 deleted that menu. `undo` (YAZ-4594 S29): the toast's
  * text when the gesture takes something away — a hidden column, an unfreeze, a cleared fill — whose Undo writes the
- * settings back as they were, in one write.
+ * settings back as they were, in one write; `after` runs once that Undo wrote. With `onHistory` (YAZ-3746 13N: a
+ * fill, a cleared fill, ⌘\) the gesture is a step of the page's ⌘Z history too, so ⌘Z and ⇧⌘Z undo and redo it as
+ * they do a typed value, and the toast's Undo is that step.
  */
-export type Mutate = (mutate: (def: ViewSet) => void, undo?: string) => void
+export type Mutate = (mutate: (def: ViewSet) => void, undo?: string, after?: () => void, onHistory?: boolean) => void
 
 export class ViewParseError extends Error {
   constructor(

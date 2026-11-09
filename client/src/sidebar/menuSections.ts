@@ -2,7 +2,7 @@ import { createElement, type ReactNode } from 'react'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
-import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, FolderIcon, HeartIcon } from '../views/view/icons'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -230,7 +230,7 @@ export const errorText = (error: unknown) => (error instanceof Error ? error.mes
 const open: Leaf = (t, h) => {
   const path = t.openPath
   if (path === null) return null
-  return { id: 'open', label: 'Open folder page', onSelect: () => h.onOpen(path) }
+  return { id: 'open', label: 'Open folder page', icon: createElement(FolderIcon, { size: 15 }), onSelect: () => h.onOpen(path) }
 }
 
 /**

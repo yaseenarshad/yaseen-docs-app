@@ -3,8 +3,9 @@
  *
  *  - THE COG: a "This folder page" group — "Read only" (D36, `readonly: true` in `.folder.md`), "Show folder page
  *    file" (D37, `show_page_file` in `.folder.md`: On, Off, or Settings — no key, which follows Settings › Folder pages),
- *    "Preview on hover" (YAZ-4601 D51, `hover_preview` in `.folder.md`) and "Show Other files" (YAZ-4597 D43,
- *    `show_other_files`), each with the same three choices.
+ *    "Preview rows on hover" and "Preview links on hover" (YAZ-4601 D51, split by demo 13D: `hover_rows` and
+ *    `hover_links` in `.folder.md`, the old `hover_preview` read where a new key is absent) and "Show Other files"
+ *    (YAZ-4597 D43, `show_other_files`), each with the same three choices.
  *    On the Page tab, the note's page switches follow it, and the note's fold-all button stands left of it (`FolderPageTab`).
  *  - ZOOM: per app tab and never stored, as a note's. The host keeps it.
  *  - SAVED / SAVING: the folder's own writes — its settings writes, and the Page body's saves (`FolderPageTab.save`).
@@ -55,7 +56,7 @@ export const FOLDER_READ_ONLY_TIP = 'This folder page is read only'
 const SAVE_RANK: Record<SaveStatus, number> = { saved: 0, unsaved: 1, saving: 2, error: 3 }
 const worse = (a: SaveStatus, b: SaveStatus): SaveStatus => (SAVE_RANK[a] >= SAVE_RANK[b] ? a : b)
 
-export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverPreview, onChangeHoverPreview, showOtherFiles, onChangeShowOtherFiles, sync, onSyncNow }: {
+export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, confirmChanges, onChangeConfirmChanges, sync, onSyncNow }: {
   store: Store<FolderChipsState>
   zoom: number
   onZoom: (zoom: number) => void
@@ -69,9 +70,15 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
   /** The folder's own choice: `undefined` follows Settings. */
   showPageFile: boolean | undefined
   onChangeShowPageFile: (next: boolean | undefined) => void
-  /** The folder's own "Preview on hover" (YAZ-4601 D51): `undefined` follows Settings. */
-  hoverPreview: boolean | undefined
-  onChangeHoverPreview: (next: boolean | undefined) => void
+  /** The folder's own "Preview rows on hover" (YAZ-4601 D51, split by demo 13D): `undefined` follows Settings. */
+  hoverRows: boolean | undefined
+  /** "Confirm changes" (YAZ-3746 13AN): the page's own choice; `undefined` follows Settings. */
+  confirmChanges?: boolean | undefined
+  onChangeConfirmChanges?: (next: boolean | undefined) => void
+  onChangeHoverRows: (next: boolean | undefined) => void
+  /** The folder's own "Preview links on hover" (demo 13D): `undefined` follows Settings. */
+  hoverLinks: boolean | undefined
+  onChangeHoverLinks: (next: boolean | undefined) => void
   /** The folder's own "Show Other files" (YAZ-4597): `undefined` follows Settings. */
   showOtherFiles: boolean | undefined
   onChangeShowOtherFiles: (next: boolean | undefined) => void
@@ -89,7 +96,7 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
       { label: 'Off', on: value === false, onPick: () => onChange(false) },
     ],
   })
-  const switches = [choiceRow('Show folder page file', showPageFile, onChangeShowPageFile), choiceRow('Preview on hover', hoverPreview, onChangeHoverPreview), choiceRow('Show Other files', showOtherFiles, onChangeShowOtherFiles)]
+  const switches = [choiceRow('Show folder page file', showPageFile, onChangeShowPageFile), choiceRow('Preview rows on hover', hoverRows, onChangeHoverRows), choiceRow('Preview links on hover', hoverLinks, onChangeHoverLinks), choiceRow('Show Other files', showOtherFiles, onChangeShowOtherFiles), ...(onChangeConfirmChanges === undefined ? [] : [choiceRow('Confirm changes', confirmChanges, onChangeConfirmChanges)])]
   return (
     <StatusChips zoom={zoom} onZoom={onZoom} readOnly={readOnly ? { asking, onAsk, onAllow, onCancel } : null} sync={sync} onSyncNow={onSyncNow} save={page === null ? save : worse(save, page.save)}>
       {page?.foldAll}

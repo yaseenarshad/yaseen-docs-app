@@ -104,7 +104,20 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
     [weeks, dayCards, undated, dateKey],
   )
   const rootRef = useRef<HTMLDivElement>(null)
-  useNoteWindowItems(windowLink, windowOrder, rootRef)
+  // The mini window's card under a "+N more" (YAZ-3746 13J): that day (or `NO_DATE`, the tray) shows every card while
+  // the window is on one of its hidden ones, so ‹ › and the arrow keys show each note highlighted; it folds again when
+  // the window moves on or closes. `show` tells each step; the revealed card is in the DOM only after that render, so
+  // the effect marks and scrolls it then.
+  const [revealed, setRevealed] = useState<string | null>(null)
+  const hiddenHome = (current: string | null): string | null => {
+    if (current === null) return null
+    if (scale !== 'week') for (const [day, list] of dayCards) if (list.findIndex((r) => r.record.path === current) >= DAY_CARDS) return day
+    return undated.findIndex((r) => r.record.path === current) >= TRAY_CARDS ? NO_DATE : null
+  }
+  useNoteWindowItems(windowLink, windowOrder, rootRef, (current) => setRevealed(hiddenHome(current)))
+  useEffect(() => {
+    if (revealed !== null) windowLink?.show()
+  }, [revealed, windowLink])
 
   const clear = () => {
     setDrag(null)
@@ -133,6 +146,8 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   const goToday = () => setAnchor(todayKey())
   const unit = isWeek ? 'week' : 'month'
   const title = isWeek ? weekLabel(weeks[0]) : `${MONTHS[month.m]} ${month.y}`
+  // The "No date" tray shows every card by its "+N more", or while the mini window is on a hidden one (13J).
+  const trayOpen = trayAll || revealed === NO_DATE
 
   /** The click rule here (D11): plain and ⌘ → a background tab, ⌥ → the right panel, ⇧ / ⌃ → nothing. */
   const open = (e: ReactMouseEvent, path: string) => {
@@ -221,6 +236,8 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   return (
     <div ref={rootRef} className="view-cal">
       <div className="view-cal__nav">
+        {/* The title alone at the left, the controls at the right (YAZ-3746 13M): views.css gives the title the room between. */}
+        <h3 className="view-cal__month">{title}</h3>
         <button type="button" className="view-toolbar__btn" aria-label={`Previous ${unit}`} title={`Previous ${unit}`} onClick={() => step(-1)}>
           ‹
         </button>
@@ -237,7 +254,6 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
             </button>
           ))}
         </div>
-        <h3 className="view-cal__month">{title}</h3>
       </div>
       <div className={`view-cal__grid${isWeek ? ' view-cal__grid--week' : ''}${hideWeekends ? ' view-cal__grid--weekdays' : ''}`} role="grid" aria-label={title}>
         <div className="view-cal__week" role="row">
@@ -252,7 +268,8 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
           <div key={week[0]} className="view-cal__week" role="row">
             {week.map((day) => {
               const list = dayCards.get(day) ?? []
-              const all = expanded === day
+              // Open by its "+N more", or while the mini window is on one of its hidden cards (13J).
+              const all = expanded === day || revealed === day
               // Week shows every card (D22); Month shows DAY_CARDS and "+N more". Both put the timed cards first.
               const shown = isWeek || all ? list : list.slice(0, DAY_CARDS)
               const inMonth = isWeek || Number(day.slice(5, 7)) === month.m + 1
@@ -275,7 +292,15 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
                   </div>
                   {shown.length > 0 && <ul className="view-cal__cards">{shown.map((row) => card(row, day))}</ul>}
                   {!isWeek && list.length > DAY_CARDS && (
-                    <button type="button" className="view-cal__more" onClick={() => setExpanded(all ? null : day)}>
+                    <button
+                      type="button"
+                      className="view-cal__more"
+                      onClick={() => {
+                        setExpanded(all ? null : day)
+                        // "Show less" on a day the mini window opened folds it until the window's next step (13J).
+                        if (all) setRevealed(null)
+                      }}
+                    >
                       {/* A narrow day shows "+3" (YAZ-4544): views.css hides the word. */}
                       {all ? 'Show less' : <>+{list.length - DAY_CARDS}<span className="view-cal__more-word"> more</span></>}
                     </button>
@@ -290,10 +315,17 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
         <h4 className="view-cal__tray-title">
           No date <span className="view-cal__tray-count">{undated.length}</span>
         </h4>
-        {undated.length > 0 && <ul className="view-cal__cards view-cal__tray-cards">{(trayAll ? undated : undated.slice(0, TRAY_CARDS)).map((row) => card(row, null))}</ul>}
+        {undated.length > 0 && <ul className="view-cal__cards view-cal__tray-cards">{(trayOpen ? undated : undated.slice(0, TRAY_CARDS)).map((row) => card(row, null))}</ul>}
         {undated.length > TRAY_CARDS && (
-          <button type="button" className="view-cal__more" onClick={() => setTrayAll(!trayAll)}>
-            {trayAll ? 'Show less' : `+${undated.length - TRAY_CARDS} more`}
+          <button
+            type="button"
+            className="view-cal__more"
+            onClick={() => {
+              setTrayAll(!trayOpen)
+              if (trayOpen) setRevealed(null)
+            }}
+          >
+            {trayOpen ? 'Show less' : `+${undated.length - TRAY_CARDS} more`}
           </button>
         )}
       </section>
@@ -323,7 +355,7 @@ export interface CalendarShowByProps {
   onUpdate: Mutate
 }
 
-/** "Show by" (D4): every date column of the folder, one per calendar tab; on the toolbar and in Properties › Calendar. */
+/** "Show by" (D4): every date column of the folder, one per calendar tab; in the View tab's Calendar section (YAZ-3746 13AD). */
 export function CalendarShowBy({ def, view, viewIndex, columns, onUpdate }: CalendarShowByProps) {
   const current = typeof view.dateProperty === 'string' ? view.dateProperty : columns[0]
   if (current === undefined) return null

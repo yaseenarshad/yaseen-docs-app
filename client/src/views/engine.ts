@@ -37,7 +37,7 @@ export interface Group {
    */
   fannedOut: boolean
   /**
-   * The inner groups (YAZ-745, up to three levels since YAZ-4531): present — possibly empty — on
+   * The inner groups (YAZ-745, up to `MAX_GROUP_LEVELS` levels: three since YAZ-4531, five since YAZ-3746 13AF): present — possibly empty — on
    * every group above the view's last level, absent on the last level (so a single level has none).
    */
   children?: Group[]

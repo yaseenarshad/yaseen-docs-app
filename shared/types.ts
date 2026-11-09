@@ -1863,7 +1863,7 @@ export const PIXABAY_SECRET = 'pixabayApiKey'
 
 /** The choices of each Settings › Folder pages row that is not a switch (YAZ-4585). The first is the default. */
 export const FOLDER_PAGE_CHOICES = {
-  weekStartsOn: ['monday', 'sunday'],
+  weekStartsOn: ['sunday', 'monday'],
   rowHeight: ['short', 'medium', 'tall'],
   textInCells: ['kind', 'wrap', 'clip'],
   groupIndent: ['medium', 'small', 'large'],
@@ -1874,8 +1874,8 @@ export const FOLDER_PAGE_CHOICES = {
 
 /**
  * Settings › Folder pages (YAZ-4585, D34 of YAZ-4501). Every default is the look before the page existed.
- * - Personal, in Settings only: `weekStartsOn`, `rowBand`, `keepWindowPinned` (and "Preview on hover", which stays
- *   `hoverPreviewIn.folderViews`).
+ * - Personal, in Settings only: `weekStartsOn`, `rowBand`, `keepWindowPinned` (and "Preview rows on hover" and "Preview
+ *   links on hover", which stay `hoverPreviewIn.folderViews` and `hoverPreviewIn.folderLinks`).
  * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`).
  * - Page default: `showFolderPageFiles`, the sidebar's folder page file rows (D37); a folder's `show_page_file` beats it.
  *   `showOtherFiles`, the Other files tray at the foot of a folder page (YAZ-4597, D43); a folder's `show_other_files` beats it.
@@ -1906,18 +1906,21 @@ export interface FolderPagesSettings {
   showFolderPageFiles: boolean
   /** A folder page's "Delete note…" asks first (YAZ-4592 S26). Its own switch: Files › Confirm before deleting does not touch it. */
   askBeforeDelete: boolean
+  /** "Confirm changes" (YAZ-3746 13AN): a change to a note's values from a folder page asks first. A folder's cog can say otherwise (`confirm_changes`). */
+  confirmChanges: boolean
   showOtherFiles: boolean
 }
 
 export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
-  weekStartsOn: 'monday',
+  // Sunday to Saturday (the demo of 2026-11-08); a stored `monday` stays Monday.
+  weekStartsOn: 'sunday',
   rowBand: null,
   keepWindowPinned: null,
   rowHeight: 'short',
   rowNumbers: true,
   textInCells: 'kind',
   groupIndent: 'medium',
-  showEmptyGroups: false,
+  showEmptyGroups: true,
   showEmptyColumns: false,
   subfolders: 'notes',
   foldersFirst: true,
@@ -1926,6 +1929,7 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   hideWeekends: false,
   showFolderPageFiles: false,
   askBeforeDelete: true,
+  confirmChanges: true,
   showOtherFiles: true,
 }
 
@@ -2064,6 +2068,10 @@ export interface SettingsState {
   tableAllNotesOpensAt: AllNotesOpensAt
   /** Settings › Editor › Typing › Arrows (YAZ-4273 D8): `->`, `==>`, `<-`, `<->` and the rest become one arrow character as you type (`typingArrows.ts`). */
   typingArrows: boolean
+  /** Settings › Editor › Typing › Enter keeps the text style, in notes (YAZ-3746 13AB): Enter at the end of a styled line, and the new line types in that style (`enterKeepsStyle.ts`). */
+  enterKeepsStyleNotes: boolean
+  /** Settings › Editor › Typing › Enter keeps the text style, in drawing text boxes (YAZ-3746 13AB). */
+  enterKeepsStyleBoxes: boolean
   /** Settings › Editor › Calendar tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mm a`, for new tables, new times in a table with none, and "Current time". */
   tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
@@ -2247,9 +2255,14 @@ export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
  */
 export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder']
 
-/** The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover. */
-export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'links' | 'drawings'
-export const HOVER_PLACES: readonly HoverPlace[] = ['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links', 'drawings']
+/**
+ * The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover.
+ * A folder page has two (YAZ-4601 demo 13D, in Settings › Folder pages): `folderViews` is "Preview rows on hover" (a
+ * row, a card, an Other files line) and `folderLinks` "Preview links on hover" (a link pill in a cell). A stored
+ * state without `folderLinks` reads it as `folderViews` (`sanitizeHoverPreviewIn`): the one switch it was keeps its Off.
+ */
+export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'folderLinks' | 'links' | 'drawings'
+export const HOVER_PLACES: readonly HoverPlace[] = ['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'folderLinks', 'links', 'drawings']
 
 /** Whether `place` shows the hover preview (YAZ-3403): the master switch and the place's own are both on. */
 export function hoverOn(settings: Pick<SettingsState, 'hoverPreview' | 'hoverPreviewIn'>, place: HoverPlace): boolean {
@@ -2500,7 +2513,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newBoardPicturesFolder: '',
   confirmRename: true,
   hoverPreview: true,
-  hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true, drawings: true },
+  hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, folderLinks: true, links: true, drawings: true },
   commentsOrder: 'oldest',
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   searchSort: DEFAULT_SEARCH_SORT,
@@ -2538,6 +2551,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableCellNotePinned: true,
   tableAllNotesOpensAt: 'cell',
   typingArrows: true,
+  enterKeepsStyleNotes: false,
+  enterKeepsStyleBoxes: true,
   tableDayStart: DEFAULT_CALENDAR_DAY.start,
   tableDayEnd: DEFAULT_CALENDAR_DAY.end,
   tableTimeFormat: DEFAULT_TIME_FORMAT,

@@ -1018,11 +1018,12 @@ export const getSelectionHoverBox = (
     );
     return { angle: 0, x1, y1, x2, y2, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 };
   }
-  const [x1, y1, x2, y2, cx, cy] = getElementAbsoluteCoords(
-    hovered,
-    elementsMap,
-    true,
-  );
+  // YAZ-3746 13BD: a text box's outline hugs its letters, as its selection
+  // frame and its click area do, not the line box's empty room above them
+  const [x1, y1, x2, y2, cx, cy] =
+    (isTextElement(hovered)
+      ? getFreeTextInteractionCoords(hovered)
+      : null) ?? getElementAbsoluteCoords(hovered, elementsMap, true);
   return { angle: hovered.angle, x1, y1, x2, y2, cx, cy };
 };
 

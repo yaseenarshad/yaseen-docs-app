@@ -333,6 +333,7 @@ import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { listMarkers } from './outline/listMarkers'
 import { listMarkerTyping, undoListMarker, wrapInTaskListInputRule } from './listMarkerTyping'
 import { typingArrows, undoTypingArrow } from './typingArrows'
+import { enterKeepsStyle, enterKeepsStyleInNotes } from './enterKeepsStyle'
 import { createFoldingSwitch } from './outline/foldingSwitch'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
@@ -435,6 +436,8 @@ export interface CreateCrepeOptions {
   hidden?: { toolbar?: readonly string[]; slash?: readonly string[] }
   /** A NON-note instance's own toolbar buttons (YAZ-4277 1E: a drawing text box's letter colors), added before the build. */
   extendToolbar?: (builder: ToolbarBuilder) => void
+  /** Whether Enter keeps the line's style (YAZ-3746 13AB). Absent → the notes' switch; a drawing text box passes its own. */
+  enterKeepsStyle?: () => boolean
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
@@ -776,6 +779,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listMarkerTyping).use(undoListMarker).use(wrapInTaskListInputRule)
   // Arrows while typing (YAZ-4273): `->` → `→` and the rest, off from Settings › Editor › Typing.
   crepe.editor.use(typingArrows).use(undoTypingArrow)
+  // Enter keeps the text style (YAZ-3746 13AB): off in notes, on in drawing text boxes, from Settings › Editor › Typing.
+  crepe.editor.use(enterKeepsStyle(opts.enterKeepsStyle ?? enterKeepsStyleInNotes))
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its kind (the toolbar's list
   // buttons and T in one strip, YAZ-3727 D13, D14), its children (Number children, when it has any), its
   // own numbered list as bullets with written numbers (YAZ-3727 D12),

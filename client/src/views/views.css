@@ -200,6 +200,8 @@
   max-width: 420px;
   max-height: 60vh;
   overflow-y: auto;
+  /* Its wheel stays in it (YAZ-3746 13AP): at the end of its list the page under it does not scroll. */
+  overscroll-behavior: contain;
   padding: 10px;
   font-size: 13px;
   background: var(--bg);
@@ -1134,12 +1136,6 @@
   box-sizing: border-box;
 }
 
-/* Group ›'s Levels (YAZ-4588 D42): rows to read, not to click — no hover fill, the plain cursor. */
-.view-header-menu .ctx-menu__item.view-header-menu__level {
-  cursor: default;
-  background: none;
-}
-
 .view-table tbody td {
   height: var(--view-table-row-h, 28px);
   overflow-wrap: anywhere;
@@ -1474,14 +1470,15 @@
   max-width: 100%;
 }
 
-/* A row's Name cell steps in with its group levels (YAZ-4532 D10). TableView sets `--view-name-indent`: the indent ×
-   the levels above the row, cut so the title keeps 60px of the column (YAZ-4544). With none, the cell's own 8px padding. */
-.view-table tbody td.view-table__name {
+/* A row's first cell steps in with its group levels (YAZ-4532 D10; the first column, Name or not, since YAZ-3746 13AG).
+   TableView sets `--view-name-indent`: the indent × the levels above the row, cut so the value keeps 60px of the column
+   (YAZ-4544). With none, the cell's own 8px padding. */
+.view-table tbody td.view-table__indent {
   padding-left: calc(var(--view-table-cell-pad-x) + var(--view-name-indent, 0px));
 }
 
 /* The title field of a nested row starts where its title stood. */
-.view-table tbody td.view-table__name > .view-cell-edit[data-editing] .view-cell-edit__input {
+.view-table tbody td.view-table__indent > .view-cell-edit[data-editing] .view-cell-edit__input {
   padding-left: calc(var(--view-table-cell-pad-x) + var(--view-name-indent, 0px));
 }
 
@@ -1961,18 +1958,6 @@
   margin-top: 8px;
   padding-bottom: 8px;
   overflow: auto;
-}
-
-.view-cal__show-by {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 12px;
-  color: var(--fg-muted);
-}
-
-.view-cal__show-by .view-select {
-  max-width: 160px;
 }
 
 .view-cal__nav {
@@ -2591,6 +2576,13 @@
   margin-left: 4px;
 }
 
+/* A toolbar popover starts under its button and grows right; Popover's viewport clamp slides it left only as far as
+   the page's right edge needs (YAZ-3746 demo). */
+.view-toolbar__menu > .view-popover {
+  left: 0;
+  right: auto;
+}
+
 /* Searchable property controls (YAZ-1395/1396). Native selects elsewhere retain their width cap. */
 .view-popover--properties {
   width: 390px;
@@ -2739,3 +2731,556 @@
 .group-style__large[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
 /* "Folders first" under the sort rows (YAZ-4579 D33, YAZ-4607 D60), lined up with them. */
 .sort-menu__folders-first { display: flex; padding: 0 28px 0 26px; margin-top: 8px; }
+
+/* ---------- Columns and View popover, and the Sort menu: the polish pass (YAZ-3746 demo) ----------
+   Rows of one height with a soft hover, an icon before each label, switches for on/off, segmented buttons for short
+   choices, quiet fills for the other controls; the tabs are one segmented switch. */
+.view-menu__tabs { padding: 10px 12px 8px; border-bottom: 0; }
+.view-menu__tabs::before { content: ''; position: absolute; inset: 10px 12px 8px; background: var(--bg-side); border-radius: 7px; }
+.view-menu__tab {
+  position: relative;
+  flex: 1;
+  margin: 2px;
+  padding: 4px 10px;
+  font-weight: 500;
+  border-bottom: 0;
+  border-radius: 5px;
+}
+.view-menu__tab[aria-pressed='true'] { background: var(--bg); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(0, 0, 0, 0.06); }
+.view-menu--tabbed .column-menu-head { top: 46px; padding: 2px 0 4px; margin-bottom: 0; border-bottom: 0; }
+.view-menu--tabbed .column-search { padding: 5px 9px; }
+.view-menu--tabbed .column-menu-summary { display: block; margin: 6px 2px 0; }
+
+/* The switch: every on/off in the popover's rows. */
+.view-switch,
+.view-settings input[type='checkbox'],
+.sort-menu input[type='checkbox'] {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 15px;
+  margin: 0 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fg) 22%, transparent);
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.view-switch::before,
+.view-settings input[type='checkbox']::before,
+.sort-menu input[type='checkbox']::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.12s;
+}
+.view-switch:checked,
+.view-settings input[type='checkbox']:checked,
+.sort-menu input[type='checkbox']:checked { background: var(--accent); }
+.view-switch:checked::before,
+.view-settings input[type='checkbox']:checked::before,
+.sort-menu input[type='checkbox']:checked::before { transform: translateX(11px); }
+.view-switch:disabled { opacity: 0.45; cursor: default; }
+.view-switch:focus-visible,
+.view-settings input[type='checkbox']:focus-visible,
+.sort-menu input[type='checkbox']:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Columns tab: Shown and Hidden, one 30px line per column. */
+.column-section__head { display: flex; align-items: center; justify-content: space-between; min-height: 24px; padding: 6px 2px 0 8px; font-size: 11px; color: var(--fg-muted); }
+.column-section__head .view-menu__action { font-size: 11px; padding: 2px 6px; }
+.view-menu--tabbed .view-prop { padding: 0; }
+.view-menu--tabbed .view-prop__identity { align-items: center; gap: 2px; height: 30px; padding-right: 2px; border-radius: 6px; }
+.view-menu--tabbed .view-prop__identity:hover { background: var(--bg-hover); }
+.view-menu--tabbed .view-prop__open { padding: 4px; }
+.view-menu--tabbed .view-prop__open:hover { background: transparent; }
+.view-menu--tabbed .view-prop__handle,
+.view-prop__handle-slot { flex: none; width: 16px; min-width: 16px; padding: 0; }
+.view-menu--tabbed .view-prop__handle { opacity: 0; }
+.view-menu--tabbed .view-prop__identity:hover .view-prop__handle,
+.view-menu--tabbed .view-prop__handle:focus-visible { opacity: 0.6; }
+.view-prop__type { flex: none; font-size: 11px; color: var(--fg-muted); }
+.view-menu--tabbed .view-prop__chevron { width: 8px; opacity: 0; }
+.view-menu--tabbed .view-prop__identity:hover .view-prop__chevron { opacity: 1; }
+.column-section--hidden .view-prop__name { color: var(--fg-muted); }
+.view-menu--tabbed > .view-menu__action {
+  display: block;
+  width: calc(100% + 20px);
+  margin: 6px -10px -10px;
+  padding: 9px 18px;
+  text-align: left;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.view-menu--tabbed > .view-menu__action:hover:not(:disabled) { color: var(--accent); background: var(--bg-hover); }
+
+/* View tab: sections of 32px rows. */
+.view-settings { gap: 0; padding: 0; }
+.view-settings > .view-menu__label { margin: 10px 0 2px; padding: 0 8px; font-weight: 500; }
+.view-settings > .view-menu__label:first-child { margin-top: 2px; }
+.view-settings .view-settings-row { min-height: 32px; padding: 0 2px 0 8px; border-radius: 6px; color: var(--fg); }
+.view-settings .view-settings-row:hover { background: var(--bg-hover); }
+.view-settings-row__label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.view-settings-row__icon { flex: none; color: var(--fg-muted); }
+.view-settings .view-seg__opt { padding: 2px 8px; }
+.view-settings .property-board-setting small { display: block; margin: -6px 0 4px; padding-left: 30px; font-size: 11px; color: var(--fg-muted); }
+.view-from-settings { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: -4px; }
+.view-from-settings--reset { color: var(--accent); text-decoration: none; border-radius: 4px; }
+.view-from-settings--reset:hover { background: var(--accent-soft); }
+.view-settings__foot { margin: 8px -10px -10px; padding: 8px 18px 10px; font-size: 11px; color: var(--fg-muted); border-top: 1px solid var(--border); }
+
+/* Quiet selects: a soft fill and a drawn chevron, no box. */
+.view-settings .view-select {
+  appearance: none;
+  height: 24px;
+  padding: 0 22px 0 8px;
+  border-color: transparent;
+  background: color-mix(in srgb, var(--fg) 6%, transparent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4l2-2 2 2M3 6l2 2 2-2'/%3E%3C/svg%3E") no-repeat right 7px center;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.view-settings .view-select:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
+
+/* Sort menu: the same quiet fills; the grip and × show on the row's hover. */
+.sort-menu .column-picker__trigger.view-select,
+.sort-menu .direction-picker__trigger,
+.sort-menu .group-style__trigger {
+  height: 28px;
+  min-height: 28px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.sort-menu .column-picker__trigger.view-select:hover,
+.sort-menu .direction-picker__trigger:hover,
+.sort-menu .group-style__trigger:hover { border-color: transparent; background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.sort-menu .view-rule__nav,
+.sort-menu .view-rule__remove { height: 28px; }
+.sort-menu .view-rule + .view-rule { margin-top: 4px; }
+.sort-menu .view-prop__handle,
+.sort-menu .view-rule__remove { opacity: 0; }
+.sort-menu .view-rule:hover .view-prop__handle,
+.sort-menu .view-prop__handle:focus-visible { opacity: 0.65; }
+.sort-menu .view-rule:hover .view-rule__remove,
+.sort-menu .view-rule__remove:focus-visible { opacity: 1; }
+.sort-menu > .view-menu__label { padding-top: 10px; margin: 10px 0 6px; font-size: 11px; font-weight: 500; color: var(--fg-muted); }
+.sort-menu > .view-menu__label:first-child { padding-top: 0; margin-top: 2px; }
+.sort-menu .view-menu__action { color: var(--fg-muted); }
+.sort-menu .view-menu__action:hover:not(:disabled) { color: var(--accent); background: var(--bg-hover); }
+/* A row with no Settings default ends where the others' ↺ slot ends, so every control lines up. */
+.view-settings .view-settings-row > :last-child:not(.view-from-settings) { margin-right: 22px; }
+/* The View tab's typed values (a board's column width, a list's separator): the same quiet fill as its selects. */
+.view-settings .view-input { height: 24px; border-color: transparent; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.view-settings .view-input:focus { border-color: var(--accent); background: var(--bg); }
+
+/* YAZ-3746 13K: a column's type sits one gap after the widest name (--prop-name-w, measured by PropertiesMenu), the ›
+   and the switch at the right. A narrow popover shrinks the names first. */
+.view-menu--tabbed .view-prop__open .view-prop__name { flex: 0 1 var(--prop-name-w, auto); }
+.view-menu--tabbed .view-prop__type { margin-left: 16px; }
+.view-menu--tabbed .view-prop__chevron { margin-left: auto; }
+
+/* ---------- The column editor (YAZ-3746 13L): the Columns and View tabs' look. Rows of one height with an icon and a
+   soft hover, quiet fills for its fields, a type picker with each type's icon, Hide and Delete as icon rows. ---------- */
+.column-detail__head { gap: 2px; padding: 6px 2px 8px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+.column-detail__back { width: 26px; height: 26px; color: var(--fg-muted); }
+.column-detail__back:hover { color: var(--fg); background: var(--bg-hover); }
+.column-detail__name:hover { border-color: transparent; background: var(--bg-hover); }
+.column-detail__name:focus { background: var(--bg); }
+.column-detail__row { gap: 12px; min-height: 32px; margin-bottom: 0; padding: 0 4px 0 8px; border-radius: 6px; }
+.column-detail__row:hover { background: var(--bg-hover); }
+.column-detail__row > .view-settings-row__label { flex: none; color: var(--fg); }
+.column-detail__row--type { flex-wrap: wrap; }
+.column-detail__row .view-input,
+.column-detail__row .view-select { height: 26px; border-color: transparent; background-color: color-mix(in srgb, var(--fg) 6%, transparent); }
+.column-detail__row .view-select {
+  appearance: none;
+  padding: 0 22px 0 8px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4l2-2 2 2M3 6l2 2 2-2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  cursor: pointer;
+}
+.column-detail__row .view-input:focus,
+.column-detail__row .view-select:focus { border-color: var(--accent); background-color: var(--bg); }
+.column-detail__key { padding: 2px 6px; border-radius: 4px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.column-detail__row .property-type-button { height: 26px; padding: 0 10px; font-size: 12px; color: var(--fg); border: 0; border-radius: 5px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.column-detail__row .property-type-button:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.type-picker__trigger { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; font-size: 12px; color: var(--fg); border-radius: 5px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.type-picker__trigger:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.type-picker__trigger[aria-expanded='true'] { box-shadow: 0 0 0 1px var(--accent); }
+.type-picker__trigger > svg:first-child,
+.type-picker__option > svg { flex: none; width: 14px; height: 14px; color: var(--fg-muted); }
+.type-picker__chevron { color: var(--fg-muted); }
+.type-picker__list { display: flex; flex-direction: column; flex-basis: 100%; gap: 1px; padding: 4px; margin: 2px -4px 6px -8px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1); }
+.type-picker__option { display: grid; grid-template-columns: 14px auto minmax(0, 1fr) 12px; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; font-size: 12px; text-align: left; color: var(--fg); border-radius: 5px; }
+.type-picker__option:hover,
+.type-picker__option:focus-visible { background: var(--bg-hover); outline: none; }
+.type-picker__about { overflow: hidden; font-size: 11px; color: var(--fg-muted); text-overflow: ellipsis; white-space: nowrap; }
+.type-picker__check { color: var(--accent); }
+.column-detail__actions { gap: 0; padding: 6px 0 0; margin-top: 6px; }
+.column-detail__action { display: flex; align-items: center; min-height: 30px; padding: 0 8px; border-radius: 6px; }
+.column-detail__action:hover:not(:disabled) { background: var(--bg-hover); }
+.column-detail__action--danger .view-settings-row__icon { color: var(--danger); }
+.view-header-menu .column-detail { width: 300px; }
+
+/* YAZ-3746 13M: the calendar's bar puts the month (or week) title alone at the left and ‹ › Today and Month | Week at
+   the right. The title takes the room between and cuts with an ellipsis in a narrow window, so nothing wraps. The
+   rules above (`.view-cal__nav`, `.view-cal__month`) stay for everything else. */
+.view-cal__nav {
+  flex-wrap: nowrap;
+}
+
+.view-cal__month {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0 8px 0 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* YAZ-3746 13X: the selection's Count / Sum / Average floats at the bottom right of the visible table (sticky to the
+   window's bottom while the table runs past it), over the rows: showing or hiding it never moves the page. */
+.views-pane__selection-dock {
+  position: sticky;
+  bottom: 14px;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  height: 0;
+  pointer-events: none;
+}
+/* A small solid card (not stretched to the dock's zero height): the page's background, a hairline, a soft shadow. */
+.views-pane__selection-dock > .view-toolbar__selection {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  margin: 0 4px 0 0;
+  padding: 0 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  pointer-events: auto;
+}
+.views-pane__selection-dock > .view-toolbar__selection[hidden] { display: none; }
+
+/* YAZ-3746 13W: a column resize moves ONE edge, as Sheets does. The columns were right already (`table-layout: fixed`,
+   the table as wide as its columns), but with the table scrolled to its right end a column dragged narrower made the
+   table narrower, the browser clamped `scrollLeft`, and every column left of the edge slid right under the mouse. While
+   an edge is held TableView sets `--view-table-slack` to the scroll width at the press, and this zero-height runner keeps
+   the scrollable width there, so nothing clamps. On release the runner eases to 0 and the scroll settles once, smoothly. */
+.view-table-wrap::after {
+  content: '';
+  display: block;
+  width: var(--view-table-slack, 0px);
+  height: 0;
+  transition: width 150ms ease-out;
+}
+
+.view-table-wrap[data-resizing]::after {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-table-wrap::after {
+    transition: none;
+  }
+}
+
+/* YAZ-3746 13Y: a column's alignment. `view.columnAlign[<key>]` puts `view-table__cell--align-<left|center|right>` on
+   the column's header, every body cell and its summary cell (TableView `aligned`). Auto (no entry) is the look above:
+   `view-table__cell--num` right, everything else left — so these come last and beat it. A cell's content is inline
+   (the display button, the chip rows, the link pills), so `text-align` places it; the editing input inherits it
+   (`text-align: inherit` above), so a centered column types centered, as in Sheets. The summary button is a flex row,
+   placed with `justify-content`. */
+.view-table th.view-table__cell--align-left,
+.view-table td.view-table__cell--align-left {
+  text-align: left;
+}
+
+.view-table th.view-table__cell--align-center,
+.view-table td.view-table__cell--align-center {
+  text-align: center;
+}
+
+.view-table th.view-table__cell--align-right,
+.view-table td.view-table__cell--align-right {
+  text-align: right;
+}
+
+.view-table tfoot td.view-table__cell--align-left .view-table__summary-btn {
+  justify-content: flex-start;
+}
+
+.view-table tfoot td.view-table__cell--align-center .view-table__summary-btn {
+  justify-content: center;
+}
+
+.view-table tfoot td.view-table__cell--align-right .view-table__summary-btn {
+  justify-content: flex-end;
+}
+
+/* The column editor's Align row (13Y): the four-way segment drops under its label where the 260px menu panel is too narrow. */
+.column-detail__row--align {
+  flex-wrap: wrap;
+}
+
+.column-detail__row--align .view-seg__opt {
+  padding: 2px 6px;
+}
+
+/* Confirm changes (YAZ-3746 13AN; laid out by 13AS): the ask by the cell, in `document.body` so the page zoom never
+   moves it. A quiet header (what and which note), the change as before → after, the two buttons with their keys, and a
+   tinted foot with the pauses. */
+.change-ask {
+  position: fixed;
+  z-index: 60;
+  width: 372px;
+  max-width: calc(100vw - 16px);
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+.change-ask__body {
+  padding: 12px 14px 12px;
+}
+.change-ask__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.change-ask__kind {
+  flex: none;
+  font-weight: 600;
+  color: var(--fg);
+}
+.change-ask__note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.change-ask__note::before {
+  content: '·';
+  margin-right: 6px;
+}
+.change-ask__diff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 10px 0 14px;
+}
+.change-ask__val {
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  padding: 3px 8px;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 6px;
+}
+.change-ask__val--from {
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.change-ask__val--to {
+  font-weight: 600;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.change-ask__val--empty {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+.change-ask__arrow {
+  flex: none;
+  color: var(--fg-muted);
+}
+.change-ask__summary {
+  margin: 8px 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.change-ask__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.change-ask__actions > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 12px;
+  font: inherit;
+  font-weight: 500;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.change-ask__actions kbd {
+  padding: 1px 4px;
+  font: 500 10px/1.3 ui-monospace, 'SF Mono', Menlo, monospace;
+  border-radius: 4px;
+}
+.change-ask__cancel {
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.change-ask__cancel:hover {
+  background: color-mix(in srgb, var(--fg) 4%, var(--bg));
+}
+.change-ask__cancel kbd {
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.change-ask__go {
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+.change-ask__go:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+.change-ask__go kbd {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+}
+.change-ask__actions > button:focus {
+  outline: none;
+}
+.change-ask__actions > button:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.change-ask__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 14px;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--fg) 3%, var(--bg));
+  border-top: 1px solid var(--border);
+}
+.change-ask__foot-label {
+  white-space: nowrap;
+}
+/* The pauses as one small segment, the view settings' look (`.view-seg`). */
+.change-ask__pauses {
+  display: inline-flex;
+  padding: 2px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-radius: 6px;
+}
+.change-ask__pause {
+  height: 20px;
+  padding: 0 7px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.change-ask__pause:hover {
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.change-ask__off {
+  margin-left: auto;
+  padding: 2px 4px;
+  font: inherit;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.change-ask__off:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+/* The pause's countdown in the view toolbar (13AN), with Resume. */
+.change-pause {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 4px 0 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 999px;
+}
+.change-pause__resume {
+  height: 20px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+/* The row menu's one "Fill ›" (YAZ-3746 13AW): what it fills, Cell · Row · Column, over the colours. */
+.fill-target {
+  display: flex;
+  gap: 2px;
+  margin: 2px 4px 6px;
+  padding: 2px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-radius: 6px;
+}
+.fill-target__opt {
+  flex: 1;
+  height: 22px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.fill-target__opt[aria-pressed='true'] {
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* A board list's end (YAZ-3746 13AX): an invisible mark; near the screen, the list draws its next cards. */
+.view-board__more {
+  height: 1px;
+  margin-top: -1px;
+  list-style: none;
+  pointer-events: none;
+}

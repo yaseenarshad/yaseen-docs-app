@@ -3,7 +3,7 @@
  * `in` (`shared/folderValues.ts`), typed and listed by its columns. Every edit goes where its row
  * lives. Value writes remain surgical and conflict-checked; raw YAML retains its own dirty draft.
  */
-import { useCallback, useMemo, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
@@ -152,6 +152,12 @@ interface Snapshot {
 /** The pill under a pointer event (YAZ-4544 4G): a resolved link's `data-link-path`. */
 const pillOf = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? target.closest<HTMLElement>('[data-link-path]') : null)
 
+/**
+ * The mini window's memory of the panel's open state (YAZ-3746 13Q): `NoteWindow` provides one `{ current }` per card,
+ * each note it shows starts as the last one left it, and each toggle writes it. Null (a tab, the right panel): closed at first.
+ */
+export const PropertiesOpenMemory = createContext<{ current: boolean | null } | null>(null)
+
 /** A link value is the note editor's pill here too, as in a folder page's cells (YAZ-4544 4G): one look for links. */
 export function FrontmatterPanel(props: FrontmatterPanelProps) {
   return (
@@ -179,7 +185,14 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   const byId = useMemo(() => foldersById(folders), [folders])
   // The choice of folder is the panel's own state: the panel is mounted per note.
   const [picked, setPicked] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState(false)
+  const openMemory = useContext(PropertiesOpenMemory)
+  const [expanded, setExpanded] = useState(openMemory?.current ?? false)
+  const toggle = () => {
+    const next = !expanded
+    if (openMemory !== null) openMemory.current = next
+    setExpanded(next)
+    setQuery('')
+  }
   // 🔒 Typed rows are the default; raw is the fallback under them.
   const [yamlMode, setYamlMode] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -476,7 +489,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
 
   return (
     <section className="frontmatter-panel" onClickCapture={onPillClick} onDoubleClickCapture={onPillClick} onMouseOver={onPillOver} onMouseOut={onPillOut}>
-      <button type="button" className="frontmatter-panel__header" aria-expanded={expanded} aria-label={label} title={label} onClick={() => { setExpanded((open) => !open); setQuery('') }}>
+      <button type="button" className="frontmatter-panel__header" aria-expanded={expanded} aria-label={label} title={label} onClick={toggle}>
         <svg className="frontmatter-panel__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />
         </svg>

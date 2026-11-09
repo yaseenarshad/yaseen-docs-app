@@ -276,7 +276,7 @@ describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar s
     document.body.append(container)
     root = createRoot(container)
     const noop = () => undefined
-    act(() => root!.render(<FolderToolbar store={store} zoom={100} onZoom={noop} readOnly={false} onToggleReadOnly={noop} asking={false} onAsk={noop} onAllow={noop} onCancel={noop} showPageFile={undefined} onChangeShowPageFile={noop} hoverPreview={undefined} onChangeHoverPreview={noop} showOtherFiles={undefined} onChangeShowOtherFiles={noop} />))
+    act(() => root!.render(<FolderToolbar store={store} zoom={100} onZoom={noop} readOnly={false} onToggleReadOnly={noop} asking={false} onAsk={noop} onAllow={noop} onCancel={noop} showPageFile={undefined} onChangeShowPageFile={noop} hoverRows={undefined} onChangeHoverRows={noop} hoverLinks={undefined} onChangeHoverLinks={noop} showOtherFiles={undefined} onChangeShowOtherFiles={noop} />))
     const onToggleLineNumbers = vi.fn()
     act(() => store.set({ page: { cog: { lineNumbers: true, onToggleLineNumbers, readText: () => 'a b' }, save: 'unsaved', foldAll: null } }))
     expect(q(container, '.save-indicator').textContent).toBe('Unsaved')

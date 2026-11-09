@@ -12,14 +12,18 @@
  *    a moved note dragged onto the view body moves back (`trayBackTarget`). No moves while the page is read only (D36).
  *  - OPEN OR CLOSED: per folder page, with the views' collapsed groups (`storage.getViewGroups`), under the page's own
  *    `<folder>::` key, which a folder rename carries.
+ *  - HOVER (YAZ-4601 demo 13C): resting on a line opens the sidebar's hover panel beside it (`useCardPreview`), as a
+ *    row of the views does, under "Preview rows on hover": a drawing's or diagram's picture, a text file's top with its
+ *    colours, a moved note's top, a picture, a PDF's first page (13R; one rule, `hasHoverPreview`).
  */
-import { useMemo, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { BOARD_TYPE_NAME } from '@shared/fileKind'
-import type { FileKind, IndexRecord, TreeNode } from '@shared/types'
+import type { DiagramDarkColors, FileKind, IndexRecord, TreeNode } from '@shared/types'
 import { FileIcon } from '../../sidebar/FileIcon'
 import { useLatestTrees } from '../../lib/pageLabel'
 import { formatBytes, formatDateTime } from '../../lib/format'
 import { storage } from '../../lib/storage'
+import { CardPreviewHost, useCardPreview, type PreviewScope } from '../../tabs/cardPreview'
 import { PageContextMenu } from './PageContextMenu'
 
 /** One line of the tray. */
@@ -93,11 +97,19 @@ export interface OtherFilesProps {
   onMoveBack: ((path: string) => void) | null
   /** A dragged view row dropped here; null while the page is read only. The host checks the path is one of its notes. */
   onTakeRow: ((path: string) => void) | null
+  /** "Preview rows on hover" (demo 13C): resting on a line shows the sidebar's panel beside it. Off = no dwell. */
+  hoverPreview?: boolean
+  /** What the hover panel needs of the page's vault: App's `boardPreviewScope`. No scope, no hover panel. */
+  previewScope?: (path: string) => PreviewScope
+  diagramDarkColors?: DiagramDarkColors
 }
 
-export function OtherFiles({ root, dir, notes, onOpen, onOpenBackground, onNotice, onMoveBack, onTakeRow }: OtherFilesProps) {
+export function OtherFiles({ root, dir, notes, onOpen, onOpenBackground, onNotice, onMoveBack, onTakeRow, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: OtherFilesProps) {
   const roots = useMemo(() => [root], [root])
   const [tree] = useLatestTrees(roots)
+  // The hover panel (demo 13C): the tray's own dwell and panel, beside the line under the pointer; a line is found again by its path.
+  const listRef = useRef<HTMLUListElement>(null)
+  const { store: hoverStore, hoverCard, leaveCard } = useCardPreview(hoverPreview, (path) => listRef.current?.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`) ?? null)
   const files = useMemo(() => (tree === null ? [] : folderFiles(tree.tree, root, dir)), [tree, root, dir])
   const lines = useMemo(() => [...files, ...notes.map(noteLine)], [files, notes])
   const key = `${dir}::`
@@ -151,12 +163,14 @@ export function OtherFiles({ root, dir, notes, onOpen, onOpenBackground, onNotic
         (lines.length === 0 ? (
           <p className="other-files__empty">No other files. Drag a row here to move its note out of the views.</p>
         ) : (
-          <ul className="other-files__list">
+          <ul className="other-files__list" ref={listRef}>
             {lines.map((line) => (
               <li
                 key={line.path}
                 className="other-files__line"
                 data-path={line.path}
+                onMouseEnter={() => hoverCard(line.path, line.path)}
+                onMouseLeave={() => leaveCard(line.path)}
                 onContextMenu={(e) => {
                   e.preventDefault()
                   setMenu({ x: e.clientX, y: e.clientY, line })
@@ -186,6 +200,7 @@ export function OtherFiles({ root, dir, notes, onOpen, onOpenBackground, onNotic
             ))}
           </ul>
         ))}
+      <CardPreviewHost store={hoverStore} cardOf={(_, path) => ({ root: null, name: lines.find((l) => l.path === path)?.name ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
       {menu !== null && (
         <PageContextMenu
           x={menu.x}

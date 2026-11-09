@@ -35,7 +35,7 @@ import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
 import { DEFAULT_FOLDER_PAGES, folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
-import { HOVER_PREVIEW_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY, hoverPreviewOf, showOtherFilesOf, showPageFileOf } from '@shared/folderPage'
+import { CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY, confirmChangesOf, hoverLinksOf, hoverPreviewOf, hoverRowsOf, showOtherFilesOf, showPageFileOf } from '@shared/folderPage'
 import { exactLinkTarget } from '@shared/linkRewrite'
 import { isReadOnlyProperties, READ_ONLY_KEY } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
@@ -89,6 +89,8 @@ export interface FolderViewProps {
   onOpenFileBackground?: (path: string) => void
   /** A subfolder's page in a new tab (YAZ-4564 D26/D27): App's `openKeptPage`, the sidebar's "Open folder page" door. Handed to `ViewsPane` as `FolderHost.openFolderPage`. */
   onOpenFolderPage?: (path: string) => void
+  /** The mini window's ↗ (YAZ-3746 13I): App's `openNewTabPage`. Handed to `ViewsPane` as `FolderHost.openNewTab`. */
+  onOpenFileNewTab?: (path: string) => void
   /** A full editor on a note, for the table's note window (YAZ-4547): handed to `ViewsPane` as `FolderHost.renderNoteEditor`. */
   renderNoteEditor?: (path: string) => ReactNode
   /** App's `trashMany` (YAZ-4592 S26), the sidebar's delete: handed to `ViewsPane` as `FolderHost.trash`. */
@@ -105,8 +107,10 @@ export interface FolderViewProps {
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => void
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
-  /** Settings › Preview on hover › Folder views (YAZ-3403), with what its panel needs: handed to `ViewsPane`. */
+  /** Settings › Folder pages › Preview rows on hover (YAZ-3403, `hoverOn(settings, 'folderViews')`), with what its panel needs: handed to `ViewsPane` and the Other files tray. */
   hoverPreview?: boolean
+  /** Settings › Folder pages › Preview links on hover (demo 13D, `hoverOn(settings, 'folderLinks')`): the link pills in cells, handed to `ViewsPane`. */
+  hoverLinks?: boolean
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
   /** The vault's sync status and the chip's click (`Editor`'s `sync`, `onSyncNow`): the toolbar's sync chip (YAZ-3746 D35). */
@@ -197,6 +201,7 @@ export function FolderView({
   onOpenFileRight,
   onOpenFileBackground,
   onOpenFolderPage,
+  onOpenFileNewTab,
   renderNoteEditor,
   onDeleteEntries,
   renderPage,
@@ -207,6 +212,7 @@ export function FolderView({
   commentsOrder,
   onChangeCommentsOrder,
   hoverPreview,
+  hoverLinks,
   previewScope,
   diagramDarkColors,
   sync,
@@ -296,8 +302,11 @@ export function FolderView({
   const [pageLocked, setPageLocked] = useAheadKey(record !== undefined && isReadOnlyProperties(record.properties))
   /** The folder's own "Show folder page file" (D37): `undefined` follows Settings. */
   const [showPageFile, setShowPageFile] = useAheadKey(record === undefined ? undefined : showPageFileOf(record.properties))
-  /** The folder's own "Preview on hover" (YAZ-4601 D51): `undefined` follows Settings; it rules the row and pill hovers here. */
-  const [ownHover, setOwnHover] = useAheadKey(record === undefined ? undefined : hoverPreviewOf(record.properties))
+  /** The folder's own "Preview rows on hover" and "Preview links on hover" (YAZ-4601 D51, split by demo 13D): `undefined` follows Settings. Each reads the legacy `hover_preview` where its own key is absent. */
+  const [ownRows, setOwnRows] = useAheadKey(record === undefined ? undefined : hoverRowsOf(record.properties))
+  const [ownLinks, setOwnLinks] = useAheadKey(record === undefined ? undefined : hoverLinksOf(record.properties))
+  /** The folder's own "Confirm changes" (YAZ-3746 13AN): `undefined` follows Settings › Folder pages (on by default). */
+  const [ownConfirm, setOwnConfirm] = useAheadKey(record === undefined ? undefined : confirmChangesOf(record.properties))
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
     chips.set({ readOnly: pageLocked })
@@ -364,6 +373,8 @@ export function FolderView({
   /** This render's host (YAZ-4591): a rename's Undo runs later, and writes through the host that is current then. */
   const latestHost = useRef<FolderHost | null>(null)
   const latestParsed = useRef<ParsedViews>(null as unknown as ParsedViews)
+  /** The newest render's settings door, for an Undo that runs later (YAZ-3746 13AY): an old door compares against old settings. */
+  const latestCommit = useRef<((columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>) | null>(null)
   /** This render's declaration door, for a rename's Undo (YAZ-4637 M5). */
   const latestDeclaration = useRef<(key: string, next: ColumnDecl, base: ColumnDecl | undefined, rename?: { from: string; to: string }) => Promise<unknown>>(() => Promise.resolve())
   const setAhead = (next: Record<string, ColumnDecl> | null): void => {
@@ -455,6 +466,21 @@ export function FolderView({
     write.catch((err: unknown) => setSettingsError(err instanceof Error ? err.message : String(err)))
     return write
   }
+  /**
+   * One of the two hover keys (demo 13D). While the page still holds the legacy `hover_preview`, the same write moves
+   * its value onto the OTHER new key (where that one has no value of its own) and removes it: the page keeps meaning what
+   * it meant, and from then on each switch stands alone.
+   */
+  const writeOwnHover = (key: typeof HOVER_ROWS_KEY | typeof HOVER_LINKS_KEY, value: boolean | undefined): Promise<unknown> => {
+    const legacy = record === undefined ? undefined : hoverPreviewOf(record.properties)
+    if (legacy === undefined) return writeOwnKey(key, value)
+    const other = key === HOVER_ROWS_KEY ? HOVER_LINKS_KEY : HOVER_ROWS_KEY
+    const otherOwn = record !== undefined && typeof record.properties[other] === 'boolean'
+    setSettingsError(null)
+    const write = track(writeProperties(file, [{ key: HOVER_PREVIEW_KEY, value: undefined }, ...(otherOwn ? [] : [{ key: other, value: legacy }]), { key, value }]))
+    write.catch((err: unknown) => setSettingsError(err instanceof Error ? err.message : String(err)))
+    return write
+  }
   /** Read only refuses every settings write (D36): the banner says why. */
   const refuseLocked = (): boolean => {
     if (pageLocked) setSettingsError(FOLDER_READ_ONLY_TIP)
@@ -495,6 +521,8 @@ export function FolderView({
       },
     )
   }
+
+  latestCommit.current = commitSettings
 
   /** Every config change (sort, columns, widths, summaries…) is ONE settings write (🔒 D3). `false`: read only refused it (YAZ-4644 E2). */
   const onChange = (next: ParsedViews): boolean => {
@@ -660,9 +688,10 @@ export function FolderView({
           folderId: id,
           writeSettings: commitSettings,
           // The settings half offers Undo (YAZ-4608 C6): one settings write puts the column back; a refusal shows the banner as any settings write does.
-          notice: (message, restore) => onNotice?.(message, 'info', 'undo', { label: 'Undo', run: () => void restore().catch(() => undefined), fades: true }),
+          // Its values back too (YAZ-3746 13AY); a note it could not write back is said in the column banner.
+          notice: (message, restore) => onNotice?.(message, 'info', 'undo', { label: 'Undo', run: () => void restore().catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))), fades: true }),
           // The Undo runs later (YAZ-4637 M3): it inverts the delete on the live declarations and def current then.
-          current: () => ({ columns: latestHost.current?.settings.columns ?? liveSettings.columns, def: latestParsed.current.def }),
+          current: () => ({ columns: latestHost.current?.settings.columns ?? liveSettings.columns, def: latestParsed.current.def, writeSettings: latestCommit.current ?? commitSettings }),
         }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     }),
     valueCount: (key: string) => notesHolding(feed.records, id, key).length + notesHolding(feed.folders, id, key).length,
@@ -674,6 +703,7 @@ export function FolderView({
     },
     openRight: onOpenFileRight,
     openFolderPage: onOpenFolderPage,
+    openNewTab: onOpenFileNewTab,
     renderNoteEditor,
     openBackground: onOpenFileBackground,
     // "Delete note…" and "Duplicate note" (YAZ-4592 S26): the sidebar's delete, and a copy beside the note.
@@ -709,8 +739,12 @@ export function FolderView({
         onCancel={() => setAskingUnlock(false)}
         showPageFile={showPageFile}
         onChangeShowPageFile={(next) => setShowPageFile(next, writeOwnKey(SHOW_PAGE_FILE_KEY, next))}
-        hoverPreview={ownHover}
-        onChangeHoverPreview={(next) => setOwnHover(next, writeOwnKey(HOVER_PREVIEW_KEY, next))}
+        hoverRows={ownRows}
+        onChangeHoverRows={(next) => setOwnRows(next, writeOwnHover(HOVER_ROWS_KEY, next))}
+        confirmChanges={ownConfirm}
+        onChangeConfirmChanges={(next) => setOwnConfirm(next, writeOwnKey(CONFIRM_CHANGES_KEY, next))}
+        hoverLinks={ownLinks}
+        onChangeHoverLinks={(next) => setOwnLinks(next, writeOwnHover(HOVER_LINKS_KEY, next))}
         showOtherFiles={showOtherFiles}
         onChangeShowOtherFiles={(next) => setShowOtherFiles(next, writeOwnKey(SHOW_OTHER_FILES_KEY, next))}
         sync={sync}
@@ -748,7 +782,10 @@ export function FolderView({
                 properties={properties}
                 onOpenFile={onOpenFile}
                 folder={host}
-                hoverPreview={ownHover ?? hoverPreview}
+                hoverPreview={ownRows ?? hoverPreview}
+                confirmChanges={ownConfirm ?? (folderPages ?? DEFAULT_FOLDER_PAGES).confirmChanges}
+                onConfirmChangesOff={() => setOwnConfirm(false, writeOwnKey(CONFIRM_CHANGES_KEY, false))}
+                hoverLinks={ownLinks ?? hoverLinks}
                 previewScope={previewScope}
                 diagramDarkColors={diagramDarkColors}
                 folderPages={folderPages}
@@ -767,6 +804,9 @@ export function FolderView({
               onNotice={onNotice}
               onMoveBack={trayMoves ? moveBack : null}
               onTakeRow={trayMoves ? (row) => latestTray.current?.toTray(row) : null}
+              hoverPreview={(ownRows ?? hoverPreview) === true}
+              previewScope={previewScope}
+              diagramDarkColors={diagramDarkColors}
             />
           )}
         </section>

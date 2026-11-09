@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { cssZoom } from '../../lib/cssZoom'
 
 interface PopoverProps {
   label: string
@@ -8,6 +9,8 @@ interface PopoverProps {
   constrainToViewport?: boolean
   /** Trigger to hang off with `position: fixed` (YAZ-743), for triggers inside a scrolling ancestor. */
   anchor?: HTMLElement | null
+  /** What takes the keyboard on open: the first control (default), or only a text field, else the popover itself. */
+  focusOn?: 'control' | 'field'
   children: ReactNode
 }
 
@@ -19,14 +22,17 @@ interface PopoverProps {
  * to the viewport like `ContextMenu`, so a clipping ancestor cannot cut it off — and
  * outside scrolling or window resizing closes it. Content resizing refits it in place.
  */
-export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false }: PopoverProps) {
+export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false, focusOn = 'control' }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<CSSProperties>()
 
   useEffect(() => {
     const el = ref.current
     if (el === null) return
-    ;(el.querySelector<HTMLElement>('input, select, button:not(:disabled)') ?? el).focus()
+    // `field`: a text field takes the keyboard (the Columns tab's search), else the popover itself, so no button opens
+    // with a focus ring (the toolbar's menus, YAZ-3746 demo). Otherwise the first control, as before.
+    const first = focusOn === 'field' ? 'input[type="text"], input[type="search"]' : 'input, select, button:not(:disabled)'
+    ;(el.querySelector<HTMLElement>(first) ?? el).focus()
   }, [])
 
   useLayoutEffect(() => {
@@ -35,8 +41,11 @@ export function Popover({ label, onClose, className, anchor, children, constrain
     const fit = () => {
       const a = anchor.getBoundingClientRect()
       const r = el.getBoundingClientRect()
-      const top = Math.max(0, Math.min(a.bottom + 6, window.innerHeight - r.height))
-      const left = Math.max(0, Math.min(a.left, window.innerWidth - r.width))
+      // Measured on screen; written in the popover's own px (YAZ-3746 13AM): inside a zoomed folder page a fixed box's
+      // `top` and `left` are scaled by the zoom, so the menu drifted right and down as the page zoomed in.
+      const z = cssZoom(el)
+      const top = Math.max(0, Math.min(a.bottom + 6, window.innerHeight - r.height)) / z
+      const left = Math.max(0, Math.min(a.left, window.innerWidth - r.width)) / z
       setPos(previous => previous?.top === top && previous.left === left ? previous : { position: 'fixed', top, left })
     }
     fit()
@@ -65,13 +74,17 @@ export function Popover({ label, onClose, className, anchor, children, constrain
           bottom = Math.min(bottom, bounds.bottom)
         }
       }
-      el.style.maxWidth = `${Math.min(cssMaxWidth, Math.max(0, right - left - 24))}px`
-      el.style.minWidth = `${Math.min(260, Math.max(0, right - left - 24))}px`
-      el.style.maxHeight = `${Math.max(0, Math.min(window.innerHeight * .6, bottom - top - 24))}px`
+      // The room is measured on screen; sizes and the shift are written in the popover's own px, so in a zoomed folder
+      // page they are divided by its zoom (YAZ-3746 13AP: at 200% the popover was twice too tall and moved twice too
+      // far, which grew the page, and each scroll fitted it again: the page slid down).
+      const z = cssZoom(el)
+      el.style.maxWidth = `${Math.min(cssMaxWidth, Math.max(0, right - left - 24) / z)}px`
+      el.style.minWidth = `${Math.min(260, Math.max(0, right - left - 24) / z)}px`
+      el.style.maxHeight = `${Math.max(0, Math.min(window.innerHeight * .6, bottom - top - 24)) / z}px`
       const rect = el.getBoundingClientRect()
       const x = Math.max(left + 12 - rect.left, Math.min(0, right - 12 - rect.right))
       const y = Math.max(top + 12 - rect.top, Math.min(0, bottom - 12 - rect.bottom))
-      el.style.translate = `${x}px ${y}px`
+      el.style.translate = `${x / z}px ${y / z}px`
     }
     fit()
     const observer = new ResizeObserver(fit)

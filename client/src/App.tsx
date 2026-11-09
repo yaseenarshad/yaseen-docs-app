@@ -62,6 +62,7 @@ import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } fro
 import { dropNoteWindowsAt, renameNoteWindows } from './views/view/NoteWindow'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
+import { setEnterKeepsStyle } from './editor/enterKeepsStyle'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
 import type { CodeSettingsPatch } from './code/codeSettings'
@@ -99,6 +100,7 @@ import { duplicateTabIds, nearSteps, stepIdOf, tabById, tabOf, useWorkspace, typ
 import { useTabSleep } from './workspace/useTabSleep'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
+import { PageActions } from './lib/pageActions'
 
 /** The "What's new" sheet (YAZ-2976 D5) is its own chunk: launch never parses it, and the first open fetches it. */
 const WhatsNewSheet = lazy(() => import('./update/WhatsNewSheet'))
@@ -630,6 +632,8 @@ export function App() {
   useEffect(() => setCellNotePinnedAtStart(settings.tableCellNotePinned ?? true), [settings.tableCellNotePinned])
   // Arrows while typing (YAZ-4273 D8): an open note reads it at its next keystroke. Absent from an older main process.
   useEffect(() => setTypingArrows(settings.typingArrows ?? true), [settings.typingArrows])
+  // Enter keeps the text style (YAZ-3746 13AB): an open note or box reads it at its next Enter. Absent from an older main process.
+  useEffect(() => setEnterKeepsStyle(settings.enterKeepsStyleNotes ?? false, settings.enterKeepsStyleBoxes ?? true), [settings.enterKeepsStyleNotes, settings.enterKeepsStyleBoxes])
   // Where a calendar table's "All notes" opens (YAZ-4276 A1). Absent from an older main process.
   useEffect(() => setAllNotesOpensAt(settings.tableAllNotesOpensAt ?? 'cell'), [settings.tableAllNotesOpensAt])
   // The past rows' shade (YAZ-4163 demo), read by table.css.
@@ -1374,6 +1378,12 @@ export function App() {
   const openKeptPage = useCallback((path: string) => {
     setOverview(OVERVIEW_CLOSED)
     openKept(path)
+  }, [openKept])
+  // The mini window's ↗ (YAZ-3746 13I): the note in a NEW tab, a copy when another tab shows it (the "New tab" rule of
+  // YAZ-3943 5B), so the folder page's tab stays as it was.
+  const openNewTabPage = useCallback((path: string) => {
+    setOverview(OVERVIEW_CLOSED)
+    openKept(path, true)
   }, [openKept])
   const toNextTab = useCallback(() => {
     setOverview(OVERVIEW_CLOSED)
@@ -2958,6 +2968,8 @@ export function App() {
       onOpenFileRight: openRight,
       // YAZ-4564: a folder page's Folder chips and ↗ open a subfolder's page as the sidebar's "Open folder page" does.
       onOpenFolderPage: openKeptPage,
+      // YAZ-3746 13I: the mini window's ↗ opens its note in a new tab.
+      onOpenFileNewTab: openNewTabPage,
       // YAZ-4547: a folder table opens a row in a window with the same editor.
       renderNoteEditor,
       // YAZ-4592 S26: a folder table's "Delete note…" is the sidebar's delete.
@@ -3004,6 +3016,7 @@ export function App() {
       hoverDrawingLinks: hoverOn(settings, 'drawings'),
       hoverBacklinks: hoverOn(settings, 'backlinks'),
       hoverFolderViews: hoverOn(settings, 'folderViews'),
+      hoverFolderLinks: hoverOn(settings, 'folderLinks'),
       // YAZ-4585: Settings › Folder pages, one object; each view reads its own key first, then these.
       folderPages: settings.folderPages,
       previewScope: editorPreviewScope,
@@ -3186,6 +3199,7 @@ export function App() {
     <IconsContext.Provider value={iconsHere}>
     <VaultLinksContext.Provider value={vaultLinks}>
     <NoteWindowEditorProps.Provider value={noteWindowEditorProps}>
+    <PageActions.Provider value={linkActions}>
     <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
@@ -3657,6 +3671,7 @@ export function App() {
         />
       )}
     </div>
+    </PageActions.Provider>
     </NoteWindowEditorProps.Provider>
     </VaultLinksContext.Provider>
     </IconsContext.Provider>

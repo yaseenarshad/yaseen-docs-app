@@ -1,6 +1,6 @@
-import { PropertyTypeIcon } from './PropertyDefinitionEditor'
+import { PROPERTY_LABELS, PropertyTypeIcon } from './PropertyDefinitionEditor'
 import { ColumnSearch, matchesColumn } from './ColumnSearch'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
@@ -49,21 +49,21 @@ export interface PropertiesMenuProps {
   properties?: PropertiesResponse | null
   /** The folder's own declarations (the ladder's TOP rung) and `setColumns`, the door they go back through (YAZ-895). */
   folder: FolderHost
-  /** A calendar's date columns for "Show by" (`dateColumns`, once in `ViewsPane`, YAZ-4544). */
-  dateColumns: readonly string[]
   /** The app tab that shows this folder page: the key of the remembered tab (D59). Absent in the right panel. */
   tabId?: string
   /** The tab to open on, over the remembered one: "View settings…" asks for View (YAZ-4585 D34, D59). */
   startTab?: PropertiesTab
+  /** A calendar's date columns for the View tab's "Show by" (`dateColumns`, once in `ViewsPane`, YAZ-4544). */
+  dateColumns?: readonly string[]
 }
 
 /**
  * Properties menu (GRO-2135), TWO TABS since YAZ-4607 (D59) over the two levels of YAZ-1513 (Notion's shape):
  *
- *  COLUMNS — the list: one clean line per column: grip (YAZ-1207, shown rows only) · shown checkbox (writes
- *  `view.order`; Table and Board may hide `file.name`, Cards and List keep it) · the column's KIND
- *  glyph · its label · a `›` — the whole label area opens the column. Nothing else rides the row.
- *  "Select all / Unselect all", the count and "+ Add column" are as they were.
+ *  COLUMNS — two sections, Shown and Hidden, each with its count and (Table, Board) Hide all / Show all. One line per
+ *  column: grip (YAZ-1207, shown rows only, on hover) · the column's KIND glyph · its label · its type in grey · a `›`
+ *  on hover — the whole label area opens the column — then the show switch (writes `view.order`; Table and Board may
+ *  hide `file.name`, Cards and List keep it). "New column" closes the list (YAZ-3746 demo polish).
  *
  *  VIEW — how this view looks (`ViewSettings`): the settings that sat below the list, by section, only those the
  *  view's type reads, each Settings default with "from Settings" and Reset (D34). Group indent and Subfolders moved
@@ -75,7 +75,9 @@ export interface PropertiesMenuProps {
  *  the table header's "Edit column…" opens, in place of both tabs. Hide in this view (= unchecking) and Delete
  *  column… return to Columns; there is no third level and no Save/Cancel; Esc or `‹` returns to the list.
  */
-export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, properties = null, folder, dateColumns, tabId, startTab }: PropertiesMenuProps) {
+const NO_DATE_COLUMNS: readonly string[] = []
+
+export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, properties = null, folder, tabId, startTab, dateColumns = NO_DATE_COLUMNS }: PropertiesMenuProps) {
   const [tab, setTab] = useState<PropertiesTab>(() => startTab ?? lastPropertiesTab(tabId))
   const [query, setQuery] = useState('')
   /** The DETAIL level (YAZ-1513): the open column's key, or null for the list. Its editor is `ColumnDetail` (YAZ-4533). */
@@ -140,6 +142,81 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
     return <PropertyTypeIcon kind={kindOf(key)} />
   }
 
+  const shownMatches = matches.filter(isShown)
+  const hiddenMatches = matches.filter((key) => !isShown(key))
+  /** Hide all / Show all: Table and Board may hide every column; Cards and List keep the name (as before). */
+  const hideable = view.type === 'table' || view.type === 'board'
+  /** The column's type in words, grey at the row's end (YAZ-3746 demo): the empty middle of the row says what it holds. */
+  const typeOf = (key: string): string => {
+    const c = canonicalKey(key)
+    if (c.startsWith('file.')) return 'File'
+    if (c.startsWith('formula.')) return 'Formula'
+    return PROPERTY_LABELS[kindOf(key)]
+  }
+  /** One column row: the grip (shown rows, no search), the kind glyph, the label, its type, a › on hover, then the switch. */
+  const row = (key: string) => {
+    const on = isShown(key)
+    const i = shown.indexOf(key)
+    const label = propertyLabel(def, key)
+    // The gap is the marker (YAZ-4606): the live gap's own attributes and transforms say where it opens, no class does.
+    return (
+      <li key={key} {...(i >= 0 && !filtering ? live.itemProps(i) : {})} className="view-prop">
+        <div className="view-prop__identity">
+          {on && !filtering ? (
+            <button
+              type="button"
+              className="view-rule__nav view-prop__handle"
+              aria-label={`Reorder ${label}`}
+              title="Reorder"
+              draggable
+              onDragStart={(e) => {
+                // The groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none.
+                e.dataTransfer?.setData('text/plain', key)
+                if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+                live.start(e, i)
+              }}
+              onDragEnd={live.end}
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                e.preventDefault()
+                if (e.key === 'ArrowUp') {
+                  if (i > 0) move(i, i - 1)
+                } else if (i < shown.length - 1) move(i, i + 2)
+              }}
+            >
+              <DragHandleIcon />
+            </button>
+          ) : (
+            <span className="view-prop__handle-slot" aria-hidden="true" />
+          )}
+          <button type="button" className="view-prop__open" aria-label={`Open ${label}`} onClick={() => openDetail(key)}>
+            <span className="view-prop__kind">{glyphOf(key)}</span>
+            <span className="view-prop__name">
+              {label}
+              {(labelCounts.get(label) ?? 0) > 1 && <small>{canonicalKey(key)}</small>}
+            </span>
+            <span className="view-prop__type">{typeOf(key)}</span>
+            <span className="view-prop__chevron" aria-hidden="true">›</span>
+          </button>
+          <input type="checkbox" className="view-switch" aria-label={`Show ${label}`} checked={on} disabled={!canToggle(key)} onChange={() => toggle(key)} />
+        </div>
+      </li>
+    )
+  }
+
+  /**
+   * The names' column (YAZ-3746 13K): as wide as the longest shown name, so every type sits one gap after the names,
+   * not at the far right. Measured after each render of the list (a name's own text width is its `scrollWidth`).
+   */
+  const menuRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const root = menuRef.current
+    if (root === null) return
+    const names = [...root.querySelectorAll<HTMLElement>('.view-prop__name')]
+    const widest = names.reduce((max, name) => Math.max(max, name.scrollWidth), 0)
+    root.style.setProperty('--prop-name-w', `${Math.ceil(widest)}px`)
+  })
+
   // ---------- DETAIL level (YAZ-1513): the shared column editor (YAZ-4533) ----------
   if (detail !== null)
     return (
@@ -163,7 +240,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
 
   // ---------- the two tabs (D59) ----------
   return (
-    <div className="view-menu view-menu--tabbed">
+    <div ref={menuRef} className="view-menu view-menu--tabbed">
       <div className="view-menu__tabs" role="group" aria-label="Columns and view tabs">
         {TABS.map(([id, text]) => (
           <button key={id} type="button" className="view-menu__tab" data-tab={id} aria-pressed={tab === id} onClick={() => pickTab(id)}>
@@ -172,73 +249,44 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
         ))}
       </div>
       {tab === 'view' ? (
-        <ViewSettings def={def} view={view} own={own} viewIndex={viewIndex} shown={shown} onUpdate={onUpdate} dateColumns={dateColumns} />
+        <ViewSettings def={def} view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} dateColumns={dateColumns} />
       ) : (
         <>
           <div className="column-menu-head">
             <ColumnSearch value={query} onChange={setQuery} label="Search columns" />
-            <div className="column-menu-summary">
-              <span aria-live="polite">{filtering ? `${matches.length} of ${keys.length}` : keys.length} columns</span>
-              {(view.type === 'table' || view.type === 'board') && <div className="view-menu__actions">
-                <button type="button" className="view-menu__action" disabled={matches.every(isShown)} onClick={() => writeOrder(filtering ? [...shown, ...matches.filter(key => !isShown(key))] : keys)}>
-                  {filtering ? 'Select results' : 'Select all'}
-                </button>
-                <button type="button" className="view-menu__action" disabled={!matches.some(isShown)} onClick={() => writeOrder(filtering ? shown.filter(key => !matchingKeys.has(canonicalKey(key))) : [])}>
-                  {filtering ? 'Unselect results' : 'Unselect all'}
-                </button>
-              </div>}
-            </div>
-            {filtering && matches.length > 0 && <p className="column-reorder-hint">Clear search to reorder columns.</p>}
+            {filtering && (
+              <p className="column-menu-summary" aria-live="polite">
+                {matches.length} of {keys.length} columns{matches.length > 0 ? ' · Clear search to reorder' : ''}
+              </p>
+            )}
           </div>
           {matches.length === 0 && <p className="column-search__empty">No columns found. Try another name.</p>}
+          {shownMatches.length > 0 && (
+            <div className="column-section__head">
+              <span>Shown · {shownMatches.length}</span>
+              {hideable && (
+                <button type="button" className="view-menu__action" onClick={() => writeOrder(filtering ? shown.filter(key => !matchingKeys.has(canonicalKey(key))) : [])}>
+                  {filtering ? 'Hide results' : 'Hide all'}
+                </button>
+              )}
+            </div>
+          )}
           <ul className="view-menu__list" {...live.listProps}>
-            {matches.map((key) => {
-              const on = isShown(key)
-              const i = shown.indexOf(key)
-              const label = propertyLabel(def, key)
-              // The gap is the marker (YAZ-4606): the live gap's own attributes and transforms say where it opens, no class does.
-              return (
-                <li key={key} {...(i >= 0 && !filtering ? live.itemProps(i) : {})} className="view-prop">
-                  <div className="view-prop__identity">
-                    {on && !filtering && (
-                      <button
-                        type="button"
-                        className="view-rule__nav view-prop__handle"
-                        aria-label={`Reorder ${label}`}
-                        title="Reorder"
-                        draggable
-                        onDragStart={(e) => {
-                          // The groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none.
-                          e.dataTransfer?.setData('text/plain', key)
-                          if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-                          live.start(e, i)
-                        }}
-                        onDragEnd={live.end}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
-                          e.preventDefault()
-                          if (e.key === 'ArrowUp') {
-                            if (i > 0) move(i, i - 1)
-                          } else if (i < shown.length - 1) move(i, i + 2)
-                        }}
-                      >
-                        <DragHandleIcon />
-                      </button>
-                    )}
-                    <input type="checkbox" aria-label={`Show ${label}`} checked={on} disabled={!canToggle(key)} onChange={() => toggle(key)} />
-                    <button type="button" className="view-prop__open" aria-label={`Open ${label}`} onClick={() => openDetail(key)}>
-                      <span className="view-prop__kind">{glyphOf(key)}</span>
-                      <span className="view-prop__name">
-                        {label}
-                        {(labelCounts.get(label) ?? 0) > 1 && <small>{canonicalKey(key)}</small>}
-                      </span>
-                      <span className="view-prop__chevron" aria-hidden="true">›</span>
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
+            {shownMatches.map(row)}
           </ul>
+          {hiddenMatches.length > 0 && (
+            <>
+              <div className="column-section__head">
+                <span>Hidden · {hiddenMatches.length}</span>
+                {hideable && (
+                  <button type="button" className="view-menu__action" onClick={() => writeOrder(filtering ? [...shown, ...hiddenMatches] : keys)}>
+                    {filtering ? 'Show results' : 'Show all'}
+                  </button>
+                )}
+              </div>
+              <ul className="view-menu__list column-section--hidden">{hiddenMatches.map(row)}</ul>
+            </>
+          )}
           <AddColumn
             taken={keys}
             shown={shown}

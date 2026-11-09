@@ -986,6 +986,25 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={ON_OFF_OPTIONS} value={settings.typingArrows ?? true} onChange={(typingArrows) => onChange({ ...settings, typingArrows })} ariaLabel="Arrows while typing" />
             ),
           },
+          // YAZ-3746 13AB: Enter at the end of a styled line, and the new line types in that style; notes off, boxes on.
+          {
+            id: 'enterKeepsStyleNotes',
+            label: 'Enter keeps the text style in notes',
+            hint: 'Press Enter at the end of a bold, italic, underlined or coloured line, and the new line types in the same style. Off: the new line starts plain.',
+            keywords: ['enter', 'return', 'new line', 'next line', 'keep', 'style', 'format', 'formatting', 'bold', 'italic', 'underline', 'color', 'colour', 'highlight', 'notes'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.enterKeepsStyleNotes ?? false} onChange={(enterKeepsStyleNotes) => onChange({ ...settings, enterKeepsStyleNotes })} ariaLabel="Enter keeps the text style in notes" />
+            ),
+          },
+          {
+            id: 'enterKeepsStyleBoxes',
+            label: 'Enter keeps the text style in drawing text boxes',
+            hint: 'The same, in a text box on a drawing. On: a new line in a bold box stays bold, however the bold was set.',
+            keywords: ['enter', 'return', 'new line', 'next line', 'keep', 'style', 'format', 'formatting', 'bold', 'italic', 'underline', 'color', 'colour', 'highlight', 'drawing', 'text box', 'box', 'excalidraw', 'board'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.enterKeepsStyleBoxes ?? true} onChange={(enterKeepsStyleBoxes) => onChange({ ...settings, enterKeepsStyleBoxes })} ariaLabel="Enter keeps the text style in drawing text boxes" />
+            ),
+          },
         ],
       },
       {

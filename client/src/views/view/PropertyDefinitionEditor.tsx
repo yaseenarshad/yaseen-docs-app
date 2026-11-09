@@ -10,7 +10,7 @@ export const PROPERTY_LABELS: Record<PropertyKind, string> = {
   text: 'Text', number: 'Number', date: 'Date', checkbox: 'Checkbox', list: 'List',
   link: 'Link', 'multi-link': 'Multi-link', select: 'Select', 'multi-select': 'Multi-select',
 }
-const DESCRIPTIONS: Record<PropertyKind, string> = {
+export const DESCRIPTIONS: Record<PropertyKind, string> = {
   text: 'Write any text.', number: 'Store a numeric value.', date: 'Choose a calendar date.', checkbox: 'Check or uncheck.',
   list: 'Keep a list of free-form values.', link: 'Link to one page.', 'multi-link': 'Link to multiple pages.',
   select: 'Choose one option.', 'multi-select': 'Choose multiple options.',

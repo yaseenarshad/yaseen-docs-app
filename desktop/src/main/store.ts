@@ -451,10 +451,15 @@ const isSidebarIconColors = (v: unknown): v is SidebarIconColors => isRecord(v) 
 /** The icon colours on load: each entry that does not read (an unknown kind, a colour that is no `#rrggbb`) is dropped, so that kind has its built-in colour. */
 export const sanitizeSidebarIconColors = (raw: unknown): SidebarIconColors => (isSidebarIconColors(raw) ? raw : isRecord(raw) && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).filter(isIconColour)) : {})
 
-/** The places' hover switches on load (YAZ-3403): each valid one is kept, a missing or broken one reads on — a file from before a place existed shows it. */
+/**
+ * The places' hover switches on load (YAZ-3403): each valid one is kept, a missing or broken one reads on — a file from
+ * before a place existed shows it. One exception (YAZ-4601 demo 13D): a missing `folderLinks` reads as the stored
+ * `folderViews`, the one folder-page switch it was split from, so a user's Off covers both.
+ */
 export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean> {
   const src = isRecord(raw) ? raw : {}
-  return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : true])) as Record<HoverPlace, boolean>
+  const fallback = (place: HoverPlace): boolean => (place === 'folderLinks' && typeof src.folderViews === 'boolean' ? src.folderViews : true)
+  return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : fallback(place)])) as Record<HoverPlace, boolean>
 }
 
 /** Settings › Folder pages (YAZ-4585): each part's guard. A choice row is one of its `FOLDER_PAGE_CHOICES`; the two "as …" switches may be null. */
@@ -477,6 +482,7 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   hideWeekends: isBool,
   showFolderPageFiles: isBool,
   askBeforeDelete: isBool,
+  confirmChanges: isBool,
   showOtherFiles: isBool,
 }
 const FOLDER_PAGES_PARTS = Object.keys(FOLDER_PAGES_PART_OK) as (keyof FolderPagesSettings)[]
@@ -654,6 +660,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableCellNoteTemplate: (v): v is string => typeof v === 'string' && v.length <= CELL_NOTE_TEMPLATE_MAX,
   tableCellNotePinned: (v): v is boolean => typeof v === 'boolean',
   typingArrows: (v): v is boolean => typeof v === 'boolean',
+  enterKeepsStyleNotes: (v): v is boolean => typeof v === 'boolean',
+  enterKeepsStyleBoxes: (v): v is boolean => typeof v === 'boolean',
   tableAllNotesOpensAt: (v): v is AllNotesOpensAt => typeof v === 'string' && (ALL_NOTES_OPENS_AT as readonly string[]).includes(v),
   newNoteTitleTemplate: (v): v is string => typeof v === 'string' && v.length <= NEW_NOTE_TITLE_MAX && !v.includes('/'),
   tableDayStart: isCalendarDayTime,

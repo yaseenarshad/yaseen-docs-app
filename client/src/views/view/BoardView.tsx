@@ -1,4 +1,5 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { ViewFind } from './viewFind'
 import type { IndexRecord } from '@shared/types'
 import { type Modifiers, openByGesture, openByKey, openTarget } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
@@ -18,6 +19,11 @@ import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } 
 import { NO_READ_ONLY } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
+
+/** Board windowing (YAZ-3746 13AX): the cards a list draws first, the cards each step adds, and how far ahead (px) of the screen a list's end starts the next step. */
+const FIRST_CARDS = 40
+const STEP_CARDS = 60
+const REVEAL_MARGIN = 800
 
 export interface BoardViewProps {
   /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
@@ -116,8 +122,8 @@ export function BoardView({
   const levelKeys = levels.map((_, level) => groupByKey(view, level))
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
   const adds = levels.map((_, level) => groupTakesNew(view, level))
-  /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES. */
-  const flipRoot = useFlip()
+  /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES; a fold never plays (13A). */
+  const flipRoot = useFlip(collapsed.join('\u001e'))
   // The note window (YAZ-4547 D24): column by column, top to bottom, collapsed sections left out; the board's root
   // is the FLIP root too, so one stable ref callback sets both.
   const windowOrder = useMemo(() => shownRows(groups, [], collapsed), [groups, collapsed])
@@ -129,7 +135,62 @@ export function BoardView({
     },
     [flipRoot],
   )
-  useNoteWindowItems(windowLink, windowOrder, boardRef)
+  /**
+   * WINDOWING (YAZ-3746 13AX, S17): each card list draws its first `FIRST_CARDS` cards, then `STEP_CARDS` more each time
+   * its end comes within `REVEAL_MARGIN` of the screen — so a board of thousands opens as fast as a small one, and the
+   * cards drawn are the ones near the screen. `reach` is each list's drawn count, by its group's key; a card asked for
+   * (⌘F, the mini window's step) draws its list down to it first (`revealCard`).
+   */
+  const [reach, setReach] = useState<Readonly<Record<string, number>>>({})
+  const drawn = (list: string, total: number) => Math.min(total, Math.max(FIRST_CARDS, reach[list] ?? 0))
+  const grow = useCallback((list: string, to: number) => setReach((r) => ((r[list] ?? FIRST_CARDS) >= to ? r : { ...r, [list]: to })), [])
+  const ends = useRef<IntersectionObserver | null>(null)
+  /** The one observer of the lists' ends, made at the first end's mount: a ref attaches before any effect runs. */
+  const endsObserver = (): IntersectionObserver | null => {
+    if (ends.current === null && typeof IntersectionObserver !== 'undefined')
+      ends.current = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            const el = entry.target as HTMLElement
+            if (entry.isIntersecting) grow(el.dataset.list!, Number(el.dataset.next))
+          }
+        },
+        { rootMargin: `${REVEAL_MARGIN}px 0px` },
+      )
+    return ends.current
+  }
+  useEffect(
+    () => () => {
+      ends.current?.disconnect()
+      ends.current = null
+    },
+    [],
+  )
+  /** Where each card sits: its list and its place in it, for `revealCard`; rebuilt by each render's lists. */
+  const places = useRef(new Map<string, { list: string; index: number }>())
+  places.current = new Map()
+  const revealCard = useCallback(
+    (path: string): boolean => {
+      const at = places.current.get(path)
+      if (at === undefined || at.index < Math.max(FIRST_CARDS, reach[at.list] ?? 0)) return false
+      grow(at.list, at.index + STEP_CARDS)
+      return true
+    },
+    [grow, reach],
+  )
+  // ⌘F's jump to a card not drawn yet draws its list down to it; the find bar scrolls to it once it mounts.
+  const find = useContext(ViewFind)
+  useEffect(() => {
+    if (find === null) return
+    find.scrollTo = (path) => void revealCard(path)
+    return () => {
+      if (find.scrollTo !== null) find.scrollTo = null
+    }
+  }, [find, revealCard])
+  // The mini window's step onto a card not drawn yet: draw it, then show it (two frames: the commit, then its layout).
+  useNoteWindowItems(windowLink, windowOrder, boardRef, (current) => {
+    if (current !== null && revealCard(current)) requestAnimationFrame(() => requestAnimationFrame(() => windowLink?.show?.()))
+  })
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */
   const [adding, setAdding] = useState<{ key: string; name: string } | null>(null)
   /** The exact rendered record targeted by the latest whole-card secondary click. */
@@ -251,9 +312,13 @@ export function BoardView({
       },
     }
   }
-  const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => (
+  const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => {
+    const list = spotKey(group, at)
+    const count = drawn(list, rows.length)
+    rows.forEach((row, index) => places.current.set(row.record.path, { list, index }))
+    return (
     <ul className="view-board__cards">
-      {rows.map((row) => (
+      {rows.slice(0, count).map((row) => (
         <li
           key={row.record.path}
           data-flip-key={row.record.path}
@@ -299,9 +364,26 @@ export function BoardView({
           {lines.length === 0 && moveChip(row)}
         </li>
       ))}
+      {count < rows.length && (
+        // The list's end (13AX): near the screen, the next cards draw. A new key per step, so a still-visible end is seen again.
+        <li
+          key={`more-${count}`}
+          className="view-board__more"
+          aria-hidden
+          data-list={list}
+          data-next={count + STEP_CARDS}
+          ref={(el) => {
+            if (el === null) return
+            const observer = endsObserver()
+            observer?.observe(el)
+            return () => observer?.unobserve(el)
+          }}
+        />
+      )}
       {isOver && <li className="view-board__placeholder" aria-hidden />}
     </ul>
-  )
+    )
+  }
   const inlineAdd = (group: Group, key: string, at?: GroupSpot) => {
     if (onNewInGroup === undefined) return null
     return adding?.key === key ? (
@@ -330,7 +412,7 @@ export function BoardView({
   }
 
   /**
-   * The nested sections under `parent` (YAZ-745): level 2 and, since YAZ-4531, level 3 inside it.
+   * The nested sections under `parent` (YAZ-745): level 2 and each deeper level inside the one above (up to `MAX_GROUP_LEVELS`, YAZ-4531, YAZ-3746 13AF).
    * Each section shows the merge rule's direct cards, then its own subgroups.
    */
   const subgroups = (parent: Group, parentAt: GroupSpot): ReactNode => {
