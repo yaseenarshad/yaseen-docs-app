@@ -1,7 +1,7 @@
 /**
  * Fill a cell or a row in the folder table (YAZ-4536, D3 / D12): ViewsPane mounted in jsdom over
  * `TEST_RECORDS`. The view's `fills` paint the cells (`--view-cell-fill`, a cell fill over a row
- * fill), and the row right-click's "Fill cell ›" and "Fill row ›" write them as YAML.
+ * fill), and the row right-click's ONE "Fill ›", with its Cell · Row · Column switch (YAZ-3746 13AW), writes them as YAML.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -75,6 +75,13 @@ const item = (el: ParentNode, label: string) => {
   return found
 }
 const click = (b: HTMLElement) => act(() => b.click())
+/** The row menu's one "Fill ›" (YAZ-3746 13AW), opened on `target` with its Cell · Row · Column switch. */
+function openFill(el: ParentNode, target: 'Cell' | 'Row' | 'Column'): void {
+  if (el.querySelector('.ctx-menu__sub .fill-target') === null) click(item(el, 'Fill'))
+  const option = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .fill-target__opt')].find((b) => b.textContent === target)
+  if (option === undefined) throw new Error(`no Fill target ${target}`)
+  click(option)
+}
 function rightClick(el: Element): void {
   act(() => void el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 40 })))
 }
@@ -117,28 +124,31 @@ describe('fills paint the folder table (YAZ-4536)', () => {
   })
 })
 
-describe('"Fill cell ›" and "Fill row ›" in the row right-click (YAZ-4536 D12)', () => {
-  it('the menu ends with the two flyouts; each holds No fill, the ten colours and Custom colour…', () => {
+describe('"Fill ›" in the row right-click: a cell, its row or its column (YAZ-4536 D12; one flyout since YAZ-3746 13AW)', () => {
+  it('the menu has ONE Fill flyout after the clipboard group; it holds the Cell · Row · Column switch, No fill, the ten colours and Custom colour…', () => {
     const { el } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":1"]'))
-    expect(items(el).map((b) => b.textContent)).toEqual(['Open', 'Copy path', 'Reveal in Finder', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below', 'Filter by this value', 'Hide this value', 'Freeze up to this row', 'Unfreeze rows'])
-    click(item(el, 'Fill cell'))
-    expect(item(el, 'Fill cell').getAttribute('aria-expanded')).toBe('true')
+    // One order in every folder-page menu (YAZ-4608 C8): open, the clipboard (13AI), the edits, the view, then Copy path.
+    expect(items(el).map((b) => b.textContent)).toEqual(['Open', 'Open in', 'Copy', 'Paste', 'Clear cells', 'Fill', 'Clear formatting', 'New row below', 'Filter', 'Freeze up to this row', 'Copy path'])
+    click(item(el, 'Fill'))
+    expect(item(el, 'Fill').getAttribute('aria-expanded')).toBe('true')
     const flyout = q(el, '.ctx-menu__sub')
+    // From a cell the switch starts on Cell.
+    expect([...flyout.querySelectorAll<HTMLButtonElement>('.fill-target__opt')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Cell', 'true'], ['Row', 'false'], ['Column', 'false']])
     expect([...flyout.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual([
       'No fill', 'Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink', 'Grey', 'Brown', 'Custom colour…',
     ])
     expect(q<HTMLElement>(flyout, '.table-menu-swatch').style.background).toBe('var(--table-fill-solid-red)')
     // One flyout at a time.
-    click(item(el, 'Fill row'))
+    click(item(el, 'Open in'))
     expect(el.querySelectorAll('.ctx-menu__sub')).toHaveLength(1)
-    expect(item(el, 'Fill cell').getAttribute('aria-expanded')).toBe('false')
+    expect(item(el, 'Fill').getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('a colour in "Fill cell" writes a cell fill for that note and column, and closes the menu', () => {
+  it('a colour in Fill › Cell writes a cell fill for that note and column, and closes the menu', () => {
     const { el, yaml } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":1"]'))
-    click(item(el, 'Fill cell'))
+    openFill(el, 'Cell')
     click(item(el, 'Blue'))
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(yaml()).toContain(`    fills:
@@ -149,17 +159,17 @@ describe('"Fill cell ›" and "Fill row ›" in the row right-click (YAZ-4536 D1
     expect(fillOf(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":1"]'))).toBe('var(--table-fill-blue)')
   })
 
-  it('"Fill row" writes a row fill; "No fill" clears it and the fills key goes', () => {
+  it('Fill › Row writes a row fill; "No fill" clears it and the fills key goes', () => {
     const { el, yaml } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Attribution'), 'td[data-cell$=":2"]'))
-    click(item(el, 'Fill row'))
+    openFill(el, 'Row')
     click(item(el, 'Pink'))
     expect(yaml()).toContain(`    fills:
       - note: "[[Attribution]]"
         fill: pink
 `)
     rightClick(q(rowNamed(el, 'Attribution'), 'td[data-cell$=":0"]'))
-    click(item(el, 'Fill row'))
+    openFill(el, 'Row')
     click(item(el, 'No fill'))
     expect(yaml()).not.toContain('fills')
   })
@@ -167,7 +177,7 @@ describe('"Fill cell ›" and "Fill row ›" in the row right-click (YAZ-4536 D1
   it('"Custom colour…" opens the colour box in the flyout; Enter in a field writes that hex, and the box stays', () => {
     const { el, yaml } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":0"]'))
-    click(item(el, 'Fill row'))
+    openFill(el, 'Row')
     click(item(el, 'Custom colour…'))
     const box = q<HTMLElement>(el, '.ctx-menu__sub .colour-box')
     expect(box.hidden).toBe(false)
@@ -187,7 +197,7 @@ describe('"Fill cell ›" and "Fill row ›" in the row right-click (YAZ-4536 D1
   it('the Fill flyout is the app’s one flyout (YAZ-4544 4F): the first Esc closes it alone, the next closes the menu', () => {
     const { el } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":0"]'))
-    click(item(el, 'Fill row'))
+    openFill(el, 'Row')
     const esc = () => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     esc()
     expect(el.querySelector('.ctx-menu__sub')).toBeNull()
@@ -199,7 +209,7 @@ describe('"Fill cell ›" and "Fill row ›" in the row right-click (YAZ-4536 D1
   it('other views show no fill items', () => {
     const { el } = mount('views:\n  - type: cards\n    name: C\n')
     rightClick(q(el, '.view-card'))
-    expect(items(el).map((b) => b.textContent)).not.toContain('Fill cell')
+    expect(items(el).map((b) => b.textContent)).not.toContain('Fill')
   })
 })
 
@@ -234,10 +244,10 @@ describe('a folder row fills (YAZ-4644 E1): Subfolders: As rows on a Schema page
     expect([...rowNamed(el, 'Overview').querySelectorAll<HTMLElement>('td[data-cell]')].map(fillOf)).toEqual(['', '', ''])
   })
 
-  it('"Fill row" on the folder row writes a link to the folder (its title, as a note\'s), and the row is drawn filled at once; "Fill cell" paints its one cell', () => {
+  it('Fill › Row on the folder row writes a link to the folder (its title, as a note\'s), and the row is drawn filled at once; Fill › Cell paints its one cell', () => {
     const { el, yaml } = schema(SCHEMA)
     rightClick(q(orders(el), 'td[data-cell$=":1"]'))
-    click(item(el, 'Fill row'))
+    openFill(el, 'Row')
     click(item(el, 'Pink'))
     expect(yaml()).toContain(`    fills:
       - note: "[[Orders]]"
@@ -245,7 +255,7 @@ describe('a folder row fills (YAZ-4644 E1): Subfolders: As rows on a Schema page
 `)
     expect([...orders(el).querySelectorAll<HTMLElement>('td[data-cell]')].map(fillOf)).toEqual(Array(3).fill('var(--table-fill-pink)'))
     rightClick(q(orders(el), 'td[data-cell$=":1"]'))
-    click(item(el, 'Fill cell'))
+    openFill(el, 'Cell')
     click(item(el, 'Blue'))
     expect(fillOf(q(orders(el), 'td[data-cell$=":1"]'))).toBe('var(--table-fill-blue)')
     expect(fillOf(q(orders(el), 'td[data-cell$=":2"]'))).toBe('var(--table-fill-pink)')

@@ -108,12 +108,30 @@ describe('the folder page toolbar (D35)', () => {
   })
 
   // "Show Other files" added by YAZ-4597 (D43): the third row of the group.
-  it('the cog holds the "This folder page" group: Read only, Show folder page file, Show Other files, Settings chosen', async () => {
+  it('the cog holds the "This folder page" group: Read only, Show folder page file, the two hover switches, Show Other files, the column switches, Confirm changes, Settings chosen', async () => {
     const el = await mount()
     openCog(el)
     const group = q(el, '.page-settings__menu [role="group"][aria-label="This folder page"]')
-    // YAZ-4601 D51 adds "Preview on hover" after "Show folder page file"; YAZ-4597 adds "Show Other files" last.
-    expect([...group.children].map((c) => c.textContent)).toEqual(['This folder page', 'Read only', 'Show folder page file:', 'SettingsOnOff', 'Preview on hover:', 'SettingsOnOff', 'Show Other files:', 'SettingsOnOff'])
+    // YAZ-4601 D51's "Preview on hover", split in two by demo 13D; YAZ-4597's "Show Other files"; YAZ-4713's
+    // "Show parent folders' columns" (C12) and "Show where columns come from" (C11); "Confirm changes" (13AN) last.
+    expect([...group.children].map((c) => c.textContent)).toEqual([
+      'This folder page',
+      'Read only',
+      'Show folder page file:',
+      'SettingsOnOff',
+      'Preview rows on hover:',
+      'SettingsOnOff',
+      'Preview links on hover:',
+      'SettingsOnOff',
+      'Show Other files:',
+      'SettingsOnOff',
+      "Show parent folders' columns:",
+      'SettingsOnOff',
+      'Show where columns come from:',
+      'SettingsIconIcon and folder nameOff',
+      'Confirm changes:',
+      'SettingsOnOff',
+    ])
     expect(pill(el, 'Settings').getAttribute('aria-pressed')).toBe('true')
     // No word counts and no trailing rows: a folder page off its Page tab has only its own group.
     expect(q(el, '.page-settings__menu').textContent).not.toContain('words')
@@ -204,13 +222,13 @@ describe('Show folder page file (D37)', () => {
   })
 })
 
-describe('Preview on hover (YAZ-4601 D51)', () => {
-  const hoverPill = (el: ParentNode, text: string): HTMLButtonElement => button(q(el, '[role="group"][aria-label="Preview on hover"]'), text)
+describe('Preview on hover (YAZ-4601 D51; two switches since demo 13D)', () => {
+  const hoverPill = (el: ParentNode, text: string): HTMLButtonElement => button(q(el, '[role="group"][aria-label="Preview rows on hover"]'), text)
 
-  it('writes `hover_preview` in three states: On is true, Off is false, Settings removes the key', async () => {
+  it('"Preview rows on hover" writes `hover_rows` in three states: On is true, Off is false, Settings removes the key', async () => {
     const el = await mount()
     openCog(el)
-    const value = () => parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties.hover_preview
+    const value = () => parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties.hover_rows
     expect(hoverPill(el, 'Settings').getAttribute('aria-pressed')).toBe('true')
     click(hoverPill(el, 'On'))
     await flush()
@@ -313,7 +331,7 @@ describe('two folder pages on one `.folder.md` (YAZ-4596 S38)', () => {
     try {
       act(() => rootB.render(<FolderView root="/vault" path={STAGES} source={source} onOpenFile={noop} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} />))
       await flush()
-      const onDiskNow = () => parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties as { show_page_file?: boolean; hover_preview?: boolean; folder_settings: { views: { name: string }[] } }
+      const onDiskNow = () => parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties as { show_page_file?: boolean; hover_rows?: boolean; folder_settings: { views: { name: string }[] } }
 
       // At once: B duplicates a view (the whole `folder_settings` block) and A's cog sets "Show folder page file".
       // Both read the same bytes; the later write is refused, reads again and lands on top.
@@ -326,18 +344,18 @@ describe('two folder pages on one `.folder.md` (YAZ-4596 S38)', () => {
       expect(onDiskNow().show_page_file).toBe(true)
       expect(onDiskNow().folder_settings.views).toHaveLength(2)
 
-      // The watcher speaks to both tabs. Then at once: A duplicates a view, B's cog turns "Preview on hover" off.
+      // The watcher speaks to both tabs. Then at once: A duplicates a view, B's cog turns "Preview rows on hover" off.
       feed()
       await flush()
       openCog(b)
       duplicateView(a)
-      click(button(q(b, '[role="group"][aria-label="Preview on hover"]'), 'Off'))
+      click(button(q(b, '[role="group"][aria-label="Preview rows on hover"]'), 'Off'))
       await flush()
       await flush()
       expect(conflicts).toBe(2)
       const end = onDiskNow()
       expect(end.show_page_file).toBe(true)
-      expect(end.hover_preview).toBe(false)
+      expect(end.hover_rows).toBe(false)
       expect(end.folder_settings.views).toHaveLength(3) // B's copy and A's copy: A wrote on the settings it heard from B
       expect(end.folder_settings.views[0].name).toBe('Pipeline')
       expect(writeFile).toHaveBeenCalledTimes(6) // four writes, two of them refused once
@@ -351,7 +369,7 @@ describe('two folder pages on one `.folder.md` (YAZ-4596 S38)', () => {
         act(() => void t.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
         click([...el.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((x) => x.textContent?.replace('✓', '').trim() === item)!)
       }
-      tabMenu(a, 'Pipeline', 'Open on this view')
+      tabMenu(a, 'Pipeline', 'Make default view')
       duplicateView(b)
       await flush()
       await flush()
@@ -363,16 +381,16 @@ describe('two folder pages on one `.folder.md` (YAZ-4596 S38)', () => {
       // else goes — A's list does not hold B's new copy yet, and the copy stays.
       expect(both.folder_settings.views.map((v) => v.name)).toEqual(['Pipeline', 'Pipeline copy 3', 'Pipeline copy 2', 'Pipeline copy'])
       expect([...a.querySelectorAll('[role="tab"]')].map((x) => x.textContent)).not.toContain('Pipeline copy 3')
-      tabMenu(a, 'Pipeline copy', 'Open on this view')
+      tabMenu(a, 'Pipeline copy', 'Make default view')
       await flush()
       expect((onDiskNow() as typeof both).folder_settings.defaultView).toBe('Pipeline copy')
-      tabMenu(b, 'Pipeline copy 2', 'Open on this view')
+      tabMenu(b, 'Pipeline copy 2', 'Make default view')
       await flush()
       const last = onDiskNow() as typeof both
       expect(last.folder_settings.defaultView).toBe('Pipeline copy 2')
       expect(last.folder_settings.views.map((v) => v.name)).toEqual(both.folder_settings.views.map((v) => v.name))
       expect(last.show_page_file).toBe(true)
-      expect(last.hover_preview).toBe(false)
+      expect(last.hover_rows).toBe(false)
     } finally {
       act(() => rootB.unmount())
       b.remove()

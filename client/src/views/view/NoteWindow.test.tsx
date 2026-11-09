@@ -96,6 +96,7 @@ afterEach(() => {
   container = null
   setCellNotePinnedAtStart(true)
   dropAllNoteWindows()
+  localStorage.clear() // the folder page's last box outlives a card (YAZ-3746 13H): each test starts on the default
 })
 
 const q = <T extends Element>(sel: string): T => {
@@ -130,12 +131,13 @@ function openOn(title: string): void {
 const currentRows = () => [...document.querySelectorAll('tr.view-table__row--current .view-table__name')].map((c) => c.textContent)
 
 describe('Open in mini window (YAZ-4547)', () => {
-  it('the row menu item, after "Open in right panel", opens the card on that note; the table marks its row', () => {
+  it('the row menu item, after "Open" and before "Open in ›", opens the card on that note; the table marks its row', () => {
     mount(SORTED, {}, testFolderHost({ openRight: vi.fn(), renderNoteEditor: (p) => <div className="stub-editor">{p}</div> }))
     rightClick(rowCell('D'))
-    // The page actions end with the two pane opens; the table's Fill items (YAZ-4536) follow in their own group.
+    // The ways to open come first, the rarer ones (the right panel) folded into "Open in ›" (YAZ-3746 13AW).
     const labels = menuItems().map((item) => item.textContent)
-    expect(labels.slice(labels.indexOf('Open in right panel'), labels.indexOf('Open in right panel') + 2)).toEqual(['Open in right panel', 'Open in mini window'])
+    // This host has no background-tab door, so no "Open in new tab".
+    expect(labels.slice(0, 3)).toEqual(['Open', 'Open in mini window', 'Open in'])
     click(menuItems().find((item) => item.textContent === 'Open in mini window')!)
 
     expect(card()).not.toBeNull()
@@ -279,10 +281,10 @@ describe('Open in mini window (YAZ-4547)', () => {
     expect(card()).toBeNull()
   })
 
-  it('× closes the card, and "Open in tab" opens the note', () => {
+  it('× closes the card, and ↗ "Open in new tab" opens the note (this tab, with no new-tab door)', () => {
     const { onOpenFile } = mount(SORTED)
     openOn('A')
-    click(button('Open in tab'))
+    click(button('Open in new tab'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(path('A'))
     openOn('A')
     click(button('Close mini window'))

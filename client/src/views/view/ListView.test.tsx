@@ -351,17 +351,19 @@ describe('list settings in the Properties menu', () => {
   it('Marker style writes markerStyle once per pick; bullet (the default) deletes the key', () => {
     const { el, onChange, def, yaml } = mount(LIST_BASE)
     const pop = openProperties(el)
-    setValue(byLabel(pop, 'Marker style'), 'number')
+    // A segmented choice since the YAZ-3746 demo: Bullet, Number, None.
+    const pickMarker = (text: string) => click([...byLabel(pop, 'Marker style').querySelectorAll('button')].find((b) => b.textContent === text)!)
+    pickMarker('Number')
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].markerStyle).toBe('number')
     expect(yaml()).toContain('markerStyle: number')
     expect(markers(el)[0]).toBe('1.')
 
-    setValue(byLabel(pop, 'Marker style'), 'none')
+    pickMarker('None')
     expect(yaml()).toContain('markerStyle: none')
     expect(el.querySelector('.view-list__marker')).toBeNull()
 
-    setValue(byLabel(pop, 'Marker style'), 'bullet')
+    pickMarker('Bullet')
     expect(onChange).toHaveBeenCalledTimes(3)
     expect(def().views[0].markerStyle).toBeUndefined()
     expect(yaml()).not.toContain('markerStyle')

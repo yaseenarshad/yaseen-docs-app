@@ -446,11 +446,12 @@ describe('runView: nested group by (YAZ-745)', () => {
     expect(r.groups![0].children!.map(c => c.summaries['file.name'])).toEqual([1, 1, 1])
   })
 
-  it('entries beyond three are ignored (YAZ-4531)', () => {
-    const recs = [rec('a', { dept: 'A', proc: 'p', step: 's', extra: 'x' })]
-    const r = T([{ property: 'dept' }, { property: 'proc' }, { property: 'step' }, { property: 'extra' }], recs)
-    expect(r.groups![0].children![0].children![0].label).toBe('s')
-    expect(r.groups![0].children![0].children![0].children).toBeUndefined()
+  it('entries beyond five are ignored (YAZ-4531; five since YAZ-3746 13AF)', () => {
+    const recs = [rec('a', { dept: 'A', proc: 'p', step: 's', part: 'q', unit: 'u', extra: 'x' })]
+    const r = T([{ property: 'dept' }, { property: 'proc' }, { property: 'step' }, { property: 'part' }, { property: 'unit' }, { property: 'extra' }], recs)
+    const fifth = r.groups![0].children![0].children![0].children![0].children![0]
+    expect(fifth.label).toBe('u')
+    expect(fifth.children).toBeUndefined()
   })
 })
 

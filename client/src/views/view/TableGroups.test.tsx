@@ -46,6 +46,11 @@ const GROUP_BASE = `views:
     summaries:
       note.priority: Sum
 `
+/**
+ * The grouped view with "Show empty groups" off: Settings › Folder pages turns it on by default (YAZ-3746), and a table
+ * that shows empty groups keeps them through a search (YAZ-3940 S11). The search tests below pin the off behavior.
+ */
+const NO_EMPTY = GROUP_BASE + '    showEmptyColumns: false\n'
 /** The same grouped view plus a plain second one, so a Delete on the first is not refused as the last view. */
 const TWO_VIEWS = GROUP_BASE + `  - type: table
     name: U
@@ -271,7 +276,7 @@ describe('collapse', () => {
 
   it('the toolbar toggle collapses every group at once, the ones search hides included', async () => {
     const { storage } = await import('../../lib/storage')
-    const { el } = mount(GROUP_BASE)
+    const { el } = mount(NO_EMPTY)
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'agency')
     expect(headerTexts(el)).toEqual(['drafting', 'idea'])
@@ -347,7 +352,7 @@ describe('collapse', () => {
 
 describe('search interplay', () => {
   it('filters within groups, drops empty groups and narrows the group summaries', () => {
-    const { el } = mount(GROUP_BASE)
+    const { el } = mount(NO_EMPTY)
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'agency')
     // 'agency' hits one row in drafting (The Levels of an Agency) and one in idea (Agentic Agency)
@@ -435,18 +440,20 @@ describe('group indent (YAZ-4532 D10)', () => {
     // medium, 150px column: 28 and 56 fit (150 - 2 × 8px padding - 60 = 74)
     expect(indents(mount(nested('')).el)).toEqual(['28px', '56px'])
     unmount()
-    // large: 42 fits; 84 is cut to 74, so the title keeps 60px
-    expect(indents(mount(nested('    groupIndent: large\n')).el)).toEqual(['42px', '74px'])
+    // large: the first column grows to fit its deepest indent and a readable value (YAZ-3746 13AL: 2 × 42 + 136 = 220px),
+    // so 84 fits whole and the title still keeps its 60px
+    expect(indents(mount(nested('    groupIndent: large\n')).el)).toEqual(['42px', '84px'])
     unmount()
     // a wide Name column keeps the full indent
     expect(indents(mount(nested('    groupIndent: large\n    columnSize:\n      file.name: 300\n')).el)).toEqual(['42px', '84px'])
     unmount()
-    // a column narrower than the title's room: no indent, never a negative one
-    expect(indents(mount(nested('    groupIndent: large\n    columnSize:\n      file.name: 60\n')).el)).toEqual(['0px'])
+    // a stored width narrower than that floor reads as the floor: the indent is never cut to nothing, never negative
+    expect(indents(mount(nested('    groupIndent: large\n    columnSize:\n      file.name: 60\n')).el)).toEqual(['42px', '84px'])
   })
-  it('the CSS contract: a header steps in by the indent × --depth; a row\'s Name cell by its --view-name-indent; both stay at 8px at depth 0', () => {
+  it('the CSS contract: a header steps in by the indent × --depth; a row\'s first cell by its --view-name-indent; both stay at 8px at depth 0', () => {
     expect(viewsCss).toMatch(/\.view-table__group-cell > \.view-group \{[^}]*left: calc\(8px \+ var\(--view-group-indent, 28px\) \* var\(--depth, 0\)\)/s)
-    expect(viewsCss).toMatch(/\.view-table tbody td\.view-table__name \{[^}]*padding-left: calc\(var\(--view-table-cell-pad-x\) \+ var\(--view-name-indent, 0px\)\)/s)
+    // The first column, Name or not, carries the indent (YAZ-3746 13AG).
+    expect(viewsCss).toMatch(/\.view-table tbody td\.view-table__indent \{[^}]*padding-left: calc\(var\(--view-table-cell-pad-x\) \+ var\(--view-name-indent, 0px\)\)/s)
     expect(viewsCss).toMatch(/\.view-table \{[^}]*--view-table-cell-pad-x: 8px/s)
   })
 })

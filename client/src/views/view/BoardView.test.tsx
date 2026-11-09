@@ -225,6 +225,13 @@ const menuItems = (el: ParentNode): HTMLButtonElement[] => [
 ]
 const itemNamed = (el: ParentNode, label: string): HTMLButtonElement | undefined =>
   menuItems(el).find((item) => item.textContent === label)
+/** The main menu's rows, without the "Open in ›" flyout's. */
+const mainItems = (el: ParentNode): (string | null)[] => menuItems(el).filter((item) => item.closest('.ctx-menu__sub') === null).map((item) => item.textContent)
+/** A row of "Open in ›" (YAZ-3746 13AW, 13AZ: right panel, other apps, Reveal in Finder): opens the flyout, then finds it. */
+const openInItem = (el: ParentNode, label: string): HTMLButtonElement | undefined => {
+  click(itemNamed(el, 'Open in')!)
+  return [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub [role="menuitem"]')].find((item) => item.textContent === label)
+}
 const cardNamed = (el: ParentNode, title: string): HTMLElement => {
   const titleButton = [...el.querySelectorAll<HTMLElement>('.view-board__title')].find((candidate) => candidate.textContent === title)
   const card = titleButton?.closest<HTMLElement>('.view-board__card')
@@ -496,7 +503,9 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel'])
+    expect(mainItems(el)).toEqual(['Open in new tab', 'Open in', 'Copy path'])
+    click(itemNamed(el, 'Open in')!)
+    expect(menuItems(el).filter((item) => item.closest('.ctx-menu__sub') !== null).map((item) => item.textContent)).toEqual(['Right panel', 'Reveal in Finder'])
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
     expect(el.querySelector('.view-cell-edit__input, .view-table__selected')).toBeNull()
@@ -506,7 +515,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     const openRight = vi.fn()
     const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openRight }) })
     rightClick(cardNamed(el, 'Agentic Agency'))
-    click(itemNamed(el, 'Open in right panel')!)
+    click(openInItem(el, 'Right panel')!)
 
     expect(openRight).toHaveBeenCalledExactlyOnceWith(agenticPath)
     expect(onOpenFile).not.toHaveBeenCalled()
@@ -539,7 +548,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
 
     rightClick(card)
-    click(itemNamed(el, 'Reveal in Finder')!)
+    click(openInItem(el, 'Reveal in Finder')!)
     expect(reveal).toHaveBeenCalledExactlyOnceWith({ path: agenticPath })
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
@@ -549,7 +558,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
     const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openBackground: vi.fn(), onNotice }) })
     rightClick(cardNamed(el, 'Agentic Agency'))
-    click(itemNamed(el, 'Reveal in Finder')!)
+    click(openInItem(el, 'Reveal in Finder')!)
     await act(async () => Promise.resolve())
 
     expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency" — it is no longer there`)
@@ -603,16 +612,16 @@ describe('Board-card page context menu (YAZ-1243)', () => {
       { folder: testFolderHost({ openRight }) },
     )
     rightClick(q(hidden.el, '.view-board__card'))
-    click(itemNamed(hidden.el, 'Open in right panel')!)
+    click(openInItem(hidden.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith(levelsPath)
 
     unmount()
     const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folder: testFolderHost({ openRight }) })
     rightClick(cardNamed(nested.el, 'alphaDirect'))
-    click(itemNamed(nested.el, 'Open in right panel')!)
+    click(openInItem(nested.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith('/vault/alphaDirect.md')
     rightClick(cardNamed(nested.el, 'alpha1'))
-    click(itemNamed(nested.el, 'Open in right panel')!)
+    click(openInItem(nested.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith('/vault/alpha1.md')
 
     unmount()
@@ -624,7 +633,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     )
     expect(repeated).toHaveLength(2)
     rightClick(q(repeated[1].closest<HTMLElement>('.view-board__card')!, '.view-board__line'))
-    click(itemNamed(fanned.el, 'Open in right panel')!)
+    click(openInItem(fanned.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith(agenticPath)
   })
 
@@ -637,7 +646,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(shell.querySelector('.view-board__line')).toBeNull()
 
     expect(rightClick(shell).defaultPrevented).toBe(true)
-    click(itemNamed(el, 'Open in right panel')!)
+    click(openInItem(el, 'Right panel')!)
     expect(openRight).toHaveBeenCalledExactlyOnceWith(levelsPath)
   })
 
@@ -650,7 +659,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
 
     expect(rightClick(byLabel(el, 'New card')).defaultPrevented).toBe(false)
     expect(document.querySelector('.ctx-menu')).toBeNull()
-    // A group header's right-click opens the group menu (YAZ-4604, D55), never the card menu.
+    // A group header's right-click opens the group menu (YAZ-4604, D55), never the card menu. One level: no level steps (YAZ-3746 13AT).
     expect(rightClick(q(el, '.view-group')).defaultPrevented).toBe(true)
     expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).toEqual(['New note in this group', 'Collapse this group'])
     act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
@@ -666,7 +675,11 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     unmount()
     const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folder: testFolderHost({ openBackground }) })
     expect(rightClick(q(nested.el, '.view-board__subgroup > .view-group')).defaultPrevented).toBe(true)
-    expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].at(-1)?.textContent).toBe('Collapse this group')
+    // The header's own group ends with its toggle; two levels add the level steps after it (YAZ-3746 13AT).
+    expect([...document.querySelectorAll('.ctx-menu .ctx-menu__group')].map((g) => [...g.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent))).toEqual([
+      ['New note in this group', 'Collapse this group'],
+      ['Collapse one level', 'Expand one level'],
+    ])
 
     unmount()
     const hint = mount(NO_GROUP_BASE, { folder: testFolderHost({ openBackground }) })

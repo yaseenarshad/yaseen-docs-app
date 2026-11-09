@@ -48,12 +48,12 @@ describe('renamedValue', () => {
 })
 
 describe('renameInContent', () => {
-  it('ID vault: only this folder’s block changes — not the note’s own key, not another folder’s', () => {
+  it('a "Separate value for <folder>" column (YAZ-4713 C3): only that page’s block changes — not the note’s own key, not another page’s', () => {
     const before = `---\ntitle: A\nstage: Todo\nin:\n  ${OTHER}:\n    stage: Todo\n  ${ID}:\n    stage: Todo\n    tags: [x]\n---\nbody\n`
     expect(renameInContent(before, { block: ID }, 'stage', 'Todo', 'Next')).toEqual({ content: `---\ntitle: A\nstage: Todo\nin:\n  ${OTHER}:\n    stage: Todo\n  ${ID}:\n    stage: Next\n    tags: [x]\n---\nbody\n`, before: 'Todo' })
   })
 
-  it('no IDs: the note’s own key; a multi-select list keeps its other elements', () => {
+  it('a shared column (YAZ-4713 C1), in vaults with IDs and without: the note’s own key; a multi-select list keeps its other elements', () => {
     const before = '---\n# kept comment\nlabels:\n  - red\n  - Todo\n  - blue\nother: 1\n---\n'
     const { content: after } = renameInContent(before, null, 'labels', 'Todo', 'Next')
     expect(after).toContain('# kept comment')

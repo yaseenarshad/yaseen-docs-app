@@ -78,6 +78,9 @@ const pressed = (pop: ParentNode): string | undefined => pop.querySelector('.vie
 const toTab = (pop: ParentNode, name: 'Columns' | 'View'): void => click(q(pop, `.view-menu__tab[data-tab="${name.toLowerCase()}"]`))
 const has = (pop: ParentNode, label: string): boolean => pop.querySelector(`[aria-label="${label}"]`) !== null
 const labels = (pop: ParentNode): string[] => [...pop.querySelectorAll('.view-menu__label')].map((p) => p.textContent ?? '')
+/** The slot after a row's control (`FromSettings`): empty while the view follows Settings, the ↺ "Reset to Settings" once it has its own value. */
+const follows = (slot: Element | null | undefined): boolean => slot != null && !slot.classList.contains('view-from-settings--reset')
+const resetIn = (slot: Element | null | undefined): HTMLElement | null => (slot?.matches('[aria-label="Reset to Settings"]') ? (slot as HTMLElement) : null)
 
 const view = (type: string, extra = '') => `views:\n  - type: ${type}\n    name: V\n    order:\n      - file.name\n      - note.status\n${extra}`
 const GROUPED = '    groupBy:\n      property: note.status\n'
@@ -104,7 +107,7 @@ describe('the two tabs (D59)', () => {
     expect(has(pop, 'Default view')).toBe(true)
     toTab(pop, 'Columns')
     expect(has(pop, 'Search columns')).toBe(true)
-    // The old Properties select for the frozen prefix is gone (YAZ-4608 C3): Frozen columns lives on the View tab and in the header menu.
+    // The old Properties select for the frozen prefix is gone (YAZ-4608 C3): Frozen columns lives in the header menu (the View tab's Frozen section went in the YAZ-3746 demo).
     expect(has(pop, 'Frozen columns')).toBe(false)
   })
 
@@ -119,21 +122,22 @@ describe('the two tabs (D59)', () => {
 })
 
 describe('each view type shows its settings only (D59)', () => {
-  const TABLE = ['Row height', 'Text in cells', 'Row numbers', 'Subfolders', 'Frozen columns', 'Frozen rows', 'Default view']
+  // Frozen columns and rows live only on the header and row right-clicks (the View tab's Frozen section went in the YAZ-3746 demo).
+  const TABLE = ['Row height', 'Text in cells', 'Row numbers', 'Subfolders', 'Default view']
   const BOARD = ['Column width in pixels', 'Subfolders', 'Default view']
   const CALENDAR = ['Show by', 'Opens in', 'Card titles', 'Hide weekends', 'Subfolders', 'Default view']
   const LIST = ['Marker style', 'Indent properties', 'Property separator', 'Subfolders', 'Default view']
-  const ALL = [...new Set([...TABLE, ...BOARD, ...CALENDAR, ...LIST, 'Group indent'])]
+  const ALL = [...new Set([...TABLE, ...BOARD, ...CALENDAR, ...LIST, 'Group indent', 'Frozen columns', 'Frozen rows'])]
 
   const expectOnly = (pop: ParentNode, shown: readonly string[]) => {
     for (const label of ALL) expect(has(pop, label), label).toBe(shown.includes(label))
   }
 
-  it('Table: Rows, Frozen, Groups and Folder; "Show empty groups" under Groups', () => {
+  it('Table: Rows, Groups and Folder; "Show empty groups" under Groups; no Frozen section', () => {
     const pop = openProperties(mount(view('table')).el)
     toTab(pop, 'View')
     expectOnly(pop, TABLE)
-    expect(labels(pop)).toEqual(['Rows', 'Frozen', 'Groups', 'Folder'])
+    expect(labels(pop)).toEqual(['Rows', 'Groups', 'Folder'])
     expect(pop.textContent).toContain('Show empty groups')
   })
 
@@ -240,16 +244,16 @@ describe('the controls D60 moved here keep "from Settings" and Reset', () => {
     const step = (name: string) => q<HTMLButtonElement>(pop, `[aria-label="Group indent"] [data-indent="${name}"]`)
     const hint = () => q<HTMLElement>(pop, '[aria-label="Group indent"]').parentElement!.querySelector('.view-from-settings')
     expect(step('medium').getAttribute('aria-pressed')).toBe('true')
-    expect(hint()?.textContent).toBe('from Settings')
+    expect(follows(hint())).toBe(true)
     click(step('small'))
     expect(yaml()).toContain('groupIndent: small')
-    expect(hint()?.textContent).toBe('Reset')
+    expect(resetIn(hint())).not.toBeNull()
     click(step('large'))
     expect(yaml()).toContain('groupIndent: large')
     click(step('medium'))
     expect(yaml()).not.toContain('groupIndent')
     click(step('large'))
-    click(hint()!)
+    click(resetIn(hint())!)
     expect(yaml()).not.toContain('groupIndent')
   })
 
@@ -258,7 +262,7 @@ describe('the controls D60 moved here keep "from Settings" and Reset', () => {
     const pop = openProperties(el)
     toTab(pop, 'View')
     const select = () => q<HTMLSelectElement>(pop, '[aria-label="Subfolders"]')
-    expect(select().closest('label')!.querySelector('.view-from-settings')?.textContent).toBe('from Settings')
+    expect(follows(select().closest('label')!.querySelector('.view-from-settings'))).toBe(true)
     choose(select(), 'both')
     expect(yaml()).toContain('subfolders: both')
     choose(select(), 'notes')
@@ -267,16 +271,18 @@ describe('the controls D60 moved here keep "from Settings" and Reset', () => {
 })
 
 describe('the settings D59 lists that had no row in the popover', () => {
-  it('Table › Frozen rows: None then 1 to 10; a pick writes `frozenRows`, None removes it', () => {
+  it('Table › Frozen rows: not on the View tab (its Frozen section went in the YAZ-3746 demo); the row right-click writes `frozenRows` and removes it', () => {
     const { el, yaml } = mount(view('table'))
-    const pop = openProperties(el)
-    toTab(pop, 'View')
-    const select = () => q<HTMLSelectElement>(pop, '[aria-label="Frozen rows"]')
-    expect([...select().options].map((o) => o.textContent)).toEqual(['None', '1 row', ...Array.from({ length: 9 }, (_, i) => `${i + 2} rows`)])
-    expect(select().value).toBe('0')
-    choose(select(), '3')
+    toTab(openProperties(el), 'View')
+    expect(has(popover(el), 'Frozen rows')).toBe(false)
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]')) // close
+    const menuItem = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === text)!
+    const cells = () => el.querySelectorAll<HTMLElement>('.view-table tbody tr td[data-cell]')
+    rightClick([...cells()].find((td) => td.dataset.cell === '2:0')!)
+    click(menuItem('Freeze up to this row'))
     expect(yaml()).toContain('frozenRows: 3')
-    choose(select(), '0')
+    rightClick([...cells()].find((td) => td.dataset.cell === '0:0')!)
+    click(menuItem('Unfreeze rows'))
     expect(yaml()).not.toContain('frozenRows')
   })
 
@@ -284,14 +290,15 @@ describe('the settings D59 lists that had no row in the popover', () => {
     const { el, yaml } = mount(view('calendar'))
     const pop = openProperties(el)
     toTab(pop, 'View')
-    const select = () => q<HTMLSelectElement>(pop, '[aria-label="Opens in"]')
-    const hint = () => select().closest('label')!.querySelector('.view-from-settings')
-    expect(select().value).toBe('month')
-    expect(hint()?.textContent).toBe('from Settings')
-    choose(select(), 'week')
+    // A segmented choice since the YAZ-3746 demo.
+    const option = (text: string) => [...pop.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Opens in"] button')].find((b) => b.textContent === text)!
+    const hint = () => q(pop, '[role="group"][aria-label="Opens in"]').closest('.view-settings-row')!.querySelector('.view-from-settings')
+    expect(option('Month').getAttribute('aria-pressed')).toBe('true')
+    expect(follows(hint())).toBe(true)
+    click(option('Week'))
     expect(yaml()).toContain('calendarScale: week')
-    expect(hint()?.textContent).toBe('Reset')
-    click(hint()!)
+    expect(resetIn(hint())).not.toBeNull()
+    click(resetIn(hint())!)
     expect(yaml()).not.toContain('calendarScale')
   })
 })

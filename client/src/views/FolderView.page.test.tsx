@@ -265,6 +265,10 @@ describe('a row\u2019s title is edited from the table (YAZ-2420 D19)', () => {
     expect(field.value).toBe('Lead Gen')
     setValue(field, 'Lead Generation')
     press(field, 'Enter')
+    // "Confirm changes" (YAZ-3746 13AN, on by default) asks first; its Rename goes on to the door.
+    expect(onRetitle).not.toHaveBeenCalled()
+    click([...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.startsWith('Rename'))!)
+    await flush()
     expect(onRetitle).toHaveBeenCalledExactlyOnceWith(LEAD, 'Lead Generation', 'file')
   })
 })

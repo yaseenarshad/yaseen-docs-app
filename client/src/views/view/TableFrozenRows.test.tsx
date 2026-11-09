@@ -194,15 +194,16 @@ describe('frozen lines under windowing (YAZ-4537)', () => {
 })
 
 describe('"Freeze up to this row" in the row right-click (YAZ-4537)', () => {
-  it('the last view group: Freeze up to this row, then Unfreeze rows, disabled with nothing frozen', () => {
+  it('the view group: Filter, then Freeze up to this row; Unfreeze rows only while rows are frozen (YAZ-3746 13AW)', () => {
     const { el } = mount(table(''))
     rightClickRow(el, 'Attribution')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Open', 'Copy path', 'Reveal in Finder', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below', 'Filter by this value', 'Hide this value', 'Freeze up to this row', 'Unfreeze rows'])
+    expect(items(el).map((b) => b.textContent)).toEqual(['Open', 'Open in', 'Copy', 'Paste', 'Clear cells', 'Fill', 'Clear formatting', 'New row below', 'Filter', 'Freeze up to this row', 'Copy path'])
     const groups = [...el.querySelectorAll('.ctx-menu .ctx-menu__group')]
-    // The C8 order (YAZ-4608): the opens, the edits (Fill, then New row below), the view groups (the cell's filter, YAZ-4592 S25, then the freeze).
-    expect(groups).toHaveLength(5)
-    expect([...groups[4].querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual(['Freeze up to this row', 'Unfreeze rows'])
-    expect(item(el, 'Unfreeze rows').disabled).toBe(true)
+    // The row menu of 13AW: the opens, the clipboard, the edits, New row below, the view group (the cell's Filter ›, then the freeze), Copy path.
+    expect(groups).toHaveLength(6)
+    expect([...groups[4].querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual(['Filter', 'Freeze up to this row'])
+    // A menu hides what does not apply (13AW): nothing is frozen, so there is no Unfreeze rows.
+    expect(items(el).some((b) => b.textContent === 'Unfreeze rows')).toBe(false)
   })
 
   it('a click freezes down to that row; on that row the item reads ✓ and a click unfreezes', () => {

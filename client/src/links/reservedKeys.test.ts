@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { COMMENTS_KEY } from '@shared/comments'
-import { HOVER_PREVIEW_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY } from '@shared/folderPage'
+import { COLUMN_MARKS_KEY, CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, INHERIT_COLUMNS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY } from '@shared/folderPage'
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
 import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
@@ -12,6 +12,12 @@ import { reservedKeys } from './reservedKeys'
 
 /** The keys the app owns where the vault uses IDs. */
 const RESERVED_KEYS = reservedKeys(true)
+/**
+ * The folder page cog's keys: `show_page_file` (YAZ-3746 D37), `hover_preview` (YAZ-4601 D51, legacy) and the two that
+ * split it, `hover_rows` and `hover_links` (demo 13D), `show_other_files` (YAZ-4597), `confirm_changes` (13AN), and
+ * YAZ-4713's `inherit_columns` (C12) and `column_marks` (C11).
+ */
+const FOLDER_PAGE_KEYS = [SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, HOVER_LINKS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY, COLUMN_MARKS_KEY]
 
 describe('reserved keys: the folders’ values (D19)', () => {
   it('The `in` key itself: Reserved — never a column, never a name a property is added under', () => {
@@ -49,12 +55,12 @@ describe('reserved keys: a vault that does not use IDs (YAZ-2523 V12)', () => {
   it('`id`, `title`, `also_in` and `in` are ordinary properties there; the comments store, the review log, the read-only switch and the page switches are still the app\u2019s', () => {
     const plain = reservedKeys(false)
     for (const key of [NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY]) expect(plain.has(key)).toBe(false)
-    expect([...plain].sort()).toEqual([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, SHOW_OTHER_FILES_KEY].sort())
+    expect([...plain].sort()).toEqual([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 
-  // `show_page_file` added by YAZ-3746 D37, `hover_preview` by YAZ-4601 D51, `show_other_files` by YAZ-4597: the folder page cog sets them.
-  it('a vault that uses IDs owns all sixteen', () => {
-    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, REVIEWS_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, SHOW_OTHER_FILES_KEY].sort())
+  // The folder page cog's keys (FOLDER_PAGE_KEYS) are the app's too: the cog sets them.
+  it('a vault that uses IDs owns all twenty-one', () => {
+    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, REVIEWS_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 })
 

@@ -204,7 +204,7 @@ describe('nested sections (YAZ-745)', () => {
   })
 
   it('search narrows inside the branches and drops emptied groups at both levels', () => {
-    const { el } = mount(NESTED_BASE)
+    const { el } = mount(noEmpty(NESTED_BASE))
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'alpha1')
     expect(headerTexts(el)).toEqual(['A', 'p1'])
@@ -229,6 +229,8 @@ describe('nested sections (YAZ-745)', () => {
 })
 
 const THREE_BASE = NESTED_BASE.replace('      - property: note.proc\n', '      - property: note.proc\n      - property: note.step\n')
+/** The base with "Show empty groups" off: Settings turns it on by default (YAZ-3746 demo round 2), and a view that shows empty groups keeps them through a search (YAZ-3940 S11). */
+const noEmpty = (base: string): string => base + '    showEmptyColumns: false\n'
 
 /** A → p1 → (direct s-merge row, s1, s2), A → p2 → s1; B → p1 → s1. */
 const THREE_RECORDS: IndexRecord[] = [
@@ -280,7 +282,7 @@ describe('three levels (YAZ-4531)', () => {
   })
 
   it('search narrows at level 3 and drops every emptied ancestor', () => {
-    const { el } = mount(THREE_BASE, { records: THREE_RECORDS })
+    const { el } = mount(noEmpty(THREE_BASE), { records: THREE_RECORDS })
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'a12')
     expect(headerTexts(el)).toEqual(['A', 'p1', 's2'])

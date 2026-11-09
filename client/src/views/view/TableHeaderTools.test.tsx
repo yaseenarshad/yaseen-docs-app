@@ -132,7 +132,11 @@ describe('auto-fit width on a double-click of the resize edge (YAZ-4590 S20)', (
     layout(el, 230)
     doubleClick(el)
     expect(onChange).toHaveBeenCalledTimes(1)
-    expect(def().views[0].columnSize).toEqual({ 'note.priority': 232 }) // 230 and the cell's side paddings, 1px each in jsdom
+    // 230 and the cell's two side paddings, as the page computes them: views.css says `var(--view-table-cell-pad-x)`
+    // (8px on screen), which jsdom does not resolve.
+    const style = getComputedStyle(q(el, 'td[data-cell$=":2"]'))
+    const pads = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
+    expect(def().views[0].columnSize).toEqual({ 'note.priority': 230 + pads })
   })
 
   it('the header label counts too, and the width is clamped to 60–600', () => {

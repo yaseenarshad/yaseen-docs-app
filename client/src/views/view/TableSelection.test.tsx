@@ -280,7 +280,8 @@ describe('the selection right-click (YAZ-4593)', () => {
     const { el } = mount(TABLE)
     drag(el, [0, 1], [1, 2])
     rightClick(cell(el, 1, 1))
-    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below'])
+    // ONE Fill › with its Cell · Row · Column switch (YAZ-3746 13AW).
+    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill', 'Clear formatting', 'New row below'])
     // Its own menu, not the row menu.
     expect(items(el)).not.toContain('Open')
   })
@@ -298,7 +299,8 @@ describe('the selection right-click (YAZ-4593)', () => {
     down(gutter(el, 1))
     down(gutter(el, 2), { shiftKey: true })
     rightClick(cell(el, 2, 2))
-    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below', 'Duplicate notes', 'Delete notes…'])
+    // The row freeze is the view group's, before Delete notes… (YAZ-3746 13AW).
+    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill', 'Clear formatting', 'New row below', 'Duplicate notes', 'Freeze up to this row', 'Delete notes…'])
     // ViewsPane wires 11C's `onDuplicateNote` / `onDeleteNotes` at merge (YAZ-4592); without them the items are off.
     expect(item(el, 'Delete notes…').disabled).toBe(true)
     expect(item(el, 'Copy').disabled).toBe(false)
@@ -337,11 +339,12 @@ describe('the selection right-click (YAZ-4593)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('Fill cell › paints every selected cell in ONE view write', () => {
+  it('Fill › (on Cell, its first target for a cell range) paints every selected cell in ONE view write', () => {
     const { el, onChange, yaml } = mount(TABLE)
     drag(el, [0, 1], [1, 2])
     rightClick(cell(el, 0, 1))
-    act(() => item(el, 'Fill cell').click())
+    act(() => item(el, 'Fill').click())
+    expect(el.querySelector('.ctx-menu__sub .fill-target__opt[aria-pressed="true"]')?.textContent).toBe('Cell')
     act(() => item(el, 'Red').click())
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(yaml().match(/fill: red/g)).toHaveLength(4)
@@ -583,16 +586,19 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
     expect(commits).toBe(0)
   })
 
-  it('a drag down marks the target with its outer edges, and continues a number step; ONE write per note, no render', async () => {
+  it('a drag down marks the target with its outer edges, and continues a number step; ONE write per note, no render while it drags', async () => {
     const { el, writeValues } = mount(FILL_TABLE, { records: NOTES })
     drag(el, [0, 1], [1, 1])
     down(handle(el)!)
     move(cell(el, 3, 1))
     expect(cell(el, 0, 1).getAttribute('data-fill-target')).toBe('top left right')
     expect(cell(el, 3, 1).getAttribute('data-fill-target')).toBe('bottom left right')
+    expect(commits).toBe(0) // the drag marks the DOM only
     up(cell(el, 3, 1))
     expect(el.querySelectorAll('[data-fill-target]')).toHaveLength(0)
-    expect(commits).toBe(0)
+    // The release shows the filled values at once, before the index echoes the writes (YAZ-3746 13AK).
+    expect(cell(el, 2, 1).textContent).toBe('5')
+    expect(cell(el, 3, 1).textContent).toBe('7')
     await flush()
     expect(writeValues).toHaveBeenCalledTimes(2)
     expect(writesOf(writeValues, NOTES[2].path)).toEqual([[{ key: 'num', value: 5 }]])
@@ -667,8 +673,10 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
     const many = Array.from({ length: 600 }, (_, i): IndexRecord => ({ ...note(i, i === 0 ? { num: 4 } : {}), title: `n${String(i).padStart(3, '0')}` }))
     const { el, writeValues } = mount(FILL_TABLE, { records: many })
     act(() => cell(el, 0, 1).focus())
-    fillTo(el, [20, 1])
-    expect(commits).toBe(0)
+    down(handle(el)!)
+    move(cell(el, 20, 1))
+    expect(commits).toBe(0) // the drag marks the DOM only; the release then shows the values at once (YAZ-3746 13AK)
+    up(cell(el, 20, 1))
     await flush()
     expect(writeValues).toHaveBeenCalledTimes(20)
     for (const [, writes] of writeValues.mock.calls as unknown as [string, unknown][]) expect(writes).toEqual([{ key: 'num', value: 4 }])

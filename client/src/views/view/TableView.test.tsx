@@ -420,6 +420,11 @@ describe('table-row context menu (YAZ-1053)', () => {
   const expectedPath = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
   const menuItems = (el: ParentNode) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
   const itemNamed = (el: ParentNode, label: string) => menuItems(el).find((item) => item.textContent === label)
+  /** A row of the "Open in ›" flyout (YAZ-3746 13AW): Right panel, New window, the other apps, Reveal in Finder. */
+  const openIn = (el: ParentNode, label: string) => {
+    click(itemNamed(el, 'Open in')!)
+    return itemNamed(el, label)
+  }
   let writeText: ReturnType<typeof vi.fn>
   const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
 
@@ -445,7 +450,11 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(document.activeElement).toBe(cell)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below', 'Filter by this value', 'Hide this value', 'Freeze up to this row', 'Unfreeze rows'])
+    // One order (YAZ-3746 13AW): the ways to open, "Open in ›" holding the rarer ones; the clipboard (13AI); Fill ›; the
+    // row edits; the view (Filter ›, the freeze; Unfreeze rows only while rows are frozen); the page's Copy path last.
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Open in', 'Copy', 'Paste', 'Clear cells', 'Fill', 'Clear formatting', 'New row below', 'Filter', 'Freeze up to this row', 'Copy path'])
+    expect(openIn(el, 'Right panel')).toBeDefined()
+    expect(itemNamed(el, 'Reveal in Finder')).toBeDefined()
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -463,7 +472,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     const openRight = vi.fn()
     const { el, onOpenFile } = mount(TYPED_BASE, { folder: testFolderHost({ openRight }) })
     rightClick(q(el, '[data-cell="0:1"]'))
-    click(itemNamed(el, 'Open in right panel')!)
+    click(openIn(el, 'Right panel')!)
 
     expect(openRight).toHaveBeenCalledExactlyOnceWith(expectedPath)
     expect(onOpenFile).not.toHaveBeenCalled()
@@ -505,7 +514,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
 
     rightClick(q(el, '[data-cell="0:1"]'))
-    click(itemNamed(el, 'Reveal in Finder')!)
+    click(openIn(el, 'Reveal in Finder')!)
     expect(reveal).toHaveBeenCalledExactlyOnceWith({ path: expectedPath })
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
@@ -515,7 +524,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
     const { el } = mount(TYPED_BASE, { folder: testFolderHost({ openBackground: vi.fn(), onNotice }) })
     rightClick(q(el, '[data-cell="0:0"]'))
-    click(itemNamed(el, 'Reveal in Finder')!)
+    click(openIn(el, 'Reveal in Finder')!)
     await act(async () => Promise.resolve())
 
     expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency" — it is no longer there`)
@@ -553,21 +562,21 @@ describe('table-row context menu (YAZ-1053)', () => {
     const event = rightClick(checkbox)
 
     expect(event.defaultPrevented).toBe(true)
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Fill cell', 'Fill row', 'Clear formatting', 'New row below', 'Filter by this value', 'Hide this value', 'Freeze up to this row', 'Unfreeze rows'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Open in', 'Copy', 'Paste', 'Clear cells', 'Fill', 'Clear formatting', 'New row below', 'Filter', 'Freeze up to this row', 'Copy path'])
   })
 
   it('targets the rendered record when file.name is hidden, grouped, or windowed', () => {
     const openRight = vi.fn()
     const hidden = mount('views:\n  - type: table\n    name: T\n    order:\n      - note.priority\n', { folder: testFolderHost({ openRight }) })
     rightClick(q(hidden.el, '[data-cell="0:0"]'))
-    click(itemNamed(hidden.el, 'Open in right panel')!)
+    click(openIn(hidden.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith(expectedPath)
 
     act(() => root?.unmount())
     container?.remove()
     const grouped = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.status\n', { folder: testFolderHost({ openRight }) })
     rightClick(q(grouped.el, '[data-cell="0:0"]'))
-    click(itemNamed(grouped.el, 'Open in right panel')!)
+    click(openIn(grouped.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
 
     act(() => root?.unmount())
@@ -575,7 +584,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     const windowedRecords = manyRecords()
     const windowed = mount('views:\n  - type: table\n    name: T\n', { records: windowedRecords, folder: testFolderHost({ vaultRecords: windowedRecords, openRight }) })
     rightClick(q(windowed.el, '[data-cell="0:0"]'))
-    click(itemNamed(windowed.el, 'Open in right panel')!)
+    click(openIn(windowed.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith('/vault/n000.md')
   })
 
@@ -586,7 +595,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(repeated).toHaveLength(2)
 
     rightClick(repeated[1])
-    click(itemNamed(el, 'Open in right panel')!)
+    click(openIn(el, 'Right panel')!)
     expect(openRight).toHaveBeenCalledExactlyOnceWith(expectedPath)
   })
 
@@ -594,13 +603,14 @@ describe('table-row context menu (YAZ-1053)', () => {
     const { el } = mount('views:\n  - type: table\n    name: T\n    summaries:\n      note.priority: Sum\n', { records: manyRecords(), folder: testFolderHost({ vaultRecords: manyRecords(), openBackground: vi.fn() }) })
     for (const target of [q(el, 'tfoot td'), q(el, '.view-table__spacer td')]) {
       const event = rightClick(target)
-      expect(event.defaultPrevented).toBe(false)
+      // No page text menu anywhere in the table (YAZ-3746 13AH): the right-click is taken, and no menu opens.
+      expect(event.defaultPrevented).toBe(true)
       expect(el.querySelector('.ctx-menu')).toBeNull()
     }
     // A header opens its OWN menu (YAZ-1513, TableHeaderMenu.test.tsx) — never the row's page actions.
     rightClick(q(el, 'thead th'))
     expect(el.querySelector('.ctx-menu')).not.toBeNull()
-    expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).not.toContain('Open in right panel')
+    expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).not.toContain('Open in')
   })
 })
 
@@ -1024,20 +1034,7 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
     act(() => void cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 2 })))
     rightClick(cell)
     expect(notePanel()).toBeNull()
-    expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((item) => item.textContent)).toEqual([
-      'Open',
-      'Open in new tab',
-      'Copy path',
-      'Reveal in Finder',
-      'Fill cell',
-      'Fill row',
-      'Clear formatting',
-      'New row below',
-      'Filter by this value',
-      'Hide this value',
-      'Freeze up to this row',
-      'Unfreeze rows',
-    ])
+    expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Open in', 'Copy', 'Paste', 'Clear cells', 'Fill', 'Clear formatting', 'New row below', 'Filter', 'Freeze up to this row', 'Copy path'])
     click([...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Open in new tab')!)
     expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })

@@ -196,7 +196,8 @@ describe('a folder row (D31/D32)', () => {
     click(nameCell(el, 'Users'), { metaKey: true })
     expect(host.openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Schema/Users')
     fire(nameCell(el, 'Users'), {}, 'contextmenu')
-    click(menuItem(el, 'Open in right panel'))
+    click(menuItem(el, 'Open in')) // "Open in ›" holds the right panel (YAZ-3746 13AW)
+    click(menuItem(el, 'Right panel'))
     expect(host.openRight).toHaveBeenCalledExactlyOnceWith('/vault/Schema/Users')
     // Open in mini window shows the folder page: the editor a folder tab has, on the directory.
     fire(nameCell(el, 'Users'), {}, 'contextmenu')

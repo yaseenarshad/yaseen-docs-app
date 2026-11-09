@@ -192,13 +192,10 @@ function aheadHost() {
   return { setColumn, folder: testFolderHost({ vaultRecords: RECORDS, settings, setColumn }) }
 }
 
-/** Pick a `<select>` value the way a user does: the native setter, then a bubbling change event React sees. */
-function selectValue(el: HTMLSelectElement, value: string): void {
-  const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
-  act(() => {
-    set?.call(el, value)
-    el.dispatchEvent(new Event('change', { bubbles: true }))
-  })
+/** The column editor's Type is the type picker (YAZ-3746 13L): its button names the type, then a list of every type. */
+function pickType(el: ParentNode, label: string, type: string): void {
+  click(byLabel(el, `Edit property ${label}`))
+  click([...el.querySelectorAll<HTMLElement>('.type-picker__option')].find((o) => o.querySelector('.type-picker__name')?.textContent === type)!)
 }
 
 /** Let an immediate declaration write resolve, so the panel's `base` moves forward (3D). */
@@ -233,13 +230,13 @@ describe('column menu relation flow', () => {
     expect((await propertiesStub.get('/vault')).properties).toEqual({})
   })
 
-  it('Multi-link: the Type select, then the target — each an immediate folder-local write against what just landed', async () => {
+  it('Multi-link: the Type picker, then the target — each an immediate folder-local write against what just landed', async () => {
     const { setColumn, folder } = aheadHost()
     const { el } = mount(UNFILTERED_BASE, { folder })
     openRelation(el, 'funnels')
     expect(setColumn).toHaveBeenNthCalledWith(1, 'funnels', { kind: 'link' }, undefined)
     await settle()
-    selectValue(byLabel<HTMLSelectElement>(el, 'Edit property Funnels'), 'multi-link')
+    pickType(el, 'Funnels', 'Multi-link')
     expect(setColumn).toHaveBeenNthCalledWith(2, 'funnels', { kind: 'multi-link' }, { kind: 'link' })
     await settle()
     setValue(byLabel<HTMLInputElement>(el, 'Link target'), 'Funnels')
@@ -265,7 +262,7 @@ describe('column menu relation flow', () => {
     click(byLabel(el, 'Relation for Funnels'))
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('funnels', { kind: 'multi-link', target: 'Funnels' }, undefined)
     await settle()
-    expect(byLabel<HTMLSelectElement>(el, 'Edit property Funnels').value).toBe('multi-link')
+    expect(byLabel(el, 'Edit property Funnels').textContent).toBe('Multi-link')
     expect(byLabel<HTMLInputElement>(el, 'Link target').value).toBe('Funnels')
   })
 

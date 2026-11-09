@@ -254,7 +254,7 @@ describe('Group levels: handles, remove, third level (YAZ-4532)', () => {
   })
 
   // YAZ-4607 D60: "Add group level" replaced the empty third picker; a level's picker exists only once its row does.
-  it('"Add group level" adds the second and third level, each row picker refuses a column used above, and the button is gone at three', () => {
+  it('"Add group level" adds the second and third level, each row picker refuses a column used above, and the button is gone at five (YAZ-3746 13AF)', () => {
     const { el, view } = mount({ name: 'Table', type: 'table', groupBy: THREE[0] })
     expect(el.querySelector('[aria-label="Then group by"]')).toBeNull()
     addLevel(el)
@@ -270,7 +270,10 @@ describe('Group levels: handles, remove, third level (YAZ-4532)', () => {
     expect(view().groupBy).toEqual([THREE[0], { property: 'note.priority', direction: 'ASC' }, { property: 'note.pillar', direction: 'ASC' }])
     expect(el.querySelectorAll('[aria-label^="Reorder group level"]')).toHaveLength(3)
     expect(el.querySelectorAll('[aria-label="Group by"], [aria-label="Then group by"], [aria-label="Then group by (level 3)"]')).toHaveLength(3)
-    expect(addLevelButton(el)).toBeNull() // no fourth level
+    addLevel(el) // levels 4 and 5 take the first free columns (MAX_GROUP_LEVELS, YAZ-3746 13AF)
+    addLevel(el)
+    expect(groupByLevels(view())).toHaveLength(5)
+    expect(addLevelButton(el)).toBeNull() // no sixth level
   })
 
   it('Folder may repeat at every level (YAZ-2541)', () => {
@@ -398,7 +401,7 @@ describe('the ⇅ popover holds only sorting and grouping (YAZ-4607 D60)', () =>
     expect([...el.querySelectorAll('.view-menu__action')].map((b) => b.textContent)).toEqual(['Add sort', 'Add group level'])
   })
 
-  it('"Add group level" adds a level on the first free column; no empty picker; the button is gone at three levels', () => {
+  it('"Add group level" adds a level on the first free column; no empty picker; the button is gone at five levels (YAZ-3746 13AF)', () => {
     const { el, view } = mount({ name: 'Table', type: 'table' })
     const add = () => [...el.querySelectorAll<HTMLButtonElement>('.view-menu__action')].find((b) => b.textContent === 'Add group level')
     expect(el.querySelector('[aria-label="Group by"]')).toBeNull()
@@ -409,9 +412,13 @@ describe('the ⇅ popover holds only sorting and grouping (YAZ-4607 D60)', () =>
     act(() => add()!.click())
     act(() => add()!.click())
     expect(groupByLevels(view())).toHaveLength(3)
-    expect(new Set(groupByLevels(view()).map((l) => l.property)).size).toBe(3) // three different columns
+    expect(add()).toBeDefined()
+    act(() => add()!.click())
+    act(() => add()!.click())
+    expect(groupByLevels(view())).toHaveLength(5)
+    expect(new Set(groupByLevels(view()).map((l) => l.property)).size).toBe(5) // five different columns
     expect(add()).toBeUndefined()
-    expect(el.querySelectorAll('[aria-label^="Reorder group level"]')).toHaveLength(3)
+    expect(el.querySelectorAll('[aria-label^="Reorder group level"]')).toHaveLength(5)
   })
 
   it('"Folders first" sits under Sort, before Group, and only while the view shows folder rows', () => {

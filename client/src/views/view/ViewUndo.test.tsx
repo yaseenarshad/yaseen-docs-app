@@ -108,6 +108,16 @@ const setValue = (el: HTMLInputElement | HTMLSelectElement, value: string): void
     el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }))
   })
 }
+/** The row menu's one "Fill ›" on its Row target (YAZ-3746 13AW: one flyout with a Cell · Row · Column switch). */
+const fillRow = (el: ParentNode): void => {
+  click(item(el, 'Fill'))
+  click([...el.querySelectorAll<HTMLElement>('.ctx-menu__sub .fill-target__opt')].find((b) => b.textContent === 'Row')!)
+}
+/** The column editor's Type (YAZ-3746 13L): the picker button, then the type by its name. */
+const pickType = (el: ParentNode, label: string, type: string): void => {
+  click(q(el, `.ctx-menu [aria-label="Edit property ${label}"]`))
+  click([...el.querySelectorAll<HTMLElement>('.type-picker__option')].find((o) => o.querySelector('.type-picker__name')?.textContent === type)!)
+}
 const press = (el: Element, key: string): void => act(() => void el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
 
 describe('the Undo toast for view changes (YAZ-4594 S29)', () => {
@@ -174,13 +184,13 @@ describe('the Undo toast for view changes (YAZ-4594 S29)', () => {
   it('"No fill": a toast, and Undo paints the fill again; No fill where there is none says nothing', () => {
     const { el, onNotice, toast, undo, yaml } = mount()
     rightClick(q(rowNamed(el, 'Attribution'), 'td[data-cell]'))
-    click(item(el, 'Fill row'))
+    fillRow(el)
     click(item(el, 'No fill'))
     expect(yaml()).not.toContain('fills')
     expect(toast()).toBe('Cleared fill')
     undo()
     rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell]'))
-    click(item(el, 'Fill row'))
+    fillRow(el)
     click(item(el, 'No fill'))
     expect(onNotice).toHaveBeenCalledTimes(1)
   })
@@ -293,7 +303,7 @@ describe('the Undo toast also covers rename column, change column type and delet
     const { el, onNotice } = mount(TABLE, { settings: { columns: { status: before }, views: [], problems: [] }, setColumn })
     rightClick(header(el, 'Status'))
     click(item(el, 'Edit column…'))
-    setValue(q<HTMLSelectElement>(el, '.ctx-menu [aria-label="Edit property Status"]'), 'text')
+    pickType(el, 'Status', 'Text')
     await act(async () => {})
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', { kind: 'text' }, before)
     const [message, icon, type, action] = onNotice.mock.lastCall as [string, string, string, Notice['action']]
@@ -308,7 +318,7 @@ describe('the Undo toast also covers rename column, change column type and delet
     const { el, onNotice, def } = mount(TABLE, { setColumn, setColumns })
     rightClick(header(el, 'Priority'))
     click(item(el, 'Edit column…'))
-    setValue(q<HTMLSelectElement>(el, '.ctx-menu [aria-label="Edit property Priority"]'), 'number')
+    pickType(el, 'Priority', 'Number')
     await act(async () => {})
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('priority', { kind: 'number' }, undefined)
     const [message, , , action] = onNotice.mock.lastCall as [string, string, string, Notice['action']]
@@ -327,7 +337,7 @@ describe('the Undo toast also covers rename column, change column type and delet
     const { el, onNotice } = mount(TABLE, { setColumn })
     rightClick(header(el, 'Status'))
     click(item(el, 'Edit column…'))
-    setValue(q<HTMLSelectElement>(el, '.ctx-menu [aria-label="Edit property Status"]'), 'number')
+    pickType(el, 'Status', 'Number')
     await act(async () => {})
     expect(onNotice).not.toHaveBeenCalled()
     expect(el.querySelector('.column-detail')?.textContent).toContain('changed since opened')
@@ -355,7 +365,7 @@ describe('a refused settings write says nothing (YAZ-4644 E2): the host returns 
     click(item(el, 'Delete'))
     click([...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete')!)
     rightClick(q(rowNamed(el, 'Attribution'), 'td[data-cell$=":1"]'))
-    click(item(el, 'Fill row'))
+    fillRow(el)
     click(item(el, 'No fill'))
     rightClick(header(el, 'Priority'))
     click(item(el, 'Unfreeze columns'))

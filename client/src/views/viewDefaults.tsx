@@ -38,14 +38,32 @@ const partOf = (key: DefaultedKey, view: Pick<ViewDef, 'type'>): keyof FolderPag
 export const settingsValue = (key: DefaultedKey, defaults: FolderPagesSettings, view: Pick<ViewDef, 'type'>): unknown => defaults[partOf(key, view)]
 
 /**
- * The view as every reader sees it: each key the view does not set takes Settings' value. A Settings value that is the
- * built-in one is left out, so with the default Settings this is the view itself, the same object.
+ * What a reader takes for each key when the view has none: the look before Settings › Folder pages. It is not
+ * `DEFAULT_FOLDER_PAGES`: a Settings default may differ from it (Show empty groups is on since the YAZ-3746 demo
+ * round 2, while a reader takes no `showEmptyColumns` as off).
+ */
+const ABSENT: { readonly [K in DefaultedKey]: unknown } = {
+  rowHeight: 'short',
+  textInCells: 'kind',
+  rowNumbers: true,
+  groupIndent: 'medium',
+  showEmptyColumns: false,
+  subfolders: 'notes',
+  foldersFirst: true,
+  calendarScale: 'month',
+  cardTitles: 'clip',
+  hideWeekends: false,
+}
+
+/**
+ * The view as every reader sees it: each key the view does not set takes Settings' value. A Settings value that a
+ * reader takes for no key anyway is left out, so a view that needs nothing filled is the view itself, the same object.
  */
 export function withDefaults(view: ViewDef, defaults: FolderPagesSettings): ViewDef {
   let out: ViewDef | null = null
   for (const key of DEFAULTED_KEYS) {
     const value = settingsValue(key, defaults, view)
-    if (view[key] !== undefined || value === settingsValue(key, DEFAULT_FOLDER_PAGES, view)) continue
+    if (view[key] !== undefined || value === ABSENT[key]) continue
     out ??= { ...view }
     ;(out as Record<string, unknown>)[key] = value
   }

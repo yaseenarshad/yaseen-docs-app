@@ -157,7 +157,8 @@ describe('what the tray lists (D44, D45)', () => {
     act(() => void q(trayLine(el, 'photo.png'), '.other-files__name').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
     expect(onOpenFileBackground).toHaveBeenCalledWith(`${STAGES}/photo.png`)
     rightClick(trayLine(el, 'Deck.pdf'))
-    expect(menuItems(el)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder'])
+    // The ways to open, "Open in ›" (Reveal in Finder inside, YAZ-3746 13AW), then the page's Copy path.
+    expect(menuItems(el)).toEqual(['Open', 'Open in new tab', 'Open in', 'Copy path'])
   })
 
   it('is collapsible, and stays closed for this folder page', async () => {
@@ -174,14 +175,14 @@ describe('what the tray lists (D44, D45)', () => {
 })
 
 describe('moving a note (D44, D46)', () => {
-  it('the row menu ends "Move to Other files" as its own group, then Delete note… last (YAZ-4592; the C8 order of YAZ-4608)', async () => {
+  it('the row menu ends with the page group — Copy path, then "Move to Other files" — then Delete note… last (YAZ-4592; the C8 order of YAZ-4608; YAZ-3746 13AW)', async () => {
     const el = await mount({ onDeleteEntries: vi.fn() })
     rightClick(nameCell(el, 'Lead Gen'))
     const groups = [...el.querySelectorAll('.ctx-menu__group')].map((g) => [...g.querySelectorAll('[role^="menuitem"]')].map((b) => b.textContent))
     expect(groups.at(-1)).toEqual(['Delete note…'])
-    expect(groups.at(-2)).toEqual(['Move to Other files'])
+    expect(groups.at(-2)).toEqual(['Copy path', 'Move to Other files'])
     expect(groups.flat()).toContain('Duplicate note')
-    expect(groups.flat()).toContain('Filter by this value')
+    expect(groups.flat()).toContain('Filter') // "Filter ›": Show only this value, Hide this value (YAZ-3746 13AW)
   })
 
   it('row right-click "Move to Other files": the link is written, the note leaves the views and shows in the tray, with Undo', async () => {
@@ -208,7 +209,8 @@ describe('moving a note (D44, D46)', () => {
     const el = await mount()
     expect(rowNames(el)).toEqual(['Lead Gen'])
     rightClick(trayLine(el, 'Sales'))
-    expect(menuItems(el)).toEqual(['Open', 'Copy path', 'Reveal in Finder', 'Move back to the table'])
+    // The tray's own group (the move back) comes before the page's Copy path (YAZ-4608 C8, YAZ-3746 13AW).
+    expect(menuItems(el)).toEqual(['Open', 'Open in', 'Move back to the table', 'Copy path'])
     click(menuItem(el, 'Move back to the table'))
     await settle()
     expect(otherFiles()).toBeUndefined()

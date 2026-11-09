@@ -130,6 +130,7 @@ describe('the header menu (YAZ-1513)', () => {
       'Sort', // YAZ-4588 D42: three flyouts replace the flat sort, group and wrap items
       'Group',
       'Text',
+      'Fill column', // YAZ-3746 13AQ: the column's fill, in its own group after the edits
       'Hide column',
       '✓ Frozen up to this column', // BASE freezes two: Status is the last frozen column
       'Unfreeze columns',
@@ -369,9 +370,11 @@ describe('the type line and "Edit column…" (YAZ-4533)', () => {
     const detail = q<HTMLElement>(el, '.ctx-menu .column-detail')
     expect(q(detail, '.column-detail__key').textContent).toBe('note.status')
     expect(q<HTMLInputElement>(detail, '[aria-label="Display name"]').placeholder).toBe('Status')
-    const select = q<HTMLSelectElement>(detail, '[aria-label="Edit property Status"]')
-    expect(select.value).toBe('text')
-    setValue(select, 'number')
+    // The Type is the picker (YAZ-3746 13L): a button that names the type, then a list of every type.
+    const trigger = q<HTMLButtonElement>(detail, '[aria-label="Edit property Status"]')
+    expect(trigger.textContent).toBe('Text')
+    click(trigger)
+    click([...detail.querySelectorAll<HTMLElement>('.type-picker__option')].find((o) => o.querySelector('.type-picker__name')?.textContent === 'Number')!)
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', { kind: 'number' }, { kind: 'text' })
     expect(onChange).not.toHaveBeenCalled()
     expect(el.querySelector('.ctx-menu .column-detail')).not.toBeNull() // the editor stays open
@@ -553,7 +556,6 @@ describe('"Add column to the right…" takes any name (YAZ-4535)', () => {
 describe('the Sort, Group and Text flyouts (YAZ-4588 D42)', () => {
   const view = (def: () => ViewSet) => def().views[0]
   const SELECT: Partial<FolderHost> = { settings: { columns: { status: { kind: 'select', options: ['zeta', 'alpha'] } }, views: [], problems: [] } }
-  const levelRows = (el: ParentNode): string[] => [...el.querySelectorAll('.ctx-menu__sub .view-header-menu__level')].map((r) => `${r.textContent}${r.getAttribute('data-hint') === '✓' ? ' ✓' : ''}`)
   const flyoutHeading = (el: ParentNode): string | null => el.querySelector('.ctx-menu__sub .ctx-menu__heading')?.textContent ?? null
   const hover = (target: Element) => {
     act(() => void target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
@@ -612,19 +614,19 @@ describe('the Sort, Group and Text flyouts (YAZ-4588 D42)', () => {
     expect(view(def).groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
   })
 
-  it('Group › grouped by other columns (1 and 2 levels): the Levels, no ✓; Add appends this column, each level keeps its fields', () => {
+  // YAZ-3746 13V: the read-only "Levels" list is gone (it looked clickable and did nothing); a column that is no level shows no heading.
+  it('Group › grouped by other columns (1 and 2 levels): no level heading; Add appends this column, each level keeps its fields', () => {
     const { el, def } = mount(`${BASE}    groupBy:\n      property: note.pillar\n      direction: DESC\n      highlight: blue\n`)
     rightClick(th(el, 1))
     click(item(el, 'Group'))
     expect(flyoutItems(el)).toEqual(['Group by this column', 'Add as next group level'])
-    expect(flyoutHeading(el)).toBe('Levels')
-    expect(levelRows(el)).toEqual(['Pillar'])
+    expect(flyoutHeading(el)).toBeNull()
     click(item(el, 'Add as next group level'))
     expect(view(def).groupBy).toEqual([{ property: 'note.pillar', direction: 'DESC', highlight: 'blue' }, { property: 'note.status', direction: 'ASC' }])
 
     rightClick(th(el, 2))
     click(item(el, 'Group'))
-    expect(levelRows(el)).toEqual(['Pillar', 'Status'])
+    expect(flyoutHeading(el)).toBeNull()
     click(item(el, 'Add as next group level'))
     expect(view(def).groupBy).toEqual([
       { property: 'note.pillar', direction: 'DESC', highlight: 'blue' },
@@ -633,33 +635,33 @@ describe('the Sort, Group and Text flyouts (YAZ-4588 D42)', () => {
     ])
   })
 
-  it('Group › at three levels: Add as next group level is disabled, with the tip', () => {
-    const { el, onChange } = mount(`${BASE}    groupBy:\n      - property: note.pillar\n      - property: note.tags\n      - property: note.priority\n`)
+  it('Group › at five levels (YAZ-3746 13AF): Add as next group level is disabled, with the tip', () => {
+    // Folder may group at more than one level (YAZ-2541).
+    const { el, onChange } = mount(`${BASE}    groupBy:\n      - property: note.pillar\n      - property: note.tags\n      - property: note.priority\n      - property: file.folder\n      - property: file.folder\n`)
     rightClick(th(el, 1))
     click(item(el, 'Group'))
     const add = item(el, 'Add as next group level') as HTMLButtonElement
     expect(add.disabled).toBe(true)
-    expect(add.title).toBe('Three levels at most')
-    expect(levelRows(el)).toEqual(['Pillar', 'Tags', 'Priority'])
+    expect(add.title).toBe('Five levels at most')
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('Group › this column a level: ✓ on its level, no Add, and Remove this group level moves the levels below up', () => {
+  it('Group › this column a level (YAZ-3746 13V): its level heading, Move up / down, no Add, and Remove this group level moves the levels below up', () => {
     const { el, def } = mount(`${BASE}    groupBy:\n      - property: note.pillar\n      - property: status\n        highlight: green\n      - property: note.priority\n        direction: DESC\n        large: true\n`)
     rightClick(th(el, 1))
     click(item(el, 'Group'))
-    expect(flyoutItems(el)).toEqual(['Group by this column', 'Remove this group level'])
-    expect(levelRows(el)).toEqual(['Pillar', 'Status ✓', 'Priority'])
+    expect(flyoutItems(el)).toEqual(['Group by this column', 'Move up a level', 'Move down a level', 'Remove this group level'])
+    expect(flyoutHeading(el)).toBe('Group level 2 of 3')
     click(item(el, 'Remove this group level'))
     expect(view(def).groupBy).toEqual([{ property: 'note.pillar' }, { property: 'note.priority', direction: 'DESC', large: true }])
   })
 
-  it('Text › Wrap text and Clip text, ✓ on the effective choice (D29)', () => {
+  it('Text › Wrap text and Clip text, ✓ on the effective choice (D29); then the column\'s alignment (YAZ-3746 13Y)', () => {
     const { el } = mount()
     rightClick(th(el, 1))
     click(item(el, 'Text'))
-    expect(flyoutItems(el)).toEqual(['Wrap text', 'Clip text'])
-    expect(checked(el)).toEqual(['Clip text'])
+    expect(flyoutItems(el)).toEqual(['Wrap text', 'Clip text', 'Auto alignment', 'Align left', 'Align center', 'Align right'])
+    expect(checked(el)).toEqual(['Clip text', 'Auto alignment'])
   })
 
   it('a flyout opens on hover; hovering another row swaps or closes it after the hover wait', () => {
@@ -693,7 +695,7 @@ describe('the Sort, Group and Text flyouts (YAZ-4588 D42)', () => {
     expect(el.querySelector('.ctx-menu__sub')).toBeNull()
     expect(document.activeElement).toBe(item(el, 'Group'))
     press(item(el, 'Text'), 'Enter')
-    expect(flyoutItems(el)).toEqual(['Wrap text', 'Clip text'])
+    expect(flyoutItems(el)).toEqual(['Wrap text', 'Clip text', 'Auto alignment', 'Align left', 'Align center', 'Align right'])
   })
 
   it('Esc closes the open flyout alone, then the menu; nothing is written', () => {

@@ -123,10 +123,11 @@ describe('declaration precedence (5E, GRO-2217 — locked amendment on GRO-2120;
 })
 
 /**
- * The ladder's TOP rung (🔒 Q8 of YAZ-815, wired here at YAZ-819): a FOLDER's own column
- * declaration, view-scoped — read off its settings, never re-parsed here.
+ * The ladder's TOP rung (YAZ-815, wired here at YAZ-819): the PAGE's columns — the folder's own declarations over
+ * its parent folders', nearest first (YAZ-4713 C2, replacing Q8's "per folder"). `FolderView` hands them in as
+ * `settings.columns` (`pageColumns`, `columnInheritance.test.ts`); they are read off the settings, never re-parsed here.
  */
-describe('folder columns are the top rung (🔒 Q8, YAZ-815)', () => {
+describe('the page’s columns are the top rung (YAZ-815, YAZ-4713 C2)', () => {
   const DECLS: PropertiesResponse = {
     root: '/vault',
     version: 1,

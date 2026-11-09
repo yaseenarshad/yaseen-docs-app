@@ -1165,9 +1165,10 @@ describe('FrontmatterPanel — a stored id link reads as the note title (YAZ-229
 })
 
 /**
- * Two kinds of field (D19): the note's OWN, at the top level, and a FOLDER's, under `in` in the
- * block named by the folder's id. One list (D23): "Note fields" and the note's own rows, then a
- * line, "Properties from <folder>" and that folder's rows — and every edit goes where its row lives.
+ * Two kinds of value (YAZ-4713): the note's OWN field, at the top level, one per key (C1), and a page's
+ * own value of a "Separate value for <folder>" column, under `in` in the block named by the page's id (C3),
+ * shown as "<column> · <folder>". A block no page shows is listed under "Values from pages that do not show
+ * this note", with Clear (C9). Every edit goes where its row lives.
  */
 describe('FrontmatterPanel — a page’s own values, and values no page shows (YAZ-4713 C3, C9)', () => {
   const NOOR = '/vault/Hiring/Noor.md'

@@ -100,26 +100,32 @@ const sheetButton = (label: string): HTMLButtonElement => [...(sheet()?.querySel
 
 const WITH_STATUS = (status: string): string[] => TEST_RECORDS.filter((r) => r.properties.status === status).map((r) => r.title).sort()
 
-describe('the row menu filters by a cell\'s value (YAZ-4592 S25)', () => {
-  it('"Filter by this value" adds `is` to the view\'s filters, and only the rows with the value stay', () => {
+describe('the row menu filters by a cell\'s value (YAZ-4592 S25; in "Filter ›" since YAZ-3746 13AW)', () => {
+  /** Opens "Filter ›" and picks one of its two rows. */
+  const filterBy = (el: ParentNode, label: 'Show only this value' | 'Hide this value'): void => {
+    click(item(el, 'Filter'))
+    click(item(el, label))
+  }
+
+  it('"Filter › Show only this value" adds `is` to the view\'s filters, and only the rows with the value stay', () => {
     const { el, yaml } = mount(TABLE)
     rightClick(cell(el, 'Agentic Agency', 1))
-    click(item(el, 'Filter by this value'))
+    filterBy(el, 'Show only this value')
     expect(yaml()).toContain('filters:\n      and:\n        - note.status == "idea"')
     expect(names(el).sort()).toEqual(WITH_STATUS('idea'))
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('"Hide this value" adds `is not`; a second rule joins the same All group', () => {
+  it('"Filter › Hide this value" adds `is not`; a second rule joins the same All group', () => {
     const { el, yaml } = mount(TABLE)
     rightClick(cell(el, 'Agentic Agency', 1))
-    click(item(el, 'Hide this value'))
+    filterBy(el, 'Hide this value')
     expect(yaml()).toContain('- note.status != "idea"')
     expect(names(el)).not.toContain('Agentic Agency')
     expect(names(el).length).toBe(TEST_RECORDS.length - WITH_STATUS('idea').length)
     // Priority 1, a number: `≠`.
     rightClick(cell(el, 'The Levels of an Agency', 2))
-    click(item(el, 'Hide this value'))
+    filterBy(el, 'Hide this value')
     expect(yaml()).toContain('    filters:\n      and:\n        - note.status != "idea"\n        - note.priority != 1\n')
     expect(names(el)).not.toContain('The Levels of an Agency')
   })

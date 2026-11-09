@@ -167,10 +167,10 @@ describe('parseViews def', () => {
     expect(def.views[0].groupBy).toEqual([{ property: 'departments', direction: 'ASC' }, { property: 'process' }])
   })
 
-  it('the shown group levels are those with a property, the first three (YAZ-4531)', () => {
-    expect(MAX_GROUP_LEVELS).toBe(3)
-    const levels = [{ property: 'a' }, { direction: 'ASC' }, { property: 'b' }, { property: 'c' }, { property: 'd' }] as never
-    expect(shownGroupLevels({ type: 'table', name: 'T', groupBy: levels }).map((l) => l.property)).toEqual(['a', 'b', 'c'])
+  it('the shown group levels are those with a property, the first five (YAZ-4531; five since YAZ-3746 13AF)', () => {
+    expect(MAX_GROUP_LEVELS).toBe(5)
+    const levels = [{ property: 'a' }, { direction: 'ASC' }, { property: 'b' }, { property: 'c' }, { property: 'd' }, { property: 'e' }, { property: 'f' }] as never
+    expect(shownGroupLevels({ type: 'table', name: 'T', groupBy: levels }).map((l) => l.property)).toEqual(['a', 'b', 'c', 'd', 'e'])
     expect(shownGroupLevels({ type: 'table', name: 'T', groupBy: { property: 'a' } })).toEqual([{ property: 'a' }])
     expect(shownGroupLevels({ type: 'table', name: 'T' })).toEqual([])
   })

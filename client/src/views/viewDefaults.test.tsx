@@ -1,7 +1,7 @@
 /**
  * Settings › Folder pages as the views read them (YAZ-4585, D34 of YAZ-4501): every reader takes the view's own key
  * first, then Settings; a menu choice equal to Settings removes the key; "from Settings" and Reset in the menus; the
- * calendar week can start on Sunday; and the view tab's right-click has "Open on this view" (D41) and "View settings…".
+ * calendar week can start on Sunday; and the view tab's right-click has "Make default view" (D41, words YAZ-3746 13S) and "View settings…".
  * ViewsPane mounted with react-dom in jsdom.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -90,6 +90,12 @@ function choose(select: HTMLSelectElement, value: string): void {
     select.dispatchEvent(new Event('change', { bubbles: true }))
   })
 }
+/** A segmented choice of the View tab (`ChoiceSeg`): its pressed option's text, and a click on an option. */
+const pressedIn = (el: ParentNode, label: string): string | undefined => [...el.querySelectorAll<HTMLButtonElement>(`.view-popover--properties [role="group"][aria-label="${label}"] button`)].find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent ?? undefined
+const pick = (el: ParentNode, label: string, text: string): void => click([...el.querySelectorAll<HTMLButtonElement>(`.view-popover--properties [role="group"][aria-label="${label}"] button`)].find((b) => b.textContent === text)!)
+/** The slot after a row's control (`FromSettings`): empty while the view follows Settings, the ↺ "Reset to Settings" once it has its own value. */
+const follows = (slot: Element | null | undefined): boolean => slot != null && !slot.classList.contains('view-from-settings--reset')
+const resetIn = (slot: Element | null | undefined): HTMLElement | null => (slot?.matches('[aria-label="Reset to Settings"]') ? (slot as HTMLElement) : null)
 const menuItem = (text: string): HTMLElement => {
   const found = [...document.querySelectorAll<HTMLElement>('.ctx-menu [role^="menuitem"]')].find((b) => b.textContent === text)
   if (found === undefined) throw new Error(`no item ${text}`)
@@ -118,9 +124,13 @@ const GROUPED = table('    groupBy:\n      property: note.status\n')
 const CALENDAR = (extra = '') => `views:\n  - type: calendar\n    name: C\n${extra}`
 
 describe('withDefaults and chooseOwn (YAZ-4585)', () => {
-  it('fills each key the view lacks from Settings; the view’s own key wins; default Settings give the same object', () => {
+  it('fills each key the view lacks from Settings; the view’s own key wins; a view that needs nothing filled is the same object', () => {
     const view: ViewDef = { type: 'table', name: 'T', rowHeight: 'medium' }
-    expect(withDefaults(view, DEFAULT_FOLDER_PAGES)).toBe(view)
+    // Show empty groups is on by default (YAZ-3746 demo round 2): a Table with no key of its own shows its empty groups.
+    expect(withDefaults(view, DEFAULT_FOLDER_PAGES)).toEqual({ ...view, showEmptyColumns: true })
+    const board: ViewDef = { type: 'board', name: 'B' }
+    expect(withDefaults(board, DEFAULT_FOLDER_PAGES)).toBe(board)
+    expect(withDefaults(view, fp({ showEmptyGroups: false }))).toBe(view)
     const all = fp({ rowHeight: 'tall', rowNumbers: false, groupIndent: 'large', showEmptyGroups: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true })
     expect(withDefaults(view, all)).toEqual({ type: 'table', name: 'T', rowHeight: 'medium', rowNumbers: false, groupIndent: 'large', showEmptyColumns: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true })
     expect(view).toEqual({ type: 'table', name: 'T', rowHeight: 'medium' })
@@ -132,7 +142,7 @@ describe('withDefaults and chooseOwn (YAZ-4585)', () => {
     expect(withDefaults(table, fp({ showEmptyGroups: true })).showEmptyColumns).toBe(true)
     expect(withDefaults(board, fp({ showEmptyGroups: true }))).toBe(board)
     expect(withDefaults(board, fp({ showEmptyColumns: true })).showEmptyColumns).toBe(true)
-    expect(withDefaults(table, fp({ showEmptyColumns: true }))).toBe(table)
+    expect(withDefaults(table, fp({ showEmptyGroups: false, showEmptyColumns: true }))).toBe(table)
     // A choice equal to the part the view reads removes the key; the other part does not count.
     const b: ViewDef = { type: 'board', name: 'B', showEmptyColumns: true }
     chooseOwn(b, 'showEmptyColumns', true, fp({ showEmptyColumns: true, showEmptyGroups: false }))
@@ -215,9 +225,15 @@ describe('each reader: no view key → Settings; a view key → the view (YAZ-45
     expect(weekdays(el)[0]).toBe('Sun')
     expect(q(el, '.view-cal__card').classList.contains('view-cal__card--wrap')).toBe(false)
     act(() => root?.unmount())
-    ;({ el } = mount(CALENDAR()))
+    // Monday first: its grid starts on Monday 30 November.
+    ;({ el } = mount(CALENDAR(), { folderPages: fp({ weekStartsOn: 'monday' }) }))
     expect(days(el)[0]).toBe('2026-11-30')
     expect(weekdays(el)[0]).toBe('Mon')
+    act(() => root?.unmount())
+    // The default week starts on Sunday (YAZ-3746 demo round 2).
+    ;({ el } = mount(CALENDAR()))
+    expect(days(el)[0]).toBe('2026-11-29')
+    expect(weekdays(el)[0]).toBe('Sun')
   })
 
   it('the note window’s pin: Settings › Folder pages, else "Keep cell notes open"', () => {
@@ -238,12 +254,12 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
     const toggle = () => q<HTMLInputElement>(el, '.view-popover--properties [aria-label="Row numbers"]')
     const hint = () => toggle().closest('label')!.querySelector('.view-from-settings')
     expect(toggle().checked).toBe(false)
-    expect(hint()?.textContent).toBe('from Settings')
+    expect(follows(hint())).toBe(true)
     click(toggle())
     expect(yaml()).toContain('rowNumbers: true')
     expect(toggle().checked).toBe(true)
-    expect(hint()?.textContent).toBe('Reset')
-    click(hint()!)
+    expect(resetIn(hint())).not.toBeNull()
+    click(resetIn(hint())!)
     expect(yaml()).not.toContain('rowNumbers')
     expect(toggle().checked).toBe(false)
   })
@@ -251,19 +267,19 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
   it('Properties › Row height (YAZ-4544 10A): from Settings with no key; a choice off Settings writes it and the rows follow; Reset removes it', () => {
     const { el, yaml } = mount(table(), { folderPages: fp({ rowHeight: 'tall' }) })
     openView(el)
-    const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Row height"]')
-    const hint = () => select().closest('label')!.querySelector('.view-from-settings')
+    // A segmented choice since the YAZ-3746 demo; the slot after it is empty while the view follows Settings.
+    const hint = () => q(el, '.view-popover--properties [role="group"][aria-label="Row height"]').closest('.view-settings-row')!.querySelector('.view-from-settings')
     const rowH = () => q<HTMLElement>(el, '.view-table').style.getPropertyValue('--view-table-row-h')
-    expect(select().value).toBe('tall')
-    expect(hint()?.textContent).toBe('from Settings')
-    choose(select(), 'medium')
+    expect(pressedIn(el, 'Row height')).toBe('Tall')
+    expect(follows(hint())).toBe(true)
+    pick(el, 'Row height', 'Medium')
     expect(yaml()).toContain('rowHeight: medium')
     expect(rowH()).toBe('44px')
-    expect(hint()?.textContent).toBe('Reset')
-    choose(select(), 'tall')
+    expect(resetIn(hint())).not.toBeNull()
+    pick(el, 'Row height', 'Tall')
     expect(yaml()).not.toContain('rowHeight')
-    choose(select(), 'short')
-    click(hint()!)
+    pick(el, 'Row height', 'Short')
+    click(resetIn(hint())!)
     expect(yaml()).not.toContain('rowHeight')
     expect(rowH()).toBe('68px')
   })
@@ -272,17 +288,16 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
     const clipped = (c: number) => [...el.querySelectorAll<HTMLElement>(`.view-table tbody td[data-cell$=":${c}"]`)].every((td) => td.classList.contains('view-table__cell--clip'))
     const { el, yaml } = mount(table('    columnWrap:\n      note.status: true\n'))
     openView(el)
-    const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Text in cells"]')
-    const hint = () => select().closest('label')!.querySelector('.view-from-settings')
-    expect(select().value).toBe('kind')
-    expect(hint()?.textContent).toBe('from Settings')
+    const hint = () => q(el, '.view-popover--properties [role="group"][aria-label="Text in cells"]').closest('.view-settings-row')!.querySelector('.view-from-settings')
+    expect(pressedIn(el, 'Text in cells')).toBe('By kind')
+    expect(follows(hint())).toBe(true)
     expect([clipped(1), clipped(2)]).toEqual([false, false])
-    choose(select(), 'clip')
+    pick(el, 'Text in cells', 'Clip')
     expect(yaml()).toContain('textInCells: clip')
     // The view clips the chip column; the Status column's own Wrap still wins.
     expect([clipped(1), clipped(2)]).toEqual([true, false])
-    expect(hint()?.textContent).toBe('Reset')
-    click(hint()!)
+    expect(resetIn(hint())).not.toBeNull()
+    click(resetIn(hint())!)
     expect(yaml()).not.toContain('textInCells')
     expect([clipped(1), clipped(2)]).toEqual([false, false])
   })
@@ -306,7 +321,7 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
     expect(yaml()).not.toContain('groupIndent')
     const subfolders = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]')
     expect(subfolders().value).toBe('rows')
-    expect(subfolders().closest('label')!.querySelector('.view-from-settings')?.textContent).toBe('from Settings')
+    expect(follows(subfolders().closest('label')!.querySelector('.view-from-settings'))).toBe(true)
     choose(subfolders(), 'notes')
     expect(yaml()).toContain('subfolders: notes')
     choose(subfolders(), 'rows')
@@ -336,9 +351,8 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
     act(() => root?.unmount())
     ;({ el, yaml } = mount(CALENDAR(), { folderPages: fp({ cardTitles: 'wrap' }) }))
     openView(el)
-    const titles = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Card titles"]')
-    expect(titles().value).toBe('wrap')
-    choose(titles(), 'clip')
+    expect(pressedIn(el, 'Card titles')).toBe('Wrap')
+    pick(el, 'Card titles', 'Clip')
     expect(yaml()).toContain('cardTitles: clip')
   })
 
@@ -358,25 +372,25 @@ describe('the view tab right-click (YAZ-4585, D41)', () => {
   const tab = (el: ParentNode, name: string) => [...el.querySelectorAll<HTMLElement>('.view-tab')].find((t) => t.textContent === name)!
   const activeTab = (el: ParentNode) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent
 
-  it('the menu is Rename, Duplicate, Open on this view, View settings…, Delete', () => {
+  it('the menu is Rename, Duplicate, Make default view, View settings…, the two exports, Delete', () => {
     const { el } = mount(TWO)
     rightClick(tab(el, 'Second'))
-    expect([...document.querySelectorAll('.ctx-menu [role^="menuitem"]')].map((b) => b.textContent)).toEqual(['Rename', 'Duplicate', 'Open on this view', 'View settings…', 'Export as CSV…', 'Copy as table', 'Delete'])
+    expect([...document.querySelectorAll('.ctx-menu [role^="menuitem"]')].map((b) => b.textContent)).toEqual(['Rename', 'Duplicate', 'Make default view', 'View settings…', 'Export as CSV…', 'Copy as table', 'Delete'])
   })
 
-  it('"Open on this view" writes defaultView, shows ✓, and clears it; the page opens on it', () => {
+  it('"Make default view" writes defaultView, then reads "✓ Default view", and clears it; the page opens on it', () => {
     const { el, yaml } = mount(TWO)
     rightClick(tab(el, 'Second'))
-    click(menuItem('Open on this view'))
+    click(menuItem('Make default view'))
     expect(yaml()).toContain('defaultView: Second')
     rightClick(tab(el, 'Second'))
-    expect(menuItem('✓ Open on this view').getAttribute('aria-checked')).toBe('true')
+    expect(menuItem('✓ Default view').getAttribute('aria-checked')).toBe('true')
     const saved = yaml()
     act(() => root?.unmount())
     const again = mount(saved)
     expect(activeTab(again.el)).toBe('Second')
     rightClick(tab(again.el, 'Second'))
-    click(menuItem('✓ Open on this view'))
+    click(menuItem('✓ Default view'))
     expect(again.yaml()).not.toContain('defaultView')
   })
 

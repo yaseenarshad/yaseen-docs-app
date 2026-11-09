@@ -41,10 +41,11 @@ describe('groupAppend (YAZ-4588 D42)', () => {
     ])
   })
 
-  it('does nothing at three levels, or when this column is already a level', () => {
-    const three = view([{ property: 'note.a' }, { property: 'note.b' }, { property: 'note.c' }])
-    groupAppend(three, 'note.d')
-    expect(three.groupBy).toEqual([{ property: 'note.a' }, { property: 'note.b' }, { property: 'note.c' }])
+  it('does nothing at five levels (YAZ-3746 13AF), or when this column is already a level', () => {
+    const levels = ['a', 'b', 'c', 'd', 'e'].map((k) => ({ property: `note.${k}` }))
+    const five = view(levels)
+    groupAppend(five, 'note.f')
+    expect(five.groupBy).toEqual(levels)
     const twice = view({ property: 'status' })
     groupAppend(twice, 'note.status')
     expect(twice.groupBy).toEqual({ property: 'status' })

@@ -46,14 +46,14 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
   it('each row writes its part of folderPages, and every other part stays', async () => {
     await open('Folder pages')
     const clicks: [string, string, Partial<SettingsState['folderPages']>][] = [
-      ['weekStartsOn', 'Sunday', { weekStartsOn: 'sunday' }],
+      ['weekStartsOn', 'Monday', { weekStartsOn: 'monday' }], // Sunday is the default (YAZ-3746 demo round 2)
       ['rowBand', 'Off', { rowBand: false }],
       ['keepWindowPinned', 'Off', { keepWindowPinned: false }],
       ['rowHeight', 'Tall', { rowHeight: 'tall' }],
       ['rowNumbers', 'Off', { rowNumbers: false }],
       ['textInCells', 'Clip', { textInCells: 'clip' }],
       ['groupIndent', 'Large', { groupIndent: 'large' }],
-      ['showEmptyGroups', 'On', { showEmptyGroups: true }],
+      ['showEmptyGroups', 'Off', { showEmptyGroups: false }], // on by default (YAZ-3746 demo round 2, F2)
       ['showEmptyColumns', 'On', { showEmptyColumns: true }], // its own switch (YAZ-4608 C2)
       ['subfolders', 'Both', { subfolders: 'both' }],
       ['foldersFirst', 'Off', { foldersFirst: false }],
@@ -62,6 +62,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
       ['hideWeekends', 'On', { hideWeekends: true }],
       ['showFolderPageFiles', 'On', { showFolderPageFiles: true }],
       ['askBeforeDelete', 'Off', { askBeforeDelete: false }],
+      ['confirmChanges', 'Off', { confirmChanges: false }],
       ['showOtherFiles', 'Off', { showOtherFiles: false }],
       ['inheritColumns', 'Off', { inheritColumns: false }],
       ['columnMarks', 'Icon and folder name', { columnMarks: 'name' }],
@@ -73,14 +74,14 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     }
   })
 
-  it('every default shows the look before: Monday, short rows, numbers on, by kind, Medium, Their notes, Month, Clip, files off', async () => {
+  it('every default shows: Sunday, short rows, numbers on, by kind, Medium, empty groups on, Their notes, Month, Clip, files off, Confirm changes on', async () => {
     await open('Folder pages')
-    expect(pressed('folderPages.weekStartsOn')).toBe('Monday')
+    expect(pressed('folderPages.weekStartsOn')).toBe('Sunday') // Sunday to Saturday (YAZ-3746 demo round 2)
     expect(pressed('folderPages.rowHeight')).toBe('Short')
     expect(pressed('folderPages.rowNumbers')).toBe('On')
     expect(pressed('folderPages.textInCells')).toBe('By kind')
     expect(pressed('folderPages.groupIndent')).toBe('Medium')
-    expect(pressed('folderPages.showEmptyGroups')).toBe('Off')
+    expect(pressed('folderPages.showEmptyGroups')).toBe('On') // YAZ-3746 demo round 2 (F2)
     expect(pressed('folderPages.showEmptyColumns')).toBe('Off')
     expect(pressed('folderPages.subfolders')).toBe('Their notes')
     expect(pressed('folderPages.foldersFirst')).toBe('On')
@@ -90,6 +91,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     expect(pressed('folderPages.showFolderPageFiles')).toBe('Off')
     // Delete note… asks first unless this is turned off (YAZ-4592 S26).
     expect(pressed('folderPages.askBeforeDelete')).toBe('On')
+    expect(pressed('folderPages.confirmChanges')).toBe('On') // a folder page asks before it changes a note (YAZ-3746 13AN)
     expect(pressed('folderPages.showOtherFiles')).toBe('On')
     expect(pressed('folderPages.inheritColumns')).toBe('On') // YAZ-4713 C12: a page shows its parent folders' columns
     expect(pressed('folderPages.columnMarks')).toBe('Icon') // C11: the header's mark is an icon by default

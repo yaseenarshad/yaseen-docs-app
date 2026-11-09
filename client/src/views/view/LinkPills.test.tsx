@@ -152,7 +152,8 @@ describe('D47: a link value is a pill', () => {
 })
 
 describe('D47: the pill hover shows the linked page', () => {
-  const on = { hoverPreview: true, previewScope: () => ({ root: '/vault', wikilinks: createWikilinkResolveSource(), textVars: {} }) }
+  // Two switches since demo 13D: "Preview rows on hover" (`hoverPreview`) and "Preview links on hover" (`hoverLinks`).
+  const on = { hoverPreview: true, hoverLinks: true, previewScope: () => ({ root: '/vault', wikilinks: createWikilinkResolveSource(), textVars: {} }) }
 
   it('the pill shows the LINKED card; back on the row, the row card shows again', async () => {
     const { el } = mount(TABLE, on)
@@ -167,8 +168,8 @@ describe('D47: the pill hover shows the linked page', () => {
     expect(preview()).toBe('Preview of Alpha')
   })
 
-  it('with the hover off, the pill shows nothing', async () => {
-    const { el } = mount(TABLE, { ...on, hoverPreview: false })
+  it('with "Preview links on hover" off, the pill shows nothing, though rows still preview', async () => {
+    const { el } = mount(TABLE, { ...on, hoverLinks: false })
     over(pills(cell(el, 1))[0], cell(el, 1))
     await settle(HOVER_PREVIEW_DWELL_MS + 50)
     expect(preview()).toBeNull()

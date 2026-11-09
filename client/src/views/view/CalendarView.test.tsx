@@ -118,11 +118,11 @@ async function flush(): Promise<void> {
 }
 
 describe('calendar grid (YAZ-4540 D11)', () => {
-  it('shows the month of today, Monday first, with today ringed (S7)', () => {
+  it('shows the month of today, Sunday first (the default since the YAZ-3746 demo round 2), with today ringed (S7)', () => {
     const { el } = mount(CALENDAR)
     expect(q(el, '.view-cal__month').textContent).toBe('December 2026')
-    expect([...el.querySelectorAll('.view-cal__weekday')].map((d) => d.textContent)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
-    expect(el.querySelectorAll('.view-cal__day')[0].getAttribute('data-day')).toBe('2026-11-30')
+    expect([...el.querySelectorAll('.view-cal__weekday')].map((d) => d.textContent)).toEqual(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])
+    expect(el.querySelectorAll('.view-cal__day')[0].getAttribute('data-day')).toBe('2026-11-29')
     expect(el.querySelectorAll('.view-cal__day--today')).toHaveLength(1)
     expect(day(el, '2026-12-10').classList.contains('view-cal__day--today')).toBe(true)
     expect(day(el, '2026-12-10').getAttribute('aria-current')).toBe('date')
@@ -249,10 +249,13 @@ describe('calendar "+" on a day (YAZ-4540 S10) and "Show by"', () => {
     expect(onOpenFile).toHaveBeenCalledWith('/vault/Untitled.md')
   })
 
-  it('"Show by" on the toolbar lists the date columns and saves the choice', () => {
+  it('"Show by" lists the date columns and saves the choice; it sits in the view settings, not on the toolbar (YAZ-3746 13AD)', () => {
     const records = [...RECORDS, rec('Started', { start: '2026-12-21', due: '2026-12-01' })]
     const { el, yaml } = mount(CALENDAR, { records })
-    const select = q<HTMLSelectElement>(el, '.view-toolbar [aria-label="Show by"]')
+    expect(el.querySelector('.view-toolbar [aria-label="Show by"]')).toBeNull()
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // the View tab (YAZ-4607 D59)
+    const select = q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Show by"]')
     expect([...select.options].map((o) => o.value)).toEqual(['note.due', 'note.start'])
     act(() => {
       select.value = 'note.start'
@@ -331,15 +334,15 @@ describe('the "No date" tray is bounded (YAZ-4544, finding 5)', () => {
 })
 
 describe('"Show by" works out the date columns once (YAZ-4544, finding 9)', () => {
-  it('one dateColumns run for a render, with "Show by" on the toolbar and in Properties', () => {
+  it('one dateColumns run for a render, with the calendar and "Show by" in Properties (off the toolbar since YAZ-3746 13AD)', () => {
     const { el } = mount(CALENDAR)
     click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // the View tab (YAZ-4607 D59)
-    expect(document.querySelectorAll('[aria-label="Show by"]')).toHaveLength(2)
+    expect(document.querySelectorAll('[aria-label="Show by"]')).toHaveLength(1)
     vi.mocked(dateColumns).mockClear()
     // New records (an index refetch): one run, not one for each "Show by" too.
     act(() => root?.render(<ViewsPane parsed={parseViews(CALENDAR)} onChange={vi.fn()} root="/vault" folderPath="/vault/Tasks" records={[...RECORDS]} folder={testFolderHost()} onOpenFile={vi.fn()} />))
-    expect(document.querySelectorAll('[aria-label="Show by"]')).toHaveLength(2)
+    expect(document.querySelectorAll('[aria-label="Show by"]')).toHaveLength(1)
     expect(vi.mocked(dateColumns)).toHaveBeenCalledTimes(1)
   })
 })
@@ -356,18 +359,18 @@ describe('calendar week view (YAZ-4558 D22)', () => {
     click(scaleBtn(el, 'week'))
     expect(yaml()).toContain('calendarScale: week')
     expect(scaleBtn(el, 'week').getAttribute('aria-pressed')).toBe('true')
-    expect(shownDays(el)).toEqual(['2026-12-07', '2026-12-08', '2026-12-09', '2026-12-10', '2026-12-11', '2026-12-12', '2026-12-13'])
+    expect(shownDays(el)).toEqual(['2026-12-06', '2026-12-07', '2026-12-08', '2026-12-09', '2026-12-10', '2026-12-11', '2026-12-12'])
     click(scaleBtn(el, 'month'))
     expect(yaml()).not.toContain('calendarScale')
     expect(q(el, '.view-cal__month').textContent).toBe('December 2026')
     expect(shownDays(el)).toHaveLength(35)
   })
 
-  it('reads calendarScale: week: Monday to Sunday of today, today ringed, the range as the title', () => {
+  it('reads calendarScale: week: Sunday to Saturday of today (the default week start), today ringed, the range as the title', () => {
     const { el } = mount(WEEK)
-    expect(q(el, '.view-cal__month').textContent).toBe('Dec 7 – Dec 13, 2026')
-    expect(q(el, '.view-cal__grid').getAttribute('aria-label')).toBe('Dec 7 – Dec 13, 2026')
-    expect([...el.querySelectorAll('.view-cal__weekday')].map((d) => d.textContent)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
+    expect(q(el, '.view-cal__month').textContent).toBe('Dec 6 – Dec 12, 2026')
+    expect(q(el, '.view-cal__grid').getAttribute('aria-label')).toBe('Dec 6 – Dec 12, 2026')
+    expect([...el.querySelectorAll('.view-cal__weekday')].map((d) => d.textContent)).toEqual(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])
     expect(day(el, '2026-12-10').getAttribute('aria-current')).toBe('date')
     expect(el.querySelectorAll('.view-cal__day--other')).toHaveLength(0)
     expect(titlesIn(q(el, '.view-cal__tray'))).toEqual(['Nothing'])
@@ -376,14 +379,14 @@ describe('calendar week view (YAZ-4558 D22)', () => {
   it('‹ and › step one week, across a month and a year; Today comes back', () => {
     const { el } = mount(WEEK)
     click(q(el, '[aria-label="Previous week"]'))
-    expect(q(el, '.view-cal__month').textContent).toBe('Nov 30 – Dec 6, 2026')
-    expect(shownDays(el)[0]).toBe('2026-11-30')
+    expect(q(el, '.view-cal__month').textContent).toBe('Nov 29 – Dec 5, 2026')
+    expect(shownDays(el)[0]).toBe('2026-11-29')
     // Late zone has a time (23:30Z), so it comes before Bare here; Month keeps the row order.
     expect(titlesIn(day(el, '2026-12-03'))).toEqual(['Late zone', 'Bare'])
     for (let i = 0; i < 4; i++) click(q(el, '[aria-label="Next week"]'))
-    expect(q(el, '.view-cal__month').textContent).toBe('Dec 28, 2026 – Jan 3, 2027')
+    expect(q(el, '.view-cal__month').textContent).toBe('Dec 27, 2026 – Jan 2, 2027')
     click(q(el, '[aria-label="Today"]'))
-    expect(q(el, '.view-cal__month').textContent).toBe('Dec 7 – Dec 13, 2026')
+    expect(q(el, '.view-cal__month').textContent).toBe('Dec 6 – Dec 12, 2026')
   })
 
   it('a day shows every card, no "+N more"; the timed ones first, in time order', () => {
@@ -427,14 +430,10 @@ describe('calendar week view (YAZ-4558 D22)', () => {
 describe('calendar card titles: Clip or Wrap (YAZ-4558 D23)', () => {
   const LONG = 'A very long title that will not fit in one narrow calendar day'
   const records = [...RECORDS, rec(LONG, { due: '2026-12-09' })]
-  const cardTitles = (el: ParentNode) => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Card titles"]')
-  function choose(select: HTMLSelectElement, value: string) {
-    act(() => {
-      select.value = value
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    draw()
-  }
+  /** Card titles is a segmented choice since the YAZ-3746 demo: Clip, Wrap. */
+  const cardTitles = (el: ParentNode) => [...el.querySelectorAll<HTMLButtonElement>('.view-popover--properties [role="group"][aria-label="Card titles"] button')]
+  const pressedTitles = (el: ParentNode) => cardTitles(el).find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent
+  const choose = (el: ParentNode, text: string) => click(cardTitles(el).find((b) => b.textContent === text)!)
 
   it('Clip by default: one line, and the full title in a tooltip', () => {
     const { el } = mount(CALENDAR, { records })
@@ -447,12 +446,12 @@ describe('calendar card titles: Clip or Wrap (YAZ-4558 D23)', () => {
     const { el, yaml } = mount(CALENDAR, { records })
     click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
-    expect(cardTitles(el).value).toBe('clip')
-    expect([...cardTitles(el).options].map((o) => o.textContent)).toEqual(['Clip …', 'Wrap'])
-    choose(cardTitles(el), 'wrap')
+    expect(pressedTitles(el)).toBe('Clip')
+    expect(cardTitles(el).map((b) => b.textContent)).toEqual(['Clip', 'Wrap'])
+    choose(el, 'Wrap')
     expect(yaml()).toContain('cardTitles: wrap')
     expect(cardOf(el, LONG).classList.contains('view-cal__card--wrap')).toBe(true)
-    choose(cardTitles(el), 'clip')
+    choose(el, 'Clip')
     expect(yaml()).not.toContain('cardTitles')
     expect(cardOf(el, LONG).classList.contains('view-cal__card--wrap')).toBe(false)
   })
@@ -473,6 +472,8 @@ describe('hide weekends (YAZ-4595 S33)', () => {
   const weekdays = (el: ParentNode) => [...el.querySelectorAll('.view-cal__weekday')].map((d) => d.textContent)
   const mark = (el: ParentNode, title: string) => cardOf(el, title).querySelector('.view-cal__weekend')?.textContent ?? null
   const hideBox = (el: ParentNode) => q<HTMLInputElement>(el, '.view-popover--properties [aria-label="Hide weekends"]')
+  /** A Monday week start (the default is Sunday since the YAZ-3746 demo round 2). */
+  const mondayFirst = { folderPages: { ...DEFAULT_FOLDER_PAGES, weekStartsOn: 'monday' as const } }
   function toggle(box: HTMLInputElement): void {
     act(() => box.click())
     draw()
@@ -501,8 +502,8 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
   })
 
-  it('Week shows Monday to Friday of the week', () => {
-    const { el } = mount(`${HIDE}    calendarScale: week\n`, { records })
+  it('Week shows Monday to Friday of the week (Monday first)', () => {
+    const { el } = mount(`${HIDE}    calendarScale: week\n`, { records, ...mondayFirst })
     expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
     expect(shownDays(el)).toEqual(['2026-12-07', '2026-12-08', '2026-12-09', '2026-12-10', '2026-12-11'])
     click(q(el, '[aria-label="Previous week"]'))
@@ -540,7 +541,7 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     })
 
     it('Month, Monday first: the same Sunday goes to the Friday before it, on the grid\'s first row', () => {
-      const { el } = mount(HIDE, { records: november })
+      const { el } = mount(HIDE, { records: november, ...mondayFirst })
       expect(titlesIn(day(el, '2026-10-30'))).toEqual(['First Sunday'])
       expect(mark(el, 'First Sunday')).toBe('Sun')
       expect(titlesIn(day(el, '2026-11-06'))).toEqual(['Saturday', 'Sunday'])
@@ -555,7 +556,7 @@ describe('hide weekends (YAZ-4595 S33)', () => {
       expect(titlesIn(day(el, '2026-11-13'))).toEqual([])
       act(() => root?.unmount())
       container?.remove()
-      const monday = mount(`${HIDE}    calendarScale: week\n`, { records: november })
+      const monday = mount(`${HIDE}    calendarScale: week\n`, { records: november, ...mondayFirst })
       expect(titlesIn(day(monday.el, '2026-11-09'))).toEqual(['Weekday'])
       click(q(monday.el, '[aria-label="Previous week"]'))
       expect(titlesIn(day(monday.el, '2026-11-06'))).toEqual(['Saturday', 'Sunday'])

@@ -1,19 +1,21 @@
 /**
  * The folder view (YAZ-2290; the adapter is 🔒 D3 of YAZ-818). Mounted with react-dom in jsdom over
  * a REAL `WikilinkResolveSource` — the App-owned feed the whole view runs on — with `writeProperty`
- * mocked (the settings door), `writeFolderValues` mocked (every value a view writes, D19) and `api`
- * mocked for the create path.
+ * mocked (the settings door), `writeRouted` mocked (every value a view writes, YAZ-4713 C1) and `api`
+ * mocked for the create path. Some blocks swap in the REAL writers over an in-memory disk.
  *
  * Pinned here: its rows are the notes UNDER the folder, at any depth, and its shortcuts; a folder with no
  * `.folder.md` shows the defaults and opening it writes nothing; link resolution and the link
  * pickers read the WHOLE vault even though the rows are a subset; a config edit is ONE
- * `folder_settings` write on the folder's `.folder.md` while a cell edit writes the NOTE, under
- * `in` in this folder's block (D19); switching view writes nothing at all; and "New" births a note
+ * `folder_settings` write on the folder's `.folder.md` while a cell edit writes the NOTE's own field
+ * (a "Separate value for <folder>" column's goes to the page's block of `in`, C3); columns flow down
+ * from the parent folders (C2); switching view writes nothing at all; and "New" births a note
  * in the folder from its template and the seed alone.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { noteFileName } from '@shared/noteName'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import type { CreateFileRequest, IndexRecord, TreeNode } from '@shared/types'
 import { declarationForKind } from './view/declarationForKind'
 import { fetchTree } from '../lib/treeFeed'
@@ -687,9 +689,9 @@ describe('the chrome is the views chrome', () => {
     const el = await mount()
     expect(el.querySelector('[aria-label="Add view"]')).not.toBeNull()
     rightClick(tab(el, 'Page'))
-    // YAZ-4585 (D41): "Open on this view" and "View settings…" sit between Duplicate and Delete. The Page has no rows,
-    // so its menu has no "Export as CSV…" / "Copy as table" (YAZ-4643 S8); `Toolbar.test.tsx` lists a Table's.
-    expect(texts(el, '.ctx-menu[role="menu"] [role^="menuitem"]')).toEqual(['Rename', 'Duplicate', 'Open on this view', 'View settings…', 'Delete'])
+    // YAZ-4585 (D41): "Make default view" (YAZ-3746 13S, was "Open on this view") and "View settings…" sit between Duplicate
+    // and Delete. The Page has no rows, so its menu has no "Export as CSV…" / "Copy as table" (YAZ-4643 S8); `Toolbar.test.tsx` lists a Table's.
+    expect(texts(el, '.ctx-menu[role="menu"] [role^="menuitem"]')).toEqual(['Rename', 'Duplicate', 'Make default view', 'View settings…', 'Delete'])
     // The Page is a document (YAZ-4584 D38): no copy, and no Properties menu for "View settings…" to open.
     const item = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu[role="menu"] [role^="menuitem"]')].find((b) => b.textContent === label)
     expect(item('Duplicate')?.disabled).toBe(true)
@@ -810,7 +812,7 @@ describe('config edits are ONE settings write on the folder', () => {
     const el = await mount(settings)
     selectView(el, name)
     click(byLabel(el, 'Columns and view'))
-    const clear = [...el.querySelectorAll<HTMLButtonElement>('.view-menu__action')].find((button) => button.textContent === 'Unselect all')!
+    const clear = [...el.querySelectorAll<HTMLButtonElement>('.view-menu__action')].find((button) => button.textContent === 'Hide all')! // was "Unselect all" (YAZ-3746 demo round 2)
     click(clear)
     await flush()
 
@@ -822,9 +824,8 @@ describe('config edits are ONE settings write on the folder', () => {
         return { ...rest, order: [] }
       }),
     }, expect.any(Function))
-    expect(clear.disabled).toBe(true)
-    click(clear)
-    await flush()
+    // Nothing is left to hide: the Shown section has no rows, so it has no "Hide all" (YAZ-3746 demo round 2), and no second write can follow.
+    expect([...el.querySelectorAll('.view-menu__action')].some((button) => button.textContent === 'Hide all')).toBe(false)
     expect(write).toHaveBeenCalledTimes(1)
   })
 
@@ -1499,33 +1500,77 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(orders(await open('/vault/Sub'))).toEqual({ Outsider: '7' }) // the shortcut's home
   })
 
-  it('end to end (C1/C2): Domain declared on Schema shows on Orders; a value set on Orders is the same value on Schema', async () => {
+  it('end to end (YAZ-4713): a column added on Schema shows on Orders with its ↳ mark; a value set on Orders is the same value on Schema; a move out and back keeps it', async () => {
     const SCHEMA = '/vault/schema'
     const ORDERS = '/vault/schema/orders'
-    const TABLE_NOTE = '/vault/schema/orders/Orders table.md'
-    const domain = { kind: 'select', options: ['Billing', 'Payments'] }
-    const folders = [
-      { ...rec(`${SCHEMA}/.folder.md`, { folder_settings: { columns: { domain }, views: [{ type: 'table', name: 'Table' }] } }), id: SUB_ID },
-      { ...rec(`${ORDERS}/.folder.md`), id: ARCHIVE_ID }, // nothing saved: no column of its own (C5)
-    ]
-    let records = [rec(TABLE_NOTE, { title: 'Orders table' })]
-    disk.set(TABLE_NOTE, '---\ntitle: Orders table\n---\n')
-    const open = async (path: string): Promise<HTMLElement> => {
+    const ARCHIVE_DIR = '/vault/archive'
+    const IN_ORDERS = '/vault/schema/orders/Orders table.md'
+    const IN_ARCHIVE = '/vault/archive/Orders table.md'
+    const domain = { kind: 'select' as const, options: ['Billing', 'Payments'] }
+    const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+    write.mockImplementation(real.writeProperty) // the settings door writes the disk too
+    disk.set(`${SCHEMA}/.folder.md`, `---\nid: ${SUB_ID}\ntitle: Schema\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n---\n`)
+    disk.set(IN_ORDERS, '---\ntitle: Orders table\n---\n')
+    /** The index as the scan reads the disk: each `.folder.md` and note by its own frontmatter. */
+    const fromDisk = (path: string): IndexRecord => {
+      const { properties } = parseFrontmatter(splitFrontmatter(disk.get(path) ?? '').frontmatter)
+      return { ...rec(path, properties), ...(typeof properties.title === 'string' && { title: properties.title }), ...(typeof properties.id === 'string' && { id: properties.id }) }
+    }
+    const open = async (path: string, note: string): Promise<HTMLElement> => {
       unmountFolderView()
       const el = renderNoAsk({ path, source, onOpenFile })
+      const folders = [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`].filter((file) => disk.has(file)).map(fromDisk)
+      const records = [fromDisk(note)]
       act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
       await flush()
       return el
     }
-    let el = await open(ORDERS)
+    const headerMark = (el: ParentNode, label: string): HTMLElement | null =>
+      [...el.querySelectorAll<HTMLElement>('.view-table thead th')].find((th) => th.textContent?.startsWith(label))?.querySelector<HTMLElement>('.view-column-mark') ?? null
+    /** A move as the app makes it (C9): the file goes to its new folder, byte for byte; no value is written away. */
+    const move = (from: string, to: string): void => {
+      disk.set(to, disk.get(from)!)
+      disk.delete(from)
+    }
+
+    // 1. Add Domain on Schema: one definition, in Schema's own `.folder.md`; no note is written (E1).
+    let el = await open(SCHEMA, IN_ORDERS)
+    await act(async () => void captured.folder!.setColumns({ ...captured.folder!.settings.columns, domain }))
+    await flush()
+    expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('    domain:\n      kind: select\n')
+    expect(disk.get(IN_ORDERS)).toBe('---\ntitle: Orders table\n---\n')
+    expect(disk.has(`${ORDERS}/.folder.md`)).toBe(false) // nothing is copied down
+
+    // 2. Open Orders: Domain is there, owned by Schema, its header marked ↳ "From Schema" (C2, C11).
+    el = await open(ORDERS, IN_ORDERS)
     expect(captured.folder!.columns).toEqual({ domain: { decl: domain, owner: 'schema' } })
-    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Domain'])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).toEqual(['Name', 'Domain'])
+    expect(headerMark(el, 'Domain')).toMatchObject({ title: 'From Schema', dataset: { mark: 'parent' } })
+
+    // 3. Set Billing on Orders: the note's own field, readable by anyone (C1).
     click(q(cell(el, 'Orders table', 1), '[data-edit]'))
     click([...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) => option.textContent?.startsWith('Billing'))!)
     await flush()
-    expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n') // the note's own field, readable by anyone
-    records = [rec(TABLE_NOTE, { title: 'Orders table', domain: 'Billing' })]
-    el = await open(SCHEMA)
+    const billing = '---\ntitle: Orders table\ndomain: Billing\n---\n'
+    expect(disk.get(IN_ORDERS)).toBe(billing)
+
+    // 4. Open Schema: the same one value; Schema's own column has no mark.
+    el = await open(SCHEMA, IN_ORDERS)
+    expect(cell(el, 'Orders table', 1).textContent).toContain('Billing')
+    expect(headerMark(el, 'Domain')).toBeNull()
+
+    // 5. Move the note out of Schema and back: the value goes with it, and comes back with it (C9).
+    move(IN_ORDERS, IN_ARCHIVE)
+    el = await open(ARCHIVE_DIR, IN_ARCHIVE) // a page with no columns shows every field
+    expect(disk.get(IN_ARCHIVE)).toBe(billing)
+    expect(captured.folder!.columns).toEqual({})
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).toContain('Domain')
+    expect(cell(el, 'Orders table', texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim()).indexOf('Domain')).textContent).toContain('Billing')
+    move(IN_ARCHIVE, IN_ORDERS)
+    el = await open(ORDERS, IN_ORDERS)
+    expect(disk.get(IN_ORDERS)).toBe(billing)
+    expect(cell(el, 'Orders table', 1).textContent).toContain('Billing')
+    el = await open(SCHEMA, IN_ORDERS)
     expect(cell(el, 'Orders table', 1).textContent).toContain('Billing')
   })
 
@@ -1777,6 +1822,124 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
+  /**
+   * Link and Multi-link columns ride the same model (YAZ-4736): the value is the note's own field, the column's `target`
+   * comes down with the definition, and a delete, an Undo and a move treat a link like any value. Backlinks and a rename
+   * read and rewrite the field and a page's block alike (`scan.test.ts` extractLinks, `renameLinks.test.ts`).
+   */
+  describe('link columns in the new model (YAZ-4736)', () => {
+    const SCHEMA = '/vault/schema'
+    const ORDERS = '/vault/schema/orders'
+    const NOTE = '/vault/schema/orders/Orders table.md'
+    const MOVED = '/vault/Sub/Orders table.md'
+    const schemaFile = `---\nid: ${SUB_ID}\ntitle: Schema\nfolder_settings:\n  columns:\n    points_to:\n      kind: link\n      target: "[[KPIs]]"\n  views:\n    - type: table\n      name: Table\n      order:\n        - file.name\n        - note.points_to\n---\n`
+    const onNotice = vi.fn()
+    const fromDisk = (path: string): IndexRecord => {
+      const { properties } = parseFrontmatter(splitFrontmatter(disk.get(path) ?? '').frontmatter)
+      return { ...rec(path, properties), ...(typeof properties.title === 'string' && { title: properties.title }), ...(typeof properties.id === 'string' && { id: properties.id }) }
+    }
+    /** The page at `path`, its index read from the disk: the two folder files, the note wherever it is, and the notes the targets name. */
+    const open = async (path: string, note = NOTE): Promise<HTMLElement> => {
+      unmountFolderView()
+      const el = renderNoAsk({ path, source, onOpenFile, onNotice })
+      const folders = [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`].filter((file) => disk.has(file)).map(fromDisk)
+      const records = [rec('/vault/kpis/CAC.md'), rec('/vault/kpis/LTV.md'), rec(OUTSIDER), fromDisk(note)].sort((a, b) => (a.path < b.path ? -1 : 1))
+      act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
+      await flush()
+      return el
+    }
+    /** The index's echo of the disk, on the mounted page. */
+    const echo = (note = NOTE): void => {
+      const folders = [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`].filter((file) => disk.has(file)).map(fromDisk)
+      const records = [rec('/vault/kpis/CAC.md'), rec('/vault/kpis/LTV.md'), rec(OUTSIDER), fromDisk(note)].sort((a, b) => (a.path < b.path ? -1 : 1))
+      act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
+    }
+    const picked = (el: ParentNode, key: string): (string | null)[] => {
+      openCell(el, 0, 1)
+      setValue(byLabel<HTMLInputElement>(el, `Edit ${key}`), '[[')
+      const offered = options(el)
+      press(byLabel(el, `Edit ${key}`), 'Escape')
+      return offered
+    }
+    beforeEach(async () => {
+      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+      write.mockImplementation(real.writeProperty)
+      disk.set(`${SCHEMA}/.folder.md`, schemaFile)
+      disk.set(NOTE, '---\ntitle: Orders table\n---\n')
+    })
+
+    it('a link set on a subfolder page picks from the inherited target and is the note’s own field; every page shows it; a move out and back keeps it', async () => {
+      let el = await open(ORDERS)
+      expect(captured.folder!.columns.points_to).toEqual({ decl: { kind: 'link', target: '[[KPIs]]' }, owner: 'schema' })
+      expect(picked(el, 'points_to')).toEqual(['CAC', 'LTV']) // the notes of Schema's target, on Orders
+      openCell(el, 0, 1)
+      setValue(byLabel<HTMLInputElement>(el, 'Edit points_to'), '[[')
+      click(q(el, '[role="option"]')) // completes to [[CAC]]
+      press(byLabel(el, 'Edit points_to'), 'Enter')
+      await flush()
+      const linked = '---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n'
+      expect(disk.get(NOTE)).toBe(linked) // a plain field: the index reads it as a link, so CAC lists the note as a backlink
+      el = await open(SCHEMA)
+      expect(cell(el, 'Orders table', 1).textContent).toBe('CAC')
+      // A move writes no value away (C9): the link goes with the note and comes back with it.
+      disk.set(MOVED, disk.get(NOTE)!)
+      disk.delete(NOTE)
+      el = await open('/vault/Sub', MOVED)
+      expect(disk.get(MOVED)).toBe(linked)
+      disk.set(NOTE, disk.get(MOVED)!)
+      disk.delete(MOVED)
+      el = await open(ORDERS)
+      expect(cell(el, 'Orders table', 1).textContent).toBe('CAC')
+    })
+
+    it('"Change on this folder only" gives Orders its own target; Schema keeps its target and its picker', async () => {
+      await open(ORDERS)
+      await act(async () => void (await captured.folder!.sources.here('points_to')))
+      let el = await open(ORDERS)
+      expect(captured.folder!.columns.points_to).toMatchObject({ owner: 'schema/orders', over: 'schema' })
+      await act(async () => void (await captured.folder!.setColumn('points_to', { kind: 'link', target: '[[Sub]]' }, { kind: 'link', target: '[[KPIs]]' })))
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toBe(schemaFile)
+      el = await open(ORDERS)
+      expect(picked(el, 'points_to')).toEqual(['Outsider']) // the notes of Orders' own target
+      el = await open(SCHEMA)
+      expect(picked(el, 'points_to')).toEqual(['CAC', 'LTV'])
+    })
+
+    it('"Delete column and clear N values" removes the link field (so its backlink goes); Undo puts back the column and the link', async () => {
+      disk.set(NOTE, '---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
+      await open(SCHEMA)
+      expect(captured.folder!.valueCount('note.points_to')).toBe(1)
+      await act(async () => captured.folder!.deleteColumn!('points_to', true))
+      await flush()
+      expect(disk.get(NOTE)).toBe('---\ntitle: Orders table\n---\n')
+      expect(disk.get(`${SCHEMA}/.folder.md`)).not.toContain('points_to')
+      const undo = onNotice.mock.calls.find((call) => call[2] === 'undo')
+      expect(undo).toBeDefined()
+      echo() // the index catches up with the delete before the Undo, as in the app
+      await act(async () => void (await undo![3].run()))
+      await flush()
+      expect(disk.get(NOTE)).toBe('---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('    points_to:\n      kind: link\n')
+    })
+
+    it('a link field no folder defines waits under "Other properties"; shown, it reads and edits as a link', async () => {
+      disk.set(NOTE, '---\ntitle: Orders table\ncontact: "[[Outsider]]"\n---\n')
+      const el = await open(ORDERS)
+      expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).toEqual(['Name', 'Points to'])
+      click(byLabel(el, 'Columns and view'))
+      click(byLabel(el, 'Show Contact'))
+      await flush()
+      const ordersView = await open(ORDERS)
+      const headers = texts(ordersView, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())
+      expect(headers).toContain('Contact')
+      const column = headers.indexOf('Contact')
+      expect(cell(ordersView, 'Orders table', column).textContent).toBe('Outsider') // resolved as a link
+      click(q(cell(ordersView, 'Orders table', column), '[data-edit]'))
+      setValue(byLabel<HTMLInputElement>(ordersView, 'Edit contact'), '[[')
+      expect(options(ordersView).length).toBeGreaterThan(0) // the link picker, typed by the value (no column)
+    })
+  })
+
   describe('a write drops no value when the note has moved (C9)', () => {
     const GONE_ID = 'n0f01der0000' // a block for a folder no settings record has
     const settings = { columns: { order: { kind: 'number' } }, views: [{ type: 'table', name: 'Table', order: ['file.name', 'note.order'] }, ORDER_BOARD] }
@@ -1981,14 +2144,15 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     it('"Delete column…" is not offered, by the header\u2019s menu or the Properties menu; hiding the column is a settings write that leaves every note as it was', async () => {
       const el = await mount(null, OWN, false)
       expect(captured.folder!.deleteColumn).toBeUndefined()
-      expect(captured.folder!.valueCount('note.owner')).toBe(0)
+      // The value is the note's own field in both kinds of vault (YAZ-4713 C1), so the count is real; only the Delete is withheld (V11).
+      expect(captured.folder!.valueCount('note.owner')).toBe(1)
       click(byLabel(el, 'Columns and view'))
       click(byLabel(el, 'Open Owner'))
       expect(byLabel(el, 'Hide Owner in this view')).toBeDefined()
       expect(el.querySelector('[aria-label="Delete column Owner"]')).toBeNull()
       click(byLabel(el, 'Columns and view'))
       rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][5])
-      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Add column to the right…', 'Sort', 'Group', 'Text', 'Hide column', 'Freeze up to this column', 'Unfreeze columns'])
+      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Add column to the right…', 'Sort', 'Group', 'Text', 'Fill column', 'Hide column', 'Freeze up to this column', 'Unfreeze columns'])
       click(menuItem(el, 'Hide column'))
       await flush()
       expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Title'])
