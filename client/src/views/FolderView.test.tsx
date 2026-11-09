@@ -1658,6 +1658,88 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n')
       expect(disk.get(`${ORDERS}/.folder.md`)).not.toContain('domain')
     })
+
+    /** The page at `path`, its index read from the disk as the scan reads it: every `.folder.md` and note in `files`. */
+    const fromDisk = (path: string): IndexRecord => {
+      const { properties } = parseFrontmatter(splitFrontmatter(disk.get(path) ?? '').frontmatter)
+      return { ...rec(path, properties), ...(typeof properties.title === 'string' && { title: properties.title }), ...(typeof properties.id === 'string' && { id: properties.id }) }
+    }
+    const openFromDisk = async (path: string, files: string[], onNotice = vi.fn()): Promise<typeof onNotice> => {
+      const folders = files.filter((file) => file.endsWith('/.folder.md') && disk.has(file)).map(fromDisk)
+      const records = files.filter((file) => !file.endsWith('/.folder.md') && disk.has(file)).map(fromDisk)
+      unmountFolderView()
+      renderNoAsk({ path, source, onOpenFile, onNotice })
+      act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
+      await flush()
+      return onNotice
+    }
+    const withFilter = (name: string, extra = '') => `---\n${extra}folder_settings:\n  views:\n    - type: table\n      name: ${name}\n      filters: note.domain == "Billing"\n---\n`
+
+    it('C6, 7A 2/4/9: an option rename of Schema’s Domain from Orders renames Schema’s notes and the filters below that take Domain from Schema; a read-only page and a subfolder with its own Domain keep theirs; Undo puts all back', async () => {
+      const LOCKED = `${SCHEMA}/locked/.folder.md`
+      const OWN = `${SCHEMA}/own/.folder.md`
+      const OWN_NOTE = `${SCHEMA}/own/Own note.md`
+      disk.set(`${ORDERS}/.folder.md`, withFilter('Orders'))
+      disk.set(LOCKED, withFilter('Locked', 'readonly: true\n'))
+      disk.set(OWN, '---\nfolder_settings:\n  columns:\n    domain:\n      kind: select\n      options: [Billing]\n  views:\n    - type: table\n      name: Own\n      filters: note.domain == "Billing"\n---\n')
+      disk.set(OWN_NOTE, '---\ndomain: Billing\n---\n')
+      const files = [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, LOCKED, OWN, TABLE_NOTE, OWN_NOTE]
+      const before = new Map(disk)
+      const onNotice = await openFromDisk(ORDERS, files)
+      const renamed = { ...domain, options: ['Ledger', 'Payments'] }
+      await act(async () => void (await captured.folder!.setColumn('domain', renamed, domain, { from: 'Billing', to: 'Ledger' })))
+      await flush()
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('Ledger') // the owner's definition
+      expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Ledger\n---\n') // a note of Schema's scope
+      expect(disk.get(`${ORDERS}/.folder.md`)).toContain('filters: note.domain == "Ledger"') // a page below that takes Domain from Schema
+      expect(disk.get(LOCKED)).toBe(before.get(LOCKED)) // read only (D36)
+      expect(disk.get(OWN)).toBe(before.get(OWN)) // its own Domain: another column
+      expect(disk.get(OWN_NOTE)).toBe(before.get(OWN_NOTE))
+      expect(onNotice).toHaveBeenCalledExactlyOnceWith('Renamed “Billing” to “Ledger” in 1 note', 'info', 'undo', expect.objectContaining({ label: 'Undo' }))
+      await act(async () => onNotice.mock.calls[0][3].run())
+      await flush()
+      expect(disk.get(TABLE_NOTE)).toBe(before.get(TABLE_NOTE))
+      expect(disk.get(`${ORDERS}/.folder.md`)).toContain('filters: note.domain == "Billing"')
+      expect(disk.get(`${SCHEMA}/.folder.md`)).not.toContain('Ledger')
+    })
+
+    it('C6, 7A 4: a second edit of Schema’s Domain from Orders before the index echoes the first builds on the first (`aheadParents`)', async () => {
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      const first = { ...domain, options: ['Billing', 'Payments', 'Refunds'] }
+      await act(async () => void (await captured.folder!.setColumn('domain', first, domain)))
+      expect(captured.folder!.settings.columns.domain).toEqual(first) // ahead of the index
+      const second = { ...first, description: 'Which team owns it' }
+      await act(async () => void (await captured.folder!.setColumn('domain', second, captured.folder!.settings.columns.domain)))
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('Refunds')
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('Which team owns it')
+      expect(captured.folder!.settings.columns.domain).toEqual(second)
+    })
+
+    it('C6, D36, 7A 4: Schema’s folder page is read only, so an edit of its Domain from Orders is refused and writes nothing', async () => {
+      disk.set(`${SCHEMA}/.folder.md`, schemaFile.replace('---\nfolder_settings', '---\nreadonly: true\nfolder_settings'))
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      writeFile.mockClear()
+      await act(async () => expect(captured.folder!.setColumn('domain', { ...domain, options: ['Billing'] }, domain)).rejects.toThrow("schema's folder page is read only"))
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(captured.folder!.settings.columns.domain).toEqual(domain)
+    })
+
+    it('C6, 7A 4: "Use Schema’s" removes Orders’ own Domain with the real writers; Undo declares it on Orders again', async () => {
+      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+      write.mockImplementation(real.writeProperty) // the settings door writes the disk too
+      disk.set(`${ORDERS}/.folder.md`, '---\nfolder_settings:\n  columns:\n    domain:\n      kind: select\n      options: [Orders only]\n  views:\n    - type: table\n      name: Orders\n---\n')
+      const onNotice = await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      expect(captured.folder!.sources.of('domain')).toEqual({ over: 'schema' })
+      await act(async () => void (await captured.folder!.sources.useParent('domain')))
+      await flush()
+      expect(disk.get(`${ORDERS}/.folder.md`)).not.toContain('domain')
+      expect(disk.get(`${SCHEMA}/.folder.md`)).toBe(schemaFile)
+      expect(onNotice).toHaveBeenCalledExactlyOnceWith('Domain uses schema\'s again', 'info', 'undo', expect.objectContaining({ label: 'Undo' }))
+      await act(async () => onNotice.mock.calls[0][3].run())
+      await flush()
+      expect(disk.get(`${ORDERS}/.folder.md`)).toContain('Orders only')
+      expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n') // the note's one value never moved
+    })
   })
 
   it('C2: the nearest declaration of a key wins, and the folder ⚙ "Show parent folders’ columns" Off shows the folder’s own alone', async () => {

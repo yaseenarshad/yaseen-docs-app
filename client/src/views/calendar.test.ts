@@ -195,9 +195,10 @@ describe('dateColumns and calendarDateKey (YAZ-4540 D4)', () => {
     expect(dateColumns(def, view, records, null, settings)).not.toContain('note.due')
   })
   it('the date key is the saved dateProperty, else the first date column', () => {
-    expect(calendarDateKey(view, ['note.due', 'note.start'])).toBe('due')
-    expect(calendarDateKey({ ...view, dateProperty: 'note.start' }, ['note.due', 'note.start'])).toBe('start')
-    expect(calendarDateKey(view, [])).toBeNull()
+    expect(calendarDateKey(view, ['note.due', 'note.start'], {})).toBe('due')
+    expect(calendarDateKey({ ...view, dateProperty: 'note.start' }, ['note.due', 'note.start'], {})).toBe('start')
+    expect(calendarDateKey({ ...view, dateProperty: 'note.seen_in' }, ['note.due'], { seen_in: { kind: 'mentions' } })).toBeNull() // 7A 28
+    expect(calendarDateKey(view, [], {})).toBeNull()
   })
 })
 

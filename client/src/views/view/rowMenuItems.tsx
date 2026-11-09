@@ -5,26 +5,6 @@ import type { FilterNode } from '../viewSchema'
 import { valueFilter } from './filterRows'
 
 /**
- * "Filter by this value" and "Hide this value" (YAZ-4592 S25): the cell's value as an `is` or `is not` rule
- * (`valueFilter`), handed to `onFilter`. Null, so the menu has no such group, when no rule names the value.
- */
-export function filterValueItems(property: string, value: Value, onFilter: (rule: FilterNode) => void): ReactNode {
-  const is = valueFilter(property, value, false)
-  const isNot = valueFilter(property, value, true)
-  if (is === null || isNot === null) return null
-  return (
-    <>
-      <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => onFilter(is)}>
-        Filter by this value
-      </button>
-      <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => onFilter(isNot)}>
-        Hide this value
-      </button>
-    </>
-  )
-}
-
-/**
  * "Filter ›" (YAZ-3746 13AW): the same two rules in one flyout of the row menu — "Show only this value" and "Hide this
  * value" — on the menu's one flyout (`MenuFlyout`). Null when no rule names the value.
  */

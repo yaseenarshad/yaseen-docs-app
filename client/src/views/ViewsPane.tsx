@@ -64,7 +64,7 @@ export interface FolderHost {
   /** Where each column comes from, named (YAZ-4713 C6, C11): Edit column's owner line and moves, the header icons, this folder's name. */
   sources: ColumnSources
   /**
-   * "Separate value on this page" (YAZ-4713 C3): this page keeps its own value of the column for each note. Only where
+   * "Separate value for <folder>" (YAZ-4713 C3): this folder's page keeps its own value of the column for each note. Only where
    * the vault uses IDs. `counts` is the turn-off ask's numbers; `set` turns it on or off (`decl` is the column as the
    * page shows it; off, `keep` says whose value stays where the page's and the note's differ) and rejects when the
    * declaration was refused.
@@ -711,7 +711,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     () => (view.type === 'calendar' ? dateColumns(def, view, records, properties, folder.settings) : []),
     [def, view, records, properties, folder.settings],
   )
-  const dateKey = view.type === 'calendar' ? calendarDateKey(view, calendarColumns) : null
+  const dateKey = view.type === 'calendar' ? calendarDateKey(view, calendarColumns, folder.settings.columns) : null
   const onMoveToDay = (path: string, day: DayKey | null) => {
     if (dateKey === null || readOnly.has(path)) return
     const prevRaw = records.find((r) => r.path === path)?.properties[dateKey]

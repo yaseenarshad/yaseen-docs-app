@@ -108,10 +108,10 @@ export interface TableViewProps {
   /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. Absent → the menu has no such item. */
   deleteColumn?: FolderHost['deleteColumn']
   /** `FolderHost.sources` (YAZ-4713 C6, C7, C11): the header icons, Edit column's owner line, and which columns may be deleted here. */
-  sources?: FolderHost['sources']
+  sources: FolderHost['sources']
   /** `FolderHost.valueCount`: the number that confirm states. */
   valueCount: (key: string) => number
-  /** `FolderHost.separate` (YAZ-4713 C3): Edit column's "Separate value on this page". Absent where the vault does not use IDs. */
+  /** `FolderHost.separate` (YAZ-4713 C3): Edit column's "Separate value for <folder>". Absent where the vault does not use IDs. */
   separate?: FolderHost['separate']
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
@@ -354,7 +354,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const marks = useMemo(
     () => keys.map((key) => {
       const c = canonicalKey(key)
-      if (sources === undefined || sources.marks === 'off' || !c.startsWith('note.')) return null
+      if (sources.marks === 'off' || !c.startsWith('note.')) return null
       const bare = c.slice('note.'.length)
       return columnMark(sources, bare, settings.columns[bare]?.separate === true)
     }),
@@ -1817,7 +1817,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     {...headerDrag(index)}
                   >
                     {propertyLabel(def, key)}
-                    {marks[index] !== null && <ColumnMark mark={marks[index]!} withName={sources?.marks === 'name'} />}
+                    {marks[index] !== null && <ColumnMark mark={marks[index]!} withName={sources.marks === 'name'} />}
                     {rule !== undefined && (
                       <button
                         type="button"
@@ -2054,7 +2054,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             records={records}
             wrapKind={headerMenu.key === null ? null : wrapKind(typings[keys.indexOf(headerMenu.key)])}
             properties={properties}
-            folder={{ settings, setColumn, setColumns: declareColumn, deleteColumn, sources, valueCount, separate, onNotice }}
+            folder={{ settings, setColumn, setColumns: declareColumn, deleteColumn, sources, valueCount, separate, onNotice, vaultFolders }}
             rowNumbers={numbered}
             onUpdate={onUpdate}
             declareColumn={declareColumn}
@@ -2082,7 +2082,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           <ConfirmDeleteColumn
             columnKey={confirmDelete}
             def={def}
-            folderName={sources?.folderName ?? 'this folder'}
+            folderName={sources.folderName}
             count={valueCount}
             onCancel={() => setConfirmDelete(null)}
             onConfirm={(clear) => {

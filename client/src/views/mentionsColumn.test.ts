@@ -71,7 +71,7 @@ describe('the Linked mentions column (YAZ-4738)', () => {
     const settings = { ...folderSettings(undefined, true), columns }
     expect(columnTyping('note.used_by', NOTES, null, settings)).toBeNull()
     expect(writableKey('note.used_by', columns)).toBeNull()
-    expect(writableKey('note.used_by')).toBe('used_by')
+    expect(writableKey('note.used_by', {})).toBe('used_by')
     const resolve = resolverOf()
     const mentions = mentionsColumns(columns, NOTES, FOLDERS, resolve)
     const rows = [TOTAL, UNUSED, ROUTE]

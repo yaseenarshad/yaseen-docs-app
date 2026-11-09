@@ -104,9 +104,12 @@ folders it is also in — with the title and path of the page or folder that id 
 \`(missing)\` (\`--json\` for the raw shape). To find a page from an id, search the vault's file
 names for it; a file the app did not name is found by its \`id: <id>\` line.
 
-A folder's values for a page (its columns) are in the page's frontmatter under \`in:\`, in the block
-named by the folder's id, and a folder's id is the \`id\` in \`<folder>/.folder.md\`. \`links\` lists
-those folders after the links, each by id and the title and path of the folder it names now.
+A page's value for a column is a top-level field of its frontmatter (\`domain: Billing\`), one value per
+key, and every folder page that shows the page reads that same field. A column defined in
+\`<folder>/.folder.md\` shows on that folder's page and on every folder page below it. Only a column
+set to "Separate value for <folder>" keeps that folder's own value under \`in:\`, in the block named
+by the folder's id; a folder's id is the \`id\` in \`<folder>/.folder.md\`. \`links\` lists the
+folders of those blocks after the links, each by id and the title and path of the folder it names now.
 
 \`mentions\` lists every note and folder that links to a page: the page's Linked mentions in the app, in
 a vault with IDs or without. A line is the title and the path of the note, or of the folder with a

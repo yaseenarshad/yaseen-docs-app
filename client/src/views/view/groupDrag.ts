@@ -49,7 +49,7 @@ export type PendingMove = PendingWrite[]
  * property — what a drop there writes, and what its group "+" seeds. Null disables the level's
  * own drag and "+" (YAZ-1101) while the other level keeps working.
  */
-export function groupByKey(view: ViewDef, level = 0, columns?: Readonly<Record<string, PropertyDecl>>): string | null {
+export function groupByKey(view: ViewDef, level: number, columns: Readonly<Record<string, PropertyDecl>>): string | null {
   // `level` counts the engine's levels (`shownGroupLevels`, YAZ-4531), as a `GroupSpot` does.
   const property = shownGroupLevels(view)[level]?.property
   // A key the app owns (`readonly`, YAZ-3122), or a Linked mentions column (YAZ-4738), is grouped by, never written by a drop or seeded by a "+".
@@ -63,7 +63,7 @@ export const groupsByFolder = (view: ViewDef, level = 0): boolean => {
 }
 
 /** Whether a level's groups take a new note: one it can seed, or — grouped by Folder — place. */
-export const groupTakesNew = (view: ViewDef, level: number, columns?: Readonly<Record<string, PropertyDecl>>): boolean => groupByKey(view, level, columns) !== null || groupsByFolder(view, level)
+export const groupTakesNew = (view: ViewDef, level: number, columns: Readonly<Record<string, PropertyDecl>>): boolean => groupByKey(view, level, columns) !== null || groupsByFolder(view, level)
 
 /** `records` with the pending moves patched in, for the engine (same clearing discipline as 5B). */
 export function applyMoves(records: readonly IndexRecord[], moves: Record<string, PendingMove>): IndexRecord[] {

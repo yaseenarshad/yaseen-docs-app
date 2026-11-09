@@ -67,7 +67,8 @@ import { exactLinkTarget, rewriteNoteLinks, type NewTarget, type ResolvesToOld }
 import { titleOf } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { resolverFor, targetBasename, targetKey } from '../views/engine'
+import { targetBasename, targetKey } from '@shared/linkResolver'
+import { resolverFor } from '../views/engine'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, dirname, relTo, stripExt } from '../lib/paths'
 import { folderResolver, linkResolver } from './folderLinks'
@@ -88,7 +89,6 @@ export function renamedTarget(target: string, opts: { newName: string; newRel: s
 }
 
 // Every target a note links to (`referenceTargets`) is in `@shared/mentions` (YAZ-4738): the reverse map reads it too.
-export { referenceTargets }
 
 /** Does this note reference the renamed file AT ALL — index links/embeds, or a nested settings leaf? */
 function makeReferences(resolves: ResolvesToOld): (record: IndexRecord) => boolean {

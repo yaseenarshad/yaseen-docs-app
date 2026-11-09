@@ -1,9 +1,10 @@
 import { FOLDER_SETTINGS_FILE, inFolder } from '@shared/types'
+import { stripBrackets } from '@shared/linkResolver'
 import { formatDate, relativeDate, startOfDay } from './dates'
 import { ArgError } from './ops'
 import {
   DateValue, DurationValue, ErrorValue, FileValue, type FileRecordLike, LinkValue, RegexValue, type Scope, type Value, type ValueType,
-  equals, fromYaml, isEmpty, isTruthy, linkTargetsMatch, render, stripBrackets, typeOf,
+  equals, fromYaml, isEmpty, isTruthy, linkTargetsMatch, render, typeOf,
 } from './values'
 
 /** Fields and type methods (GRO-2131). `filter/map/reduce` are special-cased in the evaluator; `scope` carries the resolver (GRO-2132). */

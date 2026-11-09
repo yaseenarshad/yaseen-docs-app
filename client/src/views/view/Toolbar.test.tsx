@@ -1777,9 +1777,9 @@ views:
     expect(def().views[0].order).toEqual(['file.name', 'note.priority'])
     expect(def().views[0].frozenColumns).toBe(2)
     // Status is a note field no folder declares: hidden, it waits under "Other properties in these notes" with Show and
-    // "Add to this folder" in place of the switch (YAZ-4713 C4).
+    // "Add to <folder>" in place of the switch (YAZ-4713 C4).
     expect(byLabel(pop, 'Show Status').tagName).toBe('BUTTON')
-    expect(byLabel(pop, 'Add Status to this folder')).toBeDefined()
+    expect(byLabel(pop, 'Add Status to vault')).toBeDefined()
     click(byLabel(pop, 'Open Status'))
     expect(byLabel<HTMLButtonElement>(pop, 'Hide Status in this view').disabled).toBe(true) // already hidden
   })

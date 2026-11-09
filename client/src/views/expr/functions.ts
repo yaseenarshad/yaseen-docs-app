@@ -1,6 +1,7 @@
 import { parseDuration, parseIsoDate, startOfDay } from './dates'
 import { ArgError, toNumber } from './ops'
-import { DateValue, DurationValue, ErrorValue, FileValue, LinkValue, type Scope, type Value, render, stripBrackets, typeOf } from './values'
+import { stripBrackets } from '@shared/linkResolver'
+import { DateValue, DurationValue, ErrorValue, FileValue, LinkValue, type Scope, type Value, render, typeOf } from './values'
 
 /** Global functions (GRO-2131). `if` is lazy and lives in the evaluator; `scope` carries the resolver (GRO-2132). */
 export type GlobalFn = (args: Value[], scope: Scope) => Value

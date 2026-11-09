@@ -227,6 +227,16 @@ describe('a Linked mentions column\'s Edit column (YAZ-4739 L2)', () => {
     expect(setColumn).toHaveBeenLastCalledWith('status', { kind: 'mentions', from: { folder: '[[API]]' } }, { kind: 'mentions' })
   })
 
+  it('"Only from the column" asks for a field name and suggests the link columns the vault’s folders define; any name still types (7A 20)', () => {
+    const folderMd = (folder: string, columns: Record<string, ColumnDecl>) => ({ ...TEST_RECORDS[0], path: `/vault/${folder}/.folder.md`, folder, properties: { folder_settings: { columns } } })
+    const vaultFolders = [folderMd('api', { reads_writes: { kind: 'multi-link' }, owner: { kind: 'text' } }), folderMd('kpis', { calls: { kind: 'link' }, reads_writes: { kind: 'multi-link' } })]
+    const { el } = mount(table(), { status: { kind: 'mentions' } }, { vaultFolders })
+    editColumn(el)
+    const field = q<HTMLInputElement>(el, '.column-detail [aria-label="Only from the column for Status"]')
+    expect(field.placeholder).toBe('field name, e.g. reads_writes')
+    expect([...(field.list?.options ?? [])].map((o) => o.value)).toEqual(['calls', 'reads_writes'])
+  })
+
   it('a blank field removes its part alone', () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const { el } = mount(table(), { status: { kind: 'mentions', from: { column: 'calls', folder: '[[API]]' } } }, { setColumn })

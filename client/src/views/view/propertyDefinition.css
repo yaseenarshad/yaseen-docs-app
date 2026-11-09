@@ -201,15 +201,12 @@
 .frontmatter-property-menu__heading strong {
   font-weight: 500;
 }
-/* The two headings of a note's panel (D23): "Note fields" over the note's own rows, "Properties
-   from" over the chosen folder's. A line parts the groups: "Properties from"'s top edge, drawn
-   only under a note field. */
-.frontmatter-property-context,
-.frontmatter-panel__own {
+/* "Other folders' values for this note" (YAZ-4713 C9): its heading, and a line that parts it from the note's rows above. */
+.frontmatter-property-context {
   font-size: 12px;
   color: var(--fg-muted);
 }
-.frontmatter-panel__row + .frontmatter-property-context {
+.frontmatter-panel__rows + .frontmatter-panel__kept {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);

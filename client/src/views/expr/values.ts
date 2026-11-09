@@ -119,9 +119,6 @@ export function isEmpty(v: Value): boolean {
   return typeOf(v) === 'object' && Object.keys(v).length === 0
 }
 
-// One link-value rule with the resolver (`@shared/linkResolver`, YAZ-4740).
-export { stripBrackets }
-
 const normTarget = (t: string) => stripBrackets(t).replace(/\.md$/i, '').replace(/^\/+|\/+$/g, '').toLowerCase()
 const lastSegment = (t: string) => t.slice(t.lastIndexOf('/') + 1)
 

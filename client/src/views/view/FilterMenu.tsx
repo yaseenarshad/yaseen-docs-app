@@ -4,7 +4,7 @@ import { type ViewSet, type ViewDef, type FilterNode, type Mutate, showsFolderRo
 import { type ColumnTyping, columnTyping } from '../editorType'
 import type { FolderHost } from '../ViewsPane'
 import type { EngineError } from '../engine'
-import { stripBrackets } from '../expr'
+import { stripBrackets } from '@shared/linkResolver'
 import { isMentionsColumn } from '../mentionsColumn'
 import {
   type Conjunction, type FilterGroup, type OperatorId, type PropertyType, type Rule, exprToRule, fromGroup, inferType, operator,

@@ -22,7 +22,7 @@ import { readFormat } from './columnFormat'
 /** A column the folder declares — this module's own vocabulary, shaped like `PropertyDecl`. */
 export type ColumnDecl = PropertyDecl & {
   /**
-   * "Separate value on this page" (YAZ-4713 C3): this page keeps its own value for each note, in the note's
+   * "Separate value for <folder>" (YAZ-4713 C3): this folder's page keeps its own value for each note, in the note's
    * `in: {<page id>}` block, apart from the note's one value. Off by default; read only where the vault uses IDs.
    */
   separate?: true
@@ -134,7 +134,7 @@ function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDec
       }
       if (Object.keys(narrowed).length > 0) column.from = narrowed
     }
-    // "Separate value on this page" (YAZ-4713 C3): only `true` is the switch; `false` is the default, written by hand.
+    // "Separate value for <folder>" (YAZ-4713 C3): only `true` is the switch; `false` is the default, written by hand.
     if (value.separate === true) column.separate = true
     else if (value.separate !== undefined && value.separate !== false) problems.push(`${FOLDER_SETTINGS_KEY}.columns.${name}.separate must be true or false — ignoring it`)
     columns[name] = column
@@ -268,6 +268,17 @@ export function folderSettings(record: IndexRecord | undefined, ids: boolean): F
     otherFiles: readOtherFiles(raw[OTHER_FILES_KEY], problems),
     problems,
   }
+}
+
+/** The link and multi-link column keys the vault's `.folder.md`s define, sorted, once each: what Linked mentions' "Only from the column" offers (YAZ-4739 L2). */
+export function linkColumnKeys(folders: readonly IndexRecord[]): string[] {
+  const keys = new Set<string>()
+  for (const record of folders) {
+    const raw = record.properties[FOLDER_SETTINGS_KEY]
+    if (!isRecord(raw)) continue
+    for (const [key, decl] of Object.entries(readColumns(raw.columns, []))) if (decl.kind === 'link' || decl.kind === 'multi-link') keys.add(key)
+  }
+  return [...keys].sort()
 }
 
 /** The typed settings as the plain map YAML holds; `problems` are a read-time report and never reach disk. */

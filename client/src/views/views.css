@@ -630,6 +630,7 @@
 
 .view-prop__open .view-prop__name {
   flex: 1;
+  flex-wrap: nowrap; /* the label and its mark (YAZ-4713 C11) on one line, never a second */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2808,9 +2809,12 @@
 .view-menu--tabbed .view-prop__chevron { width: 8px; opacity: 0; }
 .view-menu--tabbed .view-prop__identity:hover .view-prop__chevron { opacity: 1; }
 .column-section--hidden .view-prop__name { color: var(--fg-muted); }
-/* Hidden, by where each column comes from (YAZ-4713 C4): This folder, From <owner>, Other properties in these notes. */
-.column-section__part-title { margin: 4px 0 0 8px; font-weight: 500; }
+/* Hidden, by where each column comes from (YAZ-4713 C4): the folder's own, From <owner>, Other properties in these notes. */
+.column-section__part-title { margin: 4px 0 0 8px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* An other property's two buttons stay on the row's one line: Show keeps its size, "Add to <folder>" shrinks with "…"
+   (its title holds the whole name), after the label, which shrinks first. */
 .view-prop__identity > .view-menu__action { flex: none; font-size: 11px; padding: 2px 6px; white-space: nowrap; }
+.view-prop__identity > .view-menu__action.view-prop__add { flex: 0 1 auto; min-width: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
 .view-menu--tabbed > .view-menu__action {
   display: block;
   width: calc(100% + 20px);
@@ -3288,12 +3292,21 @@
   pointer-events: none;
 }
 
-/* The column header's mark (YAZ-4713 C11): inline after the name, so it clips with it and never widens the column. */
+/* The column header's mark (YAZ-4713 C11): inline after the name, on the name's one line, so it clips with it inside
+   the cell (`table-layout: fixed`, `overflow: hidden`) and never widens the column. In Columns ⚙ the name's row is a
+   flex row: there the mark is the item that shrinks, its folder name cut with "…". */
 .view-column-mark {
   margin-left: 4px;
   color: var(--fg-muted);
   font-weight: 400;
   opacity: 0.75;
+  white-space: nowrap;
+}
+.view-prop__name .view-column-mark {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .view-column-mark__icon {

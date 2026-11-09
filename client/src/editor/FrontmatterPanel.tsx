@@ -1,9 +1,9 @@
 /** The note's properties work like a database (YAZ-4713 C8): each row is the note's OWN field — the top level of its
  * frontmatter (C1) — typed by the columns of the folder page it lives on (its own and its parent folders', C2), and the
  * columns it holds no value for are empty rows. A page that keeps its own value (C3, "Separate value for Desserts")
- * adds a row "Cook time · Desserts", its block of `in` (`shared/folderValues.ts`). What pages that do not show the
- * note still keep is listed with Clear (C9). Every edit goes where its row lives. Value writes remain surgical and
- * conflict-checked; raw YAML retains its own dirty draft.
+ * adds a row "Cook time · Desserts", its block of `in` (`shared/folderValues.ts`). The values in `in` that no row
+ * shows are listed under "Other folders' values for this note", each with Clear (C9). Every edit goes where its row
+ * lives. Value writes remain surgical and conflict-checked; raw YAML retains its own dirty draft.
  */
 import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -11,6 +11,7 @@ import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFro
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, folderBlocks, folderValues, setFolderValue } from '@shared/folderValues'
 import { inheritColumnsOf } from '@shared/folderPage'
+import { storage } from '../lib/storage'
 import { TITLE_KEY } from '@shared/noteName'
 import { DEFAULT_FOLDER_PAGES, NOTE_PROPERTY_KINDS, builtInPrefixRefusal, folderSettingsPath, inFolder, isFolderSettingsPath, isPropertyName, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl, type NotePropertyKind } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
@@ -18,8 +19,8 @@ import { titleCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
 import { absFrom, dirname, relTo } from '../lib/paths'
 import { reservedKeyText as reservedText, reservedKeys } from '../links/reservedKeys'
-import { folderId, folderRecord, folderTitle, foldersById, foldersShowing } from '../links/shortcuts'
-import { pageColumns, selfAndAncestors } from '../views/columnInheritance'
+import { folderId, foldersById, foldersShowing } from '../links/shortcuts'
+import { byFolder, folderName, pageColumns, selfAndAncestors } from '../views/columnInheritance'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
@@ -62,7 +63,15 @@ export interface FrontmatterPanelProps {
    * the host's link card (the note's own `[[links]]` panel). Absent: the pills show and open nothing.
    */
   links?: { open: OpenHandlers; hover?: WikilinkHover }
+  /**
+   * Settings › Folder pages › "Show parent folders' columns" (YAZ-4713 C12): a folder's own switch beats it. Off, the
+   * note's rows are only the columns of the folder it lives in. Absent: the default (on).
+   */
+  inheritColumns?: boolean
 }
+
+/** The "Column on" choice that makes no column (7A 1): a folder's choice is `/` and its root-relative path, so the vault root (`/`) is not this. */
+const NO_COLUMN = 'no-column'
 
 
 /** No view is rendering here, so the ladder's record-derived rungs have nothing to read. */
@@ -177,7 +186,7 @@ export function FrontmatterPanel(props: FrontmatterPanelProps) {
   )
 }
 
-function Panel({ file, root, properties: decls = null, wikilinks, readOnly = false, links }: FrontmatterPanelProps) {
+function Panel({ file, root, properties: decls = null, wikilinks, readOnly = false, links, inheritColumns = DEFAULT_FOLDER_PAGES.inheritColumns }: FrontmatterPanelProps) {
   /** The definition popover: `file` is the `.folder.md` whose column it edits (a column's owner, or a separate column's page); none = the vault's `properties.json`. */
   const [propertyMenu, setPropertyMenu] = useState<{ key: string; home: Home | null; file: string | undefined; scope: string; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; editing: boolean } | null>(null)
   // The panel follows the folder settings FILES (YAZ-2196): every index refetch hands over a new
@@ -186,6 +195,8 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   const subscribe = useCallback((poke: () => void) => wikilinks?.subscribe(poke) ?? (() => {}), [wikilinks])
   const stamp = useSyncExternalStore(subscribe, () => [wikilinks?.ids, ...(wikilinks?.folders ?? NO_RECORDS).map((r) => `${r.path}\0${r.mtime}`)].join('\n'))
   const folders = useMemo(() => wikilinks?.folders ?? NO_RECORDS, [wikilinks, stamp])
+  /** The settings records by folder, once per snapshot. */
+  const folderMap = useMemo(() => byFolder(folders), [folders])
   const ids = wikilinks?.ids === true
   const reserved = reservedKeys(ids)
   const dir = dirname(file.path)
@@ -262,6 +273,8 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   /** The vault root, and a root-relative folder as an absolute directory. */
   const vault = root?.replace(/\/+$/, '')
   const absOf = (folder: string): string => (folder === '' ? (vault as string) : absFrom(vault as string, folder))
+  /** A folder as the panel names it, as its folder page's columns do: its title (YAZ-2420 🔒 D14); the vault's name at the root. */
+  const nameOf = (folder: string): string => folderName(folderMap, folder, typeof root === 'string' ? storage.vaultName(root) : '')
   /**
    * ONE field, surgically (🔒): `transformFile`'s read → change → `expectedMtime` → retry dance, reused. Then the
    * panel's own belief of disk moves the SAME way, so the raw fallback can never show a block a typed edit left behind
@@ -284,7 +297,6 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   const { properties: parsed, error: parseError } = useMemo(() => parseFrontmatter(splitFrontmatter(snap.content).frontmatter), [snap.content])
   /** The note's folder, root-relative; null for a note outside the vault, which the index never reads. */
   const relDir = vault !== undefined && inFolder(dir, vault) ? (dir === vault ? '' : relTo(vault, dir)) : null
-  const parentOf = (folder: string): string => (folder.includes('/') ? folder.slice(0, folder.lastIndexOf('/')) : '')
   /**
    * The folder whose page types the note's fields (C2): the one it lives in. A folder's own page is a row of its
    * PARENT's page (YAZ-3746 2D, D31) when a parent view shows subfolders as rows; the vault root has no parent.
@@ -293,19 +305,19 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     if (relDir === null) return null
     if (!own) return relDir
     if (relDir === '') return null
-    return folderSettings(folderRecord(folders, absOf(parentOf(relDir))), ids).views.some(showsFolderRows) ? parentOf(relDir) : null
-  }, [relDir, own, folders, ids]) // eslint-disable-line react-hooks/exhaustive-deps
+    return folderSettings(folderMap.get(dirname(relDir)), ids).views.some(showsFolderRows) ? dirname(relDir) : null
+  }, [relDir, own, folderMap, ids])
   /**
    * That page's columns, its own over its parent folders' (C2), each with the folder that defines it. A Linked mentions
    * column is none of the note's fields (YAZ-4738 L1): the section under the note lists its mentions.
    */
   const pageCols = useMemo(() => {
     if (typingDir === null) return {}
-    const record = folderRecord(folders, absOf(typingDir))
-    const inherit = (record === undefined ? undefined : inheritColumnsOf(record.properties)) ?? DEFAULT_FOLDER_PAGES.inheritColumns
-    const all = pageColumns(folderSettings(record, ids).columns, typingDir, folders, ids, inherit)
+    const record = folderMap.get(typingDir)
+    const inherit = (record === undefined ? undefined : inheritColumnsOf(record.properties)) ?? inheritColumns
+    const all = pageColumns(folderSettings(record, ids).columns, typingDir, folderMap, ids, inherit)
     return Object.fromEntries(Object.entries(all).filter(([, { decl }]) => decl.kind !== 'mentions'))
-  }, [typingDir, folders, ids]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [typingDir, folderMap, ids, inheritColumns])
   const typing = useMemo((): FolderSettings => ({ columns: Object.fromEntries(Object.entries(pageCols).map(([key, { decl }]) => [key, decl])), views: [], problems: [] }), [pageCols])
   /**
    * The pages that keep their own value of a column for this note (C3, vaults with IDs): each folder that shows it
@@ -315,20 +327,21 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     if (!ids || relDir === null) return []
     const showing = own ? (typingDir === null ? [] : [typingDir]) : foldersShowing(relDir, parsed, byId)
     return showing.flatMap((folder) => {
-      const record = folderRecord(folders, absOf(folder))
+      const record = folderMap.get(folder)
       const settings = folderSettings(record, ids)
       const keys = Object.keys(settings.columns).filter((key) => settings.columns[key].separate === true)
-      return keys.length === 0 ? [] : [{ home: { dir: folder, id: record?.id, name: folderTitle(folders, absOf(folder)) }, settings, keys }]
+      return keys.length === 0 ? [] : [{ home: { dir: folder, id: record?.id, name: nameOf(folder) }, settings, keys }]
     })
-  }, [ids, relDir, own, typingDir, parsed, byId, folders]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ids, relDir, own, typingDir, parsed, byId, folderMap]) // eslint-disable-line react-hooks/exhaustive-deps
   /**
    * The note's own fields: everything at the top level but `in` — and `title`, a note's or a folder's, which the page
    * title above shows (YAZ-2420 🔒 D27). Where the vault does not use IDs both are fields like any other (YAZ-2523 🔒 V12).
    */
   const ownFields = useMemo(() => Object.fromEntries(Object.entries(parsed).filter(([key]) => !ids || (key !== FOLDER_VALUES_KEY && key !== TITLE_KEY))), [parsed, ids])
   /**
-   * "Values from pages that do not show this note" (C9): every value in a block of `in` that no separate row above
-   * shows — a page the note left, a page whose column is no longer separate, a folder the app cannot find. Each has Clear.
+   * "Other folders' values for this note" (C9): every value in a block of `in` that no separate row above shows — a
+   * page the note left, a page whose column is no longer separate or was deleted with Keep, a folder the app cannot
+   * find. Each has Clear.
    */
   const keptValues = useMemo(() => {
     if (!ids) return []
@@ -339,8 +352,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
         .map(([key, raw]) => ({ id, key, raw, name: byId.get(id)?.title ?? id })),
     )
   }, [ids, separatePages, parsed, byId])
-  /** A folder as the panel names it: its title (YAZ-2420 🔒 D14). */
-  const nameOf = (folder: string): string => folderTitle(folders, absOf(folder))
+
   /** `also_in` as the eye reads it: each folder id as that folder's title; an entry no folder has stays as written. */
   const folderNames = (raw: unknown): unknown => {
     const name = (entry: unknown): unknown => (typeof entry === 'string' ? byId.get(entry)?.title : undefined) ?? entry
@@ -435,12 +447,18 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   /** A type can be saved for a column (its folder's `.folder.md`) or, with a vault root, for a note field (`properties.json`). */
   const typeable = (row: Row): boolean => definitionFile(row) !== undefined || (typeof root === 'string' && root !== '')
   /**
-   * "Column on" (C8): the note's folder, then each folder above it, nearest first — the vault root only for a note at
-   * the top level, as "Properties from" offered it. None for a folder's own page, a note outside the vault, or with no
-   * index feed (no folder is known to configure).
+   * "Column on" (C8) for the name `name`: the note's folder, then each folder above it, nearest first — the vault root
+   * only for a note at the top level, or when the root defines `name`. None for a folder's own page, a note outside the
+   * vault, or with no index feed (no folder is known to configure).
    */
-  const columnChoices = own || relDir === null || wikilinks === undefined ? [] : relDir === '' ? [''] : selfAndAncestors(relDir).filter((folder) => folder !== '')
-  const columnOn = (on: string | null | undefined): string | null => (on === undefined ? columnChoices[0] ?? null : on)
+  const columnChoices = (name: string): string[] =>
+    own || relDir === null || wikilinks === undefined ? [] : selfAndAncestors(relDir).filter((folder) => folder !== '' || relDir === '' || pageCols[name]?.owner === '')
+  /** The chosen folder, null for "No column". Not chosen: the folder that defines `name` already (C6, 7A 8), else the note's. */
+  const columnOn = (on: string | null | undefined, name: string): string | null => {
+    if (on !== undefined) return on
+    const choices = columnChoices(name)
+    return choices.length === 0 ? null : pageCols[name]?.owner ?? choices[0]
+  }
 
   const addKey = (): void => {
     if (adding === null) return
@@ -450,15 +468,16 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
       setError(refusal)
       return
     }
-    const on = columnOn(adding.on)
+    const on = columnOn(adding.on, name)
     const assigned = assignedKind(name)
     const kind = adding.kind ?? assigned ?? 'text'
-    // C8: a column on the chosen folder is ALWAYS declared there, so every page under it shows it. "No column" writes
-    // the note field alone; a type other than the one the name reads as is then saved for the vault (YAZ-4551 D20).
+    // C8: a column on the chosen folder is ALWAYS declared there, so every page under it shows it — unless it already
+    // stands there as this kind. "No column" writes the note field alone; a type other than the one the name reads as
+    // is then saved for the vault (YAZ-4551 D20).
     const declare = async (): Promise<void> => {
       if (on !== null) {
-        const base = folderSettings(folderRecord(folders, absOf(on)), ids).columns[name]
-        await writeFolderColumn(folderSettingsPath(absOf(on)), name, declarationForKind(base ?? typing.columns[name], kind), base, ids)
+        const base = folderSettings(folderMap.get(on), ids).columns[name]
+        if (base?.kind !== kind) await writeFolderColumn(folderSettingsPath(absOf(on)), name, declarationForKind(base ?? typing.columns[name], kind), base, ids)
       } else if (kind !== (assigned ?? 'text') && typeof root === 'string' && root !== '') await vaultProperties.setProperty(root, name, declarationForKind(decls?.properties[name], kind))
     }
     setSaving(true)
@@ -494,7 +513,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     const settingsFile = definitionFile(row)
     const scope = row.home !== null ? `In ${row.home.name}` : row.owner !== undefined ? `In ${nameOf(row.owner)}` : 'In every note of this vault'
     // A column a parent defines is edited on its owner (C6): the base is that definition.
-    const base = row.home !== null ? column : row.owner === undefined ? undefined : folderSettings(folderRecord(folders, absOf(row.owner)), ids).columns[row.key]
+    const base = row.home !== null ? column : row.owner === undefined ? undefined : folderSettings(folderMap.get(row.owner), ids).columns[row.key]
     return { key: row.key, home: row.home, file: settingsFile, scope, anchor, base, definition: column ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing }
   }
 
@@ -651,7 +670,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
               {/* C9: what pages that do not show the note still keep for it, never deleted by a move — each with Clear. */}
               {keptValues.length > 0 && (
                 <div className="frontmatter-panel__kept">
-                  <p className="frontmatter-property-context">Values from pages that do not show this note</p>
+                  <p className="frontmatter-property-context">Other folders' values for this note</p>
                   <ul className="frontmatter-panel__rows">
                     {keptValues.map(({ id, key, raw, name }) => (
                       <li key={`${id}:${key}`} className="frontmatter-panel__row" data-key={key}>
@@ -683,23 +702,23 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
                     }}
                   />
                   {/* "Column on" (YAZ-4713 C8): the folder page that shows it — the note's folder, a folder above, or none. */}
-                  {columnChoices.length > 0 && (
+                  {columnChoices(adding.name.trim()).length > 0 && (
                     <select
                       className="view-select"
                       aria-label="Column on"
-                      value={columnOn(adding.on) ?? ''}
-                      onChange={(e) => setAdding({ ...adding, on: e.currentTarget.value === '' ? null : e.currentTarget.value })}
+                      value={columnOn(adding.on, adding.name.trim()) === null ? NO_COLUMN : `/${columnOn(adding.on, adding.name.trim())}`}
+                      onChange={(e) => setAdding({ ...adding, on: e.currentTarget.value === NO_COLUMN ? null : e.currentTarget.value.slice(1) })}
                     >
-                      {columnChoices.map((folder) => (
-                        <option key={folder} value={folder}>
+                      {columnChoices(adding.name.trim()).map((folder) => (
+                        <option key={folder} value={`/${folder}`}>
                           {`Column on ${nameOf(folder)}`}
                         </option>
                       ))}
-                      <option value="">No column</option>
+                      <option value={NO_COLUMN}>No column</option>
                     </select>
                   )}
                   {/* The type (YAZ-4551 D20): it starts on the type the name has already, else Text. */}
-                  {(columnOn(adding.on) !== null || (typeof root === 'string' && root !== '')) && (
+                  {(columnOn(adding.on, adding.name.trim()) !== null || (typeof root === 'string' && root !== '')) && (
                     <select
                       className="view-select"
                       aria-label="New property type"

@@ -107,7 +107,6 @@ const NO_VALUE = 'No value'
 
 // The rule lives in `@shared/linkResolver` (YAZ-4740), so `yaseendocs mentions` resolves as the app does.
 import { makeResolver, type ResolverOptions } from '@shared/linkResolver'
-export { basenameKey, idKey, makeResolver, targetBasename, targetKey, typedFolders, type ResolverOptions } from '@shared/linkResolver'
 
 /** FileValue wrappers per records array identity — `runView` and `resolverFor` share the instances. */
 const filesCache = new WeakMap<readonly IndexRecord[], FileValue[]>()

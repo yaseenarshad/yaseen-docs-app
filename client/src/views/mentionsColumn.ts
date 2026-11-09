@@ -34,15 +34,21 @@ function inColumn(record: IndexRecord, column: string, target: string, resolve: 
   return folderBlocks(record.properties).some(([, values]) => holdsLinkTo(values[column], target, resolve))
 }
 
-/** The mentions `from` lets count (L2): under its folder, then in its column. Without `from`, all of them. */
-function narrowed(list: readonly IndexRecord[], from: MentionsFrom | undefined, target: string, resolve: ResolveLink): readonly IndexRecord[] {
-  if (from === undefined) return list
+/** A column's `from` (L2), its folder resolved once per column: `dir` null = a folder the vault does not have, so no mention counts. */
+interface Narrowing {
+  dir?: string | null
+  column?: string
+}
+
+const narrowingOf = (from: MentionsFrom | undefined, resolve: ResolveLink): Narrowing => ({
+  ...(from?.folder !== undefined && { dir: resolve(exactLinkTarget(from.folder) ?? from.folder) }),
+  ...(from?.column !== undefined && { column: from.column }),
+})
+
+/** The mentions a narrowing lets count: under its folder, then in its column. With neither, all of them. */
+function narrowed(list: readonly IndexRecord[], { dir, column }: Narrowing, target: string, resolve: ResolveLink): readonly IndexRecord[] {
   let out = list
-  if (from.folder !== undefined) {
-    const dir = resolve(exactLinkTarget(from.folder) ?? from.folder)
-    out = dir === null ? [] : out.filter((m) => m.path.startsWith(`${dir}/`))
-  }
-  const column = from.column
+  if (dir !== undefined) out = dir === null ? [] : out.filter((m) => m.path.startsWith(`${dir}/`))
   if (column !== undefined) out = out.filter((m) => inColumn(m, column, target, resolve))
   return out
 }
@@ -56,11 +62,12 @@ export function mentionsColumns(columns: Readonly<Record<string, ColumnDecl>>, r
   const keys = Object.keys(columns).filter((key) => columns[key].kind === 'mentions')
   if (keys.length === 0) return undefined
   const map = mentionsMap(records, folders, resolve)
+  const narrowings = new Map(keys.map((key) => [key, narrowingOf(columns[key].from, resolve)]))
   return {
     keys,
     of: (record, key) => {
       const target = rowPage(record.path)
-      return narrowed(map.get(target) ?? [], columns[key].from, target, resolve).map((m) => noteLinkOf(m, resolve))
+      return narrowed(map.get(target) ?? [], narrowings.get(key) ?? {}, target, resolve).map((m) => noteLinkOf(m, resolve))
     },
   }
 }

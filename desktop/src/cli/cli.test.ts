@@ -102,15 +102,14 @@ describe('help and usage', () => {
     }
   })
 
-  it('says, in at most three lines, that a folder’s values for a note are under `in:` in the block named by the folder’s id, and that a folder’s id is the `id` in `<folder>/.folder.md`', () => {
+  it('says, in one paragraph, that a value is the page’s own top-level field, that columns flow down, and that `in:` holds only a "Separate value for <folder>" value, in the block named by the folder’s id (YAZ-4713 C1, 7A 14)', () => {
     const lines = HELP.split('\n')
-    const first = lines.findIndex((line) => line.includes('`in:`'))
+    const first = lines.findIndex((line) => line.includes('value for a column is a top-level field'))
     expect(first).toBeGreaterThan(-1)
-    const said = lines.slice(first, first + 3).join(' ')
-    expect(said).toContain("named by the folder's id")
-    expect(said).toContain('`id` in `<folder>/.folder.md`')
-    // Nowhere else: those three lines are the whole of it.
-    expect(lines.filter((line, i) => (i < first || i >= first + 3) && /`in:`|\.folder\.md/.test(line))).toEqual([])
+    const said = lines.slice(first, first + 6).join(' ')
+    for (const words of ['one value per key', 'every folder page below it', 'Only a column set to "Separate value for <folder>"', "named by the folder's id", '`id` in `<folder>/.folder.md`']) expect(said).toContain(words)
+    // Nowhere else: that paragraph is the whole of it.
+    expect(lines.filter((line, i) => (i < first || i >= first + 6) && /`in:`|\.folder\.md/.test(line))).toEqual([])
   })
 
   it('E: says that a page\'s title is its `title:` line, that the app builds the file name from the title and the id, and that a page is found from an id by its file name (YAZ-2420 D14)', () => {

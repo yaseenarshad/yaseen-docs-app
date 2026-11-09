@@ -183,15 +183,15 @@ export function dateColumns(
   settings: FolderSettings,
 ): string[] {
   return allPropertyKeys(def, view, records, settings.columns).flatMap((key) => {
-    const bare = writableKey(key)
+    const bare = writableKey(key, settings.columns)
     const typing = columnTyping(key, records, properties, settings)
     if (bare === null || typing === null) return []
     return (typing.assigned ?? typing.dominant) === 'date' ? [`note.${bare}`] : []
   })
 }
 
-/** The bare key a calendar shows by: its own `dateProperty`, else the first date column; null = none. */
-export function calendarDateKey(view: ViewDef, columns: readonly string[]): string | null {
+/** The bare key a calendar shows by: its own `dateProperty`, else the first date column; null = none. `decls`: the page's columns, so a Linked mentions column is never one. */
+export function calendarDateKey(view: ViewDef, columns: readonly string[], decls: FolderSettings['columns']): string | null {
   const chosen = typeof view.dateProperty === 'string' ? view.dateProperty : columns[0]
-  return chosen === undefined ? null : writableKey(chosen)
+  return chosen === undefined ? null : writableKey(chosen, decls)
 }

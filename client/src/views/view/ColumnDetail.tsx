@@ -1,7 +1,7 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { type IndexRecord, type PropertiesResponse, type PropertyFormat, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
-import type { ColumnDecl, FolderSettings } from '../folderSettings'
+import { linkColumnKeys, type ColumnDecl, type FolderSettings } from '../folderSettings'
 import type { FolderHost } from '../ViewsPane'
 import { defaultLabel, propertyLabel } from '../engine'
 import { columnTyping } from '../editorType'
@@ -31,10 +31,13 @@ const DATE_LABELS: Record<(typeof DATE_STYLES)[number], string> = { iso: '2026-1
 const folderLinkOf = (text: string): string => (text.startsWith('[[') ? text : `[[${text}]]`)
 
 /**
- * The Linked mentions rows (YAZ-4739 L2): "Only from the column" (a field key, for example "Reads / writes") and "Only
- * from the folder" (`[[API]]`). Either, both or neither; a blank one is no narrowing, and `from` goes when both are blank.
+ * The Linked mentions rows (YAZ-4739 L2): "Only from the column" (a field name, for example `reads_writes`, not its
+ * label) and "Only from the folder" (`[[API]]`). Either, both or neither; a blank one is no narrowing, and `from` goes
+ * when both are blank. The column field suggests the link columns the vault's folders define, and takes any name.
  */
-function MentionsFromRows({ decl, label, onChange }: { decl: ColumnDecl; label: string; onChange: (next: ColumnDecl) => void }) {
+function MentionsFromRows({ decl, label, folders, onChange }: { decl: ColumnDecl; label: string; folders: readonly IndexRecord[]; onChange: (next: ColumnDecl) => void }) {
+  const listId = useId()
+  const linkKeys = useMemo(() => linkColumnKeys(folders), [folders])
   const write = (part: 'column' | 'folder', text: string) => {
     const from = { ...decl.from }
     if (text === '') delete from[part]
@@ -46,7 +49,12 @@ function MentionsFromRows({ decl, label, onChange }: { decl: ColumnDecl; label: 
     <>
       <div className="column-detail__row">
         <RowLabel icon="relation">Only from the column</RowLabel>
-        <TextField className="view-input" aria-label={`Only from the column for ${label}`} placeholder="Any column" value={decl.from?.column ?? ''} onCommit={(text) => write('column', text.trim())} />
+        <TextField className="view-input" aria-label={`Only from the column for ${label}`} placeholder="field name, e.g. reads_writes" list={listId} value={decl.from?.column ?? ''} onCommit={(text) => write('column', text.trim())} />
+        <datalist id={listId}>
+          {linkKeys.map((key) => (
+            <option key={key} value={key} />
+          ))}
+        </datalist>
       </div>
       <div className="column-detail__row">
         <RowLabel icon="subfolders">Only from the folder</RowLabel>
@@ -157,8 +165,8 @@ export function columnKind(key: string, records: readonly IndexRecord[], propert
  * never deleted, and this folder's own over a parent's goes back with "Use <parent>'s". A subfolder's is not a column here.
  */
 export function deletableHere(folder: Pick<ColumnDoors, 'sources'>, key: string): boolean {
-  const source = folder.sources?.of(bare(canonicalKey(key)))
-  return source?.from === undefined && source?.over === undefined && source?.below === undefined
+  const source = folder.sources.of(bare(canonicalKey(key)))
+  return source.from === undefined && source.over === undefined && source.below === undefined
 }
 
 /** The type word the header menu's top line shows (YAZ-4533): `file.*` and `formula.*` read as the detail's Type row reads them. */
@@ -174,7 +182,7 @@ export function columnTypeLabel(key: string, records: readonly IndexRecord[], pr
  * write and the delete; since YAZ-4608 C6 the notice too, for the Undo toast of a type change, with `setColumns` for the
  * Undo of a first declaration (the table hands its `declareColumn`).
  */
-export type ColumnDoors = Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount' | 'onNotice' | 'separate'> & Partial<Pick<FolderHost, 'sources'>> & {
+export type ColumnDoors = Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount' | 'onNotice' | 'separate' | 'sources' | 'vaultFolders'> & {
   /** As `FolderHost.setColumns`: no `views` means the host's live def (YAZ-4637 M3). */
   setColumns?: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
 }
@@ -227,7 +235,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
   const [saving, setSaving] = useState(false)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
   const [deleting, setDeleting] = useState<string | null>(null)
-  /** Turning "Separate value on this page" off, awaiting its ask (YAZ-4713 1B): the numbers, taken once as it opens. */
+  /** Turning "Separate value for <folder>" off, awaiting its ask (YAZ-4713 1B): the numbers, taken once as it opens. */
   const [unsharing, setUnsharing] = useState<SeparateCounts | null>(null)
 
   const name = bare(key)
@@ -277,8 +285,9 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
     folder.onNotice?.(`Changed ${propertyLabel(def, key)} to ${PROPERTY_LABELS[kind]}`, 'info', 'undo', { label: 'Undo', run: restore, fades: true })
   }
   /**
-   * "Separate value on this page" (YAZ-4713 C3). On starts with empty page values, at once. Off asks first when the
-   * page holds values (1B, locked 2026-11-08), then moves them into the notes' own fields as the answer says.
+   * "Separate value for <folder>" (YAZ-4713 C3). On shows the page's own values at once: none for a new column, and any
+   * value an earlier separate column left in the notes (7A 19). Off asks first when the page holds values (1B, locked
+   * 2026-11-08), then moves them into the notes' own fields as the answer says.
    */
   const setSeparate = async (on: boolean, keep: SeparateKeep = 'notes'): Promise<void> => {
     if (folder.separate === undefined) return
@@ -332,9 +341,9 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
   const reason = undeletableReason(key)
   const deleteColumn = deletableHere(folder, key) ? folder.deleteColumn : undefined
   /** Where the column comes from (C6): a parent folder's, this folder's own over a parent's, or a subfolder's. */
-  const source = isNote ? folder.sources?.of(name) ?? {} : {}
-  const folderName = folder.sources?.folderName ?? 'this folder'
-  /** C6: "Change on this folder only" and "Use <parent>'s", each one declaration write; a refusal shows inline. */
+  const source = isNote ? folder.sources.of(name) : {}
+  const folderName = folder.sources.folderName
+  /** C6: "Change on <folder> only" and "Use <parent>'s", each one declaration write; a refusal shows inline. */
   const move = async (run: (key: string) => Promise<unknown>): Promise<void> => {
     setSaving(true)
     setError(null)
@@ -382,25 +391,27 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         />
       </div>
       <fieldset className="column-detail__rows" disabled={saving}>
-        {/* YAZ-4713 C6: a parent folder's column is edited on that folder, unless it is changed on this folder only. */}
-        {source.from !== undefined && folder.sources !== undefined && (
+        {/* YAZ-4713 C6: a parent folder's column is edited on that folder, unless "Change on <folder> only" declares it here. */}
+        {source.from !== undefined && (
           <div className="column-detail__source" role="note">
             <span className="column-detail__source-text">
               From {source.from}. A change here shows on every page under {source.from}.
             </span>
-            <button type="button" className="view-menu__action" onClick={() => void move(folder.sources!.here)}>
-              Change on this folder only
+            <button type="button" className="view-menu__action" onClick={() => void move(folder.sources.here)}>
+              Change on {folderName} only
             </button>
           </div>
         )}
-        {source.over !== undefined && folder.sources !== undefined && (
+        {source.over !== undefined && (
           <div className="column-detail__source" role="note">
             <span className="column-detail__source-text">Changed on {folderName} only.</span>
             {/* A separate column is turned off first: its values are asked about there (1B). */}
-            {decl?.separate !== true && (
-              <button type="button" className="view-menu__action" onClick={() => void move(folder.sources!.useParent)}>
+            {decl?.separate !== true ? (
+              <button type="button" className="view-menu__action" onClick={() => void move(folder.sources.useParent)}>
                 Use {source.over}'s
               </button>
+            ) : (
+              <span className="column-detail__source-text">Turn off Separate value for {folderName} first.</span>
             )}
           </div>
         )}
@@ -429,7 +440,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         {/* A Number or Date column's display format (YAZ-4591 S21/S22): one declaration write per pick. */}
         {(kind === 'number' || kind === 'date') && decl !== undefined && <FormatRows decl={decl} label={label} onChange={(next) => void writeDeclaration(next)} />}
         {/* A Linked mentions column's narrowing (YAZ-4739 L2): which links count. Blank is every link. */}
-        {kind === 'mentions' && decl !== undefined && <MentionsFromRows decl={decl} label={label} onChange={(next) => void writeDeclaration(next)} />}
+        {kind === 'mentions' && decl !== undefined && <MentionsFromRows decl={decl} label={label} folders={folder.vaultFolders} onChange={(next) => void writeDeclaration(next)} />}
         {/* The relation (YAZ-895): a declared link kind's target inline; any other note key can BECOME one from the legacy seed. */}
         {isNote && kind !== 'mentions' && (
           <div className="column-detail__row">
@@ -470,14 +481,14 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
             />
           </div>
         )}
-        {/* "Separate value on this page" (YAZ-4713 C3): vaults with IDs only — the page's block is named by its id. */}
+        {/* "Separate value for <folder>" (YAZ-4713 C3): vaults with IDs only — the page's block is named by its id. */}
         {isNote && folder.separate !== undefined && kind !== 'mentions' && (
           <div className="column-detail__row">
             <RowLabel icon="lock">Separate value for {folderName}</RowLabel>
             <input
               type="checkbox"
               className="view-switch"
-              aria-label={`Separate value for ${folderName} for ${label}`}
+              aria-label={`${label}: separate value for ${folderName}`}
               title={`${folderName} keeps its own value for each note. Other pages show the note's one value.`}
               checked={decl?.separate === true}
               onChange={toggleSeparate}

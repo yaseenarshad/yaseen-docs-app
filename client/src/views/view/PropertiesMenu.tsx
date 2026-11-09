@@ -15,7 +15,7 @@ import { ColumnDetail, columnKind } from './ColumnDetail'
 import { DragHandleIcon, FileFieldIcon, FormulaIcon } from './icons'
 import { allPropertyKeys } from './properties'
 import { ViewFolder } from './GroupHeader'
-import { ownerName } from '../columnInheritance'
+import { byFolder, folderName } from '../columnInheritance'
 import { declarationForKind } from './declarationForKind'
 import { ViewSettings } from './ViewSettings'
 import { ColumnMark, columnMark } from './ColumnMark'
@@ -69,10 +69,10 @@ export interface PropertiesMenuProps {
  *  column: grip (YAZ-1207, shown rows only, on hover) · the column's KIND glyph · its label · its type in grey · a `›`
  *  on hover — the whole label area opens the column — then the show switch (writes `view.order`; Table and Board may
  *  hide `file.name`, Cards and List keep it). "New column" closes the list (YAZ-3746 demo polish).
- *  Hidden is in parts by where each column comes from (YAZ-4713 C4): "This folder", "From <owner>" for each parent
- *  folder, nearest first, and "Other properties in these notes" — the notes' fields that no column on the chain
- *  declares (`tags`, a value from a former folder, a column of a subfolder only). Such a row has Show (this view only)
- *  and "Add to this folder" (a column here, so every view and every page below gets it) in place of the switch.
+ *  Hidden is in parts by where each column comes from (YAZ-4713 C4): the folder's own ("Recipes"), "From <owner>" for
+ *  each parent folder, nearest first, and "Other properties in these notes" — the notes' fields that no column on the
+ *  chain declares (`tags`, a value from a former folder, a column of a subfolder only). Such a row has Show (this view
+ *  only) and "Add to Recipes" (a column here, so every view and every page below gets it) in place of the switch.
  *
  *  VIEW — how this view looks (`ViewSettings`): the settings that sat below the list, by section, only those the
  *  view's type reads, each Settings default with "from Settings" and Reset (D34). Group indent and Subfolders moved
@@ -161,11 +161,14 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
 
   const shownMatches = matches.filter(isShown)
   const hiddenMatches = matches.filter((key) => !isShown(key))
+  /** The page's folder by name (Yaseen's copy rule, 2026-11-08: name the folder, not "this folder"): "Recipes". */
+  const folderTitle = folder.sources.folderName
+  const folderMap = useMemo(() => byFolder(folder.vaultFolders), [folder.vaultFolders])
   /** The hidden rows in their parts (C4): this folder, each parent folder nearest first, then the other properties. */
   const owners = [...new Set(hiddenMatches.map(ownerOf).filter((o): o is string => o !== null && o !== here))].sort((a, b) => b.length - a.length)
   const hiddenParts: { title: string; keys: string[] }[] = [
-    { title: 'This folder', keys: hiddenMatches.filter((key) => ownerOf(key) === here) },
-    ...owners.map((owner) => ({ title: `From ${ownerName(folder.vaultFolders, owner, folder.vaultName)}`, keys: hiddenMatches.filter((key) => ownerOf(key) === owner) })),
+    { title: folderTitle, keys: hiddenMatches.filter((key) => ownerOf(key) === here) },
+    ...owners.map((owner) => ({ title: `From ${folderName(folderMap, owner, folder.vaultName)}`, keys: hiddenMatches.filter((key) => ownerOf(key) === owner) })),
     { title: 'Other properties in these notes', keys: hiddenMatches.filter((key) => ownerOf(key) === null) },
   ].filter((part) => part.keys.length > 0)
   /** Hide all / Show all: Table and Board may hide every column; Cards and List keep the name (as before). */
@@ -177,7 +180,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
     if (c.startsWith('formula.')) return 'Formula'
     return PROPERTY_LABELS[kindOf(key)]
   }
-  /** "Add to this folder" (C4): the field becomes a column of this folder, of the kind it shows, and shows in this view, in one write. */
+  /** "Add to <folder>" (C4): the field becomes a column of this folder, of the kind it shows, and shows in this view, in one write. */
   const addToFolder = (key: string) => {
     const name = canonicalKey(key).slice('note.'.length)
     // A subfolder's column (YAZ-4713 C11): its agreed definition, options and all, becomes this folder's own; then it shows.
@@ -198,8 +201,8 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
         Show
       </button>
       {!reserved.has(canonicalKey(key).slice('note.'.length)) && (
-        <button type="button" className="view-menu__action" aria-label={`Add ${label} to this folder`} onClick={() => addToFolder(key)}>
-          Add to this folder
+        <button type="button" className="view-menu__action view-prop__add" aria-label={`Add ${label} to ${folderTitle}`} title={`Add to ${folderTitle}`} onClick={() => addToFolder(key)}>
+          Add to {folderTitle}
         </button>
       )}
     </>
@@ -216,6 +219,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
     const on = isShown(key)
     const i = shown.indexOf(key)
     const label = propertyLabel(def, key)
+    const mark = on ? markOf(key) : null
     // The gap is the marker (YAZ-4606): the live gap's own attributes and transforms say where it opens, no class does.
     return (
       <li key={key} {...(i >= 0 && !filtering ? live.itemProps(i) : {})} className="view-prop">
@@ -253,7 +257,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
               {label}
               {(labelCounts.get(label) ?? 0) > 1 && <small>{canonicalKey(key)}</small>}
               {/* Where a shown column comes from (YAZ-4713 C11): Columns ⚙ names the folder; the hidden rows say it in their parts. */}
-              {on && markOf(key) !== null && <ColumnMark mark={markOf(key)!} withName />}
+              {mark !== null && <ColumnMark mark={mark} withName />}
             </span>
             <span className="view-prop__type">{typeOf(key)}</span>
             <span className="view-prop__chevron" aria-hidden="true">›</span>

@@ -1,5 +1,5 @@
 /**
- * Turning "Separate value on this page" OFF (YAZ-4713 C3, 1B, locked 2026-11-08). The page's own values for a column
+ * Turning "Separate value for <folder>" OFF (YAZ-4713 C3, 1B, locked 2026-11-08). The page's own values for a column
  * live in each note's `in: {<page id>}` block; off, the page reads the note's own field again. The ask counts the notes
  * first (`separateCounts`); then ONE guarded write per note moves the page value into the note's field and drops it
  * from the block (`mergeSeparateValues`), and Undo puts both back exactly (`restoreSeparateValues`). A read-only note is
@@ -19,7 +19,7 @@ export interface SeparateCounts {
   differ: number
 }
 
-/** "Keep the notes' values" (a differing page value is dropped) or "Use this page's values" (it overwrites the field). */
+/** "Keep the notes' values" (a differing page value is dropped) or "Use the <folder> values" (it overwrites the field). */
 export type SeparateKeep = 'notes' | 'page'
 
 const empty = (value: unknown): boolean => value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
@@ -47,7 +47,7 @@ export interface MergedNote {
 }
 
 /** One note's bytes with the page value moved into its field (or dropped, per `keep`), and what stood before. */
-export function mergeInContent(content: string, pageId: string, key: string, keep: SeparateKeep): { content: string; before?: Omit<MergedNote, 'path'> } {
+function mergeInContent(content: string, pageId: string, key: string, keep: SeparateKeep): { content: string; before?: Omit<MergedNote, 'path'> } {
   const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
   if (parsed.error) throw new FrontmatterWriteError(parsed.error)
   if (isReadOnlyProperties(parsed.properties)) return { content }

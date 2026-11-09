@@ -917,19 +917,39 @@ describe('FrontmatterPanel — "Column on" and the columns of the note’s page 
     const el = mountAt(NOTE, 'Body\n')
     click(btn(el, 'Add property'))
     expect(choices(el)).toEqual(['Column on C', 'Column on B', 'Column on A', 'No column'])
-    expect(columnOn(el)?.value).toBe('A/B/C')
+    expect(columnOn(el)?.value).toBe('/A/B/C')
+  })
+
+  it('a name a parent folder already defines: "Column on" starts on that folder, and Add writes no copy of its column (C6, 7A 8)', async () => {
+    const el = mountAt(NOTE, 'Body\n')
+    click(btn(el, 'Add property'))
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'priority')
+    expect(columnOn(el)?.value).toBe('/A')
+    click(btn(el, 'Add'))
+    await flush()
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOTE, content: '---\npriority: ""\n---\nBody\n', expectedMtime: 100 })
+  })
+
+  it('Settings › Folder pages › "Show parent folders’ columns" off: the rows are the note’s folder’s columns alone (C12, 7A 7)', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<FrontmatterPanel file={{ path: '/vault/A/B/Note.md', content: 'Body\n', mtime: 100 }} root={ROOT} wikilinks={nested()} inheritColumns={false} />))
+    expand(container)
+    expect(keysOf(container)).toEqual(['effort', 'owner'])
   })
 
   it('adding `owner` with "Column on A": the field is the note’s own, and A’s `.folder.md` declares the column — a plain Text too', async () => {
     const el = mountAt(NOTE, 'Body\n')
-    await add(el, 'reviewer', 'A')
+    await add(el, 'reviewer', '/A')
     expect(saved('/vault/A/.folder.md')).toMatchObject({ reviewer: { kind: 'text' } })
     expect(writeFile.mock.calls.at(-1)![0]).toEqual({ path: NOTE, content: '---\nreviewer: ""\n---\nBody\n', expectedMtime: 100 })
   })
 
   it('"No column" writes only the field', async () => {
     const el = mountAt(NOTE, 'Body\n')
-    await add(el, 'reviewer', '')
+    await add(el, 'reviewer', 'no-column')
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOTE, content: '---\nreviewer: ""\n---\nBody\n', expectedMtime: 100 })
   })
 
@@ -1223,9 +1243,9 @@ Body
     expect(written()).toBe(CONTENT.replace('Status: 2-Todo', 'Status: 3-Doing'))
   })
 
-  it('"Values from pages that do not show this note" (C9): Archive’s value, with Clear — which removes only it', async () => {
+  it('"Other folders’ values for this note" (C9): Archive’s value, with Clear — which removes only it', async () => {
     const el = mountNote()
-    expect(el.querySelector('.frontmatter-panel__kept .frontmatter-property-context')?.textContent).toBe('Values from pages that do not show this note')
+    expect(el.querySelector('.frontmatter-panel__kept .frontmatter-property-context')?.textContent).toBe("Other folders' values for this note")
     expect(kept(el)).toEqual(['Status · Archive'])
     click(byLabel(el, 'Clear Status · Archive'))
     await flush()
@@ -1422,6 +1442,26 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     })
     expect(value).toEqual({ path: PATH, content: FIELD_NOTE.replace('Status: Ready\n', 'Status: Ready\nDue Date:\n'), expectedMtime: 100 })
     expect((await propertiesStub.get(ROOT)).properties).toEqual({}) // a folder's property is not vault-wide
+  })
+
+  it('a note at the vault root: "Column on <vault>" and "No column" are two choices, and either can be picked again (7A 1)', async () => {
+    readFile.mockImplementation(async () => fileOf(FIELD_NOTE))
+    const el = mount(FIELD_NOTE, { root: ROOT, wikilinks: folderFeed({ Status: { kind: 'select', options: ['Ready', 'Later'] } }) })
+    expand(el)
+    click(btn(el, 'Add property'))
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Due Date')
+    const columnOn = byLabel<HTMLSelectElement>(el, 'Column on')!
+    expect([...columnOn.options].map((o) => o.textContent)).toEqual(['Column on vault', 'No column'])
+    expect(columnOn.value).toBe('/')
+    setValue(columnOn, 'no-column')
+    expect(byLabel<HTMLSelectElement>(el, 'Column on')!.value).toBe('no-column')
+    setValue(byLabel<HTMLSelectElement>(el, 'Column on')!, '/')
+    expect(byLabel<HTMLSelectElement>(el, 'Column on')!.value).toBe('/')
+    setValue(byLabel<HTMLSelectElement>(el, 'Column on')!, 'no-column')
+    click(btn(el, 'Add'))
+    await flush()
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: FIELD_NOTE.replace('Status: Ready\n', 'Status: Ready\nDue Date: ""\n'), expectedMtime: 100 })
   })
 
   it('a right-click is no native menu: it closes the popover and opens "<Type> · <name>", Change type ›, Rename…, Copy value, Remove from this note', () => {
