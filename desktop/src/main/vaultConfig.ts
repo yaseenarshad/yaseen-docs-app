@@ -2,7 +2,7 @@ import { existsSync, type Stats } from 'node:fs'
 import { mkdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { VAULT_CONFIG_DIR, type VaultConfigChange } from '@shared/types'
-import { atomicWrite, BridgeFailure, createDurable, fsCall, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
+import { atomicWrite, BridgeFailure, createRootChain, createDurable, fsCall, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
 import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 
 /**
@@ -114,7 +114,25 @@ function configText(value: unknown): string {
 }
 
 /** `mkdir -p` the dotfolder lazily, then an atomic pretty-printed write; own subscribers notified synchronously. */
+const writes = createRootChain()
 export async function writeConfig(root: string, name: string, value: unknown): Promise<void> {
+  const r = requireAbsPath(root, 'root'), n = requireConfigName(name)
+  return writes(`${r}/${n}`, () => writeConfigUnlocked(r, n, value))
+}
+
+/** Patch current public configuration under the same lock as a complete UI write. */
+export async function patchConfig(root: string, name: string, update: (current: unknown) => unknown): Promise<unknown> {
+  const r = requireAbsPath(root, 'root'), n = requireConfigName(name)
+  return writes(`${r}/${n}`, async () => {
+    const before = await readConfigDetailed(r, n)
+    if (before.state === 'malformed') throw new BridgeFailure('INVALID_CONFIG', 'The configuration is malformed and will not be overwritten.')
+    const next = update(before.state === 'ok' ? before.value : null)
+    await writeConfigUnlocked(r, n, next)
+    return next
+  })
+}
+
+async function writeConfigUnlocked(root: string, name: string, value: unknown): Promise<void> {
   const r = requireAbsPath(root, 'root')
   const n = requireConfigName(name)
   const content = configText(value)

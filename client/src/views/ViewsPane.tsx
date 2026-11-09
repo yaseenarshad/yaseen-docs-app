@@ -1,3 +1,4 @@
+import { useAutomationSurface } from '../automation/surfaces'
 import { boardOptionGroups } from './boardOptionGroups'
 import { columnTyping } from './editorType'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -23,7 +24,8 @@ import { ListView } from './view/ListView'
 import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
-import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
+import type { ViewTabsProps } from './view/ViewTabs'
+import { addView, deleteView, duplicateView, freeName, moveView, renameView, viewIndex } from '@shared/folderViews'
 import { NO_READ_ONLY } from './readOnlyRows'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
@@ -159,11 +161,7 @@ function seedGroup(seed: NewNoteSeed, group: Group, view: ViewDef, level: number
  * for unknown view types. Only the active tab and the search text are component state —
  * everything else is the file.
  */
-/** The first free name for a new view: `base`, `base 2`, `base 3`… (`taken` = the views' names). */
-export function freeName(base: string, taken: ReadonlySet<string>): string {
-  if (!taken.has(base)) return base
-  for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
-}
+export { freeName }
 
 export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', foldingOnByDefault }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
@@ -202,6 +200,14 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
    * `folderViewSet` both fall back to `DEFAULT_VIEWS` — and `index` is clamped into that list.
    */
   const view = views[index]!
+  useAutomationSurface(() => {
+    const tab = paneRef.current?.closest<HTMLElement>('[data-tab]')?.dataset.tab
+    return tab === undefined ? null : `view:${tab}`
+  }, {
+    ready: true,
+    inspect: () => ({ view: view.name, views: views.map(item => item.name) }),
+    selectView: name => setActive(viewIndex(views, name)),
+  })
   // Re-parse after every edit: `doc.setIn` stores plain JS values, so a second edit inside a
   // collection a previous edit created would throw ("Expected YAML collection"). The round trip
   // through text keeps comments and rebuilds proper nodes.
@@ -285,6 +291,16 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
     storage.setViewGroups(root, fromKey, [])
     if (toKey !== null) storage.setViewGroups(root, toKey, kept)
   }
+  // An outside edit (another window, the CLI) renames or deletes views without `moveCollapsed`: main's store already
+  // moved the entry, so a local copy for a view that is gone goes too, and a later view of that name starts open.
+  const viewNames = views.map((v) => v.name).join('\u0000')
+  useEffect(() => {
+    setCollapsedByKey((m) => {
+      const kept = Object.entries(m).filter(([key]) => views.some((v) => key === `${folderPath}::${v.name}`))
+      return kept.length === Object.keys(m).length ? m : Object.fromEntries(kept)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- by value: `views` is read through its names
+  }, [viewNames, folderPath])
   const onToggleGroup = (key: string) => {
     writeCollapsed(collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key])
   }
@@ -374,40 +390,34 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
 
   // View CRUD lives here since YAZ-1471 (re-ruling 🔒 rule 4, YAZ-819): every gesture is ONE
   // `update` — the same door as sort and columns — and which view is ACTIVE stays session state.
-  const taken = () => new Set(views.map((v) => v.name))
+  // The gestures' rules are `@shared/folderViews`, which the CLI's folder commands share (YAZ-4518).
   const tabs: ViewTabsProps = {
     views,
     active: index,
     onSelect: setActive,
     onMove: (from, to) => {
-      update((d) => d.views.splice(to, 0, ...d.views.splice(from, 1)))
+      update((d) => moveView(d, from, to))
       // The active view FOLLOWS its tab: replay the same move over the indices.
       const order = views.map((_, i) => i)
       order.splice(to, 0, ...order.splice(from, 1))
       setActive(order.indexOf(index))
     },
     onAdd: (type) => {
-      update((d) => d.views.push({ type, name: freeName(viewTypeLabel(type), taken()) }))
+      update((d) => addView(d, type))
       setActive(views.length)
     },
     onRename: (i, name) => {
       moveCollapsed(views[i].name, name)
-      update((d) => {
-        if (d.defaultView === d.views[i].name) d.defaultView = name // the saved START follows (D4)
-        d.views[i].name = name
-      })
+      update((d) => renameView(d, i, name))
     },
     onDuplicate: (i) => {
-      update((d) => d.views.splice(i + 1, 0, { ...structuredClone(d.views[i]), name: freeName(`${d.views[i].name} copy`, taken()) }))
+      update((d) => duplicateView(d, i))
       setActive(i + 1)
     },
     onDelete: (i) => {
       if (views.length <= 1) return
       moveCollapsed(views[i].name, null)
-      update((d) => {
-        const [gone] = d.views.splice(i, 1)
-        if (d.defaultView === gone.name) delete d.defaultView // a deleted START clears itself (D4)
-      })
+      update((d) => deleteView(d, i))
       // The active view stays put unless it WAS the deleted one — then its right neighbour takes over
       // (the left one when it was the last tab); a view before it in the list shifts one index down.
       setActive(index === i ? Math.min(i, views.length - 2) : index > i ? index - 1 : index)

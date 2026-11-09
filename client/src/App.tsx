@@ -1,3 +1,12 @@
+import { isTabOperation } from '@shared/automationTabs'
+import { operateTabs } from './automation/tabs'
+import { operateFiles } from './automation/organize'
+import { AutomationFailure } from '@shared/automation'
+import { exportLiveImage, readLiveDocument, runEditorAction, unsavedUnder } from './automation/liveDocument'
+import { flushSync } from 'react-dom'
+import { useAutomation } from './automation/useAutomation'
+import { inspectSurface, useAutomationSurface, waitForSurface } from './automation/surfaces'
+import type { RightPanelIdentity } from '@shared/types'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
@@ -21,7 +30,7 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
 import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
-import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
+import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type StepOutcome, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
 import { dropIndex } from './lib/dragSlot'
@@ -1305,8 +1314,8 @@ export function App() {
   const [overview, setOverview] = useState<{ phase: 'closed' | 'open' | 'leaving'; from: string | null }>(OVERVIEW_CLOSED)
   const overviewOpen = overview.phase === 'open'
   /** What the doors below read at the moment they are used; they keep their identity under the board. */
-  const now = useRef({ file, active: activeTab, tabs, preview, blank, phase: overview.phase, right: rightPanel.items.length })
-  now.current = { file, active: activeTab, tabs, preview, blank, phase: overview.phase, right: rightPanel.items.length }
+  const now = useRef({ file, active: activeTab, tabs, mounted, preview, blank, phase: overview.phase, right: rightPanel.items.length, rightPanel })
+  now.current = { file, active: activeTab, tabs, mounted, preview, blank, phase: overview.phase, right: rightPanel.items.length, rightPanel }
   // The note's first edit keeps the preview tab that shows it (YAZ-2648 D2). An editor says its path;
   // `keep` takes the tab's id (YAZ-2940 D1). Through `now`, because a new `onUserEdit` identity would rebuild every mounted editor.
   const keepEdited = useCallback((path: string) => {
@@ -1642,23 +1651,27 @@ export function App() {
    * Only this tab leaves: a copy's twins stay (YAZ-2940 S16). A `send` that answers `false` sent nothing (YAZ-3637 D5:
    * the window moved with its tab, or the drop was on a window): the tab stays, no notice.
    */
-  const sendTabAway = useCallback((path: string, id: string, send: (carry: PopOutCarry) => Promise<void | boolean>, failed: string, closeEmptyWindow: boolean) => {
+  const sendTabAwayNow = useCallback(async (path: string, id: string, send: (carry: PopOutCarry) => Promise<void | boolean>, closeEmptyWindow: boolean): Promise<'sent' | 'kept' | 'window-closed'> => {
     // The page opens there as it looks here (YAZ-2951 D2): read before the save, while its editor is the one on show.
     const view = pageViewOf(id)
     // The tab's display name goes with it (YAZ-2949 D7, S19).
     const name = now.current.tabs.find((t) => t.id === id)?.name
-    flushRenamedPath(path)
-      .then(() => send({ view, name }))
-      .then((sent) => {
-        if (sent === false) return
-        // YAZ-3091 D6: the only tab of a window whose right panel is empty takes the window with it, through its real close.
-        if (closeEmptyWindow && aloneHere(id)) void api.window.closeSelf()
-        // A moved tab lives on in the other window: no "Recently closed" (YAZ-3487 D10).
-        else if (now.current.phase === 'open') closeUnderOverview([id], true)
-        else closeTab(id, true)
-      })
-      .catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
-  }, [aloneHere, closeUnderOverview, closeTab, notify, pageViewOf])
+    await flushRenamedPath(path)
+    if ((await send({ view, name })) === false) return 'kept'
+    // YAZ-3091 D6: the only tab of a window whose right panel is empty takes the window with it, through its real close.
+    if (closeEmptyWindow && aloneHere(id)) {
+      void api.window.closeSelf()
+      return 'window-closed'
+    }
+    // A moved tab lives on in the other window: no "Recently closed" (YAZ-3487 D10).
+    if (now.current.phase === 'open') closeUnderOverview([id], true)
+    else closeTab(id, true)
+    return 'sent'
+  }, [aloneHere, closeUnderOverview, closeTab, pageViewOf])
+  /** The same, for a gesture: a refusal or a failed save says why, and the tab stays (`sendTabAwayNow` is the CLI's awaited door, YAZ-4502). */
+  const sendTabAway = useCallback((path: string, id: string, send: (carry: PopOutCarry) => Promise<void | boolean>, failed: string, closeEmptyWindow: boolean) => {
+    sendTabAwayNow(path, id, send, closeEmptyWindow).catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
+  }, [sendTabAwayNow, notify])
   /** "Move to new window" (YAZ-2933): main opens the window and stores the name with its one tab (YAZ-3057). A last tab leaves this window empty. */
   const movePageToNewWindow = useCallback((path: string, id: string) =>
     sendTabAway(path, id, (carry) => api.window.popOut(path, carry), "Can't move to a new window", false), [sendTabAway])
@@ -1887,6 +1900,81 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
+  useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed, rightPanel }) })
+  useAutomation(async target => {
+    if (target.tab !== undefined && !now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
+    flushSync(() => {
+      if (target.sidebar !== undefined) {
+        if (sidebarCollapsedRef.current) toggleSidebar()
+        changeLens(target.sidebar)
+      }
+      if (target.tab !== undefined) activate(target.tab)
+      // "Open to the right" (YAZ-2940): the page leaves the main tabs and shows expanded in the right panel.
+      else if (target.path !== undefined) (target.panel === 'right' ? openRight : openPage)(target.path)
+    })
+    const app = await waitForSurface('app', surface => {
+      const state = surface.inspect() as { path?: string | null; tab?: string; sidebar?: string; sidebarCollapsed?: boolean; rightPanel: RightPanelIdentity }
+      const shown = target.panel === 'right' ? state.rightPanel.open && state.rightPanel.expanded === target.path : state.path === target.path
+      return (target.tab === undefined || state.tab === target.tab) && (target.path === undefined || shown) && (target.sidebar === undefined || (state.sidebar === target.sidebar && state.sidebarCollapsed === false))
+    })
+    if ((target.path || target.group) && target.reveal !== false && target.sidebar && ['files', 'favorites', 'focus'].includes(target.sidebar)) {
+      const sidebar = await waitForSurface('sidebar')
+      await sidebar.reveal?.(target)
+      await waitForSurface('sidebar', surface => surface.ready && surface.inspect().revealed === (target.group ?? target.path))
+    }
+    if (target.view !== undefined) {
+      const key = `view:${String(app.inspect().tab)}`
+      // Main named a view the saved file holds; a page whose index has not caught up with that file yet waits for it.
+      const view = await waitForSurface(key, surface => surface.ready && (surface.inspect().views as string[] | undefined)?.includes(target.view!) === true)
+      flushSync(() => view.selectView?.(target.view!))
+      // Main sent the saved name, which the page holds: `selectView`'s rule (`viewIndex`) picks exactly that view.
+      await waitForSurface(key, surface => surface.inspect().view === target.view)
+    }
+    return { ...app.inspect(), acknowledged: true }
+  }, target => {
+    if (target.kind === 'history') {
+      // A move gesture carries no `step` of its own; the public history names it, as `file undo` does.
+      const { undo, redo } = moveHistory.current.inspect(), named = (entry: UndoStep) => isMoveStep(entry) ? { step: 'move', ...entry } : entry
+      return { undo: undo.map(named), redo: redo.map(named), source: 'live', window: storage.getWindowId() }
+    }
+    if (target.kind === 'document') {
+      if (!now.current.tabs.some(tab => tab.id === target.tab)) throw new AutomationFailure('TAB_NOT_FOUND', 'The requested tab is not in this window.')
+      return readLiveDocument(target.tab)
+    }
+    // YAZ-4515: a CLI board write refuses (or a shrink skips) while an editor here holds unsaved edits of that file or folder.
+    if (target.kind === 'dirty') return { open: unsavedUnder(target.path, now.current.tabs) }
+    return { source: 'live', window: storage.getWindowId(), roots, activeTab: now.current.active, tabs: now.current.tabs, storedTabs: storage.getTabStrip(), tabViews: now.current.tabs.map(tab => ({ tab: tab.id, ...inspectSurface(`view:${tab.id}`) })), sidebar: sidebarLens, sidebarCollapsed, rightPanel: now.current.rightPanel }
+  }, async target => {
+    if (isTabOperation(target)) {
+      const result = await operateTabs(target, {
+        current: () => ({ tabs: now.current.tabs, active: now.current.active, mounted: now.current.mounted, blank: now.current.blank }),
+        open: openKept, background: openBackground, blank: openBlank, duplicate: duplicateTab, close: closeTab,
+        keep, rename: setTabName, move: moveTab, sleep: sleepTabs, wake: wakeTab, restore: openStored,
+        collapse: value => { if (sidebarCollapsedRef.current !== value) toggleSidebar() },
+        right: () => now.current.rightPanel, setRightOpen,
+        send: async (id, to, at, background) => {
+          const { path } = now.current.tabs.find(tab => tab.id === id)!
+          // The GUI's doors: "Move to new window", "Move to ▸", a strip drop (`at`), and a quiet board move (`background`).
+          const move = to === null ? (carry: PopOutCarry) => api.window.popOut(path, carry) : (carry: PopOutCarry) => api.window.moveTo(to, path, { ...carry, ...(at === undefined ? {} : { at }), ...(background ? { background } : {}) })
+          const sent = await sendTabAwayNow(path, id, carry => move(carry).catch((err: unknown) => {
+            throw new AutomationFailure('TARGET_UNAVAILABLE', `The target refused the tab, which stayed here: ${err instanceof Error ? err.message : String(err)}`)
+          }), to !== null)
+          return sent === 'window-closed'
+        },
+      })
+      // This window is closing through its real close, which saves and stores it.
+      if ('sourceClosed' in result && result.sourceClosed) return result
+      // Await the same identity door the workspace mirrors, before main flushes its durable store.
+      const strip = storage.getTabStrip()
+      await api.window.setIdentity({ tabs: [...new Set(strip.map(tab => tab.path))], tabStrip: strip, file: storage.getFile(), rightPanel: storage.getRightPanel(), sidebarCollapsed: storage.getSidebarCollapsed() })
+      return result
+    }
+    if (target.command === 'editor.action') return runEditorAction(target)
+    if (target.command === 'board.export') return exportLiveImage(target)
+    return operateFiles(target, {
+      scopeOf, notify, recordMoves, historyCounts, replayStep, trashMany, planMoves, runMoves, catalogForRename, renameWithUndo,
+    })
+  })
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
   const moveBoardCardToSlot = useCallback((id: string, slot: number) => {
@@ -2272,6 +2360,11 @@ export function App() {
 
   // The window's undo list (YAZ-3255 D10; YAZ-3268 D17): moves, renames and deletes, per window, for the session only (S42).
   const moveHistory = useRef(createMoveHistory())
+  /** How many steps each list holds, as every CLI organization write reports it. */
+  const historyCounts = (): { undo: number; redo: number } => {
+    const { undo, redo } = moveHistory.current.inspect()
+    return { undo: undo.length, redo: redo.length }
+  }
   const replaying = useRef(false)
   // ⌘Z, ⌘⇧Z and the toast's buttons reach the newest undo and redo through this box.
   const moveReplay = useRef<{ undo: () => boolean; redo: () => boolean }>({ undo: () => false, redo: () => false })
@@ -2290,23 +2383,28 @@ export function App() {
    * the page title, a table's Name cell — so each goes on the undo list (YAZ-3268 D17, D19): the
    * door's input forward, and back (the old path, or the old title in a vault that uses IDs). No sound (D18).
    */
-  const renameFile = useCallback(
-    async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
+  const renameWithUndo = useCallback(
+    async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<RenameOutcome | null> => {
       // The title before the edit, read while the index still has the page.
       const from: RenameTo = to.title === undefined ? { newPath: oldPath } : { title: nameOf(oldPath) }
       const out = await applyRename(oldPath, to, viewOnlyCatalog)
-      if (out === null) return
-      if ('error' in out) {
+      if (out !== null && !('error' in out)) {
+        moveHistory.current.push({ step: 'rename', path: out.move.newPath, from, to, type: out.move.kind })
+        stepToast(renamedNotice(`Renamed to "${to.title ?? nameOf(out.move.newPath)}"`, out.links), 'info', 'undo', out.links.skipped > 0)
+      }
+      return out
+    }, [applyRename, nameOf, stepToast],
+  )
+  const renameFile = useCallback(
+    async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
+      const out = await renameWithUndo(oldPath, to, viewOnlyCatalog)
+      if (out !== null && 'error' in out) {
         const err = out.error
         const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
         const cannot = to.title === undefined ? "Can't rename" : "Can't change the title"
         notify(exists ? `${cannot}: "${to.title ?? nameOf(to.newPath)}" already exists` : `${cannot}: ${err instanceof Error ? err.message : String(err)}`)
-        return
       }
-      moveHistory.current.push({ step: 'rename', path: out.move.newPath, from, to, type: out.move.kind })
-      stepToast(renamedNotice(`Renamed to "${to.title ?? nameOf(out.move.newPath)}"`, out.links), 'info', 'undo', out.links.skipped > 0)
-    },
-    [applyRename, nameOf, notify, stepToast],
+    }, [renameWithUndo, nameOf, notify],
   )
 
   /**
@@ -2442,26 +2540,31 @@ export function App() {
    * "Can't undo: Plan moved again" (S64), and one whose name a new file took "Can't undo: a file
    * named Draft is there now" (nit 2); either way the step goes. Any other failure keeps it on its list.
    */
-  const replayRename = useCallback(async (entry: RenameStep, verb: 'undo' | 'redo'): Promise<void> => {
+  const replayRename = useCallback(async (entry: RenameStep, verb: 'undo' | 'redo'): Promise<StepOutcome> => {
     const side = verb === 'undo' ? entry.from : entry.to
     const name = entry.to.title ?? nameOf(entry.path)
     const keep = (): void => (verb === 'undo' ? moveHistory.current.redone(entry) : moveHistory.current.undone(entry))
+    const fail = (failed: string): StepOutcome => {
+      notify(stepNotice(verb, null, [failed]), 'error')
+      return { done: 0, failed: [failed] }
+    }
     const catalog = await catalogForRename(entry.path, entry.type)
     if (catalog === undefined) {
       keep()
-      return notify(stepNotice(verb, null, [`${name} — couldn't load the current file list`]), 'error')
+      return fail(`${name} — couldn't load the current file list`)
     }
     const out = await applyRename(entry.path, side, catalog)
-    if (out === null) return // the window's vaults changed under it: the lists are empty now
+    if (out === null) return { done: 0, failed: [] } // the window's vaults changed under it: the lists are empty now
     if ('error' in out) {
       if (!movedAgain(out.error)) keep()
-      return notify(stepNotice(verb, null, [renameReplayFailure(name, side.title ?? nameOf(side.newPath), entry.type, out.error)]), 'error')
+      return fail(renameReplayFailure(name, side.title ?? nameOf(side.newPath), entry.type, out.error))
     }
     const now: RenameStep = { ...entry, path: out.move.newPath }
     if (verb === 'undo') moveHistory.current.undone(now)
     else moveHistory.current.redone(now)
     const shown = side.title ?? nameOf(out.move.newPath)
     stepToast(renamedNotice(verb === 'undo' ? `Renamed back to "${shown}"` : `Renamed to "${shown}"`, out.links), 'info', verb === 'undo' ? 'redo' : 'undo', out.links.skipped > 0)
+    return { done: 1, failed: [], links: out.links }
   }, [nameOf, catalogForRename, applyRename, notify, stepToast])
 
   /**
@@ -2470,7 +2573,7 @@ export function App() {
    * there, and the rest come back. What came back goes on the redo list; "Put back 2 files (Todo.md, Plan.md)" with Redo
    * and the land sound (D18).
    */
-  const putBackStep = useCallback(async (entry: DeleteStep): Promise<void> => {
+  const putBackStep = useCallback(async (entry: DeleteStep): Promise<{ restored: DeleteStep['items']; failed: string[] }> => {
     const back: DeleteStep['items'] = []
     const failed: string[] = []
     let gone = 0
@@ -2486,9 +2589,12 @@ export function App() {
     if (back.length > 0) moveHistory.current.undone({ step: 'delete', items: back })
     else if (failed.length > gone) moveHistory.current.redone(entry)
     const text = stepNotice('undo', back.length === 0 ? null : `Put back ${namedItems(back.map((item) => ({ name: item.name, kind: item.type })))}`, failed)
-    if (back.length === 0) return notify(text, 'error')
-    playGestureSound('land')
-    stepToast(text, 'paste', 'redo', failed.length > 0)
+    if (back.length === 0) notify(text, 'error')
+    else {
+      playGestureSound('land')
+      stepToast(text, 'paste', 'redo', failed.length > 0)
+    }
+    return { restored: back, failed }
   }, [nameOf, notify, stepToast])
 
   /**
@@ -2496,7 +2602,7 @@ export function App() {
    * new places in the Trash go on the undo list; an item that was not found there has no Undo again
    * (S61). The trash sound, as a delete plays it (D18).
    */
-  const deleteAgain = useCallback(async (entry: DeleteStep): Promise<void> => {
+  const deleteAgain = useCallback(async (entry: DeleteStep): Promise<StepOutcome> => {
     const items: DeleteStep['items'] = []
     const failed: string[] = []
     let went = 0
@@ -2518,10 +2624,13 @@ export function App() {
     if (items.length > 0) moveHistory.current.redone({ step: 'delete', items })
     else if (went === 0 && failed.length > again) moveHistory.current.undone(entry)
     const text = stepNotice('redo', went === 0 ? null : `Deleted ${namedItems(names)}`, failed)
-    if (went === 0) return notify(text, 'error')
-    playGestureSound('trash')
-    if (items.length > 0) stepToast(text, 'info', 'undo', failed.length > 0)
-    else notify(text, 'info', unlessFailed('undo', failed))
+    if (went === 0) notify(text, 'error')
+    else {
+      playGestureSound('trash')
+      if (items.length > 0) stepToast(text, 'info', 'undo', failed.length > 0)
+      else notify(text, 'info', unlessFailed('undo', failed))
+    }
+    return { done: went, failed }
   }, [nameOf, notify, stepToast])
 
   /**
@@ -2530,73 +2639,69 @@ export function App() {
    * note's path before the move (`restoreFolderValues`). What moved back goes on the redo list. One
    * that moved nothing stays on the undo list, so the next ⌘Z tries again — unless every item moved
    * again (audit 21). One undo or redo runs at a time; a key during one is taken and does nothing.
-   * False with nothing to undo.
-   */
-  const undoMove = useCallback((): boolean => {
-    if (replaying.current) return true
-    const entry = moveHistory.current.undo()
-    if (entry === undefined) return false
-    replaying.current = true
-    void (async () => {
-      try {
-        // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
-        if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'undo') : putBackStep(entry))
-        const back = await runMoves(invertMoves(entry.moves), { record: false })
-        // Only a note whose move went back gets its blocks: its path is the move's own, or under a folder that went back.
-        const returned = (path: string): boolean => back.moves.some((move) => move.newPath === path || (move.kind === 'dir' && path.startsWith(`${move.newPath}/`)))
-        for (const { path, values } of entry.cleared) if (returned(path)) await transformFile(path, restoreFolderValues(values), true).catch(() => undefined) // quiet (YAZ-3235 D1)
-        if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves), cleared: [] })
-        else if (back.failed.length > back.again) moveHistory.current.redone(entry)
-        // The names in the order of the gesture it undoes, as its own toast said them (YAZ-3274 D22): the moves ran newest first.
-        const text = replayNotice('undo', [...back.names].reverse(), back.failed, back.links)
-        // Nothing ran and nothing failed: the window's vaults changed under it, and there is nothing to say.
-        if (back.moves.length === 0) {
-          if (text !== '') notify(text, 'error')
-        }
-        else {
-          // One land sound for the undo, however many items moved back (YAZ-3267 D15, S54).
-          playGestureSound('land')
-          stepToast(text, 'paste', 'redo', back.failed.length > 0 || back.links.skipped > 0)
-        }
-      } finally {
-        replaying.current = false
-      }
-    })()
-    return true
-  }, [runMoves, notify, stepToast, replayRename, putBackStep])
-
-  /**
+   *
    * ⌘⇧Z (YAZ-3255 D10 amended, S37): the newest undone gesture runs forward again through
    * `runMoves`, with no D21 sheet. Its moves clear the values again (D20), and the gesture goes back
    * on the undo list with what it cleared this time. One that moved nothing stays on the redo list,
-   * as an undo does (audit 21). False with nothing to redo.
+   * as an undo does (audit 21).
+   *
+   * One door for the keys, the toasts' buttons and the CLI's `file undo` / `file redo` / `file restore` (YAZ-4502):
+   * `busy` while one runs, null with nothing on the list (or, with `only`, when the newest step is not a delete),
+   * else what the step did. An undone delete also answers the items that came back.
    */
-  const redoMove = useCallback((): boolean => {
-    if (replaying.current) return true
-    const entry = moveHistory.current.redo()
-    if (entry === undefined) return false
+  const replayStep = useCallback((verb: 'undo' | 'redo', only?: 'delete'): Promise<StepOutcome & { step: 'move' | 'rename' | 'delete'; restored?: DeleteStep['items'] }> | 'busy' | null => {
+    if (replaying.current) return 'busy'
+    if (only !== undefined) {
+      const newest = moveHistory.current.inspect()[verb].at(-1)
+      if (newest === undefined || isMoveStep(newest) || newest.step !== only) return null
+    }
+    const entry = verb === 'undo' ? moveHistory.current.undo() : moveHistory.current.redo()
+    if (entry === undefined) return null
     replaying.current = true
-    void (async () => {
+    return (async () => {
       try {
-        if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'redo') : deleteAgain(entry))
-        const run = await runMoves(entry.moves, { record: false })
-        if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves, cleared: run.cleared })
+        // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
+        if (!isMoveStep(entry)) {
+          const outcome = entry.step === 'rename' ? await replayRename(entry, verb) : verb === 'undo' ? await putBackStep(entry).then(({ restored, failed }) => ({ done: restored.length, failed, restored })) : await deleteAgain(entry)
+          return { step: entry.step, ...outcome }
+        }
+        const run = await runMoves(verb === 'undo' ? invertMoves(entry.moves) : entry.moves, { record: false })
+        if (verb === 'undo') {
+          // Only a note whose move went back gets its blocks: its path is the move's own, or under a folder that went back.
+          const returned = (path: string): boolean => run.moves.some((move) => move.newPath === path || (move.kind === 'dir' && path.startsWith(`${move.newPath}/`)))
+          for (const { path, values } of entry.cleared) if (returned(path)) await transformFile(path, restoreFolderValues(values), true).catch(() => undefined) // quiet (YAZ-3235 D1)
+          if (run.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(run.moves), cleared: [] })
+          else if (run.failed.length > run.again) moveHistory.current.redone(entry)
+        } else if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves, cleared: run.cleared })
         else if (run.failed.length > run.again) moveHistory.current.undone(entry)
-        const text = replayNotice('redo', run.names, run.failed, run.links)
+        // The names in the order of the gesture it undoes, as its own toast said them (YAZ-3274 D22): the moves ran newest first.
+        const text = replayNotice(verb, verb === 'undo' ? [...run.names].reverse() : run.names, run.failed, run.links)
+        // Nothing ran and nothing failed: the window's vaults changed under it, and there is nothing to say.
         if (run.moves.length === 0) {
           if (text !== '') notify(text, 'error')
         }
         else {
-          // One land sound for the redo (YAZ-3267 D15, S54).
+          // One land sound for the undo or the redo, however many items moved (YAZ-3267 D15, S54).
           playGestureSound('land')
-          stepToast(text, 'paste', 'undo', run.failed.length > 0 || run.links.skipped > 0)
+          stepToast(text, 'paste', verb === 'undo' ? 'redo' : 'undo', run.failed.length > 0 || run.links.skipped > 0)
         }
+        return { step: 'move' as const, done: run.moves.length, failed: run.failed, links: run.links }
       } finally {
         replaying.current = false
       }
     })()
-    return true
-  }, [runMoves, notify, stepToast, replayRename, deleteAgain])
+  }, [runMoves, notify, stepToast, replayRename, putBackStep, deleteAgain])
+  /** False with nothing to undo or redo; a key during a running step is taken and does nothing. */
+  const undoMove = useCallback((): boolean => {
+    const run = replayStep('undo')
+    if (run instanceof Promise) void run
+    return run !== null
+  }, [replayStep])
+  const redoMove = useCallback((): boolean => {
+    const run = replayStep('redo')
+    if (run instanceof Promise) void run
+    return run !== null
+  }, [replayStep])
   moveReplay.current = { undo: undoMove, redo: redoMove }
 
   /**
@@ -2604,20 +2709,26 @@ export function App() {
    * drag makes (`requestRename`). D21 asks ONCE for the whole list, judged on the window's own
    * snapshot (`valuesLeftBehind`); a list that clears nothing runs at once. A move into the folder
    * the item is already in is no move (S7). All moves stay in one vault (YAZ-2602 R11).
+   * `planMoves` is that judgment; the CLI's `file move` shares it, and its `dropValues` is the sheet's answer (YAZ-4566).
    */
+  const planMoves = useCallback((list: readonly Move[]): { root: string; moves: Move[]; lost: LeftBehind } | 'between' | null => {
+    const moves = list.filter((move) => move.newPath !== move.oldPath)
+    const first = moves[0]
+    if (first === undefined) return null
+    const { root, wikilinks } = scopeOf(first.oldPath)
+    if (root === null) return null
+    if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return 'between'
+    return { root, moves, lost: valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders }) }
+  }, [scopeOf])
   const requestMoves = useCallback(
     async (list: readonly Move[]): Promise<void> => {
-      const moves = list.filter((move) => move.newPath !== move.oldPath)
-      const first = moves[0]
-      if (first === undefined) return
-      const { root, wikilinks } = scopeOf(first.oldPath)
-      if (root === null) return
-      if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return notify(BETWEEN_VAULTS)
-      const lost = valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders })
-      if (lost.folders.length > 0) return setPendingMoves({ root, moves, lost })
-      await runMoves(moves)
+      const plan = planMoves(list)
+      if (plan === null) return
+      if (plan === 'between') return notify(BETWEEN_VAULTS)
+      if (plan.lost.folders.length > 0) return setPendingMoves(plan)
+      await runMoves(plan.moves)
     },
-    [scopeOf, runMoves, notify],
+    [planMoves, runMoves, notify],
   )
 
   /** The move sheet's Move: the list runs as it does unasked, unless its vault left the window. Its Cancel moves nothing (S10). */
@@ -2751,7 +2862,7 @@ export function App() {
         : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`
     }
   }, [])
-  const trashMany = useCallback(async (paths: readonly string[]): Promise<void> => {
+  const trashMany = useCallback(async (paths: readonly string[]): Promise<{ went: DeleteResponse[]; failed: string[] }> => {
     // The names before the delete, while the index still has the pages.
     const names = new Map(paths.map((path) => [path, nameOf(path)]))
     const went: DeleteResponse[] = []
@@ -2767,17 +2878,19 @@ export function App() {
     }
     if (went.length === 0) {
       if (failed.length > 0) notify(paths.length === 1 ? reason : gestureNotice(null, failed, "Can't delete")!)
-      return
+      return { went, failed }
     }
     playGestureSound('trash')
     // By kind and by name on disk (YAZ-3293 D23), as Finder shows them.
     const text = gestureNotice(`Deleted ${namedItems(went.map((res) => onDisk(res.path, res.kind)))}`, failed, "Can't delete")!
     const items = went.flatMap((res) => (res.trashed == null ? [] : [{ path: res.path, trashed: res.trashed, type: res.kind, name: onDisk(res.path, res.kind).name }]))
     // No file ID from the Trash: no Undo, but still a delete's toast (YAZ-3303 D6).
-    if (items.length === 0) return notify(text, 'info', unlessFailed('undo', failed))
+    if (items.length === 0) { notify(text, 'info', unlessFailed('undo', failed)); return { went, failed } }
     moveHistory.current.push({ step: 'delete', items })
     stepToast(text, 'info', 'undo', failed.length > 0)
+    return { went, failed }
   }, [nameOf, trashOne, notify, stepToast])
+  const trashManyFromUi = useCallback(async (paths: readonly string[]): Promise<void> => { await trashMany(paths) }, [trashMany])
 
   /** The items still in their vault's tree, read fresh (S31): one another window moved or deleted is gone. */
   const stillThere = useCallback(async (paths: readonly string[]): Promise<string[]> => {
@@ -3301,7 +3414,7 @@ export function App() {
           onMoveEntries={requestMoves}
           onMoved={recordMoves}
           onRetitle={requestRetitle}
-          onDeleteEntries={trashMany}
+          onDeleteEntries={trashManyFromUi}
           onDraggedOut={(paths) => void askAfterDragOut(paths)}
           onNotice={notify}
           // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.

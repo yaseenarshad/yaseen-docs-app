@@ -1,3 +1,8 @@
+import { startAutomationServer, type AutomationServer } from '../automation/server'
+import { prepareAutomation } from './automation'
+import { registerAutomationIpc } from './ipc/automation'
+import { navigate, resolveNavigation, type NavigationHost } from './automation/navigation'
+import { parseNavigationLink } from '@shared/navigationLinks'
 import { rendererUrlFor } from './rendererUrl'
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
@@ -73,6 +78,11 @@ claimDeepLinkScheme(app, process.env)
 
 /** A parsed link routes to the best window; a bad one gets the unobtrusive notice, never a dialog. */
 function handleLink(url: string): void {
+  const target = parseNavigationLink(url)
+  if (target !== null && automationNavigation !== undefined) {
+    void navigate(automationNavigation, target).catch(() => manager.linkNotice('The requested navigation target could not be opened.'))
+    return
+  }
   const parsed = parseFileLink(url)
   if (parsed === null) {
     manager.linkNotice(`Can't open link: ${url}`)
@@ -300,6 +310,10 @@ app.on('browser-window-focus', (_event, win) => {
   for (const root of store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.roots ?? []) gitSync?.notifyFocus(root)
 })
 
+let restartWithoutUpdate = false
+let automationServer: Promise<AutomationServer> | undefined
+let automationNavigation: NavigationHost | undefined
+
 app.whenReady().then(() => {
   if (!isPrimaryInstance) return
   // A dev run wears the app's own Dock icon instead of Electron's; a packaged build gets it from the bundle.
@@ -408,7 +422,7 @@ app.whenReady().then(() => {
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
   rebuildMenuOnFocus = applyIfMoved
-  const { sync, secrets, lsp } = registerIpc(store, manager, {
+  const { sync, secrets, lsp, automationServices } = registerIpc(store, manager, {
     userData: app.getPath('userData'),
     // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.
     viewerAssetsDir: viewerAssetsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), mainDir: __dirname, exists: existsSync }),
@@ -430,6 +444,22 @@ app.whenReady().then(() => {
     },
   })
   updater.start()
+  const navigation = registerAutomationIpc(store, manager)
+  automationNavigation = navigation
+  automationServer = startAutomationServer(app.getPath('userData'), (request, content) =>
+    prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), packaged: app.isPackaged, state: () => store.get(), navigation, store, services: automationServices, app: {
+      updater,
+      diagnostics: async () => ({ platform: process.platform, architecture: process.arch, version: app.getVersion(), packaged: app.isPackaged, memory: await meter?.report() ?? null }),
+      restart: mode => {
+        if (quitting) return
+        if (mode === 'update') reopenAfterQuit = true
+        else restartWithoutUpdate = true
+        app.quit()
+      },
+    } }, request, content),
+    // A quit stops a CLI pack download or helper install at once, as it stops the GUI's (YAZ-4527 P1).
+    () => Promise.all([automationServices.studio.packs.stop(), automationServices.languageHelpers.cancel()]))
+  void automationServer.catch(() => console.error('[cli] Could not start the local connection. Check profile permissions.'))
   // The memory meter (YAZ-3737 D1): one `getAppMetrics` each 30 s, in memory only. The rest is read only for a report.
   meter = createMemoryMeter({
     metrics: () => app.getAppMetrics(),
@@ -485,13 +515,19 @@ app.whenReady().then(() => {
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.
-  const asked = links.pending().flatMap((url) => {
+  const askedRoots = Promise.all(links.pending().map(async url => {
+    const navigation = parseNavigationLink(url)
+    if (navigation !== null) {
+      try { return (await resolveNavigation(store.get(), navigation)).resolved.roots }
+      catch { return [] }
+    }
     const link = parseFileLink(url)
-    return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []
-  })
+    const root = link === null ? null : manager.rootFor(link.path, link.root)
+    return root === null ? [] : [root]
+  })).then(roots => roots.flat())
   // The first window waits for the settings folder's first read (YAZ-3276 D4), so a theme that the other Mac
   // changed shows no flash. At most 500 ms: a slow or lost folder never holds up a launch. No folder: at once.
-  void Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]).then(() => {
+  void Promise.all([Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]), askedRoots]).then(([, asked]) => {
     manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
     links.flush()
   })
@@ -505,7 +541,10 @@ app.on('before-quit', (event) => {
   if (quitting) return
   quitting = true
   void runQuitSequence({
-    flushWindows: () => manager.flushAllForQuit(),
+    flushWindows: async () => {
+      await automationServer?.then(server => server.close(), () => undefined)
+      await manager.flushAllForQuit()
+    },
     // The settings folder's pending write (YAZ-3276 D4) goes with the state file's.
     flushStore: () => Promise.all([store.flush(), settingsFolder.flush()]).then(() => undefined),
     // The index cache's pending persist, and each vault's diary of links to the IDs this Mac made (YAZ-2677 R27): neither flush throws.
@@ -517,7 +556,8 @@ app.on('before-quit', (event) => {
     stopHelpers: () => Promise.all([stopAllLanguageServers(), cancelHelperInstall(), speller.stop()]).then(() => undefined),
     // The swap waits for this process to end (S21, S22): start it last, then exit.
     exit: () => {
-      updater.installOnExit(reopenAfterQuit)
+      if (restartWithoutUpdate) app.relaunch()
+      else updater.installOnExit(reopenAfterQuit)
       app.exit(0)
     },
   })

@@ -2,6 +2,7 @@ import { BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import type { AppState } from '@shared/types'
 import type { Store } from '../store'
 import type { WindowManager } from '../windows'
+import { recordSaved } from '../documentSaves'
 
 /**
  * Sends `channel` (+ payload) to every live window, whichever window — or main itself —
@@ -28,7 +29,7 @@ export function senderRoots(store: Pick<Store, 'get'>, windows: Pick<WindowManag
 export function loggedSave<A extends unknown[], R extends { path: string }>(store: Pick<Store, 'get' | 'addEdit'>, windows: Pick<WindowManager, 'idFor'>, save: (...args: A) => Promise<R>, logs: (...args: A) => boolean = () => true) {
   return async (e: IpcMainInvokeEvent, ...args: A): Promise<R> => {
     const saved = await save(...args)
-    if (logs(...args)) store.addEdit(senderRoots(store, windows, e), saved.path)
+    if (logs(...args)) recordSaved(store, senderRoots(store, windows, e), saved.path)
     return saved
   }
 }

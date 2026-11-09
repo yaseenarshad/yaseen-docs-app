@@ -52,6 +52,7 @@ import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
+import { registerRenameContinuity } from '../lib/renameContinuity'
 import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingAppSettings, DrawingSnapshot } from './ExcalidrawSurface'
@@ -119,6 +120,8 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   const closing = useRef(false)
   /** The modal has left (closed or discarded): a close still saving must not leave it a second time. */
   const left = useRef(false)
+  /** Its file was renamed or trashed (YAZ-4515): this modal never writes again, and no new autosave starts. */
+  const retired = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   /** The disk's mtime while the conflict bar is up (YAZ-3044 A4); null when there is no conflict. */
@@ -226,7 +229,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
 
   const onSnapshot = useCallback(
     (next: DrawingSnapshot) => {
-      if (generation !== generationRef.current) return
+      if (generation !== generationRef.current || retired.current) return
       snapshot.current = next
       const drawing = loadedRef.current
       // Read only: never an edit, so there is nothing to autosave.
@@ -259,6 +262,36 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       autosave.current = null
     }
   }, [])
+
+  /**
+   * The shell's rename and delete continuity (YAZ-4515), as a drawing tab has it (`useDocumentHost`): a rename flushes
+   * this canvas first, so its edits travel with the file; then a rename or a delete RETIRES it. A retired modal closes
+   * and writes nothing more, so its unmount flush cannot bring the old path back. It does not follow a rename: it has no
+   * tab to remap, and the note's repaired embed opens the new file. `dirty` lets `dirtyPaths()` see its unsaved edits.
+   */
+  const leaveRef = useRef(onClose)
+  leaveRef.current = onClose
+  const path = loaded?.path
+  useEffect(() => {
+    if (path === undefined) return
+    return registerRenameContinuity(path, {
+      flush: async () => {
+        if (!retired.current) await autosave.current?.flush()
+      },
+      capture: () => null,
+      dirty: () => autosave.current?.dirty === true,
+      // Not a pane owner: a pane move of a tab of this file leaves the modal open and saving.
+      modal: true,
+      retire: () => {
+        retired.current = true
+        autosave.current?.dispose()
+        autosave.current = null
+        if (left.current) return
+        left.current = true
+        leaveRef.current()
+      },
+    })
+  }, [path])
 
   /** Esc, click-away and ✕ are ONE gesture: save what is left, then leave. Ask only when that save failed. */
   const requestClose = async (): Promise<void> => {

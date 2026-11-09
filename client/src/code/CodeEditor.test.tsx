@@ -1,3 +1,4 @@
+import { readLiveDocument, runEditorAction } from '../automation/liveDocument'
 /**
  * The code tab on the REAL document host (YAZ-3448) with a fake Monaco (`monacoTestKit.ts`): the
  * scenarios S1–S4 and S9 of YAZ-3448, the bytes of YAZ-3445 (line break, BOM) through the host, the
@@ -1023,5 +1024,53 @@ describe('Appearance (YAZ-3447 S2)', () => {
     await settle()
     expect(applyAppTheme).toHaveBeenLastCalledWith('dark')
     expect(created.editors).toHaveLength(1)
+  })
+})
+
+
+describe('automation live code read', () => {
+  it('reads unsaved code, line breaks, and the explicit tab selection without saving', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-code'
+    await opened('saved\r\n')
+    type('unsaved\ncode\n')
+    editor().setSelection({ selectionStartLineNumber: 1, selectionStartColumn: 1, positionLineNumber: 1, positionColumn: 8 })
+    expect(readLiveDocument('live-code')).toMatchObject({ source: 'live', path: PATH, kind: 'text', content: 'unsaved\r\ncode\r\n', baselineMtime: 100, dirty: true, selection: { anchor: 0, head: 7, text: 'unsaved', coordinate: 'utf16' } })
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4563: an autosave between two editor actions does not make the first result\'s revision stale', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-code'
+    await opened('a\n')
+    const run = (revision: string, edit: Parameters<typeof runEditorAction>[0]['edit']) => runEditorAction({ command: 'editor.action', tab: 'live-code', revision, edit })
+    const selected = await run(readLiveDocument('live-code').revision, { action: 'select', anchor: 0, head: 1 })
+    const replaced = await run(selected.revision, { action: 'replace', text: 'b' })
+    await after(600)
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    await expect(run(replaced.revision, { action: 'select', anchor: 0, head: 0 })).resolves.toMatchObject({ dirty: false, selection: { anchor: 0, head: 0 } })
+  })
+
+  it('YAZ-4515: a live read says when the conflict bar is up', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-code'
+    await opened('a\n')
+    expect(readLiveDocument('live-code').conflict).toBe(false)
+    type('mine\n')
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    expect(container.querySelector('.conflict-bar')).not.toBeNull()
+    expect(readLiveDocument('live-code')).toMatchObject({ dirty: true, conflict: true })
+  })
+
+  it('YAZ-4515: a Read only code tab offers only select and save and refuses a replace; "Allow edits" offers the edits again', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-code'
+    readFile.mockResolvedValueOnce(disk('saved\n'))
+    act(() => root?.render(<CodeEditor root={ROOT} path={PATH} watch={watch} codeReadOnly />))
+    await settle()
+    const locked = readLiveDocument('live-code')
+    expect(locked.actions).toEqual(['select', 'save'])
+    await expect(runEditorAction({ command: 'editor.action', tab: 'live-code', revision: locked.revision, edit: { action: 'replace', text: 'X' } })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
+    expect(model().getValue()).toBe('saved\n')
+    act(() => container.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
+    act(() => container.querySelector<HTMLButtonElement>('.read-only-chip__allow')!.click())
+    expect(readLiveDocument('live-code').actions).toEqual(['select', 'replace', 'undo', 'redo', 'save'])
   })
 })

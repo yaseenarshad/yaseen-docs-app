@@ -4,6 +4,9 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
+import { FolderView } from './views/FolderView'
+import type { WikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
+import type { RendererCommand } from '@shared/automationNavigation'
 import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
@@ -165,6 +168,7 @@ vi.mock('./editor/Editor', () => ({
     captured.linkOpeners.push({ path, open: onOpenLink })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
+    if (path === '/v/Automation Folder') return <FolderView path={path} root={root} source={wikilinks as WikilinkResolveSource} onOpenFile={onOpenFile} onRetitle={() => {}} commentsOrder="oldest" onChangeCommentsOrder={() => {}} />
     return (
       <div data-editor data-root={root} data-path={path ?? ''} data-review-settings={reviewSettings === undefined ? 'none' : 'given'}>
         <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
@@ -211,6 +215,7 @@ import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'>>
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
+  const automationRequests = new Set<(request: RendererCommand) => void>()
   const stateChanged = new Set<(next: AppState) => void>()
   const windowViews = new Set<() => (StartView | null)[]>()
   const windowTabs = new Set<() => MemoryTabFacts[]>()
@@ -264,6 +269,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       return () => set.delete(l)
     })
   const bridge = {
+    automation: { onRequest: vi.fn((listener: (request: RendererCommand) => void) => { automationRequests.add(listener); return () => automationRequests.delete(listener) }), ready: vi.fn(async () => {}), reply: vi.fn(async () => {}) },
     tree: vi.fn(async (root: string): Promise<TreeResponse> => ({ root, tree: [], generatedAt: 1 })),
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
     index: vi.fn(async (root: string): Promise<IndexResponse> => ({ root, records: [], folders: [], generatedAt: 1, ids: true })),
@@ -477,6 +483,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     // In-app rename (Links E1, GRO-2194) + external repair (E1c, GRO-2242): App subscribes to
     // the renamed push on mount; the banner's Update goes through repairRename.
     file: {
+      copyTo: vi.fn(async (_req: { paths: string[]; targetDir: string; external: boolean }): Promise<import('@shared/types').PasteResponse> => ({ pasted: [], failed: [] })),
+      moveTo: vi.fn(async (_req: { paths: string[]; targetDir: string }): Promise<import('@shared/types').PasteResponse> => ({ pasted: [], failed: [] })),
       rename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath })),
       // A title edit (YAZ-2420 D16): the name main would build is each test's to say; by default the path stands.
       retitle: vi.fn(async ({ path }: { path: string; title: string }) => ({ oldPath: path, newPath: path, kind: 'file' as 'file' | 'dir' })),
@@ -567,6 +575,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
     bridge,
+    emitAutomation: (request: RendererCommand) => automationRequests.forEach(listener => listener(request)),
     emitStateChanged: (next: AppState) => stateChanged.forEach((listener) => listener(next)),
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitOpenFolder: () => menuOpenFolder.forEach((l) => l()),
@@ -3721,6 +3730,57 @@ describe('App rename door (⚡ YAZ-888)', () => {
   /** "Ask before renaming" switched off (YAZ-2420 3C1). */
   const askOff = (): AppState => ({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } })
 
+  it('automation rename acknowledges the full link repair and records Undo', async () => {
+    const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), identity(), files, feed)
+    await act(async () => emitAutomation({ id: 'rename-1', action: 'operate', target: { command: 'file.rename', path: '/v/B.md', newPath: '/v/B2.md', kind: 'file' } }))
+    expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'rename-1', ok: true, value: expect.objectContaining({ move: expect.objectContaining({ newPath: '/v/B2.md' }), links: { updated: 1, skipped: 0 }, diskSaved: true }) })
+  })
+
+  it('automation Undo and Redo replay a CLI rename through the window history the GUI uses', async () => {
+    const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), identity(), files, feed)
+    const reply = (id: string) => (bridge.automation.reply.mock.calls as unknown as [{ id: string }][]).map(([r]) => r).find((r) => r.id === id)
+    await act(async () => emitAutomation({ id: 'undo-empty', action: 'operate', target: { command: 'file.undo' } }))
+    expect(reply('undo-empty')).toMatchObject({ ok: false, error: { code: 'NOTHING_TO_UNDO' } })
+    await act(async () => emitAutomation({ id: 'rename-u', action: 'operate', target: { command: 'file.rename', path: '/v/B.md', newPath: '/v/B2.md', kind: 'file' } }))
+    await act(async () => emitAutomation({ id: 'undo-1', action: 'operate', target: { command: 'file.undo' } }))
+    expect(bridge.file.rename).toHaveBeenLastCalledWith({ oldPath: '/v/B2.md', newPath: '/v/B.md' })
+    expect(reply('undo-1')).toEqual({ id: 'undo-1', ok: true, value: expect.objectContaining({ step: 'rename', done: 1, failed: [], history: { undo: 0, redo: 1 }, diskSaved: true }) })
+    // The GUI's toast now offers the Redo of the CLI's Undo.
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Redo')
+    await act(async () => emitAutomation({ id: 'redo-1', action: 'operate', target: { command: 'file.redo' } }))
+    expect(bridge.file.rename).toHaveBeenLastCalledWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
+    expect(reply('redo-1')).toMatchObject({ ok: true, value: { step: 'rename', done: 1, history: { undo: 1, redo: 0 } } })
+    await act(async () => emitAutomation({ id: 'redo-empty', action: 'operate', target: { command: 'file.redo' } }))
+    expect(reply('redo-empty')).toMatchObject({ ok: false, error: { code: 'NOTHING_TO_REDO' } })
+    // The GUI's own Undo takes the same step back: one history for both doors.
+    await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+    expect(bridge.file.rename).toHaveBeenLastCalledWith({ oldPath: '/v/B2.md', newPath: '/v/B.md' })
+    await act(async () => emitAutomation({ id: 'history-u', action: 'inspect', target: { kind: 'history' } }))
+    expect(reply('history-u')).toMatchObject({ ok: true, value: { undo: [], redo: [expect.objectContaining({ step: 'rename', path: '/v/B.md' })] } })
+  })
+
+  it('automation Undo reports a step that changed nothing and keeps the GUI history rules', async () => {
+    const { bridge, emitAutomation } = await mount(defaultAppState(), identity(), {}, feed)
+    const reply = (id: string) => (bridge.automation.reply.mock.calls as unknown as [{ id: string }][]).map(([r]) => r).find((r) => r.id === id)
+    bridge.file.delete.mockImplementation(async ({ path }) => ({ path, kind: 'file', trashed: `/scratch-trash/${path.split('/').at(-1)}` }))
+    await act(async () => emitAutomation({ id: 'trash-u', action: 'operate', target: { command: 'file.trash', paths: ['/v/A.md'] } }))
+    bridge.file.putBack.mockRejectedValueOnce(new Error('disk refused'))
+    await act(async () => emitAutomation({ id: 'undo-fail', action: 'operate', target: { command: 'file.undo' } }))
+    expect(reply('undo-fail')).toMatchObject({ ok: false, error: { code: 'HISTORY_STEP_FAILED', details: { step: 'delete', done: 0, failed: [expect.any(String)], history: { undo: 1, redo: 0 } } } })
+  })
+
+  it('automation rename reports a partial result when a referencing note cannot be read', async () => {
+    const { bridge, emitAutomation } = await mount(defaultAppState(), identity(), {}, feed)
+    await act(async () => emitAutomation({ id: 'rename-2', action: 'operate', target: { command: 'file.rename', path: '/v/B.md', newPath: '/v/B2.md', kind: 'file' } }))
+    expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'rename-2', ok: false, error: expect.objectContaining({ code: 'PARTIAL_FAILURE', details: expect.objectContaining({ links: { updated: 0, skipped: 1 } }) }) })
+  })
+
   it('a NAME change asks first, with the honest count — and confirming runs the whole pipeline', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
@@ -4077,6 +4137,98 @@ describe('App rename door (⚡ YAZ-888)', () => {
           delete files[oldPath]
           return { oldPath, newPath, kind: 'file' }
         })
+
+      /** The CLI's `file move` (YAZ-4566): this door, with the D21 sheet's answer as an explicit input. */
+      const replyOf = (bridge: ReturnType<typeof installBridge>['bridge'], id: string) => (bridge.automation.reply.mock.calls as unknown as [{ id: string }][]).map(([r]) => r).find((r) => r.id === id)
+      const cliMove = (dropValues: boolean) => ({ command: 'file.move' as const, targetDir: '/v/Team/Archive', moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' as const }], dropValues })
+
+      it('a CLI move that clears values is refused without dropValues; with it, it is one move step, and CLI Undo puts the values back (YAZ-4566)', async () => {
+        const files: Disk = { [NOOR]: { content: held, mtime: 1 } }
+        const { bridge, el, emitAutomation } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => emitAutomation({ id: 'm-ask', action: 'operate', target: cliMove(false) }))
+        expect(replyOf(bridge, 'm-ask')).toMatchObject({ ok: false, error: { code: 'CONFIRMATION_REQUIRED', details: { folders: ['/v/Team/Hiring'], notes: 1 } } })
+        expect(bridge.file.rename).not.toHaveBeenCalled()
+        expect(el.querySelector('.confirm')).toBeNull() // no sheet opens for the CLI
+
+        await act(async () => emitAutomation({ id: 'm-run', action: 'operate', target: cliMove(true) }))
+        await settle()
+        expect(files[ARCHIVED].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(replyOf(bridge, 'm-run')).toEqual({ id: 'm-run', ok: true, value: { moved: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [expect.objectContaining({ values: { [HIRING]: { Status: 'Interview' } } })], failed: [], links: { updated: 0, skipped: 0 }, betweenVaults: false, history: { undo: 1, redo: 0 }, diskSaved: true } })
+        expect(toast(el)).toEqual({ text: 'Moved 1 file (Noor.md)', action: 'Undo' })
+        await act(async () => emitAutomation({ id: 'm-hist', action: 'inspect', target: { kind: 'history' } }))
+        expect(replyOf(bridge, 'm-hist')).toMatchObject({ ok: true, value: { undo: [{ step: 'move', cleared: [expect.objectContaining({ values: { [HIRING]: { Status: 'Interview' } } })] }] } })
+
+        await act(async () => emitAutomation({ id: 'm-undo', action: 'operate', target: { command: 'file.undo' } }))
+        await settle()
+        expect(renames(bridge)).toEqual([[NOOR, ARCHIVED], [ARCHIVED, NOOR]])
+        expect(files[NOOR].content).toBe(held) // the Hiring block is back
+        expect(replyOf(bridge, 'm-undo')).toMatchObject({ ok: true, value: { step: 'move', done: 1, history: { undo: 0, redo: 1 } } })
+      })
+
+      it('a CLI move between two vaults runs the GUI\u2019s Paste of a Cut (YAZ-4502): D21 on the target vault, an explicit move door with no clipboard, no link rewrite, one move step, and CLI Undo moves both back with the values', async () => {
+        const MOVED = '/w/Moved.md'
+        const files: Disk = { [NOOR]: { content: held, mtime: 1 }, [MOVED]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el, emitAutomation } = await mount(defaultAppState(), { ...identity(), roots: ['/v', '/w'] }, files, (b) => b.bridge.index.mockImplementation(async (root: string) => (root === '/v' ? snapshot() : { root, records: [record(MOVED)], folders: [], generatedAt: 1, ids: false })))
+        realDisk(bridge, files)
+        bridge.file.moveTo.mockImplementation(async ({ paths, targetDir }: { paths: string[]; targetDir: string }) => {
+          const pasted = paths.map((from) => ({ from, to: `${targetDir}/${from.slice(from.lastIndexOf('/') + 1)}`, kind: 'file' as const }))
+          for (const { from, to } of pasted) { files[to] = files[from]; delete files[from] }
+          return { pasted, failed: [] }
+        })
+        const target = (dropValues: boolean) => ({ command: 'file.move' as const, targetDir: '/v/Team/Archive', moves: [{ oldPath: MOVED, newPath: '/v/Team/Archive/Moved.md', kind: 'file' as const }, { oldPath: NOOR, newPath: ARCHIVED, kind: 'file' as const }], dropValues })
+        await act(async () => emitAutomation({ id: 'x-ask', action: 'operate', target: target(false) }))
+        expect(replyOf(bridge, 'x-ask')).toMatchObject({ ok: false, error: { code: 'CONFIRMATION_REQUIRED', details: { folders: ['/v/Team/Hiring'], notes: 1 } } })
+        expect(bridge.file.moveTo).not.toHaveBeenCalled()
+
+        await act(async () => emitAutomation({ id: 'x-run', action: 'operate', target: target(true) }))
+        await settle()
+        expect(bridge.file.moveTo).toHaveBeenCalledExactlyOnceWith({ paths: [MOVED, NOOR], targetDir: '/v/Team/Archive' })
+        expect(bridge.file.rename).not.toHaveBeenCalled()
+        expect(files[ARCHIVED].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(replyOf(bridge, 'x-run')).toEqual({ id: 'x-run', ok: true, value: { moved: [{ oldPath: MOVED, newPath: '/v/Team/Archive/Moved.md', kind: 'file' }, { oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [expect.objectContaining({ values: { [HIRING]: { Status: 'Interview' } } })], failed: [], links: { updated: 0, skipped: 0 }, betweenVaults: true, history: { undo: 1, redo: 0 }, diskSaved: true } })
+        expect(toast(el)).toEqual({ text: 'Pasted 2 files (Moved.md, Noor.md)', action: 'Undo' })
+
+        await act(async () => emitAutomation({ id: 'x-undo', action: 'operate', target: { command: 'file.undo' } }))
+        await settle()
+        expect(renames(bridge)).toEqual([[ARCHIVED, NOOR], ['/v/Team/Archive/Moved.md', MOVED]])
+        expect(files[NOOR].content).toBe(held)
+        expect(files[MOVED].content).toBe('Body\n')
+        expect(replyOf(bridge, 'x-undo')).toMatchObject({ ok: true, value: { step: 'move', done: 2 } })
+      })
+
+      it('a CLI move between vaults reports each item that did not land (PARTIAL_FAILURE), as the GUI\u2019s notice names it', async () => {
+        const { bridge, emitAutomation } = await mount(defaultAppState(), { ...identity(), roots: ['/v', '/w'] }, {}, (b) => b.bridge.index.mockImplementation(async (root: string) => (root === '/v' ? snapshot() : { root, records: [], folders: [], generatedAt: 1, ids: false })))
+        bridge.file.moveTo.mockResolvedValueOnce({ pasted: [], failed: [{ from: '/w/Moved.md', code: 'ALREADY_EXISTS', message: 'a file with this name already exists' }] })
+        await act(async () => emitAutomation({ id: 'x-fail', action: 'operate', target: { command: 'file.move', targetDir: '/v/Team', moves: [{ oldPath: '/w/Moved.md', newPath: '/v/Team/Moved.md', kind: 'file' }], dropValues: false } }))
+        expect(replyOf(bridge, 'x-fail')).toMatchObject({ ok: false, error: { code: 'PARTIAL_FAILURE', details: { moved: [], failed: [expect.stringContaining('a file with this name already exists')], betweenVaults: true, history: { undo: 0, redo: 0 }, diskSaved: false } } })
+      })
+
+      it('a CLI copy asks as the sidebar’s Paste of a Copy does (YAZ-2420 3E1): refused without dropValues; with it, the copy keeps no values for folders that do not show it, and the original stays', async () => {
+        const files: Disk = { [NOOR]: { content: held, mtime: 1 }, [ARCHIVED]: { content: held, mtime: 1 } }
+        const { bridge, emitAutomation } = await mountTeam(files)
+        bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [{ type: 'dir', name: 'Team', path: '/v/Team', children: [{ type: 'dir', name: 'Archive', path: '/v/Team/Archive', children: [{ type: 'file', name: 'Noor.md', path: ARCHIVED, size: 1, mtime: 1, kind: 'markdown' }] }] }], generatedAt: 2 }))
+        const copy = (dropValues: boolean) => ({ command: 'file.copy' as const, paths: [NOOR], targetDir: '/v/Team/Archive', external: false, dropValues })
+        await act(async () => emitAutomation({ id: 'c-ask', action: 'operate', target: copy(false) }))
+        expect(replyOf(bridge, 'c-ask')).toMatchObject({ ok: false, error: { code: 'CONFIRMATION_REQUIRED', details: { folders: ['/v/Team/Hiring'], notes: 1 } } })
+        expect(bridge.file.copyTo).not.toHaveBeenCalled()
+        bridge.file.copyTo.mockResolvedValueOnce({ pasted: [{ from: NOOR, to: ARCHIVED, kind: 'file' }], failed: [] })
+        await act(async () => emitAutomation({ id: 'c-run', action: 'operate', target: copy(true) }))
+        expect(replyOf(bridge, 'c-run')).toMatchObject({ ok: true, value: { pasted: [{ to: ARCHIVED }], diskSaved: true } })
+        expect(files[ARCHIVED].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(files[NOOR].content).toBe(held)
+      })
+
+      it('a CLI restore and every organization write report the history and diskSaved, as file undo does', async () => {
+        const { bridge, emitAutomation } = await mountTeam({})
+        bridge.file.delete.mockImplementation(async ({ path }) => ({ path, kind: 'file', trashed: `/scratch-trash/${path.split('/').at(-1)}` }))
+        await act(async () => emitAutomation({ id: 't', action: 'operate', target: { command: 'file.trash', paths: [PLAIN] } }))
+        expect(replyOf(bridge, 't')).toMatchObject({ ok: true, value: { history: { undo: 1, redo: 0 }, diskSaved: true } })
+        await act(async () => emitAutomation({ id: 'r', action: 'operate', target: { command: 'file.restore' } }))
+        expect(replyOf(bridge, 'r')).toMatchObject({ ok: true, value: { restored: [expect.objectContaining({ path: PLAIN })], failed: [], history: { undo: 0, redo: 1 }, diskSaved: true } })
+        await act(async () => emitAutomation({ id: 'n', action: 'operate', target: { command: 'file.rename', path: LOST, newPath: '/v/Team/Hiring/Gone.md', kind: 'file' } }))
+        expect(replyOf(bridge, 'n')).toMatchObject({ ok: true, value: { history: { undo: 1, redo: 0 }, diskSaved: true } })
+      })
 
       it('a drag, then ⌘Z: it moves back, the cleared values come back, and the toast says "Moved back 1 file (Noor.md)" with Redo; ⌘⇧Z moves it again with no sheet and clears them again (S33, S37, D11)', async () => {
         const files: Disk = { [NOOR]: { content: held, mtime: 1 } }
@@ -7069,5 +7221,279 @@ describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
     await act(async () => sidebar.onAddVaultFor?.('zz', 'q.md'))
     expect(el.querySelector('#confirm-add-vault-for-link-text')).toBeNull()
     expect(el.querySelector('.link-notice')?.textContent).toContain('This item is in the vault "zz", which this Mac does not know. Open that folder first.')
+  })
+})
+
+
+describe('App automation navigation acknowledgement', () => {
+  const activeTab = (el: HTMLElement) => el.querySelector<HTMLElement>('.tabbar__tab:has([aria-selected="true"])')?.dataset.tab
+  const tabNames = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map(tab => tab.textContent)
+  it('selects the exact copy of a file and refuses a missing tab without changing the sidebar', async () => {
+    const path = '/v/a.md'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], tabStrip: [{ path, active: true }, { path, name: 'Second copy' }], sidebarCollapsed: true })
+    const ids = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map(tab => tab.dataset.tab!)
+    expect(ids).toHaveLength(2)
+    await act(async () => emitAutomation({ id: 'nav-tab', action: 'navigate', target: { tab: ids[1] } } as RendererCommand))
+    expect(activeTab(el)).toBe(ids[1])
+    expect(tabNames(el)).toEqual(['a', 'Second copy'])
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-tab', ok: true, value: expect.objectContaining({ tab: ids[1], acknowledged: true }) })
+    await act(async () => emitAutomation({ id: 'nav-missing-tab', action: 'navigate', target: { tab: 'gone', sidebar: 'favorites' } } as RendererCommand))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-missing-tab', ok: false, error: expect.objectContaining({ code: 'TAB_NOT_FOUND' }) })
+    expect(activeTab(el)).toBe(ids[1])
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+  })
+
+  it('opens the requested page and sidebar before replying', async () => {
+    const path = '/v/Mochi.md'
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Mochi', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-1', action: 'navigate', target: { path, sidebar: 'favorites', reveal: false } }))
+    expect(captured.sidebar?.lens).toBe('favorites')
+    expect(captured.sidebar?.activeFile).toBe(path)
+    expect(bridge.automation.reply).toHaveBeenCalledExactlyOnceWith({ id: 'nav-1', ok: true, value: expect.objectContaining({ path, sidebar: 'favorites', sidebarCollapsed: false, acknowledged: true }) })
+  })
+  it('waits for a view the saved file holds until the page has indexed it, then selects it (YAZ-4518)', async () => {
+    // The Editor mock renders a real FolderView at this one path.
+    const path = '/v/Automation Folder'
+    const folderRecord = (views: unknown[]): IndexRecord => ({ path: `${path}/.folder.md`, name: '.folder.md', basename: '.folder', title: 'Automation Folder', folder: 'Automation Folder', ext: 'md', size: 7, ctime: 1, mtime: 2, properties: { folder_settings: { views } }, aliases: [], tags: [], links: [], embeds: [] })
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], sidebarCollapsed: true }, {}, b => {
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: [{ type: 'dir', path, name: 'Automation Folder', children: [] }], generatedAt: 1 })
+    })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await act(async () => {})
+    expect([...el.querySelectorAll('.view-tab__btn')].map(node => node.textContent)).toEqual(['Table', 'Board'])
+    await act(async () => { emitAutomation({ id: 'nav-later', action: 'navigate', target: { path, view: 'Later' } }) })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => {})
+    expect(JSON.stringify(bridge.automation.reply.mock.calls)).not.toContain('nav-later')
+    // The CLI's write reaches the page through the index, as any outside edit does.
+    bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [folderRecord([{ type: 'table', name: 'Table' }, { type: 'list', name: 'Later' }])], generatedAt: 2, ids: true })
+    const listeners = bridge.watch.mock.calls.flatMap(([root, listener]) => root === '/v' && typeof listener === 'function' ? [listener as (event: unknown) => void] : [])
+    await act(async () => { listeners.forEach(listener => listener({ type: 'change', path: `${path}/.folder.md` })); await new Promise(resolve => setTimeout(resolve, 400)) })
+    await act(async () => {})
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-later', ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+    expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe('Later')
+  })
+  it('picks a folder view by the one shared rule: of "Table" and "table", each name selects its own view (YAZ-4527 P9)', async () => {
+    const path = '/v/Automation Folder'
+    const views = [{ type: 'table', name: 'Table' }, { type: 'list', name: 'table' }]
+    const folder: IndexRecord = { path: `${path}/.folder.md`, name: '.folder.md', basename: '.folder', title: 'Automation Folder', folder: 'Automation Folder', ext: 'md', size: 7, ctime: 1, mtime: 2, properties: { folder_settings: { views } }, aliases: [], tags: [], links: [], embeds: [] }
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], sidebarCollapsed: true }, {}, b => {
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: [{ type: 'dir', path, name: 'Automation Folder', children: [] }], generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [folder], generatedAt: 1, ids: true })
+    })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await act(async () => {})
+    expect([...el.querySelectorAll('.view-tab__btn')].map(node => node.textContent)).toEqual(['Table', 'table'])
+    for (const name of ['table', 'Table']) {
+      await act(async () => { emitAutomation({ id: `nav-${name}`, action: 'navigate', target: { path, view: name } }); await new Promise(resolve => setTimeout(resolve, 50)) })
+      expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: `nav-${name}`, ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+      expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe(name)
+    }
+  })
+  it('preserves the hidden sidebar when only a page was requested', async () => {
+    const path = '/v/Journal.md'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Journal', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-2', action: 'navigate', target: { path } }))
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-2', ok: true, value: expect.objectContaining({ path, sidebarCollapsed: true }) })
+  })
+})
+
+
+describe('App automation live inspection', () => {
+  it('reports current and supported views from a real folder tab without changing its selection', async () => {
+    const path = '/v/Automation Folder'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], sidebarCollapsed: true }, {}, b => {
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: [{ type: 'dir', path, name: 'Folder', children: [] }], generatedAt: 1 })
+    })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await act(async () => {})
+    const names = [...el.querySelectorAll('.view-tab__btn')].map(node => node.textContent)
+    expect(names.length).toBeGreaterThan(1)
+    const current = el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent
+    await act(async () => emitAutomation({ id: 'inspect-views', action: 'inspect', target: { kind: 'window' } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'inspect-views', ok: true, value: expect.objectContaining({ tabViews: [expect.objectContaining({ state: 'ready', view: current, views: names })] }) })
+    expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe(current)
+    expect(bridge.writeFile).not.toHaveBeenCalled()
+  })
+
+  it('reads current tabs without navigating and reports a missing tab', async () => {
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
+    await act(async () => emitAutomation({ id: 'inspect-1', action: 'inspect', target: { kind: 'window' } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'inspect-1', ok: true, value: expect.objectContaining({ source: 'live', roots: ['/v'], tabs: [], sidebarCollapsed: true }) })
+    await act(async () => emitAutomation({ id: 'inspect-2', action: 'inspect', target: { kind: 'document', tab: 'missing' } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'inspect-2', ok: false, error: expect.objectContaining({ code: 'TAB_NOT_FOUND' }) })
+  })
+})
+
+
+describe('App automation Trash', () => {
+  it('returns actual successes and failures while retaining Undo for the moved file', async () => {
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    bridge.file.delete.mockImplementation(async ({ path }) => {
+      if (path === '/v/A.md') throw new Error('failed')
+      return { path, kind: 'file', trashed: '/scratch-trash/B.md' }
+    })
+    await act(async () => emitAutomation({ id: 'trash-1', action: 'operate', target: { command: 'file.trash', paths: ['/v/A.md', '/v/B.md'] } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'trash-1', ok: false, error: expect.objectContaining({ code: 'PARTIAL_FAILURE', details: { went: [{ path: '/v/B.md', kind: 'file', trashed: '/scratch-trash/B.md' }], failed: [expect.any(String)], history: { undo: 1, redo: 0 }, diskSaved: true } }) })
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
+  })
+})
+
+describe('App automation restore', () => {
+  it('restores the last delete through put-back, reports partial failures, and retains Redo', async () => {
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    bridge.file.delete.mockImplementation(async ({ path }) => ({ path, kind: 'file', trashed: `/scratch-trash/${path.split('/').at(-1)}` }))
+    await act(async () => emitAutomation({ id: 'delete-for-restore', action: 'operate', target: { command: 'file.trash', paths: ['/v/A.md', '/v/B.md'] } }))
+    bridge.file.putBack.mockImplementation(async ({ path }) => { if (path === '/v/A.md') throw new Error('Destination exists'); return { path, kind: 'file' } })
+    await act(async () => emitAutomation({ id: 'restore-1', action: 'operate', target: { command: 'file.restore' } }))
+    expect(bridge.file.putBack).toHaveBeenNthCalledWith(1, { path: '/v/B.md', trashed: '/scratch-trash/B.md' })
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'restore-1', ok: false, error: expect.objectContaining({ code: 'PARTIAL_FAILURE', details: { restored: [expect.objectContaining({ path: '/v/B.md' })], failed: [expect.any(String)], history: { undo: 0, redo: 1 }, diskSaved: true } }) })
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Redo')
+    await act(async () => emitAutomation({ id: 'history-1', action: 'inspect', target: { kind: 'history' } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'history-1', ok: true, value: expect.objectContaining({ undo: [], redo: [{ step: 'delete', items: [expect.objectContaining({ path: '/v/B.md' })] }] }) })
+  })
+  it('refuses restore with no delete without changing files', async () => {
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    await act(async () => emitAutomation({ id: 'restore-empty', action: 'operate', target: { command: 'file.restore' } }))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'restore-empty', ok: false, error: expect.objectContaining({ code: 'NO_DELETE_TO_RESTORE' }) })
+    expect(bridge.file.putBack).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('App automation tab actions', () => {
+  it('lands a CLI copy as the sidebar’s Paste of a Copy does (YAZ-4527 P6): the tree is read again, and one notice says what landed', async () => {
+    // A vault that does not use IDs: no folder-value pass reads the tree for the copy.
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, b => b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false })))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    const before = bridge.tree.mock.calls.length
+    bridge.file.copyTo.mockResolvedValueOnce({ pasted: [{ from: '/v/a.md', to: '/v/To/a.md', kind: 'file' }], failed: [] })
+    await act(async () => emitAutomation({ id: 'copy-land', action: 'operate', target: { command: 'file.copy', paths: ['/v/a.md'], targetDir: '/v/To', external: false, dropValues: false } }))
+    expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'copy-land', ok: true, value: { pasted: [{ from: '/v/a.md', to: '/v/To/a.md', kind: 'file' }], failed: [], diskSaved: true } })
+    expect(bridge.tree.mock.calls.slice(before)).toContainEqual(['/v'])
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Pasted 1 file (a.md)')
+  })
+  it('flushes a copied folder’s dirty descendants and reports partial copy results', async () => {
+    const path = '/v/Folder/Note.md'
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path] })
+    let dirty = true
+    const flush = vi.fn(async () => {})
+    const off = continuity.registerRenameContinuity(path, { flush, capture: () => dirty ? { frontmatter: '', body: 'unsaved' } : null, retire: () => {} })
+    const target = { command: 'file.copy' as const, paths: ['/v/Folder'], targetDir: '/v/To', external: false, dropValues: false }
+    try {
+      await act(async () => emitAutomation({ id: 'copy-dirty', action: 'operate', target }))
+      expect(flush).toHaveBeenCalled()
+      expect(bridge.file.copyTo).not.toHaveBeenCalled()
+      expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'copy-dirty', ok: false, error: expect.objectContaining({ code: 'UNSAVED_CHANGES' }) })
+      dirty = false
+      bridge.file.copyTo.mockResolvedValueOnce({ pasted: [{ from: path, to: '/v/To/Note.md', kind: 'file' }], failed: [{ from: '/v/Folder/Other.md', code: 'IO_ERROR', message: 'disk refused' }] })
+      await act(async () => emitAutomation({ id: 'copy-partial', action: 'operate', target }))
+      expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'copy-partial', ok: false, error: expect.objectContaining({ code: 'PARTIAL_FAILURE', details: expect.objectContaining({ diskSaved: true, pasted: [expect.objectContaining({ to: '/v/To/Note.md' })] }) }) })
+    } finally { off() }
+  })
+  it('duplicates, names, reorders and closes an exact tab while preserving the source copy', async () => {
+    const path = '/v/a.md'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path] })
+    const source = el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab!
+    const run = async (target: import('@shared/automationTabs').TabOperation) => { await act(async () => emitAutomation({ id: target.command, action: 'operate', target })) }
+    await run({ command: 'tab.duplicate', tab: source })
+    const copies = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map(tab => tab.dataset.tab!)
+    expect(copies).toHaveLength(2)
+    const copy = copies[1]
+    await run({ command: 'tab.rename', tab: copy, name: 'Agent copy' })
+    await run({ command: 'tab.reorder', tab: copy, index: 0 })
+    expect(el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab).toBe(copy)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabStrip: [{ path, name: 'Agent copy', active: true }, { path }] }))
+    await run({ command: 'tab.close', tab: copy })
+    expect([...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map(tab => tab.dataset.tab)).toEqual([source])
+    expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'tab.close', ok: true, value: expect.objectContaining({ tabs: [{ id: source, path }], rendererApplied: true }) })
+  })
+  it.each(['tab.close', 'tab.open'] as const)('refuses %s when its source flush leaves unsaved content', async command => {
+    const path = '/v/a.md'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path] })
+    const tab = el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab!
+    const flush = vi.fn(async () => {})
+    const off = continuity.registerRenameContinuity(path, { flush, capture: () => ({ frontmatter: '', body: 'unsaved' }), retire: () => {} })
+    try {
+      await act(async () => emitAutomation({ id: 'close-dirty', action: 'operate', target: command === 'tab.close' ? { command, tab } : { command, path, copy: true, background: false } }))
+      expect(flush).toHaveBeenCalledOnce()
+      expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: 'close-dirty', ok: false, error: expect.objectContaining({ code: 'UNSAVED_CHANGES' }) })
+      expect(el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab).toBe(tab)
+      expect(el.querySelectorAll('.tabbar__tab')).toHaveLength(1)
+    } finally { off() }
+  })
+})
+
+describe('App automation right panel and cross-window tab moves', () => {
+  const entry = (over: Partial<WindowEntry> & Pick<WindowEntry, 'id' | 'root'>): WindowEntry => ({ roots: [over.root!], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 }, ...over })
+  const withW2 = (): AppState => ({ ...defaultAppState(), windows: [entry({ id: 'w2', root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] })] })
+  const tabNames = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  const ids = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((t) => t.dataset.tab!)
+  const replyOf = (bridge: ReturnType<typeof installBridge>['bridge'], id: string) => (bridge.automation.reply.mock.calls as unknown as [{ id: string }][]).map(([r]) => r).find((r) => r.id === id)
+
+  it('opens a page in the right panel as Open to the right does, reads it back, and hides the panel', async () => {
+    const files = { '/v/a.md': { content: 'A', mtime: 1 }, '/v/b.md': { content: 'B', mtime: 1 } }
+    const { bridge, el, emitAutomation } = await mount(withW2(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }, files)
+    await act(async () => emitAutomation({ id: 'right-1', action: 'navigate', target: { path: '/v/b.md', panel: 'right' } }))
+    expect(replyOf(bridge, 'right-1')).toMatchObject({ ok: true, value: { rightPanel: { open: true, items: ['/v/b.md'], expanded: '/v/b.md' }, acknowledged: true } })
+    // One owner per page: the main tab of the page closed.
+    expect(tabNames(el)).toEqual(['a'])
+    expect(el.querySelector('[data-testid="right-layer-/v/b.md"]')).not.toBeNull()
+    await act(async () => emitAutomation({ id: 'inspect-right', action: 'inspect', target: { kind: 'window' } }))
+    expect(replyOf(bridge, 'inspect-right')).toMatchObject({ ok: true, value: { rightPanel: { open: true, items: ['/v/b.md'], expanded: '/v/b.md' } } })
+    await act(async () => emitAutomation({ id: 'hide', action: 'operate', target: { command: 'rightPanel.setOpen', open: false } }))
+    expect(el.querySelector('.right-panel')).toBeNull()
+    expect(el.querySelector('.right-panel-reopen')).not.toBeNull()
+    expect(replyOf(bridge, 'hide')).toMatchObject({ ok: true, value: { rightPanel: { open: false, items: ['/v/b.md'] } } })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ rightPanel: expect.objectContaining({ open: false, items: ['/v/b.md'] }) }))
+    await act(async () => emitAutomation({ id: 'show', action: 'operate', target: { command: 'rightPanel.setOpen', open: true } }))
+    expect(el.querySelector('[data-testid="right-layer-/v/b.md"]')).not.toBeNull()
+  })
+
+  it('sends a tab through the GUI move door after its save, and keeps it when the target refuses or it stays dirty', async () => {
+    const { bridge, el, emitAutomation } = await mount(withW2(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/c.md'] })
+    const [a, b, c] = ids(el)
+    await act(async () => emitAutomation({ id: 'move-1', action: 'operate', target: { command: 'tab.move', tab: a, to: 'w2', at: 0, background: false } }))
+    expect(bridge.window.moveTo).toHaveBeenCalledExactlyOnceWith('w2', '/v/a.md', expect.objectContaining({ at: 0 }))
+    expect(bridge.window.moveTo.mock.lastCall?.[2]).not.toHaveProperty('background')
+    expect(tabNames(el)).toEqual(['b', 'c'])
+    expect(replyOf(bridge, 'move-1')).toMatchObject({ ok: true, value: { sourceClosed: false, rendererApplied: true } })
+    bridge.window.moveTo.mockRejectedValueOnce(new Error('that window is closed'))
+    await act(async () => emitAutomation({ id: 'move-refused', action: 'operate', target: { command: 'tab.move', tab: b, to: 'w2', background: true } }))
+    expect(bridge.window.moveTo).toHaveBeenLastCalledWith('w2', '/v/b.md', expect.objectContaining({ background: true }))
+    expect(replyOf(bridge, 'move-refused')).toMatchObject({ ok: false, error: { code: 'TARGET_UNAVAILABLE' } })
+    expect(tabNames(el)).toEqual(['b', 'c'])
+    const off = continuity.registerRenameContinuity('/v/c.md', { flush: async () => {}, capture: () => ({ frontmatter: '', body: 'unsaved' }), retire: () => {} })
+    try {
+      await act(async () => emitAutomation({ id: 'move-dirty', action: 'operate', target: { command: 'tab.move', tab: c, to: null, background: false } }))
+      expect(replyOf(bridge, 'move-dirty')).toMatchObject({ ok: false, error: { code: 'UNSAVED_CHANGES' } })
+      expect(bridge.window.popOut).not.toHaveBeenCalled()
+    } finally { off() }
+    await act(async () => emitAutomation({ id: 'move-new', action: 'operate', target: { command: 'tab.move', tab: c, to: null, background: false } }))
+    expect(bridge.window.popOut).toHaveBeenCalledExactlyOnceWith('/v/c.md', expect.anything())
+    expect(tabNames(el)).toEqual(['b'])
+    expect(bridge.window.closeSelf).not.toHaveBeenCalled()
+  })
+
+  it('closes a window that the move empties through its real close, without a later identity write', async () => {
+    const { bridge, el, emitAutomation } = await mount(withW2(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const writes = bridge.window.setIdentity.mock.calls.length
+    await act(async () => emitAutomation({ id: 'move-last', action: 'operate', target: { command: 'tab.move', tab: ids(el)[0], to: 'w2', background: false } }))
+    expect(bridge.window.closeSelf).toHaveBeenCalledOnce()
+    expect(replyOf(bridge, 'move-last')).toMatchObject({ ok: true, value: { sourceClosed: true } })
+    expect(bridge.window.setIdentity.mock.calls.length).toBe(writes)
+  })
+
+  it('acknowledges a received tab only once the take-tab door has added it', async () => {
+    const { bridge, el, emitAutomation, emitTakeTab } = await mount(defaultAppState(), { id: 'w2', root: '/v', file: '/v/z.md', tabs: ['/v/z.md'] })
+    const [existing] = ids(el)
+    await act(async () => emitAutomation({ id: 'recv', action: 'operate', target: { command: 'tab.received', path: '/v/z.md', except: [existing] } }))
+    expect(replyOf(bridge, 'recv')).toBeUndefined()
+    await act(async () => emitTakeTab({ path: '/v/z.md', background: true }))
+    await act(async () => {})
+    const copy = ids(el).find((id) => id !== existing)
+    expect(copy).toBeDefined()
+    expect(replyOf(bridge, 'recv')).toMatchObject({ ok: true, value: { tab: copy, rendererApplied: true } })
   })
 })

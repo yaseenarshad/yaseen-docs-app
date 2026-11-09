@@ -1,12 +1,11 @@
 import { DateValue, DurationValue, ErrorValue, type Value, compile, equals, evaluate, isEmpty } from './expr'
+import { BUILTIN_SUMMARIES } from '@shared/folderViews'
 
 /**
  * Column summaries for Bases views (GRO-2134). Built-ins follow Obsidian's table view; anything
  * else is looked up in the base's `summaries:` map and evaluated with `values` bound to the column.
  */
-export const BUILTIN_SUMMARIES = [
-  'Count', 'Empty', 'Filled', 'Unique', 'Average', 'Max', 'Median', 'Min', 'Range', 'Stddev', 'Sum', 'Earliest', 'Latest', 'Checked', 'Unchecked',
-] as const
+export { BUILTIN_SUMMARIES }
 
 export type BuiltinSummary = (typeof BUILTIN_SUMMARIES)[number]
 

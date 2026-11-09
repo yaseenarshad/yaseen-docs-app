@@ -1,3 +1,4 @@
+import { revisionOf, serializeFile } from './revision'
 /**
  * `diagram:load` / `diagram:save` (Draw's 🔒 YAZ-1802 D6, ported by YAZ-3028 D2) — `drawing.ts`'s twin for a `.drawio`: the only
  * way a diagram opened as a document is read and written. Both doors refuse a file that fails the
@@ -11,25 +12,34 @@ import { readBoundedRegularFile } from './boundedRead'
 import { atomicWrite, BridgeFailure, fsCall, requireDir } from './fsUtils'
 
 export async function loadDiagram(req: unknown): Promise<DiagramLoadResponse> {
-  const { dir, file } = boardTarget(req, 'diagram')
+  const { dir, file, body } = boardTarget(req, 'diagram')
   await requireDir(dir)
   const snapshot = await readBoundedRegularFile(file, BOARDS.diagram.max, BOARDS.diagram.tooLarge)
   const xml = snapshot.data.toString('utf8')
   const problem = diagramDocumentError(xml)
   if (problem !== null) throw new BridgeFailure('IO_ERROR', problem, { path: file })
-  return { path: file, xml, mtime: snapshot.mtime, size: snapshot.size }
+  return { path: file, xml, mtime: snapshot.mtime, size: snapshot.size, ...(body.includeRevision === true ? { revision: revisionOf(snapshot.data, snapshot.mtime) } : {}) }
 }
 
 export async function saveDiagram(req: unknown): Promise<DiagramSaveResponse> {
+  const { file } = boardTarget(req, 'diagram')
+  return serializeFile(file, () => saveDiagramUnlocked(req))
+}
+
+async function saveDiagramUnlocked(req: unknown): Promise<DiagramSaveResponse> {
   const { dir, file, body } = boardTarget(req, 'diagram')
-  const { xml, expectedMtime } = body
+  const { xml, expectedMtime, expectedRevision } = body
   if (typeof xml !== 'string') throw new BridgeFailure('BAD_REQUEST', "'xml' must be a string", { path: file })
   if (expectedMtime !== undefined && typeof expectedMtime !== 'number') throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: file })
   // Every check before any write: a diagram the editor could not have produced is refused whole.
   const problem = diagramDocumentError(xml)
   if (problem !== null) throw new BridgeFailure('BAD_REQUEST', `'xml' is not a draw.io diagram: ${problem}`, { path: file })
   await requireDir(dir)
+  if (expectedRevision !== undefined) {
+    const snapshot = await readBoundedRegularFile(file, BOARDS.diagram.max, BOARDS.diagram.tooLarge)
+    if (typeof expectedRevision !== 'string' || revisionOf(snapshot.data, snapshot.mtime) !== expectedRevision) throw new BridgeFailure('CONFLICT', 'diagram changed since the supplied revision', { path: file, mtime: snapshot.mtime })
+  }
   const stamped = await guardedStamp(file, 'diagram', expectedMtime, (at, prior) => stampDiagramMeta(xml, at, prior))
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
-  return { path: file, mtime, size }
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
+  return { path: file, mtime, size, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
 }

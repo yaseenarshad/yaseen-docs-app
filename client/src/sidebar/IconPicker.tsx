@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { PICKER_COLUMNS, PICKER_W } from './iconSuggestions'
+import { iconMatcher } from '@shared/vaultIcons'
 import { iconUrl, pickableIcons, useMaterialIcons } from './materialIcons'
 
 /**
@@ -43,11 +44,11 @@ export function IconPicker({ x, y, anchor, title, current, canReset = current !=
   // Material's tables (YAZ-3470) are in by the time a menu opens the picker; if not, it lists them once they land.
   const material = useMaterialIcons()
   const all = useMemo(() => pickableIcons().sort(), [material]) // eslint-disable-line react-hooks/exhaustive-deps -- `material` is read by pickableIcons
-  const words = query.trim().toLowerCase().split(/[\s-]+/).filter((w) => w !== '')
-  const matches = (id: string) => words.every((w) => id.includes(w))
+  const matches = iconMatcher(query)
+  const searching = query.trim() !== ''
   const sections = [
     { title: 'Suggested', ids: suggested.filter(matches) },
-    { title: 'All icons', ids: words.length === 0 ? all : all.filter(matches) },
+    { title: 'All icons', ids: searching ? all.filter(matches) : all },
   ].filter((section) => section.ids.length > 0)
   const panel = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState(() => (anchor === undefined ? { x, y } : { x: anchor.left, y: anchor.bottom + 4 }))

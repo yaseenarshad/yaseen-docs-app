@@ -1,3 +1,4 @@
+import { exportLiveImage, readLiveDocument, runEditorAction } from '../automation/liveDocument'
 /**
  * The diagram document's host (YAZ-1802), with draw.io replaced by the one thing the host can see
  * of it: postMessage. The iframe never loads in jsdom, so the test plays draw.io — it posts the
@@ -395,5 +396,35 @@ describe('read only: a change draw.io queued before the switch landed (YAZ-3116 
     const written = save.mock.calls[0]![0]
     expect(written.expectedMtime).toBe(300)
     expect(written.xml).toBe(EDITED.replace('<mxfile>', '<mxfile yaseendraw-readonly="1">'))
+  })
+})
+
+describe('automation live diagram', () => {
+  it('reads the unsaved XML without flushing and refuses a loading frame', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-diagram'
+    render(); await settle()
+    expect(() => readLiveDocument('live-diagram')).toThrow('not ready')
+    tapFrame(); drawio({ event: 'init' }); drawio({ event: 'load', xml: XML })
+    drawio({ event: 'autosave', xml: EDITED })
+    expect(readLiveDocument('live-diagram')).toMatchObject({ path: PATH, kind: 'diagram', content: EDITED, source: 'live', baselineMtime: 100, dirty: true })
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4515: exports the live XML through Export Image…\'s renderer, saves on request, and offers no draw.io action', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-diagram'
+    render(); await settle()
+    tapFrame(); drawio({ event: 'init' }); drawio({ event: 'load', xml: XML })
+    drawio({ event: 'autosave', xml: EDITED })
+    const image = await exportLiveImage({ command: 'board.export', tab: 'live-diagram', kind: 'diagram', format: 'svg', options: {} })
+    expect(vi.mocked(renderDiagramImage)).toHaveBeenLastCalledWith(EDITED, 'svg')
+    expect(image).toMatchObject({ format: 'svg', path: PATH, dirty: true })
+    expect(new TextDecoder().decode((image as { data: Uint8Array }).data)).toBe('SVG')
+    await expect(exportLiveImage({ command: 'board.export', tab: 'live-diagram', kind: 'diagram', format: 'pdf', options: {} })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
+    const live = readLiveDocument('live-diagram')
+    expect(live.actions).toEqual(['save'])
+    await expect(runEditorAction({ command: 'editor.action', tab: 'live-diagram', revision: live.revision, edit: { action: 'undo' } })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
+    await act(async () => { await runEditorAction({ command: 'editor.action', tab: 'live-diagram', revision: live.revision, edit: { action: 'save' } }) })
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save.mock.calls[0]![0].xml).toBe(EDITED)
   })
 })

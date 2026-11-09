@@ -1,9 +1,10 @@
+import { AutomationFailure } from '@shared/automation'
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { MAX_FOCUS_FOLDERS, MAX_FOLDER_ITEMS, VAULT_CONFIG_DIR, isFocusFolder, type FocusFolder, type FocusFoldersConfig, type ListScope } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { isSafeRel, toAbs, toRel, under } from './favorites'
-import { createRootChain, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
+import { BridgeFailure, createRootChain, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
 import { macId } from './vaultIndex/mint'
 
@@ -90,7 +91,7 @@ async function save(root: string, scope: ListScope, kind: FolderKind, folders: F
  * name, so each becomes the new name, with a new `at` so the healed folders win over the other vaults' copies, and
  * the healed file is written.
  */
-export async function getFocusFolders(root: string, scope: ListScope, kind: FolderKind = 'focus'): Promise<FocusFolder[]> {
+export async function getFocusFolders(root: string, scope: ListScope, kind: FolderKind = 'focus', options: { readOnly?: boolean } = {}): Promise<FocusFolder[]> {
   const r = requireAbsPath(root, 'root')
   const held = await readNewest(r, scope, kind)
   if (held === null) return []
@@ -99,7 +100,7 @@ export async function getFocusFolders(root: string, scope: ListScope, kind: Fold
   const was = held.self
   const now = Date.now()
   const healed = held.folders.map((f) => (f.items.some((i) => i.vault === was) ? { ...f, items: f.items.map((i) => (i.vault === was ? { ...i, vault: name } : i)), at: now } : f))
-  await chained(r, async () => save(r, scope, kind, healed, await readNewest(r, scope, kind)))
+  if (!options.readOnly) await chained(r, async () => save(r, scope, kind, healed, await readNewest(r, scope, kind)))
   return healed
 }
 
@@ -107,6 +108,29 @@ export async function getFocusFolders(root: string, scope: ListScope, kind: Fold
 export async function setFocusFolders(root: string, scope: ListScope, folders: readonly unknown[], kind: FolderKind = 'focus'): Promise<void> {
   const r = requireAbsPath(root, 'root')
   await chained(r, async () => save(r, scope, kind, clean(folders), await readNewest(r, scope, kind)))
+}
+
+/** Patch a group across the requested vaults while holding their existing locks in stable order.
+ * A disk failure can leave some copies saved. Report those roots; do not claim a multi-file transaction.
+ */
+export async function patchFocusFolder(roots: readonly string[], scope: ListScope, kind: FolderKind, update: (copies: Record<string, readonly FocusFolder[]>) => FocusFolder): Promise<FocusFolder> {
+  const ordered = [...new Set(roots.map(root => requireAbsPath(root, 'root')))].sort()
+  const locked = (at: number): Promise<FocusFolder> => at < ordered.length ? chained(ordered[at], () => locked(at + 1)) : apply()
+  const apply = async () => {
+    const held = await Promise.all(ordered.map(root => readNewest(root, scope, kind)))
+    const copies: Record<string, FocusFolder[]> = Object.fromEntries(await Promise.all(ordered.map(async root => [root, await getFocusFolders(root, scope, kind, { readOnly: true })])))
+    const folder = update(copies)
+    const next = ordered.map(root => {
+      const current = copies[root]
+      if (!current.some(item => item.id === folder.id) && current.length >= MAX_FOCUS_FOLDERS) throw new BridgeFailure('BAD_REQUEST', 'the collection group limit is reached', { path: root })
+      return current.some(item => item.id === folder.id) ? current.map(item => item.id === folder.id ? folder : item) : [...current, folder]
+    })
+    const results = await Promise.allSettled(ordered.map((root, i) => save(root, scope, kind, next[i], held[i])))
+    const failedRoots = ordered.filter((_root, i) => results[i].status === 'rejected')
+    if (failedRoots.length) throw new AutomationFailure('PARTIAL_FAILURE', 'Some group copies could not be saved. Inspect the affected vaults before another mutation.', { appliedRoots: ordered.filter((_root, i) => results[i].status === 'fulfilled'), failedRoots })
+    return folder
+  }
+  return locked(0)
 }
 
 /** Fires after any change to a focus folders file of the vault, with its scope. Returns an unsubscribe. */

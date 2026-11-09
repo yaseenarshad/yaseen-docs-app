@@ -1,3 +1,4 @@
+import { revisionOf, serializeFile } from './revision'
 /**
  * THE DRAWING DOCUMENT'S TWO DOORS (Draw's 🔒 YAZ-1810, ported by YAZ-3028 D2).
  *
@@ -122,7 +123,7 @@ export async function loadDrawing(req: unknown, fit?: (files: Record<string, Dra
   // YAZ-3943 D5: an "inside" board's save finds every picture in the file or the store by itself,
   // so the renderer never ships one of them back; a "pictures out" board's are the store's only.
   const kept = picturesOut(block) ? stored : Object.keys(files).sort()
-  return { path: file, json, mtime: snapshot.mtime, size: snapshot.size, files: pictures, stored: kept }
+  return { path: file, json, mtime: snapshot.mtime, size: snapshot.size, files: pictures, stored: kept, ...(body.includeRevision === true ? { revision: revisionOf(snapshot.data, snapshot.mtime) } : {}) }
 }
 
 /** The `yaseendraw` block off a board's bytes, by the head rule `readBoardHead` reads it with (🔒 YAZ-1834 D7). */
@@ -234,8 +235,13 @@ async function boardIdToGive(root: string, file: string, block: BoardMetaBlock |
 
 /** `approved` (YAZ-3943 demo round 3): the outside pictures folders the user picked (`AppState.approvedPictureFolders`), the only ones a save writes to. */
 export async function saveDrawing(req: unknown, approved: readonly string[] = []): Promise<DrawingSaveResponse> {
+  const { file } = boardTarget(req, 'drawing')
+  return serializeFile(file, () => saveDrawingUnlocked(req, approved))
+}
+
+async function saveDrawingUnlocked(req: unknown, approved: readonly string[]): Promise<DrawingSaveResponse> {
   const { dir, file, body } = boardTarget(req, 'drawing')
-  const { json, expectedMtime, newFiles } = body
+  const { json, expectedMtime, newFiles, expectedRevision } = body
   if (typeof json !== 'string') throw new BridgeFailure('BAD_REQUEST', "'json' must be a string", { path: file })
   if (expectedMtime !== undefined && typeof expectedMtime !== 'number') throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: file })
   if (!Array.isArray(newFiles)) throw new BridgeFailure('BAD_REQUEST', "'newFiles' must be an array", { path: file })
@@ -246,6 +252,7 @@ export async function saveDrawing(req: unknown, approved: readonly string[] = []
   await requireDir(dir)
   const current = await readCurrent(file)
   const known = current?.head ?? null
+  if (expectedRevision !== undefined && (typeof expectedRevision !== 'string' || current === null || revisionOf(current.data, current.head.mtime) !== expectedRevision)) throw new BridgeFailure('CONFLICT', 'drawing changed since the supplied revision', { path: file, mtime: known?.mtime })
   // A board's ID (YAZ-3943 4C): given on its first save in a vault that gives IDs, never on a save the guard refuses.
   const conflict = expectedMtime !== undefined && known !== null && known.mtime !== expectedMtime
   const id = conflict ? undefined : await boardIdToGive(dir, file, known?.block)
@@ -258,10 +265,12 @@ export async function saveDrawing(req: unknown, approved: readonly string[] = []
     pending.push(...lifted)
     const stamped = await guardedStamp(file, 'drawing', expectedMtime, (at, prior) => serializeBoard(stampBoardMetaScene(lean, at, withId(prior))), known)
     // Assets first (see the module doc), and only once the conflict guard has passed — a refused
-    // save must leave the vault exactly as it found it. A save with no new picture asks no `realpath` (YAZ-4071 nit).
+    // save must leave the vault exactly as it found it. Only the check right before the rename
+    // (YAZ-4576) comes after them: its `CONFLICT` can leave the new pictures in the store, unnamed
+    // until a later save of the scene names them. A save with no new picture asks no `realpath` (YAZ-4071 nit).
     const persisted = pending.length === 0 ? [] : await landAssets(dir, pending, await landingFolder(dir, picturesFolderOf(known?.block), approved))
-    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
-    return { path: file, mtime, size, persisted, ...given }
+    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
+    return { path: file, mtime, size, persisted, ...given, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
   }
 
   // Inside (YAZ-3943 D5): the new pictures, any the scene sent inside itself, the file's own, then the store.
@@ -292,10 +301,10 @@ export async function saveDrawing(req: unknown, approved: readonly string[] = []
     known,
   )
   if (!movedOut) {
-    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
-    return { path: file, mtime, size, persisted: Object.keys(pictures), inside: true, ...given }
+    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
+    return { path: file, mtime, size, persisted: Object.keys(pictures), inside: true, ...given, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
   }
   const persisted = await landAssets(dir, liftEmbedded(inside, elements).lifted)
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
-  return { path: file, mtime, size, persisted, movedOut: true, ...given }
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped, undefined, expectedMtime as number | undefined))
+  return { path: file, mtime, size, persisted, movedOut: true, ...given, ...(expectedRevision !== undefined ? { revision: revisionOf(stamped, mtime) } : {}) }
 }

@@ -1,3 +1,4 @@
+import { exportLiveImage, readLiveDocument, runEditorAction } from '../automation/liveDocument'
 /**
  * The drawing document's chrome, with the ENGINE replaced by a stub (Draw's 🔒 YAZ-1810, ported by YAZ-3028).
  *
@@ -61,6 +62,10 @@ const surface = {
   pictures: { bytes: 0, count: 0, missing: 0 },
   /** The pan and zoom the engine is on (YAZ-3737 D13). */
   canvas: { scrollX: 0, scrollY: 0, zoom: 1 },
+  /** YAZ-4515: the engine actions run by name, what each answers, and the selection's identity. */
+  ran: [] as string[],
+  applies: true,
+  selection: {} as object,
 }
 
 vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
@@ -91,6 +96,17 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
       },
       pictures: () => surface.pictures,
       canvas: () => surface.canvas,
+      runAction: (name) => {
+        surface.ran.push(name)
+        return surface.applies
+      },
+      selectElements: (ids) => {
+        const missing = ids.filter((id) => id !== 'a')
+        if (missing.length === 0) surface.selection = { a: true }
+        return missing
+      },
+      selection: () => surface.selection,
+      exportImage: async (format) => (format === 'pdf' ? { format, svg: '<svg/>', width: 10, height: 20 } : { format, data: new Uint8Array([1, 2, 3]) }),
     } satisfies DrawingSurfaceApi)
     // The real engine renders this into its own top-right row; the stub just puts it on screen,
     // because WHERE the chips go is the surface's business and WHAT they say is the host's.
@@ -100,7 +116,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
 
 import { api, BridgeRequestError } from '../api'
 import { readPageView } from '../lib/pageView'
-import { _resetRenameContinuity } from '../lib/renameContinuity'
+import { _resetRenameContinuity, carryEditorAcrossPane, dirtyPaths } from '../lib/renameContinuity'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { BROKEN_DRAWING_DOCUMENT, DrawingEditor, OUTSIDE_FOLDER_WARNING, picturesMoveAsk, picturesPlaceText } from './DrawingEditor'
@@ -158,6 +174,9 @@ beforeEach(() => {
   surface.nextReplaceVersion = 0
   surface.commands = []
   surface.pictures = { bytes: 0, count: 0, missing: 0 }
+  surface.ran = []
+  surface.applies = true
+  surface.selection = {}
   Object.defineProperty(window, 'yaseenDocs', {
     configurable: true,
     writable: true,
@@ -1118,5 +1137,86 @@ describe('YAZ-3943 demo round 3 — what the confirm box before a picture move s
     expect(OUTSIDE_FOLDER_WARNING).toBe('This folder is outside the vault. Your other Macs, Version history and copies of the vault will not have these pictures unless you sync this folder yourself.')
     // A folder outside the home folder shows its whole path.
     expect(picturesMoveAsk('folder', { count: 1, bytes: 1 }, 'x', '/Volumes/Disk/pics', '/Users/me').body).toContain('to /Volumes/Disk/pics.')
+  })
+})
+
+describe('automation live drawing', () => {
+  it('reads the unsaved scene and its image bytes without flushing', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-drawing'
+    render(); await flush(); emit(1, scene())
+    const files = { image: { mimeType: 'image/png', dataURL: 'data:image/png;base64,aGk=' } }
+    emit(2, scene([{ id: 'unsaved', type: 'image', fileId: 'image' }]), files)
+    const live = readLiveDocument('live-drawing')
+    expect(live).toMatchObject({ path: PATH, kind: 'drawing', source: 'live', baselineMtime: 100, dirty: true })
+    expect(JSON.parse(live.content)).toMatchObject({ elements: [{ id: 'unsaved' }], files })
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4515: runs the engine actions it advertises under a live revision that the selection moves', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-drawing'
+    render(); await flush(); emit(1, scene())
+    const first = readLiveDocument('live-drawing')
+    expect(first.actions).toEqual(expect.arrayContaining(['selectElements', 'deleteSelection', 'group', 'zoomToFit', 'undo', 'redo', 'save']))
+    const run = (edit: Parameters<typeof runEditorAction>[0]['edit'], revision = readLiveDocument('live-drawing').revision) => runEditorAction({ command: 'editor.action', tab: 'live-drawing', revision, edit })
+    await expect(run({ action: 'selectElements', ids: ['a', 'gone'] })).rejects.toMatchObject({ code: 'NOT_FOUND', details: { ids: ['gone'] } })
+    await run({ action: 'selectElements', ids: ['a'] })
+    // The selection moved, so the first revision is stale.
+    await expect(run({ action: 'deleteSelection' }, first.revision)).rejects.toMatchObject({ code: 'CONFLICT' })
+    await run({ action: 'deleteSelection' })
+    await run({ action: 'undo' })
+    expect(surface.ran).toEqual(['deleteSelectedElements', 'undo'])
+    surface.applies = false
+    await expect(run({ action: 'group' })).rejects.toMatchObject({ code: 'NOT_APPLICABLE' })
+  })
+
+  it('YAZ-4515: a Read only drawing offers only the view actions and still exports', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-drawing'
+    load.mockResolvedValue(loaded({ json: `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} })}\n` }))
+    render(); await flush(); emit(1, scene())
+    const live = readLiveDocument('live-drawing')
+    expect(live.actions).toEqual(['zoomIn', 'zoomOut', 'resetZoom', 'zoomToFit', 'zoomToFitSelection'])
+    await expect(runEditorAction({ command: 'editor.action', tab: 'live-drawing', revision: live.revision, edit: { action: 'deleteSelection' } })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
+    await runEditorAction({ command: 'editor.action', tab: 'live-drawing', revision: live.revision, edit: { action: 'zoomToFit' } })
+    expect(surface.ran).toEqual(['zoomToFit'])
+    expect(await exportLiveImage({ command: 'board.export', tab: 'live-drawing', kind: 'drawing', format: 'pdf', options: {} })).toEqual({ format: 'pdf', svg: '<svg/>', width: 10, height: 20, path: PATH, dirty: false })
+  })
+
+  it('YAZ-4515: exports the live canvas bytes with its dirty state, and refuses the wrong board kind', async () => {
+    container.classList.add('tabstack__layer'); container.dataset.tab = 'live-drawing'
+    render(); await flush(); emit(1, scene()); emit(2)
+    const image = await exportLiveImage({ command: 'board.export', tab: 'live-drawing', kind: 'drawing', format: 'png', options: { scale: 2 } })
+    expect(image).toMatchObject({ format: 'png', path: PATH, dirty: true })
+    expect([...(image as { data: Uint8Array }).data]).toEqual([1, 2, 3])
+    await expect(exportLiveImage({ command: 'board.export', tab: 'live-drawing', kind: 'diagram', format: 'png', options: {} })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
+    expect(save).not.toHaveBeenCalled()
+  })
+})
+
+describe('a pane move (YAZ-4515)', () => {
+  it('a dirty board moved main → right and back saves its edits before the new owner reads, and the old owner never writes again', async () => {
+    const order: string[] = []
+    load.mockImplementation(async () => { order.push('load'); return loaded({ mtime: 100 + order.length }) })
+    save.mockImplementation(async (req) => { order.push(`save ${JSON.parse(req.json).elements[0]?.id}`); return { path: PATH, mtime: 500 + order.length, size: 1, persisted: [] } })
+    render(); await flush(); emit(1, scene()); emit(2, scene([{ id: 'main-edit' }]))
+    expect(dirtyPaths()).toEqual([PATH])
+    const owners: Root[] = []
+    const move = async (): Promise<void> => {
+      // `useWorkspace` carries in `dispatch`, before React unmounts the old owner and mounts the new one.
+      act(() => carryEditorAcrossPane(PATH))
+      act(() => (owners.at(-1) ?? root)?.unmount())
+      const next = createRoot(document.body.appendChild(document.createElement('div')))
+      owners.push(next)
+      act(() => next.render(<DrawingEditor root={ROOT} path={PATH} watch={watch} />))
+      await flush(); await flush()
+    }
+    await move()
+    expect(order).toEqual(['load', 'save main-edit', 'load'])
+    emit(1, scene()); emit(2, scene([{ id: 'right-edit' }]))
+    await move()
+    expect(order).toEqual(['load', 'save main-edit', 'load', 'save right-edit', 'load'])
+    await act(async () => { vi.advanceTimersByTime(2000) })
+    act(() => owners.at(-1)?.unmount())
+    root = null
+    expect(order.filter(step => step.startsWith('save'))).toEqual(['save main-edit', 'save right-edit'])
   })
 })

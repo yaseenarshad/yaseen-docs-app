@@ -1,3 +1,6 @@
+import { markdownAction, markdownVersion } from './automationActions'
+import { TEXT_READ_ONLY_ACTIONS, type EditorAction } from '@shared/automationEditor'
+import { registerLiveDocument } from '../automation/liveDocument'
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
 import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
@@ -620,7 +623,7 @@ function CrepeHost({
     if (always || now !== from) reportZoom(now, true, getZoomLabelOf(crepe), from)
   }, [reportZoom])
   const autosave = useAutosave(file.path)
-  const { attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused } = autosave
+  const { attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, conflicted } = autosave
   // The user's own edit keeps a preview tab (YAZ-2648 D2), and the signal is the note turning
   // UNSAVED, never `onMarkdownUpdated`: that fires for a silent reload of an outside change too.
   // The autosave turns unsaved only when the editor's text differs from what it last read or
@@ -647,6 +650,9 @@ function CrepeHost({
    * Parsed once per `disk`, never per keystroke or per save.
    */
   const readOnly = useMemo(() => isNoteReadOnly(disk), [disk])
+  /** For the CLI's live actions (YAZ-4560), read only when it asks. */
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
   /**
    * The page cog's on/off rows (YAZ-4094 G4, G1): IN the note's frontmatter too, read off `disk` the same
    * way, so a toggle in another tab or window, or an agent's edit, shows here at once. A key that is absent
@@ -892,6 +898,7 @@ function CrepeHost({
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
     let offPageView: (() => void) | null = null
+    let offLiveDocument: (() => void) | null = null
     const ready = crepe.create().then(() => {
       if (cancelled) return
       controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body)
@@ -932,6 +939,21 @@ function CrepeHost({
       startViewRef.current = undefined
       // This tab's page view, read only when a copy action asks (YAZ-2951 D4): nothing runs per keystroke.
       if (scroller) {
+        offLiveDocument = registerLiveDocument(scroller, () => {
+          const parts = diskParts(), bodyNow = getMarkdownForSave(crepe)
+          const { selection, doc } = editorViewOf(crepe).state
+          return { path: file.path, kind: 'markdown', content: parts.frontmatter + bodyNow, baselineMtime: controller!.mtime, dirty: controller!.unsaved(bodyNow), conflict: conflicted(), selection: { anchor: selection.anchor, head: selection.head, text: doc.textBetween(selection.from, selection.to, '\n'), coordinate: 'prosemirror' } }
+        }, {
+          // Not the save's mtime: an autosave between two agent calls changes nothing an action reads (YAZ-4563).
+          version: () => markdownVersion(crepe),
+          // Read only blocks a person's edits and Undo (YAZ-3076 D2), so the CLI gets none either (YAZ-4560).
+          get actions(): EditorAction['action'][] { return readOnlyRef.current ? [...TEXT_READ_ONLY_ACTIONS] : ['select', 'replace', 'format', 'undo', 'redo', 'save'] },
+          run: async action => {
+            if (action.action !== 'save') markdownAction(crepe, action)
+            controller!.update(getMarkdownForSave(crepe))
+            if (action.action === 'save') await controller!.flush()
+          },
+        })
         offPageView = registerPageView(scroller, () => ({
           scrollTop: scroller.scrollTop,
           zoomKey: getZoomKeyOf(crepe),
@@ -1016,12 +1038,13 @@ function CrepeHost({
       cancelled = true
       crepeRef.current = null
       offPageView?.()
+      offLiveDocument?.()
       unsubscribe()
       offTwin()
       offRefused()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, drawingFeed, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, conflicted, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, drawingFeed, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom])
 
   /**
    * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1), and the cog's on/off rows

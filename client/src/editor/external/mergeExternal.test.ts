@@ -240,3 +240,21 @@ describe('applyExternalMarkdown tells the change list too (YAZ-3704 D3)', () => 
     expect(seen[1].getMeta(OUTSIDE_RANGES_META)).toBeUndefined()
   })
 })
+
+describe('the debounced save text after a merge (YAZ-4562)', () => {
+  it('an outside edit merged within 200 ms of the last keystroke is in the text handed to autosave', async () => {
+    const saved = vi.fn<(markdown: string) => void>()
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: 'Typed base\n\nOther paragraph\n', onMarkdownUpdated: saved })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    view.dispatch(view.state.tr.insertText('Human', 1, 6))
+    // The outside edit lands before the listener's 200 ms debounce fires.
+    expect(mergeExternalMarkdown(crepe, 'Typed base\n\nOther paragraph\n', 'Typed base\n\nAgent paragraph\n')).toBe('merged')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(getMarkdownForSave(crepe)).toBe('Human base\n\nAgent paragraph\n')
+    expect(saved).toHaveBeenLastCalledWith('Human base\n\nAgent paragraph\n')
+  })
+})

@@ -1,3 +1,4 @@
+import { dayOf as calendarDay } from '@shared/calendarDay'
 /**
  * `yaseendocs` (YAZ-1617 🔒 D1, D4, D5): the door an agent uses to work with a page from the
  * shell — its comments, and its id and the ids it points at (YAZ-2293) — to read the app's
@@ -13,6 +14,7 @@
  *
  * `HELP` IS the contract: it is the only documentation an agent reads, so its wording is UI copy.
  */
+import { AUTOMATION_HELP, isAutomationCommand, runAutomation } from './automation'
 import { execFile } from 'node:child_process'
 import { readFile as readRaw, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -54,7 +56,8 @@ import { scanFile, walk } from '../main/vaultIndex/scan'
 
 export interface Io {
   /** The whole of stdin, for `--body -`. */
-  stdin(): Promise<string>
+  stdin(maxBytes?: number): Promise<string>
+  stdinBytes?(maxBytes: number): Promise<Buffer>
   stdout(text: string): void
   stderr(text: string): void
   /** Hands a `yaseendocs://` link to the system, as a click on it would (D10). */
@@ -73,7 +76,9 @@ export const USAGE = `usage:
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
-  yaseendocs --help`
+  yaseendocs --help
+
+${AUTOMATION_HELP}`
 
 export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, when it is next due for review, the app's list of vaults, and a new note or the day's daily note, from the shell.
 
@@ -369,15 +374,8 @@ async function vaults(json: boolean, io: Io): Promise<void> {
   else io.stdout(rows.length === 0 ? 'no vaults\n' : rows.map((v) => `${v.name}  ${v.path}${v.key === null ? '' : `  ⌘${v.key}`}${v.open ? '  (open)' : ''}\n`).join(''))
 }
 
-/** The day `--date` names, on this Mac's own calendar: today, tomorrow, yesterday or `YYYY-MM-DD` (D9); today when it is not given. */
 export function dayOf(text: string | undefined, now = new Date()): Date {
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const shift = { today: 0, tomorrow: 1, yesterday: -1 }[text ?? 'today']
-  if (shift !== undefined) return new Date(today.getFullYear(), today.getMonth(), today.getDate() + shift)
-  const [, y, m, d] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text ?? '') ?? []
-  const day = new Date(Number(y), Number(m) - 1, Number(d))
-  if (y === undefined || day.getFullYear() !== Number(y) || day.getMonth() !== Number(m) - 1 || day.getDate() !== Number(d)) throw new Usage('--date takes today, tomorrow, yesterday or a day as YYYY-MM-DD')
-  return day
+  try { return calendarDay(text, now) } catch (error) { throw new Usage((error as Error).message) }
 }
 
 /** `made <path>` or `found <path>`, each other note of the title on stderr (D8); `--json` the whole answer. */
@@ -570,6 +568,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
 
 /** The program: resolves to the exit code (0 done · 1 refused or failed · 2 usage). */
 export async function main(argv: readonly string[], io: Io): Promise<number> {
+  if (isAutomationCommand(argv)) return runAutomation(argv, io)
   try {
     await run(argv, io)
     return 0

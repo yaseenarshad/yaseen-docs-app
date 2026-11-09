@@ -1,3 +1,6 @@
+import { editorStateVersion, registerLiveDocument } from '../automation/liveDocument'
+import { DRAWING_ACTIONS, DRAWING_VIEW_ACTIONS, type EditorAction } from '@shared/automationEditor'
+import { AutomationFailure } from '@shared/automation'
 /**
  * THE DRAWING DOCUMENT (Draw's 🔒 YAZ-1810, ported by YAZ-3028 D2): a `.excalidraw` opened full-pane in a
  * tab. `Editor` dispatches `kind === 'drawing'` here, and this is the shell's ordinary document host — save
@@ -379,6 +382,42 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     focus: () => surface.current?.focus(),
   })
   const { autosave, start, chips, readOnly, reload } = board
+
+  useEffect(() => {
+    const host = board.hostRef.current
+    if (!host) return
+    return registerLiveDocument(host, () => {
+      const current = snapshot.current, save = autosave.current
+      if (!current || !save || board.retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The drawing is not ready.')
+      const { json, files } = current.serialize()
+      return { path, kind: 'drawing', content: JSON.stringify({ ...JSON.parse(json), files }), baselineMtime: save.mtime, dirty: save.dirty, conflict: board.conflicted.current }
+    }, {
+      // YAZ-4515: the engine's own actions and history. Read only leaves the view actions; content edits then use drawing.save.
+      version: () => `${snapshot.current?.version}:${surface.current === null ? 0 : editorStateVersion(surface.current.selection())}`,
+      get actions(): EditorAction['action'][] {
+        return readOnlyRef.current ? [...DRAWING_VIEW_ACTIONS] : ['selectElements', ...(Object.keys(DRAWING_ACTIONS) as (keyof typeof DRAWING_ACTIONS)[]), 'undo', 'redo', 'save']
+      },
+      run: async (edit) => {
+        const s = surface.current
+        if (s === null || board.retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The drawing is not ready.')
+        if (edit.action === 'save') return void (await autosave.current?.flush())
+        if (edit.action === 'selectElements') {
+          const missing = s.selectElements(edit.ids)
+          if (missing.length) throw new AutomationFailure('NOT_FOUND', 'Some element ids are not on the canvas.', { ids: missing })
+          return
+        }
+        const name = edit.action === 'undo' || edit.action === 'redo' ? edit.action : edit.action in DRAWING_ACTIONS ? DRAWING_ACTIONS[edit.action as keyof typeof DRAWING_ACTIONS] : null
+        if (name === null) throw new AutomationFailure('UNSUPPORTED_ACTION', 'A drawing does not support this action.')
+        if (!s.runAction(name)) throw new AutomationFailure('NOT_APPLICABLE', 'This action does not apply to the current selection.')
+      },
+    }, { kind: 'drawing', run: async ({ format, options }) => {
+      const s = surface.current
+      if (s === null || board.retired.current) throw new AutomationFailure('LIVE_DOCUMENT_UNAVAILABLE', 'The drawing is not ready.')
+      try { return { ...await s.exportImage(format, options), path, dirty: autosave.current?.dirty === true } }
+      catch (error) { throw new AutomationFailure('EXPORT_FAILED', error instanceof Error ? error.message : 'The drawing could not be exported.') }
+    } })
+  }, [path, board.hostRef, board.retired, board.conflicted, autosave])
+
   // The hover preview: the app's "Links in drawings" AND this board's own switch (YAZ-3943 demo 2); clicks stay.
   const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: { ...linkProps, hoverLinks: linkProps.hoverLinks === true && !hoverLinksOff } })
   /**

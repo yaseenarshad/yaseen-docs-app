@@ -224,9 +224,13 @@ describe('sharing (YAZ-1799) against the real Worker', () => {
     workerCalls = []
     await sharing.setPermission(vault, board(), false)
     expect(workerCalls.map((c) => c.method)).toEqual(['PATCH'])
-    await sharing.stop(vault, board())
+    expect(await sharing.stop(vault, board())).toBe(true)
     expect(bucket.objects.size).toBe(0)
     expect(await sharing.get(vault, board())).toBeNull()
+    // YAZ-4573: nothing saved at the path any more, so nothing stops and the caller is told.
+    workerCalls = []
+    expect(await sharing.stop(vault, board())).toBe(false)
+    expect(workerCalls).toEqual([])
   })
 
   it('a re-upload never sends a permission, so it can never reset a view-only board', async () => {

@@ -49,6 +49,7 @@ import { Plugin, PluginKey, type EditorState, type Selection, type Transaction }
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { WIKILINK_RE } from '@shared/linkRewrite'
+import { linkPageName } from '@shared/backlinks'
 import { isNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
 import { boardBaseName, fileKind } from '@shared/fileKind'
 import { basename, type IndexRecord } from '@shared/types'
@@ -158,14 +159,8 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
 // The wiki link pattern is the shared rewrite's (YAZ-2677): the editor and the rewrite read one shape.
 export { WIKILINK_RE }
 
-/**
- * The page-name half of a raw `[[inner]]` text: `|alias` and `#heading` / `#^block` stripped,
- * trimmed. '' for the same-file `[[#h]]` form. The ONE strip shared by the decorations below,
- * click navigation and create-on-click (`wikilinkClick.ts` / `createFromLink.ts`, Links C).
- */
-export function linkPageName(inner: string): string {
-  return inner.split('|')[0].split('#')[0].trim()
-}
+/** The page-name half of a raw `[[inner]]` text (`@shared/backlinks`): the ONE strip for decorations, clicks and create-on-click. */
+export { linkPageName }
 
 /**
  * The title an id link shows (YAZ-2293): `target` is a note's id and `resolve` finds the note →

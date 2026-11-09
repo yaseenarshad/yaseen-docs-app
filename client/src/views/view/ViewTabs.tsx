@@ -2,16 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../../lib/dragSlot'
 import type { ViewDef } from '../viewSchema'
+import { VIEW_TYPES, uniqueViewName, viewTypeLabel } from '@shared/folderViews'
 import { ConfirmDeleteView } from './ConfirmDeleteView'
 import { ViewTypeIcon } from './icons'
 import { Popover } from './Popover'
 import { TextField } from './TextField'
 
-/** The kinds "+" offers, in menu order; a kind's label is its type, capitalised. */
-const VIEW_TYPES = ['table', 'board', 'cards', 'list', 'outline'] as const
 /** This strip's own drag payload (TabBar's `WORKSPACE_PAGE_MIME` idiom); never `text/plain`. */
 const VIEW_TAB_MIME = 'application/x-yaseen-view-tab'
-export const viewTypeLabel = (type: string): string => type.charAt(0).toUpperCase() + type.slice(1)
 
 export interface ViewTabsProps {
   views: ViewDef[]
@@ -66,10 +64,7 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
     if (to !== drag.from) onMove(drag.from, to)
   }
   /** Names key `defaultView` and the collapse store: a rename commits only a non-empty name no OTHER view has. */
-  const uniqueName = (i: number) => (draft: string): string | null => {
-    const name = draft.trim()
-    return name !== '' && !views.some((v, j) => j !== i && v.name === name) ? name : null
-  }
+  const uniqueName = (i: number) => (draft: string): string | null => uniqueViewName(views, i, draft)
 
   return (
     <>

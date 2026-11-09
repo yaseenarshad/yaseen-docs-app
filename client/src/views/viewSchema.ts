@@ -3,68 +3,14 @@ import { isRecord } from '@shared/guards'
 
 /**
  * The Obsidian Bases view-schema model — the shape a folder's `views` block round-trips
- * through (`FolderView`). The types mirror Obsidian's schema and
- * are ours too (extended later); unknown keys are typed as `unknown` and must
+ * through (`FolderView`). The types mirror Obsidian's schema and live in `@shared/folderViews`
+ * (YAZ-4518); unknown keys are typed as `unknown` and must
  * survive a parse → update → serialise cycle untouched, comments included.
  */
 
-export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } | { not: FilterNode[] }
-
-export interface SortSpec {
-  property: string
-  direction: 'ASC' | 'DESC'
-}
-
-export interface GroupBySpec {
-  property: string
-  direction?: 'ASC' | 'DESC'
-}
-
-export interface ViewDef {
-  /** 'table' | 'cards' | 'list' | 'map' | 'board' (ours) | anything else (unknown, preserved) */
-  type: string
-  name: string
-  filters?: FilterNode
-  order?: string[]
-  /** 🔒 D2 (YAZ-867): an outline view's whole document — ONE markdown bullet list (`views/outlineDoc.ts`). */
-  outline?: string
-  sort?: SortSpec[]
-  /** Ordered levels, outer first; only the first two are honoured in v1 (YAZ-745). The single-object form stays valid. */
-  groupBy?: GroupBySpec | GroupBySpec[]
-  showEmptyColumns?: boolean
-  limit?: number
-  summaries?: Record<string, string>
-  columnSize?: Record<string, number>
-  frozenColumns?: number
-  /** The `#` gutter (YAZ-1513). Absent = shown. */
-  rowNumbers?: boolean
-  rowHeight?: string
-  image?: string
-  cardSize?: string | number
-  imageFit?: string
-  imageAspectRatio?: string | number
-  indentProperties?: boolean
-  markerStyle?: string
-  propertySeparator?: string
-  /** Board card styling (YAZ-1206, reshaped by YAZ-1217): per canonical property key — bold/underline the value's row, hide its label, or `join` it onto the row being built instead of starting a new one. */
-  cardStyle?: Record<string, { bold?: boolean; underline?: boolean; hideLabel?: boolean; join?: boolean }>
-  [extra: string]: unknown
-}
-
-/** A view's grouping levels, outer first, whichever form `groupBy` is written in. */
-export const groupByLevels = (view: ViewDef): GroupBySpec[] =>
-  Array.isArray(view.groupBy) ? view.groupBy : view.groupBy ? [view.groupBy] : []
-
-export interface ViewSet {
-  filters?: FilterNode
-  formulas?: Record<string, string>
-  properties?: Record<string, { displayName?: string; [extra: string]: unknown }>
-  summaries?: Record<string, string>
-  views: ViewDef[]
-  /** The saved START (YAZ-1104), a view NAME — in the def since YAZ-1471 so rename/delete keep it honest in the same write. */
-  defaultView?: string
-  [extra: string]: unknown
-}
+import type { ViewSet } from '@shared/folderViews'
+export type { FilterNode, GroupBySpec, SortSpec, ViewDef, ViewSet } from '@shared/folderViews'
+export { groupByLevels } from '@shared/folderViews'
 
 /**
  * The ONE config-write door every menu is handed: `ViewsPane`'s `update`, which re-parses and

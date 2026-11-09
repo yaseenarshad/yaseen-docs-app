@@ -142,3 +142,13 @@ export function mergeIconsFile(base: string | null, theirs: string, mine: string
   }
   return `${JSON.stringify({ version: 1, paths }, null, 2)}\n`
 }
+
+/** The ids the icon picker lists, of Material's set: every icon but the open and the light twins, which follow their icon. */
+export const pickableIconIds = (ids: ReadonlySet<string>): string[] =>
+  [...ids].filter((id) => !(id.endsWith('-open') && ids.has(id.slice(0, -5))) && !(id.endsWith('_light') && ids.has(id.slice(0, -6))))
+
+/** The icon picker's search, and `icon.names`': each word of `query` (split at spaces and dashes) is in the id. */
+export function iconMatcher(query: string): (id: string) => boolean {
+  const words = query.trim().toLowerCase().split(/[\s-]+/).filter((w) => w !== '')
+  return (id) => words.every((w) => id.includes(w))
+}

@@ -1,3 +1,4 @@
+import { serializeFile } from './revision'
 /**
  * `board:set-pictures` (YAZ-3943 D5): the cog's "Move to the assets folder", "Choose a folder…" and "Keep
  * pictures inside" on a drawing, written as `"pictures": "assets"` — and, for a folder of the board's own
@@ -25,7 +26,7 @@
  */
 import { BOARD_META_KEY, isValidPicturesFolder, PICTURES_INSIDE_MAX_BYTES, picturesFolderOf, picturesMissingRefusal, referencedFileIds, serializeBoard, stripEmbeddedScene, withPicturesOut } from '@shared/drawingAssets'
 import type { BoardPicturesResponse } from '@shared/types'
-import { BOARDS, boardTarget } from './boardDocument'
+import { BOARDS, boardTarget, checkBoardRevision } from './boardDocument'
 import { readBoundedRegularFile } from './boundedRead'
 import { embedPictures, landAssets, liftEmbedded, parseScene } from './drawing'
 import { atomicWrite, BridgeFailure, fsCall, requireDir } from './fsUtils'
@@ -37,6 +38,11 @@ export const TOO_BIG_INSIDE = 'The pictures stay in the assets folder: with them
 export const FOLDER_NOT_CHOSEN = 'Choose this folder with "Choose a folder…" first.'
 
 export async function setBoardPictures(req: unknown, approved: readonly string[] = []): Promise<BoardPicturesResponse> {
+  const { file } = boardTarget(req, 'drawing')
+  return serializeFile(file, () => setBoardPicturesUnlocked(req, approved))
+}
+
+async function setBoardPicturesUnlocked(req: unknown, approved: readonly string[] = []): Promise<BoardPicturesResponse> {
   const { dir, file, body } = boardTarget(req, 'drawing')
   const { out, folder, expectedMtime } = body
   if (typeof out !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'out' must be a boolean", { path: file })
@@ -46,6 +52,7 @@ export async function setBoardPictures(req: unknown, approved: readonly string[]
   // An outside folder, or a vault folder whose real place is outside (6A item 4), must be one the user picked.
   if (folder !== undefined && (await landingFolder(dir, folder, approved)) !== folder) throw new BridgeFailure('BAD_REQUEST', FOLDER_NOT_CHOSEN, { path: file })
   const snap = await readBoundedRegularFile(file, BOARDS.drawing.max, BOARDS.drawing.tooLarge)
+  checkBoardRevision(body, snap, file)
   if (snap.mtime !== expectedMtime) throw new BridgeFailure('CONFLICT', `${BOARDS.drawing.noun} changed on disk since last read`, { path: file, mtime: snap.mtime })
   const text = snap.data.toString('utf8')
   const { scene, elements } = parseScene(text, file, 'IO_ERROR')
@@ -59,6 +66,6 @@ export async function setBoardPictures(req: unknown, approved: readonly string[]
   // Assets first, then the file that names them (`drawing.ts`); into the folder the file is about to name.
   if (out) await landAssets(dir, liftEmbedded({ ...scene, files }, elements).lifted, folder ?? null)
   else if (Buffer.byteLength(next, 'utf8') >= PICTURES_INSIDE_MAX_BYTES) throw new BridgeFailure('TOO_LARGE', TOO_BIG_INSIDE, { path: file })
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next))
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next, undefined, snap.mtime))
   return { path: file, mtime, size }
 }

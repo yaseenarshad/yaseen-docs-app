@@ -109,21 +109,21 @@ export function toBridgeFailure(err: unknown, p: string): BridgeFailure {
 
 /**
  * A per-root promise chain: `chained(root, fn)` runs `fn` after everything chained on that root
- * before it, settled or not, so read-modify-writes on one root never interleave.
+ * before it, settled or not, so read-modify-writes on one root never interleave. A root's entry
+ * goes when its last call settles (D9): `size` counts the roots with work still chained.
  */
-export function createRootChain(): <T>(root: string, fn: () => Promise<T>) => Promise<T> {
+export function createRootChain(): (<T>(root: string, fn: () => Promise<T>) => Promise<T>) & { readonly size: number } {
   const chains = new Map<string, Promise<unknown>>()
-  return <T>(root: string, fn: () => Promise<T>): Promise<T> => {
+  const chained = <T>(root: string, fn: () => Promise<T>): Promise<T> => {
     const run = (chains.get(root) ?? Promise.resolve()).then(fn, fn)
-    chains.set(
-      root,
-      run.then(
-        () => undefined,
-        () => undefined,
-      ),
-    )
+    const tail: Promise<void> = run.then(settle, settle)
+    function settle(): void {
+      if (chains.get(root) === tail) chains.delete(root)
+    }
+    chains.set(root, tail)
     return run
   }
+  return Object.defineProperty(chained, 'size', { get: () => chains.size }) as typeof chained & { readonly size: number }
 }
 
 /**
@@ -216,11 +216,21 @@ export function tmpSibling(file: string): string {
  * Writes `content` durably to a tmp sibling then renames it over `file`. Parent dir must exist.
  * `mode` is the tmp file's mode from its creation (the secrets file's 0600; see `writeDurable`), so
  * the bytes are never briefly readable by anyone else.
+ *
+ * `ifMtime` is the mtime that the caller's conflict check just accepted (YAZ-4576). Another program
+ * can write during the tmp write and its full fsync, which take milliseconds. So `file` is checked
+ * again right before the rename: a file there with another mtime is `CONFLICT`, and nothing is
+ * replaced. A file that is gone is no conflict. The mtime returned is still a stat after the rename:
+ * exFAT changes a file's mtime on close or rename, so the tmp file's own mtime would not match disk.
  */
-export async function atomicWrite(file: string, content: string | Uint8Array, mode?: number): Promise<{ mtime: number; size: number }> {
+export async function atomicWrite(file: string, content: string | Uint8Array, mode?: number, ifMtime?: number): Promise<{ mtime: number; size: number }> {
   const tmp = tmpSibling(file)
   try {
     await writeDurable(tmp, content, 'w', mode)
+    if (ifMtime !== undefined) {
+      const now = await stat(file).catch((err: NodeJS.ErrnoException) => (err.code === 'ENOENT' ? undefined : Promise.reject(err)))
+      if (now !== undefined && now.mtimeMs !== ifMtime) throw new BridgeFailure('CONFLICT', 'file changed on disk since last read', { path: file, mtime: now.mtimeMs })
+    }
     await rename(tmp, file)
   } catch (err) {
     await unlink(tmp).catch(() => undefined)

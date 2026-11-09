@@ -1,8 +1,9 @@
-import { stat } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import type { FileResponse, FileWriteRequest, FileWriteResponse } from '@shared/types'
 import { MAX_FILE_BYTES } from '@shared/types'
 import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireTextReadableFile } from './fsUtils'
 import { readBoundedRegularFile } from './boundedRead'
+import { revisionOf, serializeFile } from './revision'
 import { requireRequest } from './validate'
 
 const strictUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
@@ -36,23 +37,36 @@ export async function readFile(path: string): Promise<FileResponse> {
  * so its shape is checked like a request body, not trusted from the type.
  */
 export async function writeFile(req: FileWriteRequest): Promise<FileWriteResponse> {
-  const { path, content, expectedMtime } = requireRequest(req)
+  const { path, content, expectedMtime, expectedRevision } = requireRequest(req)
   const p = requireAbsPath(path, 'path')
   const kind = requireTextReadableFile(p)
   if (typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string", { path: p })
-  if (expectedMtime !== undefined && typeof expectedMtime !== 'number') {
+  if (expectedMtime !== undefined && (typeof expectedMtime !== 'number' || !Number.isFinite(expectedMtime))) {
     throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: p })
   }
-  const st = await stat(p).catch(() => undefined)
-  if (st !== undefined && !st.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a regular file', { path: p })
-  // A code file is never created here (YAZ-3445 D3): only a tab that read it (so it sends `expectedMtime`)
-  // puts back a file another app deleted, as VS Code saves a deleted file again.
-  if (st === undefined && kind === 'text' && expectedMtime === undefined) {
-    throw new BridgeFailure('NOT_FOUND', 'a code file is never created, only saved after a read', { path: p })
-  }
-  if (st !== undefined && expectedMtime !== undefined && st.mtimeMs !== expectedMtime) {
-    throw new BridgeFailure('CONFLICT', 'file changed on disk since last read', { path: p, mtime: st.mtimeMs })
-  }
-  const { mtime, size } = await fsCall(p, () => atomicWrite(p, content))
-  return { path: p, mtime, size }
+  if (expectedRevision !== undefined && typeof expectedRevision !== 'string') throw new BridgeFailure('BAD_REQUEST', 'expectedRevision must be text', { path: p })
+  if (Buffer.byteLength(content) > MAX_FILE_BYTES) throw new BridgeFailure('TOO_LARGE', `file exceeds ${MAX_FILE_BYTES} bytes`, { path: p })
+  const key = await realpath(p).catch(() => p)
+  return serializeFile(key, async () => {
+    const st = await stat(p).catch(() => undefined)
+    if (st !== undefined && !st.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a regular file', { path: p })
+    // A code file is never created here (YAZ-3445 D3): only a tab that read it (so it sends `expectedMtime`)
+    // puts back a file another app deleted, as VS Code saves a deleted file again.
+    if (st === undefined && kind === 'text' && expectedMtime === undefined) {
+      throw new BridgeFailure('NOT_FOUND', 'a code file is never created, only saved after a read', { path: p })
+    }
+    if (st !== undefined && expectedMtime !== undefined && st.mtimeMs !== expectedMtime) {
+      throw new BridgeFailure('CONFLICT', 'file changed on disk since last read', { path: p, mtime: st.mtimeMs })
+    }
+    if (expectedRevision !== undefined) {
+      if (st === undefined) throw new BridgeFailure('CONFLICT', 'file no longer exists', { path: p })
+      const before = await readFile(p)
+      if (revisionOf(before.content, before.mtime) !== expectedRevision) throw new BridgeFailure('CONFLICT', 'file changed since the supplied revision', { path: p, mtime: before.mtime })
+      if (before.content === content) return { path: p, mtime: before.mtime, size: before.size }
+    }
+    // Checked again right before the rename: another program can write during the fsync (YAZ-4576).
+    const accepted = expectedMtime ?? (expectedRevision !== undefined ? st?.mtimeMs : undefined)
+    const { mtime, size } = await fsCall(p, () => atomicWrite(p, content, undefined, accepted))
+    return { path: p, mtime, size }
+  })
 }

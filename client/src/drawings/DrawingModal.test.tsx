@@ -20,6 +20,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { api, BridgeRequestError } from '../api'
 import { placeOverTab } from '../keys/keySheetRequest'
 import { createDrawingFeed } from './drawingFeed'
+import { _resetRenameContinuity, carryEditorAcrossPane, carryEditorAcrossRename, dirtyPaths, flushRenamedPath, retireDeletedPath } from '../lib/renameContinuity'
 import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
@@ -93,6 +94,7 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root?.unmount())
+  _resetRenameContinuity()
   vi.useRealTimers()
   root = null
   container?.remove()
@@ -827,5 +829,61 @@ describe('the outside pictures folder in the popup', () => {
     })
     expect(list).not.toHaveBeenCalled()
     expect(container?.querySelector('.confirm__text')).toBeNull()
+  })
+})
+
+describe('rename and delete continuity (YAZ-4515)', () => {
+  it('dirtyPaths() sees the modal\'s unsaved edits, and a save clears them', async () => {
+    await open()
+    emit(1)
+    expect(dirtyPaths()).toEqual([])
+    emit(2)
+    expect(dirtyPaths()).toEqual([PATH])
+    await idle()
+    expect(dirtyPaths()).toEqual([])
+  })
+
+  it('a rename flushes the dirty canvas to the old path BEFORE the move, then closes the modal, which never writes the old path again', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    // The renaming window's step (a): the edits go to disk and travel with the file.
+    await act(async () => { await flushRenamedPath(PATH) })
+    expect(drawingSave).toHaveBeenCalledTimes(1)
+    expect(drawingSave.mock.calls[0]![0]).toMatchObject({ path: PATH, json: BYTES })
+    act(() => carryEditorAcrossRename(PATH, '/v/assets/drawings/Renamed.excalidraw'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    // A late change, the quiet period, the quit handshake and the unmount: none of them writes the old path.
+    emit(3)
+    await idle(2000)
+    expect(await quitFlush?.()).not.toBe(false)
+    await act(async () => root?.unmount())
+    root = null
+    expect(drawingSave).toHaveBeenCalledTimes(1)
+    expect(dirtyPaths()).toEqual([])
+  })
+
+  it('a trash while the modal is dirty closes it and writes nothing, so the file is not recreated', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    act(() => retireDeletedPath(PATH))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    await idle(2000)
+    await act(async () => root?.unmount())
+    root = null
+    expect(drawingSave).not.toHaveBeenCalled()
+  })
+
+  it('a pane move of a tab of the same file leaves the modal open, dirty, and still saving', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    act(() => carryEditorAcrossPane(PATH))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(dirtyPaths()).toEqual([PATH])
+    expect(drawingSave).not.toHaveBeenCalled()
+    await idle()
+    expect(drawingSave).toHaveBeenCalledTimes(1)
   })
 })

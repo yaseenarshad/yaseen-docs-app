@@ -97,7 +97,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.makeDailyNote.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readTextHead.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.makeDailyNote.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.copyTo.channel, CONTRACT.file.moveTo.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readTextHead.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -158,7 +158,7 @@ describe('registerFsIpc', () => {
   })
 
   it('fs:write-asset writes a drawing sidecar and envelopes its failures (YAZ-876)', async () => {
-    const req = { root, path: 'assets/drawings/scene.excalidraw', content: '{"type":"excalidraw"}' }
+    const req = { root, path: 'assets/drawings/scene.excalidraw', content: '{"type":"excalidraw","elements":[]}' }
     const ok = await registered(CONTRACT.writeAsset.channel)({ sender: {} }, req)
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')
@@ -173,7 +173,7 @@ describe('registerFsIpc', () => {
   })
 
   it('fs:write-asset takes image BYTES on an image path and passes them through untouched (YAZ-1661)', async () => {
-    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff])
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff])
     const ok = await registered(CONTRACT.writeAsset.channel)({ sender: {} }, { root, path: 'assets/pasted.png', content: bytes })
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')
@@ -878,6 +878,43 @@ describe('registerFsIpc', () => {
   describe('fs:clip / fs:paste (YAZ-1674)', () => {
     const win = (id: string, file: string | null) =>
       store.upsertWindow({ id, root, file, tabs: file === null ? [] : [file], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+
+    it('copies explicit sources through the shared service without reading or changing the clipboard', async () => {
+      win('explicit-copy', null); senderWinId = 'explicit-copy'
+      const from = path.join(root, 'Explicit source.txt'), dir = path.join(root, 'Explicit destination')
+      await writeFile(from, 'source bytes'); await mkdir(dir)
+      fileClip.set({ op: 'cut', paths: [from] })
+      const clipboardBefore = fileClip.get(), osBefore = new Map(pasteboard)
+      const result = await registered(CONTRACT.file.copyTo.channel)({ sender: {} }, { paths: [from, path.join(root, 'Missing.txt')], targetDir: dir, external: false })
+      expect(result).toMatchObject({ ok: true, value: { pasted: [{ from, to: path.join(dir, 'Explicit source.txt') }], failed: [{ code: 'NOT_FOUND' }] } })
+      expect(await readFile(path.join(dir, 'Explicit source.txt'), 'utf8')).toBe('source bytes')
+      expect(await readFile(from, 'utf8')).toBe('source bytes')
+      expect(fileClip.get()).toBe(clipboardBefore); expect(pasteboard).toEqual(osBefore)
+      const outside = path.join(storeDir, 'External.txt'); await writeFile(outside, 'external bytes')
+      expect(await registered(CONTRACT.file.copyTo.channel)({ sender: {} }, { paths: [outside], targetDir: dir, external: false })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+      expect(await registered(CONTRACT.file.copyTo.channel)({ sender: {} }, { paths: [outside], targetDir: dir, external: true })).toMatchObject({ ok: true, value: { pasted: [{ from: outside }], failed: [] } })
+      expect(await readFile(outside, 'utf8')).toBe('external bytes')
+    })
+
+    it('fs:move-to moves explicit items as a Paste of a Cut does, without reading or changing either clipboard (YAZ-4502)', async () => {
+      win('explicit-move', null); senderWinId = 'explicit-move'
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      const from = path.join(root, 'Cut source.md'), here = path.join(root, 'Already.md'), dir = path.join(root, 'Cut destination')
+      await writeFile(from, 'source bytes'); await mkdir(dir); await writeFile(path.join(dir, 'Already.md'), 'x'); await writeFile(here, 'y')
+      fileClip.set({ op: 'copy', paths: [here] })
+      const clipboardBefore = fileClip.get(), osBefore = new Map(pasteboard)
+      const result = await registered(CONTRACT.file.moveTo.channel)({ sender: {} }, { paths: [from, here, path.join(dir, 'Already.md')], targetDir: dir })
+      // An item already in the folder is no move (D2); a taken name stays where it is.
+      expect(result).toEqual({ ok: true, value: { pasted: [{ from, to: path.join(dir, 'Cut source.md'), kind: 'file' }], failed: [{ from: here, code: 'ALREADY_EXISTS', message: expect.any(String) }] } })
+      expect(await readFile(path.join(dir, 'Cut source.md'), 'utf8')).toBe('source bytes')
+      expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath: from, newPath: path.join(dir, 'Cut source.md'), kind: 'file' })
+      expect(fileClip.get()).toBe(clipboardBefore); expect(pasteboard).toEqual(osBefore)
+      const outside = path.join(storeDir, 'Outside.md'); await writeFile(outside, 'z')
+      expect(await registered(CONTRACT.file.moveTo.channel)({ sender: {} }, { paths: [outside], targetDir: dir })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+      expect(await registered(CONTRACT.file.moveTo.channel)({ sender: {} }, { paths: [root], targetDir: dir })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+      expect(await readFile(outside, 'utf8')).toBe('z')
+    })
 
     it('fs:clip stores the ordered selection and pushes clip:changed (count, op and the paths) to EVERY window (D1)', async () => {
       fileClip.clear()

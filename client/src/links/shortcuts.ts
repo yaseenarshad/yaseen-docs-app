@@ -9,14 +9,20 @@
  * rule from the note's side). The vault root's entry is the notes directly in it. An `also_in`
  * entry no folder has is ignored.
  */
-import { ALSO_IN_KEY, alsoIn, alsoInEntries } from '@shared/alsoIn'
-import { FOLDER_VALUES_KEY, withoutStaleFolderValues } from '@shared/folderValues'
-import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from '@shared/noteId'
-import { folderSettingsPath, inFolder, type IndexRecord } from '@shared/types'
+import { foldersByDir } from '@shared/folderRecords'
+export { foldersByDir } from '@shared/folderRecords'
+import { FOLDER_VALUES_KEY } from '@shared/folderValues'
+import { setFrontmatterIn } from '@shared/frontmatter'
+import { clearedFolders, dropStaleFolderValues, folderIdWith, foldersShowing, idsUnder, withoutLeftFolders, withShortcut, withoutShortcut, type LeftBehind } from '@shared/shortcuts'
+import { folderSettingsPath, type IndexRecord } from '@shared/types'
+import { api } from '../api'
 import { basename, dirname, relTo } from '../lib/paths'
+import { fetchTree } from '../lib/treeFeed'
+import { notesAt } from '../lib/treeState'
 import { takeNoteId } from '../views/scaffold'
 import { transformFile, type ContentTransform } from '../views/writeProperty'
+// The pure rules live in `@shared/shortcuts`, which the CLI's shortcut commands share (YAZ-4518).
+export { dropStaleFolderValues, foldersShowing, isShortcut, valuesLeftByShortcut, type LeftBehind } from '@shared/shortcuts'
 
 /** The settings record of the folder at `dir`; undefined while it has no `.folder.md`. */
 export function folderRecord(folders: readonly IndexRecord[], dir: string): IndexRecord | undefined {
@@ -27,18 +33,12 @@ export function folderRecord(folders: readonly IndexRecord[], dir: string): Inde
 /** A folder's title (YAZ-2420 🔒 D14): its settings record's, else, while it has no `.folder.md`, its directory's name. */
 export const folderTitle = (folders: readonly IndexRecord[], dir: string): string => folderRecord(folders, dir)?.title ?? basename(dir)
 
-/** The settings records by the directory each is the folder of. */
-export const foldersByDir = (folders: readonly IndexRecord[]): Map<string, IndexRecord> => new Map(folders.map((r) => [dirname(r.path), r]))
 
 /** How a folder's name reads where a note's could stand: the `[[` picker's row, an id link's menu. */
 export const folderLabel = (name: string): string => `${name} (folder)`
 
-/** The settings records by folder id. Of two folders still sharing an id the first in path order is the one it names — the id sweep's own choice. */
-export function foldersById(folders: readonly IndexRecord[]): Map<string, IndexRecord> {
-  const byId = new Map<string, IndexRecord>()
-  for (const folder of folders) if (folder.id !== undefined && !byId.has(folder.id)) byId.set(folder.id, folder)
-  return byId
-}
+export { foldersById } from '@shared/folderRecords'
+import { foldersById } from '@shared/folderRecords'
 
 const rowsCache = new WeakMap<readonly IndexRecord[], WeakMap<readonly IndexRecord[], Map<string, IndexRecord[]>>>()
 
@@ -54,28 +54,6 @@ export function rowsByFolder(records: readonly IndexRecord[], folders: readonly 
   let rows = bySettings.get(folders)
   if (rows === undefined) bySettings.set(folders, (rows = buildRows(records, folders)))
   return rows
-}
-
-/** `folder` and every folder above it, short of the root. */
-function addWithParents(shown: Set<string>, folder: string): void {
-  shown.add(folder)
-  for (let cut = folder.lastIndexOf('/'); cut > 0; cut = folder.lastIndexOf('/', cut - 1)) shown.add(folder.slice(0, cut))
-}
-
-/**
- * The folders that SHOW a note, in order: the folder it lives in (`folder`, as the index names it)
- * and each folder above it, nearest first, then each folder its `also_in` names with the folders
- * above that one. A note directly in the root is shown by the root ('').
- */
-export function foldersShowing(folder: string, properties: Record<string, unknown>, byId: ReadonlyMap<string, IndexRecord>): string[] {
-  // A Set: under a folder and naming it or one under it, or naming it twice, is still one row.
-  const shown = new Set<string>()
-  addWithParents(shown, folder)
-  for (const id of alsoIn(properties)) {
-    const named = byId.get(id)?.folder
-    if (named !== undefined) addWithParents(shown, named)
-  }
-  return [...shown]
 }
 
 function buildRows(records: readonly IndexRecord[], folders: readonly IndexRecord[]): Map<string, IndexRecord[]> {
@@ -95,35 +73,13 @@ function buildRows(records: readonly IndexRecord[], folders: readonly IndexRecor
 export const folderRows = (records: readonly IndexRecord[], folders: readonly IndexRecord[], folder: string): IndexRecord[] =>
   rowsByFolder(records, folders).get(folder) ?? []
 
-/** Whether a row `folder` shows is there by a shortcut: it does not live under it. */
-export const isShortcut = (record: IndexRecord, folder: string): boolean => !inFolder(record.folder, folder)
-
-const propertiesOf = (content: string): Record<string, unknown> => parseFrontmatter(splitFrontmatter(content).frontmatter).properties
-
 /**
- * The id of the folder at `dir`, for its first shortcut or the first value written for it (D19): a
- * folder with no `.folder.md` gets one holding just its id (that write creates the file,
- * `readForWrite`), and a file with no id, or another tool's (YAZ-2420 🔒 D30), is given a fresh one.
- * Asked of the file's own bytes, never the index: a snapshot one write behind would give a second
- * id over the first, and every shortcut and value naming the first would be lost.
- *
- * The fresh id is the vault's next number, from the door (YAZ-2677 D4), taken only when the file
- * is seen to hold none: a folder that has its id costs no number. Returned as the index holds it (R2).
+ * The id of the folder at `dir`, for its first shortcut or the first value written for it (D19): `folderIdWith`, which
+ * the CLI shares, through this window's file door. Quiet (YAZ-3235 D1): a folder's id is the app's bookkeeping, not an
+ * edit the user made. Returned as the index holds it (R2).
  */
 export async function folderId(dir: string): Promise<string> {
-  const file = folderSettingsPath(dir)
-  const held = (bytes: string): string | undefined => {
-    const id = propertiesOf(bytes)[NOTE_ID_KEY]
-    return isNoteId(id) ? canonicalNoteId(id) : undefined
-  }
-  // A transform that changes nothing is a read: it writes nothing, and makes no file where there is none.
-  const there = held((await transformFile(file, (bytes) => bytes)).content)
-  if (there !== undefined) return there
-  const fresh = await takeNoteId(dir)
-  // Written against the file's bytes as they are now: an id that arrived since the read above stays.
-  // Quiet (YAZ-3235 D1): a folder's id is the app's bookkeeping, not an edit the user made.
-  const { content } = await transformFile(file, (bytes) => (held(bytes) === undefined ? setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh) : bytes), true)
-  return held(content) ?? fresh
+  return (await folderIdWith(dir, { transform: (path, change) => transformFile(path, change, true), mint: takeNoteId })).id
 }
 
 /**
@@ -132,17 +88,8 @@ export async function folderId(dir: string): Promise<string> {
  */
 export async function addShortcut(dir: string, path: string): Promise<void> {
   const id = await folderId(dir)
-  await transformFile(path, (content) => {
-    const list = alsoInEntries(propertiesOf(content))
-    return list.some((entry) => asId(entry) === id) ? content : setFrontmatterProperty(content, ALSO_IN_KEY, [...list, id])
-  })
+  await transformFile(path, (content) => withShortcut(content, id))
 }
-
-/** An `also_in` entry as the id it names (`alsoIn`'s reading, YAZ-2677 R2: `yaz-12` names `YAZ-12`); any other entry as it is. */
-const asId = (entry: unknown): unknown => (isNoteId(entry) ? canonicalNoteId(entry) : entry)
-
-/** The ids of the folder at `dir` and of every folder under it. */
-const idsUnder = (folders: readonly IndexRecord[], dir: string): Set<unknown> => new Set(folders.filter((folder) => inFolder(dirname(folder.path), dir)).map((folder) => folder.id))
 
 /**
  * Take the note at `path` out of the folder at `dir` (E5): the ids of that folder and of every
@@ -153,42 +100,7 @@ const idsUnder = (folders: readonly IndexRecord[], dir: string): Set<unknown> =>
 export function removeShortcut(dir: string, path: string, folders: readonly IndexRecord[], root: string): Promise<unknown> {
   const ids = idsUnder(folders, dir)
   const tidy = dropStaleFolderValues(root, path, folders)
-  return transformFile(path, (content) => {
-    const list = alsoInEntries(propertiesOf(content))
-    const kept = list.filter((entry) => !ids.has(asId(entry)))
-    return kept.length === list.length ? content : tidy(setFrontmatterProperty(content, ALSO_IN_KEY, kept.length === 0 ? undefined : kept))
-  })
-}
-
-/** The properties of a note living in `folder` without its stale blocks (D20): what shows it is asked of these properties' own `also_in`. */
-function withoutLeftFolders(properties: Record<string, unknown>, folder: string, folders: readonly IndexRecord[]): Record<string, unknown> {
-  if (properties[FOLDER_VALUES_KEY] === undefined) return properties
-  const byId = foldersById(folders)
-  const showing = new Set(foldersShowing(folder, properties, byId))
-  // By the folder, never back through `byId`: of two folders still sharing an id, either may be the one showing it.
-  const ids = folders.flatMap((record) => (record.id !== undefined && showing.has(record.folder) ? [record.id] : []))
-  return withoutStaleFolderValues(properties, new Set(ids), new Set(byId.keys()))
-}
-
-/**
- * A folder's values leave the note when the note leaves the folder (D20), as a change to the bytes
- * about to be written: the note at `path` without the blocks of the folders that exist (`folders`,
- * the index's settings records) and do not show it. Only ever part of a write the user caused —
- * a move, "Remove shortcut", a value — never a pass of its own. A note outside the vault, which
- * the index cannot speak for, and one that will not parse are left as they are.
- */
-export function dropStaleFolderValues(root: string, path: string, folders: readonly IndexRecord[]): ContentTransform {
-  const rel = relTo(root, path)
-  return (content) => {
-    if (rel === path) return content
-    const properties = propertiesOf(content)
-    const kept = withoutLeftFolders(properties, dirname(rel), folders)
-    if (kept === properties) return content
-    // Each stale block goes where it stands, so the blocks that stay are not laid out again.
-    const stay = Object.keys((kept[FOLDER_VALUES_KEY] as object | undefined) ?? {})
-    if (stay.length === 0) return setFrontmatterProperty(content, FOLDER_VALUES_KEY, undefined)
-    return Object.keys(properties[FOLDER_VALUES_KEY] as object).reduce((next, id) => (stay.includes(id) ? next : setFrontmatterIn(next, [FOLDER_VALUES_KEY, id], undefined)), content)
-  }
+  return transformFile(path, (content) => withoutShortcut(content, ids, tidy))
 }
 
 /** One in-app move or rename of a note or a folder, as the rename door and a pasted Cut name it. */
@@ -248,6 +160,16 @@ export async function dropFolderValuesAfterMove(move: Move & Snapshot): Promise<
 }
 
 /**
+ * After a copy lands in a vault that uses IDs (YAZ-2420 3E1): each note it made — a folder's
+ * included — keeps no values for the folders that do not show it, judged on a fresh tree and index.
+ * The original is never written. The sidebar's Paste of a Copy and the CLI's `file copy` share it.
+ */
+export async function dropFolderValuesAfterCopy(root: string, landed: readonly string[]): Promise<void> {
+  const [{ tree }, { folders }] = await Promise.all([fetchTree(root), api.index(root)])
+  for (const to of landed) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(root, path, folders), true).catch(() => undefined) // quiet (YAZ-3235 D1)
+}
+
+/**
  * The undo of a move (YAZ-3255 D10), as a change to the bytes about to be written: the blocks the
  * move cleared (`ClearedValues.values`) come back, and only those. Every other block, and every
  * other property, stays as it is now. Nothing to put back changes nothing.
@@ -260,24 +182,6 @@ export function restoreFolderValues(values: Record<string, unknown>): ContentTra
 export interface ClearedValues {
   path: string
   values: Record<string, unknown>
-}
-
-/** What a gesture would clear (D21): how many notes, and the folders whose values go — their directories, nearest to the note first. */
-export interface LeftBehind {
-  notes: number
-  folders: string[]
-}
-
-/** The directories of the folders whose blocks leave `record` when its properties become `kept`, nearest to the note first (`foldersShowing`). */
-function clearedFolders(record: IndexRecord, kept: Record<string, unknown>, folders: readonly IndexRecord[]): string[] {
-  const stay = (kept[FOLDER_VALUES_KEY] ?? {}) as object
-  const byId = foldersById(folders)
-  const near = foldersShowing(record.folder, record.properties, byId)
-  // A folder that did not show the note comes last.
-  const rank = (folder: IndexRecord): number => (near.includes(folder.folder) ? near.indexOf(folder.folder) : near.length)
-  // Only a block whose folder is known ever goes, so each id has its record.
-  const gone = Object.keys((record.properties[FOLDER_VALUES_KEY] ?? {}) as object).flatMap((id) => (Object.hasOwn(stay, id) ? [] : [byId.get(id)!]))
-  return gone.sort((a, b) => rank(a) - rank(b)).map((folder) => dirname(folder.path))
 }
 
 /**
@@ -297,12 +201,3 @@ export function valuesLeftBehind({ moves, ...snapshot }: Snapshot & { moves: rea
   return { notes: notes.size, folders: [...dirs] }
 }
 
-/** What "Remove shortcut" would clear (D21), from a snapshot: the note at `path` without its `also_in` entries for `dir` and the folders under it. */
-export function valuesLeftByShortcut(dir: string, path: string, records: readonly IndexRecord[], folders: readonly IndexRecord[]): LeftBehind {
-  const record = records.find((r) => r.path === path)
-  if (record === undefined) return { notes: 0, folders: [] }
-  const ids = idsUnder(folders, dir)
-  const without = { ...record.properties, [ALSO_IN_KEY]: alsoInEntries(record.properties).filter((entry) => !ids.has(entry)) }
-  const cleared = clearedFolders(record, withoutLeftFolders(without, record.folder, folders), folders)
-  return { notes: cleared.length === 0 ? 0 : 1, folders: cleared }
-}

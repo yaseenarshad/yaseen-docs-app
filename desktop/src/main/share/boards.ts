@@ -188,10 +188,10 @@ export function createBoards(ctx: ShareContext) {
     return toEntry(r, saved[0], saved[1], origin)
   }
 
-  async function stop(root: string, path: string): Promise<void> {
+  async function stop(root: string, path: string): Promise<boolean> {
     const { r, key } = board(root, path)
     const rec = (await readShares(r))[key]
-    if (rec === undefined) return
+    if (rec === undefined) return false
     const { password, origin } = await ready()
     const res = await worker(origin, 'DELETE', `/api/boards/${rec.id}`, password)
     if (res.status === 401) throw new BridgeFailure('PROVIDER_FAILED', `${PASSWORD_REFUSED} The link is still live: run Set up sharing again, then Stop.`)
@@ -203,6 +203,7 @@ export function createBoards(ctx: ShareContext) {
     })
     stale.delete(rec.id)
     setSync(rec.id, null)
+    return true
   }
 
   /** A board (or folder) was renamed or moved inside the app: its shares follow (D10). */

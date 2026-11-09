@@ -760,6 +760,14 @@ export function mergeFolderSettings(current: SettingsState, incoming: Partial<Re
 }
 
 /** Strict: every field present and valid (the IPC boundary rejects anything else). */
+/** Validate each named patch against the same guards as a complete UI settings write. */
+export function patchSettings(current: SettingsState, changes: Record<string, unknown>): SettingsState {
+  for (const [key, value] of Object.entries(changes)) {
+    if (!Object.hasOwn(SETTINGS_FIELD_OK, key) || !SETTINGS_FIELD_OK[key as keyof SettingsState](value)) throw new Error(`Invalid settings field: ${key}`)
+  }
+  return { ...current, ...changes }
+}
+
 export const isSettings = (v: unknown): v is SettingsState => isRecord(v) && SETTINGS_KEYS.every((k) => SETTINGS_FIELD_OK[k](v[k]))
 
 export const isWindowBounds = (v: unknown): v is WindowBounds =>

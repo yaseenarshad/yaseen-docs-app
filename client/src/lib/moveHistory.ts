@@ -50,12 +50,21 @@ export interface DeleteStep {
 /** One entry of the undo list (D17): a move gesture (as YAZ-3255 built it), a rename or a delete. */
 export type UndoStep = MovedGesture | RenameStep | DeleteStep
 
+/** What one undo or redo did (YAZ-4502): the items it changed, a reason for each item it could not, and the links a rename or a move updated. */
+export interface StepOutcome {
+  done: number
+  failed: string[]
+  links?: { updated: number; skipped: number }
+}
+
 /** A move gesture: the entry has `moves` (a rename and a delete name their `step`). */
 export const isMoveStep = (entry: UndoStep): entry is MovedGesture => !('step' in entry)
 
 export interface MoveHistory<T = UndoStep> {
   /** A new step: on the undo list, and the redo list empties. */
   push(entry: T): void
+  /** Bounded session state, oldest first. The caller must not mutate entries. */
+  inspect(): { undo: readonly T[]; redo: readonly T[] }
   /** The newest step to undo, taken off the list; undefined when there is none (S35). */
   undo(): T | undefined
   /** The newest step to redo, taken off the list; undefined when there is none. */
@@ -78,6 +87,7 @@ export function createMoveHistory<T = UndoStep>(limit: number = MOVE_HISTORY_LIM
       redos.length = 0
       keep(undos, entry)
     },
+    inspect: () => ({ undo: [...undos], redo: [...redos] }),
     undo: () => undos.pop(),
     redo: () => redos.pop(),
     undone: (entry) => keep(redos, entry),

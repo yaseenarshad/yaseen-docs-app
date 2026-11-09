@@ -1,3 +1,4 @@
+import { serializeFile } from './revision'
 /**
  * `board:set-read-only` (YAZ-3076 D1): the human's read-only switch, written IN a drawing or a
  * diagram (`shared/readOnly.ts`), so it moves with the file. A note's switch is a frontmatter key and
@@ -18,7 +19,7 @@ import { serializeBoard } from '@shared/drawingAssets'
 import { fileKind } from '@shared/fileKind'
 import { setDiagramReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 import type { BoardKind, BoardReadOnlyResponse } from '@shared/types'
-import { BOARDS, boardTarget } from './boardDocument'
+import { BOARDS, boardTarget, checkBoardRevision } from './boardDocument'
 import { readBoundedRegularFile } from './boundedRead'
 import { parseScene } from './drawing'
 import { atomicWrite, BridgeFailure, fsCall, requireDir } from './fsUtils'
@@ -35,6 +36,11 @@ function kindOf(raw: unknown): BoardKind {
 }
 
 export async function setBoardReadOnly(req: unknown): Promise<BoardReadOnlyResponse> {
+  const { file } = boardTarget(req, kindOf(req))
+  return serializeFile(file, () => setBoardReadOnlyUnlocked(req))
+}
+
+async function setBoardReadOnlyUnlocked(req: unknown): Promise<BoardReadOnlyResponse> {
   const kind = kindOf(req)
   const { dir, file, body } = boardTarget(req, kind)
   const { on, expectedMtime } = body
@@ -42,6 +48,7 @@ export async function setBoardReadOnly(req: unknown): Promise<BoardReadOnlyRespo
   if (typeof expectedMtime !== 'number') throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: file })
   await requireDir(dir)
   const snap = await readBoundedRegularFile(file, BOARDS[kind].max, BOARDS[kind].tooLarge)
+  checkBoardRevision(body, snap, file)
   if (snap.mtime !== expectedMtime) throw new BridgeFailure('CONFLICT', `${BOARDS[kind].noun} changed on disk since last read`, { path: file, mtime: snap.mtime })
   const text = snap.data.toString('utf8')
   let next: string
@@ -56,6 +63,6 @@ export async function setBoardReadOnly(req: unknown): Promise<BoardReadOnlyRespo
   }
   if (next === text) return { path: file, mtime: snap.mtime, size: snap.size }
   if (Buffer.byteLength(next, 'utf8') > BOARDS[kind].max) throw new BridgeFailure('TOO_LARGE', BOARDS[kind].tooLarge, { path: file })
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next))
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next, undefined, snap.mtime))
   return { path: file, mtime, size }
 }

@@ -84,18 +84,28 @@ export async function getFavorites(root: string, scope: ListScope = 'vault'): Pr
 
 /** Replace the list of `scope` (absolute paths inside `root`); creates the dotfolder and file on first write. */
 export async function setFavorites(root: string, absPaths: readonly string[], scope: ListScope = 'vault'): Promise<void> {
+  await updateFavorites(root, scope, () => absPaths)
+}
+
+/** Patch the latest list under the same lock as UI replacements and path repairs. */
+export async function updateFavorites(root: string, scope: ListScope, update: (paths: readonly string[]) => readonly string[]): Promise<string[]> {
   const r = requireAbsPath(root, 'root')
-  for (const p of absPaths) {
-    if (typeof p !== 'string' || !under(r, p)) throw new BridgeFailure('BAD_REQUEST', 'a favorite must be inside the vault', { path: String(p) })
-  }
-  await chained(r, async () => {
+  return chained(r, async () => {
     const raw = await readRaw(r, scope)
     if (raw.state === 'bad') throw new BridgeFailure('INVALID_CONFIG', `${fileOf(scope)} is malformed; fix or delete it`, { path: raw.file })
-    const unique = [...new Set(absPaths)]
-    const alive = await Promise.all(unique.map((p) => stat(p).then(() => true, () => false)))
-    const kept = unique.filter((_, i) => alive[i]) // D14: a favorite whose file is gone leaves the list here
-    const value: FavoritesConfig = { version: 1, favorites: clean(kept.map((p) => toRel(r, p))) }
-    await writeConfig(r, fileOf(scope), value)
+    const previous = raw.state === 'ok' ? raw.rels : []
+    const next = update(previous.map(rel => toAbs(r, rel)))
+    for (const p of next) {
+      if (typeof p !== 'string' || !under(r, p)) throw new BridgeFailure('BAD_REQUEST', 'a favorite must be inside the vault', { path: String(p) })
+    }
+    const unique = [...new Set(next)]
+    const alive = await Promise.all(unique.map(p => stat(p).then(() => true, () => false)))
+    const rels = clean(unique.filter((_, i) => alive[i]).map(p => toRel(r, p)))
+    if (JSON.stringify(previous) !== JSON.stringify(rels)) {
+      const value: FavoritesConfig = { version: 1, favorites: rels }
+      await writeConfig(r, fileOf(scope), value)
+    }
+    return rels.map(rel => toAbs(r, rel))
   })
 }
 

@@ -62,7 +62,7 @@
  *    titled Candidates, is rewritten to the note's id, since either title may be the one that changed.
  */
 import { isViewOnly } from '@shared/fileKind'
-import { folderSettingsLinks } from '@shared/folderSettingsLinks'
+import { referenceTargets } from '@shared/backlinks'
 import { exactLinkTarget, rewriteNoteLinks, type NewTarget, type ResolvesToOld } from '@shared/linkRewrite'
 import { titleOf } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
@@ -87,15 +87,8 @@ export function renamedTarget(target: string, opts: { newName: string; newRel: s
   return /\.(md|markdown)$/i.test(target) ? withExt : stripExt(withExt)
 }
 
-/** Every target a note links to: index links and embeds, then the nested settings leaves (lazily). */
-export function* referenceTargets(record: IndexRecord): Generator<string> {
-  yield* record.links
-  yield* record.embeds
-  for (const link of folderSettingsLinks(record.properties)) {
-    const target = exactLinkTarget(link)
-    if (target !== null) yield target
-  }
-}
+/** Every target a note links to (`@shared/backlinks`, which `link incoming` shares). */
+export { referenceTargets }
 
 /** Does this note reference the renamed file AT ALL — index links/embeds, or a nested settings leaf? */
 function makeReferences(resolves: ResolvesToOld): (record: IndexRecord) => boolean {

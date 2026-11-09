@@ -1,3 +1,4 @@
+import { revisionOf } from './revision'
 /**
  * What a board's two doors share (Draw's YAZ-2073 🔒 D16, ported by YAZ-3028 D2), whichever kind it
  * is: `drawing.ts` (a `.excalidraw`) and `diagram.ts` (a `.drawio`) resolve a request's board and
@@ -53,4 +54,12 @@ export async function guardedStamp(file: string, kind: BoardKind, expectedMtime:
     throw new BridgeFailure('CONFLICT', `${BOARDS[kind].noun} changed on disk since last read`, { path: file, mtime: prior.mtime })
   }
   return stamped
+}
+
+
+/** Optional stronger CLI revision, checked on the same snapshot inside each board writer's lock. */
+export function checkBoardRevision(body: Record<string, unknown>, snapshot: { data: Uint8Array; mtime: number }, file: string): void {
+  if (body.expectedRevision !== undefined && (typeof body.expectedRevision !== 'string' || revisionOf(snapshot.data, snapshot.mtime) !== body.expectedRevision)) {
+    throw new BridgeFailure('CONFLICT', 'Board changed since the supplied revision.', { path: file, mtime: snapshot.mtime })
+  }
 }

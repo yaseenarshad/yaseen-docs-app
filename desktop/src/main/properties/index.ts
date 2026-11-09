@@ -189,3 +189,18 @@ export function subscribeProperties(root: string, listener: (properties: Propert
     })
   })
 }
+
+/** Named-field patch for automation. Unknown stored extension fields survive. */
+export async function patchProperty(root: string, name: string, changes: Record<string, unknown>): Promise<void> {
+  const r = requireAbsPath(root, 'root'), n = requirePropertyName(name)
+  await chained(r, () => mutate(r, raw => {
+    const properties = ensureRecord(raw, 'properties')
+    const existing = isRecord(properties[n]) ? properties[n] : {}
+    const next = { ...existing, ...changes }
+    for (const [key, value] of Object.entries(changes)) if (value === null) delete next[key]
+    const clean = requirePropertyDecl(next)
+    // Validate all named fields but retain fields written by a newer reader.
+    properties[n] = { ...next, ...clean }
+    return JSON.stringify(existing) !== JSON.stringify(properties[n])
+  }))
+}

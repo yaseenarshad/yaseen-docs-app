@@ -813,12 +813,20 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
     crepe.on((listener) => {
+      // The listener serializes the last transaction it recorded, and it skips `addToHistory: false`. An outside edit
+      // (YAZ-1347, YAZ-3704) that lands inside its 200 ms debounce is therefore not in `markdown`, and saving that text
+      // would put the file back under the outside edit (YAZ-4562). `updated` fires first with the document it serialized.
+      let serialized: unknown = null
+      listener.updated((_ctx, doc) => {
+        serialized = doc
+      })
       listener.markdownUpdated((ctx, markdown, prev) => {
         // Compared as it would be SAVED. Crepe's trailing empty paragraph (added on start-up to any
         // document ending in a list) differs raw but vanishes in `postProcessMarkdown`, and an
         // update the file would not notice is not an update (YAZ-968's save-path contract). An empty
         // cell note is left out, as `getMarkdownForSave` leaves it out (YAZ-3818 D15).
-        const next = postProcessMarkdown(savedMarkdown(ctx) ?? markdown)
+        const { doc } = ctx.get(editorViewCtx).state
+        const next = postProcessMarkdown(savedMarkdown(ctx) ?? (doc === serialized ? markdown : ctx.get(serializerCtx)(doc)))
         if (next !== postProcessMarkdown(prev)) cb(next)
       })
     })

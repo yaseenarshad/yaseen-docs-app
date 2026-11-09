@@ -71,6 +71,8 @@ import { picturesSize, referencedFileIds, type DrawingFileData } from '@shared/d
 import { appStateToPrefs, changedPrefKeys, foldArrowsOf, NEW_ELEMENT_DEFAULT_KEYS, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
 import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type FoldArrowMode, type PageView } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { BoardExportOptions, BoardImageData, BoardImageFormat } from '@shared/automationEditor'
+import { flushSync } from 'react-dom'
 import type { HotkeyAside, MouseMods } from '@shared/keys'
 import { holdColResize } from '../lib/colResize'
 import { namingTab } from '../lib/focusHandoff'
@@ -128,6 +130,14 @@ export interface DrawingSurfaceApi {
   replaceScene(scene: DrawingScene): number
   /** The pan and zoom now (YAZ-3737 D13): what a tab that goes to sleep, or is copied, starts on again. */
   canvas(): NonNullable<PageView['canvas']>
+  /** YAZ-4515: one engine action by name, committed before it returns; false when it does not apply now. */
+  runAction(name: string): boolean
+  /** YAZ-4515: select exactly these live element ids; returns the ids that are not on the canvas, and then selects nothing. */
+  selectElements(ids: readonly string[]): string[]
+  /** YAZ-4515: the selection's identity, which changes only when the selection does. */
+  selection(): object
+  /** YAZ-4515: the export box's PNG or SVG bytes, or the PDF's SVG, with no sheet. */
+  exportImage(format: BoardImageFormat, options: BoardExportOptions): Promise<BoardImageData>
 }
 
 /**
@@ -786,6 +796,20 @@ export function ExcalidrawSurface({
         const { scrollX, scrollY, zoom } = api.getAppState()
         return { scrollX, scrollY, zoom: zoom.value }
       },
+      runAction: (name) => {
+        let ran = false
+        flushSync(() => { ran = api.runAction(name) })
+        return ran
+      },
+      selectElements: (ids) => {
+        const live = new Set(api.getSceneElements().map((element) => element.id))
+        const missing = ids.filter((id) => !live.has(id))
+        if (missing.length === 0) flushSync(() => api.updateScene({ appState: { selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])), selectedGroupIds: {} } as unknown as EngineAppState }))
+        return missing
+      },
+      selection: () => api.getAppState().selectedElementIds,
+      exportImage: async (format, options) =>
+        format === 'pdf' ? { format, ...(await api.exportImage('pdf', options)) } : { format, data: new Uint8Array(await (await api.exportImage(format, options)).arrayBuffer()) },
     })
   }, [withPanel, rail])
 

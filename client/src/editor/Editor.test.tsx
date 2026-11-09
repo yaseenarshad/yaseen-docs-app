@@ -1,3 +1,4 @@
+import { readLiveDocument, runEditorAction } from '../automation/liveDocument'
 /**
  * CrepeHost external-change handling (GRO-2186): a property write from a base (GRO-2141)
  * rewrites only the frontmatter block on disk; the open editor must absorb it silently —
@@ -2716,5 +2717,87 @@ describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
     } finally {
       vi.mocked(moveCaretIntoZoom).mockReset()
     }
+  })
+})
+
+
+describe('automation live Markdown read', () => {
+  // Checker (YAZ-4510 round 2): the real serializer writes `# H\ntext\n` back as `# H\n\ntext\n` with no edit.
+  // Autosave treats the tab as clean (nothing is written), so the live read must not say dirty.
+  // YAZ-4580: the serializer's form is there when the editor is created, so it is the autosave's baseline too.
+  it('checker: an unedited note whose saved text is not in the serializer form reads as clean', async () => {
+    // The editor's own round trip, no user edit.
+    createCrepeMock.mockImplementationOnce((opts) => ({ md: '# H\n\ntext\n', onMarkdownUpdated: opts.onMarkdownUpdated, create: () => Promise.resolve(), destroy: () => Promise.resolve() }) as never)
+    const el = await mount('# H\ntext\n')
+    el.classList.add('tabstack__layer'); el.dataset.tab = 'live-unedited'
+    vi.mocked(editorViewOf).mockReturnValue({ ...emptyView(), state: { selection: { anchor: 1, head: 1, from: 1, to: 1 }, doc: { textBetween: () => '' } } } as never)
+    try {
+      await pastDebounce()
+      expect(writeFile).not.toHaveBeenCalled()
+      const live = readLiveDocument('live-unedited')
+      expect(live).toMatchObject({ dirty: false })
+      // `editor save` agrees: nothing to write is a finished save, not SAVE_INCOMPLETE.
+      await expect(runEditorAction({ command: 'editor.action', tab: 'live-unedited', revision: live.revision, edit: { action: 'save' } })).resolves.toMatchObject({ dirty: false, diskSaved: true })
+      expect(writeFile).not.toHaveBeenCalled()
+      type('# H\n\ntext edited\n')
+      expect(readLiveDocument('live-unedited').dirty).toBe(true)
+      type('# H\n\ntext\n')
+      expect(readLiveDocument('live-unedited').dirty).toBe(false)
+    } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
+  })
+
+  it('returns current typing and selection without saving or substituting disk content', async () => {
+    const el = await mount('---\ntitle: Original\n---\nSaved body\n')
+    el.classList.add('tabstack__layer'); el.dataset.tab = 'live-markdown'
+    type('Unsaved body\n')
+    const view = { ...emptyView(), state: { selection: { anchor: 1, head: 8, from: 1, to: 8 }, doc: { textBetween: () => 'Unsaved' } } }
+    vi.mocked(editorViewOf).mockReturnValue(view as never)
+    try {
+      expect(readLiveDocument('live-markdown')).toMatchObject({ source: 'live', path: PATH, kind: 'markdown', content: '---\ntitle: Original\n---\nUnsaved body\n', baselineMtime: 1, dirty: true, selection: { text: 'Unsaved', coordinate: 'prosemirror' } })
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(() => readLiveDocument('missing')).toThrow('no ready live document')
+    } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
+  })
+
+  it('YAZ-4563: an autosave does not change the live revision when the document and the selection stay', async () => {
+    const el = await mount(FM + BODY)
+    el.classList.add('tabstack__layer'); el.dataset.tab = 'live-saved'
+    vi.mocked(editorViewOf).mockReturnValue({ ...emptyView(), state: { selection: { anchor: 1, head: 1, from: 1, to: 1 }, doc: { textBetween: () => '' } } } as never)
+    try {
+      type('# Hello\n\nedit\n')
+      const before = readLiveDocument('live-saved').revision
+      await pastDebounce()
+      expect(writeFile).toHaveBeenCalledTimes(1)
+      expect(readLiveDocument('live-saved')).toMatchObject({ dirty: false, revision: before })
+    } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
+  })
+
+  it('YAZ-4515: a live read says when the conflict bar is up, so an agent knows why a save stays incomplete', async () => {
+    const el = await mount(FM + BODY)
+    el.classList.add('tabstack__layer'); el.dataset.tab = 'live-conflict'
+    vi.mocked(editorViewOf).mockReturnValue({ ...emptyView(), state: { selection: { anchor: 1, head: 1, from: 1, to: 1 }, doc: { textBetween: () => '' } } } as never)
+    try {
+      expect(readLiveDocument('live-conflict').conflict).toBe(false)
+      type('# Hello\n\nunsaved edit\n')
+      diskHas(FM + '# Someone else\n', 2)
+      await emit({ type: 'change', path: PATH, mtime: 2 })
+      expect(el.querySelector('.conflict-bar')).not.toBeNull()
+      expect(readLiveDocument('live-conflict')).toMatchObject({ dirty: true, conflict: true })
+    } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
+  })
+
+  it('YAZ-4515: a Read only note offers only select and save, refuses a replace, and offers the edits again at "Allow edits"', async () => {
+    const el = await mount('---\nreadonly: true\n---\nLocked body\n')
+    el.classList.add('tabstack__layer'); el.dataset.tab = 'live-locked'
+    vi.mocked(editorViewOf).mockReturnValue({ ...emptyView(), state: { selection: { anchor: 1, head: 1, from: 1, to: 1 }, doc: { textBetween: () => '' } } } as never)
+    try {
+      const locked = readLiveDocument('live-locked')
+      expect(locked.actions).toEqual(['select', 'save'])
+      await expect(runEditorAction({ command: 'editor.action', tab: 'live-locked', revision: locked.revision, edit: { action: 'replace', text: 'X' } })).rejects.toMatchObject({ code: 'UNSUPPORTED_ACTION' })
+      expect(crepe().md).toBe('Locked body\n')
+      diskHas('---\n---\nLocked body\n', 2)
+      await emit({ type: 'change', path: PATH, mtime: 2 })
+      expect(readLiveDocument('live-locked').actions).toEqual(['select', 'replace', 'format', 'undo', 'redo', 'save'])
+    } finally { vi.mocked(editorViewOf).mockImplementation(emptyView as never) }
   })
 })

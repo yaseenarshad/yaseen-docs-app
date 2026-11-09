@@ -31,7 +31,7 @@ import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import { requireRequest, requireStringArray } from '../fs/validate'
 import type { Store } from '../store'
-import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
+import { changeLettersPass, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbersPass, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import { dailyNote } from '../notes/daily'
@@ -52,7 +52,13 @@ const repairFocus = (p: Promise<void>): Promise<void> => p.catch((err: unknown) 
 const repairIcons = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[icons] repair failed: ${String(err)}`))
 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */
-export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor' | 'vaultNotice'>): void {
+/** The two vault-wide ID changes as Settings runs them, with each rename's follow-up and the `ids:changed` broadcast: the CLI's `ids` commands call these too (YAZ-4518). */
+export interface IdChanges {
+  reletter(root: string, letters: string): ReturnType<typeof changeLettersPass>
+  backfill(root: string): ReturnType<typeof giveOldIdsNumbersPass>
+}
+
+export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor' | 'vaultNotice'>): IdChanges {
   handle(CONTRACT.tree, tree)
   handle(CONTRACT.readFile, readFile)
   // The pages of the tab board (YAZ-2648 D6): read-only, one call for every open tab.
@@ -192,14 +198,12 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // When either ends, done or stopped, each window of the vault reads its index at once: notes have
   // new paths, and the watcher's events would hold the read back until they settle (YAZ-3102).
   const thenTell = <T>(root: string, change: Promise<T>): Promise<T> => change.finally(() => broadcastAll(CONTRACT.ids.onChanged.channel, { root }))
-  handleWithEvent(CONTRACT.ids.reletter, async (e, root: unknown, letters: unknown) => {
-    const r = ownVault(e, root)
-    return thenTell(r, changeLetters(r, letters, followed))
-  })
-  handleWithEvent(CONTRACT.ids.backfill, async (e, root: unknown) => {
-    const r = ownVault(e, root)
-    return thenTell(r, giveOldIdsNumbers(r, followed))
-  })
+  const idChanges: IdChanges = {
+    reletter: (root, letters) => thenTell(root, changeLettersPass(root, letters, followed)),
+    backfill: (root) => thenTell(root, giveOldIdsNumbersPass(root, followed)),
+  }
+  handleWithEvent(CONTRACT.ids.reletter, async (e, root: unknown, letters: unknown) => (await idChanges.reletter(ownVault(e, root), letters as string)).state)
+  handleWithEvent(CONTRACT.ids.backfill, async (e, root: unknown) => (await idChanges.backfill(ownVault(e, root))).state)
   // A clash this Mac fixed (S45): a note whose file name followed its new ID (R26) takes the rename
   // handler's downstream, so its open tab, its favorite and its stored paths follow; then ONE
   // notice in each window that shows the vault. Set once: `registerFsIpc` runs once.
@@ -367,6 +371,31 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     return res
   })
   /**
+   * The explicit items of `fs:copy-to` and `fs:move-to` (YAZ-4502): the target is a folder in a vault of the calling
+   * window, and 1–200 distinct items, each inside its vaults and none a vault itself — unless `outside` (an import) allows any.
+   */
+  const explicitItems = (e: IpcMainInvokeEvent, req: unknown, verb: 'copy' | 'move', outside = false) => {
+    const { targetDir, paths } = requireRequest(req)
+    const dir = requireAbsPath(targetDir, 'targetDir'), roots = rootsOfSender(e)
+    if (rootOfPath(roots, dir) === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that folder', { path: dir })
+    const items = [...new Set(requireStringArray(paths, 'paths').map(p => requireAbsPath(p, 'paths')))]
+    if (!items.length || items.length > 200) throw new BridgeFailure('BAD_REQUEST', `${verb} between 1 and 200 items`)
+    if (!outside && items.some(p => roots.includes(p) || rootOfPath(roots, p) === null)) throw new BridgeFailure('BAD_REQUEST', `a ${verb} must name items inside this window’s vaults`)
+    return { dir, items }
+  }
+  handleWithEvent(CONTRACT.file.copyTo, async (e, req: unknown) => {
+    const { external } = requireRequest(req)
+    if (typeof external !== 'boolean') throw new BridgeFailure('BAD_REQUEST', 'choose internal copy or external import')
+    const { dir, items } = explicitItems(e, req, 'copy', external)
+    const ids = external ? null : await doorFor(e, req, 'targetDir')
+    return pasteEntries({ op: 'copy', paths: items }, { targetDir: dir }, { copy: external ? (from, to) => importCopy(from, to, { freeName: true }) : (from, to) => copyEntry(from, to, ids), move: moveEntry })
+  })
+  // A Paste of a Cut with explicit items (YAZ-4502): the same `moveEntry` per item, in order, and neither clipboard is read or cleared.
+  handleWithEvent(CONTRACT.file.moveTo, async (e, req: unknown) => {
+    const { dir, items } = explicitItems(e, req, 'move')
+    return pasteEntries({ op: 'cut', paths: items }, { targetDir: dir }, { copy: () => Promise.reject(new BridgeFailure('BAD_REQUEST', 'a move copies nothing')), move: moveEntry })
+  })
+  /**
    * A drop from Finder (YAZ-3253 D3, D9A): `pasteEntries` with an explicit list — the app clipboard
    * is never read or written. Per item, in order, and one bad item never stops the rest:
    *  - a hidden item (`isSkipped`: the tree's own rule) is left out with no row (S20);
@@ -457,4 +486,5 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     const { paths } = requireRequest(req)
     dropLanded(e.sender, requireStringArray(paths, 'paths').map((p) => requireAbsPath(p, 'paths')))
   })
+  return idChanges
 }

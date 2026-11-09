@@ -3,7 +3,7 @@
  * Vendors Material Icon Theme (YAZ-3440 D4, MIT) into the app: every icon of a release to
  * `client/public/material-icons/` (served beside the renderer bundle as `/material-icons/<file>`, so a row
  * loads only the icons it shows, and the icon picker loads the rest when it opens), its LICENSE, and the
- * release's own matching tables to `client/src/sidebar/materialIconData.ts`, which `materialIcons.ts` reads.
+ * release's own matching tables to `shared/materialIconData.ts`, which `materialIcons.ts` reads (and main, to check a CLI icon name).
  *
  * The tables come from the release's generated manifest (`dist/material-icons.json`, what VS Code reads), not
  * from the repo's `src/core/icons/*.ts`: the open-folder icons and the clones exist only in a built release.
@@ -80,7 +80,7 @@ const header = `/**
  */
 `
 writeFileSync(
-  join(repo, 'client/src/sidebar/materialIconData.ts'),
+  join(repo, 'shared/materialIconData.ts'),
   `${header}export const MATERIAL_VERSION = '${pkg.version}'
 /** Every icon id, file name \`<id>.svg\` but the clones below. */
 export const MATERIAL_IDS = '${ids.join(' ')}'

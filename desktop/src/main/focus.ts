@@ -98,15 +98,23 @@ export async function getFocus(root: string, scope: ListScope = 'vault'): Promis
 
 /** Replace the list of `scope` (absolute paths inside `root`); the first write creates the dotfolder and this Mac's file. */
 export async function setFocus(root: string, absPaths: readonly string[], scope: ListScope = 'vault'): Promise<void> {
+  await updateFocus(root, scope, () => absPaths)
+}
+
+/** Patch the latest winner while holding the existing root lock. */
+export async function updateFocus(root: string, scope: ListScope, update: (paths: readonly string[]) => readonly string[]): Promise<string[]> {
   const r = requireAbsPath(root, 'root')
-  for (const p of absPaths) {
-    if (typeof p !== 'string' || !under(r, p)) throw new BridgeFailure('BAD_REQUEST', 'a focus item must be inside the vault', { path: String(p) })
-  }
-  await chained(r, async () => {
-    const unique = [...new Set(absPaths)]
-    const alive = await Promise.all(unique.map((p) => stat(p).then(() => true, () => false)))
-    const kept = unique.filter((_, i) => alive[i]) // R7, Favorites' D14: an item whose file is gone leaves the list here
-    await save(r, scope, clean(kept.map((p) => toRel(r, p))), await readNewest(r, scope))
+  return chained(r, async () => {
+    const held = await readNewest(r, scope)
+    const next = update((held?.rels ?? []).map(rel => toAbs(r, rel)))
+    for (const p of next) {
+      if (typeof p !== 'string' || !under(r, p)) throw new BridgeFailure('BAD_REQUEST', 'a focus item must be inside the vault', { path: String(p) })
+    }
+    const unique = [...new Set(next)]
+    const alive = await Promise.all(unique.map(p => stat(p).then(() => true, () => false)))
+    const rels = clean(unique.filter((_, i) => alive[i]).map(p => toRel(r, p)))
+    await save(r, scope, rels, held)
+    return rels.map(rel => toAbs(r, rel))
   })
 }
 

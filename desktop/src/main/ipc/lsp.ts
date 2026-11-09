@@ -11,6 +11,13 @@ import { LspPool } from '../lsp/pool'
 import { pythonSpec, resolvePyright } from '../lsp/python'
 import { resolveTypescriptServer, typescriptSpec, type LspPlaces } from '../lsp/typescript'
 import { handle, handleWithEvent } from './envelope'
+import type { LspHelpersState, LspInstallResult } from '@shared/lspInstall'
+
+export interface LanguageHelperActions {
+  state(): LspHelpersState
+  install(): Promise<LspInstallResult>
+  cancel(): Promise<void>
+}
 
 function requirePosition(raw: unknown): LspPosition {
   const p = raw as Partial<LspPosition> | null
@@ -71,7 +78,7 @@ export async function cancelHelperInstall(): Promise<void> {
  * of helpers, and their download. The owner of a handle is the window that opened it; a window that
  * closes, crashes or reloads closes its handles, so no helper stays up for a tab that is gone.
  */
-export function registerLspIpc(places: LspPlaces, helpersSwitch?: HelpersSwitch, fetch: Fetch = (url, init) => net.fetch(url, init)): LspPool {
+export function registerLspIpc(places: LspPlaces, helpersSwitch?: HelpersSwitch, fetch: Fetch = (url, init) => net.fetch(url, init), onActions?: (actions: LanguageHelperActions) => void): LspPool {
   const pool = new LspPool([typescriptSpec(places), pythonSpec(places)])
   const switchOn = (): boolean => helpersSwitch?.on() ?? true
   let wasOn = switchOn()
@@ -126,7 +133,8 @@ export function registerLspIpc(places: LspPlaces, helpersSwitch?: HelpersSwitch,
     const { handle, position } = requirePositionRequest(req)
     return pool.hover(ownerOf(e), handle, position)
   })
-  handle(CONTRACT.lsp.helpers, async () => ({ ready: ready(), installing: install.installing }))
+  const actions: LanguageHelperActions = { state: () => ({ ready: ready(), installing: install.installing }), install: () => install.install(), cancel: () => install.cancel() }
+  handle(CONTRACT.lsp.helpers, async () => actions.state())
   handleWithEvent(CONTRACT.lsp.install, async (e) => {
     const sender = e.sender
     return install.install((p) => {
@@ -134,5 +142,6 @@ export function registerLspIpc(places: LspPlaces, helpersSwitch?: HelpersSwitch,
     })
   })
   handle(CONTRACT.lsp.cancelInstall, () => install.cancel())
+  onActions?.(actions)
   return pool
 }

@@ -118,13 +118,8 @@ export function isEmpty(v: Value): boolean {
   return typeOf(v) === 'object' && Object.keys(v).length === 0
 }
 
-const WIKI_LINK = /^\[\[([^\]|]+)(?:\|([^\]]*))?\]\]$/
-
-/** `[[x]]` → `x`, otherwise unchanged. */
-export function stripBrackets(s: string): string {
-  const m = WIKI_LINK.exec(s)
-  return m ? m[1] : s
-}
+export { stripBrackets } from '@shared/linkText'
+import { stripBrackets, WIKI_LINK } from '@shared/linkText'
 
 const normTarget = (t: string) => stripBrackets(t).replace(/\.md$/i, '').replace(/^\/+|\/+$/g, '').toLowerCase()
 const lastSegment = (t: string) => t.slice(t.lastIndexOf('/') + 1)

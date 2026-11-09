@@ -26,8 +26,8 @@ import { MAX_PICTURE_FOLDERS, PICTURE_FOLDERS_FULL } from '../fs/picturesFolders
 import { setBoardReadOnly } from '../fs/boardReadOnly'
 import { createBoard } from '../fs/createBoard'
 import { loadDiagram, saveDiagram } from '../fs/diagram'
-import { loadDrawing, saveDrawing } from '../fs/drawing'
-import { indexBoard } from '../vaultIndex'
+import { loadDrawing } from '../fs/drawing'
+import { saveDrawingIndexed } from '../documentSaves'
 import type { Store } from '../store'
 import type { WindowManager } from '../windows'
 import { loggedSave } from './broadcast'
@@ -48,11 +48,7 @@ export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit' | 'approve
   // A drawing's and a diagram's save go in the save log, as a note's does (YAZ-3235 D1, S10).
   // A save that gave the board its ID (YAZ-3943 4C) tells the index at once: a `[[` pick right after it writes the ID.
   // A save writes to an outside pictures folder only when the user picked it (YAZ-3943 demo round 3, `approvedPictureFolders`).
-  const save = async (req: unknown) => {
-    const res = await saveDrawing(req, store.get().approvedPictureFolders)
-    if (res.id !== undefined) indexBoard(res.path, res.id)
-    return res
-  }
+  const save = (req: unknown) => saveDrawingIndexed(req, store.get().approvedPictureFolders)
   handleWithEvent(CONTRACT.drawing.save, loggedSave(store, windows, save))
   handle(CONTRACT.diagram.load, loadDiagram)
   handleWithEvent(CONTRACT.diagram.save, loggedSave(store, windows, saveDiagram))

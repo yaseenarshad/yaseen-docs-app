@@ -36,6 +36,8 @@ const h = vi.hoisted(() => {
     // The memory meter (YAZ-3737 D1): one read each 30 s, none in these tests.
     getAppMetrics: vi.fn(() => []),
     quit: vi.fn(),
+    relaunch: vi.fn(log('relaunch')),
+
     exit: vi.fn(log('exit')),
   }
   const manager = {
@@ -110,6 +112,7 @@ vi.mock('electron', () => ({
   // Save Heap Snapshot (YAZ-3737 D9) finds the window's debugger by id; no test clicks it.
   webContents: { fromId: vi.fn() },
 }))
+vi.mock('../automation/server', () => ({ startAutomationServer: vi.fn(async () => ({ close: vi.fn(async () => {}) })) }))
 vi.mock('./store', () => ({ createStore: () => h.store }))
 vi.mock('./windows', () => ({ createWindowManager: () => h.manager }))
 // The diaries of links (YAZ-2677 R27) are flushed with the index cache, in the same step.
@@ -338,6 +341,21 @@ describe('main quit order: before-quit runs runQuitSequence with the live deps (
 })
 
 describe('the updater in index.ts (YAZ-2976)', () => {
+  it('CLI plain restart drains and flushes, then relaunches without applying a staged update', async () => {
+    h.s.ready(); await settle()
+    const { startAutomationServer } = await import('../automation/server')
+    const prepare = vi.mocked(startAutomationServer).mock.calls[0][1]
+    const operation = prepare({ version: 1, session: 'session', token: 'token', id: 'restart', issuedAt: Date.now(), command: 'app.restart', args: {} }, Buffer.alloc(0))
+    await expect(operation.run()).resolves.toMatchObject({ accepted: true })
+    expect(h.app.quit).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(h.app.quit).toHaveBeenCalledOnce())
+    h.s.on.get('before-quit')!(event()); await settle()
+    expect(h.manager.flushAllForQuit).toHaveBeenCalled()
+    expect(h.store.flush).toHaveBeenCalled()
+    expect(h.updater.installOnExit).not.toHaveBeenCalled()
+    expect(h.s.order.slice(-2)).toEqual(['relaunch', 'exit'])
+  })
+
   const invoke = (channel: string) => h.handles.get(channel)!({})
 
   it('is created once at load with the bundle, the version and the feed, and broadcasts each state to every window (S20)', async () => {
@@ -354,7 +372,7 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     expect([...h.handles.keys()]).toEqual([])
     h.s.ready()
     await settle()
-    expect([...h.handles.keys()].sort()).toEqual(['memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
+    expect([...h.handles.keys()].sort()).toEqual(['automation:ready', 'automation:reply', 'memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
     expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
     h.updater.kind = 'manual'
     await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })

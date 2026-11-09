@@ -468,6 +468,8 @@ export interface DrawingLoadRequest {
 }
 
 export interface DrawingLoadResponse {
+  /** Requested by automation; exact saved bytes and modification time. */
+  revision?: string
   /** Absolute path that was read — what every later save addresses. */
   path: string
   /** The file's bytes as UTF-8 text, exactly as on disk — except that a LEGACY scene's embedded `files` map comes back empty: those bytes travel once, in `files`. */
@@ -492,6 +494,8 @@ export interface DrawingNewFile extends DrawingFileEntry {
 }
 
 export interface DrawingSaveRequest {
+  /** Automation replacement guard, checked inside the shared write turn. */
+  expectedRevision?: string
   root: string
   path: string
   /** The serialized scene. Written verbatim but for the store's own `files: {}` rewrite and the date stamp. */
@@ -503,6 +507,8 @@ export interface DrawingSaveRequest {
 }
 
 export interface DrawingSaveResponse {
+  /** Requested by automation; exact saved bytes and modification time. */
+  revision?: string
   path: string
   mtime: number
   size: number
@@ -527,6 +533,8 @@ export interface DiagramLoadRequest {
 }
 
 export interface DiagramLoadResponse {
+  /** Requested by automation; exact saved bytes and modification time. */
+  revision?: string
   /** Absolute path that was read. */
   path: string
   /** The file's XML exactly as it sits on disk (compressed pages included — draw.io inflates them). */
@@ -536,6 +544,8 @@ export interface DiagramLoadResponse {
 }
 
 export interface DiagramSaveRequest {
+  /** Automation replacement guard, checked inside the shared write turn. */
+  expectedRevision?: string
   root: string
   path: string
   /** The document as draw.io serialised it: plain `<mxfile>` XML (Draw's 🔒 YAZ-1802 D3). */
@@ -545,6 +555,8 @@ export interface DiagramSaveRequest {
 }
 
 export interface DiagramSaveResponse {
+  /** Requested by automation; exact saved bytes and modification time. */
+  revision?: string
   path: string
   mtime: number
   size: number
@@ -749,6 +761,8 @@ export interface FileWriteRequest {
    * `BridgeError` whose code is `CONFLICT` (carrying the disk `mtime`) and does NOT write.
    */
   expectedMtime?: number
+  /** Automation's saved-content hash and mtime, checked inside the shared write turn. */
+  expectedRevision?: string
   /**
    * A tidy-up write that the user did not make on this file (YAZ-3235 D1): a link rewrite after a
    * rename, a deleted column stripped from each note, stale folder values dropped after a move, a
@@ -1255,6 +1269,11 @@ export const LIST_SCOPES: readonly ListScope[] = ['vault', 'workspace']
 /** "Separate list for workspaces" (YAZ-4450 D4): one switch for Focus, one for Favorites. On by default: a workspace shows its own lists. */
 export type WorkspaceLists = Record<'focus' | 'favorites', boolean>
 export const DEFAULT_WORKSPACE_LISTS: WorkspaceLists = { focus: true, favorites: true }
+/**
+ * The Favorites or Focus list a window shows (YAZ-4450 D2, D4): the workspace list only with two or more vaults and that
+ * tab's switch on; a vault alone always shows its own. The sidebar and the CLI share this rule (YAZ-4527 P3).
+ */
+export const shownListScope = (roots: readonly string[], separate: WorkspaceLists, kind: keyof WorkspaceLists): ListScope => (roots.length > 1 && separate[kind] ? 'workspace' : 'vault')
 
 /**
  * `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. The max is only a

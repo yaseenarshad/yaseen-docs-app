@@ -45,7 +45,7 @@ export function idFor(webContents: { id: number }): string | undefined {
 /** A hung save can never block close or quit: the flush handshake gives up after this long. */
 export const FLUSH_TIMEOUT_MS = 5000
 /** How a flush handshake ended (YAZ-3737 D2): the ack said clean, the ack said not clean, or no ack in FLUSH_TIMEOUT_MS. */
-type FlushAck = 'clean' | 'dirty' | 'timeout'
+export type FlushAck = 'clean' | 'dirty' | 'timeout'
 /** `move`/`resize` fire for every pixel of a drag; one store commit (= one `state:changed` broadcast) per burst. */
 export const BOUNDS_DEBOUNCE_MS = 250
 /** `duplicateWindow` offsets the copy so it does not sit exactly on its source. */
@@ -114,6 +114,9 @@ export interface WindowHost {
 }
 
 export interface WindowManager extends WindowLookup {
+  /** Programmatic navigation uses only live full windows, in focus order. */
+  automationWindows(): WindowEntry[]
+  openAutomationWindow(opts: OpenWindowOptions): string
   /**
    * The stored windows that come back at launch (YAZ-2589), bounds clamped: those on the vaults in
    * `which` (a launch that asked for them, D1), or what the setting says (D2): every one, those of
@@ -255,6 +258,11 @@ export interface WindowManager extends WindowLookup {
    * No live window for `id` (mid-close race) is a no-op.
    */
   closeWindow(id: string): void
+  /**
+   * The close handshake's first step alone (YAZ-4502): flush the window `id` and answer its ack, or `null` when it is
+   * not live, closing, or the app quits. A CLI close asks this first and refuses on `dirty`, as ⌘R does.
+   */
+  flushWindow(id: string): Promise<FlushAck | null>
   /**
    * A path from outside the app — a `yaseendocs://` link, Finder's Open With (files), `open -a`.
    * A FOLDER is "Open Folder…" on it (YAZ-2556 D1): it goes to `openRecentBeside`, trailing slash
@@ -961,6 +969,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
   return {
     idFor,
+    automationWindows: () => [...new Set([...focusOrder, ...live.keys()])].flatMap(id => {
+      const entry = entryOf(id)
+      return entry !== undefined && !isFilesWindow(entry) && liveWindow(id) !== undefined ? [entry] : []
+    }),
+    openAutomationWindow: openWindow,
 
     rootFor(path, rootOverride) {
       if (host.dirExists(path)) return stripSlash(path)
@@ -1174,6 +1187,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     closeWindow(id) {
       const win = live.get(id)
       if (win !== undefined && !win.isDestroyed()) win.close()
+    },
+
+    flushWindow(id) {
+      const win = liveWindow(id)
+      return win === undefined || quitting || closingWins.has(id) ? Promise.resolve(null) : flushRenderer(win)
     },
 
     routeToFile(path, rootOverride) {

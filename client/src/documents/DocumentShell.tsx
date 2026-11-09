@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { savedFirst } from '../lib/renameContinuity'
 
 interface DocumentShellProps<T> {
   root: string
@@ -26,7 +27,9 @@ export function DocumentShell<T>({ root, path, className, load, errorText, child
     let live = true
     setLoaded(null)
     setError(null)
-    load({ root, path }).then(
+    // A save of this path under way (a pane move, a switch to a copy) lands first, so the new owner reads it (YAZ-4515).
+    const pending = savedFirst(path)
+    ;(pending === null ? load({ root, path }) : pending.then(() => load({ root, path }))).then(
       (doc) => {
         if (live) setLoaded(doc)
       },

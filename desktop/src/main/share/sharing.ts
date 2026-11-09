@@ -32,7 +32,8 @@ export interface Sharing {
   /** A first share, or (with the `id` the board is shared under) a re-upload after a save. */
   publish(root: string, path: string, content: string, id?: string): Promise<ShareEntry>
   setPermission(root: string, path: string, allowDownload: boolean): Promise<ShareEntry>
-  stop(root: string, path: string): Promise<void>
+  /** False when no share is saved at this path: nothing was stopped (the CLI's NOT_FOUND, YAZ-4573). */
+  stop(root: string, path: string): Promise<boolean>
   /** A board (or folder) was renamed or moved inside the app: its shares follow. */
   relocate(roots: readonly string[], oldPath: string, newPath: string): Promise<void>
   /** A board (or folder) was deleted inside the app: its shares are stopped. */

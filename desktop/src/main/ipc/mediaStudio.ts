@@ -13,6 +13,7 @@
  * and nothing else, so the moment the app starts is exactly when yesterday's entries should go —
  * and the first search must not wait for a `readdir` of it.
  */
+import type { AutomationServices } from '../automation/services'
 import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { isMediaBytesProvider, isMediaSearchSource, isMediaZoomWidth, MEDIA_ZOOM_WIDTHS, PIXABAY_SECRET, type MediaBytesRequest, type MediaDrawingRequest, type MediaSearchRequest } from '@shared/types'
@@ -82,6 +83,7 @@ export function registerMediaStudioIpc(
   fetchImpl: typeof globalThis.fetch = globalThis.fetch,
   store?: Pick<Store, 'get' | 'onChange' | 'setSettings'>,
   copies?: FavoriteCopies,
+  onServices?: (services: AutomationServices['studio']) => void,
 ): string {
   const folder = join(userData, MEDIA_CACHE_DIR)
   const cache = createMediaCache(folder)
@@ -142,5 +144,6 @@ export function registerMediaStudioIpc(
     return op === 'status' ? packs.status() : op === 'download' ? packs.download() : op === 'stop' ? packs.stop() : op === 'check' ? packs.check() : packs.remove()
   })
 
+  onServices?.({ providers, packs })
   return folder
 }
