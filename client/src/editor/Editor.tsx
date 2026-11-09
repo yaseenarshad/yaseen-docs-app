@@ -253,7 +253,7 @@ interface EditorProps {
   codeOutlineLocals?: SettingsState['codeOutlineLocals']
   /** Settings › Preview on hover › Links in notes (YAZ-3403): resting on a resolved [[link]] shows the sidebar's panel beside it. */
   hoverLinks?: boolean
-  /** A board's link pills (YAZ-3943): their own "Preview on hover" row, "Links in drawings". */
+  /** A board's link pills (YAZ-3943): their own "Preview on hover" row, "Links in drawings and diagrams". */
   hoverDrawingLinks?: boolean
   /** Settings › Preview on hover › Linked mentions (YAZ-3403): resting on an entry shows the linking note beside the list. */
   hoverBacklinks?: boolean
@@ -458,7 +458,7 @@ function CrepeHost({
   onOpenBullet?: (tabId: string, zoom: string | null, background: boolean, label: string | null) => void
   diagramDarkColors: DiagramDarkColors
   hoverLinks: boolean
-  /** The note popup's board pills follow "Links in drawings" (YAZ-3943). */
+  /** The note popup's board pills follow "Links in drawings and diagrams" (YAZ-3943). */
   hoverDrawingLinks: boolean
   hoverBacklinks: boolean
   previewScope?: (path: string) => PreviewScope

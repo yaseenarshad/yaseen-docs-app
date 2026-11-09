@@ -12,26 +12,13 @@ import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { MouseMods } from '@shared/keys'
 import type { AnchorRect } from '../sidebar/previewPlacement'
-import type { DrawingLink, DrawingLinkHit } from '../drawings/drawingLinks'
+import { wireLook, type DrawingLink, type DrawingLinkHit } from '../drawings/drawingLinks'
 import type { PickerEditor } from '../drawings/drawingLinkPicker'
 import type { BoardLinks } from '../drawings/useDrawingLinks'
 import { linkClickAction } from '../editor/linkGesture'
 import { lastSidebarDrag, onSidebarDrag, sidebarDragOn } from '../sidebar/sidebarDrag'
+import type { WireLook } from './diagramLooks'
 import type { DrawioEditorState, DrawioLinkMessage } from './drawioProtocol'
-
-/** A pill's look as the iframe takes it: the icon as its data URL; null, no icon; absent, not drawn yet. */
-export interface WireLook {
-  label: string
-  missing?: boolean
-  folder?: boolean
-  icon?: string | null
-}
-
-export function wireLook(look: DrawingLink | null): WireLook | null {
-  if (look === null) return null
-  const { label, missing, folder, icon } = look
-  return { label, ...(missing ? { missing } : {}), ...(folder ? { folder } : {}), ...(icon === undefined ? {} : { icon: icon === null ? null : icon.url }) }
-}
 
 const COMBOS: readonly MouseMods[] = Array.from({ length: 16 }, (_, bits) => ({ metaKey: (bits & 1) !== 0, ctrlKey: (bits & 2) !== 0, altKey: (bits & 4) !== 0, shiftKey: (bits & 8) !== 0 }))
 
@@ -149,6 +136,10 @@ export function useDrawioLinkBridge(links: BoardLinks | undefined, frame: RefObj
         return
       case 'yaseenDrop':
         post({ action: 'yaseenDropLinks', id: msg.id, links: hostLinks.dropPaths(lastSidebarDrag()) ?? [] })
+        return
+      case 'yaseenShapeLink':
+        // D8: a shape's own link, as a board's link icon opens it. A web link never comes up here.
+        links!.openShapeLink(msg.link, msg.mods)
         return
     }
   }

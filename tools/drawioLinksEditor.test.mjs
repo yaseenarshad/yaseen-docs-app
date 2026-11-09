@@ -70,8 +70,12 @@ function load() {
     getCellAt: () => null,
   })
   graph.cellEditor = new mxCellEditor(graph)
+  // draw.io's editor: the shape links (D8) wrap its handling of custom links.
+  function EditorUi() {}
+  EditorUi.prototype.handleCustomLink = () => {}
   Object.assign(globalThis, {
     Graph,
+    EditorUi,
     mxCellEditor,
     mxUtils: { convertPoint: (_c, x, y) => ({ x, y }) },
     mxClient: { IS_MAC: true },

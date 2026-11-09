@@ -879,7 +879,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     render({ wikilinks: createWikilinkResolveSource(), onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn(), hoverLinks: true })
     await flush()
     expect(preview.mock.lastCall?.[0]).toBe(false)
-    // "Links in drawings" off (the app's setting) turns it off for every board, whatever the board says.
+    // "Links in drawings and diagrams" off (the app's setting) turns it off for every board, whatever the board says.
     act(() => root?.unmount())
     root = createRoot(container)
     load.mockResolvedValue(loaded())

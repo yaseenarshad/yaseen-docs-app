@@ -29,6 +29,7 @@ import { isFolderPath, pathTitles } from '../lib/pageLabel'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import type { VaultLinks } from '../links/vaultLinks'
 import type { IconsHere } from '../sidebar/FileIcon'
+import { setDiagramLinkLooks, type WireLook } from '../diagrams/diagramLooks'
 import { drawingLinkIcon, setDrawingLinkIcons, type PillIcon } from './drawingLinkIcons'
 import type { PickerEditor } from './drawingLinkPicker'
 
@@ -177,6 +178,16 @@ function lookOf(inner: string): DrawingLink | null {
   const icon = drawingLinkIcon(path, look!.folder === true, iconReady)
   return icon === undefined ? look : { ...look!, icon }
 }
+
+/** A pill's look for draw.io's side (YAZ-4748): the icon as its data URL; null, no icon; absent, not drawn yet. */
+export function wireLook(look: DrawingLink | null): WireLook | null {
+  if (look === null) return null
+  const { label, missing, folder, icon } = look
+  return { label, ...(missing ? { missing } : {}), ...(folder ? { folder } : {}), ...(icon === undefined ? {} : { icon: icon === null ? null : icon.url }) }
+}
+
+// A diagram's previews and Export Image draw its pills with the window's links (YAZ-4748 D9).
+setDiagramLinkLooks((inner) => wireLook(windowLinkLook(inner)))
 
 /** The pills draw again with what the window says now (a theme change: the icons' other look). */
 export function redrawWindowLinks(): void {

@@ -219,6 +219,12 @@ describe('readDrawioMessage — the link pills’ messages (YAZ-4748)', () => {
     expect(msg({ event: 'yaseenDrop' })).toBeNull()
   })
 
+  it('reads a shape’s own link with the keys of its press (3-, D8)', () => {
+    expect(msg({ event: 'yaseenShapeLink', link: '[[YAZ-1]]', mods })).toEqual({ event: 'yaseenShapeLink', link: '[[YAZ-1]]', mods })
+    expect(msg({ event: 'yaseenShapeLink', link: '[[YAZ-1]]' })).toBeNull()
+    expect(msg({ event: 'yaseenShapeLink', mods })).toBeNull()
+  })
+
   it('takes them only from THAT iframe on the drawio origin', () => {
     const data = JSON.stringify({ event: 'yaseenLinkLooks', inners: ['YAZ-1'] })
     expect(readDrawioMessage({ source: {}, origin: DRAWIO_ORIGIN, data }, frame)).toBeNull()

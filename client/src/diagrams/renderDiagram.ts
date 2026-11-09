@@ -20,6 +20,7 @@
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import type { DiagramDarkColors } from '@shared/types'
 import type { PreviewBounds } from '../lib/scenePreview'
+import { diagramLinkLooks, type WireLook } from './diagramLooks'
 import { drawioAdaptiveColors } from './drawioProtocol'
 
 const RENDER_URL = `${DRAWIO_ORIGIN}/yaseen-render.html`
@@ -39,6 +40,8 @@ interface RenderRequest {
   padding: number
   maxWidth?: number
   maxHeight?: number
+  /** What the diagram's link pills show (YAZ-4748 D9); absent, they keep the raw text. */
+  looks?: Record<string, WireLook | null>
 }
 
 interface Pending {
@@ -145,7 +148,7 @@ async function render(req: RenderRequest): Promise<string> {
  * nothing on it. Rejects when the XML is not a diagram, or nothing answers in time.
  */
 export function renderDiagramPreview(xml: string, theme: 'light' | 'dark', darkColors: DiagramDarkColors, bounds: PreviewBounds): Promise<string> {
-  return render({ xml, theme, adaptive: drawioAdaptiveColors(darkColors), format: 'svg', scale: 1, padding: bounds.padding, maxWidth: bounds.maxWidth, maxHeight: bounds.maxHeight })
+  return render({ xml, theme, adaptive: drawioAdaptiveColors(darkColors), format: 'svg', scale: 1, padding: bounds.padding, maxWidth: bounds.maxWidth, maxHeight: bounds.maxHeight, looks: diagramLinkLooks(xml) })
 }
 
 /**
@@ -158,5 +161,5 @@ export function renderDiagramPreview(xml: string, theme: 'light' | 'dark', darkC
  * look different from its preview, and it needs nothing from the editor but the XML it last posted.
  */
 export function renderDiagramImage(xml: string, format: 'svg' | 'png'): Promise<string> {
-  return render({ xml, theme: 'light', adaptive: 'none', format, scale: format === 'png' ? 2 : 1, padding: EXPORT_PADDING })
+  return render({ xml, theme: 'light', adaptive: 'none', format, scale: format === 'png' ? 2 : 1, padding: EXPORT_PADDING, looks: diagramLinkLooks(xml) })
 }

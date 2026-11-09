@@ -57,6 +57,11 @@ function load() {
   Graph.prototype.refresh = function () {
     this.refreshed++
   }
+  // draw.io's own link doors: only `data:` is its custom link, which the editor handles; a web link opens a window.
+  Graph.prototype.isCustomLink = (link) => link.substring(0, 5) === 'data:'
+  Graph.prototype.openLink = vi.fn(() => 'window')
+  function EditorUi() {}
+  EditorUi.prototype.handleCustomLink = vi.fn()
   Graph.prototype.labelChanged = function (cell, value) {
     this.changed.push([cell.id, value])
     cell.label = value
@@ -69,6 +74,7 @@ function load() {
   mxCellEditor.prototype.stopEditing = () => {}
   const env = {
     Graph,
+    EditorUi,
     mxCellEditor,
     console: { error: vi.fn() },
     mxUtils: { convertPoint: (_container, x, y) => ({ x: x - 100, y: y - 100 }) },
@@ -81,7 +87,11 @@ function load() {
   runInContext(readFileSync(LINKS_JS, 'utf8'), env)
   const graph = new Graph()
   const cell = (id, label, html = true) => (cells[id] = { id, label, html })
-  const label = (c) => graph.getLabel(c)
+  /** A label as drawn, without the pills' inline look (one test pins that). */
+  const label = (c) => {
+    const drawn = graph.getLabel(c)
+    return typeof drawn === 'string' ? drawn.replace(/ style="[^"]*"/g, '') : drawn
+  }
   /** The editor's half, as PostConfig.js installs it; returns its answer to the host's messages. */
   const install = () => env.yaseenLinks.installEditor({ editor: { graph } }, (msg) => posted.push(msg))
   /** A page event in the capture phase; true when the pills stopped it. */
@@ -90,7 +100,7 @@ function load() {
     for (const listener of listeners[type] ?? []) listener(evt)
     return evt.stopPropagation.mock.calls.length > 0
   }
-  return { env, graph, cell, label, install, fire, posted, style: env.document.head.appendChild }
+  return { env, graph, cell, label, install, fire, posted, EditorUi }
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -161,10 +171,15 @@ describe('yaseen-links.js: a label draws its links as pills (D1, D3)', () => {
     expect(posted).toHaveLength(1)
   })
 
-  it('puts the pill look on the page once', () => {
-    const { style } = load()
-    expect(style).toHaveBeenCalledTimes(1)
-    expect(style.mock.calls[0][0].textContent).toContain('.yaseen-pill{')
+  it('carries the board pill’s look inline — an exported SVG or PNG has no page stylesheet', () => {
+    const { env, graph, cell } = load()
+    env.yaseenLinks.setLooks({ 'YAZ-1': LOOK, Gone: { label: 'Gone', missing: true } })
+    const found = graph.getLabel(cell('a', '[[YAZ-1]]'))
+    expect(found).toMatch(/class="yaseen-pill yaseen-link-0" style="[^"]*background:light-dark\(#5b6cff1a,#7c8aff26\)/)
+    expect(found).toMatch(/<img class="yaseen-pill__icon" style="[^"]*width:0\.75em/)
+    const missing = graph.getLabel(cell('b', '[[Gone]]'))
+    expect(missing).toMatch(/style="[^"]*color:light-dark\(#7a7a7a,#8f8f8f\)/)
+    expect(missing).not.toContain('background')
   })
 })
 
@@ -257,6 +272,33 @@ describe('yaseen-links.js: the editor’s pointer on a pill (D2)', () => {
   })
 })
 
+describe('yaseen-links.js: a shape’s own link (D8)', () => {
+  it('a [[link]], a vault path or a yaseendocs:// link goes to the host with the last press’s keys; a web link stays draw.io’s', () => {
+    const { graph, install, fire, posted, EditorUi } = load()
+    const openLink = graph.openLink
+    const handle = EditorUi.prototype.handleCustomLink
+    install()
+    fire('pointerdown', { target: element(), metaKey: true })
+    expect(graph.isCustomLink('[[YAZ-1]]')).toBe(true)
+    expect(graph.isCustomLink('https://example.com')).toBe(false)
+    expect(graph.isCustomLink('data:page/id,p2')).toBe(true)
+    // draw.io's own custom link (a page link) stays its own; ours goes up.
+    new EditorUi().handleCustomLink('data:page/id,p2')
+    expect(handle).toHaveBeenCalledWith('data:page/id,p2')
+    new EditorUi().handleCustomLink('[[YAZ-1]]')
+    expect(handle).toHaveBeenCalledTimes(1)
+    graph.openLink('/vault/Plan.md')
+    graph.openLink('yaseendocs://open?path=x')
+    expect(posted).toEqual([
+      { event: 'yaseenShapeLink', link: '[[YAZ-1]]', mods: { metaKey: true, ctrlKey: false, altKey: false, shiftKey: false } },
+      { event: 'yaseenShapeLink', link: '/vault/Plan.md', mods: { metaKey: true, ctrlKey: false, altKey: false, shiftKey: false } },
+      { event: 'yaseenShapeLink', link: 'yaseendocs://open?path=x', mods: { metaKey: true, ctrlKey: false, altKey: false, shiftKey: false } },
+    ])
+    expect(graph.openLink('https://example.com')).toBe('window')
+    expect(openLink).toHaveBeenCalledWith('https://example.com')
+  })
+})
+
 describe('yaseen-links.js: Edit link and Remove link (the host’s replace)', () => {
   it('puts the text in place of the first raw link, escaped in an HTML label, as one labelChanged', () => {
     const { graph, cell, install } = load()
@@ -302,6 +344,23 @@ describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io internal yaseen-links.js
       'mxUtils.convertPoint': /convertPoint\s*:\s*function/,
       'cellEditor.textarea': /this\.textarea\s*=\s*document\.createElement\("div"\)/,
       'dark mode sets color-scheme': /classList\.add\("geDarkMode"\),\w+\.style\.colorScheme="dark"/,
+      // 2-: the label editor, a new text box, a picture drop.
+      'mxCellEditor.setEditingValue': /mxCellEditor\.prototype\.setEditingValue\s*=\s*function/,
+      'mxCellEditor.getCurrentValue': /mxCellEditor\.prototype\.getCurrentValue\s*=\s*function/,
+      'mxCellEditor.stopEditing': /mxCellEditor\.prototype\.stopEditing\s*=\s*function/,
+      'mxCellEditor.getEditingCell': /mxCellEditor\.prototype\.getEditingCell\s*=\s*function/,
+      'startEditing sets the value through setEditingValue': /this\.setEditingValue\(d,this\.getInitialValue\(/,
+      'Graph.getInsertPoint': /Graph\.prototype\.getInsertPoint\s*=\s*function/,
+      'mxGraph.insertVertex': /mxGraph\.prototype\.insertVertex\s*=\s*function/,
+      'Graph.updateCellSize': /updateCellSize\s*=\s*function/,
+      'mxGraph.setSelectionCells': /mxGraph\.prototype\.setSelectionCells\s*=\s*function/,
+      'EditorUi.importFiles': /EditorUi\.prototype\.importFiles\s*=\s*function/,
+      // D8: a shape's link.
+      'Graph.isCustomLink': /Graph\.prototype\.isCustomLink\s*=\s*function/,
+      'EditorUi.handleCustomLink': /EditorUi\.prototype\.handleCustomLink\s*=\s*function/,
+      'the editor\'s customLinkClicked calls ui.handleCustomLink': /customLinkClicked=function\(\w+,\w+\)\{var \w+=!1;try\{[^}]*\}?[^;]*;\w+\.handleCustomLink\(/,
+      'Graph.openLink': /Graph\.prototype\.openLink\s*=\s*function/,
+      'a link hint asks isCustomLink, then customLinkClicked': /this\.graph\.isCustomLink\(e\)&&\(mxEvent\.isTouchEvent\(d\)\|\|!mxEvent\.isPopupTrigger\(d\)\)&&this\.graph\.customLinkClicked\(e\)/,
     }
     for (const [name, pattern] of Object.entries(internals)) expect(pattern.test(app), name).toBe(true)
   })

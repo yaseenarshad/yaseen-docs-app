@@ -266,6 +266,7 @@ export type DrawioLinkMessage =
   | { event: 'yaseenEditor'; state: DrawioEditorState | null }
   | { event: 'yaseenEditorKey'; key: string }
   | { event: 'yaseenDrop'; id: number }
+  | { event: 'yaseenShapeLink'; link: string; mods: MouseMods }
 
 /** The label editor while `[[` is open before the caret (D5): the picker's `PickerEditor`, as the frame sees it. */
 export interface DrawioEditorState {
@@ -318,6 +319,10 @@ function readLinkMessage(msg: Record<string, unknown>): DrawioLinkMessage | null
       return isString(msg.key) ? { event: 'yaseenEditorKey', key: msg.key } : null
     case 'yaseenDrop':
       return isNumber(msg.id) ? { event: 'yaseenDrop', id: msg.id } : null
+    case 'yaseenShapeLink': {
+      const mods = modsOf(msg.mods)
+      return isString(msg.link) && mods !== null ? { event: 'yaseenShapeLink', link: msg.link, mods } : null
+    }
     default:
       return null
   }

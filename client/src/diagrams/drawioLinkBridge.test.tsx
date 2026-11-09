@@ -8,7 +8,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { PickerEditor } from '../drawings/drawingLinkPicker'
 import type { BoardLinks } from '../drawings/useDrawingLinks'
 import { setSidebarDrag } from '../sidebar/sidebarDrag'
-import { inWindow, linkOpens, modsKey, useDrawioLinkBridge, wireLook, type DrawioLinkLive } from './drawioLinkBridge'
+import { wireLook } from '../drawings/drawingLinks'
+import { inWindow, linkOpens, modsKey, useDrawioLinkBridge, type DrawioLinkLive } from './drawioLinkBridge'
 import type { DrawioLinkMessage } from './drawioProtocol'
 
 describe('the bridge’s pure parts', () => {
@@ -160,6 +161,13 @@ describe('useDrawioLinkBridge', () => {
     expect(posted.at(-1)).toEqual({ action: 'yaseenSidebarDrag', on: false })
     send({ event: 'yaseenDrop', id: 1 })
     expect(posted.at(-1)).toEqual({ action: 'yaseenDropLinks', id: 1, links: ['[[/vault/A.md]]', '[[/vault/B.md]]'] })
+  })
+
+  it('opens a shape’s own link as a board’s link icon does, with the keys of its press (D8)', () => {
+    render()
+    const mods = { metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }
+    send({ event: 'yaseenShapeLink', link: '[[YAZ-1]]', mods })
+    expect(links.openShapeLink).toHaveBeenCalledWith('[[YAZ-1]]', mods)
   })
 
   it('with no link source the pills stay text: nothing is answered and no keys are sent', () => {

@@ -63,7 +63,7 @@ async function openRenderer() {
   // The page's own scripts in its own order — ours from the overlay, draw.io's (the stencils bundle
   // among them, 🔒 YAZ-1802 D5) from the pruned webapp.
   const scripts = [...readFileSync(`${OVERLAY}yaseen-render.html`, 'utf8').matchAll(/<script src="([^"]+)"/g)].map((m) => m[1])
-  expect(scripts).toEqual(['js/yaseen-render-config.js', 'js/viewer-static.min.js', 'js/stencils.min.js', 'js/yaseen-render.js'])
+  expect(scripts).toEqual(['js/yaseen-render-config.js', 'js/viewer-static.min.js', 'js/stencils.min.js', 'js/yaseen-links.js', 'js/yaseen-render.js'])
   for (const script of scripts) window.eval(readFileSync(existsSync(`${OVERLAY}${script}`) ? `${OVERLAY}${script}` : `${WEBAPP}${script}`, 'utf8'))
   await expect.poll(() => answers).toEqual([{ event: 'ready' }])
   let serial = 0
@@ -122,6 +122,17 @@ describe.skipIf(!existsSync(`${WEBAPP}js/viewer-static.min.js`))(`yaseen-render.
     expect(await scheme('', { theme: 'dark', adaptive: 'none' })).toBe('light')
     expect(await scheme(' adaptiveColors="none"', { theme: 'dark', adaptive: 'auto' })).toBe('light')
     expect(await scheme('', { theme: 'light', adaptive: 'auto' })).toBe('light')
+  })
+
+  it('YAZ-4748 D9: draws a label\'s [[link]] as its pill with the look the request carries, and as raw text with none', async () => {
+    const { render } = await openRenderer()
+    const diagram = mxfile(model(cell('a', 'See [[YAZ-1]] and [[Gone]]', 10)))
+    const looks = { 'YAZ-1': { label: 'Roadmap', icon: 'data:image/png;base64,AAAA' }, Gone: { label: 'Gone', missing: true } }
+    const drawn = svgOf(await render(diagram, { looks }))
+    expect(drawn).toMatch(/<span class="yaseen-pill yaseen-link-\d+" style="[^"]*light-dark\(#5b6cff1a,#7c8aff26\)[^"]*"><img[^>]*src="data:image\/png;base64,AAAA"[^>]*\/?>Roadmap<\/span>/)
+    expect(drawn).toMatch(/yaseen-pill--missing" style="[^"]*">Gone<\/span>/)
+    expect(drawn).not.toContain('[[YAZ-1]]')
+    expect(svgOf(await render(mxfile(model(cell('b', 'See [[YAZ-9]]', 10)))))).toContain('See [[YAZ-9]]')
   })
 
   it('fits a preview inside its bounds, and draws an export at its scale', async () => {

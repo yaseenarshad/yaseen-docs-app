@@ -111,14 +111,27 @@
 		return writtenLook(inner);
 	}
 
+	/**
+	 * The board pill's look (the engine's `getLinkPillMetrics` / `getLinkPillColors`), in em of the label's font, as
+	 * INLINE styles: an exported SVG or PNG carries no page stylesheet. `light-dark` follows draw.io's dark mode, which
+	 * sets `color-scheme`. An inline block keeps the name on the line's baseline, beside the label's own text.
+	 */
+	var PILL_STYLE = 'display:inline-block;padding:0 0.25em;border-radius:0.25em;white-space:nowrap;line-height:1.25em;';
+	var FOUND_STYLE = PILL_STYLE + 'color:light-dark(#5b6cff,#7c8aff);background:light-dark(#5b6cff1a,#7c8aff26);';
+	var MISSING_STYLE = PILL_STYLE + 'color:light-dark(#7a7a7a,#8f8f8f);';
+	var ICON_STYLE = 'display:inline-block;width:0.75em;height:0.75em;margin-right:0.2em;vertical-align:-0.08em;';
+	/** An icon not drawn yet: its outline holds the place. */
+	var OUTLINE_STYLE = ICON_STYLE + 'box-sizing:border-box;border:1px solid currentColor;border-radius:0.1em;opacity:0.4;';
+
 	/** One pill: an atom of the label, as on a board. Its link is its number's class (`numberOf`). */
 	function pillHtml(inner, look)
 	{
 		var icon = (look.missing || look.icon === null) ? '' : (typeof look.icon == 'string') ?
-			'<img class="yaseen-pill__icon" src="' + escapeHtml(look.icon) + '">' : '<span class="yaseen-pill__icon"></span>';
+			'<img class="yaseen-pill__icon" style="' + ICON_STYLE + 'object-fit:contain;" src="' + escapeHtml(look.icon) + '">' :
+			'<span class="yaseen-pill__icon" style="' + OUTLINE_STYLE + '"></span>';
 
-		return '<span class="yaseen-pill yaseen-link-' + numberOf(inner) + (look.missing ? ' yaseen-pill--missing' : '') + '">' +
-			icon + escapeHtml(look.label) + '</span>';
+		return '<span class="yaseen-pill yaseen-link-' + numberOf(inner) + (look.missing ? ' yaseen-pill--missing' : '') + '" style="' +
+			(look.missing ? MISSING_STYLE : FOUND_STYLE) + '">' + icon + escapeHtml(look.label) + '</span>';
 	}
 
 	/** An HTML label with each `[[inner]]` drawn as its pill; a link with no look stays raw text. */
@@ -164,20 +177,6 @@
 
 		return (typeof label == 'string' && label.indexOf('[[') >= 0 && this.isHtmlLabel(cell)) ? withPills(label) : label;
 	};
-
-	// The board pill's look (the engine's `getLinkPillMetrics` / `getLinkPillColors`), in em of the label's font.
-	// `light-dark` follows draw.io's own dark mode, which sets `color-scheme` on the page.
-	if (typeof document != 'undefined' && document.head != null)
-	{
-		var style = document.createElement('style');
-		// An inline block keeps the pill's name on the line's baseline, beside the label's own text.
-		style.textContent = '.yaseen-pill{display:inline-block;padding:0 0.25em;border-radius:0.25em;white-space:nowrap;' +
-			'line-height:1.25em;color:light-dark(#5b6cff,#7c8aff);background:light-dark(#5b6cff1a,#7c8aff26)}' +
-			'.yaseen-pill--missing{color:light-dark(#7a7a7a,#8f8f8f);background:none}' +
-			'.yaseen-pill__icon{display:inline-block;width:0.75em;height:0.75em;margin-right:0.2em;vertical-align:-0.08em;object-fit:contain}' +
-			'span.yaseen-pill__icon{box-sizing:border-box;border:1px solid currentColor;border-radius:0.1em;opacity:0.4}';
-		document.head.appendChild(style);
-	}
 
 	/**
 	 * Every page listener of ours runs through this: draw.io turns an uncaught error into a native alert, which blocks
@@ -238,6 +237,52 @@
 			post({event: 'yaseenLinkLooks', inners: inners});
 		};
 
+		/** The modifier keys of the last press: draw.io opens a shape's link with no event at hand. */
+		var lastMods = modsOf({});
+
+		// D8: a shape's own link that is a `[[link]]`, a path or a `yaseendocs://` link opens through the host
+		// (`openShapeLink`, as on a board). A web link stays draw.io's. draw.io asks `isCustomLink` before it follows a
+		// link; a custom one goes to the graph's own `customLinkClicked`, which the editor sets on the INSTANCE to call
+		// `EditorUi.handleCustomLink`. Its other doors end in `openLink`.
+		var OURS = /^\s*(\[\[|\/|[A-Za-z]:[\\/]|yaseen(docs|draw):\/\/)/;
+		var isCustomLink = Graph.prototype.isCustomLink;
+		var handleCustomLink = EditorUi.prototype.handleCustomLink;
+		var openLink = Graph.prototype.openLink;
+
+		function shapeLink(link)
+		{
+			post({event: 'yaseenShapeLink', link: link, mods: lastMods});
+		}
+
+		Graph.prototype.isCustomLink = function(link)
+		{
+			return OURS.test(link) || isCustomLink.apply(this, arguments);
+		};
+
+		EditorUi.prototype.handleCustomLink = function(link)
+		{
+			if (typeof link == 'string' && OURS.test(link))
+			{
+				shapeLink(link);
+			}
+			else
+			{
+				return handleCustomLink.apply(this, arguments);
+			}
+		};
+
+		Graph.prototype.openLink = function(link)
+		{
+			if (typeof link == 'string' && OURS.test(link))
+			{
+				shapeLink(link);
+
+				return window;
+			}
+
+			return openLink.apply(this, arguments);
+		};
+
 		/** The drawn pill under the event, or null; a pill inside the open label editor is the editor's (D6). */
 		function pillOf(evt)
 		{
@@ -283,6 +328,7 @@
 		listen(doc, 'pointerdown', function(evt)
 		{
 			var pill = pillOf(evt);
+			lastMods = modsOf(evt);
 			swallowing = false;
 			hover(null);
 
