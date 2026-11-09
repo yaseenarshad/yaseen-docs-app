@@ -127,9 +127,9 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 
 /** The rows of each page with no vault open, in registry order (registry.tsx). */
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
-const GENERAL_ROWS = ['settingsFolder', 'startupWindows', 'vaultOpensOn']
+const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'diagramDarkColors']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'commentsResolved', 'commentsHint', 'diagramDarkColors']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
@@ -178,7 +178,7 @@ describe('SettingsDialog shell (D1)', () => {
   it('General shows the "Settings folder" row and the "Reopen" row, each under its own group; Files & Links no longer shows "Reopen" (YAZ-3276 D7)', () => {
     const { el } = mount()
     expect(headings(el)).toEqual(['General'])
-    expect(groupTitles(el)).toEqual(['Settings folder', 'When the app starts', 'When a vault opens'])
+    expect(groupTitles(el)).toEqual(['You', 'Settings folder', 'When the app starts', 'When a vault opens'])
     expect(rowIds(el)).toEqual(GENERAL_ROWS)
     expect(row(el, 'settingsFolder')?.querySelector('.setting__label')?.textContent).toBe('Settings folder')
     expect(row(el, 'settingsFolder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Settings folder')
@@ -337,7 +337,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     const { el } = mount()
     const hints = () => [...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)
     // General, as it opens (YAZ-3276 D7): two titled groups, no hints.
-    expect(groupTitles(el)).toEqual(['Settings folder', 'When the app starts', 'When a vault opens'])
+    expect(groupTitles(el)).toEqual(['You', 'Settings folder', 'When the app starts', 'When a vault opens'])
     expect(hints()).toEqual([])
 
     clickNav(el, 'Appearance')
@@ -1494,9 +1494,9 @@ describe('SettingsDialog search (D6)', () => {
     expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap', 'noteBulletIndent', 'noteBulletGap'])
     // Comments is a group of Appearance now, so its breadcrumb says so.
     type(searchInput(el), 'comments')
-    // A code key's row says "comment" too (YAZ-3564): the Appearance group leads.
-    expect(headings(el)[0]).toBe('Appearance › Comments')
-    expect(rowIds(el)[0]).toBe('commentsOrder')
+    // A code key's row says "comment" too (YAZ-3564). General › You (YAZ-4615 D7, who you comment as) leads, then the Appearance group.
+    expect(headings(el).slice(0, 2)).toEqual(['General › You', 'Appearance › Comments'])
+    expect(rowIds(el).slice(0, 4)).toEqual(['profile', 'commentsOrder', 'commentsResolved', 'commentsHint'])
     type(searchInput(el), 'section indent')
     expect(headings(el)).toEqual(['Editor › Section indent'])
     expect(rowIds(el)).toEqual(['sectionStep', 'sectionLines'])

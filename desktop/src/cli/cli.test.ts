@@ -303,7 +303,7 @@ describe('edit and delete (🔒 D4: only what an agent wrote)', () => {
       ['delete', p, 'aa1'],
     ]) {
       const r = await run(argv)
-      expect(r).toEqual({ code: 1, out: '', err: '#1 was left by a person — edit or delete it in the app\n' })
+      expect(r).toEqual({ code: 1, out: '', err: '#1 was left by a person — only its writer can edit or delete it (--by)\n' })
     }
     expect(await readFile(p, 'utf8')).toBe(PERSON_AND_AGENT)
   })
@@ -795,9 +795,42 @@ describe('the door stays Electron-free (🔒 D1)', () => {
   })
 })
 
+describe('YAZ-4615: signed comments, resolve, open comments under a folder', () => {
+  const SIGNED = `---\ncomments:\n  - id: p1\n    n: 1\n    at: ${at(1)}\n    by: yaseen\n    body: Yaseen's\n  - id: c2\n    n: 2\n    at: ${at(2)}\n    by: claude\n    body: Claude's\n  - id: r3\n    n: 1\n    at: ${at(3)}\n    reply_to: p1\n    by: agent\n    body: A reply\n---\n`
+
+  it('D2: edit and delete change only the caller\'s own comments — a person\'s signed comment is refused, an agent\'s own name works', async () => {
+    const p = await page('s.md', SIGNED)
+    expect(await run(['edit', p, '#1', '--body', 'nope'])).toEqual({ code: 1, out: '', err: '#1 was left by yaseen — only its writer can edit or delete it (--by)\n' })
+    expect(await run(['delete', p, '#2'])).toMatchObject({ code: 1, err: expect.stringContaining('was left by claude') })
+    expect(await readFile(p, 'utf8')).toBe(SIGNED)
+    expect((await run(['edit', p, '#2', '--body', 'Claude, edited', '--by', 'claude'])).out).toBe('#2 edited\n')
+    expect((await run(['delete', p, '#1.1'])).out).toBe('#1.1 deleted\n') // `agent`, the default caller
+  })
+
+  it('D3: resolve marks any writer\'s comment, with the caller as resolver; --reopen opens it again', async () => {
+    const p = await page('r.md', SIGNED)
+    expect((await run(['resolve', p, '#1', '--by', 'claude'])).out).toBe('#1 resolved\n')
+    expect(readComments(await readFile(p, 'utf8'))[0]).toMatchObject({ id: 'p1', resolved_by: 'claude', resolved: expect.stringMatching(/Z$/) })
+    expect((await run(['resolve', p, '#1', '--reopen'])).out).toBe('#1 reopened\n')
+    expect(await readFile(p, 'utf8')).toBe(SIGNED)
+    expect(await run(['resolve', p])).toMatchObject({ code: 2 })
+  })
+
+  it('item 6: comments --open drops a resolved comment and the replies of a resolved parent; a folder lists each note with comments', async () => {
+    const root = await vault('v', { 'a/one.md': SIGNED, 'a/two.md': '---\ntitle: Two\n---\nNo comments\n' })
+    await run(['resolve', path.join(root, 'a/one.md'), '#1'])
+    const open = await run(['comments', path.join(root, 'a/one.md'), '--open', '--json'])
+    expect(JSON.parse(open.out).map((t: { comment: { id: string } }) => t.comment.id)).toEqual(['c2'])
+    const folder = JSON.parse((await run(['comments', path.join(root, 'a'), '--open', '--json'])).out)
+    expect(folder).toEqual([expect.objectContaining({ path: path.join(root, 'a/one.md'), threads: [expect.objectContaining({ comment: expect.objectContaining({ id: 'c2' }) })] })])
+    expect((await run(['comments', path.join(root, 'a')])).out).toContain('[resolved]')
+  })
+})
+
 describe('daily and new (YAZ-4269)', () => {
   const TUE = new Date(2026, 10, 3)
-  const DAILY = { dailyNotes: true, dailyNoteFolder: 'daily', dailyNoteFormat: 'MM_DD- ddd', dailyNoteDayFolder: false }
+  // The comment hint (YAZ-4615 D10) is off here, so these keep to the bytes they always pinned; its own test turns it on.
+  const DAILY = { dailyNotes: true, dailyNoteFolder: 'daily', dailyNoteFormat: 'MM_DD- ddd', dailyNoteDayFolder: false, commentsHint: false }
   beforeEach(() => {
     // The app's profile in the temp dir: its state file, this Mac's ID and the locks (S13).
     vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', dir)
@@ -913,6 +946,7 @@ describe('daily and new (YAZ-4269)', () => {
   })
 
   it('new makes a note as New note does: the template, the title, an id; --body - takes the template body\'s place, its properties go over the template\'s (D4)', async () => {
+    await settings()
     const root = await vault('v', { 'projects/.template.md': '---\nstatus: todo\nowner: me\n---\n## Template body\n' })
 
     const made = await run(['new', path.join(root, 'projects'), '--title', 'Gym plan', '--body', '-', '--json'], '---\nstatus: doing\n---\n## Plan\n- Gym\n')
@@ -920,6 +954,16 @@ describe('daily and new (YAZ-4269)', () => {
     const answer = JSON.parse(made.out) as { path: string; id: string }
     expect(answer).toMatchObject({ title: 'Gym plan', created: true, others: [], path: expect.stringMatching(/\/projects\/gym-plan-yaz-\d+\.md$/) })
     expect(await readFile(answer.path, 'utf8')).toBe(`---\nstatus: doing\nowner: me\ntitle: Gym plan\nid: ${answer.id}\n---\n## Plan\n- Gym\n`)
+  })
+
+  it('YAZ-4615 D10: with the comment hint on (the default), a new note carries it as the first line of its frontmatter — in both kinds of vault', async () => {
+    const ids = await vault('v', { 'projects/.keep.md': '' })
+    await run(['new', path.join(ids, 'projects'), '--title', 'Gym plan'])
+    const made = (await notes(path.join(ids, 'projects'))).find((n) => n.startsWith('gym-plan'))
+    expect(await readFile(path.join(ids, 'projects', made ?? ''), 'utf8')).toMatch(/^---\n# comments: - \{by: <name>, body: <text>\}\n(?:title|id): /)
+    const plain = await vault('plain', { 'projects/.keep.md': '' }, false)
+    await run(['new', path.join(plain, 'projects'), '--title', 'Gym plan', '--body', 'Hello'])
+    expect(await readFile(path.join(plain, 'projects', 'Gym plan.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\n---\nHello')
   })
 
   it('new again with the same title finds the note and makes nothing; --body is then not written, and says so (D7)', async () => {
@@ -936,6 +980,7 @@ describe('daily and new (YAZ-4269)', () => {
   })
 
   it('new in a vault without IDs: the file is the title, and a properties block that does not parse is refused with nothing made', async () => {
+    await settings()
     const root = await vault('plain', { 'projects/.template.md': '---\nstatus: todo\n---\nBody\n' }, false)
 
     expect(await run(['new', path.join(root, 'projects'), '--title', 'Gym plan', '--json'])).toMatchObject({ code: 0, out: expect.stringContaining('"id": null') })

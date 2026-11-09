@@ -78,6 +78,7 @@ import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
 import { VaultLinksContext } from './links/vaultLinks'
+import { CommentPrefsContext, useCardFollowsProfile } from './comments/usePeople'
 import type { LinkActions } from './editor/linkMenu'
 import { useVaultIcons } from './sidebar/useVaultIcons'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
@@ -1189,6 +1190,14 @@ export function App() {
     setSettingsOpen(true)
   }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  // YAZ-4615: what every comment block reads — your profile (D2), where resolved threads go (D5), and
+  // the composer's way to Settings › You (D7, the first page of the dialog).
+  const commentPrefs = useMemo(
+    () => ({ me: settings.profile, resolvedPlace: settings.commentsResolved, openProfile: openSettings }),
+    [settings.profile, settings.commentsResolved, openSettings],
+  )
+  // D1 rule 3: your card follows your profile in each vault of the window.
+  useCardFollowsProfile(roots, settings.profile)
   // Settings › Daily notes › Open template (YAZ-3607 D6): the daily notes folder's hidden `.template.md`, in a tab. A
   // missing one is made empty first. The sidebar hides a "." file, so this is the way to it. Settings closes first.
   // The folder is the one the daily note uses: in the first vault of the window that holds it (`dailyNoteVault`).
@@ -1446,7 +1455,7 @@ export function App() {
       const board = firstBoard === null ? null : absFrom(vault.root, firstBoard)
       setNotice(board === null ? { text, icon: 'info' } : { text, icon: 'info', action: { label: 'See changes', run: () => openHistory(board, true) } })
       // A shared drawing the merge rewrote re-uploads its link, as a local save would (YAZ-3040).
-      for (const m of merged) if (m.copy === undefined) noteBoardSaved(vault.root, absFrom(vault.root, m.path))
+      for (const m of merged) if (m.copy === undefined && m.kind !== 'note') noteBoardSaved(vault.root, absFrom(vault.root, m.path))
     }
   })
   const leftOverview = useCallback(() => setOverview((at) => (at.phase === 'leaving' ? OVERVIEW_CLOSED : at)), [])
@@ -3143,6 +3152,7 @@ export function App() {
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
     <VaultLinksContext.Provider value={vaultLinks}>
+    <CommentPrefsContext.Provider value={commentPrefs}>
     <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
@@ -3614,6 +3624,7 @@ export function App() {
         />
       )}
     </div>
+    </CommentPrefsContext.Provider>
     </VaultLinksContext.Provider>
     </IconsContext.Provider>
   )

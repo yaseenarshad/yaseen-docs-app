@@ -89,6 +89,24 @@ export function setFrontmatterProperty(content: string, key: string, value: unkn
 }
 
 /**
+ * YAZ-4615 D10: the one line a new note carries for an agent — where comments go and the two keys
+ * an agent's comment needs. A YAML comment at the TOP of the block: every `setFrontmatterIn` write
+ * keeps it (yaml's Document holds a leading comment), the properties panel never shows it, and the
+ * reader (`shared/comments.ts`) shows a `{by, body}` entry and numbers it on its next write.
+ */
+export const COMMENTS_HINT = '# comments: - {by: <name>, body: <text>}'
+
+/** `content` with the hint as its frontmatter's first line; a block is made when there is none. Unchanged when the line is there. */
+export function withCommentsHint(content: string): string {
+  const { frontmatter, body } = splitFrontmatter(content)
+  if (frontmatter === '') return `---\n${COMMENTS_HINT}\n---\n${content}`
+  if (frontmatter.split(/\r?\n/).some((line) => line.trim() === COMMENTS_HINT)) return content
+  const open = OPEN_FENCE_RE.exec(frontmatter)?.[0] ?? '---\n'
+  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
+  return `${open}${COMMENTS_HINT}${eol}${frontmatter.slice(open.length)}${body}`
+}
+
+/**
  * The same for a value INSIDE a key: `path` names it through maps (`['in', <folder id>, 'Status']`),
  * and nothing beside it is laid out again. A map on the way that is missing, or written with no
  * value, is made; one that holds anything else is refused.
@@ -130,8 +148,24 @@ export function setFrontmatterIn(content: string, path: readonly string[], value
     doc.setIn(path.slice(0, at + 1), set)
   }
 
-  const yaml = serializeInner(doc)
+  const yaml = keepHint(frontmatter, serializeInner(doc))
   return `---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
+}
+
+/**
+ * YAZ-4615 D10: the hint stays the block's first line through EVERY write — a comment, a property,
+ * a merge. yaml drops a block's only comment once its last key goes, and parts it from a first key
+ * with a blank line; this puts it back where it stood. A block that never had it is not touched.
+ */
+function keepHint(before: string, yaml: string): string {
+  const hadIt = before.replace(OPEN_FENCE_RE, '').split(/\r?\n/, 1)[0]?.trim() === COMMENTS_HINT
+  if (!hadIt) return yaml
+  const rest = yaml.split('\n')
+  const at = rest.findIndex((line) => line.trim() === COMMENTS_HINT)
+  if (at !== -1) rest.splice(at, 1)
+  while (rest[0] === '') rest.shift()
+  const tail = rest.join('\n')
+  return `${COMMENTS_HINT}\n${tail}`
 }
 
 /**

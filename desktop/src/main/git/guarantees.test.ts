@@ -48,14 +48,18 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) await c()
 })
 
-/** Repo `a` pushed to a bare remote, plus an independent second clone at `bDir`. */
+/**
+ * Repo `a` pushed to a bare remote, plus an independent second clone at `bDir`. The file is a plain
+ * `.txt`: since YAZ-4615 D9 sync settles a NOTE that changed on both sides, so the lossless abort is
+ * proven on a file it never settles.
+ */
 async function twoClonesOneRemote(): Promise<{ bin: string; remoteUrl: string; a: GitRepo; bDir: string }> {
   const bin = await requireGit()
   const remote = await makeBareRemote()
   cleanups.push(remote.cleanup)
   const a = await makeGitRepo()
   cleanups.push(a.cleanup)
-  await a.write('note.md', 'line one\nline two\n')
+  await a.write('note.txt', 'line one\nline two\n')
   await a.run(['add', '-A'])
   await a.run(['commit', '-m', 'base'])
   await wireOrigin(a, remote)
@@ -72,7 +76,7 @@ async function twoClonesOneRemote(): Promise<{ bin: string; remoteUrl: string; a
 
 /** Pushes a same-line edit from the second clone. */
 async function pushFromB(bin: string, bDir: string, content: string): Promise<void> {
-  await writeFile(path.join(bDir, 'note.md'), content, 'utf8')
+  await writeFile(path.join(bDir, 'note.txt'), content, 'utf8')
   for (const args of [['add', '-A'], ['commit', '-m', 'b change'], ['push']]) {
     expect((await git(bin, bDir, args)).code).toBe(0)
   }
@@ -82,7 +86,7 @@ describe('guarantee 1: a rebase conflict is lossless', () => {
   it('aborts back to a byte-identical working tree and reports attention/conflict', async () => {
     const { bin, a, bDir } = await twoClonesOneRemote()
     await pushFromB(bin, bDir, 'line one CHANGED ON B\nline two\n')
-    await a.write('note.md', 'line one CHANGED ON A\nline two\n')
+    await a.write('note.txt', 'line one CHANGED ON A\nline two\n')
     const before = snapshot(a.root)
 
     const status = await syncPass(a.root)
@@ -179,7 +183,7 @@ describe('guarantee 4: no git binary is a classification, not a crash', () => {
 describe('guarantee 5: quit flush lands pending edits', () => {
   it('commits and pushes before resolving', async () => {
     const { remoteUrl, a } = await twoClonesOneRemote()
-    await a.write('note.md', 'line one\nline two\nline three added\n')
+    await a.write('note.txt', 'line one\nline two\nline three added\n')
     const host: GitSyncHost = {
       readConfig: async () => ({ enabled: true }),
       writeConfig: async () => {},

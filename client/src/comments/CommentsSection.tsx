@@ -16,29 +16,39 @@
  * Threads are one level deep; an orphaned reply shows at top level (`threadsOf`).
  *
  * The shape on screen — one card per thread, the outliner's folds, the title fixed in the header
- * row, "(agent)" after the time — is CONTRACTS "Comments" 🔒 D12. Fold state and the header's
- * collapse are session chrome, never persisted (the backlinks' rule). A link inside a body opens
- * through the shell like the editor's own, never by navigating the app window.
+ * row — is CONTRACTS "Comments" 🔒 D12. Fold state and the header's collapse are session chrome,
+ * never persisted (the backlinks' rule). A link inside a body opens through the shell like the
+ * editor's own, never by navigating the app window.
+ *
+ * YAZ-4615: who wrote it (D6 — a picture or initials, the name, then the number), your comments
+ * signed with your handle (D2), Edit only on your own, old and agent comments (D8), and Resolve
+ * (D3, D5): a resolved parent takes its whole thread to a folded "Resolved" group at the bottom, a
+ * resolved reply goes into a fold at the end of its thread, and a 5-second Undo row holds the place.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   addComment,
-  commentsShape,
   deleteComment,
   editComment,
   newCommentId,
   nowIso,
   readComments,
+  readCommentsAndShape,
+  setResolved,
   threadsOf,
+  type CommentThread,
   type PageComment,
 } from '@shared/comments'
-import type { CommentsOrder, FileResponse } from '@shared/types'
+import { cardMatches, own, type PeopleRead } from '@shared/people'
+import { AGENT_HANDLE, type CommentProfile, type CommentsOrder, type FileResponse } from '@shared/types'
 import { api } from '../api'
 import { relativeTime } from '../lib/relativeTime'
 import { transformFile } from '../views/writeProperty'
 import { CollapseAllIcon, ExpandAllIcon } from '../views/view/icons'
+import { Avatar, type AvatarTone } from './Avatar'
 import { ConfirmDeleteComment } from './ConfirmDeleteComment'
 import { commentHtml, commentInlineHtml, commentSplit } from './markdown'
+import { CommentPrefsContext, saveCard, usePeople } from './usePeople'
 import './comments.css'
 
 export interface CommentsSectionProps {
@@ -48,6 +58,8 @@ export interface CommentsSectionProps {
   order: CommentsOrder
   /** The header's Oldest/Newest toggle writes the setting through this; the block holds no order of its own. */
   onChangeOrder: (order: CommentsOrder) => void
+  /** The vault the note is in (YAZ-4615 D1): whose people file names the writers. Null shows handles only. */
+  root?: string | null
 }
 
 interface Snapshot {
@@ -73,6 +85,16 @@ interface Draft {
   title: string
 }
 
+/** Who wrote a comment, as the row shows it (D6). `none`: an old comment with no `by` — its number keeps the seat. */
+interface Writer {
+  kind: 'none' | 'me' | 'person' | 'agent'
+  name: string
+  picture: string | null
+}
+
+/** How long the "Resolved · Undo" row holds a resolved comment's place (D5). */
+export const UNDO_MS = 5000
+
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
 const NOTICE = {
@@ -84,10 +106,31 @@ const NOTICE = {
 const nonBlank = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null)
 
 /**
- * What a comment shows in its header row and what sits below it. A title is the header and the
- * whole body is below. Without one, the body's first line is the header — permanently, so a fold
- * never moves text — and only the REST is below; a one-liner has nothing below and nothing to fold.
+ * D6: you by your profile (so your own row is right before the people file has your card), a
+ * teammate by their card: a person, no Edit (D8). Any handle with no card is an agent — `agent` as
+ * the violet "AI", one that signs with its own name (`claude`) as violet initials — and you may edit
+ * it. A person's card goes in with their first comment, so a handle with no card is an agent
+ * (Yaseen's pick on audit 4, after the checker's round 1).
  */
+function writerOf(by: string | null, me: CommentProfile | null, people: PeopleRead): Writer {
+  if (by === null) return { kind: 'none', name: '', picture: null }
+  if (me !== null && by === me.handle) return { kind: 'me', name: me.name, picture: me.picture }
+  if (by === AGENT_HANDLE) return { kind: 'agent', name: by, picture: null }
+  const card = own(people.people, by)
+  if (card !== undefined) return { kind: 'person', name: card.name, picture: card.picture }
+  // A card the file holds but this app cannot show is still a person's: initials, no Edit.
+  return people.handles.has(by) ? { kind: 'person', name: by, picture: null } : { kind: 'agent', name: by, picture: null }
+}
+
+/** The name a handle stands for, for "Resolved by …". */
+const nameOf = (handle: string | undefined, me: CommentProfile | null, people: PeopleRead): string | null => {
+  const h = nonBlank(handle)
+  if (h === null) return null
+  return me !== null && h === me.handle ? me.name : (own(people.people, h)?.name ?? h)
+}
+
+const TONE: Record<Exclude<Writer['kind'], 'none'>, AvatarTone> = { me: 'me', person: 'person', agent: 'agent' }
+
 /** `#3` for a top-level comment, `#3.1` for a reply under it; null (a dot) when either number is missing or the parent is gone. */
 function labelOf(comment: PageComment, parent?: PageComment): string | null {
   if (comment.n === undefined) return null
@@ -95,6 +138,11 @@ function labelOf(comment: PageComment, parent?: PageComment): string | null {
   return parent.n === undefined ? null : `#${parent.n}.${comment.n}`
 }
 
+/**
+ * What a comment shows in its header row and what sits below it. A title is the header and the
+ * whole body is below. Without one, the body's first line is the header — permanently, so a fold
+ * never moves text — and only the REST is below; a one-liner has nothing below and nothing to fold.
+ */
 function shapeOf(comment: PageComment): { title: string | null; head: string; below: string; foldable: boolean } {
   const title = nonBlank(comment.title)
   if (title !== null) return { title, head: title, below: comment.body, foldable: true }
@@ -102,9 +150,17 @@ function shapeOf(comment: PageComment): { title: string | null; head: string; be
   return { title: null, head: summary, below: rest, foldable: rest.trim() !== '' }
 }
 
+const isResolved = (c: PageComment): boolean => c.resolved !== undefined
+
 const Chevron = () => (
   <svg className="comments__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="m4 6 4 4 4-4" />
+  </svg>
+)
+
+const Check = () => (
+  <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="m3.5 8.5 3 3 6-7" />
   </svg>
 )
 
@@ -115,7 +171,9 @@ const toggled = (set: ReadonlySet<string>, id: string): Set<string> => {
   return next
 }
 
-export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionProps) {
+export function CommentsSection({ file, order, onChangeOrder, root = null }: CommentsSectionProps) {
+  const { me, resolvedPlace, openProfile } = useContext(CommentPrefsContext)
+  const people = usePeople(root)
   const [snap, setSnap] = useState<Snapshot>(() => ({ seen: file.content, content: file.content }))
   // The file moved under us (a reload, a property write, our own write echoed back): follow it.
   if (snap.seen !== file.content) setSnap({ seen: file.content, content: file.content })
@@ -125,18 +183,35 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
   /** Comment ids folded to one line, and parent ids whose replies are hidden — the bullet's fold, twice. */
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
   const [repliesFolded, setRepliesFolded] = useState<ReadonlySet<string>>(() => new Set())
+  /** D5: the Resolved group (folded at first), and each thread whose resolved replies are open. */
+  const [resolvedOpen, setResolvedOpen] = useState(false)
+  const [resolvedRepliesOpen, setResolvedRepliesOpen] = useState<ReadonlySet<string>>(() => new Set())
+  /** D5: the comment just resolved, whose place the Undo row holds for `UNDO_MS`. */
+  const [justResolved, setJustResolved] = useState<{ id: string; label: string | null } | null>(null)
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const groupRef = useRef<HTMLDivElement>(null)
   const [inline, setInline] = useState<Inline>(null)
   const [confirming, setConfirming] = useState<PendingDelete | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const now = useClock()
+  useEffect(() => () => {
+    if (undoTimer.current !== null) clearTimeout(undoTimer.current)
+  }, [])
 
-  const shape = commentsShape(snap.content)
+  // Item 12: the comment list is read ONCE for each content, not on every render (a fold, the clock).
+  const { shape, chronological } = useMemo(() => {
+    const read = readCommentsAndShape(snap.content)
+    return { shape: read.shape, chronological: threadsOf(read.comments) }
+  }, [snap.content])
   // The model's order is by the ROOT's `at`; newest-first is that list read backwards. Replies stay oldest-first: a conversation reads down.
   const newest = order === 'newest'
-  const chronological = threadsOf(readComments(snap.content))
   const threads = newest ? [...chronological].reverse() : chronological
-  const count = threads.reduce((n, t) => n + 1 + t.replies.length, 0)
+  // D5: at the bottom, a resolved parent takes its whole thread to the group; in place, every thread stays where it is.
+  const bottom = resolvedPlace === 'bottom'
+  const done = bottom ? threads.filter((t) => isResolved(t.comment)) : []
+  // The header counts what is still open: a resolved comment, and every reply of a resolved parent, is not.
+  const count = threads.reduce((n, t) => (isResolved(t.comment) ? n : n + 1 + t.replies.filter((r) => !isResolved(r)).length), 0)
 
   // One fold-all control, the outliner's pair in one seat: while anything is open it collapses
   // everything (comments and reply groups); once everything is folded it expands everything.
@@ -165,45 +240,156 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
     }
   }
 
-  const add = (draft: Draft, replyTo?: string): Promise<boolean> =>
-    write((fresh) => addComment(fresh, draft.body, { id: newCommentId(), at: nowIso(), replyTo, title: draft.title }))
+  const add = async (draft: Draft, replyTo?: string): Promise<boolean> => {
+    // D2: signed with your handle when you have a profile; the first comment in a vault puts your card in its people file (D1).
+    const ok = await write((fresh) => addComment(fresh, draft.body, { id: newCommentId(), at: nowIso(), replyTo, title: draft.title, by: me?.handle }))
+    // Only when the vault's card is not yours yet: no IPC read after every comment (audit 16).
+    if (ok && me !== null && root !== null && !cardMatches(own(people.people, me.handle), me)) void saveCard(root, me)
+    return ok
+  }
+
+  const clearUndo = (): void => {
+    if (undoTimer.current !== null) clearTimeout(undoTimer.current)
+    undoTimer.current = null
+    setJustResolved(null)
+  }
+
+  /** D3: resolve or reopen; a resolve leaves the Undo row in the comment's place (D5). */
+  const toggleResolved = async (comment: PageComment, label: string | null): Promise<void> => {
+    const reopen = isResolved(comment)
+    const ok = await write((fresh) => setResolved(fresh, comment.id, reopen ? null : nowIso(), me?.handle))
+    if (!ok) return
+    if (reopen) return clearUndo()
+    // In place nothing moves, so there is no place to hold (audit 17).
+    if (!bottom) return
+    if (undoTimer.current !== null) clearTimeout(undoTimer.current)
+    setJustResolved({ id: comment.id, label })
+    undoTimer.current = setTimeout(() => setJustResolved(null), UNDO_MS)
+  }
+
+  const undo = (id: string): void => {
+    clearUndo()
+    void write((fresh) => setResolved(fresh, id, null))
+  }
+
+  /** The header's "· N resolved": opens the group and brings it into view. */
+  const showResolved = (): void => {
+    setExpanded(true)
+    setResolvedOpen(true)
+    requestAnimationFrame(() => groupRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+  }
 
   const closeInline = (): void => {
     setInline(null)
     setError(null)
   }
 
-  const item = (comment: PageComment, parent?: PageComment, onReply?: () => void, replies = 0) => (
-    <CommentItem
-      key={comment.id}
-      comment={comment}
-      label={labelOf(comment, parent)}
-      now={now}
-      saving={saving}
-      folded={folded.has(comment.id)}
-      editing={inline?.kind === 'edit' && inline.id === comment.id}
-      onToggleFold={() => setFolded((s) => toggled(s, comment.id))}
-      onReply={onReply}
-      onEdit={() => {
-        setFolded((s) => (s.has(comment.id) ? toggled(s, comment.id) : s))
-        setInline({ kind: 'edit', id: comment.id })
-      }}
-      onDelete={() => setConfirming({ id: comment.id, label: labelOf(comment, parent), replies })}
-      onSave={async (draft) => {
-        // Save is against the comment as it was opened: gone or changed underneath → refuse, never clobber.
-        const ok = await write((fresh) => {
-          const current = readComments(fresh).find((c) => c.id === comment.id)
-          if (current === undefined || current.body !== comment.body || current.edited !== comment.edited) {
-            throw new Error('this comment changed on disk — cancel and reopen Edit')
-          }
-          return editComment(fresh, comment.id, draft.body, nowIso(), draft.title)
-        })
-        if (ok) closeInline()
-        return ok
-      }}
-      onCancel={closeInline}
-    />
+  const item = (comment: PageComment, parent?: PageComment, onReply?: () => void, replies = 0) => {
+    const writer = writerOf(nonBlank(comment.by), me, people)
+    const label = labelOf(comment, parent)
+    return (
+      <CommentItem
+        key={comment.id}
+        comment={comment}
+        label={label}
+        writer={writer}
+        resolvedBy={nameOf(comment.resolved_by, me, people)}
+        // D8: never another person's words; your own, an old one and an agent's can be edited.
+        canEdit={writer.kind !== 'person'}
+        now={now}
+        saving={saving}
+        folded={folded.has(comment.id)}
+        editing={inline?.kind === 'edit' && inline.id === comment.id}
+        onToggleFold={() => setFolded((s) => toggled(s, comment.id))}
+        onReply={onReply}
+        onToggleResolved={() => void toggleResolved(comment, label)}
+        onEdit={() => {
+          setFolded((s) => (s.has(comment.id) ? toggled(s, comment.id) : s))
+          setInline({ kind: 'edit', id: comment.id })
+        }}
+        onDelete={() => setConfirming({ id: comment.id, label, replies })}
+        onSave={async (draft) => {
+          // Save is against the comment as it was opened: gone or changed underneath → refuse, never clobber.
+          const ok = await write((fresh) => {
+            const current = readComments(fresh).find((c) => c.id === comment.id)
+            if (current === undefined || current.body !== comment.body || current.edited !== comment.edited) {
+              throw new Error('this comment changed on disk — cancel and reopen Edit')
+            }
+            return editComment(fresh, comment.id, draft.body, nowIso(), draft.title)
+          })
+          if (ok) closeInline()
+          return ok
+        }}
+        onCancel={closeInline}
+      />
+    )
+  }
+
+  const undoRow = (id: string, label: string | null) => (
+    <div key={`undo-${id}`} className="comments__undo" role="status">
+      <Check />
+      <span>Resolved {label ?? ''}</span>
+      <span aria-hidden>·</span>
+      <button type="button" className="comments__undo-btn" disabled={saving} onClick={() => undo(id)}>
+        Undo
+      </button>
+    </div>
   )
+
+  /** One thread's card. `inGroup`: it sits in the Resolved group, so everything in it shows as it is. */
+  const thread = ({ comment, replies }: CommentThread, inGroup = false) => {
+    const opened = inline?.kind === 'reply' && inline.to === comment.id
+    const threaded = replies.length > 0
+    const hidden = repliesFolded.has(comment.id)
+    // D5: a resolved reply drops into a fold at the end of its thread (at the bottom only, and not inside the group).
+    const split = bottom && !inGroup
+    const openReplies = split ? replies.filter((r) => !isResolved(r) || r.id === justResolved?.id) : replies
+    const doneReplies = split ? replies.filter((r) => isResolved(r) && r.id !== justResolved?.id) : []
+    const doneOpen = resolvedRepliesOpen.has(comment.id)
+    return (
+      <div key={comment.id} className={`comments__thread${!bottom && isResolved(comment) ? ' comments__thread--resolved' : ''}`}>
+        {/* A thread already has its reply field; a lone comment offers Reply on hover. */}
+        {item(comment, undefined, threaded ? undefined : () => setInline({ kind: 'reply', to: comment.id }), replies.length)}
+        {threaded && (
+          <button type="button" className="comments__replies-toggle" aria-expanded={!hidden} onClick={() => setRepliesFolded((s) => toggled(s, comment.id))}>
+            <Chevron />
+            {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
+          </button>
+        )}
+        {threaded && !hidden && (
+          <div className="comments__replies">
+            {openReplies.map((reply) => (split && reply.id === justResolved?.id && isResolved(reply) ? undoRow(reply.id, justResolved.label) : item(reply, comment)))}
+            {doneReplies.length > 0 && (
+              <>
+                <button type="button" className="comments__resolved-toggle" aria-expanded={doneOpen} onClick={() => setResolvedRepliesOpen((s) => toggled(s, comment.id))}>
+                  <Chevron />
+                  {doneReplies.length} resolved {doneReplies.length === 1 ? 'reply' : 'replies'}
+                </button>
+                {doneOpen && doneReplies.map((reply) => item(reply, comment))}
+              </>
+            )}
+            {/* One rule (audit 19): a resolved thread takes no new reply — Reopen it first. */}
+            {!isResolved(comment) && <Composer placeholder="Reply…" submitLabel="Reply" saving={saving} collapsible onSubmit={(draft) => add(draft, comment.id)} />}
+          </div>
+        )}
+        {!threaded && opened && (
+          <div className="comments__replies">
+            <Composer
+              placeholder="Reply…"
+              submitLabel="Reply"
+              saving={saving}
+              onSubmit={async (draft) => {
+                const ok = await add(draft, comment.id)
+                if (ok) closeInline()
+                return ok
+              }}
+              onCancel={closeInline}
+            />
+          </div>
+        )}
+      </div>
+    )
+  }
 
   /** A link in a rendered body: through the shell, the editor's way — a click must never navigate the app window. */
   const onClick = (e: React.MouseEvent<HTMLElement>): void => {
@@ -215,6 +401,8 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
     void api.shell.openLink({ href, sourcePath: file.path }).catch((err: unknown) => setError(`Could not open the link: ${messageOf(err)}`))
   }
 
+  const listed = threads.filter((t) => !bottom || !isResolved(t.comment) || t.comment.id === justResolved?.id)
+
   return (
     <section className="comments" onClick={onClick}>
       <div className="comments__bar">
@@ -225,6 +413,12 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
             {count > 0 && <span className="comments__count"> ({count})</span>}
           </span>
         </button>
+        {/* D5: "· N resolved" opens the Resolved group and scrolls to it. */}
+        {done.length > 0 && (
+          <button type="button" className="comments__resolved-link" onClick={showResolved}>
+            · {done.length} resolved
+          </button>
+        )}
         {expanded && (
           <div className="comments__tools">
             {/* The order toggle (YAZ-1515): state-driven like fold-all — the label names the CURRENT order; below two threads there is nothing to reorder. */}
@@ -252,50 +446,23 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
             <p className="comments__notice">{NOTICE[shape]}</p>
           ) : (
             <>
-              {threads.length > 0 && (
+              {listed.length > 0 && (
                 <div className="comments__list">
-                  {threads.map(({ comment, replies }) => {
-                    const opened = inline?.kind === 'reply' && inline.to === comment.id
-                    const threaded = replies.length > 0
-                    const hidden = repliesFolded.has(comment.id)
-                    return (
-                      <div key={comment.id} className="comments__thread">
-                        {/* A thread already has its reply field; a lone comment offers Reply on hover. */}
-                        {item(comment, undefined, threaded ? undefined : () => setInline({ kind: 'reply', to: comment.id }), replies.length)}
-                        {threaded && (
-                          <button type="button" className="comments__replies-toggle" aria-expanded={!hidden} onClick={() => setRepliesFolded((s) => toggled(s, comment.id))}>
-                            <Chevron />
-                            {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
-                          </button>
-                        )}
-                        {threaded && !hidden && (
-                          <div className="comments__replies">
-                            {replies.map((reply) => item(reply, comment))}
-                            <Composer placeholder="Reply…" submitLabel="Reply" saving={saving} collapsible onSubmit={(draft) => add(draft, comment.id)} />
-                          </div>
-                        )}
-                        {!threaded && opened && (
-                          <div className="comments__replies">
-                            <Composer
-                              placeholder="Reply…"
-                              submitLabel="Reply"
-                              saving={saving}
-                              onSubmit={async (draft) => {
-                                const ok = await add(draft, comment.id)
-                                if (ok) closeInline()
-                                return ok
-                              }}
-                              onCancel={closeInline}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {listed.map((t) => (bottom && isResolved(t.comment) && justResolved !== null ? undoRow(t.comment.id, justResolved.label) : thread(t)))}
                 </div>
               )}
               {/* The composer stays at the BOTTOM whichever way the list reads (YAZ-1515: Yasin's call on the demo). */}
-              <Composer placeholder="Leave a comment…" submitLabel="Comment" saving={saving} onSubmit={(draft) => add(draft)} />
+              <Composer placeholder="Leave a comment…" submitLabel="Comment" saving={saving} onSubmit={(draft) => add(draft)} me={me} onOpenProfile={openProfile} />
+              {/* D5: the Resolved group, folded until opened; under the composer, so the open stream and its box stay together. */}
+              {done.length > 0 && (
+                <div className="comments__resolved" ref={groupRef}>
+                  <button type="button" className="comments__resolved-toggle comments__resolved-toggle--group" aria-expanded={resolvedOpen} onClick={() => setResolvedOpen((open) => !open)}>
+                    <Chevron />
+                    Resolved ({done.length})
+                  </button>
+                  {resolvedOpen && <div className="comments__list comments__list--resolved">{done.map((t) => thread(t, true))}</div>}
+                </div>
+              )}
             </>
           )}
           {error !== null && (
@@ -340,12 +507,16 @@ const parsed = (iso: string): number | null => {
 function CommentItem({
   comment,
   label,
+  writer,
+  resolvedBy,
+  canEdit,
   now,
   saving,
   folded,
   editing,
   onToggleFold,
   onReply,
+  onToggleResolved,
   onEdit,
   onDelete,
   onSave,
@@ -354,6 +525,10 @@ function CommentItem({
   comment: PageComment
   /** `#3` / `#3.1`, or null for a dot. */
   label: string | null
+  writer: Writer
+  /** Who resolved it, by name; null when no resolver was recorded. */
+  resolvedBy: string | null
+  canEdit: boolean
   now: number
   saving: boolean
   folded: boolean
@@ -361,18 +536,19 @@ function CommentItem({
   onToggleFold: () => void
   /** Only on a top-level comment with no replies yet: a thread carries its own reply field. */
   onReply?: () => void
+  onToggleResolved: () => void
   onEdit: () => void
   onDelete: () => void
   onSave: (draft: Draft) => Promise<boolean>
   onCancel: () => void
 }) {
-  const at = parsed(comment.at)
+  const at = comment.at === '' ? null : parsed(comment.at)
   const edited = comment.edited === undefined ? null : parsed(comment.edited)
-  const by = nonBlank(comment.by)
   const { title, head, below, foldable } = shapeOf(comment)
   const closed = foldable && folded && !editing
+  const resolved = isResolved(comment)
   return (
-    <article className={`comments__item${by === null ? '' : ' comments__item--agent'}`}>
+    <article className={`comments__item${writer.kind === 'agent' ? ' comments__item--agent' : ''}${resolved ? ' comments__item--resolved' : ''}`}>
       <div className="comments__meta">
         {foldable ? (
           <button type="button" className="comments__fold" aria-expanded={!closed} aria-label={closed ? 'Expand comment' : 'Collapse comment'} onClick={onToggleFold}>
@@ -381,10 +557,22 @@ function CommentItem({
         ) : (
           <span className="comments__fold comments__fold--none" aria-hidden />
         )}
-        {/* The comment's number, worn like an id (`#3`, a reply `#3.1`); a hand-written one without a number gets a dot. */}
-        <span className="comments__mark" title={label === null ? 'No number on this comment' : `Comment ${label}`}>
-          {label ?? '·'}
-        </span>
+        {writer.kind === 'none' ? (
+          // An old comment with no writer: the number keeps the avatar's seat, as before (YAZ-1472 D12).
+          <span className="comments__mark" title={label === null ? 'No number on this comment' : `Comment ${label}`}>
+            {label ?? '·'}
+          </span>
+        ) : (
+          // D6: the picture (or initials), the name, then the number — quiet, the way an id is worn.
+          <span className="comments__writer">
+            <Avatar name={writer.name} picture={writer.picture} tone={TONE[writer.kind]} />
+            <span className="comments__name">{writer.name}</span>
+            {/* A hand-written entry has no number until the next write (D10): a dot, as an unsigned one shows. */}
+            <span className="comments__num" title={label === null ? 'No number on this comment yet' : `Comment ${label}`}>
+              {label ?? '·'}
+            </span>
+          </span>
+        )}
         {/* The header text never moves: a title, or the body's first line — the whole comment when that is all there is. */}
         {title !== null ? (
           <span className="comments__summary comments__summary--title">{head}</span>
@@ -392,25 +580,36 @@ function CommentItem({
           // A body's first line keeps its inline Markdown (sanitised, the same renderer as the body).
           <span className={`comments__summary${foldable ? '' : ' comments__summary--whole'}`} dangerouslySetInnerHTML={{ __html: commentInlineHtml(head) }} />
         )}
-        <time className="comments__when" dateTime={comment.at} title={at === null ? comment.at : new Date(at).toLocaleString()}>
-          {at === null ? comment.at : relativeTime(at, now)}
-        </time>
+        {at !== null || comment.at !== '' ? (
+          <time className="comments__when" dateTime={comment.at} title={at === null ? comment.at : new Date(at).toLocaleString()}>
+            {at === null ? comment.at : relativeTime(at, now)}
+          </time>
+        ) : null}
         {comment.edited !== undefined && (
           <span className="comments__edited" title={edited === null ? comment.edited : `Edited ${new Date(edited).toLocaleString()}`}>
             (edited)
           </span>
         )}
-        {/* The writer, as declared in `by`, in the same quiet voice as "(edited)" — the dot's colour already says it. */}
-        {by !== null && <span className="comments__by">({by})</span>}
+        {resolved && (
+          <span className="comments__resolved-by" title={parsed(comment.resolved ?? '') === null ? undefined : `Resolved ${new Date(parsed(comment.resolved ?? '') ?? 0).toLocaleString()}`}>
+            <Check />
+            {resolvedBy === null ? 'Resolved' : `Resolved by ${resolvedBy}`}
+          </span>
+        )}
         <div className="comments__actions">
-          {onReply !== undefined && (
+          <button type="button" className="comments__action" disabled={saving} onClick={onToggleResolved}>
+            {resolved ? 'Reopen' : 'Resolve'}
+          </button>
+          {onReply !== undefined && !resolved && (
             <button type="button" className="comments__action" onClick={onReply}>
               Reply
             </button>
           )}
-          <button type="button" className="comments__action" onClick={onEdit}>
-            Edit
-          </button>
+          {canEdit && (
+            <button type="button" className="comments__action" onClick={onEdit}>
+              Edit
+            </button>
+          )}
           <button type="button" className="comments__action comments__action--danger" disabled={saving} onClick={onDelete}>
             Delete
           </button>
@@ -433,7 +632,8 @@ function CommentItem({
  * optional title line appears once the composer is in use (focused, holding text, or editing). A
  * `collapsible` seat shows one placeholder line until then — Linear's "Reply…" row — and folds
  * back when it is empty and loses focus. A seat that can be cancelled was opened by a click, so
- * it takes focus.
+ * it takes focus. The bottom seat shows who you comment as (YAZ-4615 D7): your picture and name,
+ * or a "+" that opens Settings › You.
  */
 function Composer({
   placeholder,
@@ -443,6 +643,8 @@ function Composer({
   collapsible = false,
   onSubmit,
   onCancel,
+  me,
+  onOpenProfile,
 }: {
   placeholder: string
   submitLabel: string
@@ -454,6 +656,9 @@ function Composer({
   onSubmit: (draft: Draft) => Promise<boolean>
   /** Esc and the Cancel button; absent → Esc clears the draft and there is no Cancel. */
   onCancel?: () => void
+  /** The bottom seat only: who you comment as. Undefined elsewhere. */
+  me?: CommentProfile | null
+  onOpenProfile?: () => void
 }) {
   const autoFocus = onCancel !== undefined
   const [text, setText] = useState(initial?.body ?? '')
@@ -539,6 +744,18 @@ function Composer({
       />
       {open && (
         <div className="comments__footer">
+          {me !== undefined &&
+            (me === null ? (
+              <button type="button" className="comments__me comments__me--none" title="Add your name and picture" onClick={onOpenProfile}>
+                <Avatar name="" picture={null} tone="me" size={18} empty />
+                <span>Add your name</span>
+              </button>
+            ) : (
+              <button type="button" className="comments__me" title="Change your name and picture" onClick={onOpenProfile}>
+                <Avatar name={me.name} picture={me.picture} tone="me" size={18} />
+                <span>{me.name}</span>
+              </button>
+            ))}
           <span className="comments__hint">⌘ Enter</span>
           {onCancel !== undefined && (
             <button type="button" className="btn comments__btn" disabled={saving} onClick={onCancel}>

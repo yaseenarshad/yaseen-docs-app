@@ -1,3 +1,4 @@
+import { readComments } from '@shared/comments'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -304,29 +305,103 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect((await a.git('rev-parse', '--verify', '-q', BEFORE_MERGE_REF)) === '').toBe(true)
   }
 
-  it('D4: a note changed on both machines still stops with the same words, and nothing is lost or copied', async () => {
-    const { a, b } = await twoMachines({ 'note.md': 'line one\nline two\n' })
-    await b.write('note.md', 'line one CHANGED ON B\nline two\n')
-    await a.write('note.md', 'line one CHANGED ON A\nline two\n')
-    await stopsUntouched(a, b)
-    expect(a.read('note.md')).toBe('line one CHANGED ON A\nline two\n')
+  // YAZ-4615 D4, D9 (reversing YAZ-3028 D4/D12 for notes): a note no longer stops the vault's sync.
+  const NOTE = (comments: string) => `---\ntitle: Plan\n${comments === '' ? '' : `comments:\n${comments}`}---\nline one\nline two\n`
+  const entry = (id: string, n: number, at: string, body: string, by?: string) =>
+    `  - id: ${id}\n    n: ${n}\n    at: ${at}\n${by === undefined ? '' : `    by: ${by}\n`}    body: ${body}\n`
+
+  it('YAZ-4615 D4: two people comment on one note between syncs — both comments stay, and my clashing #2 becomes #3', async () => {
+    const one = entry('aaaa0001', 1, '2026-11-01T10:00:00Z', 'First')
+    const { a, b } = await twoMachines({ 'plan.md': NOTE(one) })
+    await b.write('plan.md', NOTE(one + entry('bbbb0002', 2, '2026-11-02T10:00:00Z', 'From Sam', 'sam')))
+    await a.write('plan.md', NOTE(one + entry('cccc0003', 2, '2026-11-02T11:00:00Z', 'From me', 'yaseen')))
+    const status = await meet(a, b)
+    expect(status.merged).toEqual([{ path: 'plan.md', author: 'Sam', clashes: 0, kind: 'note', title: 'Plan', renumbered: [{ from: '#2', to: '#3' }] }])
+    const list = readComments(a.read('plan.md'))
+    expect(list.map((c) => [c.id, c.n, c.body])).toEqual([
+      ['aaaa0001', 1, 'First'],
+      ['bbbb0002', 2, 'From Sam'],
+      ['cccc0003', 3, 'From me'],
+    ])
+    expect(a.read('plan.md')).toContain('---\nline one\nline two\n')
   })
 
-  it('D4: a note conflict in the same pass as a drawing conflict stops the WHOLE pass — the drawing is not half-merged', async () => {
+  it('YAZ-4615 D4: a resolve on one machine and a reply on the other merge key by key; an edit beats a delete', async () => {
+    const one = entry('aaaa0001', 1, '2026-11-01T10:00:00Z', 'First')
+    const two = entry('dddd0004', 2, '2026-11-01T11:00:00Z', 'Second')
+    const { a, b } = await twoMachines({ 'plan.md': NOTE(one + two) })
+    // Sam resolves #1 and deletes #2; I reply to #1 and edit #2.
+    await b.write('plan.md', NOTE(one.replace('    body: First', '    resolved: 2026-11-02T09:00:00Z\n    resolved_by: sam\n    body: First')))
+    await a.write('plan.md', NOTE(one + two.replace('body: Second', 'body: Second, edited') + `  - id: eeee0005\n    n: 1\n    at: 2026-11-02T10:00:00Z\n    reply_to: aaaa0001\n    body: Reply\n`))
+    await meet(a, b)
+    const list = readComments(a.read('plan.md'))
+    expect(list.find((c) => c.id === 'aaaa0001')).toMatchObject({ resolved: '2026-11-02T09:00:00Z', resolved_by: 'sam' })
+    expect(list.find((c) => c.id === 'dddd0004')?.body).toBe('Second, edited')
+    expect(list.find((c) => c.id === 'eeee0005')?.reply_to).toBe('aaaa0001')
+  })
+
+  it('YAZ-4615 D9: a note whose text changed on both machines keeps both — theirs at the path with every comment, mine beside it with none — and sync goes on', async () => {
+    const one = entry('aaaa0001', 1, '2026-11-01T10:00:00Z', 'First')
+    const { a, b } = await twoMachines({ 'plan.md': NOTE(one) })
+    await b.write('plan.md', NOTE(one).replace('line one', 'line one CHANGED ON B'))
+    await a.write('plan.md', NOTE(one + entry('cccc0003', 2, '2026-11-02T11:00:00Z', 'Mine')).replace('line one', 'line one CHANGED ON A'))
+    const status = await meet(a, b)
+    const copy = status.merged?.[0]?.copy ?? ''
+    expect(copy).toMatch(/^plan \(conflict, .+\)\.md$/)
+    expect(status.merged?.[0]).toMatchObject({ path: 'plan.md', kind: 'note' })
+    expect(a.read('plan.md')).toContain('line one CHANGED ON B')
+    expect(readComments(a.read('plan.md')).map((c) => c.id)).toEqual(['aaaa0001', 'cccc0003'])
+    expect(a.read(copy)).toBe('---\ntitle: Plan\n---\nline one CHANGED ON A\nline two\n')
+    // The next pass on each side has nothing left to settle.
+    expect((await syncPass(a.root)).state).toBe('synced')
+  })
+
+  it('YAZ-4615 D9: a note conflict and a drawing conflict in one pass are both settled', async () => {
     const { a, b } = await twoMachines({ 'note.md': 'x\n', 'b.excalidraw': board([r1, r2]) })
     await b.write('note.md', 'sam\n')
     await b.write('b.excalidraw', board([{ ...r1, x: 7, version: 2, updated: 2000 }, r2]))
     await a.write('note.md', 'me\n')
     await a.write('b.excalidraw', board([r1, { ...r2, x: 13, version: 2, updated: 2000 }]))
-    await stopsUntouched(a, b)
-    expect(shapesOf(a.read('b.excalidraw')).map((e) => e.x)).toEqual([0, 13])
+    const status = await meet(a, b)
+    expect(shapesOf(a.read('b.excalidraw')).map((e) => e.x)).toEqual([7, 13])
+    expect(a.read('note.md')).toBe('sam\n')
+    expect(a.read(status.merged?.find((m) => m.kind === 'note')?.copy ?? '')).toBe('me\n')
   })
 
-  it('D4: a note deleted on one machine and edited on the other stops too (Docs never guessed there)', async () => {
+  it('YAZ-4615 D9: a note deleted on one machine and edited on the other keeps the edit', async () => {
     const { a, b } = await twoMachines({ 'note.md': 'x\n' })
     await b.remove('note.md')
     await a.write('note.md', 'edited\n')
-    await stopsUntouched(a, b)
+    await meet(a, b)
+    expect(a.read('note.md')).toBe('edited\n')
+  })
+
+  it('YAZ-4615 D9 (audit 8): a note whose `comments` is a value of the user\'s own keeps both whole files, and sync goes on', async () => {
+    const { a, b } = await twoMachines({ 'odd.md': '---\ncomments: "my own"\n---\nx\n' })
+    await b.write('odd.md', '---\ncomments: "sam"\n---\nx\n')
+    await a.write('odd.md', '---\ncomments: "me"\n---\nx\n')
+    const status = await meet(a, b)
+    const copy = status.merged?.[0]?.copy ?? ''
+    expect(a.read('odd.md')).toBe('---\ncomments: "sam"\n---\nx\n')
+    expect(a.read(copy)).toBe('---\ncomments: "me"\n---\nx\n')
+  })
+
+  it('YAZ-4615 D9 (audit 9): a folder\'s hidden `.folder.md` gets a copy the sidebar shows', async () => {
+    const { a, b } = await twoMachines({ 'f/.folder.md': '---\ntitle: F\n---\nbase\n' })
+    await b.write('f/.folder.md', '---\ntitle: F\n---\nsam\n')
+    await a.write('f/.folder.md', '---\ntitle: F\n---\nme\n')
+    const status = await meet(a, b)
+    expect(status.merged?.[0]?.copy).toMatch(/^f\/folder \(conflict, .+\)\.md$/)
+  })
+
+  it('YAZ-4615 D1: the people file merges card by card — the newer card wins', async () => {
+    const card = (name: string, updated: string) => ({ name, picture: null, updated })
+    const file = (people: Record<string, unknown>) => `${JSON.stringify({ version: 1, people }, null, 2)}\n`
+    const { a, b } = await twoMachines({ '.yaseendocs/people.json': file({ sam: card('Sam', '2026-11-01T00:00:00Z') }) })
+    await b.write('.yaseendocs/people.json', file({ sam: card('Sam B', '2026-11-03T00:00:00Z') }))
+    await a.write('.yaseendocs/people.json', file({ sam: card('Sam A', '2026-11-02T00:00:00Z'), yaseen: card('Yaseen', '2026-11-02T00:00:00Z') }))
+    await meet(a, b)
+    expect(JSON.parse(a.read('.yaseendocs/people.json')).people).toEqual({ sam: card('Sam B', '2026-11-03T00:00:00Z'), yaseen: card('Yaseen', '2026-11-02T00:00:00Z') })
   })
 
   it('D12: another .yaseendocs/ config file changed on both stops, rather than silently keeping one side', async () => {

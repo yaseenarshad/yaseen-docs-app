@@ -19,7 +19,7 @@ import { LOCK_DIR, onlyOne } from '../fs/lock'
  * takes the place of the template's body, and its own properties go over the template's (D4); a properties block that
  * does not parse is refused, and nothing is made.
  */
-export async function newNote(dir: string, title: string, body?: string): Promise<FoundNote> {
+export async function newNote(dir: string, title: string, body?: string, hint = false): Promise<FoundNote> {
   const at = await stat(dir).catch(() => null)
   if (at === null) throw new Error(`no folder ${dir}`)
   if (!at.isDirectory()) throw new Error(`${dir} is not a folder`)
@@ -28,7 +28,7 @@ export async function newNote(dir: string, title: string, body?: string): Promis
   if (extra?.error !== undefined) throw new Error('the properties block of --body does not parse')
   const seed = extra === undefined || Object.keys(extra.properties).length === 0 ? undefined : (template: Record<string, unknown>) => ({ ...template, ...extra.properties })
   const root = await idVault(dir)
-  const { disk, ids } = await noteDisk(root)
+  const { disk, ids } = await noteDisk(root, hint)
   // The real path: a symlink and its target are one lock (and the same lock as `daily`'s for a note of that folder).
   return onlyOne(path.join(appDataDir(), LOCK_DIR), `${await realpath(dir)}\n${title}`, async () => {
     // The notes of this folder as the index hands them out: in path order, and in a vault without IDs the file name is the title (YAZ-2523 V12).
