@@ -970,8 +970,13 @@ describe('FrontmatterPanel — "Column on" and the columns of the note’s page 
     const a = folderMd('/vault/A', { columns: A_COLUMNS, id: A_ID })
     const locked = { ...a, properties: { ...a.properties, readonly: true } }
     const el = mountAt(NOTE, '---\npriority: P1\n---\nBody\n', feedOf(locked, folderMd('/vault/A/B', { columns: B_COLUMNS, id: B_ID }), folderMd('/vault/A/B/C')))
+    // A's file is on disk, so without the refusal the base matches and the save would land (the checker's round-2 nit).
+    const A_FILE = '---\nreadonly: true\nfolder_settings:\n  columns:\n    effort:\n      kind: text\n    priority:\n      kind: text\n---\n'
+    readFile.mockImplementation(async (p: string) => ({ path: p, content: p === '/vault/A/.folder.md' ? A_FILE : '---\npriority: P1\n---\nBody\n', mtime: 100, size: 1 }))
     click(byLabel(el, 'Configure priority'))
     click(buttonNamed(el, 'Edit property ›'))
+    click(byLabel(el, 'Property type: Text'))
+    click(buttonNamed(el, 'Number'))
     click(buttonNamed(document.querySelector('.frontmatter-property-menu__actions')!, 'Save'))
     await flush()
     expect(writeFile).not.toHaveBeenCalled()
