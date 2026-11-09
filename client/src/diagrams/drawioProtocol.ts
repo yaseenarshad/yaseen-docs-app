@@ -262,6 +262,19 @@ export type DrawioLinkMessage =
   | { event: 'yaseenLinkHover'; inner: string | null; rect: AnchorRect | null }
   | { event: 'yaseenLinkClick'; inner: string; cellId: string | null; mods: MouseMods }
   | { event: 'yaseenLinkMenu'; inner: string; cellId: string | null; x: number; y: number }
+  | { event: 'yaseenPaste'; id: number; text: string }
+  | { event: 'yaseenEditor'; state: DrawioEditorState | null }
+  | { event: 'yaseenEditorKey'; key: string }
+  | { event: 'yaseenDrop'; id: number }
+
+/** The label editor while `[[` is open before the caret (D5): the picker's `PickerEditor`, as the frame sees it. */
+export interface DrawioEditorState {
+  text: string
+  caret: number
+  typed: boolean
+  cellId: string
+  rect: AnchorRect
+}
 
 const isString = (value: unknown): value is string => typeof value === 'string'
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
@@ -292,6 +305,19 @@ function readLinkMessage(msg: Record<string, unknown>): DrawioLinkMessage | null
     }
     case 'yaseenLinkMenu':
       return isString(inner) && cell !== undefined && isNumber(msg.x) && isNumber(msg.y) ? { event: 'yaseenLinkMenu', inner, cellId: cell, x: msg.x, y: msg.y } : null
+    case 'yaseenPaste':
+      return isNumber(msg.id) && isString(msg.text) ? { event: 'yaseenPaste', id: msg.id, text: msg.text } : null
+    case 'yaseenEditor': {
+      if (msg.state === null) return { event: 'yaseenEditor', state: null }
+      const s = msg.state as Record<string, unknown> | undefined
+      return typeof s === 'object' && isString(s.text) && isNumber(s.caret) && typeof s.typed === 'boolean' && isString(s.cellId) && isRect(s.rect)
+        ? { event: 'yaseenEditor', state: { text: s.text, caret: s.caret, typed: s.typed, cellId: s.cellId, rect: s.rect } }
+        : null
+    }
+    case 'yaseenEditorKey':
+      return isString(msg.key) ? { event: 'yaseenEditorKey', key: msg.key } : null
+    case 'yaseenDrop':
+      return isNumber(msg.id) ? { event: 'yaseenDrop', id: msg.id } : null
     default:
       return null
   }

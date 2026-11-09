@@ -269,10 +269,19 @@ window.ICON_SERVICE_PATH = null;
 			applyReadOnly(msg.value === true);
 		}
 
-		// YAZ-4748: the link pills' messages (`yaseen-links.js`), only once the editor exists, like the ones above.
-		if (msg != null && linkMessage != null && linkMessage(msg))
+		// YAZ-4748: the link pills' messages (`yaseen-links.js`), only once the editor exists, like the ones above. A
+		// fault there is logged: draw.io would show an uncaught error as an alert, which blocks the editor.
+		try
+		{
+			if (msg != null && linkMessage != null && linkMessage(msg))
+			{
+				evt.stopImmediatePropagation();
+			}
+		}
+		catch (e)
 		{
 			evt.stopImmediatePropagation();
+			console.error('Yaseen links', msg.action, e);
 		}
 
 		if (msg != null && msg.action == 'yaseenAdaptiveColors')

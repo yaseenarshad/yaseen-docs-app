@@ -36,10 +36,11 @@ function load() {
   const cells = {}
   const page = {
     addEventListener: (type, listener) => (listeners[type] ??= []).push(listener),
+    getSelection: () => null,
   }
   function Graph() {
     this.container = {}
-    this.cellEditor = { textarea: null }
+    this.cellEditor = { textarea: null, getEditingCell: () => null }
     this.enabled = true
     this.refreshed = 0
     this.changed = []
@@ -61,8 +62,15 @@ function load() {
     cell.label = value
   }
   const posted = []
+  // draw.io's own label editor: the making half (drawioLinksEditor.test.mjs) wraps it; these tests do not use it.
+  function mxCellEditor() {}
+  mxCellEditor.prototype.setEditingValue = () => {}
+  mxCellEditor.prototype.getCurrentValue = () => ''
+  mxCellEditor.prototype.stopEditing = () => {}
   const env = {
     Graph,
+    mxCellEditor,
+    console: { error: vi.fn() },
     mxUtils: { convertPoint: (_container, x, y) => ({ x: x - 100, y: y - 100 }) },
     mxClient: { IS_MAC: true },
     setTimeout,
@@ -208,6 +216,16 @@ describe('yaseen-links.js: the editor’s pointer on a pill (D2)', () => {
     expect(fire('contextmenu', { target: element() })).toBe(false)
     // A pill whose number this page never drew is no pill.
     expect(fire('contextmenu', { target: element('yaseen-pill yaseen-link-99') })).toBe(false)
+  })
+
+  it('a fault in a listener is logged, never thrown: draw.io would show it as an alert that blocks the editor', () => {
+    const { env, graph, install, fire } = loadDrawn()
+    install()
+    graph.getCellAt = () => {
+      throw new Error('boom')
+    }
+    expect(() => fire('contextmenu', { target: pill() })).not.toThrow()
+    expect(env.console.error).toHaveBeenCalledWith('Yaseen links', 'contextmenu', expect.any(Error))
   })
 
   it('leaves a pill inside the open label editor to the editor', () => {

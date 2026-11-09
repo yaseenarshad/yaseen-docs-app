@@ -219,6 +219,8 @@ export interface DrawingLinkDeps {
   pasteLink?: (text: string) => string | null
   /** Files dropped on the board as their links, or null (`drawingDropLinks`). */
   dropLinks?: (files: readonly File[]) => string[] | null
+  /** The same by the files' paths: a diagram's frame drops pages it has no paths for (YAZ-4748 D4). */
+  dropPaths?: (paths: readonly string[]) => string[] | null
 }
 
 /** The engine's `hostLinks` for one board. `deps` is read at each event, so the host can keep it in a ref. */
@@ -249,6 +251,7 @@ export function drawingHostLinks(deps: () => DrawingLinkDeps) {
     },
     pasteLink: (text: string) => deps().pasteLink?.(text) ?? null,
     dropLinks: (files: readonly File[]) => deps().dropLinks?.(files) ?? null,
+    dropPaths: (paths: readonly string[]) => deps().dropPaths?.(paths) ?? null,
     onEditorChange: (editor: PickerEditor | null) => deps().picker?.change(editor),
     onEditorKeyDown: (event: KeyboardEvent) => deps().picker?.keyDown(event) ?? false,
   }

@@ -205,6 +205,20 @@ describe('readDrawioMessage — the link pills’ messages (YAZ-4748)', () => {
     expect(msg({ event: 'yaseenLinkMenu', inner: 'YAZ-1', cellId: 'a', x: 'far', y: 6 })).toBeNull()
   })
 
+  it('reads the paste, the label editor, its keys and the drop (2-)', () => {
+    const state = { text: 'See [[pl', caret: 8, typed: true, cellId: 'a', rect }
+    expect(msg({ event: 'yaseenPaste', id: 2, text: '/vault/Plan.md' })).toEqual({ event: 'yaseenPaste', id: 2, text: '/vault/Plan.md' })
+    expect(msg({ event: 'yaseenEditor', state })).toEqual({ event: 'yaseenEditor', state })
+    expect(msg({ event: 'yaseenEditor', state: null })).toEqual({ event: 'yaseenEditor', state: null })
+    expect(msg({ event: 'yaseenEditorKey', key: 'Enter' })).toEqual({ event: 'yaseenEditorKey', key: 'Enter' })
+    expect(msg({ event: 'yaseenDrop', id: 1 })).toEqual({ event: 'yaseenDrop', id: 1 })
+    expect(msg({ event: 'yaseenPaste', id: 'x', text: 'a' })).toBeNull()
+    expect(msg({ event: 'yaseenEditor', state: { ...state, caret: 'end' } })).toBeNull()
+    expect(msg({ event: 'yaseenEditor' })).toBeNull()
+    expect(msg({ event: 'yaseenEditorKey' })).toBeNull()
+    expect(msg({ event: 'yaseenDrop' })).toBeNull()
+  })
+
   it('takes them only from THAT iframe on the drawio origin', () => {
     const data = JSON.stringify({ event: 'yaseenLinkLooks', inners: ['YAZ-1'] })
     expect(readDrawioMessage({ source: {}, origin: DRAWIO_ORIGIN, data }, frame)).toBeNull()

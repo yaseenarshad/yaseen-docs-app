@@ -5,7 +5,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, useRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { DrawingSurfaceLinks } from '../drawings/ExcalidrawSurface'
+import type { PickerEditor } from '../drawings/drawingLinkPicker'
+import type { BoardLinks } from '../drawings/useDrawingLinks'
+import { setSidebarDrag } from '../sidebar/sidebarDrag'
 import { inWindow, linkOpens, modsKey, useDrawioLinkBridge, wireLook, type DrawioLinkLive } from './drawioLinkBridge'
 import type { DrawioLinkMessage } from './drawioProtocol'
 
@@ -48,8 +50,12 @@ describe('useDrawioLinkBridge', () => {
     onHover: vi.fn(),
     onPointerDown: vi.fn(() => true),
     onContextMenu: vi.fn(() => true),
+    pasteLink: vi.fn((text: string) => (text === '/vault/Plan.md' ? '[[YAZ-7]]' : null)),
+    onEditorChange: vi.fn(),
+    onEditorKeyDown: vi.fn(() => true),
+    dropPaths: vi.fn((paths: readonly string[]) => paths.map((path) => `[[${path}]]`)),
   }
-  const links = { hostLinks, openShapeLink: vi.fn() } as unknown as DrawingSurfaceLinks
+  const links = { hostLinks, openShapeLink: vi.fn() } as unknown as BoardLinks
 
   function Host({ live, withLinks = true }: { live: DrawioLinkLive; withLinks?: boolean }) {
     const frame = useRef<HTMLIFrameElement>(null)
@@ -118,6 +124,42 @@ describe('useDrawioLinkBridge', () => {
     render()
     send({ event: 'yaseenLinkMenu', inner: 'YAZ-1', cellId: null, x: 0, y: 0 })
     expect((hostLinks.onContextMenu.mock.calls.at(-1) as unknown as [{ replace?: unknown }])[0].replace).toBeUndefined()
+  })
+
+  it('answers a paste with the link the board makes of it, or null for the text as it is (2A)', () => {
+    render()
+    send({ event: 'yaseenPaste', id: 3, text: '/vault/Plan.md' })
+    send({ event: 'yaseenPaste', id: 4, text: '/elsewhere/x.md' })
+    expect(posted).toEqual([
+      { action: 'yaseenPasteAnswer', id: 3, link: '[[YAZ-7]]' },
+      { action: 'yaseenPasteAnswer', id: 4, link: null },
+    ])
+  })
+
+  it('gives the board’s picker the label editor: its caret box in the window, and its writes sent back (2A, D5)', () => {
+    render()
+    send({ event: 'yaseenEditor', state: { text: 'See [[pl', caret: 8, typed: true, cellId: 'a', rect: { left: 1, top: 2, right: 3, bottom: 4 } } })
+    const editor = hostLinks.onEditorChange.mock.calls.at(-1)![0] as unknown as PickerEditor
+    expect(editor).toMatchObject({ text: 'See [[pl', caret: 8, typed: true })
+    expect(editor.caretRect()).toEqual({ left: 301, top: 102, right: 303, bottom: 104 })
+    editor.replace(4, 8, '[[YAZ-7]]')
+    expect(posted.at(-1)).toEqual({ action: 'yaseenEditorReplace', start: 4, end: 8, text: '[[YAZ-7]]' })
+    expect(editor.replaceLink('[[New]]', '[[YAZ-9]]')).toBe(true)
+    expect(posted.at(-1)).toEqual({ action: 'yaseenEditorReplaceLink', cellId: 'a', raw: '[[New]]', text: '[[YAZ-9]]' })
+    send({ event: 'yaseenEditorKey', key: 'ArrowDown' })
+    expect(hostLinks.onEditorKeyDown).toHaveBeenLastCalledWith(expect.objectContaining({ key: 'ArrowDown' }))
+    send({ event: 'yaseenEditor', state: null })
+    expect(hostLinks.onEditorChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('tells the frame when the sidebar drags pages, and links the drag’s pages on a drop — also after the drag ended (2B, D4)', () => {
+    render()
+    act(() => setSidebarDrag(['/vault/A.md', '/vault/B.md']))
+    expect(posted.at(-1)).toEqual({ action: 'yaseenSidebarDrag', on: true })
+    act(() => setSidebarDrag([]))
+    expect(posted.at(-1)).toEqual({ action: 'yaseenSidebarDrag', on: false })
+    send({ event: 'yaseenDrop', id: 1 })
+    expect(posted.at(-1)).toEqual({ action: 'yaseenDropLinks', id: 1, links: ['[[/vault/A.md]]', '[[/vault/B.md]]'] })
   })
 
   it('with no link source the pills stay text: nothing is answered and no keys are sent', () => {

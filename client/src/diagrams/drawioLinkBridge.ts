@@ -13,9 +13,11 @@ import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { MouseMods } from '@shared/keys'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import type { DrawingLink, DrawingLinkHit } from '../drawings/drawingLinks'
-import type { DrawingSurfaceLinks } from '../drawings/ExcalidrawSurface'
+import type { PickerEditor } from '../drawings/drawingLinkPicker'
+import type { BoardLinks } from '../drawings/useDrawingLinks'
 import { linkClickAction } from '../editor/linkGesture'
-import type { DrawioLinkMessage } from './drawioProtocol'
+import { lastSidebarDrag, onSidebarDrag, sidebarDragOn } from '../sidebar/sidebarDrag'
+import type { DrawioEditorState, DrawioLinkMessage } from './drawioProtocol'
 
 /** A pill's look as the iframe takes it: the icon as its data URL; null, no icon; absent, not drawn yet. */
 export interface WireLook {
@@ -56,7 +58,7 @@ export interface DrawioLinkLive {
  * The bridge for one diagram tab. `post` sends to the iframe; `ready` is draw.io's `init` (it listens); `onMessage` takes
  * each link message. With no `links` (a window with no link source) the pills stay raw text: no look is ever sent.
  */
-export function useDrawioLinkBridge(links: DrawingSurfaceLinks | undefined, frame: RefObject<HTMLIFrameElement | null>, post: (msg: Record<string, unknown>) => void, live: DrawioLinkLive) {
+export function useDrawioLinkBridge(links: BoardLinks | undefined, frame: RefObject<HTMLIFrameElement | null>, post: (msg: Record<string, unknown>) => void, live: DrawioLinkLive) {
   const listening = useRef(false)
   /** The links this diagram asked for: their looks go again when the window's links change. Bounded by the diagram. */
   const asked = useRef(new Set<string>())
@@ -74,6 +76,12 @@ export function useDrawioLinkBridge(links: DrawingSurfaceLinks | undefined, fram
 
   useEffect(() => hostLinks?.subscribe?.(() => sendLooks(asked.current)), [hostLinks, sendLooks])
 
+  // D4: the frame takes a drop only while the sidebar drags pages.
+  useEffect(() => {
+    if (hostLinks === undefined) return
+    return onSidebarDrag(() => post({ action: 'yaseenSidebarDrag', on: sidebarDragOn() }))
+  }, [hostLinks, post])
+
   const sendOpens = useCallback(() => {
     if (listening.current && hostLinks !== undefined) post({ action: 'yaseenLinkOpens', opens: linkOpens(live.readOnly, live.hotkeys) })
   }, [hostLinks, post, live.readOnly, live.hotkeys])
@@ -89,6 +97,20 @@ export function useDrawioLinkBridge(links: DrawingSurfaceLinks | undefined, fram
     end: 0,
     rect,
     ...(live.readOnly || cellId === null ? {} : { replace: (text: string) => post({ action: 'yaseenLinkReplace', cellId, inner, text }) }),
+  })
+
+  /** The label editor as the board's `[[` picker reads it (D5): its caret box in the window, its writes sent back. */
+  const pickerEditor = (state: DrawioEditorState): PickerEditor => ({
+    text: state.text,
+    caret: state.caret,
+    typed: state.typed,
+    caretRect: () => inWindow(state.rect, frameRect()),
+    replace: (start, end, text) => post({ action: 'yaseenEditorReplace', start, end, text }),
+    // The frame finds the link in the open editor, or in the label once it closed; a missing one changes nothing.
+    replaceLink: (raw, text) => {
+      post({ action: 'yaseenEditorReplaceLink', cellId: state.cellId, raw, text })
+      return true
+    },
   })
 
   const onMessage = (msg: DrawioLinkMessage): void => {
@@ -115,6 +137,19 @@ export function useDrawioLinkBridge(links: DrawingSurfaceLinks | undefined, fram
         hostLinks.onContextMenu?.(hitOf(msg.inner, msg.cellId, { left: x, top: y, right: x, bottom: y }), { clientX: x, clientY: y } as MouseEvent)
         return
       }
+      case 'yaseenPaste':
+        post({ action: 'yaseenPasteAnswer', id: msg.id, link: hostLinks.pasteLink(msg.text) })
+        return
+      case 'yaseenEditor':
+        hostLinks.onEditorChange(msg.state === null ? null : pickerEditor(msg.state))
+        return
+      case 'yaseenEditorKey':
+        // The board's picker reads only the key.
+        hostLinks.onEditorKeyDown({ key: msg.key, isComposing: false } as KeyboardEvent)
+        return
+      case 'yaseenDrop':
+        post({ action: 'yaseenDropLinks', id: msg.id, links: hostLinks.dropPaths(lastSidebarDrag()) ?? [] })
+        return
     }
   }
 

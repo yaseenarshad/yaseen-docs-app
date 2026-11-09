@@ -197,7 +197,18 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   const { autosave, retired, start } = board
 
   // YAZ-4748 D2: the board's own link host, spoken to the iframe by the bridge (`drawioLinkBridge.ts`).
-  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly: board.readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: { ...linkProps, diagramDarkColors: darkColors } })
+  const { links, linkPreview, linkCard } = useDrawingLinks({
+    root,
+    theme,
+    path,
+    readOnly: board.readOnly,
+    hotkeys,
+    onNotice,
+    hostRef: board.hostRef,
+    // D5: the frame sends the picker's keys up only while it is open.
+    onPickerShow: (open) => post({ action: 'yaseenPickerOpen', open }),
+    props: { ...linkProps, diagramDarkColors: darkColors },
+  })
   const bridge = useDrawioLinkBridge(links, frameRef, post, { readOnly: board.readOnly, hotkeys })
   const bridgeNow = useRef(bridge)
   bridgeNow.current = bridge

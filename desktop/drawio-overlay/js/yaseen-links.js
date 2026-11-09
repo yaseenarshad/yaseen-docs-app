@@ -179,6 +179,25 @@
 		document.head.appendChild(style);
 	}
 
+	/**
+	 * Every page listener of ours runs through this: draw.io turns an uncaught error into a native alert, which blocks
+	 * the whole frame (the editor freezes). A fault of ours costs that one event, never the diagram.
+	 */
+	function listen(doc, type, handler, options)
+	{
+		doc.addEventListener(type, function(evt)
+		{
+			try
+			{
+				handler(evt);
+			}
+			catch (e)
+			{
+				console.error('Yaseen links', type, e);
+			}
+		}, (options != null) ? options : true);
+	}
+
 	/** The held modifiers as one key of the host's open table (`yaseenLinkOpens`): ⌘, ⌃, ⌥, ⇧. */
 	function modsKey(evt)
 	{
@@ -261,7 +280,7 @@
 			return evt.button == 2 || (evt.button == 0 && evt.ctrlKey && mxClient.IS_MAC && !opens[modsKey(evt)]);
 		}
 
-		doc.addEventListener('pointerdown', function(evt)
+		listen(doc, 'pointerdown', function(evt)
 		{
 			var pill = pillOf(evt);
 			swallowing = false;
@@ -287,7 +306,7 @@
 
 		['pointerup', 'mousedown', 'mouseup', 'click', 'dblclick'].forEach(function(type)
 		{
-			doc.addEventListener(type, function(evt)
+			listen(doc, type, function(evt)
 			{
 				if (swallowing)
 				{
@@ -301,7 +320,7 @@
 			}, true);
 		});
 
-		doc.addEventListener('contextmenu', function(evt)
+		listen(doc, 'contextmenu', function(evt)
 		{
 			var pill = pillOf(evt);
 
@@ -315,12 +334,12 @@
 			post({event: 'yaseenLinkMenu', inner: innerOf(pill), cellId: cellIdAt(evt), x: evt.clientX, y: evt.clientY});
 		}, true);
 
-		doc.addEventListener('mouseover', function(evt)
+		listen(doc, 'mouseover', function(evt)
 		{
 			hover(pillOf(evt));
 		}, true);
 
-		doc.addEventListener('mouseout', function(evt)
+		listen(doc, 'mouseout', function(evt)
 		{
 			if (hovered != null && (evt.relatedTarget == null || !hovered.contains(evt.relatedTarget)))
 			{
@@ -329,7 +348,7 @@
 		}, true);
 
 		// A pan or a zoom moves the pill from under its card.
-		doc.addEventListener('wheel', function()
+		listen(doc, 'wheel', function()
 		{
 			hover(null);
 		}, {capture: true, passive: true});
@@ -364,6 +383,8 @@
 			}
 		}
 
+		var making = installMaking(ui, post, replace);
+
 		return function(msg)
 		{
 			switch (msg.action)
@@ -384,9 +405,600 @@
 					return true;
 			}
 
+			return making(msg);
+		};
+	}
+
+	// ================================================================================
+	// MAKING A PILL (2-): the label editor (D6), paste, the `[[` picker (D5), the sidebar drop (D4).
+	// ================================================================================
+
+	var WHOLE_LINK = /^\[\[[^\[\]]+\]\]$/;
+	/** A paste the host may make a link of (the board's `pastedPath`): one line, a path or a `yaseendocs://` link. */
+	var PATH_LIKE = /^\s*['"]?(\/|[A-Za-z]:[\\/]|yaseen(docs|draw):\/\/)/;
+
+	function isPill(node)
+	{
+		return node != null && node.nodeType == 1 && /(^|\s)yaseen-pill(\s|$)/.test(node.className) && innerOf(node) != null;
+	}
+
+	/** In the label editor a pill is one unit (D6): the caret jumps it, Backspace or Delete takes it whole. */
+	function fixPills(root)
+	{
+		var pills = root.querySelectorAll('.yaseen-pill');
+
+		for (var i = 0; i < pills.length; i++)
+		{
+			pills[i].contentEditable = 'false';
+		}
+	}
+
+	/**
+	 * The label editor's text as the picker reads it (D5): each text node as it is, each pill as its raw `[[inner]]`, a
+	 * line break and each new block as `\n`. `segments` places every part, so an offset maps back to the page.
+	 */
+	function modelOf(root)
+	{
+		var text = '';
+		var segments = [];
+
+		function add(node, kind, part)
+		{
+			segments.push({node: node, kind: kind, start: text.length, end: text.length + part.length});
+			text += part;
+		}
+
+		(function walk(node)
+		{
+			for (var child = node.firstChild; child != null; child = child.nextSibling)
+			{
+				if (child.nodeType == 3)
+				{
+					add(child, 'text', child.data);
+				}
+				else if (isPill(child))
+				{
+					add(child, 'atom', '[[' + innerOf(child) + ']]');
+				}
+				else if (child.nodeName == 'BR')
+				{
+					add(child, 'atom', '\n');
+				}
+				else if (child.nodeType == 1)
+				{
+					if ((child.nodeName == 'DIV' || child.nodeName == 'P') && text.length > 0)
+					{
+						add(child, 'break', '\n');
+					}
+
+					walk(child);
+				}
+			}
+		})(root);
+
+		return {text: text, segments: segments};
+	}
+
+	/** Where the model's `offset` is on the page: inside a text node, or before / after an atom. */
+	function placeOf(model, root, offset)
+	{
+		for (var i = 0; i < model.segments.length; i++)
+		{
+			var s = model.segments[i];
+
+			if (offset > s.end || (offset == s.end && s.kind != 'text'))
+			{
+				continue;
+			}
+
+			if (s.kind == 'text')
+			{
+				return {node: s.node, offset: Math.max(0, offset - s.start)};
+			}
+
+			var parent = s.node.parentNode;
+			var index = Array.prototype.indexOf.call(parent.childNodes, s.node);
+
+			return {node: parent, offset: (offset <= s.start || s.kind == 'break') ? index : index + 1};
+		}
+
+		return {node: root, offset: root.childNodes.length};
+	}
+
+	function installMaking(ui, post, replaceInCell)
+	{
+		var graph = ui.editor.graph;
+		var doc = document;
+
+		// ---- D6: the label editor opens with the pills and saves `[[inner]]` again ----
+
+		var setEditingValue = mxCellEditor.prototype.setEditingValue;
+
+		mxCellEditor.prototype.setEditingValue = function(state)
+		{
+			setEditingValue.apply(this, arguments);
+
+			try
+			{
+				if (this.textarea != null && this.textarea.innerHTML.indexOf('[[') >= 0 && this.graph.isHtmlLabel(state.cell))
+				{
+					this.textarea.innerHTML = withPills(this.textarea.innerHTML);
+					fixPills(this.textarea);
+				}
+			}
+			catch (e)
+			{
+				// The label opens as its raw text.
+				console.error('Yaseen links', e);
+			}
+		};
+
+		/**
+		 * draw.io reads the label off the editor's HTML (and cleans it). Each pill is its raw text for that read, then
+		 * goes back, so the editor keeps its pills and the caret.
+		 */
+		var getCurrentValue = mxCellEditor.prototype.getCurrentValue;
+
+		mxCellEditor.prototype.getCurrentValue = function()
+		{
+			var pills = (this.textarea != null) ? this.textarea.querySelectorAll('.yaseen-pill') : [];
+			var swapped = [];
+
+			for (var i = 0; i < pills.length; i++)
+			{
+				var inner = innerOf(pills[i]);
+
+				if (inner != null && pills[i].parentNode != null)
+				{
+					var raw = doc.createTextNode('[[' + inner + ']]');
+					pills[i].parentNode.replaceChild(raw, pills[i]);
+					swapped.push([raw, pills[i]]);
+				}
+			}
+
+			try
+			{
+				return getCurrentValue.apply(this, arguments);
+			}
+			finally
+			{
+				for (var j = 0; j < swapped.length; j++)
+				{
+					if (swapped[j][0].parentNode != null)
+					{
+						swapped[j][0].parentNode.replaceChild(swapped[j][1], swapped[j][0]);
+					}
+				}
+			}
+		};
+
+		function textarea()
+		{
+			return graph.isEditing() ? graph.cellEditor.textarea : null;
+		}
+
+		function selectionIn(root)
+		{
+			var selection = doc.getSelection();
+
+			return (root != null && selection != null && selection.rangeCount > 0 &&
+				root.contains(selection.getRangeAt(0).commonAncestorContainer)) ? selection : null;
+		}
+
+		/** A pill copied out of a label is its `[[inner]]` text, so it is a pill again in a note or a board. */
+		function onCopy(evt)
+		{
+			var root = textarea();
+			var selection = selectionIn(root);
+
+			if (selection == null || evt.clipboardData == null)
+			{
+				return;
+			}
+
+			var holder = doc.createElement('div');
+			holder.appendChild(selection.getRangeAt(0).cloneContents());
+			var pills = holder.querySelectorAll('.yaseen-pill');
+
+			if (pills.length == 0)
+			{
+				return;
+			}
+
+			for (var i = 0; i < pills.length; i++)
+			{
+				var inner = innerOf(pills[i]);
+				pills[i].parentNode.replaceChild(doc.createTextNode((inner != null) ? '[[' + inner + ']]' : pills[i].textContent), pills[i]);
+			}
+
+			evt.preventDefault();
+			evt.clipboardData.setData('text/plain', modelOf(holder).text);
+			evt.clipboardData.setData('text/html', holder.innerHTML);
+
+			if (evt.type == 'cut')
+			{
+				selection.deleteFromDocument();
+			}
+		}
+
+		listen(doc, 'copy', onCopy, true);
+		listen(doc, 'cut', onCopy, true);
+
+		/** Text at the editor's selection: a whole `[[link]]` goes in as its pill. One edit the label editor can undo. */
+		function insertAtSelection(root, text)
+		{
+			var html = WHOLE_LINK.test(text) ? withPills(escapeHtml(text)) : null;
+			var done = typeof doc.execCommand == 'function' &&
+				((html != null) ? doc.execCommand('insertHTML', false, html) : doc.execCommand('insertText', false, text));
+
+			if (!done)
+			{
+				// No editing commands (a test page): put the nodes in by hand.
+				var range = doc.getSelection().getRangeAt(0);
+				range.deleteContents();
+				var holder = doc.createElement('span');
+				holder.innerHTML = (html != null) ? html : escapeHtml(text);
+				var last = holder.lastChild;
+
+				while (holder.firstChild != null)
+				{
+					range.insertNode(holder.lastChild);
+				}
+
+				if (last != null)
+				{
+					range.setStartAfter(last);
+					range.collapse(true);
+					doc.getSelection().removeAllRanges();
+					doc.getSelection().addRange(range);
+				}
+			}
+
+			fixPills(root);
+		}
+
+		function select(root, model, start, end)
+		{
+			var from = placeOf(model, root, start);
+			var to = placeOf(model, root, end);
+			var range = doc.createRange();
+			range.setStart(from.node, from.offset);
+			range.setEnd(to.node, to.offset);
+			var selection = doc.getSelection();
+			selection.removeAllRanges();
+			selection.addRange(range);
+		}
+
+		// ---- New text boxes on the canvas: a paste, a drop ----
+
+		/** One text box for each link, stacked down from `pt` (graph units), selected, as ONE undo step. */
+		function addLinkBoxes(links, pt)
+		{
+			var model = graph.getModel();
+			var parent = graph.getDefaultParent();
+			var cells = [];
+			var y = pt.y;
+
+			model.beginUpdate();
+
+			try
+			{
+				for (var i = 0; i < links.length; i++)
+				{
+					var cell = graph.insertVertex(parent, null, escapeHtml(links[i]), pt.x, y, 120, 30,
+						'text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;autosize=1;');
+					graph.updateCellSize(cell, true);
+					y += graph.getModel().getGeometry(cell).height + 10;
+					cells.push(cell);
+				}
+			}
+			finally
+			{
+				model.endUpdate();
+			}
+
+			graph.setSelectionCells(cells);
+
+			return y;
+		}
+
+		/** A page point in graph units. */
+		function graphPoint(clientX, clientY)
+		{
+			var pt = mxUtils.convertPoint(graph.container, clientX, clientY);
+			var view = graph.view;
+
+			return {x: Math.round(pt.x / view.scale - view.translate.x), y: Math.round(pt.y / view.scale - view.translate.y)};
+		}
+
+		// ---- Paste (2A) ----
+
+		/** ⌘⇧V pastes text as it is (the board's rule): the next paste is not asked about. */
+		var plainPaste = false;
+		var pastes = {};
+		var pasteCount = 0;
+
+		listen(doc, 'paste', function(evt)
+		{
+			var plain = plainPaste;
+			plainPaste = false;
+			var text = (evt.clipboardData != null) ? evt.clipboardData.getData('text/plain') : '';
+			var root = textarea();
+
+			if (plain || !graph.isEnabled() || text.indexOf('\n') >= 0 || (root != null && !root.contains(evt.target)))
+			{
+				return;
+			}
+
+			var whole = WHOLE_LINK.test(text.trim());
+
+			if (!whole && !PATH_LIKE.test(text))
+			{
+				return;
+			}
+
+			evt.preventDefault();
+			evt.stopPropagation();
+
+			if (whole && root != null)
+			{
+				insertAtSelection(root, text.trim());
+				return;
+			}
+
+			var id = ++pasteCount;
+			pastes[id] = (root != null) ?
+				{cell: graph.cellEditor.getEditingCell(), range: doc.getSelection().getRangeAt(0).cloneRange(), text: text} :
+				{cell: null, point: graph.getInsertPoint(), text: text};
+			post({event: 'yaseenPaste', id: id, text: text});
+		}, true);
+
+		/** The host's word on a paste: the link, or null for the text as it is. */
+		function pasteAnswer(id, link)
+		{
+			var paste = pastes[id];
+			delete pastes[id];
+
+			if (paste == null || !graph.isEnabled())
+			{
+				return;
+			}
+
+			var text = (link != null) ? link : paste.text;
+
+			if (paste.cell == null)
+			{
+				addLinkBoxes([text], paste.point);
+			}
+			else if (graph.isEditing(paste.cell))
+			{
+				var selection = doc.getSelection();
+				selection.removeAllRanges();
+				selection.addRange(paste.range);
+				insertAtSelection(graph.cellEditor.textarea, text);
+			}
+		}
+
+		// ---- The `[[` picker (2A, D5) ----
+
+		/** The host's picker is open: its keys come up to the host. */
+		var pickerOpen = false;
+		/** The host was told the editor's state, so it hears when that ends. */
+		var told = false;
+
+		function tell(typed)
+		{
+			var root = textarea();
+			var selection = selectionIn(root);
+
+			if (selection == null || (!told && root.textContent.indexOf('[[') < 0 && root.querySelector('.yaseen-pill') == null))
+			{
+				untell();
+				return;
+			}
+
+			var model = modelOf(root);
+			var before = doc.createRange();
+			before.setStart(root, 0);
+			before.setEnd(selection.focusNode, selection.focusOffset);
+			var holder = doc.createElement('div');
+			holder.appendChild(before.cloneContents());
+			var caret = modelOf(holder).text.length;
+			var head = model.text.substring(0, caret);
+
+			// Only while `[[` is open before the caret does the host hear about it: typing stays here.
+			if (head.lastIndexOf('[[') <= head.lastIndexOf(']]'))
+			{
+				untell();
+				return;
+			}
+
+			var range = selection.getRangeAt(0);
+			var rects = range.getClientRects();
+			var r = (rects.length > 0) ? rects[rects.length - 1] : root.getBoundingClientRect();
+			told = true;
+			post({event: 'yaseenEditor', state: {text: model.text, caret: caret, typed: typed, cellId: graph.cellEditor.getEditingCell().id,
+				rect: {left: r.left, top: r.top, right: r.right, bottom: r.bottom}}});
+		}
+
+		function untell()
+		{
+			if (told)
+			{
+				told = false;
+				pickerOpen = false;
+				post({event: 'yaseenEditor', state: null});
+			}
+		}
+
+		listen(doc, 'input', function(evt)
+		{
+			var root = textarea();
+
+			if (root != null && root.contains(evt.target))
+			{
+				fixPills(root);
+				tell(true);
+			}
+		}, true);
+
+		listen(doc, 'selectionchange', function()
+		{
+			if (told)
+			{
+				tell(false);
+			}
+		});
+
+		var stopEditing = mxCellEditor.prototype.stopEditing;
+
+		mxCellEditor.prototype.stopEditing = function()
+		{
+			try
+			{
+				return stopEditing.apply(this, arguments);
+			}
+			finally
+			{
+				untell();
+			}
+		};
+
+		var PICKER_KEYS = {ArrowUp: true, ArrowDown: true, Enter: true, Escape: true};
+
+		listen(doc, 'keydown', function(evt)
+		{
+			if ((evt.metaKey || evt.ctrlKey) && evt.shiftKey && (evt.key == 'v' || evt.key == 'V'))
+			{
+				plainPaste = true;
+			}
+
+			if (pickerOpen && PICKER_KEYS[evt.key] && !evt.isComposing && textarea() != null)
+			{
+				evt.preventDefault();
+				evt.stopPropagation();
+				post({event: 'yaseenEditorKey', key: evt.key});
+			}
+		}, true);
+
+		/** The picker's pick: `text` from the model's `start` to `end`, where a whole `[[link]]` is its pill. */
+		function editorReplace(start, end, text)
+		{
+			var root = textarea();
+
+			if (root == null)
+			{
+				return;
+			}
+
+			root.focus();
+			select(root, modelOf(root), start, end);
+			insertAtSelection(root, text);
+			tell(false);
+		}
+
+		/** A page the picker made gets its link (`[[ID]]`): in the open editor, or in the label once it closed. */
+		function editorReplaceLink(cellId, raw, text)
+		{
+			var root = textarea();
+
+			if (root != null && graph.cellEditor.getEditingCell().id == cellId)
+			{
+				var model = modelOf(root);
+				var at = model.text.indexOf(raw);
+
+				if (at >= 0)
+				{
+					select(root, model, at, at + raw.length);
+					insertAtSelection(root, text);
+				}
+			}
+			else if (WHOLE_LINK.test(raw))
+			{
+				replaceInCell(cellId, raw.substring(2, raw.length - 2), text);
+			}
+		}
+
+		// ---- The sidebar drop (2B, D4) ----
+
+		/** The app's sidebar drags pages now: a drop is the host's (it knows the paths). */
+		var sidebarDrag = false;
+		var drops = {};
+		var dropCount = 0;
+
+		function isPicture(file)
+		{
+			return /^image\//.test(file.type);
+		}
+
+		listen(doc, 'drop', function(evt)
+		{
+			var files = (evt.dataTransfer != null) ? Array.prototype.slice.call(evt.dataTransfer.files || []) : [];
+
+			if (!sidebarDrag || graph.isEditing() || files.length == 0 || files.every(isPicture))
+			{
+				return;
+			}
+
+			evt.preventDefault();
+			evt.stopPropagation();
+
+			if (!graph.isEnabled())
+			{
+				return;
+			}
+
+			var id = ++dropCount;
+			drops[id] = {point: graphPoint(evt.clientX, evt.clientY), pictures: files.filter(isPicture)};
+			post({event: 'yaseenDrop', id: id});
+		}, true);
+
+		/** The host's links for a drop: one box each, then the pictures below the last box (the board's rule). */
+		function dropAnswer(id, links)
+		{
+			var drop = drops[id];
+			delete drops[id];
+
+			if (drop == null || !graph.isEnabled())
+			{
+				return;
+			}
+
+			var below = (links.length > 0) ? addLinkBoxes(links, drop.point) : drop.point.y;
+
+			if (drop.pictures.length > 0)
+			{
+				ui.importFiles(drop.pictures, drop.point.x, below);
+			}
+		}
+
+		return function(msg)
+		{
+			switch (msg.action)
+			{
+				case 'yaseenPasteAnswer':
+					pasteAnswer(msg.id, (typeof msg.link == 'string') ? msg.link : null);
+					return true;
+				case 'yaseenPickerOpen':
+					pickerOpen = msg.open === true;
+					return true;
+				case 'yaseenEditorReplace':
+					editorReplace(msg.start, msg.end, msg.text);
+					return true;
+				case 'yaseenEditorReplaceLink':
+					editorReplaceLink(msg.cellId, msg.raw, msg.text);
+					return true;
+				case 'yaseenSidebarDrag':
+					sidebarDrag = msg.on === true;
+					return true;
+				case 'yaseenDropLinks':
+					dropAnswer(msg.id, Array.isArray(msg.links) ? msg.links : []);
+					return true;
+			}
+
 			return false;
 		};
 	}
 
-	window.yaseenLinks = {withPills: withPills, setLooks: setLooks, innerOf: innerOf, installEditor: installEditor};
+	window.yaseenLinks = {withPills: withPills, setLooks: setLooks, innerOf: innerOf, modelOf: modelOf, installEditor: installEditor};
 })();
