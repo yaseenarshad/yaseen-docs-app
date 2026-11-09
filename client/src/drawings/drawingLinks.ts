@@ -182,8 +182,8 @@ function lookOf(inner: string): DrawingLink | null {
 /** A pill's look for draw.io's side (YAZ-4748): the icon as its data URL; null, no icon; absent, not drawn yet. */
 export function wireLook(look: DrawingLink | null): WireLook | null {
   if (look === null) return null
-  const { label, missing, folder, icon } = look
-  return { label, ...(missing ? { missing } : {}), ...(folder ? { folder } : {}), ...(icon === undefined ? {} : { icon: icon === null ? null : icon.url }) }
+  const { label, missing, icon } = look
+  return { label, ...(missing ? { missing } : {}), ...(icon === undefined ? {} : { icon: icon === null ? null : icon.url }) }
 }
 
 // A diagram's previews and Export Image draw its pills with the window's links (YAZ-4748 D9).

@@ -451,7 +451,7 @@ describe('link pills (YAZ-4748): draw.io asks, the tab answers with the board’
     expect(rows).not.toContain('Remove link')
   })
 
-  it('with no link source the pills stay text: no keys are sent and nothing is answered', async () => {
+  it('with no link source draw.io never gets yaseenLinkOpens — the word that turns its pills on (drawioLinks.test.mjs: raw text with none)', async () => {
     await opened()
     drawio({ event: 'yaseenLinkLooks', inners: ['Known'] })
     expect(posted.some((m) => m.action === 'yaseenLinkOpens' || m.action === 'yaseenLinkLooks')).toBe(false)

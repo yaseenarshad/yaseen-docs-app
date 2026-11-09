@@ -5,12 +5,12 @@
  * (`drawingLinks.ts`): a window that has opened no board or diagram knows no vault, so its previews keep the raw text,
  * as a board's previews do. This file is tiny on purpose: the sidebar's preview loads it, not the link code.
  */
+import { WIKILINK_RE } from '@shared/linkRewrite'
 
-/** A pill's look as draw.io's side takes it: the icon as its data URL; null, no icon; absent, not drawn yet. */
+/** A pill's look as draw.io's side takes it: the icon as its data URL (a folder's shows a folder); null, no icon; absent, not drawn yet. */
 export interface WireLook {
   label: string
   missing?: boolean
-  folder?: boolean
   icon?: string | null
 }
 
@@ -21,7 +21,6 @@ export function setDiagramLinkLooks(next: (inner: string) => WireLook | null): v
   source = next
 }
 
-const LINK = /\[\[([^[\]]+)\]\]/g
 const decode = (text: string): string =>
   text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
 
@@ -33,8 +32,8 @@ const decode = (text: string): string =>
 export function diagramLinkLooks(xml: string): Record<string, WireLook | null> | undefined {
   if (source === null || !xml.includes('[[')) return undefined
   const looks: Record<string, WireLook | null> = {}
-  for (const match of xml.matchAll(LINK)) {
-    const inner = decode(decode(match[1]!))
+  for (const match of xml.matchAll(WIKILINK_RE)) {
+    const inner = decode(decode(match[2]!))
     if (!(inner in looks)) looks[inner] = source(inner)
   }
   return Object.keys(looks).length > 0 ? looks : undefined

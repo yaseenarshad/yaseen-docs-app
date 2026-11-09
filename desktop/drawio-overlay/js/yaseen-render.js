@@ -106,10 +106,11 @@
 		// `adaptiveColors` attribute (read by `setGraphXml`) still wins over it, as in the editor.
 		Graph.defaultAdaptiveColors = req.adaptive;
 
-		// YAZ-4748 D9: the link pills draw with the looks the request carries; with none they keep the raw text.
-		if (window.yaseenLinks != null && req.looks != null)
+		// YAZ-4748 D9: the link pills draw with the looks the request carries, and only those (A7: the page lives for
+		// the session; a request carries every look it needs). With none they keep the raw text.
+		if (window.yaseenLinks != null)
 		{
-			window.yaseenLinks.setLooks(req.looks);
+			window.yaseenLinks.setLooks(req.looks, true);
 		}
 
 		editor.setGraphXml(firstPage(req.xml));

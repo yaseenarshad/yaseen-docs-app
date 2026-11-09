@@ -5,18 +5,20 @@
  * reached through its `hostLinks`. Nothing here decides a rule: it moves rects from the iframe's view into the
  * window's, and turns messages into calls.
  *
- * D3: the iframe asks for the looks of the links it draws; the host answers, and sends the asked ones again when the
- * window's links change (a rename, a new page, an icon that finished drawing).
+ * D3: the iframe asks for the looks of the links it draws; the host answers, and sends again the asked ones that
+ * changed when the window's links change (a rename, a new page, an icon that finished drawing).
  */
 import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import { WIKILINK_RE } from '@shared/linkRewrite'
 import type { MouseMods } from '@shared/keys'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { wireLook, type DrawingLink, type DrawingLinkHit } from '../drawings/drawingLinks'
 import type { PickerEditor } from '../drawings/drawingLinkPicker'
 import type { BoardLinks } from '../drawings/useDrawingLinks'
 import { linkClickAction } from '../editor/linkGesture'
-import { lastSidebarDrag, onSidebarDrag, sidebarDragOn } from '../sidebar/sidebarDrag'
+import { basename } from '../lib/paths'
+import { lastSidebarDrag, onSidebarDrag, sidebarDragOn, sidebarDropInFrame } from '../sidebar/sidebarDrag'
 import type { WireLook } from './diagramLooks'
 import type { DrawioEditorState, DrawioLinkMessage } from './drawioProtocol'
 
@@ -33,6 +35,18 @@ export function linkOpens(readOnly: boolean, hotkeys: HotkeyOverrides | undefine
   return COMBOS.filter((mods) => linkClickAction({ editable: !readOnly }, mods, hotkeys) !== null).map(modsKey)
 }
 
+/** The links this diagram asked for, at most (A7): the oldest goes first. */
+const MAX_ASKED = 2000
+
+const sameLook = (a: WireLook | null | undefined, b: WireLook | null): boolean =>
+  a === b || (a != null && b !== null && a.label === b.label && a.missing === b.missing && a.icon === b.icon)
+
+/** The `inner` of each `[[inner]]` in `links` (a paste's or a drop's answer). */
+const innersOf = (links: readonly string[]): string[] => links.flatMap((link) => [...link.matchAll(WIKILINK_RE)].map((m) => m[2]!))
+
+/** `inner` was sent with this look last. */
+const sentAlready = (sent: ReadonlyMap<string, WireLook | null>, inner: string, look: WireLook | null): boolean => sent.has(inner) && sameLook(sent.get(inner), look)
+
 /** A rect in the iframe's view, in the window's. */
 export const inWindow = (rect: AnchorRect, frame: AnchorRect): AnchorRect => ({ left: rect.left + frame.left, top: rect.top + frame.top, right: rect.right + frame.left, bottom: rect.bottom + frame.top })
 
@@ -43,25 +57,45 @@ export interface DrawioLinkLive {
 
 /**
  * The bridge for one diagram tab. `post` sends to the iframe; `ready` is draw.io's `init` (it listens); `onMessage` takes
- * each link message. With no `links` (a window with no link source) the pills stay raw text: no look is ever sent.
+ * each link message. With no `links` (a window with no link source) the pills stay raw text: the frame never gets the
+ * `yaseenLinkOpens` that turns its link work on, and a stray paste or drop is answered with nothing.
  */
 export function useDrawioLinkBridge(links: BoardLinks | undefined, frame: RefObject<HTMLIFrameElement | null>, post: (msg: Record<string, unknown>) => void, live: DrawioLinkLive) {
   const listening = useRef(false)
-  /** The links this diagram asked for: their looks go again when the window's links change. Bounded by the diagram. */
-  const asked = useRef(new Set<string>())
+  /**
+   * The links this diagram asked for, and the look each was sent last (A8): when the window's links change, only a
+   * look that changed goes again. At most MAX_ASKED, oldest out (A7).
+   */
+  const asked = useRef(new Map<string, WireLook | null>())
   const hostLinks = links?.hostLinks
 
-  const sendLooks = useCallback(
-    (inners: Iterable<string>) => {
-      if (hostLinks === undefined) return
+  /** The looks of `inners` now, each kept as sent; `changedOnly`: only those that differ from the last sent. */
+  const looksOf = useCallback(
+    (inners: Iterable<string>, changedOnly = false): Record<string, WireLook | null> => {
       const looks: Record<string, WireLook | null> = {}
-      for (const inner of inners) looks[inner] = wireLook(hostLinks.resolve(inner) as DrawingLink | null)
-      if (Object.keys(looks).length > 0) post({ action: 'yaseenLinkLooks', looks })
+      if (hostLinks === undefined) return looks
+      const sent = asked.current
+      for (const inner of inners) {
+        const look = wireLook(hostLinks.resolve(inner) as DrawingLink | null)
+        if (changedOnly && sentAlready(sent, inner, look)) continue
+        sent.delete(inner)
+        sent.set(inner, look)
+        if (sent.size > MAX_ASKED) sent.delete(sent.keys().next().value!)
+        looks[inner] = look
+      }
+      return looks
     },
-    [hostLinks, post],
+    [hostLinks],
   )
 
-  useEffect(() => hostLinks?.subscribe?.(() => sendLooks(asked.current)), [hostLinks, sendLooks])
+  useEffect(
+    () =>
+      hostLinks?.subscribe?.(() => {
+        const looks = looksOf([...asked.current.keys()], true)
+        if (Object.keys(looks).length > 0) post({ action: 'yaseenLinkLooks', looks })
+      }),
+    [hostLinks, looksOf, post],
+  )
 
   // D4: the frame takes a drop only while the sidebar drags pages.
   useEffect(() => {
@@ -101,13 +135,19 @@ export function useDrawioLinkBridge(links: BoardLinks | undefined, frame: RefObj
   })
 
   const onMessage = (msg: DrawioLinkMessage): void => {
-    if (hostLinks === undefined) return
+    if (hostLinks === undefined) {
+      // The frame asks nothing with no link source (A3); should it ever, no entry of its waits forever.
+      if (msg.event === 'yaseenPaste') post({ action: 'yaseenPasteAnswer', id: msg.id, link: null })
+      else if (msg.event === 'yaseenDrop') post({ action: 'yaseenDropLinks', id: msg.id, links: [] })
+      return
+    }
     const frameAt = frameRect()
     switch (msg.event) {
-      case 'yaseenLinkLooks':
-        for (const inner of msg.inners) asked.current.add(inner)
-        sendLooks(msg.inners)
+      case 'yaseenLinkLooks': {
+        const looks = looksOf(msg.inners)
+        if (msg.inners.length > 0) post({ action: 'yaseenLinkLooks', looks })
         return
+      }
       case 'yaseenLinkHover':
         hostLinks.onHover?.(msg.inner === null || msg.rect === null ? null : hitOf(msg.inner, null, inWindow(msg.rect, frameAt)))
         return
@@ -124,9 +164,12 @@ export function useDrawioLinkBridge(links: BoardLinks | undefined, frame: RefObj
         hostLinks.onContextMenu?.(hitOf(msg.inner, msg.cellId, { left: x, top: y, right: x, bottom: y }), { clientX: x, clientY: y } as MouseEvent)
         return
       }
-      case 'yaseenPaste':
-        post({ action: 'yaseenPasteAnswer', id: msg.id, link: hostLinks.pasteLink(msg.text) })
+      case 'yaseenPaste': {
+        // A13: the link's look goes with it, so the frame sizes a new box for the pill.
+        const link = hostLinks.pasteLink(msg.text)
+        post({ action: 'yaseenPasteAnswer', id: msg.id, link, ...(link === null ? {} : { looks: looksOf(innersOf([link])) }) })
         return
+      }
       case 'yaseenEditor':
         hostLinks.onEditorChange(msg.state === null ? null : pickerEditor(msg.state))
         return
@@ -134,9 +177,15 @@ export function useDrawioLinkBridge(links: BoardLinks | undefined, frame: RefObj
         // The board's picker reads only the key.
         hostLinks.onEditorKeyDown({ key: msg.key, isComposing: false } as KeyboardEvent)
         return
-      case 'yaseenDrop':
-        post({ action: 'yaseenDropLinks', id: msg.id, links: hostLinks.dropPaths(lastSidebarDrag()) ?? [] })
+      case 'yaseenDrop': {
+        // A6: only the drag's paths the frame took as pages (by name); its pictures are the frame's own import.
+        const names = new Set(msg.names)
+        const dropped = hostLinks.dropPaths(lastSidebarDrag().filter((path) => names.has(basename(path)))) ?? []
+        // A5: the drop landed in the app, though the window heard none.
+        sidebarDropInFrame()
+        post({ action: 'yaseenDropLinks', id: msg.id, links: dropped, looks: looksOf(innersOf(dropped)) })
         return
+      }
       case 'yaseenShapeLink':
         // D8: a shape's own link, as a board's link icon opens it. A web link never comes up here.
         links!.openShapeLink(msg.link, msg.mods)

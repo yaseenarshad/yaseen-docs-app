@@ -17,42 +17,63 @@
 	var LINK = /\[\[([^\[\]]+)\]\]/g;
 
 	/**
-	 * What each link shows, as the host said: `{ label, missing?, folder?, icon? }`, or null for a link that stays raw
-	 * text (`[[Note|]]`). `icon`: a data URL; null, no icon; absent, the icon is not drawn yet (an empty box holds its
-	 * place). Emptied when it passes MAX_LOOKS: the host is asked again for what is on screen.
+	 * What each link shows, as the host said: `{ label, missing?, icon? }`, or null for a link that stays raw text
+	 * (`[[Note|]]`). `icon`: a data URL; null, no icon; absent, the icon is not drawn yet (an empty box holds its place).
+	 * Emptied before an answer would pass MAX_LOOKS: the host is asked again for what is on screen.
 	 */
 	var looks = {};
 	var lookCount = 0;
 	var MAX_LOOKS = 2000;
 
 	/**
-	 * Each link drawn so far gets a number, and its pill carries it as a class, `yaseen-link-<n>`: draw.io cleans a
-	 * label's HTML after `getLabel` (DOMPurify with `ALLOW_DATA_ATTR` off), and a class is what it keeps. One entry per
-	 * distinct link of this diagram; the page lives as long as its tab.
+	 * A pill carries its link in its class, `yaseen-link-<encodeURIComponent(inner)>`: draw.io cleans a label's HTML
+	 * (DOMPurify with `ALLOW_DATA_ATTR` off) and keeps a class, and an encoded link has no white space. So any page
+	 * reads a drawn pill's link, and nothing grows. The link of a drawn pill, or null.
 	 */
-	var numbers = {};
-	var links = [];
+	var LINK_CLASS = /(?:^|\s)yaseen-link-(\S+)/;
 
-	function numberOf(inner)
-	{
-		if (!Object.prototype.hasOwnProperty.call(numbers, inner))
-		{
-			numbers[inner] = links.length;
-			links.push(inner);
-		}
-
-		return numbers[inner];
-	}
-
-	/** The link a drawn pill stands for, or null. */
 	function innerOf(pill)
 	{
-		var match = /(?:^|\s)yaseen-link-(\d+)(?:\s|$)/.exec(pill.className);
+		var match = (typeof pill.className == 'string') ? LINK_CLASS.exec(pill.className) : null;
 
-		return (match != null && links[match[1]] != null) ? links[match[1]] : null;
+		if (match == null)
+		{
+			return null;
+		}
+
+		try
+		{
+			return decodeURIComponent(match[1]);
+		}
+		catch (e)
+		{
+			return null;
+		}
 	}
 
-	/** The editor's ask for looks (`installEditor`); null on the picture page, whose request carries every look. */
+	/**
+	 * Every page listener and timer of ours runs through this: draw.io turns an uncaught error into a native alert,
+	 * which blocks the whole frame (the editor freezes). A fault of ours costs that one event, never the diagram.
+	 */
+	function guard(name, fn)
+	{
+		return function()
+		{
+			try
+			{
+				return fn.apply(this, arguments);
+			}
+			catch (e)
+			{
+				console.error('Yaseen links', name, e);
+			}
+		};
+	}
+
+	/**
+	 * The editor's ask for looks (`installEditor`), once the host has a link source (A3); null before that, and on the
+	 * picture page, whose request carries every look.
+	 */
 	var ask = null;
 	/** Links asked for and not answered yet, so a redraw does not ask twice; and the batch to send. */
 	var requested = {};
@@ -97,12 +118,12 @@
 			if (batch == null)
 			{
 				batch = [];
-				window.setTimeout(function()
+				window.setTimeout(guard('looks', function()
 				{
 					var inners = batch;
 					batch = null;
 					ask(inners);
-				}, 0);
+				}), 0);
 			}
 
 			batch.push(inner);
@@ -123,14 +144,14 @@
 	/** An icon not drawn yet: its outline holds the place. */
 	var OUTLINE_STYLE = ICON_STYLE + 'box-sizing:border-box;border:1px solid currentColor;border-radius:0.1em;opacity:0.4;';
 
-	/** One pill: an atom of the label, as on a board. Its link is its number's class (`numberOf`). */
+	/** One pill: an atom of the label, as on a board. Its link is in its class (`innerOf`). */
 	function pillHtml(inner, look)
 	{
 		var icon = (look.missing || look.icon === null) ? '' : (typeof look.icon == 'string') ?
-			'<img class="yaseen-pill__icon" style="' + ICON_STYLE + 'object-fit:contain;" src="' + escapeHtml(look.icon) + '">' :
-			'<span class="yaseen-pill__icon" style="' + OUTLINE_STYLE + '"></span>';
+			'<img style="' + ICON_STYLE + 'object-fit:contain;" src="' + escapeHtml(look.icon) + '">' :
+			'<span style="' + OUTLINE_STYLE + '"></span>';
 
-		return '<span class="yaseen-pill yaseen-link-' + numberOf(inner) + (look.missing ? ' yaseen-pill--missing' : '') + '" style="' +
+		return '<span class="yaseen-pill yaseen-link-' + encodeURIComponent(inner) + '" style="' +
 			(look.missing ? MISSING_STYLE : FOUND_STYLE) + '">' + icon + escapeHtml(look.label) + '</span>';
 	}
 
@@ -146,55 +167,85 @@
 		});
 	}
 
-	/** The host's looks: merged in, and a link it answered is no longer asked for. */
-	function setLooks(next)
+	function sameLook(a, b)
 	{
-		for (var inner in next)
+		return a === b || (a != null && b != null && a.label === b.label && a.missing === b.missing && a.icon === b.icon);
+	}
+
+	/**
+	 * The host's looks: merged in, and a link it answered is no longer asked for. `replace` (the picture page): these
+	 * looks alone, as each request carries every look it needs. True when a pill would draw differently.
+	 */
+	function setLooks(next, replace)
+	{
+		var changed = false;
+		var added = 0;
+		var inner;
+		next = next || {};
+
+		for (inner in next)
+		{
+			if (!Object.prototype.hasOwnProperty.call(looks, inner))
+			{
+				added++;
+			}
+		}
+
+		// Emptied BEFORE the merge: the answer that passes the cap is the one that stays.
+		if (replace || lookCount + added > MAX_LOOKS)
+		{
+			changed = lookCount > 0;
+			looks = {};
+			lookCount = 0;
+		}
+
+		for (inner in next)
 		{
 			if (!Object.prototype.hasOwnProperty.call(looks, inner))
 			{
 				lookCount++;
+				changed = true;
+			}
+			else if (!sameLook(looks[inner], next[inner]))
+			{
+				changed = true;
 			}
 
 			looks[inner] = next[inner];
 			delete requested[inner];
 		}
 
-		if (lookCount > MAX_LOOKS)
-		{
-			looks = {};
-			lookCount = 0;
-		}
+		return changed;
 	}
 
-	// D1: every place draw.io draws a label asks `getLabel` (the canvas, the size of an autosized cell, the SVG export).
-	// A plain-text label (`html=0`) has no markup to hold a pill: it shows the raw text.
-	var getLabel = Graph.prototype.getLabel;
-
-	Graph.prototype.getLabel = function(cell)
+	/**
+	 * A label whose markup draws (draw.io's `html=1`). draw.io's editor also calls a `whiteSpace=wrap` label HTML, but
+	 * its cell renderer escapes one with no `html=1`: a pill there would show as its markup. A plain-text label
+	 * (`html=0`) has no markup to hold a pill: it shows the raw text.
+	 */
+	function isHtml(graph, cell, style)
 	{
-		var label = getLabel.apply(this, arguments);
+		return graph.isHtmlLabel(cell) && style != null && style.html != null && style.html != '0';
+	}
 
-		return (typeof label == 'string' && label.indexOf('[[') >= 0 && this.isHtmlLabel(cell)) ? withPills(label) : label;
+	// D1, A1: every place draw.io DRAWS a label asks the cell renderer (the canvas, the size of an autosized cell, the
+	// text inside a shape, the SVG export). draw.io's Graph sets its own `getLabelValue` on the renderer instance, which
+	// calls this prototype's at each call and then cleans the HTML. `Graph.getLabel` stays the raw label: draw.io also
+	// READS a label there and writes it back (Find/Replace, the dark-colour fix, a page rename), and the file keeps
+	// `[[inner]]`. Called for every label draw: a label with no `[[` costs one indexOf.
+	var getLabelValue = mxCellRenderer.prototype.getLabelValue;
+
+	mxCellRenderer.prototype.getLabelValue = function(state)
+	{
+		var label = getLabelValue.apply(this, arguments);
+
+		return (typeof label == 'string' && label.indexOf('[[') >= 0 && isHtml(state.view.graph, state.cell, state.style)) ?
+			withPills(label) : label;
 	};
 
-	/**
-	 * Every page listener of ours runs through this: draw.io turns an uncaught error into a native alert, which blocks
-	 * the whole frame (the editor freezes). A fault of ours costs that one event, never the diagram.
-	 */
 	function listen(doc, type, handler, options)
 	{
-		doc.addEventListener(type, function(evt)
-		{
-			try
-			{
-				handler(evt);
-			}
-			catch (e)
-			{
-				console.error('Yaseen links', type, e);
-			}
-		}, (options != null) ? options : true);
+		doc.addEventListener(type, guard(type, handler), (options != null) ? options : true);
 	}
 
 	/** The held modifiers as one key of the host's open table (`yaseenLinkOpens`): ⌘, ⌃, ⌥, ⇧. */
@@ -231,11 +282,43 @@
 		var hovered = null;
 		/** A press the host took: its up, click and the mouse events after it stay away from draw.io. */
 		var swallowing = false;
+		/**
+		 * The window has a link source (A3): the host's first `yaseenLinkOpens` turns the link work on, and a host with
+		 * no links sends none. Until then the labels keep their raw text, and paste, drop and shape links stay draw.io's.
+		 */
+		var linked = false;
 
-		ask = function(inners)
+		/**
+		 * The labels draw again with the looks now (A8): the view keeps its cell states, so only a label whose drawn
+		 * value changed is drawn again, and an open label editor keeps its hidden label.
+		 */
+		function redraw()
 		{
-			post({event: 'yaseenLinkLooks', inners: inners});
-		};
+			graph.view.invalidate();
+			graph.view.validate();
+		}
+
+		function turnOn()
+		{
+			if (!linked)
+			{
+				linked = true;
+				ask = function(inners)
+				{
+					post({event: 'yaseenLinkLooks', inners: inners});
+				};
+				redraw();
+			}
+		}
+
+		/** The host's looks (its answer, or the ones sent with a paste or a drop): the labels draw again if one changed. */
+		function takeLooks(next)
+		{
+			if (next != null && typeof next == 'object' && setLooks(next))
+			{
+				redraw();
+			}
+		}
 
 		/** The modifier keys of the last press: draw.io opens a shape's link with no event at hand. */
 		var lastMods = modsOf({});
@@ -254,14 +337,19 @@
 			post({event: 'yaseenShapeLink', link: link, mods: lastMods});
 		}
 
+		function ours(link)
+		{
+			return linked && typeof link == 'string' && OURS.test(link);
+		}
+
 		Graph.prototype.isCustomLink = function(link)
 		{
-			return OURS.test(link) || isCustomLink.apply(this, arguments);
+			return ours(link) || isCustomLink.apply(this, arguments);
 		};
 
 		EditorUi.prototype.handleCustomLink = function(link)
 		{
-			if (typeof link == 'string' && OURS.test(link))
+			if (ours(link))
 			{
 				shapeLink(link);
 			}
@@ -273,7 +361,7 @@
 
 		Graph.prototype.openLink = function(link)
 		{
-			if (typeof link == 'string' && OURS.test(link))
+			if (ours(link))
 			{
 				shapeLink(link);
 
@@ -293,12 +381,23 @@
 			return (pill == null || innerOf(pill) == null || (editing != null && editing.contains(pill))) ? null : pill;
 		}
 
-		function cellIdAt(evt)
+		/**
+		 * The cell whose drawn label holds the pill (A4), or null: the label of an edge, or one outside or over its
+		 * shape, is not where the pointer's point finds a cell. On a press or a right-click only, never on a move.
+		 */
+		function cellIdOf(pill)
 		{
-			var pt = mxUtils.convertPoint(graph.container, evt.clientX, evt.clientY);
-			var cell = graph.getCellAt(pt.x, pt.y);
+			var found = null;
 
-			return (cell != null) ? cell.id : null;
+			graph.view.states.visit(function(key, state)
+			{
+				if (found == null && state != null && state.text != null && state.text.node != null && state.text.node.contains(pill))
+				{
+					found = state.cell;
+				}
+			});
+
+			return (found != null) ? found.id : null;
 		}
 
 		function hover(pill)
@@ -346,7 +445,7 @@
 			{
 				swallowing = true;
 				stop(evt);
-				post({event: 'yaseenLinkClick', inner: innerOf(pill), cellId: cellIdAt(evt), mods: modsOf(evt)});
+				post({event: 'yaseenLinkClick', inner: innerOf(pill), cellId: cellIdOf(pill), mods: modsOf(evt)});
 			}
 		}, true);
 
@@ -377,7 +476,7 @@
 
 			stop(evt);
 			swallowing = false;
-			post({event: 'yaseenLinkMenu', inner: innerOf(pill), cellId: cellIdAt(evt), x: evt.clientX, y: evt.clientY});
+			post({event: 'yaseenLinkMenu', inner: innerOf(pill), cellId: cellIdOf(pill), x: evt.clientX, y: evt.clientY});
 		}, true);
 
 		listen(doc, 'mouseover', function(evt)
@@ -400,8 +499,9 @@
 		}, {capture: true, passive: true});
 
 		/**
-		 * Edit link and Remove link (D15 of the board): `text` in place of the first raw `[[inner]]` of the cell's label,
-		 * as ONE undo step (draw.io's own `labelChanged`). Nothing on a read-only diagram, whose graph is off.
+		 * Edit link and Remove link (D15 of the board): `text` in place of the first link of the cell's label that reads
+		 * as `inner` (A15: read as its pill reads it, so a `'`, a `"` or an `&nbsp;` as the label editor wrote it
+		 * matches), as ONE undo step (draw.io's own `labelChanged`). Nothing on a read-only diagram, whose graph is off.
 		 */
 		function replace(cellId, inner, text)
 		{
@@ -412,32 +512,37 @@
 				return;
 			}
 
-			var html = graph.isHtmlLabel(cell);
-			var label = graph.convertValueToString(cell);
-			var raw = '[[' + (html ? escapeHtml(inner) : inner) + ']]';
-			var at = label.indexOf(raw);
-
-			if (at < 0 && html)
+			var html = isHtml(graph, cell, graph.getCurrentCellStyle(cell));
+			var found = false;
+			var label = graph.convertValueToString(cell).replace(LINK, function(raw, written)
 			{
-				raw = '[[' + inner + ']]';
-				at = label.indexOf(raw);
-			}
+				if (found || (html ? decodeHtml(written) : written) !== inner)
+				{
+					return raw;
+				}
 
-			if (at >= 0)
+				found = true;
+
+				return html ? escapeHtml(text) : text;
+			});
+
+			if (found)
 			{
-				graph.labelChanged(cell, label.substring(0, at) + (html ? escapeHtml(text) : text) + label.substring(at + raw.length));
+				graph.labelChanged(cell, label);
 			}
 		}
 
-		var making = installMaking(ui, post, replace);
+		var making = installMaking(ui, post, replace, takeLooks, function()
+		{
+			return linked;
+		});
 
 		return function(msg)
 		{
 			switch (msg.action)
 			{
 				case 'yaseenLinkLooks':
-					setLooks(msg.looks || {});
-					graph.refresh();
+					takeLooks(msg.looks);
 					return true;
 				case 'yaseenLinkOpens':
 					opens = {};
@@ -445,6 +550,7 @@
 					{
 						opens[key] = true;
 					});
+					turnOn();
 					return true;
 				case 'yaseenLinkReplace':
 					replace(msg.cellId, msg.inner, msg.text);
@@ -551,7 +657,7 @@
 		return {node: root, offset: root.childNodes.length};
 	}
 
-	function installMaking(ui, post, replaceInCell)
+	function installMaking(ui, post, replaceInCell, takeLooks, isLinked)
 	{
 		var graph = ui.editor.graph;
 		var doc = document;
@@ -566,7 +672,7 @@
 
 			try
 			{
-				if (this.textarea != null && this.textarea.innerHTML.indexOf('[[') >= 0 && this.graph.isHtmlLabel(state.cell))
+				if (this.textarea != null && this.textarea.innerHTML.indexOf('[[') >= 0 && isHtml(this.graph, state.cell, state.style))
 				{
 					this.textarea.innerHTML = withPills(this.textarea.innerHTML);
 					fixPills(this.textarea);
@@ -587,23 +693,24 @@
 
 		mxCellEditor.prototype.getCurrentValue = function()
 		{
-			var pills = (this.textarea != null) ? this.textarea.querySelectorAll('.yaseen-pill') : [];
 			var swapped = [];
-
-			for (var i = 0; i < pills.length; i++)
-			{
-				var inner = innerOf(pills[i]);
-
-				if (inner != null && pills[i].parentNode != null)
-				{
-					var raw = doc.createTextNode('[[' + inner + ']]');
-					pills[i].parentNode.replaceChild(raw, pills[i]);
-					swapped.push([raw, pills[i]]);
-				}
-			}
 
 			try
 			{
+				var pills = (this.textarea != null) ? this.textarea.querySelectorAll('.yaseen-pill') : [];
+
+				for (var i = 0; i < pills.length; i++)
+				{
+					var inner = innerOf(pills[i]);
+
+					if (inner != null && pills[i].parentNode != null)
+					{
+						var raw = doc.createTextNode('[[' + inner + ']]');
+						pills[i].parentNode.replaceChild(raw, pills[i]);
+						swapped.push([raw, pills[i]]);
+					}
+				}
+
 				return getCurrentValue.apply(this, arguments);
 			}
 			finally
@@ -661,7 +768,8 @@
 			evt.clipboardData.setData('text/plain', modelOf(holder).text);
 			evt.clipboardData.setData('text/html', holder.innerHTML);
 
-			if (evt.type == 'cut')
+			// A cut through the editing commands is one step of the label editor's own undo (⌘Z brings it back).
+			if (evt.type == 'cut' && !(typeof doc.execCommand == 'function' && doc.execCommand('delete')))
 			{
 				selection.deleteFromDocument();
 			}
@@ -759,7 +867,10 @@
 
 		// ---- Paste (2A) ----
 
-		/** ⌘⇧V pastes text as it is (the board's rule): the next paste is not asked about. */
+		/**
+		 * ⌘⇧V pastes text as it is (the board's rule): the paste that follows it is not asked about. Any other key clears
+		 * it (A11): a ⌘⇧V that made no paste leaves no mark.
+		 */
 		var plainPaste = false;
 		var pastes = {};
 		var pasteCount = 0;
@@ -770,8 +881,11 @@
 			plainPaste = false;
 			var text = (evt.clipboardData != null) ? evt.clipboardData.getData('text/plain') : '';
 			var root = textarea();
+			// A2: a paste in the open label editor, or on the canvas (draw.io's canvas clipboard); never one in a field of
+			// draw.io's (Edit Link, Find, a panel), which takes the text itself.
+			var at = (root != null) ? root : ui.clipboardElt;
 
-			if (plain || !graph.isEnabled() || text.indexOf('\n') >= 0 || (root != null && !root.contains(evt.target)))
+			if (plain || !isLinked() || !graph.isEnabled() || text.indexOf('\n') >= 0 || at == null || !at.contains(evt.target))
 			{
 				return;
 			}
@@ -799,7 +913,10 @@
 			post({event: 'yaseenPaste', id: id, text: text});
 		}, true);
 
-		/** The host's word on a paste: the link, or null for the text as it is. */
+		/**
+		 * The host's word on a paste: the link, or null for the text as it is. On the canvas that text is draw.io's own
+		 * text paste (A12), as if nothing had asked.
+		 */
 		function pasteAnswer(id, link)
 		{
 			var paste = pastes[id];
@@ -810,18 +927,23 @@
 				return;
 			}
 
-			var text = (link != null) ? link : paste.text;
-
 			if (paste.cell == null)
 			{
-				addLinkBoxes([text], paste.point);
+				if (link != null)
+				{
+					addLinkBoxes([link], paste.point);
+				}
+				else
+				{
+					graph.setSelectionCells(ui.insertTextAt(paste.text, paste.point.x, paste.point.y, false));
+				}
 			}
 			else if (graph.isEditing(paste.cell))
 			{
 				var selection = doc.getSelection();
 				selection.removeAllRanges();
 				selection.addRange(paste.range);
-				insertAtSelection(graph.cellEditor.textarea, text);
+				insertAtSelection(graph.cellEditor.textarea, (link != null) ? link : paste.text);
 			}
 		}
 
@@ -829,15 +951,17 @@
 
 		/** The host's picker is open: its keys come up to the host. */
 		var pickerOpen = false;
-		/** The host was told the editor's state, so it hears when that ends. */
+		/** The host was told the editor's state, so it hears when that ends; and the caret and text it was told last. */
 		var told = false;
+		var lastTold = null;
 
 		function tell(typed)
 		{
 			var root = textarea();
 			var selection = selectionIn(root);
 
-			if (selection == null || (!told && root.textContent.indexOf('[[') < 0 && root.querySelector('.yaseen-pill') == null))
+			// A pill is a closed `[[…]]`: only a typed `[[` opens the picker.
+			if (!isLinked() || selection == null || (!told && root.textContent.indexOf('[[') < 0))
 			{
 				untell();
 				return;
@@ -859,10 +983,19 @@
 				return;
 			}
 
+			// A9: a keystroke's `input` and its `selectionchange` are one state: the host hears it once.
+			var said = caret + ':' + model.text;
+
+			if (told && said === lastTold)
+			{
+				return;
+			}
+
 			var range = selection.getRangeAt(0);
 			var rects = range.getClientRects();
 			var r = (rects.length > 0) ? rects[rects.length - 1] : root.getBoundingClientRect();
 			told = true;
+			lastTold = said;
 			post({event: 'yaseenEditor', state: {text: model.text, caret: caret, typed: typed, cellId: graph.cellEditor.getEditingCell().id,
 				rect: {left: r.left, top: r.top, right: r.right, bottom: r.bottom}}});
 		}
@@ -872,6 +1005,7 @@
 			if (told)
 			{
 				told = false;
+				lastTold = null;
 				pickerOpen = false;
 				post({event: 'yaseenEditor', state: null});
 			}
@@ -881,9 +1015,9 @@
 		{
 			var root = textarea();
 
+			// A pill is made one unit where it goes in (`setEditingValue`, `insertAtSelection`): nothing to fix per key.
 			if (root != null && root.contains(evt.target))
 			{
-				fixPills(root);
 				tell(true);
 			}
 		}, true);
@@ -914,10 +1048,7 @@
 
 		listen(doc, 'keydown', function(evt)
 		{
-			if ((evt.metaKey || evt.ctrlKey) && evt.shiftKey && (evt.key == 'v' || evt.key == 'V'))
-			{
-				plainPaste = true;
-			}
+			plainPaste = (evt.metaKey || evt.ctrlKey) && evt.shiftKey && (evt.key == 'v' || evt.key == 'V');
 
 			if (pickerOpen && PICKER_KEYS[evt.key] && !evt.isComposing && textarea() != null)
 			{
@@ -967,8 +1098,14 @@
 
 		// ---- The sidebar drop (2B, D4) ----
 
-		/** The app's sidebar drags pages now: a drop is the host's (it knows the paths). */
-		var sidebarDrag = false;
+		/**
+		 * D4, A5: the host says when the app's sidebar drags pages (`hostDrag`). A drag over this page while that is on
+		 * is the sidebar's (`dragOver`), and its drop is the host's (it knows the paths), also when the host's "off"
+		 * (sent at the release) comes before the drop. One drop ends it, and so does the drag leaving the page: a later
+		 * drag (from Finder) waits for the host's next "on".
+		 */
+		var hostDrag = false;
+		var dragOver = false;
 		var drops = {};
 		var dropCount = 0;
 
@@ -977,11 +1114,39 @@
 			return /^image\//.test(file.type);
 		}
 
+		function dragging()
+		{
+			if (hostDrag && isLinked())
+			{
+				dragOver = true;
+			}
+		}
+
+		listen(doc, 'dragenter', dragging, true);
+		listen(doc, 'dragover', dragging, true);
+
+		listen(doc, 'dragleave', function(evt)
+		{
+			if (evt.relatedTarget == null)
+			{
+				dragOver = false;
+			}
+		}, true);
+
 		listen(doc, 'drop', function(evt)
 		{
+			var sidebar = dragOver;
+			dragOver = false;
+
+			if (!sidebar)
+			{
+				return;
+			}
+
+			hostDrag = false;
 			var files = (evt.dataTransfer != null) ? Array.prototype.slice.call(evt.dataTransfer.files || []) : [];
 
-			if (!sidebarDrag || graph.isEditing() || files.length == 0 || files.every(isPicture))
+			if (graph.isEditing() || files.length == 0 || files.every(isPicture))
 			{
 				return;
 			}
@@ -996,7 +1161,14 @@
 
 			var id = ++dropCount;
 			drops[id] = {point: graphPoint(evt.clientX, evt.clientY), pictures: files.filter(isPicture)};
-			post({event: 'yaseenDrop', id: id});
+			// A6: the host links only the pages, by their names in the drag; the pictures are imported here.
+			post({event: 'yaseenDrop', id: id, names: files.filter(function(file)
+			{
+				return !isPicture(file);
+			}).map(function(file)
+			{
+				return file.name;
+			})});
 		}, true);
 
 		/** The host's links for a drop: one box each, then the pictures below the last box (the board's rule). */
@@ -1023,6 +1195,8 @@
 			switch (msg.action)
 			{
 				case 'yaseenPasteAnswer':
+					// A13: the link's look comes with it, so a new box takes the size of its pill, not of the written link.
+					takeLooks(msg.looks);
 					pasteAnswer(msg.id, (typeof msg.link == 'string') ? msg.link : null);
 					return true;
 				case 'yaseenPickerOpen':
@@ -1035,9 +1209,10 @@
 					editorReplaceLink(msg.cellId, msg.raw, msg.text);
 					return true;
 				case 'yaseenSidebarDrag':
-					sidebarDrag = msg.on === true;
+					hostDrag = msg.on === true;
 					return true;
 				case 'yaseenDropLinks':
+					takeLooks(msg.looks);
 					dropAnswer(msg.id, Array.isArray(msg.links) ? msg.links : []);
 					return true;
 			}

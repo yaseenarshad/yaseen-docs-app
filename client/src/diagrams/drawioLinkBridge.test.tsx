@@ -7,7 +7,7 @@ import { act, useRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { PickerEditor } from '../drawings/drawingLinkPicker'
 import type { BoardLinks } from '../drawings/useDrawingLinks'
-import { setSidebarDrag } from '../sidebar/sidebarDrag'
+import { setSidebarDrag, sidebarDroppedInFrame } from '../sidebar/sidebarDrag'
 import { wireLook } from '../drawings/drawingLinks'
 import { inWindow, linkOpens, modsKey, useDrawioLinkBridge, type DrawioLinkLive } from './drawioLinkBridge'
 import type { DrawioLinkMessage } from './drawioProtocol'
@@ -19,7 +19,8 @@ describe('the bridge’s pure parts', () => {
     expect(wireLook({ label: 'Plain', icon: null })).toEqual({ label: 'Plain', icon: null })
     expect(wireLook({ label: 'Soon' })).toEqual({ label: 'Soon' })
     expect(wireLook({ label: 'Missing note · YAZ-9', missing: true })).toEqual({ label: 'Missing note · YAZ-9', missing: true })
-    expect(wireLook({ label: 'Folder', folder: true })).toEqual({ label: 'Folder', folder: true })
+    // The icon shows a folder: the frame needs no folder flag (A19).
+    expect(wireLook({ label: 'Folder', folder: true, icon: null })).toEqual({ label: 'Folder', icon: null })
     expect(wireLook(null)).toBeNull()
   })
 
@@ -43,7 +44,7 @@ describe('useDrawioLinkBridge', () => {
   let listener: (() => void) | null
   let bridge: ReturnType<typeof useDrawioLinkBridge>
   const hostLinks = {
-    resolve: vi.fn((inner: string) => (inner === 'Gone' ? { label: 'Gone', missing: true } : { label: `Page ${inner}`, icon: null })),
+    resolve: vi.fn(),
     subscribe: vi.fn((next: () => void) => {
       listener = next
       return () => (listener = null)
@@ -57,6 +58,7 @@ describe('useDrawioLinkBridge', () => {
     dropPaths: vi.fn((paths: readonly string[]) => paths.map((path) => `[[${path}]]`)),
   }
   const links = { hostLinks, openShapeLink: vi.fn() } as unknown as BoardLinks
+  const resolveAsFound = (inner: string) => (inner === 'Gone' ? { label: 'Gone', missing: true } : { label: `Page ${inner}`, icon: null })
 
   function Host({ live, withLinks = true }: { live: DrawioLinkLive; withLinks?: boolean }) {
     const frame = useRef<HTMLIFrameElement>(null)
@@ -67,6 +69,7 @@ describe('useDrawioLinkBridge', () => {
   const send = (msg: DrawioLinkMessage) => act(() => bridge.onMessage(msg))
 
   beforeEach(() => {
+    hostLinks.resolve.mockImplementation(resolveAsFound)
     posted = []
     listener = null
     container = document.createElement('div')
@@ -81,14 +84,29 @@ describe('useDrawioLinkBridge', () => {
     vi.clearAllMocks()
   })
 
-  it('answers the looks asked for, and sends the asked ones again when the window’s links change', () => {
+  it('answers the looks asked for, and sends again only the asked ones that changed when the window’s links change (A8)', () => {
     render()
     send({ event: 'yaseenLinkLooks', inners: ['YAZ-1', 'Gone'] })
     expect(posted).toEqual([{ action: 'yaseenLinkLooks', looks: { 'YAZ-1': { label: 'Page YAZ-1', icon: null }, Gone: { label: 'Gone', missing: true } } }])
     send({ event: 'yaseenLinkLooks', inners: ['YAZ-2'] })
     posted = []
     act(() => listener!())
-    expect(posted).toEqual([{ action: 'yaseenLinkLooks', looks: { 'YAZ-1': { label: 'Page YAZ-1', icon: null }, Gone: { label: 'Gone', missing: true }, 'YAZ-2': { label: 'Page YAZ-2', icon: null } } }])
+    expect(posted).toEqual([])
+    hostLinks.resolve.mockImplementation((inner: string) => (inner === 'Gone' ? { label: 'Gone', missing: true } : { label: inner === 'YAZ-2' ? 'Renamed' : `Page ${inner}`, icon: null }))
+    act(() => listener!())
+    expect(posted).toEqual([{ action: 'yaseenLinkLooks', looks: { 'YAZ-2': { label: 'Renamed', icon: null } } }])
+  })
+
+  it('A7: keeps the 2000 links asked last, oldest out', () => {
+    render()
+    send({ event: 'yaseenLinkLooks', inners: Array.from({ length: 2001 }, (_, i) => `P${i}`) })
+    posted = []
+    hostLinks.resolve.mockImplementation((inner: string) => ({ label: `New ${inner}`, icon: null }))
+    act(() => listener!())
+    const looks = posted[0]!.looks as Record<string, unknown>
+    expect(Object.keys(looks)).toHaveLength(2000)
+    expect(looks.P0).toBeUndefined()
+    expect(looks.P2000).toEqual({ label: 'New P2000', icon: null })
   })
 
   it('tells draw.io which keys open a link once it listens, and again when the diagram turns read only', () => {
@@ -127,14 +145,19 @@ describe('useDrawioLinkBridge', () => {
     expect((hostLinks.onContextMenu.mock.calls.at(-1) as unknown as [{ replace?: unknown }])[0].replace).toBeUndefined()
   })
 
-  it('answers a paste with the link the board makes of it, or null for the text as it is (2A)', () => {
+  it('answers a paste with the link the board makes of it and that link’s look (A13), or null for the text as it is (2A)', () => {
     render()
     send({ event: 'yaseenPaste', id: 3, text: '/vault/Plan.md' })
     send({ event: 'yaseenPaste', id: 4, text: '/elsewhere/x.md' })
     expect(posted).toEqual([
-      { action: 'yaseenPasteAnswer', id: 3, link: '[[YAZ-7]]' },
+      { action: 'yaseenPasteAnswer', id: 3, link: '[[YAZ-7]]', looks: { 'YAZ-7': { label: 'Page YAZ-7', icon: null } } },
       { action: 'yaseenPasteAnswer', id: 4, link: null },
     ])
+    // The pasted link is one of the asked ones now: a rename reaches it.
+    posted = []
+    hostLinks.resolve.mockImplementation((inner: string) => ({ label: `Renamed ${inner}`, icon: null }))
+    act(() => listener!())
+    expect(posted).toEqual([{ action: 'yaseenLinkLooks', looks: { 'YAZ-7': { label: 'Renamed YAZ-7', icon: null } } }])
   })
 
   it('gives the board’s picker the label editor: its caret box in the window, and its writes sent back (2A, D5)', () => {
@@ -159,8 +182,23 @@ describe('useDrawioLinkBridge', () => {
     expect(posted.at(-1)).toEqual({ action: 'yaseenSidebarDrag', on: true })
     act(() => setSidebarDrag([]))
     expect(posted.at(-1)).toEqual({ action: 'yaseenSidebarDrag', on: false })
-    send({ event: 'yaseenDrop', id: 1 })
-    expect(posted.at(-1)).toEqual({ action: 'yaseenDropLinks', id: 1, links: ['[[/vault/A.md]]', '[[/vault/B.md]]'] })
+    send({ event: 'yaseenDrop', id: 1, names: ['A.md', 'B.md'] })
+    expect(posted.at(-1)).toEqual({
+      action: 'yaseenDropLinks',
+      id: 1,
+      links: ['[[/vault/A.md]]', '[[/vault/B.md]]'],
+      looks: { '/vault/A.md': { label: 'Page /vault/A.md', icon: null }, '/vault/B.md': { label: 'Page /vault/B.md', icon: null } },
+    })
+    // A5: the drop landed in the app; the "dragged out to Finder" box does not ask.
+    expect(sidebarDroppedInFrame()).toEqual(['/vault/A.md', '/vault/B.md'])
+  })
+
+  it('A6: links only the pages the frame took — a picture of the drag is the frame’s own import, never a pill', () => {
+    render()
+    act(() => setSidebarDrag(['/vault/A.md', '/vault/pics/p.png', '/vault/B.md']))
+    send({ event: 'yaseenDrop', id: 2, names: ['A.md', 'B.md'] })
+    expect(hostLinks.dropPaths).toHaveBeenLastCalledWith(['/vault/A.md', '/vault/B.md'])
+    act(() => setSidebarDrag([]))
   })
 
   it('opens a shape’s own link as a board’s link icon does, with the keys of its press (D8)', () => {
@@ -170,11 +208,17 @@ describe('useDrawioLinkBridge', () => {
     expect(links.openShapeLink).toHaveBeenCalledWith('[[YAZ-1]]', mods)
   })
 
-  it('with no link source the pills stay text: nothing is answered and no keys are sent', () => {
+  it('with no link source the pills stay text: nothing is resolved, no keys are sent, and a paste or a drop is answered with nothing (A3)', () => {
     render(undefined, false)
     act(() => bridge.ready())
     send({ event: 'yaseenLinkLooks', inners: ['YAZ-1'] })
     expect(posted).toEqual([])
+    send({ event: 'yaseenPaste', id: 5, text: '/vault/Plan.md' })
+    send({ event: 'yaseenDrop', id: 6, names: ['A.md'] })
+    expect(posted).toEqual([
+      { action: 'yaseenPasteAnswer', id: 5, link: null },
+      { action: 'yaseenDropLinks', id: 6, links: [] },
+    ])
     expect(hostLinks.resolve).not.toHaveBeenCalled()
   })
 })

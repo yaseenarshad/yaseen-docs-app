@@ -6,15 +6,30 @@
  */
 let current: readonly string[] = []
 let last: readonly string[] = []
+let inFrame: readonly string[] = []
 const listeners = new Set<() => void>()
 
 /** The sidebar's drag started (its paths) or ended (none). */
 export function setSidebarDrag(paths: readonly string[]): void {
   if (paths === current) return
   current = paths
-  if (paths.length > 0) last = paths
+  if (paths.length > 0) {
+    last = paths
+    inFrame = []
+  }
   listeners.forEach((listener) => listener())
 }
+
+/**
+ * A diagram's frame took the drop of the last drag (A5). The frame is another document, so the window hears no drop:
+ * App's "dragged out to Finder" box reads this after its own read, as it reads `landedInApp`, and does not ask.
+ */
+export function sidebarDropInFrame(): void {
+  inFrame = last
+}
+
+/** The paths of the last drag, once a diagram's frame took its drop; none until then. */
+export const sidebarDroppedInFrame = (): readonly string[] => inFrame
 
 /** A sidebar drag is on. */
 export const sidebarDragOn = (): boolean => current.length > 0
