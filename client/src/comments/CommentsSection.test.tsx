@@ -1025,6 +1025,20 @@ describe('CommentsSection — YAZ-4615 resolve, writers, signing', () => {
     expect(openProfile).toHaveBeenCalledOnce()
   })
 
+  it('a card under the handle `agent` changes nothing: `agent` stays the violet "AI" with Edit', async () => {
+    readConfig.mockResolvedValue({ version: 1, people: { agent: { name: 'Agent Smith', picture: null, updated: '2026-09-01T00:00:00Z' } } })
+    const el = mountWith(note(`  - id: aaaaaaaa
+    at: 2026-09-11T20:00:00Z
+    by: agent
+    body: From an agent
+`), {}, '/vault')
+    await act(async () => await new Promise((r) => setTimeout(r, 0)))
+    const [a] = articles(el)
+    expect(q(a, '.comments-avatar--agent')?.textContent).toBe('AI')
+    expect(q(a, '.comments__name')?.textContent).toBe('agent')
+    expect(actionOf(a, 'Edit')).not.toBeNull()
+  })
+
   it('D6, D8: a teammate shows by their card and has no Edit; your own, an agent\'s and an old comment keep Edit', async () => {
     readConfig.mockResolvedValue({ version: 1, people: { sam: { name: 'Sam Lee', picture: null, updated: '2026-09-01T00:00:00Z' } } })
     const el = mountWith(
@@ -1053,9 +1067,10 @@ describe('CommentsSection — YAZ-4615 resolve, writers, signing', () => {
     expect(actionOf(sam, 'Edit')).toBeNull()
     expect(actionOf(sam, 'Delete')).not.toBeNull()
     expect(q(mine, '.comments__name')?.textContent).toBe('Yaseen')
-    // A handle with no card is a person whose card has not arrived (D1 rule 6): neutral initials, no Edit (D8).
-    expect(q(claude, '.comments-avatar--person')?.textContent).toBe('CL')
-    expect(actionOf(claude, 'Edit')).toBeNull()
+    // A handle with no card is an agent that signed with its own name (Yaseen's pick on audit 4): violet initials, and Edit.
+    expect(q(claude, '.comments-avatar--agent')?.textContent).toBe('CL')
+    expect(q(claude, '.comments__name')?.textContent).toBe('claude')
+    expect(actionOf(claude, 'Edit')).not.toBeNull()
     for (const a of [mine, old]) expect(actionOf(a, 'Edit')).not.toBeNull()
   })
 })

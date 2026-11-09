@@ -316,7 +316,7 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     await b.write('plan.md', NOTE(one + entry('bbbb0002', 2, '2026-11-02T10:00:00Z', 'From Sam', 'sam')))
     await a.write('plan.md', NOTE(one + entry('cccc0003', 2, '2026-11-02T11:00:00Z', 'From me', 'yaseen')))
     const status = await meet(a, b)
-    expect(status.merged).toEqual([{ path: 'plan.md', author: 'Sam', clashes: 0, kind: 'note', renumbered: [{ from: '#2', to: '#3' }] }])
+    expect(status.merged).toEqual([{ path: 'plan.md', author: 'Sam', clashes: 0, kind: 'note', title: 'Plan', renumbered: [{ from: '#2', to: '#3' }] }])
     const list = readComments(a.read('plan.md'))
     expect(list.map((c) => [c.id, c.n, c.body])).toEqual([
       ['aaaa0001', 1, 'First'],

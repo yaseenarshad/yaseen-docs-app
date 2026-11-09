@@ -65,4 +65,12 @@ describe('ProfileControl', () => {
     type(field(el, 'Name'), '')
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ profile: null }))
   })
+  it('the handle “agent” is refused: it is for AI agents, and nothing is saved', () => {
+    const onChange = vi.fn()
+    const el = mount({ ...DEFAULT_SETTINGS, profile: { handle: 'yaz', name: 'Yaseen', picture: null } }, onChange)
+    type(field(el, 'Handle'), 'agent')
+    expect(el.textContent).toContain('“agent” is for AI agents. Pick another handle.')
+    expect(field(el, 'Handle')?.getAttribute('aria-invalid')).toBe('true')
+    expect(onChange).not.toHaveBeenCalled()
+  })
 })

@@ -40,7 +40,7 @@ import {
   type PageComment,
 } from '@shared/comments'
 import { cardMatches, type PeopleConfig } from '@shared/people'
-import type { CommentProfile, CommentsOrder, FileResponse } from '@shared/types'
+import { AGENT_HANDLE, type CommentProfile, type CommentsOrder, type FileResponse } from '@shared/types'
 import { api } from '../api'
 import { relativeTime } from '../lib/relativeTime'
 import { transformFile } from '../views/writeProperty'
@@ -107,15 +107,16 @@ const nonBlank = (v: unknown): string | null => (typeof v === 'string' && v.trim
 
 /**
  * D6: you by your profile (so your own row is right before the people file has your card), a
- * teammate by their card, `agent` as the violet "AI". Any other handle is a person whose card has
- * not arrived (D1 rule 6): neutral initials, and no Edit (D8).
+ * teammate by their card: a person, no Edit (D8). Any handle with no card is an agent — `agent` as
+ * the violet "AI", one that signs with its own name (`claude`) as violet initials — and you may edit
+ * it. A person's card goes in with their first comment, so a handle with no card is an agent
+ * (Yaseen's pick on audit 4, after the checker's round 1).
  */
 function writerOf(by: string | null, me: CommentProfile | null, people: PeopleConfig): Writer {
   if (by === null) return { kind: 'none', name: '', picture: null }
   if (me !== null && by === me.handle) return { kind: 'me', name: me.name, picture: me.picture }
-  if (by === 'agent') return { kind: 'agent', name: by, picture: null }
-  const card = people.people[by]
-  return { kind: 'person', name: card?.name ?? by, picture: card?.picture ?? null }
+  const card = by === AGENT_HANDLE ? undefined : people.people[by]
+  return card === undefined ? { kind: 'agent', name: by, picture: null } : { kind: 'person', name: card.name, picture: card.picture }
 }
 
 /** The name a handle stands for, for "Resolved by …". */

@@ -78,7 +78,7 @@ import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
 import { VaultLinksContext } from './links/vaultLinks'
-import { CommentPrefsContext, saveCard } from './comments/usePeople'
+import { CommentPrefsContext, useCardFollowsProfile } from './comments/usePeople'
 import type { LinkActions } from './editor/linkMenu'
 import { useVaultIcons } from './sidebar/useVaultIcons'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
@@ -1196,22 +1196,8 @@ export function App() {
     () => ({ me: settings.profile, resolvedPlace: settings.commentsResolved, openProfile: openSettings }),
     [settings.profile, settings.commentsResolved, openSettings],
   )
-  // D1 rule 3: your card follows your profile in each vault of the window that already has one —
-  // after a change, and in a vault when it joins the window (it may hold an old card). Each vault is
-  // asked once for each version of the profile; a card that already matches writes nothing.
-  const carded = useRef(new Set<string>())
-  const rootsKey = roots.join('\n')
-  useEffect(() => {
-    const me = settings.profile
-    if (me === null) return
-    const version = JSON.stringify(me)
-    for (const root of rootsKey === '' ? [] : rootsKey.split('\n')) {
-      const key = `${root}\n${version}`
-      if (carded.current.has(key)) continue
-      carded.current.add(key)
-      void saveCard(root, me, true)
-    }
-  }, [settings.profile, rootsKey])
+  // D1 rule 3: your card follows your profile in each vault of the window.
+  useCardFollowsProfile(roots, settings.profile)
   // Settings › Daily notes › Open template (YAZ-3607 D6): the daily notes folder's hidden `.template.md`, in a tab. A
   // missing one is made empty first. The sidebar hides a "." file, so this is the way to it. Settings closes first.
   // The folder is the one the daily note uses: in the first vault of the window that holds it (`dailyNoteVault`).

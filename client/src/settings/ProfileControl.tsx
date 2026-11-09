@@ -9,7 +9,7 @@
  * here, so the profile (and the vault's people file) stays a few KB.
  */
 import { useEffect, useRef, useState } from 'react'
-import { handleFromName, HANDLE_RE, isCommentProfile, PROFILE_PICTURE_MAX, type CommentProfile, type SettingsState } from '@shared/types'
+import { AGENT_HANDLE, handleFromName, HANDLE_RE, isCommentProfile, PROFILE_PICTURE_MAX, type CommentProfile, type SettingsState } from '@shared/types'
 import { Avatar } from '../comments/Avatar'
 
 const SIDE = 96
@@ -80,6 +80,8 @@ export function ProfileControl({ settings, onChange }: { settings: SettingsState
   }
 
   const badHandle = draft.name.trim() !== '' && !HANDLE_RE.test(draft.handle)
+  // The CLI signs an agent that gives no name as `agent`; a person with that handle would read as one (D2, D6).
+  const agentHandle = draft.name.trim() !== '' && draft.handle === AGENT_HANDLE
   const preview: CommentProfile = { handle: draft.handle, name: draft.name.trim() || 'You', picture: draft.picture }
 
   return (
@@ -138,13 +140,14 @@ export function ProfileControl({ settings, onChange }: { settings: SettingsState
           value={draft.handle}
           placeholder="your-name"
           maxLength={32}
-          aria-invalid={badHandle}
+          aria-invalid={badHandle || agentHandle}
           onChange={(e) => setDraft({ ...draft, handle: e.currentTarget.value.toLowerCase(), ownHandle: true })}
           onBlur={() => save()}
           onKeyDown={(e) => e.key === 'Enter' && save()}
         />
       </label>
       {badHandle && <p className="profile-control__error">Use lowercase letters, numbers and single hyphens.</p>}
+      {agentHandle && <p className="profile-control__error">“agent” is for AI agents. Pick another handle.</p>}
       {error !== null && <p className="profile-control__error">{error}</p>}
     </div>
   )

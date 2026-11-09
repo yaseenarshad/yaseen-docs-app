@@ -39,7 +39,7 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { dueAt, isInReview, reviewQueue } from '@shared/schedule'
-import { VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type SettingsState } from '@shared/types'
+import { AGENT_HANDLE, VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type SettingsState } from '@shared/types'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
 import { dailyNote } from '../main/notes/daily'
@@ -238,7 +238,7 @@ function listing(comments: readonly PageComment[]): string {
 }
 
 /** The caller's name: its --by, else `agent` — what `comment` writes and what `edit` / `delete` may change. */
-const callerOf = (flags: Map<string, string | true>): string => str(flags, '--by')?.trim() || 'agent'
+const callerOf = (flags: Map<string, string | true>): string => str(flags, '--by')?.trim() || AGENT_HANDLE
 
 /** The comment `ref` names (id or number), or the refusal. Returns the parse it did, so callers label without parsing again. */
 function named(content: string, ref: string, page: string): { comments: PageComment[]; target: PageComment } {

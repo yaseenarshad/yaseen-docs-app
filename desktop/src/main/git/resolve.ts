@@ -1,8 +1,11 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
-import { mergeNoteComments } from '@shared/commentMerge'
+import { mergeNoteComments, noteRest } from '@shared/commentMerge'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { titleOf } from '@shared/noteName'
 import { isBoard, isDiagram, isDrawing, isMarkdown } from '@shared/fileKind'
 import { mergePeopleFile, PEOPLE_FILE } from '@shared/people'
 import { VAULT_CONFIG_DIR, type GithubSyncMerge } from '@shared/types'
@@ -227,18 +230,25 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
     return { staged: [rel], report: null }
   }
   if (isMarkdown(rel)) {
-    // YAZ-4615 D4, D9: comments by id; the rest kept both ways when both sides changed it.
-    const merged = mergeNoteComments(base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8'))
+    // YAZ-4615 D4, D9: comments by id; the rest merged line by line, kept both ways only when the
+    // same lines changed on both sides.
+    const [b, t, m] = [base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8')]
+    let merged = mergeNoteComments(b, t, m)
+    if (merged?.copy !== undefined && b !== null) {
+      const lined = await lineMerge(bin, root, noteRest(b), noteRest(t), noteRest(m))
+      if (lined !== null) merged = mergeNoteComments(b, t, m, () => lined)
+    }
     // Comments that are not ours to read (a value of the user's own, a block that does not parse):
     // the whole note is kept both ways, as a board is (D9 — one note never stops the vault's sync).
     if (merged === null) return keepBoth(root, rel, theirs, mine, copies, author)
     await atomicWrite(abs(root, rel), merged.text)
     const renumbered = merged.renumbered.length === 0 ? {} : { renumbered: merged.renumbered }
-    if (merged.copy === undefined) return { staged: [rel], report: { path: rel, author: await author(), clashes: 0, kind: 'note', ...renumbered } }
+    const note = { kind: 'note' as const, title: noteTitle(rel, merged.text), ...renumbered }
+    if (merged.copy === undefined) return { staged: [rel], report: { path: rel, author: await author(), clashes: 0, ...note } }
     const copy = copies.get(rel) ?? freeCopyName(root, rel)
     copies.set(rel, copy)
     await atomicWrite(abs(root, copy), merged.copy)
-    return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, kind: 'note', ...renumbered } }
+    return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...note } }
   }
   const merged = mergeText(rel, base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8'))
   if (merged !== null) {
@@ -250,13 +260,34 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   return keepBoth(root, rel, theirs, mine, copies, author)
 }
 
+/** Git's own three-way line merge of three texts; null when the same lines changed, or git fails. */
+async function lineMerge(bin: string, root: string, base: string, theirs: string, mine: string): Promise<string | null> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'yaseendocs-merge-'))
+  try {
+    const [b, t, m] = ['base', 'theirs', 'mine'].map((name) => path.join(dir, name))
+    await Promise.all([writeFile(b, base), writeFile(t, theirs), writeFile(m, mine)])
+    const res = await git(bin, root, ['merge-file', '-p', '--quiet', t, b, m])
+    return res.code === 0 ? res.stdout : null
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
 /** D3: keep both. The remote's at the path (it is already everywhere else); ours beside it. */
 async function keepBoth(root: string, rel: string, theirs: Buffer, mine: Buffer, copies: Map<string, string>, author: () => Promise<string>): Promise<Settled> {
   const copy = copies.get(rel) ?? freeCopyName(root, rel)
   copies.set(rel, copy)
   await atomicWrite(abs(root, rel), theirs)
   await atomicWrite(abs(root, copy), mine)
-  return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...(isMarkdown(rel) ? { kind: 'note' as const } : {}) } }
+  return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...(isMarkdown(rel) ? { kind: 'note' as const, title: noteTitle(rel, theirs.toString('utf8')) } : {}) } }
+}
+
+/** A note as the notice names it: its `title`, else its file name, and a folder page its folder's name. */
+function noteTitle(rel: string, text: string): string {
+  const name = path.posix.basename(rel)
+  const dir = path.posix.basename(path.posix.dirname(rel))
+  const fallback = name === '.folder.md' && dir !== '.' ? dir : path.posix.basename(name, path.posix.extname(name)).replace(/^\.+/, '')
+  return titleOf(parseFrontmatter(splitFrontmatter(text).frontmatter).properties, fallback)
 }
 
 /** Whether sync may settle a conflict on `rel` at all: a board, a note (YAZ-4615 D4, D9), or one of the per-entry list files. */

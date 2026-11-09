@@ -390,6 +390,23 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ commentsOrder: 'oldest' })
   })
 
+  it('the comment settings of YAZ-4615: an old file gets the defaults; a good profile survives; a bad one, or a person signed `agent`, is none', async () => {
+    const { profile: _p, commentsResolved: _r, commentsHint: _h, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ profile: null, commentsResolved: 'bottom', commentsHint: true })
+
+    const me = { handle: 'maya', name: 'Maya Chen', picture: 'data:image/webp;base64,AAAA' }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, profile: me, commentsResolved: 'inPlace', commentsHint: false } }))
+    expect(createStore(file).get().settings).toMatchObject({ profile: me, commentsResolved: 'inPlace', commentsHint: false })
+
+    for (const profile of [{ ...me, handle: 'Maya Chen' }, { ...me, handle: 'agent' }, { ...me, name: '' }, { ...me, picture: 'https://x/y.png' }, 'maya']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, profile } }))
+      expect(createStore(file).get().settings.profile).toBeNull()
+    }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, commentsResolved: 'top', commentsHint: 'yes' } }))
+    expect(createStore(file).get().settings).toMatchObject({ commentsResolved: 'bottom', commentsHint: true })
+  })
+
   it('sidebarSort (YAZ-3227 D1): a file without the key reads the defaults; a sort of each tab survives; Manual on Files, a bad way or a missing tab falls back', async () => {
     const { sidebarSort: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

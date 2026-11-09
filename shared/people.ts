@@ -5,7 +5,11 @@
  *
  * The app writes it, nobody edits it: your card goes in on your first comment in a vault, and is
  * updated when your profile changes. GitHub sync merges it card by card (`mergePeopleFile`): the
- * card with the newer `updated` wins. Pure: no fs, no React.
+ * card with the newer `updated` wins. The writes work on the file as it is (`withCard`, the merge):
+ * a card this version cannot read — a newer app's shape — is kept as it is, never dropped.
+ *
+ * Size: one card per person who commented; a picture is at most `PROFILE_PICTURE_MAX` (a 96 px WebP
+ * is a few KB). The app shows at most `PEOPLE_MAX` cards; the rest show initials. Pure: no fs, no React.
  */
 import { PROFILE_PICTURE_MAX, type CommentProfile } from './types'
 
@@ -26,6 +30,9 @@ export interface PeopleConfig {
 
 export const EMPTY_PEOPLE: PeopleConfig = { version: 1, people: {} }
 
+/** The cards the app reads; a vault with more shows initials for the rest (a limit on what grows). */
+export const PEOPLE_MAX = 1000
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /** A picture from a synced file is only a small data URL: never a remote address (a tracking pixel) nor megabytes. */
@@ -37,9 +44,16 @@ const isCard = (v: unknown): v is PersonCard => isRecord(v) && typeof v.name ===
 export function parsePeople(value: unknown): PeopleConfig {
   if (!isRecord(value) || !isRecord(value.people)) return EMPTY_PEOPLE
   const people: Record<string, PersonCard> = {}
-  for (const [handle, card] of Object.entries(value.people)) if (isCard(card)) people[handle] = { name: card.name, picture: card.picture, updated: card.updated }
+  let n = 0
+  for (const [handle, card] of Object.entries(value.people)) {
+    if (n >= PEOPLE_MAX) break
+    if (isCard(card)) (people[handle] = { name: card.name, picture: card.picture, updated: card.updated }), (n += 1)
+  }
   return { version: 1, people }
 }
+
+/** Every entry of the file as it is, readable or not: what a write builds on. */
+const rawPeople = (value: unknown): Record<string, unknown> => (isRecord(value) && isRecord(value.people) ? value.people : {})
 
 /** Your card as the profile says it, stamped `now`. */
 export const cardOf = (profile: CommentProfile, now: string): PersonCard => ({ name: profile.name, picture: profile.picture, updated: now })
@@ -48,17 +62,23 @@ export const cardOf = (profile: CommentProfile, now: string): PersonCard => ({ n
 export const cardMatches = (card: PersonCard | undefined, profile: CommentProfile): boolean =>
   card !== undefined && card.name === profile.name && card.picture === profile.picture
 
-/** The file with your card set; null when it already matches, so the caller writes nothing. */
-export function withCard(config: PeopleConfig, profile: CommentProfile, now: string): PeopleConfig | null {
-  if (cardMatches(config.people[profile.handle], profile)) return null
-  return { version: 1, people: { ...config.people, [profile.handle]: cardOf(profile, now) } }
+/**
+ * The file (its value as read) with your card set, every other entry kept as it is; null when your
+ * card already matches, so the caller writes nothing.
+ */
+export function withCard(file: unknown, profile: CommentProfile, now: string): PeopleConfig | null {
+  const mine = parsePeople({ people: { [profile.handle]: rawPeople(file)[profile.handle] } }).people[profile.handle]
+  if (cardMatches(mine, profile)) return null
+  return { version: 1, people: { ...(rawPeople(file) as Record<string, PersonCard>), [profile.handle]: cardOf(profile, now) } }
 }
 
-/** Newer `updated` wins; equal stamps keep `a` (the caller passes the side that wins ties first). */
-const newer = (a: PersonCard | undefined, b: PersonCard | undefined): PersonCard | undefined => {
+const stamp = (card: unknown): number => (isRecord(card) && typeof card.updated === 'string' ? Date.parse(card.updated) : Number.NaN)
+
+/** Newer `updated` wins; equal or unreadable stamps keep `a` (the caller passes the side that wins ties first). */
+const newer = (a: unknown, b: unknown): unknown => {
   if (a === undefined) return b
   if (b === undefined) return a
-  return Date.parse(b.updated) > Date.parse(a.updated) ? b : a
+  return stamp(b) > stamp(a) ? b : a
 }
 
 /**
@@ -68,19 +88,19 @@ const newer = (a: PersonCard | undefined, b: PersonCard | undefined): PersonCard
  * can win a tie it should lose — the cost of no server). A card is never deleted by the app.
  */
 export function mergePeopleFile(base: string | null, theirs: string, mine: string): string | null {
-  const parse = (text: string): PeopleConfig | null => {
+  const parse = (text: string): Record<string, unknown> | null => {
     try {
-      return parsePeople(JSON.parse(text))
+      return rawPeople(JSON.parse(text))
     } catch {
       return null
     }
   }
-  const [b, t, m] = [base === null ? EMPTY_PEOPLE : parse(base), parse(theirs), parse(mine)]
+  const [b, t, m] = [base === null ? {} : parse(base), parse(theirs), parse(mine)]
   if (b === null || t === null || m === null) return null
-  const people: Record<string, PersonCard> = {}
-  for (const h of new Set([...Object.keys(t.people), ...Object.keys(m.people)])) {
-    const [was, their, my] = [b.people[h], t.people[h], m.people[h]]
-    const same = (x: PersonCard | undefined, y: PersonCard | undefined) => JSON.stringify(x) === JSON.stringify(y)
+  const people: Record<string, unknown> = {}
+  for (const h of new Set([...Object.keys(t), ...Object.keys(m)])) {
+    const [was, their, my] = [b[h], t[h], m[h]]
+    const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y)
     const pick = same(my, was) ? their : same(their, was) ? my : newer(their, my)
     if (pick !== undefined) people[h] = pick
   }

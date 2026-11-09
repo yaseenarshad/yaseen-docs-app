@@ -1,6 +1,6 @@
 /** `shared/people.ts` (YAZ-4615 D1): the vault's people file. */
 import { describe, expect, it } from 'vitest'
-import { EMPTY_PEOPLE, mergePeopleFile, parsePeople, withCard } from '@shared/people'
+import { EMPTY_PEOPLE, mergePeopleFile, parsePeople, PEOPLE_MAX, withCard } from '@shared/people'
 import { handleFromName, isCommentProfile } from '@shared/types'
 
 const card = (name: string, updated: string) => ({ name, picture: null, updated })
@@ -43,5 +43,19 @@ describe('people file', () => {
     expect(isCommentProfile({ handle: 'Bad Handle', name: 'x', picture: null })).toBe(false)
     expect(isCommentProfile({ handle: 'ok', name: ' ', picture: null })).toBe(false)
     expect(isCommentProfile({ handle: 'ok', name: 'x', picture: 'http://x' })).toBe(false)
+    // `agent` is what the CLI signs an agent with: a person with it would read as an agent (checker, round 1).
+    expect(isCommentProfile({ handle: 'agent', name: 'Agent Smith', picture: null })).toBe(false)
+  })
+  it('a write keeps a card this version cannot read (a newer app’s shape); so does the merge', () => {
+    const odd = { name: 'Lee', avatar: { url: 'x' }, updated: '2026-11-01T00:00:00Z' }
+    const me = { handle: 'maya', name: 'Maya', picture: null }
+    expect(withCard({ version: 1, people: { lee: odd } }, me, 't1')?.people).toEqual({ lee: odd, maya: card('Maya', 't1') })
+    const base = file({ lee: odd })
+    expect(JSON.parse(mergePeopleFile(base, file({ lee: odd, sam: card('Sam', 't1') }), file({ lee: odd, maya: card('Maya', 't1') })) ?? '').people).toEqual({ lee: odd, sam: card('Sam', 't1'), maya: card('Maya', 't1') })
+  })
+
+  it('the app reads at most PEOPLE_MAX cards (a limit on what grows)', () => {
+    const many = Object.fromEntries(Array.from({ length: PEOPLE_MAX + 5 }, (_, i) => [`p${i}`, card(`P${i}`, 't')]))
+    expect(Object.keys(parsePeople({ version: 1, people: many }).people)).toHaveLength(PEOPLE_MAX)
   })
 })

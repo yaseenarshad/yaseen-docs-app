@@ -11,9 +11,10 @@
  *  - a number that clashes in one run (the page's top-level comments, or one parent's replies) goes
  *    to the comment only MY side has — nobody else has seen it yet — as the next free number;
  *  - the rest: the same on both sides, or changed on one side only, is that side's. Changed on BOTH
- *    (the same lines, or git would not have stopped) is D9: the remote's rest stays at the path with
- *    every comment merged into it, and my rest is handed back as `copy`, with no comments, so no
- *    comment shows two times.
+ *    sides, it is merged line by line (`mergeLines`, git's own three-way merge): edits on different
+ *    lines both stay. Only when the SAME lines changed is it D9: the remote's rest stays at the path
+ *    with every comment merged into it, and my rest is handed back as `copy`, with no comments, so no
+ *    comment shows two times. (Git stops on the comments alone: both sides append at one place.)
  *
  * Null only when a version's comments are not ours to write (`foreign` / `invalid` bytes): the pass
  * then stops as it always did.
@@ -44,8 +45,9 @@ const ours = (content: string): boolean => {
   return shape === 'absent' || shape === 'list'
 }
 
-/** The note with its comments taken out. */
-const restOf = (content: string): string => setFrontmatterProperty(content, COMMENTS_KEY, undefined)
+/** The note with its comments taken out: what `mergeLines` merges. */
+export const noteRest = (content: string): string => setFrontmatterProperty(content, COMMENTS_KEY, undefined)
+const restOf = noteRest
 
 /** Entries by id; an entry that is not a comment we know is kept by its exact JSON. */
 function keyed(list: readonly unknown[]): Map<string, unknown> {
@@ -74,7 +76,13 @@ const label = (list: readonly unknown[], e: Entry, n: number): string => {
   return parent !== undefined && isIdComment(parent) && typeof parent.n === 'number' ? `#${parent.n}.${n}` : `#${n}`
 }
 
-export function mergeNoteComments(base: string | null, theirs: string, mine: string): NoteMerge | null {
+/**
+ * A three-way LINE merge of the rest (`git merge-file`), or null when the same lines changed. Sync
+ * passes git's; without one, any change on both sides keeps both versions.
+ */
+export type LineMerge = (base: string, theirs: string, mine: string) => string | null
+
+export function mergeNoteComments(base: string | null, theirs: string, mine: string, mergeLines?: LineMerge): NoteMerge | null {
   if (!ours(theirs) || !ours(mine) || (base !== null && !ours(base))) return null // resolve.ts keeps both whole files (D9)
   const [b, t, m] = [base === null ? new Map<string, unknown>() : keyed(writableComments(base)), keyed(writableComments(theirs)), keyed(writableComments(mine))]
 
@@ -116,7 +124,10 @@ export function mergeNoteComments(base: string | null, theirs: string, mine: str
 
   const [restB, restT, restM] = [base === null ? null : restOf(base), restOf(theirs), restOf(mine)]
   const both = restT !== restM && restB !== restT && restB !== restM
-  const rest = restT === restM || restB === restM ? restT : restB === restT ? restM : restT
+  // Both changed the rest: lines that differ on one side only merge as git merges them (D9 is only
+  // for the SAME lines). The base is needed for that; two new notes at one path keep both.
+  const lined = both && restB !== null && mergeLines !== undefined ? mergeLines(restB, restT, restM) : null
+  const rest = lined ?? (restT === restM || restB === restM ? restT : restB === restT ? restM : restT)
   const text = withComments(rest, list)
-  return both ? { text, renumbered, copy: restM } : { text, renumbered }
+  return both && lined === null ? { text, renumbered, copy: restM } : { text, renumbered }
 }

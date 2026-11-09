@@ -2359,6 +2359,9 @@ export interface CommentProfile {
 
 /** A handle the app writes: lowercase letters, digits and single inner hyphens, 1–32 characters. */
 export const HANDLE_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/** The handle an agent signs with when it gives no name of its own (the CLI's default `--by`). A person cannot take it. */
+export const AGENT_HANDLE = 'agent'
 /** The picture is a small data URL; anything bigger is not one the app made. */
 export const PROFILE_PICTURE_MAX = 64 * 1024
 
@@ -2366,7 +2369,7 @@ export function isCommentProfile(v: unknown): v is CommentProfile {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
   const p = v as Record<string, unknown>
   return (
-    typeof p.handle === 'string' && p.handle.length <= 32 && HANDLE_RE.test(p.handle) &&
+    typeof p.handle === 'string' && p.handle.length <= 32 && HANDLE_RE.test(p.handle) && p.handle !== AGENT_HANDLE &&
     typeof p.name === 'string' && p.name.trim() !== '' && p.name.length <= 80 &&
     (p.picture === null || (typeof p.picture === 'string' && p.picture.startsWith('data:image/') && p.picture.length <= PROFILE_PICTURE_MAX))
   )
@@ -3196,6 +3199,8 @@ export interface GithubSyncMerge {
   kind?: 'note'
   /** YAZ-4615 D4: our comments that took a new number, `#4` → `#5`. */
   renumbered?: readonly { from: string; to: string }[]
+  /** YAZ-4615: a note's title (its `title`, else its file or folder name) — what the notice calls it. */
+  title?: string
 }
 
 /** One entry in a drawing's or diagram's Version history (YAZ-1897 D4, YAZ-3039). */
