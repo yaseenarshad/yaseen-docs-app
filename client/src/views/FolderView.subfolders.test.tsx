@@ -2,13 +2,13 @@
  * Subfolders as rows on a folder page (YAZ-4579, 2D, D31/D32): `FolderView` over a REAL `WikilinkResolveSource` and the
  * Files tree, with the `api` mock UNDER the real writers over a tiny in-memory disk, so what a folder row's write
  * puts in its `.folder.md` is real bytes. The page `stages` has two subfolders: `archive`, with a `.folder.md` holding
- * its values for stages, and `plain`, with no file. Pinned, in a vault that uses IDs and in one that does not: a
- * folder row's values read and write in its own `.folder.md`, and its first write creates the file; its Name cell
- * renames the folder; read-only comes from its `readonly`; and Delete column strips it too.
+ * its values, and `plain`, with no file. Pinned, in a vault that uses IDs and in one that does not: a folder row's
+ * values are its `.folder.md`'s own top-level keys (YAZ-4713 C1), read and written there, and its first write creates
+ * the file; its Name cell renames the folder; read-only comes from its `readonly`; and Delete column strips it too.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
-import type { FileWriteRequest, IndexRecord, TreeNode } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, type FileWriteRequest, type IndexRecord, type TreeNode } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { fetchTree } from '../lib/treeFeed'
 import { linkResolver, vaultDirs } from '../links/folderLinks'
@@ -79,10 +79,10 @@ const SETTINGS = { columns: { order: { kind: 'number' } }, views: [{ type: 'tabl
 let source: MutableWikilinkResolveSource
 const onRetitle = vi.fn()
 
-/** The index's records, as the window holds them; `archive` holds `own` at its top level. */
-function feed(ids: boolean, archive: Record<string, unknown>): void {
+/** The index's records, as the window holds them: `archive` is the subfolder's `.folder.md` properties, `lead` the note's. */
+function feed(ids: boolean, archive: Record<string, unknown>, lead: Record<string, unknown> = { order: 2 }): void {
   const id = (value: string) => (ids ? { id: value } : {})
-  const records: IndexRecord[] = [rec(LEAD, ids ? { in: { [STAGES_ID]: { order: 2 } } } : { order: 2 }), rec('/vault/stages/archive/Old.md')]
+  const records: IndexRecord[] = [rec(LEAD, lead), rec('/vault/stages/archive/Old.md')]
   const folders: IndexRecord[] = [
     { ...rec('/vault/kpis/.folder.md'), ...id(KPIS_ID) },
     { ...rec(`${STAGES}/.folder.md`, { folder_settings: SETTINGS }), ...id(STAGES_ID) },
@@ -91,9 +91,10 @@ function feed(ids: boolean, archive: Record<string, unknown>): void {
   act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, ids))
 }
 
-async function mount(ids: boolean, archive: Record<string, unknown>): Promise<HTMLElement> {
-  const el = renderFolderView({ path: STAGES, source, onOpenFile: vi.fn(), onRetitle })
-  feed(ids, archive)
+async function mount(ids: boolean, archive: Record<string, unknown>, lead?: Record<string, unknown>): Promise<HTMLElement> {
+  // Confirm changes off (YAZ-3746 13AN): these tests pin where a write goes, not the ask before it.
+  const el = renderFolderView({ path: STAGES, source, onOpenFile: vi.fn(), onRetitle, folderPages: { ...DEFAULT_FOLDER_PAGES, confirmChanges: false } })
+  feed(ids, archive, lead)
   await flush()
   return el
 }
@@ -128,21 +129,29 @@ function editOrder(el: ParentNode, r: number, value: string): void {
 const propertiesOf = (path: string): Record<string, unknown> => parseFrontmatter(splitFrontmatter(disk.get(path) ?? '').frontmatter).properties
 const written = (path: string): FileWriteRequest | undefined => vi.mocked(api.writeFile).mock.calls.map(([req]) => req).find((req) => req.path === path)
 
-describe('in a vault that uses IDs: the values are in the subfolder’s `.folder.md`, under `in`, in the page’s block', () => {
-  const ARCHIVE = { title: 'Archive', in: { [STAGES_ID]: { order: 3 }, [KPIS_ID]: { order: 8 } } }
+describe('in a vault that uses IDs: the values are the subfolder’s `.folder.md`’s own top-level keys (YAZ-4713 C1, D31)', () => {
+  /** Its own `order`, and an old per-page value of another page (D19), which is not read. */
+  const ARCHIVE = { title: 'Archive', order: 3, in: { [KPIS_ID]: { order: 8 } } }
 
-  it('a row per direct subfolder — one with no `.folder.md` too — first, then the page’s own note; each reads the page’s block', async () => {
+  it('a row per direct subfolder — one with no `.folder.md` too — first, then the page’s own note; each reads its own field', async () => {
     const el = await mount(true, ARCHIVE)
     expect(names(el)).toEqual(['archive', 'plain', 'Lead'])
     expect([0, 1, 2].map((r) => cell(el, r, 1).textContent)).toEqual(['3', 'Empty', '2'])
   })
 
-  it('a cell edit writes the page’s block of the `.folder.md`; the block of a folder above it stays, one that holds it not goes (D20)', async () => {
-    disk.set(ARCHIVE_FILE, `---\nid: ${ARCHIVE_ID}\ntitle: Archive\nin:\n  ${STAGES_ID}:\n    order: 3\n  ${KPIS_ID}:\n    order: 8\n---\n`)
+  it('a cell edit writes the `.folder.md`’s top-level field; every block stays (C9)', async () => {
+    disk.set(ARCHIVE_FILE, `---\nid: ${ARCHIVE_ID}\ntitle: Archive\norder: 3\nin:\n  ${KPIS_ID}:\n    order: 8\n---\n`)
     const el = await mount(true, ARCHIVE)
     editOrder(el, 0, '9')
     await flush()
-    expect(propertiesOf(ARCHIVE_FILE)).toEqual({ id: ARCHIVE_ID, title: 'Archive', in: { [STAGES_ID]: { order: 9 } } })
+    expect(propertiesOf(ARCHIVE_FILE)).toEqual({ id: ARCHIVE_ID, title: 'Archive', order: 9, in: { [KPIS_ID]: { order: 8 } } })
+  })
+
+  it('its settings block and the app’s keys are no column, and the write door refuses them', async () => {
+    const el = await mount(true, { ...ARCHIVE, folder_settings: { views: [] }, show_other_files: false })
+    expect(el.querySelector('[data-cell="0:2"]')).toBeNull() // Name and Order
+    await expect(captured.folder!.writeValues(ARCHIVE_FILE, [{ key: 'folder_settings', value: 'x' }])).rejects.toThrow("folder_settings is the app's own property")
+    expect(api.writeFile).not.toHaveBeenCalled()
   })
 
   it('the FIRST write of a subfolder with no `.folder.md` creates it, holding just that value', async () => {
@@ -150,7 +159,7 @@ describe('in a vault that uses IDs: the values are in the subfolder’s `.folder
     editOrder(el, 1, '5')
     await flush()
     expect(written(PLAIN_FILE)).toMatchObject({ expectedMtime: 0 })
-    expect(propertiesOf(PLAIN_FILE)).toEqual({ in: { [STAGES_ID]: { order: 5 } } })
+    expect(propertiesOf(PLAIN_FILE)).toEqual({ order: 5 })
   })
 
   it('the Name cell renames the FOLDER through the rename door, as its page title does', async () => {
@@ -170,10 +179,11 @@ describe('in a vault that uses IDs: the values are in the subfolder’s `.folder
     expect(api.writeFile).not.toHaveBeenCalled()
   })
 
+  // Today's delete strips the page's block (D19); YAZ-4713 subissue 3 (C7) moves it to the notes' fields.
   it('Delete column strips the subfolder’s `.folder.md` too, and the confirm count includes it', async () => {
     disk.set(ARCHIVE_FILE, `---\nid: ${ARCHIVE_ID}\nin:\n  ${STAGES_ID}:\n    order: 3\n---\n`)
     disk.set(LEAD, `---\nin:\n  ${STAGES_ID}:\n    order: 2\n---\n`)
-    await mount(true, ARCHIVE)
+    await mount(true, { in: { [STAGES_ID]: { order: 3 } } }, { in: { [STAGES_ID]: { order: 2 } } })
     expect(captured.folder!.valueCount('note.order')).toBe(2)
     await act(async () => captured.folder!.deleteColumn!('order'))
     expect(propertiesOf(ARCHIVE_FILE)).toEqual({ id: ARCHIVE_ID })

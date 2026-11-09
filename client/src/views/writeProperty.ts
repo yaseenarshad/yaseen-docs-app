@@ -108,3 +108,14 @@ export async function writeProperty(path: string, key: string, value: unknown, r
 export function writeFolderValues(path: string, folderId: string, writes: readonly PropertyWrite[], tidy: ContentTransform): Promise<{ mtime: number }> {
   return transformFile(path, (content) => tidy(writes.reduce((next, { key, value }) => setFolderValue(next, folderId, key, value), content)))
 }
+
+/**
+ * A folder page's values for one note (YAZ-4713 C1/C3), in ONE guarded whole-file transformation: each key is the
+ * note's own top-level field, or, when its column is separate on this page, a field of this page's block (`pageId`).
+ * Every cell edit, paste, fill, Undo, board drag and calendar drag of a folder page comes through here.
+ */
+export function writeRouted(path: string, writes: readonly PropertyWrite[], separate: ReadonlySet<string>, pageId: string | undefined): Promise<{ mtime: number }> {
+  return transformFile(path, (content) =>
+    writes.reduce((next, { key, value }) => (pageId !== undefined && separate.has(key) ? setFolderValue(next, pageId, key, value) : setFrontmatterProperty(next, key, value)), content),
+  )
+}

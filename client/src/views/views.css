@@ -2808,6 +2808,9 @@
 .view-menu--tabbed .view-prop__chevron { width: 8px; opacity: 0; }
 .view-menu--tabbed .view-prop__identity:hover .view-prop__chevron { opacity: 1; }
 .column-section--hidden .view-prop__name { color: var(--fg-muted); }
+/* Hidden, by where each column comes from (YAZ-4713 C4): This folder, From <owner>, Other properties in these notes. */
+.column-section__part-title { margin: 4px 0 0 8px; font-weight: 500; }
+.view-prop__identity > .view-menu__action { flex: none; font-size: 11px; padding: 2px 6px; white-space: nowrap; }
 .view-menu--tabbed > .view-menu__action {
   display: block;
   width: calc(100% + 20px);

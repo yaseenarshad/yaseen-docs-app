@@ -1879,6 +1879,7 @@ export const FOLDER_PAGE_CHOICES = {
  * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`).
  * - Page default: `showFolderPageFiles`, the sidebar's folder page file rows (D37); a folder's `show_page_file` beats it.
  *   `showOtherFiles`, the Other files tray at the foot of a folder page (YAZ-4597, D43); a folder's `show_other_files` beats it.
+ *   `inheritColumns`, a folder page shows its parent folders' columns too (YAZ-4713 C2, C12); a folder's `inherit_columns` beats it.
  */
 export interface FolderPagesSettings {
   /** The calendar view's first day. */
@@ -1909,6 +1910,7 @@ export interface FolderPagesSettings {
   /** "Confirm changes" (YAZ-3746 13AN): a change to a note's values from a folder page asks first. A folder's cog can say otherwise (`confirm_changes`). */
   confirmChanges: boolean
   showOtherFiles: boolean
+  inheritColumns: boolean
 }
 
 export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
@@ -1931,6 +1933,7 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   askBeforeDelete: true,
   confirmChanges: true,
   showOtherFiles: true,
+  inheritColumns: true,
 }
 
 export interface SettingsState {

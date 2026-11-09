@@ -11,6 +11,8 @@ import { canonicalKey } from './keys'
 import { displayNameOf, setDisplayName } from './columnLabel'
 import { declarationForKind } from './declarationForKind'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
+import { ConfirmSheet } from '../../components/ConfirmSheet'
+import type { SeparateCounts, SeparateKeep } from '../separateValues'
 import { PROPERTY_LABELS, PropertyOptionsEditor } from './PropertyDefinitionEditor'
 import { TextField } from './TextField'
 import { ChoiceSeg, RowLabel } from './settingRow'
@@ -100,6 +102,17 @@ function FormatRows({ decl, label, onChange }: { decl: ColumnDecl; label: string
   )
 }
 
+const notes = (n: number): string => `${n} ${n === 1 ? 'note' : 'notes'}`
+
+/** The turn-off ask's numbers (YAZ-4713 1B): "12 notes have a value on this page. 9 fill an empty note field or match it. 3 differ from the note's value." */
+export function unshareMessage({ total, fill, differ }: SeparateCounts): string {
+  const have = total === 1 ? 'has' : 'have'
+  const parts = [`${notes(total)} ${have} a value on this page.`]
+  if (fill > 0) parts.push(`${fill} ${fill === 1 ? 'fills' : 'fill'} an empty note field or ${fill === 1 ? 'matches' : 'match'} it.`)
+  if (differ > 0) parts.push(`${differ} ${differ === 1 ? 'differs' : 'differ'} from the note's value.`)
+  return parts.join(' ')
+}
+
 /** One property's card styling (YAZ-1206), keyed by canonical key under `view.cardStyle`. */
 type CardStyle = NonNullable<ViewDef['cardStyle']>[string]
 
@@ -123,7 +136,7 @@ export function columnTypeLabel(key: string, records: readonly IndexRecord[], pr
  * write and the delete; since YAZ-4608 C6 the notice too, for the Undo toast of a type change, with `setColumns` for the
  * Undo of a first declaration (the table hands its `declareColumn`).
  */
-export type ColumnDoors = Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount' | 'onNotice'> & {
+export type ColumnDoors = Pick<FolderHost, 'settings' | 'setColumn' | 'deleteColumn' | 'valueCount' | 'onNotice' | 'separate'> & {
   /** As `FolderHost.setColumns`: no `views` means the host's live def (YAZ-4637 M3). */
   setColumns?: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
 }
@@ -176,6 +189,8 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
   const [saving, setSaving] = useState(false)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
   const [deleting, setDeleting] = useState<string | null>(null)
+  /** Turning "Separate value on this page" off, awaiting its ask (YAZ-4713 1B): the numbers, taken once as it opens. */
+  const [unsharing, setUnsharing] = useState<SeparateCounts | null>(null)
 
   const name = bare(key)
   /**
@@ -223,6 +238,33 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
     }
     folder.onNotice?.(`Changed ${propertyLabel(def, key)} to ${PROPERTY_LABELS[kind]}`, 'info', 'undo', { label: 'Undo', run: restore, fades: true })
   }
+  /**
+   * "Separate value on this page" (YAZ-4713 C3). On starts with empty page values, at once. Off asks first when the
+   * page holds values (1B, locked 2026-11-08), then moves them into the notes' own fields as the answer says.
+   */
+  const setSeparate = async (on: boolean, keep: SeparateKeep = 'notes'): Promise<void> => {
+    if (folder.separate === undefined) return
+    setSaving(true)
+    setError(null)
+    try {
+      await folder.separate.set(name, decl ?? { kind: columnKind(key, records, properties, folder.settings) }, on, keep)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+  const toggleSeparate = (): void => {
+    if (folder.separate === undefined) return
+    if (decl?.separate !== true) return void setSeparate(true)
+    const counts = folder.separate.counts(name)
+    if (counts.total === 0) void setSeparate(false)
+    else setUnsharing(counts)
+  }
+  const answerUnshare = (keep: SeparateKeep): void => {
+    setUnsharing(null)
+    void setSeparate(false, keep)
+  }
   /** The label, through the shared rule (`columnLabel.ts`) the table header's rename uses too (YAZ-1513); a rename offers Undo (YAZ-4608 C6). */
   const renameColumn = (next: string) => onUpdate((d) => setDisplayName(d, key, next), `Renamed ${propertyLabel(def, key)} to ${next.trim() || defaultLabel(key)}`)
 
@@ -269,7 +311,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
       onKeyDown={(e) => {
         // Esc steps back; the popover's own window listener never sees it. (Inside the
         // name field, TextField takes Esc first and only reverts the draft.)
-        if (e.key !== 'Escape' || deleting !== null) return
+        if (e.key !== 'Escape' || deleting !== null || unsharing !== null) return
         e.stopPropagation()
         onBack()
       }}
@@ -346,6 +388,20 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
             />
           </div>
         )}
+        {/* "Separate value on this page" (YAZ-4713 C3): vaults with IDs only — the page's block is named by its id. */}
+        {isNote && folder.separate !== undefined && (
+          <div className="column-detail__row">
+            <RowLabel icon="lock">Separate value on this page</RowLabel>
+            <input
+              type="checkbox"
+              className="view-switch"
+              aria-label={`Separate value on this page for ${label}`}
+              title="This page keeps its own value for each note. Other pages show the note's one value."
+              checked={decl?.separate === true}
+              onChange={toggleSeparate}
+            />
+          </div>
+        )}
         {/* The column's alignment in THIS table view (YAZ-3746 13Y): one `columnAlign` write per pick; Auto deletes the entry. */}
         {view.type === 'table' && (
           <div className="column-detail__row column-detail__row--align">
@@ -402,6 +458,28 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
           </button>
         )}
       </div>
+      {unsharing !== null && (
+        <ConfirmSheet
+          labelId="confirm-unshare-column-text"
+          text={unshareMessage(unsharing)}
+          confirmLabel="Keep the notes' values"
+          keys="contained"
+          focusConfirm
+          onConfirm={() => answerUnshare('notes')}
+          onCancel={() => setUnsharing(null)}
+          other={
+            <button type="button" className="confirm__btn confirm__btn--other" onClick={() => answerUnshare('page')}>
+              Use this page's values
+            </button>
+          }
+        >
+          {unsharing.differ > 0 && (
+            <p className="confirm__status confirm__status--error" role="note">
+              Where the two values differ, only one stays. Undo puts both back.
+            </p>
+          )}
+        </ConfirmSheet>
+      )}
       {deleting !== null && deleteColumn && (
         <ConfirmDeleteColumn
           columnKey={deleting}

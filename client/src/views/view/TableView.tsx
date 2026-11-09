@@ -108,6 +108,8 @@ export interface TableViewProps {
   deleteColumn?: (key: string) => Promise<void>
   /** `FolderHost.valueCount`: the number that confirm states. */
   valueCount: (key: string) => number
+  /** `FolderHost.separate` (YAZ-4713 C3): Edit column's "Separate value on this page". Absent where the vault does not use IDs. */
+  separate?: FolderHost['separate']
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
   /** A bulk write on a selection (YAZ-4593): several values of one note in ONE guarded write, `FolderHost.writeValues`. */
@@ -261,7 +263,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, valueCount, separate, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /**
    * The wrap's scroll width when a column resize starts, in px (YAZ-3746 13W), 0 when none is held. views.css draws a
@@ -2038,7 +2040,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             records={records}
             wrapKind={headerMenu.key === null ? null : wrapKind(typings[keys.indexOf(headerMenu.key)])}
             properties={properties}
-            folder={{ settings, setColumn, setColumns: declareColumn, deleteColumn, valueCount, onNotice }}
+            folder={{ settings, setColumn, setColumns: declareColumn, deleteColumn, valueCount, separate, onNotice }}
             rowNumbers={numbered}
             onUpdate={onUpdate}
             declareColumn={declareColumn}

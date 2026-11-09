@@ -440,11 +440,11 @@ export function folderAt(folder: string, page: string, depth: number): string {
 // ---------- public API ----------
 
 /**
- * `view.order` if set, else `file.name` plus every note property key seen OR declared, sorted, as
- * `note.<key>`. `declared` is the folder's own column names (YAZ-1549): a declared column is
- * a column before any note carries it, so a new folder shows its `status` at once. Every key
- * the rows hold is one: a folder's values where the vault uses IDs, and where it does not the
- * notes' own properties — `id`, `title` and `also_in` like the rest (YAZ-2523 🔒 V12).
+ * `view.order` if set, else `file.name` plus the page's columns, sorted, as `note.<key>`. `declared` is the page's
+ * column names (YAZ-1549; since YAZ-4713 C2 its own and its parent folders'): a declared column is a column before any
+ * note carries it. A page with columns shows them alone (C4): the notes' other fields wait in Columns ⚙ › "Other
+ * properties in these notes". A page with NO column shows every key the rows hold, as a plain vault does — the folder
+ * host has taken the app's own keys out of the rows already (`columnReservedKeys`).
  * Except the read-only switch (`readonly`, a reserved key the index keeps so the views can lock a
  * note's cells, YAZ-3122): one locked note must not put a "Readonly" row on every card (YAZ-3130
  * nit). It shows only where a view orders it or the folder declares it; the menus still offer it.
@@ -453,7 +453,7 @@ export function folderAt(folder: string, page: string, depth: number): string {
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   if (view.order) return [...view.order]
   const keys = new Set<string>(declared.map((k) => `note.${k}`))
-  for (const r of records) for (const k of Object.keys(r.properties)) if (k !== READ_ONLY_KEY) keys.add(`note.${k}`)
+  if (declared.length === 0) for (const r of records) for (const k of Object.keys(r.properties)) if (k !== READ_ONLY_KEY) keys.add(`note.${k}`)
   return ['file.name', ...[...keys].sort()]
 }
 

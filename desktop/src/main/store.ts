@@ -484,6 +484,7 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   askBeforeDelete: isBool,
   confirmChanges: isBool,
   showOtherFiles: isBool,
+  inheritColumns: isBool,
 }
 const FOLDER_PAGES_PARTS = Object.keys(FOLDER_PAGES_PART_OK) as (keyof FolderPagesSettings)[]
 const isFolderPages = (v: unknown): v is FolderPagesSettings => isRecord(v) && FOLDER_PAGES_PARTS.every((part) => FOLDER_PAGES_PART_OK[part](v[part]))

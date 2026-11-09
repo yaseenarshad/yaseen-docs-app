@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest'
+import type { IndexRecord } from '@shared/types'
+import { TEST_RECORDS } from './testRecords'
+import { ownerName, pageColumns, selfAndAncestors } from './columnInheritance'
+
+/** A folder's `.folder.md` record declaring `columns` (YAZ-4713 C2). */
+const folderMd = (folder: string, columns?: Record<string, unknown>, title = folder.slice(folder.lastIndexOf('/') + 1)): IndexRecord => ({
+  ...TEST_RECORDS[0],
+  path: `/vault/${folder}/.folder.md`,
+  name: '.folder.md',
+  title,
+  folder,
+  properties: columns === undefined ? {} : { folder_settings: { columns } },
+})
+
+const domain = { kind: 'select', options: ['Billing', 'Payments'] }
+const FOLDERS = [folderMd('schema', { domain, owner: { kind: 'text' } }, 'Schema'), folderMd('schema/orders', { type: { kind: 'text' } })]
+
+describe('columns flow down (YAZ-4713 C2)', () => {
+  it('selfAndAncestors: the folder, then each folder above it, nearest first, the vault root last', () => {
+    expect(selfAndAncestors('a/b/c')).toEqual(['a/b/c', 'a/b', 'a', ''])
+    expect(selfAndAncestors('')).toEqual([''])
+  })
+
+  it('Schema declares Domain: the Orders page shows it, with Schema as its owner, after its own columns', () => {
+    const own = { type: { kind: 'text' as const } }
+    expect(pageColumns(own, 'schema/orders', FOLDERS, true, true)).toEqual({
+      type: { decl: { kind: 'text' }, owner: 'schema/orders' },
+      domain: { decl: domain, owner: 'schema' },
+      owner: { decl: { kind: 'text' }, owner: 'schema' },
+    })
+  })
+
+  it('the nearest declaration of a key wins: Orders’ own Domain options on the Orders page; Schema keeps its own', () => {
+    const override = { domain: { kind: 'select' as const, options: ['Orders only'] } }
+    expect(pageColumns(override, 'schema/orders', FOLDERS, true, true).domain).toEqual({ decl: override.domain, owner: 'schema/orders' })
+    expect(pageColumns({ domain: domain as never }, 'schema', FOLDERS, true, true).domain.owner).toBe('schema')
+  })
+
+  it('"Show parent folders’ columns" off: the folder’s own columns alone', () => {
+    expect(Object.keys(pageColumns({ type: { kind: 'text' } }, 'schema/orders', FOLDERS, true, false))).toEqual(['type'])
+  })
+
+  it('"Separate value on this page" (C3) is each page’s own: an inherited column never carries it', () => {
+    const folders = [folderMd('schema', { domain: { ...domain, separate: true } })]
+    expect(pageColumns({}, 'schema/orders', folders, true, true).domain.decl).toEqual(domain)
+  })
+
+  it('a folder with no `.folder.md`, or none saved, adds nothing (C5)', () => {
+    expect(pageColumns({}, 'notes/a', [folderMd('notes')], true, true)).toEqual({})
+  })
+
+  it('ownerName: the owner’s title; the vault’s name at the root', () => {
+    expect(ownerName(FOLDERS, 'schema', 'vault')).toBe('Schema')
+    expect(ownerName(FOLDERS, 'elsewhere/x', 'vault')).toBe('x')
+    expect(ownerName(FOLDERS, '', 'My vault')).toBe('My vault')
+  })
+})

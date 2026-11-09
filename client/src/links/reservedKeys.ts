@@ -1,15 +1,16 @@
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { COMMENTS_KEY } from '@shared/comments'
-import { HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, SHOW_PAGE_FILE_KEY } from '@shared/folderPage'
+import { HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY, SHOW_PAGE_FILE_KEY } from '@shared/folderPage'
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
 import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
 import { OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { REVIEWS_KEY } from '@shared/reviews'
+import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 
-// `show_page_file` (YAZ-3746 D37), `hover_preview` (YAZ-4601 D51; legacy), `hover_rows` and `hover_links` (demo 13D), `show_other_files` (YAZ-4597) and `confirm_changes` (13AN): a folder page's cog sets them, as a note's cog sets its page switches.
-const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, HOVER_LINKS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY])
+// `show_page_file` (YAZ-3746 D37), `hover_preview` (YAZ-4601 D51; legacy), `hover_rows` and `hover_links` (demo 13D), `show_other_files` (YAZ-4597), `confirm_changes` (13AN) and `inherit_columns` (YAZ-4713 C12): a folder page's cog sets them, as a note's cog sets its page switches.
+const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, HOVER_LINKS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY])
 const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY])
 
 /**
@@ -31,6 +32,16 @@ const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, NOTE_ID_KEY, TITLE_KEY,
  * only where the vault uses IDs (🔒 V11), so `deleteColumn.ts` asks for that vault's keys.
  */
 export const reservedKeys = (ids: boolean): ReadonlySet<string> => (ids ? ID_VAULT : PLAIN)
+
+const PLAIN_COLUMNS: ReadonlySet<string> = new Set([...PLAIN, FOLDER_SETTINGS_KEY])
+const ID_VAULT_COLUMNS: ReadonlySet<string> = new Set([...ID_VAULT, FOLDER_SETTINGS_KEY])
+
+/**
+ * The names no folder page column may have (YAZ-4713 C1): the vault's app keys, and `folder_settings`. A column's
+ * value is a top-level field of each note, and of each subfolder row's `.folder.md` (D31), whose settings block that
+ * key is. "+ Add column" refuses them, the views list none of them, and the page's write door refuses them.
+ */
+export const columnReservedKeys = (ids: boolean): ReadonlySet<string> => (ids ? ID_VAULT_COLUMNS : PLAIN_COLUMNS)
 
 /** Why a reserved key has no editor, and why Add property and "+ Add column" refuse one: said once, in the same words (YAZ-4544). */
 export const reservedKeyText = (key: string): string => `${key} is the app's own property — it is set where it belongs, not here`

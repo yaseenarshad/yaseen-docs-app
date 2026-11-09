@@ -133,6 +133,7 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
       items: [
         row('showFolderPageFiles', 'Show folder page files', ON_OFF_OPTIONS, { hint: "Each folder's page file in the sidebar, first under its folder. A folder's ⚙ can say otherwise.", keywords: ['sidebar', 'page file', '.folder.md'] }),
         row('showOtherFiles', 'Show Other files', ON_OFF_OPTIONS, { hint: "A tray at the foot of each folder page: the folder's files that are not notes, and the notes moved out of its views. A folder's ⚙ can say otherwise.", keywords: ['other files', 'tray', 'pdf', 'image', 'drawing'] }),
+        row('inheritColumns', "Show parent folders' columns", ON_OFF_OPTIONS, { hint: "A folder page shows the columns of the folders above it too. A folder's ⚙ can say otherwise.", keywords: ['columns', 'parent', 'inherit', 'properties', 'schema'] }),
       ],
     },
   ],

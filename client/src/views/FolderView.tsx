@@ -10,16 +10,18 @@
  *  - THE ADAPTER (🔒 D3, YAZ-819): ViewsPane stays ONE component. This host builds a def in memory
  *    from the settings' views and turns every def change back into ONE settings write
  *    (`writeFolderSettings`). Which view is active is session state, never written.
- *  - VALUES (D19): a folder's values for a note are in the NOTE, under `in`, in the block named by
- *    the folder's id (`shared/folderValues.ts`). This host is the one seam: the views get rows
- *    whose `properties` ARE this folder's block, and every value they write comes back through
- *    `writeValues` into it. A column is never stamped into a note (E1). That write is also where a
- *    note drops the values of the folders that no longer show it (D20). Where the vault does not
- *    use IDs (YAZ-2523 🔒 V6) there is no block: the rows are the notes' own properties, a value is
- *    written at the top of its note, and no column is deleted.
+ *  - COLUMNS (YAZ-4713 C2): the page's own columns and its parent folders' (`columnInheritance.ts`), the nearest
+ *    declaration of a key first — unless "Show parent folders' columns" is off (the folder's ⚙, else Settings ›
+ *    Folder pages). The views read them as `settings.columns`, and `columns` says which folder owns each.
+ *  - VALUES (C1): a note's value for a column is the note's own top-level field, one per key, the same on every
+ *    page. This host is the one seam: the views get rows whose `properties` are the note's fields less the app's
+ *    keys, and every value they write comes back through `writeValues` (`writeRouted`). A column set to "Separate
+ *    value on this page" (C3, vaults with IDs) reads and writes this page's block of `in` instead
+ *    (`shared/folderValues.ts`). A column is never stamped into a note (E1), and a write drops no value (C9). Where
+ *    the vault does not use IDs (YAZ-2523 🔒 V6) no column is deleted.
  *  - SUBFOLDERS AS ROWS (YAZ-4579 D31): each direct subfolder is a row too, for the views whose "Subfolders"
- *    switch asks for it — its `.folder.md`, read and written like a note: its values for this folder are in its
- *    block of `in`, or at its top level where the vault does not use IDs, and its first write creates the file.
+ *    switch asks for it — its `.folder.md`, read and written like a note: its values are its own top-level keys
+ *    (a separate column's, its block of `in`), and its first write creates the file.
  *  - THE PAGE AROUND THE VIEWS (D9/D10): the title (a commit renames the directory), the folder's
  *    OWN properties and comments, both stored in `.folder.md`, and its linked mentions — the
  *    components a note uses.
@@ -35,7 +37,7 @@ import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
 import { DEFAULT_FOLDER_PAGES, folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type PropertiesResponse, type ZoomStep } from '@shared/types'
-import { CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY, confirmChangesOf, hoverLinksOf, hoverPreviewOf, hoverRowsOf, showOtherFilesOf, showPageFileOf } from '@shared/folderPage'
+import { CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, INHERIT_COLUMNS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY, confirmChangesOf, hoverLinksOf, hoverPreviewOf, hoverRowsOf, inheritColumnsOf, showOtherFilesOf, showPageFileOf } from '@shared/folderPage'
 import { exactLinkTarget } from '@shared/linkRewrite'
 import { isReadOnlyProperties, READ_ONLY_KEY } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
@@ -51,17 +53,20 @@ import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from '../links/BacklinksSection'
-import { dropStaleFolderValues, folderId, folderRecord, folderRows, rowPage, subfolderRows } from '../links/shortcuts'
+import { folderId, folderRecord, folderRows, rowPage, subfolderRows } from '../links/shortcuts'
+import { columnReservedKeys, reservedKeyText } from '../links/reservedKeys'
 import { vaultDirs } from '../links/folderLinks'
-import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
 import { renameNotice, renameOptionInFilters, renameOptionInNotes, restoreInPaths, type ValueHome } from './renameOption'
 import { createNote } from './scaffold'
+import { propertyLabel } from './engine'
 import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
-import { writeFolderValues, writeProperties, writeProperty } from './writeProperty'
+import { writeProperties, writeProperty, writeRouted } from './writeProperty'
+import { pageColumns } from './columnInheritance'
+import { mergeSeparateValues, restoreSeparateValues, separateCounts, separateHolders, type SeparateKeep } from './separateValues'
 import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { ViewFolder } from './view/GroupHeader'
 import { noteLinkOf } from './view/fills'
@@ -159,8 +164,23 @@ function folderViewSet({ views, formulas, properties, defaultView }: FolderSetti
   }
 }
 
-/** A folder's own keys as a folder row's values where the vault does not use IDs (YAZ-4579 D31): its view settings are no column. */
-const withoutSettings = ({ [FOLDER_SETTINGS_KEY]: _, ...values }: Record<string, unknown>): Record<string, unknown> => values
+/**
+ * A row's values as the views read them (YAZ-4713 C1/C3): its file's own fields less the keys no column may have
+ * (`columnReservedKeys`: the app's, and a subfolder row's settings block, D31) — but the read-only switch, which a view
+ * may still show (YAZ-3130) — and each separate column's value from this page's block. The same object when nothing changes.
+ */
+function rowValues(properties: Record<string, unknown>, hidden: ReadonlySet<string>, pageId: string | undefined, separate: ReadonlySet<string>): Record<string, unknown> {
+  const keys = Object.keys(properties)
+  const own = keys.some((key) => hidden.has(key) && key !== READ_ONLY_KEY) ? Object.fromEntries(keys.filter((key) => !hidden.has(key) || key === READ_ONLY_KEY).map((key) => [key, properties[key]])) : properties
+  if (separate.size === 0) return own
+  const block = folderValues(properties, pageId)
+  const out = { ...own }
+  for (const key of separate) {
+    if (Object.hasOwn(block, key)) out[key] = block[key]
+    else delete out[key]
+  }
+  return out
+}
 
 /** Order-insensitive identity for one declaration; a field that is undefined is one that is absent (YAZ-4637 M1), as on disk. */
 const declStamp = (decl: ColumnDecl): string =>
@@ -275,21 +295,11 @@ export function FolderView({
   const moveToTray = useCallback((path: string) => latestTray.current?.toTray(path), [])
   const moveBack = useCallback((path: string) => latestTray.current?.back(path), [])
 
-  /** The rows as the views read them (D19): each row's `properties` are THIS folder's values for the note — or, where the vault does not use IDs, the note's own. A note moved to Other files is in none of them. */
-  const shown = useMemo(() => {
-    const inViews = moved.size === 0 ? rows : rows.filter((row) => !moved.has(row.path))
-    return ids ? inViews.map((row) => ({ ...row, properties: folderValues(row.properties, id) })) : inViews
-  }, [rows, moved, id, ids])
   /**
    * The direct subfolders as rows (YAZ-4579 D31), off the Files tree — it knows a folder with no `.folder.md` — and the
    * settings records. A new resolver is the feed's word that the tree's folders moved (`WikilinkIndexBridge`).
    */
   const subfolders = useMemo(() => subfolderRows(root, folder, vaultDirs(root), feed.folders), [root, folder, feed.folders, feed.resolve])
-  /** As the views read them, like `shown`: this folder's block, or the file's own keys less the view settings block (the views' own). */
-  const shownSubfolders = useMemo(
-    () => subfolders.map((row) => ({ ...row, properties: ids ? folderValues(row.properties, id) : withoutSettings(row.properties) })),
-    [subfolders, id, ids],
-  )
   /** The read-only notes (YAZ-3076 D6), read off each note's OWN properties before `shown` swaps in the folder's values; a folder row's off its `.folder.md` (D32). */
   const locked = useMemo(() => readOnlyPaths([...rows, ...subfolders]), [rows, subfolders])
   /** The folder's own properties panel opens its link pills as the cells do (YAZ-4544 4G); the cells' card is the views' own. */
@@ -307,6 +317,9 @@ export function FolderView({
   const [ownLinks, setOwnLinks] = useAheadKey(record === undefined ? undefined : hoverLinksOf(record.properties))
   /** The folder's own "Confirm changes" (YAZ-3746 13AN): `undefined` follows Settings › Folder pages (on by default). */
   const [ownConfirm, setOwnConfirm] = useAheadKey(record === undefined ? undefined : confirmChangesOf(record.properties))
+  /** The folder's own "Show parent folders' columns" (YAZ-4713 C12): `undefined` follows Settings › Folder pages (on by default). */
+  const [ownInherit, setOwnInherit] = useAheadKey(record === undefined ? undefined : inheritColumnsOf(record.properties))
+  const inheritOn = ownInherit ?? (folderPages ?? DEFAULT_FOLDER_PAGES).inheritColumns
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
     chips.set({ readOnly: pageLocked })
@@ -370,11 +383,11 @@ export function FolderView({
    */
   const [ahead, setAheadState] = useState<Record<string, ColumnDecl> | null>(null)
   const aheadRef = useRef<Record<string, ColumnDecl> | null>(null)
-  /** This render's host (YAZ-4591): a rename's Undo runs later, and writes through the host that is current then. */
-  const latestHost = useRef<FolderHost | null>(null)
   const latestParsed = useRef<ParsedViews>(null as unknown as ParsedViews)
   /** The newest render's settings door, for an Undo that runs later (YAZ-3746 13AY): an old door compares against old settings. */
   const latestCommit = useRef<((columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>) | null>(null)
+  /** The folder's own live declarations, for a delete's Undo that runs later (YAZ-4637 M3): the host's `settings` are the page's columns (YAZ-4713 C2). */
+  const latestOwnColumns = useRef<Record<string, ColumnDecl>>({})
   /** This render's declaration door, for a rename's Undo (YAZ-4637 M5). */
   const latestDeclaration = useRef<(key: string, next: ColumnDecl, base: ColumnDecl | undefined, rename?: { from: string; to: string }) => Promise<unknown>>(() => Promise.resolve())
   const setAhead = (next: Record<string, ColumnDecl> | null): void => {
@@ -411,6 +424,28 @@ export function FolderView({
     () => (settings === null ? null : ahead === null && aheadOther === null ? settings : { ...settings, columns: ahead ?? settings.columns, otherFiles: aheadOther ?? settings.otherFiles }),
     [settings, ahead, aheadOther],
   )
+  /** The page's columns (YAZ-4713 C2): its own live declarations over its parent folders', each with the folder that owns it. Once per snapshot. */
+  const columns = useMemo(() => (liveSettings === null ? null : pageColumns(liveSettings.columns, folder, feed.folders, ids, inheritOn)), [liveSettings, folder, feed.folders, ids, inheritOn])
+  /** What the views read (C2): the settings with the page's columns in place of the folder's own. Every write still states the folder's own. */
+  const pageSettings = useMemo(
+    () => (liveSettings === null || columns === null ? null : { ...liveSettings, columns: Object.fromEntries(Object.entries(columns).map(([key, { decl }]) => [key, decl])) }),
+    [liveSettings, columns],
+  )
+  /** The keys this page keeps its own value for (C3), as one string so a new settings object with the same switches remaps no row. Vaults with IDs only. */
+  const separateKeys = ids && liveSettings !== null ? Object.keys(liveSettings.columns).filter((key) => liveSettings.columns[key].separate === true).join('\n') : ''
+  const separate = useMemo(() => new Set(separateKeys === '' ? [] : separateKeys.split('\n')), [separateKeys])
+  /** The keys no column may have (C1): never shown as a column, never written by a view. */
+  const hidden = columnReservedKeys(ids)
+  /** The rows as the views read them (C1/C3, `rowValues`). A note moved to Other files is in none of them. */
+  const shown = useMemo(() => {
+    const inViews = moved.size === 0 ? rows : rows.filter((row) => !moved.has(row.path))
+    return inViews.map((row) => {
+      const properties = rowValues(row.properties, hidden, id, separate)
+      return properties === row.properties ? row : { ...row, properties }
+    })
+  }, [rows, moved, hidden, id, separate])
+  /** As the views read them, like `shown`: the `.folder.md`'s own keys, less its settings block (the views' own). */
+  const shownSubfolders = useMemo(() => subfolders.map((row) => ({ ...row, properties: rowValues(row.properties, hidden, id, separate) })), [subfolders, hidden, id, separate])
 
   // Rebuilt when the FILE's own views move — an external edit, or our own write coming back
   // through the index (identical then, since `onChange` already applied it). JSON identity is the
@@ -440,7 +475,7 @@ export function FolderView({
   }, [stamp, settings])
 
   const resolveLink = feed.resolve
-  if (resolveLink === null || settings === null || liveSettings === null || parsed === null) return null
+  if (resolveLink === null || settings === null || liveSettings === null || columns === null || pageSettings === null || parsed === null) return null
   /** This render's def, for an Undo that runs later (YAZ-4637 M3). */
   latestParsed.current = parsed
 
@@ -523,6 +558,7 @@ export function FolderView({
   }
 
   latestCommit.current = commitSettings
+  latestOwnColumns.current = liveSettings.columns
 
   /** Every config change (sort, columns, widths, summaries…) is ONE settings write (🔒 D3). `false`: read only refused it (YAZ-4644 E2). */
   const onChange = (next: ParsedViews): boolean => {
@@ -556,16 +592,21 @@ export function FolderView({
     })
   }
   /**
-   * S24 (YAZ-4591): the renamed option in every note that holds it — this folder's block of each indexed note
-   * where the vault uses IDs (the notes `deleteColumn` reaches), the rows' own key where it does not — one
-   * guarded write per note, read-only notes kept (YAZ-4637 M6: on disk too, wherever the note is). Then the toast,
-   * whose Undo puts the declaration and the filters back through the LATEST host's door (its ahead copy is current)
-   * and gives each changed note its exact previous value (M5).
+   * S24 (YAZ-4591): the renamed option in every note that holds it — the note's own field (YAZ-4713 C1) of every row of
+   * the column's owner folder and of each subfolder row below it; for a separate column (C3), this page's block of each
+   * indexed note — one guarded write per note, read-only notes kept (YAZ-4637 M6: on disk too, wherever the note is).
+   * Then the toast, whose Undo puts the declaration and the filters back through the LATEST host's door (its ahead copy
+   * is current) and gives each changed note its exact previous value (M5).
    */
   const renameInNotes = async (key: string, next: ColumnDecl, base: ColumnDecl | undefined, { from, to }: { from: string; to: string }): Promise<void> => {
-    if (ids && id === undefined) return // a folder with no id holds no values
-    const home: ValueHome = ids ? { block: id! } : null
-    const result = await track(renameOptionInNotes(ids ? [...feed.records, ...feed.folders] : [...rows, ...subfolders], home, key, from, to, locked))
+    const own = separate.has(key)
+    if (own && id === undefined) return // a page with no id holds no values of its own
+    const home: ValueHome = own ? { block: id! } : null
+    const owner = columns[key]?.owner ?? folder
+    const scope = own
+      ? [...feed.records, ...feed.folders]
+      : [...(owner === folder ? rows : folderRows(feed.records, feed.folders, owner)), ...feed.folders.filter((r) => r.folder !== owner && inFolder(r.folder, owner))]
+    const result = await track(renameOptionInNotes(scope, home, key, from, to, locked))
     const undo = () => {
       const now = latestDeclaration.current
       if (base === undefined) return
@@ -577,6 +618,34 @@ export function FolderView({
     onNotice?.(renameNotice(from, to, result), 'info', 'undo', { label: 'Undo', run: undo, fades: true })
   }
   latestDeclaration.current = writeDeclaration
+
+  /**
+   * "Separate value on this page" on or off (YAZ-4713 C3, 1B). On: this folder's declaration gains `separate: true` (an
+   * inherited column is then declared here, with the definition the page shows), and the page's values start empty.
+   * Off: the declaration loses it first; then each note's page value moves into its own field and leaves the block
+   * (`separateValues.ts`; `keep` says whose value stays where they differ), and the toast's Undo puts the declaration
+   * and every changed note back.
+   */
+  const setSeparate = async (key: string, decl: ColumnDecl, on: boolean, keep: SeparateKeep): Promise<void> => {
+    const { separate: _was, ...shared } = decl
+    const base = liveSettings.columns[key]
+    if (on) {
+      await writeDeclaration(key, { ...shared, separate: true }, base)
+      return
+    }
+    await writeDeclaration(key, shared, base)
+    if (id === undefined) return // a page with no id holds no values of its own
+    const pageId = id
+    const holders = separateHolders([...feed.records, ...feed.folders], pageId, key).filter((r) => !locked.has(r.path))
+    const { changed, failed } = await track(mergeSeparateValues(holders.map((r) => r.path), pageId, key, keep))
+    if (failed > 0) setColumnError(`Could not move this page's "${key}" value into ${failed} ${failed === 1 ? 'note' : 'notes'}`)
+    const undo = () =>
+      void latestDeclaration.current(key, { ...shared, separate: true }, shared).then(
+        () => track(restoreSeparateValues(changed, pageId, key)),
+        (err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error'),
+      )
+    onNotice?.(`${propertyLabel(parsed.def, `note.${key}`)} has one value per note again`, 'info', 'undo', { label: 'Undo', run: undo, fades: true })
+  }
 
   /**
    * The `other_files` ONE write (YAZ-4597 D44), ahead first as `commitSettings` writes the columns: the list shows at
@@ -618,27 +687,31 @@ export function FolderView({
   const trayMoves = trayOn && !pageLocked
 
   const host: FolderHost = {
-    settings: liveSettings,
+    settings: pageSettings,
+    columns,
     vaultRecords: feed.records,
     vaultFolders: feed.folders,
     vaultName: storage.vaultName(root),
     resolveLink,
     // A group "+" under group-by-Folder is born in that group's folder — a subfolder of this one; any other birth is here.
-    // Wherever it is born, the seeded values are THIS folder's — its view is the one being satisfied — and a
-    // folder with no id is given one first (`folderId`). It is titled `Untitled`, every time (YAZ-2420 🔒 D20: the
-    // ids keep the files apart), unless the caller knows what it is called (YAZ-943's inline board add types one).
-    // In a vault that does not use IDs (YAZ-2523 🔒 V3) the folder is given no id and a seeded value is the note's own
-    // property; only the name keeps two notes apart, so an untyped one is `Untitled`, then `Untitled 2`, `Untitled 3`, …
+    // Wherever it is born, the seeded values are the note's own fields (YAZ-4713 C1) — a separate column's (C3) go to
+    // THIS page's block, and a page with no id is given one first (`folderId`). It is titled `Untitled`, every time
+    // (YAZ-2420 🔒 D20: the ids keep the files apart), unless the caller knows what it is called (YAZ-943's inline board
+    // add types one). In a vault that does not use IDs (YAZ-2523 🔒 V3) only the name keeps two notes apart, so an
+    // untyped one is `Untitled`, then `Untitled 2`, `Untitled 3`, …
     create: async (seed, name) => {
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
       const dir = into === folder ? path : absFrom(root, into)
-      const block = !ids || Object.keys(seed.properties).length === 0 ? undefined : id ?? (await folderId(path))
+      const pageSeed = Object.fromEntries(Object.entries(seed.properties).filter(([key]) => separate.has(key)))
+      const block = Object.keys(pageSeed).length === 0 ? undefined : id ?? (await folderId(path))
+      const fields = Object.fromEntries(Object.entries(seed.properties).filter(([key]) => !separate.has(key)))
       // No seed when the view seeds nothing: the note is then its folder's template as it is.
       const seeded =
         Object.keys(seed.properties).length === 0 && seed.tags === undefined
           ? undefined
           : (template: Record<string, unknown>): Record<string, unknown> => ({
-              ...(block === undefined ? { ...template, ...seed.properties } : withFolderValues(template, block, seed.properties)),
+              ...(block === undefined ? template : withFolderValues(template, block, pageSeed)),
+              ...fields,
               ...(seed.tags !== undefined && { tags: seed.tags }),
             })
       const typed = (name ?? '').trim()
@@ -651,11 +724,15 @@ export function FolderView({
         }
       }
     },
-    // A folder with no id is given one first — the path its first shortcut uses (`folderId`) — then the value is written.
-    // The same save drops the note's values for the folders that no longer show it (D20).
-    // Where the vault does not use IDs the value is the note's own property, and that is all the write is.
-    // A read-only note's write is refused here, the one door every view write passes (YAZ-3076 D6, S54).
-    writeValues: guardReadOnly(locked, ids ? async (note, writes) => writeFolderValues(note, id ?? (await folderId(path)), writes, dropStaleFolderValues(root, note, feed.folders)) : writeProperties),
+    // ONE guarded write per note (YAZ-4713 C1): each value is the note's own field; a separate column's (C3) is this
+    // page's block, and a page with no id is given one first — the path its first shortcut uses (`folderId`). No value
+    // is dropped (C9). A key no column may have is refused, and so is a read-only note's write: this is the one door
+    // every view write passes (YAZ-3076 D6, S54).
+    writeValues: guardReadOnly(locked, async (note, writes) => {
+      const refused = writes.find(({ key }) => hidden.has(key))
+      if (refused !== undefined) throw new Error(reservedKeyText(refused.key))
+      return writeRouted(note, writes, separate, writes.some(({ key }) => separate.has(key)) ? id ?? (await folderId(path)) : undefined)
+    }),
     // ONE declaration through `writeDeclaration`. An option rename (YAZ-4591 S24) goes on to the notes once the
     // declaration has landed: a refused declaration touches none.
     setColumn: (key, next, base, rename) => {
@@ -670,8 +747,10 @@ export function FolderView({
     // `views` the caller moved.
     // The labels follow the same rule as the views: the caller's when it speaks, else the LIVE def's
     // (YAZ-1513). Fire-and-forget — the banner is the report; the delete below awaits the door itself.
-    setColumns: (columns, views, labels) => {
-      void commitSettings(columns, views ?? parsed.def.views, labels === undefined ? parsed.def.properties : labels.properties).catch(() => undefined)
+    // The caller edits the page's columns (`settings.columns`, C2): only the keys it changed there become this folder's
+    // own, so an inherited column is never copied into this folder's file.
+    setColumns: (next, views, labels) => {
+      void commitSettings(columnsChanged(liveSettings.columns, pageSettings.columns, next), views ?? parsed.def.views, labels === undefined ? parsed.def.properties : labels.properties).catch(() => undefined)
     },
     // Delete column (YAZ-1513): the settings half is `commitSettings` — the same one door, the same
     // echo behaviour — AWAITED, so a refused write aborts before any note is touched; the
@@ -691,10 +770,17 @@ export function FolderView({
           // Its values back too (YAZ-3746 13AY); a note it could not write back is said in the column banner.
           notice: (message, restore) => onNotice?.(message, 'info', 'undo', { label: 'Undo', run: () => void restore().catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))), fades: true }),
           // The Undo runs later (YAZ-4637 M3): it inverts the delete on the live declarations and def current then.
-          current: () => ({ columns: latestHost.current?.settings.columns ?? liveSettings.columns, def: latestParsed.current.def, writeSettings: latestCommit.current ?? commitSettings }),
+          current: () => ({ columns: latestOwnColumns.current, def: latestParsed.current.def, writeSettings: latestCommit.current ?? commitSettings }),
         }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     }),
     valueCount: (key: string) => notesHolding(feed.records, id, key).length + notesHolding(feed.folders, id, key).length,
+    // "Separate value on this page" (YAZ-4713 C3): only where the vault uses IDs — the page's block is named by its id.
+    ...(ids && {
+      separate: {
+        counts: (key: string) => separateCounts([...feed.records, ...feed.folders].filter((r) => !locked.has(r.path)), id, key),
+        set: setSeparate,
+      },
+    }),
     // A folder row's title is its folder's (YAZ-4579 D32): the folder is renamed, title and directory, as its page title does.
     retitle: (note, title) => {
       if (locked.has(note)) return
@@ -715,7 +801,6 @@ export function FolderView({
     // The Page's editor reads the file, so it waits for the index to know one (YAZ-4584): a "+ Page" on a folder with none creates it.
     renderPage: record === undefined ? undefined : renderPage,
   }
-  latestHost.current = host
   const visibleError = settingsError ?? columnError
 
   return (
@@ -747,6 +832,8 @@ export function FolderView({
         onChangeHoverLinks={(next) => setOwnLinks(next, writeOwnHover(HOVER_LINKS_KEY, next))}
         showOtherFiles={showOtherFiles}
         onChangeShowOtherFiles={(next) => setShowOtherFiles(next, writeOwnKey(SHOW_OTHER_FILES_KEY, next))}
+        inheritColumns={ownInherit}
+        onChangeInheritColumns={(next) => setOwnInherit(next, writeOwnKey(INHERIT_COLUMNS_KEY, next))}
         sync={sync}
         onSyncNow={onSyncNow}
       />

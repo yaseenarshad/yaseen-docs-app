@@ -635,15 +635,15 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [])).toEqual(['file.name'])
   })
 
-  it('propertyKeys: every key the rows hold is a default column — `id`, `also_in` and `title` like any other (YAZ-2523 V12)', () => {
+  it('propertyKeys: on a page with no column, every key the rows hold is a default column — `id`, `also_in` and `title` like any other (YAZ-2523 V12; the folder host takes the app’s keys out first)', () => {
     const own = [{ ...TEST_RECORDS[0], properties: { id: 'k3m9x2pq7abc', also_in: ['f7n2w8rt4xyz'], title: 'Zebra', status: 'idea' } }]
     expect(propertyKeys(yasin, yasin.views[1], own)).toEqual(['file.name', 'note.also_in', 'note.id', 'note.status', 'note.title'])
   })
 
   it('propertyKeys: a DECLARED column is a column before any member carries it (YAZ-1549)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [], ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
-    // seen and declared merge, once each
-    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status', 'owner'])).toContain('note.owner')
+    // A page with columns shows them alone (YAZ-4713 C4): the rows' other fields wait in Columns ⚙ › Other properties.
+    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
     expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status']).filter((k) => k === 'note.status')).toHaveLength(1)
     // an explicit order still wins
     expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name'] }, TEST_RECORDS, ['status'])).toEqual(['file.name'])

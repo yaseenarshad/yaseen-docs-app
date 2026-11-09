@@ -162,7 +162,7 @@ describe('a folder with no `.folder.md`', () => {
     expect(onDisk()).toBe('---\nowner: Yasin\n---\n')
   })
 
-  it("its own panel does not list the folder's columns as empty rows, while a note inside it still does", async () => {
+  it('it has no column (YAZ-4713 C5): neither its own panel nor a note inside it lists an empty row', async () => {
     const el = await mount()
     expandPanel(el)
     expect(rowKeys(el)).toEqual([])
@@ -171,7 +171,7 @@ describe('a folder with no `.folder.md`', () => {
     const noteRoot = createRoot(note)
     act(() => noteRoot.render(<FrontmatterPanel file={{ path: LEAD, content: '', mtime: 1 }} root="/vault" wikilinks={source} />))
     expandPanel(note)
-    expect(rowKeys(note)).toEqual(['status']) // E2's default column
+    expect(rowKeys(note)).toEqual([]) // no default column
     act(() => noteRoot.unmount())
   })
 })

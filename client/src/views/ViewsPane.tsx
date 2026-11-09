@@ -12,6 +12,8 @@ import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, lev
 import { type Group, type Row, propertyKeys, propertyLabel, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import { type ColumnDecl, type FolderSettings, rebaseSettings } from './folderSettings'
+import type { PageColumn } from './columnInheritance'
+import type { SeparateCounts, SeparateKeep } from './separateValues'
 import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
@@ -28,7 +30,7 @@ import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY, writableKey } from './readOnlyRows'
 import { type HistoryStep, noteRef, valueHistory } from './view/valueHistory'
-import { reservedKeys } from '../links/reservedKeys'
+import { columnReservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
 import { ColumnDecls, FolderPages, type FolderPagesValue, LinkPills } from './view/GroupHeader'
@@ -50,8 +52,24 @@ import { CHANGE_CANCELLED, useConfirmChanges } from './confirmChanges'
  * its only mount, hands it an in-memory def and this bundle.
  */
 export interface FolderHost {
-  /** The folder's own declaration: the typing ladder's TOP rung (🔒 Q8, YAZ-815). */
+  /**
+   * The folder's settings, with the PAGE's columns (YAZ-4713 C2): its own declarations over its parent folders', the
+   * nearest of each key — the typing ladder's TOP rung. A column write hands this map back changed (`setColumns`), and
+   * only the keys it changed become the folder's own.
+   */
   settings: FolderSettings
+  /** The same columns, each with the folder that owns its definition (root-relative, '' = the vault root): this folder's own, or a parent's. */
+  columns: Readonly<Record<string, PageColumn>>
+  /**
+   * "Separate value on this page" (YAZ-4713 C3): this page keeps its own value of the column for each note. Only where
+   * the vault uses IDs. `counts` is the turn-off ask's numbers; `set` turns it on or off (`decl` is the column as the
+   * page shows it; off, `keep` says whose value stays where the page's and the note's differ) and rejects when the
+   * declaration was refused.
+   */
+  separate?: {
+    counts: (key: string) => SeparateCounts
+    set: (key: string, decl: ColumnDecl, on: boolean, keep: SeparateKeep) => Promise<void>
+  }
   /** The WHOLE index snapshot — `records` here carries only the folder's notes (YAZ-2290 D4), and link resolution plus the link pickers must still see the vault. */
   vaultRecords: readonly IndexRecord[]
   /** The same snapshot's folder settings records: a link column narrowed to a folder asks what that folder holds, shortcuts included. */
@@ -936,11 +954,12 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           declareColumn={folder.setColumns}
           deleteColumn={folder.deleteColumn}
           valueCount={folder.valueCount}
+          separate={folder.separate}
           onWriteValue={writeValue}
           onWriteValues={folder.writeValues}
           onRetitle={askedRetitle}
           confirmChange={confirmChange}
-          reservedKeys={reservedKeys(folder.wikilinks.ids)}
+          reservedKeys={columnReservedKeys(folder.wikilinks.ids)}
           onDuplicateNote={folder.duplicate}
           onDeleteNotes={confirmDeleteNotes}
           onNewRowBelow={newRowBelow}

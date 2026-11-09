@@ -20,7 +20,13 @@ import { transformFile, writeProperty } from './writeProperty'
 import { readFormat } from './columnFormat'
 
 /** A column the folder declares — this module's own vocabulary, shaped like `PropertyDecl`. */
-export type ColumnDecl = PropertyDecl
+export type ColumnDecl = PropertyDecl & {
+  /**
+   * "Separate value on this page" (YAZ-4713 C3): this page keeps its own value for each note, in the note's
+   * `in: {<page id>}` block, apart from the note's one value. Off by default; read only where the vault uses IDs.
+   */
+  separate?: true
+}
 
 export interface FolderSettings {
   columns: Record<string, ColumnDecl>
@@ -59,17 +65,12 @@ export const DEFAULT_VIEWS: readonly ViewDef[] = [
   { type: 'board', name: 'Board' },
 ]
 
-/** The column a folder has until its settings say otherwise (YAZ-1513): a Select whose options are in the order the board shows them. */
-export const DEFAULT_COLUMNS: Readonly<Record<string, ColumnDecl>> = {
-  status: { kind: 'select', options: ['1-Backlog', '2-Todo', '3-In-Progress', '4-Done'] },
-}
-
 const KINDS = new Set<string>(PROPERTY_KINDS)
 
 /** A fresh copy per read: the defaults are handed out to be edited and written back. The Table alone where the vault does not use IDs (YAZ-2523 🔒 V11). */
 const defaultViews = (ids: boolean): ViewDef[] => (ids ? DEFAULT_VIEWS : DEFAULT_VIEWS.filter((view) => view.type === 'table')).map((view) => ({ ...view }))
 
-/** Keys → `{ kind, target?, required?, options?, optionSort?, format? }`. An unknown kind means the column is ABSENT (typing falls to lower rungs). */
+/** Keys → `{ kind, target?, required?, options?, optionSort?, format?, separate? }`. An unknown kind means the column is ABSENT (typing falls to lower rungs). */
 function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDecl> {
   const columns: Record<string, ColumnDecl> = {}
   if (raw === undefined) return columns
@@ -110,6 +111,9 @@ function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDec
       const format = readFormat(column.kind, value.format, problems, `${FOLDER_SETTINGS_KEY}.columns.${name}.format`)
       if (format !== undefined) column.format = format
     }
+    // "Separate value on this page" (YAZ-4713 C3): only `true` is the switch; `false` is the default, written by hand.
+    if (value.separate === true) column.separate = true
+    else if (value.separate !== undefined && value.separate !== false) problems.push(`${FOLDER_SETTINGS_KEY}.columns.${name}.separate must be true or false — ignoring it`)
     columns[name] = column
   }
   return columns
@@ -217,16 +221,16 @@ export const hasFolderSettings = (record: IndexRecord | undefined): boolean => r
 
 /**
  * A FOLDER's settings (YAZ-2290 D1/E2), off its `.folder.md` record. Until that file saves any, the
- * folder has the defaults — the default views and the default Status column — and nothing is
- * written for them. Once saved, the file states exactly which columns the folder has.
+ * folder has the defaults — the default views and NO column (YAZ-4713 C5: a folder starts blank and shows what its
+ * parent folders declare, C2) — and nothing is written for them. Once saved, the file states exactly which columns
+ * the folder has.
  *
- * Where the vault does not use IDs (`ids` false, YAZ-2523 🔒 V11) the defaults are a Table and no
- * column: a column there is the notes' own property, and none is made up.
+ * Where the vault does not use IDs (`ids` false, YAZ-2523 🔒 V11) the default views are a Table alone.
  */
 export function folderSettings(record: IndexRecord | undefined, ids: boolean): FolderSettings {
   const raw = record?.properties[FOLDER_SETTINGS_KEY]
   // Absent, or written as a bare `folder_settings:` — nothing saved yet.
-  if (raw == null) return { columns: ids ? structuredClone(DEFAULT_COLUMNS) : {}, views: defaultViews(ids), problems: [] }
+  if (raw == null) return { columns: {}, views: defaultViews(ids), problems: [] }
   const problems: string[] = []
   if (!isRecord(raw)) {
     problems.push(`${FOLDER_SETTINGS_KEY} must be a map of settings — using the defaults`)
@@ -379,7 +383,7 @@ export function rebaseSettings(base: unknown, mine: unknown, theirs: unknown): u
  * boundary: concurrent changes to other columns/views are retained, while a changed definition
  * asks the user to reopen its settings. transformFile repeats this check after an mtime retry.
  */
-export function writeFolderColumn(path: string, key: string, next: PropertyDecl, base: PropertyDecl | undefined, ids: boolean, views?: (views: unknown) => unknown): Promise<{ mtime: number }> {
+export function writeFolderColumn(path: string, key: string, next: ColumnDecl, base: ColumnDecl | undefined, ids: boolean, views?: (views: unknown) => unknown): Promise<{ mtime: number }> {
   const problems: string[] = []
   const replacement = readColumns({ column: next }, problems).column
   if (!replacement || problems.length) return Promise.reject(new Error(problems[0] ?? 'Invalid property definition'))
@@ -391,8 +395,8 @@ export function writeFolderColumn(path: string, key: string, next: PropertyDecl,
     if (parsed.error) throw new FrontmatterWriteError(parsed.error)
     const settings = parsed.properties[FOLDER_SETTINGS_KEY]
     if (settings != null && !isRecord(settings)) throw new Error('Folder settings must be a map before editing properties.')
-    // Nothing saved yet (YAZ-2290 E2): the default columns are what the caller saw, so this first write states them.
-    const raw = settings ?? { columns: folderSettings(undefined, ids).columns }
+    // Nothing saved yet (YAZ-2290 E2): a folder starts with no columns (YAZ-4713 C5).
+    const raw: Record<string, unknown> = settings ?? {}
     if (raw.columns !== undefined && !isRecord(raw.columns)) throw new Error('Folder columns must be a map before editing properties.')
     const columns = raw.columns ?? {}
     const current = Object.prototype.hasOwnProperty.call(columns, key) ? columns[key] : undefined
@@ -406,7 +410,7 @@ export function writeFolderColumn(path: string, key: string, next: PropertyDecl,
     if (currentKnown === desired && nextViews === raw.views) return content
     const declaration = { ...current }
     // Removing a known optional setting is intentional; unknown extension metadata survives.
-    for (const field of ['kind', 'target', 'required', 'options', 'optionSort', 'description', 'format']) delete declaration[field]
+    for (const field of ['kind', 'target', 'required', 'options', 'optionSort', 'description', 'format', 'separate']) delete declaration[field]
     Object.assign(declaration, replacement)
     return setFrontmatterProperty(content, FOLDER_SETTINGS_KEY, { ...raw, columns: { ...columns, [key]: declaration }, ...(nextViews === undefined ? {} : { views: nextViews }) })
   })

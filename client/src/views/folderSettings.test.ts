@@ -16,7 +16,7 @@ vi.mock('./writeProperty', () => ({
   }),
 }))
 import { writeProperty } from './writeProperty'
-import { DEFAULT_COLUMNS, DEFAULT_VIEWS, folderSettings, rebaseSettings, writeFolderSettings } from './folderSettings'
+import { DEFAULT_VIEWS, folderSettings, rebaseSettings, writeFolderSettings } from './folderSettings'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -73,16 +73,15 @@ describe('defaults (Q7, amended YAZ-935, YAZ-2290 D5a): a folder that lists NO v
 describe("a FOLDER's settings (YAZ-2290 D1/E2): its `.folder.md`, else the defaults", () => {
   const FILE = '/vault/Projects/.folder.md'
 
-  it('no settings file: the default views and the default Status column', () => {
-    expect(folderSettings(undefined, true)).toEqual({ columns: DEFAULT_COLUMNS, views: TABLE_BOARD, problems: [] })
+  it('no settings file: the default views and no column (YAZ-4713 C5: a folder starts blank)', () => {
+    expect(folderSettings(undefined, true)).toEqual({ columns: {}, views: TABLE_BOARD, problems: [] })
   })
 
   it('a file that has saved NO settings yet is the defaults too, each read its own copy', () => {
     const a = folderSettings(rec(FILE, {}), true)
-    expect(a).toEqual({ columns: DEFAULT_COLUMNS, views: TABLE_BOARD, problems: [] })
+    expect(a).toEqual({ columns: {}, views: TABLE_BOARD, problems: [] })
     expect(folderSettings(rec(FILE, { folder_settings: null }), true)).toEqual(a)
-    expect(a.columns).not.toBe(DEFAULT_COLUMNS)
-    expect(a.columns.status).not.toBe(folderSettings(rec(FILE, {}), true).columns.status)
+    expect(a.views).not.toBe(folderSettings(rec(FILE, {}), true).views)
   })
 
   it('once saved, the file states exactly which columns the folder has — Status is not added back', () => {
@@ -345,11 +344,11 @@ it('reads option order tolerantly and reports malformed order without changing t
   expect(raw.columns.Labels.optionSort).toBe('sideways')
 })
 
-describe('the default status column (YAZ-1513): every folder is born with it', () => {
-  const STATUS = { kind: 'select', options: ['1-Backlog', '2-Todo', '3-In-Progress', '4-Done'] }
-
-  it('DEFAULT_COLUMNS is one Select, its options in board order', () => {
-    expect(DEFAULT_COLUMNS).toEqual({ status: STATUS })
+describe('"Separate value on this page" (YAZ-4713 C3): `separate: true` on a column', () => {
+  it('reads `true` as the switch; `false` is the default; anything else is a problem and ignored', () => {
+    const settings = settingsOf({ columns: { a: { kind: 'text', separate: true }, b: { kind: 'text', separate: false }, c: { kind: 'text', separate: 'yes' } } })
+    expect(settings.columns).toEqual({ a: { kind: 'text', separate: true }, b: { kind: 'text' }, c: { kind: 'text' } })
+    expect(settings.problems).toEqual(['folder_settings.columns.c.separate must be true or false — ignoring it'])
   })
 })
 

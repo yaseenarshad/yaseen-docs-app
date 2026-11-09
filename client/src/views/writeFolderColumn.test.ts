@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import type { PropertyDecl } from '@shared/types'
-import { DEFAULT_COLUMNS } from './folderSettings'
 import { writeFolderColumn } from './folderSettings'
 
 vi.mock('../api', async (importOriginal) => ({
@@ -24,10 +23,10 @@ beforeEach(() => {
 })
 
 describe('writeFolderColumn', () => {
-  it.each([undefined, null])('creates a definition when settings are %s: the default columns are stated with it (YAZ-2290 E2), no view defaults injected', async settings => {
+  it.each([undefined, null])('creates a definition when settings are %s: it is the only column stated (YAZ-4713 C5: no default column), no view defaults injected', async settings => {
     read.mockResolvedValue(file(content(settings)))
     await expect(writeFolderColumn(path, 'Status', base, undefined, true)).resolves.toMatchObject({ mtime: 200 })
-    expect(settingsWritten()).toEqual({ columns: { ...DEFAULT_COLUMNS, Status: base } })
+    expect(settingsWritten()).toEqual({ columns: { Status: base } })
     expect(write.mock.lastCall![0].expectedMtime).toBe(100)
     expect(write.mock.lastCall![0].content).toContain('Body stays.\n')
   })
@@ -38,11 +37,20 @@ describe('writeFolderColumn', () => {
     expect(settingsWritten()).toEqual({ columns: { owner: { kind: 'text' } } })
   })
 
-  it('with nothing saved, the default Status column is the base an edit of it is checked against (YAZ-2290 E2)', async () => {
+  it('with nothing saved there is no column to check an edit against (YAZ-4713 C5): a base that names one is refused', async () => {
     read.mockResolvedValue(file(''))
-    const edited: PropertyDecl = { ...DEFAULT_COLUMNS.status, options: ['Todo', 'Done'] }
-    await writeFolderColumn(path, 'status', edited, DEFAULT_COLUMNS.status, true)
-    expect(settingsWritten()).toEqual({ columns: { status: edited } })
+    const edited: PropertyDecl = { kind: 'select', options: ['Todo', 'Done'] }
+    await expect(writeFolderColumn(path, 'status', edited, { kind: 'select', options: ['1-Backlog'] }, true)).rejects.toThrow('changed since')
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('"Separate value on this page" (YAZ-4713 C3) is written, and removed again, as a known setting', async () => {
+    read.mockResolvedValue(file(content({ columns: { domain: { kind: 'text' } } })))
+    await writeFolderColumn(path, 'domain', { kind: 'text', separate: true }, { kind: 'text' }, true)
+    expect(settingsWritten()).toEqual({ columns: { domain: { kind: 'text', separate: true } } })
+    read.mockResolvedValue(file(content({ columns: { domain: { kind: 'text', separate: true } } })))
+    await writeFolderColumn(path, 'domain', { kind: 'text' }, { kind: 'text', separate: true }, true)
+    expect(settingsWritten()).toEqual({ columns: { domain: { kind: 'text' } } })
   })
 
   it('preserves concurrent sibling edits, raw view settings and unknown definition metadata', async () => {

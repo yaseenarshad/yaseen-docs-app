@@ -1,6 +1,6 @@
 import { PROPERTY_LABELS, PropertyTypeIcon } from './PropertyDefinitionEditor'
 import { ColumnSearch, matchesColumn } from './ColumnSearch'
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
@@ -9,10 +9,13 @@ import { propertyKeys, propertyLabel } from '../engine'
 import { canonicalKey } from './keys'
 import { AddColumn } from './AddColumn'
 import { canHideColumn, setViewOrder, withOrder } from './columnOrder'
-import { reservedKeys } from '../../links/reservedKeys'
+import { columnReservedKeys } from '../../links/reservedKeys'
 import { ColumnDetail, columnKind } from './ColumnDetail'
 import { DragHandleIcon, FileFieldIcon, FormulaIcon } from './icons'
 import { allPropertyKeys } from './properties'
+import { ViewFolder } from './GroupHeader'
+import { ownerName } from '../columnInheritance'
+import { declarationForKind } from './declarationForKind'
 import { ViewSettings } from './ViewSettings'
 
 export { normalizeBoardWidth } from './ViewSettings'
@@ -64,6 +67,10 @@ export interface PropertiesMenuProps {
  *  column: grip (YAZ-1207, shown rows only, on hover) · the column's KIND glyph · its label · its type in grey · a `›`
  *  on hover — the whole label area opens the column — then the show switch (writes `view.order`; Table and Board may
  *  hide `file.name`, Cards and List keep it). "New column" closes the list (YAZ-3746 demo polish).
+ *  Hidden is in parts by where each column comes from (YAZ-4713 C4): "This folder", "From <owner>" for each parent
+ *  folder, nearest first, and "Other properties in these notes" — the notes' fields that no column on the chain
+ *  declares (`tags`, a value from a former folder, a column of a subfolder only). Such a row has Show (this view only)
+ *  and "Add to this folder" (a column here, so every view and every page below gets it) in place of the switch.
  *
  *  VIEW — how this view looks (`ViewSettings`): the settings that sat below the list, by section, only those the
  *  view's type reads, each Settings default with "from Settings" and Reset (D34). Group indent and Subfolders moved
@@ -90,6 +97,14 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const matches = keys.filter(key => matchesColumn(query, propertyLabel(def, key), key))
   const matchingKeys = new Set(matches.map(canonicalKey))
   const isShown = (key: string) => shown.some((k) => canonicalKey(k) === canonicalKey(key))
+  /** The page's folder (root-relative): the owner of its own columns, its built-in fields and its formulas. */
+  const here = useContext(ViewFolder) ?? ''
+  /** Where a key comes from (C2/C4): the folder that declares it, the page's folder for a built-in key, or null for a note field no column declares. */
+  const ownerOf = (key: string): string | null => {
+    const c = canonicalKey(key)
+    return c.startsWith('note.') ? folder.columns[c.slice('note.'.length)]?.owner ?? null : here
+  }
+  const reserved = columnReservedKeys(folder.wikilinks.ids)
   const canToggle = (key: string) => canHideColumn(view, key)
 
   const pickTab = (next: PropertiesTab) => {
@@ -144,6 +159,13 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
 
   const shownMatches = matches.filter(isShown)
   const hiddenMatches = matches.filter((key) => !isShown(key))
+  /** The hidden rows in their parts (C4): this folder, each parent folder nearest first, then the other properties. */
+  const owners = [...new Set(hiddenMatches.map(ownerOf).filter((o): o is string => o !== null && o !== here))].sort((a, b) => b.length - a.length)
+  const hiddenParts: { title: string; keys: string[] }[] = [
+    { title: 'This folder', keys: hiddenMatches.filter((key) => ownerOf(key) === here) },
+    ...owners.map((owner) => ({ title: `From ${ownerName(folder.vaultFolders, owner, folder.vaultName)}`, keys: hiddenMatches.filter((key) => ownerOf(key) === owner) })),
+    { title: 'Other properties in these notes', keys: hiddenMatches.filter((key) => ownerOf(key) === null) },
+  ].filter((part) => part.keys.length > 0)
   /** Hide all / Show all: Table and Board may hide every column; Cards and List keep the name (as before). */
   const hideable = view.type === 'table' || view.type === 'board'
   /** The column's type in words, grey at the row's end (YAZ-3746 demo): the empty middle of the row says what it holds. */
@@ -153,7 +175,29 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
     if (c.startsWith('formula.')) return 'Formula'
     return PROPERTY_LABELS[kindOf(key)]
   }
-  /** One column row: the grip (shown rows, no search), the kind glyph, the label, its type, a › on hover, then the switch. */
+  /** "Add to this folder" (C4): the field becomes a column of this folder, of the kind it shows, and shows in this view, in one write. */
+  const addToFolder = (key: string) => {
+    const name = canonicalKey(key).slice('note.'.length)
+    const kind = kindOf(key)
+    folder.setColumns(
+      { ...folder.settings.columns, [name]: declarationForKind({ kind }, kind) },
+      def.views.map((v, i) => (i === viewIndex ? withOrder(v, [...shown, key]) : v)),
+    )
+  }
+  /** An "Other properties" row's two buttons, in place of the switch (C4). An app key is never a column, so it is only shown. */
+  const otherActions = (key: string, label: string) => (
+    <>
+      <button type="button" className="view-menu__action" aria-label={`Show ${label}`} onClick={() => writeOrder([...shown, key])}>
+        Show
+      </button>
+      {!reserved.has(canonicalKey(key).slice('note.'.length)) && (
+        <button type="button" className="view-menu__action" aria-label={`Add ${label} to this folder`} onClick={() => addToFolder(key)}>
+          Add to this folder
+        </button>
+      )}
+    </>
+  )
+  /** One column row: the grip (shown rows, no search), the kind glyph, the label, its type, a › on hover, then the switch (an other property: its buttons). */
   const row = (key: string) => {
     const on = isShown(key)
     const i = shown.indexOf(key)
@@ -198,7 +242,11 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
             <span className="view-prop__type">{typeOf(key)}</span>
             <span className="view-prop__chevron" aria-hidden="true">›</span>
           </button>
-          <input type="checkbox" className="view-switch" aria-label={`Show ${label}`} checked={on} disabled={!canToggle(key)} onChange={() => toggle(key)} />
+          {!on && ownerOf(key) === null ? (
+            otherActions(key, label)
+          ) : (
+            <input type="checkbox" className="view-switch" aria-label={`Show ${label}`} checked={on} disabled={!canToggle(key)} onChange={() => toggle(key)} />
+          )}
         </div>
       </li>
     )
@@ -284,13 +332,18 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
                   </button>
                 )}
               </div>
-              <ul className="view-menu__list column-section--hidden">{hiddenMatches.map(row)}</ul>
+              {hiddenParts.map((part) => (
+                <div key={part.title} className="column-section__part">
+                  <p className="view-menu__label column-section__part-title">{part.title}</p>
+                  <ul className="view-menu__list column-section--hidden">{part.keys.map(row)}</ul>
+                </div>
+              ))}
             </>
           )}
           <AddColumn
             taken={keys}
             shown={shown}
-            reserved={reservedKeys(folder.wikilinks.ids)}
+            reserved={reserved}
             onShow={(existing) => writeOrder([...shown, existing])}
             onSave={(name, column) =>
               folder.setColumns(

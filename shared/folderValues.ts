@@ -1,9 +1,9 @@
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 
 /**
- * A folder's values for a note (D19): `in`, one block per FOLDER ID, each holding that folder's
- * columns for the note. The note's own fields stay at the top level; a folder's views and the
- * properties panel read and write only that folder's block. The app's own key, never a column.
+ * A folder page's own values for a note (D19, since YAZ-4713 C3 only for a column set to "Separate value on this
+ * page"): `in`, one block per FOLDER ID, each holding that page's values for the note. Every other column's value is
+ * the note's own top-level field (C1). The app's own key, never a column.
  */
 export const FOLDER_VALUES_KEY = 'in'
 

@@ -18,8 +18,11 @@ import { writeProperties, writeProperty } from './writeProperty'
  * has no `jsx` — a `.tsx` import from that file breaks a typecheck two workspaces away.
  */
 export function testFolderHost(over: Partial<FolderHost> = {}): FolderHost {
+  const settings = over.settings ?? { columns: {}, views: [], problems: [] }
   return {
-    settings: { columns: {}, views: [], problems: [] },
+    settings,
+    // Every declared column is the folder's own (YAZ-4713 C2) unless a test says otherwise.
+    columns: Object.fromEntries(Object.entries(settings.columns).map(([key, decl]) => [key, { decl, owner: '' }])),
     vaultRecords: TEST_RECORDS,
     vaultFolders: [],
     vaultName: 'vault',

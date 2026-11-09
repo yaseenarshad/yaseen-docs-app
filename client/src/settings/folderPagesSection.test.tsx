@@ -63,6 +63,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
       ['showFolderPageFiles', 'On', { showFolderPageFiles: true }],
       ['askBeforeDelete', 'Off', { askBeforeDelete: false }],
       ['showOtherFiles', 'Off', { showOtherFiles: false }],
+      ['inheritColumns', 'Off', { inheritColumns: false }],
     ]
     for (const [part, label, change] of clicks) {
       act(() => button(`folderPages.${part}`, label).click())
@@ -89,6 +90,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     // Delete note… asks first unless this is turned off (YAZ-4592 S26).
     expect(pressed('folderPages.askBeforeDelete')).toBe('On')
     expect(pressed('folderPages.showOtherFiles')).toBe('On')
+    expect(pressed('folderPages.inheritColumns')).toBe('On') // YAZ-4713 C12: a page shows its parent folders' columns
   })
 
   it('Row band and the window pin show the table block’s setting until they are set', async () => {

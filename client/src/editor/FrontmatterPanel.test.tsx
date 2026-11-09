@@ -649,8 +649,8 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     // Nothing reads them, so opening rewrites nothing.
     expect(writeFile).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
-    // Every key a row, in the block's order, among the note's own; then the folder's one default column, unfilled.
-    expect(keysOf(el)).toEqual(['folder_page', 'folder_pages', 'folder_page_settings', 'status'])
+    // Every key a row, in the block's order, among the note's own; the folder has no column (YAZ-4713 C5).
+    expect(keysOf(el)).toEqual(['folder_page', 'folder_pages', 'folder_page_settings'])
     expect(header(el)?.getAttribute('aria-label')).toBe('Properties (3)')
     // Typed by their own values, like any property: a flag, a list, and a map no editor can hold.
     for (const key of ['folder_page', 'folder_pages', 'folder_page_settings']) expect(chipIn(rowOf(el, key))).not.toBe('Reserved')
@@ -766,12 +766,10 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: LOCAL_NOTE.replace('    Status: Ready\n', '    Status: Ready\n    effort: 3\n'), expectedMtime: 100 })
   })
 
-  it('a folder with no settings file types its notes from the defaults: an empty Status row (E2)', () => {
+  it('a folder with no settings file has no column (YAZ-4713 C5): no empty row, and nothing is written', () => {
     const el = mount('Just a body\n', { root: ROOT, wikilinks: folderFeed() })
     expand(el)
-    expect(keysOf(el)).toEqual(['status'])
-    click(rowOf(el, 'status').querySelector('[data-edit]'))
-    expect([...document.querySelectorAll('[role="option"] .property-choice-chip')].map(option => option.textContent)).toEqual(['1-Backlog', '2-Todo', '3-In-Progress', '4-Done'])
+    expect(keysOf(el)).toEqual([])
     expect(writeFile).not.toHaveBeenCalled()
   })
 
@@ -905,7 +903,7 @@ describe('FrontmatterPanel — "Properties from"', () => {
   })
 
   it('E: a folder is named by its title: "Properties from", each choice, "In …" and what `also_in` reads as; two choices with one title read as their paths (YAZ-2420 D14)', () => {
-    const one = mountAt('/vault/upwork-2026/Note.md', 'Body\n', feedOf(folderMd('/vault/upwork-2026', { title: 'Upwork 2026' })))
+    const one = mountAt('/vault/upwork-2026/Note.md', 'Body\n', feedOf(folderMd('/vault/upwork-2026', { title: 'Upwork 2026', columns: { status: { kind: 'select', options: ['Todo'] } } })))
     expect(from(one)?.textContent).toBe('Properties from Upwork 2026')
     click(byLabel(one, 'Configure status'))
     click(buttonNamed(one, 'Edit property ›'))
@@ -946,16 +944,16 @@ describe('FrontmatterPanel — "Properties from"', () => {
     expect(picker(el)?.value).toBe('/vault/A/B')
     expect(keysOf(el)).toEqual(['effort', 'owner'])
     pick(el, '/vault/A/B/C')
-    expect(keysOf(el)).toEqual(['status']) // nothing saved there: the default column
+    expect(keysOf(el)).toEqual([]) // nothing saved there: no column (YAZ-4713 C5)
     pick(el, '/vault/A')
     expect(keysOf(el)).toEqual(['effort', 'priority'])
   })
 
-  it('no folder in the list has saved settings: the folder the note lives in is chosen; its default columns show', () => {
+  it('no folder in the list has saved settings: the folder the note lives in is chosen; it has no column (YAZ-4713 C5)', () => {
     const el = mountAt(NOTE, 'Body\n', feedOf(folderMd('/vault/A'), folderMd('/vault/A/B'), folderMd('/vault/A/B/C')))
     expect(choices(el)).toEqual(['C', 'B', 'A'])
     expect(picker(el)?.value).toBe('/vault/A/B/C')
-    expect(keysOf(el)).toEqual(['status'])
+    expect(keysOf(el)).toEqual([])
   })
 
   it('picking another folder: the rows are typed and listed by THAT folder’s columns — its unfilled columns are empty rows — and nothing is written', async () => {

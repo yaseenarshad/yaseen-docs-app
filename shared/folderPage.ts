@@ -72,3 +72,16 @@ export function showOtherFilesOf(properties: Readonly<Record<string, unknown>>):
   const value = properties[SHOW_OTHER_FILES_KEY]
   return typeof value === 'boolean' ? value : undefined
 }
+
+/**
+ * A folder page's own "Show parent folders' columns" (YAZ-4713 C2, C12), `inherit_columns: true | false` in its
+ * `.folder.md`; the cog's Settings — no key — follows Settings › Folder pages (on by default). Off: the page shows only
+ * the columns its own folder declares. Any other value counts as no key.
+ */
+export const INHERIT_COLUMNS_KEY = 'inherit_columns'
+
+/** The folder's own choice off its `.folder.md` properties: `undefined` follows Settings. */
+export function inheritColumnsOf(properties: Readonly<Record<string, unknown>>): boolean | undefined {
+  const value = properties[INHERIT_COLUMNS_KEY]
+  return typeof value === 'boolean' ? value : undefined
+}
