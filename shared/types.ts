@@ -2037,6 +2037,12 @@ export interface SettingsState {
   hoverPreviewIn: Record<HoverPlace, boolean>
   /** Comment stream order (YAZ-1515): how you READ, global, never part of a note. */
   commentsOrder: CommentsOrder
+  /** YAZ-4615 D5: where resolved comments sit — a folded group at the bottom, or in their place by time. */
+  commentsResolved: CommentsResolvedPlace
+  /** YAZ-4615 D10: each new note the app creates carries `COMMENTS_HINT` at the top of its frontmatter. */
+  commentsHint: boolean
+  /** YAZ-4615 D1/D7: who you are on a comment; null until set. Travels with the settings folder. */
+  profile: CommentProfile | null
   /** Each sidebar tab's sort (YAZ-3227 D1): how you READ, global to this Mac, never part of a vault. */
   sidebarSort: SidebarSort
   /** The Search tab's own sort (YAZ-3511 D1, D12): Files can stay by name while a search shows the best match first. */
@@ -2553,6 +2559,50 @@ export const NEW_BOARD_PICTURES: readonly NewBoardPictures[] = ['inside', 'asset
 export type CommentsOrder = 'oldest' | 'newest'
 export const COMMENTS_ORDERS: readonly CommentsOrder[] = ['oldest', 'newest']
 
+/** YAZ-4615 D5: a resolved thread moves to a folded "Resolved" group, or stays in time order, dimmed. */
+export type CommentsResolvedPlace = 'bottom' | 'inPlace'
+export const COMMENTS_RESOLVED_PLACES: readonly CommentsResolvedPlace[] = ['bottom', 'inPlace']
+
+/** YAZ-4615 D1: who you are on a comment. A comment holds `handle` in `by`; the vault's people file holds the rest. */
+export interface CommentProfile {
+  /** Lowercase letters, digits and `-`; filled from the name, editable. Stable when the name changes. */
+  handle: string
+  /** Your preferred name, as others see it. */
+  name: string
+  /** A 96 px WebP data URL, or null for initials. */
+  picture: string | null
+}
+
+/** A handle the app writes: lowercase letters, digits and single inner hyphens, 1–32 characters. */
+export const HANDLE_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/** The handle an agent signs with when it gives no name of its own (the CLI's default `--by`). A person cannot take it. */
+export const AGENT_HANDLE = 'agent'
+/** The picture is a small data URL; anything bigger is not one the app made. */
+export const PROFILE_PICTURE_MAX = 64 * 1024
+
+export function isCommentProfile(v: unknown): v is CommentProfile {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
+  const p = v as Record<string, unknown>
+  return (
+    typeof p.handle === 'string' && p.handle.length <= 32 && HANDLE_RE.test(p.handle) && p.handle !== AGENT_HANDLE &&
+    typeof p.name === 'string' && p.name.trim() !== '' && p.name.length <= 80 &&
+    (p.picture === null || (typeof p.picture === 'string' && p.picture.startsWith('data:image/') && p.picture.length <= PROFILE_PICTURE_MAX))
+  )
+}
+
+/** A handle from a name: `Yaseen Arshad` → `yaseen-arshad`; '' when the name has no letter or digit. */
+export function handleFromName(name: string): string {
+  return name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32)
+    .replace(/-+$/, '')
+}
+
 /** What a plain launch brings back (YAZ-2589 D2): every window · the windows of the vault used last · none (the list of vaults). */
 export type StartupWindows = 'all' | 'last' | 'none'
 export const STARTUP_WINDOWS: readonly StartupWindows[] = ['all', 'last', 'none']
@@ -2632,6 +2682,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hoverPreview: true,
   hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, folderLinks: true, links: true, drawings: true },
   commentsOrder: 'oldest',
+  commentsResolved: 'bottom',
+  commentsHint: true,
+  profile: null,
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   searchSort: DEFAULT_SEARCH_SORT,
   rowDates: DEFAULT_ROW_DATES,
@@ -3366,6 +3419,12 @@ export interface GithubSyncMerge {
   clashes: number
   /** Vault-relative POSIX path of our copy, when both versions were kept. */
   copy?: string
+  /** YAZ-4615: a NOTE (its comments merged by id); absent for a drawing or diagram. */
+  kind?: 'note'
+  /** YAZ-4615 D4: our comments that took a new number, `#4` → `#5`. */
+  renumbered?: readonly { from: string; to: string }[]
+  /** YAZ-4615: a note's title (its `title`, else its file or folder name) — what the notice calls it. */
+  title?: string
 }
 
 /** One entry in a drawing's or diagram's Version history (YAZ-1897 D4, YAZ-3039). */

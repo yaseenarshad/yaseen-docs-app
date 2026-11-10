@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type FindFolds, type SectionLines, type TableBandRows, type TableDimPast, type TableNowMark, type TableRowBand, type DailyNoteOpens, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyNoteOpens, type DiagramDarkColors, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -35,6 +35,12 @@ export const DIAGRAM_DARK_COLORS_OPTIONS: readonly Option<DiagramDarkColors>[] =
 export const COMMENTS_ORDER_OPTIONS: readonly Option<CommentsOrder>[] = [
   { label: 'Oldest first', value: 'oldest' },
   { label: 'Newest first', value: 'newest' },
+]
+
+/** YAZ-4615 D5: where a resolved thread sits. */
+export const COMMENTS_RESOLVED_OPTIONS: readonly Option<CommentsResolvedPlace>[] = [
+  { label: 'At the bottom', value: 'bottom' },
+  { label: 'In place', value: 'inPlace' },
 ]
 
 /**

@@ -83,7 +83,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     return root === null ? null : doorOf(root)
   }
   handleWithEvent(CONTRACT.createDir, async (e, req) => createDir(req, await doorFor(e, req)))
-  handleWithEvent(CONTRACT.createFile, async (e, req) => createFile(req, await doorFor(e, req)))
+  // YAZ-4615 D10: a note the app makes carries the comment hint while Settings › Comments says so.
+  handleWithEvent(CONTRACT.createFile, async (e, req) => createFile(req, await doorFor(e, req), { hint: store.get().settings.commentsHint }))
   // The door, for the front end (YAZ-2677 R17): the next ID of the vault that holds `path`, saved
   // before it is answered (R18). The caller needs it BEFORE its note exists — the note's file name
   // holds it, and so does a link the `[[` picker writes — and hands it back in `createFile`'s `id`.

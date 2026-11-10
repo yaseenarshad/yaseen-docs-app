@@ -1405,7 +1405,7 @@ function CrepeHost({
           <div className="editor-mount" ref={hostRef} {...mountWidths} />
           {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
               writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
-          <MemoCommentsSection file={diskFile} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />
+          <MemoCommentsSection file={diskFile} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />
           {wikilinks !== undefined && (
             <MemoBacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} hoverPreview={hoverBacklinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
           )}

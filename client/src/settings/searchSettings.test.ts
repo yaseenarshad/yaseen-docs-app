@@ -31,7 +31,8 @@ const tiers: SettingHit[] = (['width of the thread', 'width', 'content width'] a
 describe('settingCandidates', () => {
   it('covers every setting of every available section, one candidate each, in registry order', () => {
     expect(ids(settingCandidates(ctx()))).toEqual([
-      // General (YAZ-3276 D7): the settings folder, then Reopen, moved here from Files & Links.
+      // General (YAZ-3276 D7): You (YAZ-4615 D7), the settings folder, then Reopen, moved here from Files & Links.
+      'profile',
       'settingsFolder',
       'startupWindows',
       'vaultOpensOn',
@@ -41,6 +42,8 @@ describe('settingCandidates', () => {
       'blockGap',
       'textFormatting',
       'commentsOrder',
+      'commentsResolved',
+      'commentsHint',
       'diagramDarkColors',
       // Settings › Sidebar (YAZ-3440 D7), after Appearance. The Line set's colour rows show only with that set.
       'sidebarLines',

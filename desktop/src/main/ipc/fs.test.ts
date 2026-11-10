@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -6,6 +6,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import type { IndexResponse } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { dailyNoteName } from '@shared/dailyNote'
+import { withCommentsHint } from '@shared/frontmatter'
 import { loadDrawing } from '../fs/drawing'
 import { makeFixture, removeVault, sleep, vaultFiles } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
@@ -415,6 +416,42 @@ describe('registerFsIpc', () => {
       fileClip.set({ op: 'copy', paths: [from] })
       return call(CONTRACT.file.paste, pasteReq(targetDir))
     }
+    // These cases are about ids: a new note's bytes are what the caller sent. The hint has its own test below (YAZ-4700).
+    let hintBefore = true
+    beforeEach(() => {
+      hintBefore = store.get().settings.commentsHint
+      store.setSettings({ ...store.get().settings, commentsHint: false })
+    })
+    afterEach(() => store.setSettings({ ...store.get().settings, commentsHint: hintBefore }))
+
+    it('a new note starts with the comment hint while Settings says so, and without it when the switch is off (YAZ-4615 D10, YAZ-4700)', async () => {
+      const vault = await open(false)
+      try {
+        const at = (...p: string[]) => path.join(vault, ...p)
+        store.setSettings({ ...store.get().settings, commentsHint: true })
+        expect(await call(CONTRACT.createFile, { path: at('With hint.md'), content: NOTE })).toMatchObject({ ok: true })
+        expect(await readFile(at('With hint.md'), 'utf8')).toBe(withCommentsHint(NOTE))
+        expect(await readFile(at('With hint.md'), 'utf8')).toMatch(/^---\n# comments: /)
+        store.setSettings({ ...store.get().settings, commentsHint: false })
+        expect(await call(CONTRACT.createFile, { path: at('No hint.md'), content: NOTE })).toMatchObject({ ok: true })
+        expect(await readFile(at('No hint.md'), 'utf8')).toBe(NOTE)
+      } finally {
+        await close(vault)
+      }
+    })
+
+    it('in a vault that uses IDs, a new note also starts with the hint, above its id (YAZ-4615 D10)', async () => {
+      const vault = await open(true)
+      try {
+        const at = (...p: string[]) => path.join(vault, ...p)
+        store.setSettings({ ...store.get().settings, commentsHint: true })
+        expect(await call(CONTRACT.mintNoteId, at('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.createFile, { path: at('meeting-notes-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
+        expect(await readFile(at('meeting-notes-yaz-1.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\nstatus: idea\nid: YAZ-1\n---\nbody\n')
+      } finally {
+        await close(vault)
+      }
+    })
 
     it.each([
       ['said no', false],

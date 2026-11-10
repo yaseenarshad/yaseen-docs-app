@@ -1554,7 +1554,7 @@ export function FolderView({
             }}
           />
         )}
-        {disk !== null && <MemoCommentsSection file={disk} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />}
+        {disk !== null && <MemoCommentsSection file={disk} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />}
         {/* The notes and folders that link to the FOLDER (D10): its path is what such a link resolves to. */}
         <MemoBacklinksSection path={path} source={source} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
       </div>
