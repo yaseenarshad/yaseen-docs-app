@@ -51,7 +51,8 @@ function blockItem(doc: Node, inside: number): { pos: number; kind: ListKind | n
     if ($pos.parent.type.name === 'list_item' && $pos.index() === 0) itemPos = $pos.before()
     // A code block or a table in no bullet (YAZ-4800 demo: "a table that doesnt have any bullet doesnt show the option
     // to put it on a bullet … same for code block"): the strip makes it the first block of a new bullet.
-    else if (node !== null && (node.type.name === 'table' || node.type.spec.code === true)) return { pos: inside, kind: null }
+    // A block that is a later block of a bullet is IN one: no strip, as the table's cell probe below (YAZ-4800).
+    else if (node !== null && (node.type.name === 'table' || node.type.spec.code === true)) return $pos.parent.type.name === 'list_item' ? null : { pos: inside, kind: null }
     else {
       // A table's handle points into its first cell (YAZ-3795): the table is an ancestor.
       for (let depth = $pos.depth; depth > 0; depth--) {

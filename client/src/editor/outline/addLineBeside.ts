@@ -69,6 +69,10 @@ export function tableAtSelection(state: EditorState): number | null {
 const inTable = (side: LineSide): Command => (state, dispatch, view) => {
   const table = tableAtSelection(state)
   if (table === null || view === undefined || !view.editable) return false
+  // A bullet IN a cell keeps its own ⌘↵, the to-do cycle (YAZ-3818 D6): YAZ-4800 asked for the line beside the table
+  // from the table's text, not to take the cell bullets' key away.
+  const { $from } = state.selection
+  for (let depth = $from.depth; depth > 0 && $from.before(depth) > table; depth--) if ($from.node(depth).type.name === 'list_item') return false
   if (!addLineBesideCommand(table, side)(state, dispatch)) return false
   view.focus()
   return true

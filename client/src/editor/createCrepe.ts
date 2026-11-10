@@ -792,16 +792,17 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // menu holds the bullet strip and the table's settings (`tableRows`). Crepe's own rule stays: nothing inside a table,
   // a quote or inline math.
   // Only where the handle is on: an editor built without it (a preview) has no `blockConfig` to set.
-  crepe.editor.config((ctx) =>
-    ctx.isInjected(blockConfig.key) &&
+  // A statement, not `&&`: a config callback returns void (YAZ-4800, tsc).
+  crepe.editor.config((ctx) => {
+    if (!ctx.isInjected(blockConfig.key)) return
     ctx.set(blockConfig.key, {
       filterNodes: (pos, node) => {
         if (node.type.name === 'table' && pos.parent.type.name === 'list_item' && pos.index() === 0) return false
         for (let depth = pos.depth; depth > 0; depth--) if (['table', 'blockquote', 'math_inline'].includes(pos.node(depth).type.name)) return false
         return true
       },
-    }),
-  )
+    })
+  })
   // YAZ-3727 D8, D9: Milkdown's list typing rules fire inside bullets and on Enter, and undo badly; ours
   // replace them (plain lines, a typed space, a clean undo). The toolbar's Numbered button (YAZ-3806 T2) is the click
   // path; Mod-Alt-7 and the slash-menu row stay absent. GFM's `[ ] ` rule reached past a table cell (YAZ-3818).
