@@ -174,4 +174,22 @@ describe('YAZ-4794 demo: the note table Header row flyout, as the folder page', 
     ;[...flyout(view).querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'White')!.click()
     expect(getMarkdownForSave(crepe)).toContain('<!-- table: header black strong text-white -->')
   })
+
+  it('YAZ-4793 demo: "Plain, like any row" makes the header Off, Regular and Full in one pick (✓), and a second pick hands them back', async () => {
+    const { crepe, view } = await openHeaderRow()
+    const plain = () => [...flyout(view).querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Plain, like any row')!
+    const reopen = () => {
+      if (view.dom.parentElement!.querySelector('.ctx-menu__sub') !== null) return
+      ;[...menuOf(view).querySelectorAll<HTMLButtonElement>('[aria-haspopup="menu"]')].find((b) => b.textContent === 'Header row')!.click()
+    }
+    expect(plain().dataset.hint).toBeUndefined()
+    plain().click()
+    const md = getMarkdownForSave(crepe)
+    // Full text is a note table's own default, so it saves no part.
+    expect(parseTableComment(md.slice(md.indexOf('<!--')).trim())?.header).toEqual({ strength: 'off', weight: 'regular' })
+    reopen()
+    expect(plain().dataset.hint).toBe('✓')
+    plain().click()
+    expect(getMarkdownForSave(crepe)).not.toContain('<!-- table:')
+  })
 })
