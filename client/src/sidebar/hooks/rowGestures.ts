@@ -18,6 +18,7 @@ import { fetchTree } from '../../lib/treeFeed'
 import { findDirNode, notesAt, treeHasPath } from '../../lib/treeState'
 import { dropFolderValuesAfterMove, dropStaleFolderValues, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
 import { createNote, folderPath } from '../../views/scaffold'
+import { setSidebarDrag } from '../sidebarDrag'
 import { transformFile } from '../../views/writeProperty'
 import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
 import { dragPill, pillLabel } from '../dragPill'
@@ -237,6 +238,7 @@ export function useTreeDrag(
     const accepts = (dir: string, files = false) => (dragging.current.length > 0 ? !dragging.current.some((path) => dir === path || dir.startsWith(`${path}/`)) : files)
     const end = () => {
       dragging.current = []
+      setSidebarDrag([])
       light(null, null)
     }
     /** The moves into `dir`, through the door the context menu's rename uses for one row, and App's list door for more (YAZ-3250 D1): links follow. */
@@ -266,6 +268,8 @@ export function useTreeDrag(
       const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults, finder: out, onNotice: say } = live.current
       const paths = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
       dragging.current = paths
+      // YAZ-4748 D4: a diagram's frame takes the drop of these pages.
+      setSidebarDrag(paths)
       droppedInside.current = false
       leftWindow.current = false
       // An unselected row first becomes the selection (S4), then goes alone.

@@ -366,17 +366,22 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     await settle()
   }
   const tab = (id: string): HTMLElement => container.querySelector<HTMLElement>(`[data-tab="${id}"]`)!
+  /** A tab's cog menu: on the page, in `document.body` (YAZ-4776), found by its cog's `aria-controls`. */
+  const menuIn = (id: string): HTMLElement | null => {
+    const menuId = tab(id).querySelector('.page-settings__trigger')?.getAttribute('aria-controls')
+    return menuId ? document.getElementById(menuId) : null
+  }
   const chipIn = (id: string) => tab(id).querySelector('.read-only-chip')
   const cogRows = (id: string): string[] => {
     act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    const rows = [...tab(id).querySelectorAll('.page-settings__menu button')].map((b) => b.textContent ?? '')
+    const rows = [...menuIn(id)!.querySelectorAll('button')].map((b) => b.textContent ?? '')
     act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
     return rows
   }
   const clickRow = (id: string, label: string): void => {
     // The menu stays open after a row (as a note's does): open it only when it is closed.
-    if (tab(id).querySelector('.page-settings__menu') === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    act(() => [...tab(id).querySelectorAll<HTMLButtonElement>('.page-settings__menu button')].find((b) => b.textContent?.startsWith(label))!.click())
+    if (menuIn(id) === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    act(() => [...menuIn(id)!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.startsWith(label))!.click())
   }
 
   afterEach(() => readFile.mockReset())
@@ -387,8 +392,8 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     expect(cogRows('a')).toEqual(['Read only', 'Wrap long lines✓', 'Minimap', 'Table of contents✓'])
     clickRow('a', 'Read only')
     // One line each, under one heading that says they change every code file (the checker's nit on YAZ-3458).
-    expect(tab('a').querySelector('.page-settings__menu [role="group"]')?.getAttribute('aria-label')).toBe('All code files')
-    expect(tab('a').querySelector('.page-settings__menu .page-settings__label')?.textContent).toBe('All code files')
+    expect(menuIn('a')!.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('All code files')
+    expect(menuIn('a')!.querySelector('.page-settings__label')?.textContent).toBe('All code files')
     expect(changeCode).toHaveBeenLastCalledWith({ codeReadOnly: true })
     clickRow('a', 'Wrap long lines')
     expect(changeCode).toHaveBeenLastCalledWith({ codeWrap: false })
@@ -495,9 +500,14 @@ describe('the cog\'s "Table of contents" row: this file only (YAZ-3506)', () => 
   }
   const tab = (id: string): HTMLElement => container.querySelector<HTMLElement>(`[data-tab="${id}"]`)!
   const toc = (id: string): Element | null => tab(id).querySelector('nav.outline')
+  /** A tab's cog menu: on the page, in `document.body` (YAZ-4776), found by its cog's `aria-controls`. */
+  const menuIn = (id: string): HTMLElement | null => {
+    const menuId = tab(id).querySelector('.page-settings__trigger')?.getAttribute('aria-controls')
+    return menuId ? document.getElementById(menuId) : null
+  }
   const openCog = (id: string): HTMLButtonElement[] => {
-    if (tab(id).querySelector('.page-settings__menu') === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    return [...tab(id).querySelectorAll<HTMLButtonElement>('.page-settings__menu button')]
+    if (menuIn(id) === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    return [...menuIn(id)!.querySelectorAll<HTMLButtonElement>('button')]
   }
   const clickToc = (id: string): void => {
     const row = openCog(id).find((b) => b.textContent?.startsWith('Table of contents'))!

@@ -21,7 +21,7 @@
 import type { ReactNode } from 'react'
 import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type TextAlign } from '@shared/types'
 import { Segmented, Select, Stepper } from './controls'
-import { ON_OFF_OPTIONS, type Option } from './options'
+import { DIAGRAM_DARK_COLORS_OPTIONS, ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsSection } from './registry'
 
 const SELECT_ON_OPTIONS: readonly Option<SelectOn>[] = [
@@ -119,10 +119,11 @@ const width = (key: WidthKey, label: string, hint: string): SettingDef => ({
 
 export const CANVAS_SECTION: SettingsSection = {
   id: 'canvas',
-  // Draw's 🔒 YAZ-1802 D12 / D13: these preferences are Excalidraw's alone; a draw.io diagram has fixed defaults.
-  // "Drawings", as the app names them (the YAZ-3818 demo); the old words still find it.
-  title: 'Drawings',
-  keywords: ['excalidraw', 'canvas', 'board'],
+  // Draw's 🔒 YAZ-1802 D12 / D13: the canvas preferences are Excalidraw's alone; a draw.io diagram has fixed defaults.
+  // "Drawings", as the app names them (the YAZ-3818 demo), and draw.io diagrams beside them, with their one row at the
+  // end (YAZ-4748 D11); the old words still find it.
+  title: 'Drawings and diagrams',
+  keywords: ['excalidraw', 'canvas', 'board', 'drawio', 'draw.io', 'diagram'],
   groups: [
     {
       title: 'Drawing aids',
@@ -260,6 +261,22 @@ export const CANVAS_SECTION: SettingsSection = {
           render: ({ settings, onChange }) => (
             <PxStepper name="Smallest fold arrow on screen" value={settings.canvas.foldArrowMinSize ?? DEFAULT_CANVAS_PREFS.foldArrowMinSize} fallback={DEFAULT_CANVAS_PREFS.foldArrowMinSize}
               min={FOLD_ARROW_MIN_SIZE_MIN} max={FOLD_ARROW_MIN_SIZE_MAX} step={1} onSet={(foldArrowMinSize) => onChange(write(settings, { foldArrowMinSize }))} />
+          ),
+        },
+      ],
+    },
+    {
+      // YAZ-3037 (Draw's 🔒 YAZ-1802 D16), here since YAZ-4748 D11 (before: Appearance): the default for every diagram; a file
+      // that sets its own `adaptiveColors` keeps it.
+      title: 'draw.io diagrams',
+      items: [
+        {
+          id: 'diagramDarkColors',
+          label: 'In dark mode',
+          hint: 'Adapt re-colours diagrams so they stay readable in dark mode. A diagram that asks to keep its own colours always does.',
+          keywords: ['drawio', 'draw.io', 'diagram', 'dark', 'colors', 'colours', 'adaptive'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={DIAGRAM_DARK_COLORS_OPTIONS} value={settings.diagramDarkColors} onChange={(diagramDarkColors) => onChange({ ...settings, diagramDarkColors })} ariaLabel="draw.io diagrams in dark mode" />
           ),
         },
       ],

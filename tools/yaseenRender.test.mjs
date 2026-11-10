@@ -63,7 +63,7 @@ async function openRenderer() {
   // The page's own scripts in its own order — ours from the overlay, draw.io's (the stencils bundle
   // among them, 🔒 YAZ-1802 D5) from the pruned webapp.
   const scripts = [...readFileSync(`${OVERLAY}yaseen-render.html`, 'utf8').matchAll(/<script src="([^"]+)"/g)].map((m) => m[1])
-  expect(scripts).toEqual(['js/yaseen-render-config.js', 'js/viewer-static.min.js', 'js/stencils.min.js', 'js/yaseen-render.js'])
+  expect(scripts).toEqual(['js/yaseen-render-config.js', 'js/viewer-static.min.js', 'js/stencils.min.js', 'js/yaseen-links.js', 'js/yaseen-render.js'])
   for (const script of scripts) window.eval(readFileSync(existsSync(`${OVERLAY}${script}`) ? `${OVERLAY}${script}` : `${WEBAPP}${script}`, 'utf8'))
   await expect.poll(() => answers).toEqual([{ event: 'ready' }])
   let serial = 0
@@ -122,6 +122,44 @@ describe.skipIf(!existsSync(`${WEBAPP}js/viewer-static.min.js`))(`yaseen-render.
     expect(await scheme('', { theme: 'dark', adaptive: 'none' })).toBe('light')
     expect(await scheme(' adaptiveColors="none"', { theme: 'dark', adaptive: 'auto' })).toBe('light')
     expect(await scheme('', { theme: 'light', adaptive: 'auto' })).toBe('light')
+  })
+
+  it('YAZ-4748 D9: draws a label\'s [[link]] as its pill with the look the request carries, and as raw text with none', async () => {
+    const { render } = await openRenderer()
+    const diagram = mxfile(model(cell('a', 'See [[YAZ-1]] and [[Gone]]', 10)))
+    const looks = { 'YAZ-1': { label: 'Roadmap', icon: 'data:image/png;base64,AAAA' }, Gone: { label: 'Gone', missing: true } }
+    const drawn = svgOf(await render(diagram, { looks }))
+    // A7: the pill carries its link in its class, which draw.io's HTML cleaner keeps.
+    expect(drawn).toMatch(/<span class="yaseen-pill yaseen-link-YAZ-1" style="[^"]*light-dark\(#5b6cff1a,#7c8aff26\)[^"]*"><img[^>]*src="data:image\/png;base64,AAAA"[^>]*\/?>Roadmap<\/span>/)
+    expect(drawn).toMatch(/<span class="yaseen-pill yaseen-link-Gone" style="[^"]*color:light-dark\(#7a7a7a,#8f8f8f\)[^"]*">Gone<\/span>/)
+    expect(drawn).not.toContain('[[YAZ-1]]')
+    // A7: a request with no looks draws raw text, also after one that had them.
+    expect(svgOf(await render(diagram))).toContain('See [[YAZ-1]] and [[Gone]]')
+  })
+
+  it('YAZ-4748 A1: the real viewer draws the pill through its cell renderer — the canvas and autosize — while graph.getLabel stays the raw link', async () => {
+    await openRenderer()
+    page.yaseenLinks.setLooks({ 'YAZ-1': { label: 'Roadmap', icon: null } }, true)
+    const graph = new page.Graph(page.document.body.appendChild(page.document.createElement('div')))
+    const box = graph.insertVertex(graph.getDefaultParent(), null, 'See [[YAZ-1]]', 10, 10, 120, 30, 'text;html=1;autosize=1;')
+    // What draw.io reads and writes back (Find/Replace, the dark-colour fix, a page rename): the file's own text.
+    expect(graph.getLabel(box)).toBe('See [[YAZ-1]]')
+    // What it draws: the graph's own renderer (its instance override, which cleans the HTML) shows the pill.
+    expect(graph.cellRenderer.getLabelValue(graph.view.getState(box))).toMatch(/^See <span class="yaseen-pill yaseen-link-YAZ-1"[^>]*>Roadmap<\/span>$/)
+    expect(graph.view.getState(box).text.node.innerHTML).toContain('Roadmap')
+    // Autosize measures the pill, not the written link (`getPreferredSizeForCell` reads the cell renderer).
+    const measured = []
+    const getSizeForString = page.mxUtils.getSizeForString
+    page.mxUtils.getSizeForString = (text, ...rest) => {
+      measured.push(text)
+      return getSizeForString(text, ...rest)
+    }
+    try {
+      graph.getPreferredSizeForCell(box)
+    } finally {
+      page.mxUtils.getSizeForString = getSizeForString
+    }
+    expect(measured.some((text) => text.includes('yaseen-pill') && text.includes('Roadmap'))).toBe(true)
   })
 
   it('fits a preview inside its bounds, and draws an export at its scale', async () => {

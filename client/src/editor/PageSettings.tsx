@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useId, useRef, useState } from 'react'
+import { type FocusEvent, Fragment, type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { OutsideChangeGlow, TocSource } from '@shared/types'
 import { OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
 import { CogIcon } from '../settings/SettingsButton'
@@ -30,7 +31,20 @@ export interface PageSwitch {
   title?: string
   /** A CHOICE row (YAZ-4277 demo): the label, then pills, one pressed, as "TOC made from". The menu stays open. */
   choices?: readonly { label: string; on: boolean; onPick: () => void; title?: string }[]
+  /** An (i) after the label: hover shows this sentence (13BP CL4). */
+  hint?: Hint
+  /** The menu's own "Read only" row stands here, with its hint (YAZ-4748 demo: a drawing's and a diagram's cog). */
+  readOnlySlot?: boolean
 }
+
+/**
+ * An (i)'s words (13BP CL4): one sentence, or a short list (13BP, demo: "reads like a list rather than a paragraph"): an
+ * optional line, then each row's symbol or term at the left and its meaning at the right, then an optional last line.
+ */
+export type Hint = string | { lead?: string; rows: readonly (readonly [ReactNode, string])[]; foot?: string }
+
+/** An (i)'s box width (YAZ-4776): `.page-settings__tip--hint` draws it at this width. */
+const HINT_WIDTH = 240
 
 /**
  * The page's own quick switches (YAZ-2643): a cog left of the zoom pill, and a small menu under it.
@@ -105,16 +119,35 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   const open = text !== null
   // The explanation behind the small "i" beside "TOC made from": shown while the mouse or the keyboard is on it.
   const [info, setInfo] = useState(false)
+  /** An (i)'s sentence (13BP CL4) and how far down the menu its row is: shown while the mouse or the keyboard is on it, or after a click. */
+  const [hintTip, setHintTip] = useState<{ label: string; hint: Hint; left: number; top: number } | null>(null)
   const setOpen = (next: boolean) => {
     setText(next ? (readText?.() ?? '') : null)
     // The explanation goes with the menu: a menu that closes under a mouse at rest sends the "i" no
     // `mouseleave`, and the text would stand there, unasked, at the next open.
-    if (!next) setInfo(false)
+    if (!next) {
+      setInfo(false)
+      setHintTip(null)
+    }
   }
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  /**
+   * The menu, on the page (YAZ-4776): under its button, right-aligned to it, and moved left or right to stay inside the
+   * window. Inside the toolbar a narrow window let the sidebar cover its left part.
+   */
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [menuAt, setMenuAt] = useState<{ left: number; top: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!open) return setMenuAt(null)
+    const t = triggerRef.current?.getBoundingClientRect()
+    const w = menuRef.current?.offsetWidth
+    if (t === undefined || w === undefined) return
+    setMenuAt({ left: Math.max(8, Math.min(t.right - w, window.innerWidth - w - 8)), top: t.bottom + 6 })
+  }, [open])
   const menuId = useId()
   const tipId = useId()
+  const hintTipId = useId()
   const glowId = useId()
 
   // A press outside closes the menu, and so does the window losing focus (YAZ-3121, the rule of the
@@ -124,7 +157,8 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   useEffect(() => {
     if (!open) return
     const onOutside = (event: Event) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
     }
     const onBlur = () => setOpen(false)
     document.addEventListener('pointerdown', onOutside, true)
@@ -135,10 +169,73 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
     }
   }, [open])
 
-  const rowOf = ({ label, on, onToggle, disabled, warn, divider, title, choices }: PageSwitch) => <Fragment key={label}>
+  /**
+   * Where an (i)'s box goes (YAZ-4776): left of the menu, as "TOC made from"'s; else right of it; else under the (i) —
+   * always inside the window. The box is fixed on the page (a portal), so no pane's edge can cut it.
+   */
+  const showHint = (el: HTMLElement, label: string, hint: Hint) => {
+    const menu = menuRef.current
+    if (menu == null) return
+    const m = menu.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    const width = HINT_WIDTH + 8
+    const below = { left: Math.max(8, Math.min(r.left - 8, window.innerWidth - width)), top: r.bottom + 6 }
+    const beside = m.left - width >= 8 ? m.left - width : m.right + width <= window.innerWidth - 8 ? m.right + 8 : null
+    setHintTip({ label, hint, ...(beside === null ? below : { left: beside, top: Math.max(8, Math.min(r.top - 10, window.innerHeight - 200)) }) })
+  }
+  const infoGlyph = <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" aria-hidden>
+    <circle cx="8" cy="8" r="6.3" /><path d="M8 7.4v3.4M8 5v.2" />
+  </svg>
+  /**
+   * The (i) after a label (13BP CL4): the app's own tooltip box beside the menu, as "TOC made from"'s, level with its row.
+   * The mouse on it, the keyboard on it, or a click shows it. A native title showed nothing in the app.
+   */
+  const infoOf = (label: string, hint: Hint | undefined) =>
+    hint !== undefined && (
+      <button type="button" className="page-settings__info" aria-label={`About ${label}`} aria-describedby={hintTip?.label === label ? hintTipId : undefined}
+        onMouseEnter={(e) => showHint(e.currentTarget, label, hint)} onMouseLeave={() => setHintTip(null)}
+        onFocus={(e) => showHint(e.currentTarget, label, hint)} onBlur={() => setHintTip(null)}
+        onClick={(e) => showHint(e.currentTarget, label, hint)}>
+        {infoGlyph}
+      </button>
+    )
+  /**
+   * The (i) inside a row that is itself a button (YAZ-4748 demo: "Link preview on hover", the exports): a button may not
+   * hold a button, so the (i) is a glyph here. The mouse on it shows the box, and a click on it shows the box and does not
+   * press the row. The keyboard on the row shows it too, and the row names it (`aria-describedby`).
+   */
+  const rowInfoOf = (label: string, hint: Hint | undefined) =>
+    hint !== undefined && (
+      <span className="page-settings__info" aria-hidden="true"
+        onMouseEnter={(e) => showHint(e.currentTarget, label, hint)} onMouseLeave={() => setHintTip(null)}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          showHint(e.currentTarget, label, hint)
+        }}>
+        {infoGlyph}
+      </span>
+    )
+  /** What a row that holds an (i) glyph adds to its button: the keyboard on it shows the box. */
+  const rowHintProps = (label: string, hint: Hint | undefined) => hint === undefined ? {} : {
+    'aria-describedby': hintTip?.label === label ? hintTipId : undefined,
+    onFocus: (e: FocusEvent<HTMLButtonElement>) => {
+      if (e.currentTarget.matches(':focus-visible')) showHint(e.currentTarget, label, hint)
+    },
+    onBlur: () => setHintTip(null),
+  }
+  const readOnlyRow = (hint?: Hint) => onToggleReadOnly !== undefined && <button type="button" aria-pressed={readOnly} {...rowHintProps('Read only', hint)} onClick={() => {
+    // On: the one box, under the chip (D4) — so the menu makes way for it.
+    if (readOnly) setOpen(false)
+    onToggleReadOnly()
+  }}>
+    <span>Read only{rowInfoOf('Read only', hint)}</span><span aria-hidden="true">{readOnly ? '✓' : ''}</span>
+  </button>
+  const rowOf = ({ label, on, onToggle, disabled, warn, divider, title, choices, hint, readOnlySlot }: PageSwitch) => <Fragment key={label}>
     {divider === true && <div className="page-settings__divider" aria-hidden="true" />}
-    {choices !== undefined ? <>
-      <p className="page-settings__label">{label}:</p>
+    {readOnlySlot === true ? readOnlyRow(hint)
+      : choices !== undefined ? <>
+      <p className="page-settings__label">{label}{hint === undefined ? ':' : infoOf(label, hint)}</p>
       <div className="page-settings__choices" role="group" aria-label={label}>
         {choices.map((choice) => (
           <button key={choice.label} type="button" aria-pressed={choice.on} disabled={disabled} title={choice.title} onClick={choice.onPick}>{choice.label}</button>
@@ -146,20 +243,48 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
       </div>
     </>
       : onToggle === undefined ? <p className={warn === true ? 'page-settings__warn' : undefined} title={title}>{label}</p>
-      : on === undefined ? <button type="button" disabled={disabled} onClick={() => {
+      : on === undefined ? <button type="button" disabled={disabled} {...rowHintProps(label, hint)} onClick={() => {
         setOpen(false)
         onToggle()
-      }}><span>{label}</span></button>
-      : <button type="button" aria-pressed={on} disabled={disabled} onClick={onToggle}>
-        <span>{label}</span><span aria-hidden="true">{on ? '✓' : ''}</span>
+      }}><span>{label}{rowInfoOf(label, hint)}</span></button>
+      : <button type="button" aria-pressed={on} disabled={disabled} {...rowHintProps(label, hint)} onClick={onToggle}>
+        <span>{label}{rowInfoOf(label, hint)}</span><span aria-hidden="true">{on ? '✓' : ''}</span>
       </button>}
   </Fragment>
+  /**
+   * YAZ-4810 5G: the menu is on `document.body` (YAZ-4776), so the page's Tab order no longer runs from the cog into it.
+   * Tab on the cog goes to the menu's first control; Shift+Tab on that one goes back to the cog; Tab on the last one
+   * closes the menu on the cog, as Esc does. (A portal's keys still reach this root through React.)
+   */
+  const tabAcross = (event: KeyboardEvent<HTMLDivElement>) => {
+    const items = [...(menuRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), select:not([disabled]), input:not([disabled])') ?? [])]
+    if (items.length === 0) return
+    const at = event.target
+    const into = at === triggerRef.current && !event.shiftKey
+    const back = at === items[0] && event.shiftKey
+    const out = at === items[items.length - 1] && !event.shiftKey
+    if (!into && !back && !out) return
+    event.preventDefault()
+    if (into) {
+      items[0]!.focus()
+      return
+    }
+    if (out) setOpen(false)
+    triggerRef.current?.focus()
+  }
   const switchRows = switches?.map(rowOf)
+  // Read while the menu is open, never while it is closed (a drawing's rows count its pictures).
+  const rowList = open ? rows?.() : undefined
 
   return (
     <div ref={rootRef} className="page-settings"
       onKeyDown={(event) => {
-        if (!open || event.key !== 'Escape') return
+        if (!open) return
+        if (event.key === 'Tab') {
+          tabAcross(event)
+          return
+        }
+        if (event.key !== 'Escape') return
         event.preventDefault()
         event.stopPropagation()
         setOpen(false)
@@ -169,15 +294,11 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={() => setOpen(!open)}>
         <CogIcon size={13} />
       </button>
-      {text !== null && <div id={menuId} className="page-settings__menu" role="group" aria-label="Page settings">
-        {onToggleReadOnly !== undefined && <button type="button" aria-pressed={readOnly} onClick={() => {
-          // On: the one box, under the chip (D4) — so the menu makes way for it.
-          if (readOnly) setOpen(false)
-          onToggleReadOnly()
-        }}>
-          <span>Read only</span><span aria-hidden="true">{readOnly ? '✓' : ''}</span>
-        </button>}
-        {rows?.().map(rowOf)}
+      {text !== null && createPortal(<div ref={menuRef} id={menuId} className="page-settings__menu page-settings__menu--placed" role="group" aria-label="Page settings"
+        style={menuAt === null ? { visibility: 'hidden' } : { left: menuAt.left, top: menuAt.top }}>
+        {/* A row may ask for "Read only" where it stands, with its (i) (`readOnlySlot`); else it is the first row. */}
+        {rowList?.some((row) => row.readOnlySlot === true) !== true && readOnlyRow()}
+        {rowList?.map(rowOf)}
         {switchesHeading === undefined ? switchRows : <>
           <div role="group" aria-label={switchesHeading}>
             <p className="page-settings__label" aria-hidden="true">{switchesHeading}</p>
@@ -241,8 +362,15 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
           <p>{(text.match(/\S+/g)?.length ?? 0).toLocaleString()} words</p>
           <p>{text.length.toLocaleString()} characters</p>
         </>}
-      </div>}
-      {/* BESIDE the menu, not in it: the menu scrolls and is 172px wide, and this is a short text to read. */}
+      </div>, document.body)}
+      {/* BESIDE the menu, not in it: the menu scrolls and is 172px wide (212px when rows have an (i)), and this is a short text to read. */}
+      {open && hintTip !== null && createPortal(<div id={hintTipId} role="tooltip" className="page-settings__tip page-settings__tip--hint" style={{ left: hintTip.left, top: hintTip.top }}>
+        {typeof hintTip.hint === 'string' ? <p>{hintTip.hint}</p> : <>
+          {hintTip.hint.lead !== undefined && <p>{hintTip.hint.lead}</p>}
+          <dl>{hintTip.hint.rows.map(([term, text]) => <Fragment key={text}><dt>{term}</dt><dd>{text}</dd></Fragment>)}</dl>
+          {hintTip.hint.foot !== undefined && <p>{hintTip.hint.foot}</p>}
+        </>}
+      </div>, document.body)}
       {open && info && <div id={tipId} role="tooltip" className="page-settings__tip">
         <p>This sets what the table of contents of this page shows.</p>
         <dl>

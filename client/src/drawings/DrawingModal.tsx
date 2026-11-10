@@ -183,7 +183,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
   const readOnly = loaded?.scene.readOnly === true
   // The drawing's page links (YAZ-4039), as in a drawing tab: pills, hover, the open gestures, the menu, the picker, paste.
-  // The hover preview: "Links in drawings" AND the board's own switch (YAZ-3943 demo 2), read from the file.
+  // The hover preview: "Links in drawings and diagrams" AND the board's own switch (YAZ-3943 demo 2), read from the file.
   const hoverLinks = linkProps.hoverLinks === true && loaded?.scene.hoverLinksOff !== true
   const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path: loaded?.path ?? root, readOnly, hotkeys, onNotice, hostRef: sheetRef, props: { ...linkProps, hoverLinks } })
   // YAZ-3943 demo round 3: a board naming an outside pictures folder this Mac has not allowed asks once when it opens here too.
