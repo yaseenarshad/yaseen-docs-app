@@ -214,6 +214,8 @@ describe('readDrawioMessage — the link pills’ messages (YAZ-4748)', () => {
     expect(msg({ event: 'yaseenDrop', id: 1, names: ['A.md'] })).toEqual({ event: 'yaseenDrop', id: 1, names: ['A.md'] })
     expect(msg({ event: 'yaseenDrop', id: 1 })).toBeNull()
     expect(msg({ event: 'yaseenDrop', id: 1, names: [3] })).toBeNull()
+    // YAZ-4811: a sidebar drop landed in the frame, linked or not.
+    expect(msg({ event: 'yaseenDropLanded' })).toEqual({ event: 'yaseenDropLanded' })
     expect(msg({ event: 'yaseenPaste', id: 'x', text: 'a' })).toBeNull()
     expect(msg({ event: 'yaseenEditor', state: { ...state, caret: 'end' } })).toBeNull()
     expect(msg({ event: 'yaseenEditor' })).toBeNull()
