@@ -367,6 +367,24 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, outsideListPinned: 1 })).toBe(false)
   })
 
+  it('YAZ-4783 layer 3: codeBlockWidth and tableWidth — a file from before them reads Text column (null); px in 240–4000 kept; junk reads Text column', async () => {
+    const { codeBlockWidth: _c, tableWidth: _t, ...legacySettings } = DEFAULT_SETTINGS
+    expect(DEFAULT_SETTINGS.codeBlockWidth).toBeNull()
+    expect(DEFAULT_SETTINGS.tableWidth).toBeNull()
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ codeBlockWidth: null, tableWidth: null })
+    for (const width of [240, 900, 4000, null]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeBlockWidth: width, tableWidth: width } }))
+      expect(createStore(file).get().settings).toMatchObject({ codeBlockWidth: width, tableWidth: width })
+      expect(isSettings({ ...DEFAULT_SETTINGS, codeBlockWidth: width, tableWidth: width })).toBe(true)
+    }
+    for (const bad of [239, 4001, 900.5, '900', 0, Infinity, undefined]) {
+      expect(sanitizeSettings({ ...DEFAULT_SETTINGS, codeBlockWidth: bad, tableWidth: bad }), String(bad)).toMatchObject({ codeBlockWidth: null, tableWidth: null })
+      expect(isSettings({ ...DEFAULT_SETTINGS, codeBlockWidth: bad }), String(bad)).toBe(false)
+      expect(isSettings({ ...DEFAULT_SETTINGS, tableWidth: bad }), String(bad)).toBe(false)
+    }
+  })
+
   it('YAZ-4450 D4, D7: workspaceLists and recentsByVault — a file without them loads them on; a value kept; junk falls back', () => {
     const { workspaceLists: _w, recentsByVault: _r, ...legacy } = DEFAULT_SETTINGS
     expect(sanitizeSettings(legacy)).toMatchObject({ workspaceLists: { focus: true, favorites: true }, recentsByVault: true })
@@ -849,6 +867,22 @@ describe('createStore: loading', () => {
     // Both stored: each keeps its own value.
     const both = { ...before, showEmptyGroups: true, showEmptyColumns: false }
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: both }).folderPages).toEqual(both)
+  })
+
+  it('folderPages (YAZ-4798): sticky group headers on, group lines on hover, plain lines by default; each choice is kept, a broken or missing one reads its default', () => {
+    const fp = DEFAULT_SETTINGS.folderPages
+    expect([fp.stickyGroups, fp.groupLines, fp.groupLineStyle]).toEqual([true, 'hover', 'plain'])
+    for (const ok of [{ stickyGroups: false }, { groupLines: 'always' }, { groupLines: 'off' }, { groupLineStyle: 'thread' }]) {
+      expect(isSettings({ ...DEFAULT_SETTINGS, folderPages: { ...fp, ...ok } })).toBe(true)
+      expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: { ...fp, ...ok } }).folderPages).toEqual({ ...fp, ...ok })
+    }
+    for (const bad of [{ stickyGroups: 'on' }, { groupLines: 'never' }, { groupLines: true }, { groupLineStyle: 'dotted' }]) {
+      expect(isSettings({ ...DEFAULT_SETTINGS, folderPages: { ...fp, ...bad } })).toBe(false)
+      expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: { ...fp, groupLineStyle: 'thread', ...bad } }).folderPages).toEqual({ ...fp, groupLineStyle: 'thread', ...Object.fromEntries(Object.keys(bad).map((k) => [k, fp[k as keyof typeof fp]])) })
+    }
+    // A file from before them: the three read their defaults, every stored part stays.
+    const { stickyGroups: _a, groupLines: _b, groupLineStyle: _c, ...before } = { ...fp, rowHeight: 'tall' as const }
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: before }).folderPages).toEqual({ ...fp, rowHeight: 'tall' })
   })
 
   it('hoverOn (YAZ-3403 D7, S36, S37): a place shows the panel only while the master and its own switch are both on', () => {
@@ -3245,5 +3279,22 @@ describe('the closed notes (YAZ-3487 D9, "Recently closed")', () => {
     expect(store.get().folders['/v'].closed).toEqual({ '/v/a2.md': T, '/v/papers/b.md': T })
     store.removePath('/v/papers/b.md')
     expect(store.get().folders['/v'].closed).toEqual({ '/v/a2.md': T })
+  })
+})
+
+describe('Settings › Tables › Header row (YAZ-4794): text colour and align', () => {
+  it('a file from before them reads text unset and Follow column; a text colour and an align survive; junk is that part only', () => {
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: { color: 'blue', strength: 'strong', weight: 'bold', text: null } }).tableHeaderRow).toEqual({ color: 'blue', strength: 'strong', weight: 'bold', text: null, align: 'follow' })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: { ...DEFAULT_SETTINGS.tableHeaderRow, text: 'pink', align: 'center' } }).tableHeaderRow).toMatchObject({ text: 'pink', align: 'center' })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: { ...DEFAULT_SETTINGS.tableHeaderRow, text: 'gray', align: 'middle', color: 'red' } }).tableHeaderRow).toEqual({ ...DEFAULT_SETTINGS.tableHeaderRow, color: 'red' })
+  })
+
+  it('a write takes every part set (text may be null) and refuses a value that is no choice', () => {
+    expect(DEFAULT_SETTINGS.tableHeaderRow).toEqual({ color: 'gray', strength: 'light', weight: 'bold', text: null, align: 'follow' })
+    expect(isSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: { ...DEFAULT_SETTINGS.tableHeaderRow, text: 'teal', align: 'right' } })).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: { ...DEFAULT_SETTINGS.tableHeaderRow, align: 'middle' } })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: { ...DEFAULT_SETTINGS.tableHeaderRow, text: 'gray' } })).toBe(false)
+    const { align: _, ...noAlign } = DEFAULT_SETTINGS.tableHeaderRow
+    expect(isSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: noAlign })).toBe(false)
   })
 })

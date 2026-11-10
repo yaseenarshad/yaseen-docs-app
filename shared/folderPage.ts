@@ -62,6 +62,18 @@ export function confirmChangesOf(properties: Readonly<Record<string, unknown>>):
 }
 
 /**
+ * A folder page's own "Show New buttons" (YAZ-3746 13BL), `show_new_buttons: true | false` in its `.folder.md`; the cog's
+ * Settings — no key — follows Settings › Folder pages › Show New buttons (on by default). Any other value counts as no key.
+ */
+export const SHOW_NEW_BUTTONS_KEY = 'show_new_buttons'
+
+/** The folder's own choice off its `.folder.md` properties: `undefined` follows Settings. */
+export function showNewButtonsOf(properties: Readonly<Record<string, unknown>>): boolean | undefined {
+  const value = properties[SHOW_NEW_BUTTONS_KEY]
+  return typeof value === 'boolean' ? value : undefined
+}
+
+/**
  * A folder page's own switch for its Other files tray (YAZ-4597, D43), stored IN its `.folder.md` as `show_page_file`
  * is: `show_other_files: true | false`. The cog writes it ("Show Other files": On, Off, or Settings — no key, which
  * follows Settings › Folder pages, default on). Any other value counts as no key.

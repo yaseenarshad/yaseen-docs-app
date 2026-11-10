@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
-import { nativeImage, screen, type IpcMainInvokeEvent } from 'electron'
+import { nativeImage, net, screen, type IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import { BETWEEN_VAULTS, CLIP_CHANGED, rootOfPath, type FileWriteRequest, type FileWriteResponse, type ImportResponse, type RenameFileResponse } from '@shared/types'
 import { dropLanded, rememberDragOut } from '../dragLanding'
@@ -10,6 +10,7 @@ import * as icons from '../icons'
 import { fileClip, type FileClip } from '../fileClip'
 import * as focus from '../focus'
 import { readAsset, writeAsset } from '../fs/assets'
+import { downloadImage } from '../fs/downloadImage'
 import { copyEntry, importCopy, isCrossDevice, pasteEntries, type PasteOps } from '../fs/copy'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
@@ -107,6 +108,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // `.excalidraw` is not a vault file, so nothing points at it; a pasted image is a NEW file
   // the tree learns of from the watcher, like any add made outside the app.
   handle(CONTRACT.writeAsset, writeAsset)
+  // An Image cell's "Paste a link" (YAZ-4802): bytes only, nothing written; the renderer saves them through writeAsset.
+  handle(CONTRACT.downloadImage, (req: unknown) => downloadImage(req, (url, init) => net.fetch(url, init)))
   // Reveal in Finder (GRO-2274): read-only, so no store repair and no broadcast — but still
   // enveloped like every other handler so a stale row's NOT_FOUND reaches the renderer as a
   // passive notice instead of vanishing (showItemInFolder is silent on a missing path).

@@ -16,14 +16,20 @@ export const FOLDER_SETTINGS_KEY = 'folder_settings'
 export const OTHER_FILES_KEY = 'other_files'
 
 /**
+ * The folders in `other_files` whose notes stay in the table (YAZ-4747 OF2, "Move the folder only"):
+ * `folder_settings.other_files_keep_notes: ["[[…]]"]`. A folder in `other_files` without an entry here takes its notes.
+ */
+export const OTHER_FILES_KEEP_NOTES_KEY = 'other_files_keep_notes'
+
+/**
  * A rename has to walk INTO `folder_settings` — the one reserved key with app-defined link
  * semantics (🔒 Q1) — and the rule that no surface re-parses that key holds for the rename engine
  * too: it comes through here, and the key STRING rides back in the result rather than being spelled
  * anywhere else.
  *
- * The link-bearing leaves are exactly five: every view's [D5] `order` entry (🔒 Q3), every view's
+ * The link-bearing leaves are exactly six: every view's [D5] `order` entry (🔒 Q3), every view's
  * `fills[].note` (YAZ-4536), every column's belongs-to `target` (🔒 Q2), every Linked mentions column's
- * `from.folder` (YAZ-4739) and every `other_files` entry (YAZ-4597 D44) — the places this
+ * `from.folder` (YAZ-4739), every `other_files` entry (YAZ-4597 D44) and every `other_files_keep_notes` entry (YAZ-4747) — the places this
  * vocabulary spells a wikilink. Each string leaf is offered to `map`; `undefined` means LEAVE IT.
  * Everything else in the value — unknown view types, extra keys, unusable shapes, an old Outline's
  * `outline` string (YAZ-4584 D40: the folder's document is its Page, the `.folder.md` body, whose
@@ -75,6 +81,8 @@ export function mapFolderSettingsLinks(
   }
   // A note moved to Other files is named by a link (YAZ-4597 D44): a rename keeps it there.
   if (Array.isArray(raw[OTHER_FILES_KEY])) value[OTHER_FILES_KEY] = raw[OTHER_FILES_KEY].map(mapLink)
+  // A folder moved there "folder only" is named by a link too (YAZ-4747 OF5).
+  if (Array.isArray(raw[OTHER_FILES_KEEP_NOTES_KEY])) value[OTHER_FILES_KEEP_NOTES_KEY] = raw[OTHER_FILES_KEEP_NOTES_KEY].map(mapLink)
   return changed ? { key: FOLDER_SETTINGS_KEY, value } : null
 }
 

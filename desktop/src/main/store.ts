@@ -34,6 +34,7 @@ import {
   type NewBoardPictures,
   type NewTabPlace,
   OUTSIDE_CHANGE_GLOWS,
+  FIND_FOLDS,
   ALL_NOTES_OPENS_AT,
   TABLE_NOW_MARKS,
   TABLE_DIM_PASTS,
@@ -56,6 +57,7 @@ import {
   TABLE_BAND_STRENGTH_MIN,
   TABLE_BAND_STRENGTH_STEP,
   isBandColour,
+  isBlockWidth,
   type TableBandRows,
   DAILY_NOTE_OPENS,
   type DailyNoteOpens,
@@ -128,6 +130,7 @@ import {
   type TabSleepAfter,
   type OpenStat,
   type OutsideChangeGlow,
+  type FindFolds,
   type AllNotesOpensAt,
   type RecentRoots,
   type RightPanelIdentity,
@@ -182,6 +185,10 @@ import {
   type TabCanvasState,
   type TabRef,
   normalizeFilesZoom,
+  DEFAULT_HEADER_ROW,
+  HEADER_ROW_PARTS,
+  headerRowOwn,
+  type HeaderRow,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isValidPicturesFolder } from '@shared/drawingAssets'
@@ -471,8 +478,13 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   keepWindowPinned: (v) => v === null || isBool(v),
   rowHeight: oneOf(FOLDER_PAGE_CHOICES.rowHeight),
   rowNumbers: isBool,
+  columnTypeIcons: isBool,
   textInCells: oneOf(FOLDER_PAGE_CHOICES.textInCells),
   groupIndent: oneOf(FOLDER_PAGE_CHOICES.groupIndent),
+  // YAZ-4798: a file from before them reads On, On hover and plain lines (`sanitizeFolderPages`).
+  stickyGroups: isBool,
+  groupLines: oneOf(FOLDER_PAGE_CHOICES.groupLines),
+  groupLineStyle: oneOf(FOLDER_PAGE_CHOICES.groupLineStyle),
   showEmptyGroups: isBool,
   showEmptyColumns: isBool,
   subfolders: oneOf(FOLDER_PAGE_CHOICES.subfolders),
@@ -483,6 +495,7 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   showFolderPageFiles: isBool,
   askBeforeDelete: isBool,
   confirmChanges: isBool,
+  showNewButtons: isBool,
   showOtherFiles: isBool,
   inheritColumns: isBool,
   columnMarks: oneOf(FOLDER_PAGE_CHOICES.columnMarks),
@@ -497,6 +510,9 @@ export function sanitizeFolderPages(raw: unknown): FolderPagesSettings {
   if (!isBool(src.showEmptyColumns) && isBool(src.showEmptyGroups)) out.showEmptyColumns = src.showEmptyGroups
   return out
 }
+
+/** Settings › Tables › Header row (YAZ-4774) on load: each valid part is kept, a missing or broken one is its default. */
+export const sanitizeHeaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_HEADER_ROW, ...headerRowOwn(raw) })
 
 /**
  * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
@@ -644,15 +660,21 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tocOnByDefault: (v): v is boolean => typeof v === 'boolean',
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
+  findFolds: (v): v is FindFolds => typeof v === 'string' && (FIND_FOLDS as readonly string[]).includes(v),
   outsideChangeGlow: (v): v is OutsideChangeGlow => typeof v === 'string' && (OUTSIDE_CHANGE_GLOWS as readonly string[]).includes(v),
   outsideListPinned: (v): v is boolean => typeof v === 'boolean',
+  // YAZ-4783: "Text column" (`null`) or whole px in range; anything else falls back to Text column, the look before.
+  codeBlockWidth: (v): v is number | null => v === null || isBlockWidth(v),
+  tableWidth: (v): v is number | null => v === null || isBlockWidth(v),
   tableRowBand: (v): v is TableRowBand => typeof v === 'string' && (TABLE_ROW_BANDS as readonly string[]).includes(v),
   tableBandColour: isBandColour,
   tableBandStrength: (v): v is number => isFiniteNumber(v) && v >= TABLE_BAND_STRENGTH_MIN && v <= TABLE_BAND_STRENGTH_MAX && v % TABLE_BAND_STRENGTH_STEP === 0,
   tableBandRows: (v): v is TableBandRows => typeof v === 'string' && (TABLE_BAND_ROWS as readonly string[]).includes(v),
   tableBandBold: (v): v is boolean => typeof v === 'boolean',
+  tableHeaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
   tableNowButton: (v): v is boolean => typeof v === 'boolean',
+  tableCellNoteButton: (v): v is boolean => typeof v === 'boolean',
   tableDimPast: (v): v is TableDimPast => typeof v === 'string' && (TABLE_DIM_PASTS as readonly string[]).includes(v),
   tableShadeDarkness: (v): v is number => isFiniteNumber(v) && v >= TABLE_SHADE_MIN && v <= TABLE_SHADE_MAX && v % TABLE_SHADE_STEP === 0,
   noteBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_INDENT_MIN && v <= NOTE_BULLET_INDENT_MAX,
@@ -745,6 +767,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.highlightCustomColors = sanitizeHighlightCustomColors(src.highlightCustomColors)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.folderPages = sanitizeFolderPages(src.folderPages)
+  out.tableHeaderRow = sanitizeHeaderRow(src.tableHeaderRow)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)
   out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)
