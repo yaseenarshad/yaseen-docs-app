@@ -20,7 +20,7 @@ import { createNote, folderPath } from '../../views/scaffold'
 import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
 import { dragPill, pillLabel } from '../dragPill'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
-import type { PendingCreate, PendingRename, ReorderOver, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
+import type { CreatePlace, PendingCreate, PendingRename, ReorderOver, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
 /**
  * A new board (YAZ-3028 D9): name first, then birth. `fs:create-board` writes the empty scene or the
@@ -796,8 +796,10 @@ export function useInlineEdits(
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>,
   openTo: (file: string, top?: string) => void,
+  /** A placed create's item, made on disk (YAZ-4782): it joins the Focus or the Favorites list at `place`. */
+  onPlace?: (place: CreatePlace, path: string) => void,
 ) {
-  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null } | null>(null)
+  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null; place?: CreatePlace } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir'; top: string | null } | null>(null)
 
   /**
@@ -805,8 +807,15 @@ export function useInlineEdits(
    * (⌘N, YAZ-3556 D4), which asks for it in Files with no menu open.
    */
   const startCreateAt = useCallback(
-    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null }) => {
+    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
       const menu = at
+      // A New … on the Focus or the Favorites tab with a place in its list (YAZ-4782: a pinned file row, a focus folder,
+      // blank space): the field opens there, on the tab, and the item joins the list there (`submitCreate`). The tab
+      // stays: no hop to Files, and no folder to open — the row, the folder or the list's end is on show.
+      if (at.place != null) {
+        setCreating({ kind, seed, parentDir: at.targetDir, top: at.top, place: at.place })
+        return
+      }
       // Favorites and Focus each show a SUBSET of the vault (YAZ-1766 3B1, YAZ-2619 S36): a target dir
       // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
       // mount, so the create moves to Files, where the `openTo` below opens that dir.
@@ -815,7 +824,10 @@ export function useInlineEdits(
       // The reveal hop's rule (D10), applied to the other gesture that needs a row. With two or more
       // vaults a vault's root is held only as its row (YAZ-2602), and neither tab has that row (YAZ-2631 D1).
       const shown = menu.lens === 'favorites' ? favoriteNodes : menu.lens === 'focus' ? focusNodes : null
-      const toFiles = shown !== null && (menu.targetDir === root ? shown.length === 0 || kind === 'dir' : findDirNode(shown, menu.targetDir) === null)
+      // A dir at or under the right-clicked row's top row is on show in that copy (YAZ-4782): `shown` holds the top level
+      // alone, and a pinned folder in a focus or a favorite folder — and its subfolders — stand in that folder's tree instead.
+      const inCopy = menu.top !== null && (menu.targetDir === menu.top || menu.targetDir.startsWith(`${menu.top}/`))
+      const toFiles = shown !== null && !inCopy && (menu.targetDir === root ? shown.length === 0 || kind === 'dir' : findDirNode(shown, menu.targetDir) === null)
       // The input renders inside the target dir's children, so that dir must be open — and its
       // vault's row with it; `openTo` opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
       // In a copy of Focus or Favorites it opens there too, and in that copy alone (YAZ-3131 S20).
@@ -830,7 +842,7 @@ export function useInlineEdits(
   const startCreate = useCallback(
     (kind: EntryKind, seed = '') => {
       if (menu === null || menu.targetDir === null) return
-      startCreateAt(kind, seed, { targetDir: menu.targetDir, lens: menu.lens, top: menu.top })
+      startCreateAt(kind, seed, { targetDir: menu.targetDir, lens: menu.lens, top: menu.top, place: menu.place })
       setMenu(null)
     },
     [menu, startCreateAt],
@@ -845,6 +857,7 @@ export function useInlineEdits(
         const board = await createBoardFile(vault, creating.parentDir, name, creating.kind, creating.seed)
         setCreating(null)
         refresh(vault)
+        if (creating.place !== undefined) onPlace?.(creating.place, board)
         onOpenFile(board)
         return
       }
@@ -853,13 +866,18 @@ export function useInlineEdits(
       // What was typed is the TITLE (YAZ-2420 🔒 D6, D20): the name on disk is built from it.
       // In a vault that does not use IDs it is the name itself (YAZ-2523 🔒 V3).
       let note: string | null = null
-      if (creating.kind === 'dir') await api.createDir({ path: folderPath(creating.parentDir, name, index.ids), ...(index.ids && { title: name }) })
-      else note = await createNote(creating.parentDir, name, index.ids)
+      let made: string
+      if (creating.kind === 'dir') {
+        made = folderPath(creating.parentDir, name, index.ids)
+        await api.createDir({ path: made, ...(index.ids && { title: name }) })
+      } else made = note = await createNote(creating.parentDir, name, index.ids)
       setCreating(null)
       refresh(vault)
+      // In the list where the New … was picked (YAZ-4782), before the note opens, so its tab lights the new row.
+      if (creating.place !== undefined) onPlace?.(creating.place, made)
       if (note !== null) onOpenFile(note)
     },
-    [creating, refresh, onOpenFile, vaultOf],
+    [creating, refresh, onOpenFile, vaultOf, onPlace],
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])
@@ -894,6 +912,7 @@ export function useInlineEdits(
             seed: creating.seed,
             parentDir: creating.parentDir,
             top: creating.top,
+            ...(creating.place !== undefined && { place: creating.place }),
             onSubmit: submitCreate,
             onCancel: cancelCreate,
           },

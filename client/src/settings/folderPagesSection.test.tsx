@@ -53,6 +53,10 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
       ['rowNumbers', 'Off', { rowNumbers: false }],
       ['textInCells', 'Clip', { textInCells: 'clip' }],
       ['groupIndent', 'Large', { groupIndent: 'large' }],
+      // YAZ-4798: where you are in a grouped table.
+      ['stickyGroups', 'Off', { stickyGroups: false }],
+      ['groupLines', 'On', { groupLines: 'always' }],
+      ['groupLineStyle', 'Thread', { groupLineStyle: 'thread' }],
       ['showEmptyGroups', 'Off', { showEmptyGroups: false }], // on by default (YAZ-3746 demo round 2, F2)
       ['showEmptyColumns', 'On', { showEmptyColumns: true }], // its own switch (YAZ-4608 C2)
       ['subfolders', 'Both', { subfolders: 'both' }],
@@ -81,6 +85,10 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     expect(pressed('folderPages.rowNumbers')).toBe('On')
     expect(pressed('folderPages.textInCells')).toBe('By kind')
     expect(pressed('folderPages.groupIndent')).toBe('Medium')
+    // YAZ-4798: sticky group headers on, group lines on hover, plain lines.
+    expect(pressed('folderPages.stickyGroups')).toBe('On')
+    expect(pressed('folderPages.groupLines')).toBe('On hover')
+    expect(pressed('folderPages.groupLineStyle')).toBe('Lines')
     expect(pressed('folderPages.showEmptyGroups')).toBe('On') // YAZ-3746 demo round 2 (F2)
     expect(pressed('folderPages.showEmptyColumns')).toBe('Off')
     expect(pressed('folderPages.subfolders')).toBe('Their notes')

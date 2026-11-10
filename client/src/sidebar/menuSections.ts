@@ -548,7 +548,7 @@ const openAlone: Leaf = (t, h) => {
 // ---- (5) Open in ▸: the OS verbs, one parent in a group of its own (D7 amended) ----
 
 /**
- * "Open in new window" — FILE rows only (D2, GRO-2168); folders and blank space hide it. Out of the "Open in ▸" flyout
+ * "Open in new window" — a FILE row (D2, GRO-2168), and a FOLDER row since YAZ-4778 (its folder page); blank space hides it. Out of the "Open in ▸" flyout
  * since YAZ-4470: at the top, in the open group, where a file row of Files or Search shows it at once.
  */
 const openInNewWindow: Leaf = (t, h) => {

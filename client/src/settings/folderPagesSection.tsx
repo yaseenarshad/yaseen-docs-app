@@ -41,6 +41,19 @@ const GROUP_INDENT_OPTIONS: readonly Option<FolderPagesSettings['groupIndent']>[
   { label: 'Medium', value: 'medium' },
   { label: 'Large', value: 'large' },
 ]
+/**
+ * YAZ-4798: a grouped table's group lines, the three choices and meaning of Settings › Sidebar › Level lines, in the
+ * approved words (Off · On · On hover); and their look, plain lines or the thread to the row under the pointer.
+ */
+const GROUP_LINES_OPTIONS: readonly Option<FolderPagesSettings['groupLines']>[] = [
+  { label: 'On hover', value: 'hover' },
+  { label: 'On', value: 'always' },
+  { label: 'Off', value: 'off' },
+]
+const GROUP_LINE_STYLE_OPTIONS: readonly Option<FolderPagesSettings['groupLineStyle']>[] = [
+  { label: 'Lines', value: 'plain' },
+  { label: 'Thread', value: 'thread' },
+]
 const SUBFOLDERS_OPTIONS: readonly Option<FolderPagesSettings['subfolders']>[] = [
   { label: 'Their notes', value: 'notes' },
   { label: 'As rows', value: 'rows' },
@@ -108,8 +121,8 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
           ),
         },
         // The hints' "›" stays with the word after it: a no-break space, so the arrow never ends a line (YAZ-4643 S7).
-        row('rowBand', 'Row band on hover', ON_OFF_OPTIONS, { hint: 'A band on the table row under the mouse. Until you set it, it follows Editor ›\u00a0Tables ›\u00a0Row band.', keywords: ['band', 'highlight', 'hover', 'row'], shown: ({ settings }) => folderRowBandOn(settings) }),
-        row('keepWindowPinned', 'Keep the mini window pinned', ON_OFF_OPTIONS, { hint: 'The mini window of a row stays open on a click outside it. Until you set it, it follows Editor ›\u00a0Cell notes ›\u00a0Keep cell notes open.', keywords: ['mini window', 'note window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
+        row('rowBand', 'Row band on hover', ON_OFF_OPTIONS, { hint: 'A band on the table row under the mouse. Until you set it, it follows Tables ›\u00a0All tables ›\u00a0Row band.', keywords: ['band', 'highlight', 'hover', 'row'], shown: ({ settings }) => folderRowBandOn(settings) }),
+        row('keepWindowPinned', 'Keep the mini window pinned', ON_OFF_OPTIONS, { hint: 'The mini window of a row stays open on a click outside it. Until you set it, it follows Tables ›\u00a0Cell notes ›\u00a0Keep cell notes open.', keywords: ['mini window', 'note window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
         // Its own switch (YAZ-4592 S26): the sidebar's Confirm before deleting does not turn it off.
         row('askBeforeDelete', 'Ask before deleting notes', ON_OFF_OPTIONS, { hint: 'Delete note… in a row’s menu asks first. The note moves to the Trash. The sidebar’s Confirm before deleting does not change this.', keywords: ['delete', 'confirm', 'trash', 'ask'] }),
         // YAZ-3746 13AN: on by default, so a stray key in a cell never changes a note unasked.
@@ -122,8 +135,15 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
       items: [
         row('rowHeight', 'Row height', ROW_HEIGHT_OPTIONS, { keywords: ['row', 'height', 'short', 'tall'] }),
         row('rowNumbers', 'Row numbers', ON_OFF_OPTIONS, { keywords: ['row numbers', 'gutter', '#'] }),
+        row('columnTypeIcons', 'Column type icons', ON_OFF_OPTIONS, { hint: "A table header shows each column's type icon before its name. A table's View settings can say otherwise.", keywords: ['icon', 'type', 'column', 'header', 'kind'] }),
+        // YAZ-3746 13BL: off leaves the right-click doors (New row below, New note in this group) and the group header "+".
+        row('showNewButtons', 'Show New buttons', ON_OFF_OPTIONS, { hint: 'The + New at the top right, the + New rows, + New card, and the + on group headers. Off: right-click a row for New row below, or a group header for New note in this group. An empty view still shows + New. A folder’s ⚙ can say otherwise.', keywords: ['new', 'add', 'plus', 'button', 'row', 'card', 'hide'] }),
         row('textInCells', 'Text in cells', TEXT_IN_CELLS_OPTIONS, { hint: 'By kind: lists, links and selects wrap; text, numbers and dates are one line. A column can say otherwise.', keywords: ['wrap', 'clip', 'cells', 'text'] }),
         row('groupIndent', 'Group indent', GROUP_INDENT_OPTIONS, { keywords: ['group', 'indent', 'nested'] }),
+        // YAZ-4798: where you are in a long grouped table, as the sidebar shows it (sticky folders, level lines, thread).
+        row('stickyGroups', 'Sticky group headers', ON_OFF_OPTIONS, { hint: "In a grouped table, the headers of the groups you are in stay at the top under the column header while the rows scroll. A click on one goes back to its group's top. A table's View settings can say otherwise.", keywords: ['sticky', 'group', 'header', 'pin', 'scroll', 'nested'] }),
+        row('groupLines', 'Group lines', GROUP_LINES_OPTIONS, { hint: "In a grouped table, a thin line from each open group's header down to its last row. On hover shows them while the mouse is over the table.", keywords: ['group', 'lines', 'guide', 'indent', 'nested', 'hover', 'tree'] }),
+        row('groupLineStyle', 'Group line style', GROUP_LINE_STYLE_OPTIONS, { hint: 'Thread colours the lines and the headers of the groups that hold the row under the mouse, as the sidebar’s Thread to the row.', keywords: ['group', 'thread', 'bullet threading', 'path', 'lines'] }),
         // Two switches, not one (YAZ-4608 C2): a Table's empty groups and a Board's empty columns are separate things.
         row('showEmptyGroups', 'Show empty groups', ON_OFF_OPTIONS, { hint: 'In a table: the options of the grouping column that no note has yet.', keywords: ['empty', 'groups', 'table'] }),
         row('showEmptyColumns', 'Show empty columns', ON_OFF_OPTIONS, { hint: 'On a board: a column for each option that no note has yet.', keywords: ['empty', 'columns', 'board'] }),
@@ -140,7 +160,7 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('showFolderPageFiles', 'Show folder page files', ON_OFF_OPTIONS, { hint: "Each folder's page file in the sidebar, first under its folder. A folder's ⚙ can say otherwise.", keywords: ['sidebar', 'page file', '.folder.md'] }),
         row('showOtherFiles', 'Show Other files', ON_OFF_OPTIONS, { hint: "A tray at the foot of each folder page: the folder's files that are not notes, and the notes moved out of its views. A folder's ⚙ can say otherwise.", keywords: ['other files', 'tray', 'pdf', 'image', 'drawing'] }),
         row('inheritColumns', "Show parent folders' columns", ON_OFF_OPTIONS, { hint: "A folder page shows the columns of the folders above it too. A folder's ⚙ can say otherwise.", keywords: ['columns', 'parent', 'inherit', 'properties', 'schema'] }),
-        row('columnMarks', 'Show where columns come from', COLUMN_MARKS_OPTIONS, { hint: "A tiny mark after a column's name: ↳ when a parent folder defines it, ↑ when a subfolder does, a lock when the folder keeps its own value. A folder's ⚙ can say otherwise.", keywords: ['columns', 'icon', 'parent', 'subfolder', 'inherit', 'lock', 'separate'] }),
+        row('columnMarks', 'Show where columns come from', COLUMN_MARKS_OPTIONS, { hint: "A tiny mark after a column's name: ↳ when a parent folder defines it, ↑ when a subfolder does, a lock when the folder keeps its own value, ◌ when it is only a field in the notes. A folder's ⚙ can say otherwise.", keywords: ['columns', 'icon', 'parent', 'subfolder', 'inherit', 'lock', 'separate'] }),
       ],
     },
   ],

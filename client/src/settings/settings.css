@@ -1622,6 +1622,89 @@
 }
 
 /* "Band colour" (the YAZ-3818 demo): the accent, the ten table colours and Custom…, as the cell toolbar's Fill. */
+/* Header row (YAZ-4774, `registry.tsx`): Color, Strength and Text, each its word then its control. */
+.settings__header-row {
+  display: grid;
+  /* YAZ-4794: the names share one column, and the controls' column may shrink below their width (they wrap, never
+     push the dialog sideways). */
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.settings__header-row > * {
+  min-width: 0;
+}
+
+.settings__header-row-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* YAZ-4794: the segments a size smaller here, so Text colour (Muted, Full and eight swatches) and Align fit one line. */
+.settings__header-row .settings__options {
+  flex-wrap: wrap;
+}
+
+.settings__header-row .settings__option {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+/* Reset: a quiet word at the end of the last row, not a button of its own row. */
+.settings__header-row-reset {
+  margin-left: auto;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings__header-row-reset:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+/* The live preview (YAZ-4794): a sample note table header row and one row under it, the `table.css` variables painted
+   as a note table paints them. Fixed layout at the card's width, so it never widens the dialog. */
+.header-row-preview {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 440px;
+  margin-bottom: 4px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.header-row-preview :is(th, td) {
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+}
+
+.header-row-preview th {
+  background: color-mix(in srgb, var(--table-header-hue, var(--fg)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), transparent);
+  font-weight: var(--table-header-weight, bold);
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 0) * 100%), var(--fg)));
+}
+
+/* Align: the columns' own (inline, Follow column) unless the row's is Left, Center or Right. */
+.header-row-preview[data-table-header-align]:not([data-table-header-align='follow']) th {
+  text-align: var(--table-header-align) !important;
+}
+
 .settings__band-colours {
   display: flex;
   flex-wrap: wrap;

@@ -42,7 +42,7 @@ import type { ListFold } from './listFold'
 import { createPortal } from 'react-dom'
 import { FocusFolderList } from './FocusFolderList'
 import { ConfirmSheet } from '../components/ConfirmSheet'
-import { resolveItem } from '../lists/focusFolders'
+import { resolveItem, vaultOfFolder } from '../lists/focusFolders'
 import { RecentList } from './RecentList'
 import { recentSections } from './recents'
 import { RowDateTip } from './RowDateTip'
@@ -50,7 +50,7 @@ import { FilterChips, SearchFilterBar } from './SearchFilterBar'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind, NoticeType } from '../lib/notice'
-import { dropOn, hasFiles, leftTarget, Tree, type ReorderOver, type TreeFileMove } from './Tree'
+import { dropOn, hasFiles, leftTarget, PlacedCreate, Tree, type CreatePlace, type ReorderOver, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
@@ -388,9 +388,17 @@ export interface MenuTargets {
   y: number
   /**
    * Where "New …" creates and Paste pastes: a dir row → itself, a file row → its parent, blank
-   * space → the root. Null where blank space is no one vault's (two or more vaults, YAZ-2602 S10).
+   * space → the root. Null where blank space is no one vault's (two or more vaults, YAZ-2602 S10) —
+   * but on the Focus and Favorites tabs, where blank space makes a new item in a vault's root (YAZ-4782, `vaultOfFolder`).
    */
   targetDir: string | null
+  /**
+   * Where a New … picked on the Focus or the Favorites tab puts its item in that tab's list, and its name field
+   * (YAZ-4782, `CreatePlace`): a pinned FILE row (a top row) → right after it, in its focus folder or at the top level;
+   * blank space → last, in the folder shown alone ("Hide all others") or at the top level. Null or absent everywhere
+   * else — Files, Search, a folder row, a row inside a pinned folder — where the field opens in `targetDir` as ever.
+   */
+  place?: CreatePlace | null
   /** The right-clicked row's kind; null for blank space. Drives the Rename input's mode. */
   rowKind: 'file' | 'dir' | null
   /**
@@ -434,7 +442,7 @@ export interface MenuTargets {
    * the vault root, and neither is what a Cut may name.
    */
   clipPaths: string[] | null
-  /** "Open in new window" — FILE rows only (D2, GRO-2168). */
+  /** "Open in new window" — a file row (D2, GRO-2168) or a folder row, its folder page (YAZ-4778). */
   newWindowPath: string | null
   /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
   renamePath: string | null
@@ -1257,6 +1265,17 @@ export function Sidebar({
       // "Change icon ▸" (YAZ-3440 D8, D9): the row or its selection (never a vault row, a shortcut row or blank space), and the one name rule its rows want.
       const iconPaths = node === null || vaultRow !== null || shortcutIn !== null || holdsVault ? null : plural ?? [node.path]
       const iconRule = iconPaths === null ? null : oneRule(iconPaths.map((path) => ruleFor(path.slice(path.lastIndexOf('/') + 1), (path === node?.path ? node.type === 'dir' : dirs.includes(path)) ? 'folder' : 'file')))
+      // A New … on the Focus or the Favorites tab stays there (YAZ-4782): a pinned file row's — its folder holds the new
+      // item on disk, and it goes right after the row in the list — or blank space's: the vault's root, last in the list,
+      // or in the one folder "Hide all others" shows. A folder row, and a row inside a pinned folder, create in that folder, as ever.
+      const listLens = !asSearch && (lens === 'focus' || lens === 'favorites') ? lens : null
+      const listTab = listLens === 'focus' ? listsNow.current.focusTab : listsNow.current.favoritesTab
+      const shownAlone = listLens === null ? undefined : listTab.folders.find((folder) => folder.id === focusOnly)
+      const place: CreatePlace | null =
+        listLens === null ? null
+        : node === null ? { list: listLens, folder: shownAlone?.id ?? null, after: null }
+        : node.type === 'file' && node.shortcutIn === undefined && node.pageOf === undefined && node.top === node.path ? { list: listLens, folder: listTab.folderOf(node.path)?.id ?? null, after: node.path }
+        : null
       setMenu({
         x,
         y,
@@ -1264,7 +1283,9 @@ export function Sidebar({
         leaveSearchTo: asSearch ? (node?.path ?? null) : null,
         // Any row that is not the Files tree's own (YAZ-2638 D1, D3): Search, Focus, Favorites. One row, never a selection.
         showPath: (outside || lens !== 'files') && plural === null ? (node?.path ?? null) : null,
-        targetDir: node === null && multi ? null : targetDirFor(node, root),
+        // Blank space of a window with two or more vaults is a vault's root on Focus and Favorites alone (YAZ-4782).
+        targetDir: node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, root),
+        place,
         rowKind: node?.type ?? null,
         top: asSearch ? null : (node?.top ?? null),
         // ONE field per item, each resolved on its own (GRO-2296). Several are the same
@@ -1283,7 +1304,8 @@ export function Sidebar({
         // One row too (YAZ-4470): a file or folder row; not a vault row, a shortcut row or blank space.
         openTabPaths: pluralRows ?? (node === null || vaultRow !== null || shortcutIn !== null ? null : [node.path]),
         clipPaths: shortcutIn !== null || vaultRow !== null || holdsVault ? null : plural ?? (node === null ? null : [node.path]),
-        newWindowPath: filePath,
+        // A file, or a folder (YAZ-4778: its folder page in a new window); not a vault row, a shortcut row or a selection.
+        newWindowPath: filePath ?? (plural === null && node?.type === 'dir' && vaultRow === null && shortcutIn === null ? node.path : null),
         renamePath: shortcutIn !== null || vaultRow !== null ? null : node?.path ?? null,
         deletePaths: node === null || shortcutIn !== null || vaultRow !== null || holdsVault ? null : outermost(plural ?? [node.path]),
         revealPath: node?.path ?? blank,
@@ -1323,7 +1345,7 @@ export function Sidebar({
         ...(node?.pageOf !== undefined ? PAGE_ROW_MENU : {}),
       })
     },
-    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState, dirs, iconTargets],
+    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState, dirs, iconTargets, focusOnly],
   )
   // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
   // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
@@ -1459,7 +1481,24 @@ export function Sidebar({
     )
   }, [onOpenSetHere, onOpenVaultHere, onNotice])
 
-  const { setRenamingEntry, startCreate, startCreateAt, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo)
+  // A placed create's item joins the Focus or the Favorites list where its New … was picked (YAZ-4782).
+  const addAt = lists.addAt
+  const placeMade = useCallback((place: CreatePlace, path: string) => addAt(place.list, path, place.folder, place.after), [addAt])
+  const { setRenamingEntry, startCreate, startCreateAt, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo, placeMade)
+  /** A New … on a focus or favorite folder's menu (YAZ-4782): the field first in that folder; the item in a vault's root (`vaultOfFolder`), then in the folder. */
+  const newInFolder = (list: 'focus' | 'favorites') => (id: string, kind: EntryKind) => {
+    const folder = (list === 'focus' ? lists.focusTab : lists.favoritesTab).folders.find((f) => f.id === id)
+    startCreateAt(kind, '', { targetDir: vaultOfFolder(folder, roots), lens: list, top: null, place: { list, folder: id, after: null } })
+  }
+  /** A New … on blank space of the tab (YAZ-4782), with no folder shown alone: the field after the top level's last row, where the item goes. */
+  const listEndField = (list: 'focus' | 'favorites') =>
+    pending?.place?.list === list && pending.place.folder === null && pending.place.after === null && (
+      <ul className="tree">
+        <li>
+          <PlacedCreate pending={pending} level={0} />
+        </li>
+      </ul>
+    )
   // "Rename file" from a tab's menu (YAZ-4248): the rename field takes the row's place, so it flashes as the row did.
   useEffect(() => {
     if (!renameFlash.current || renaming === null || bodyRef.current === null) return
@@ -1929,12 +1968,15 @@ export function Sidebar({
                 onSetScope={lists.favoritesTab.setFolderScope}
                 onReorderFolders={lists.favoritesTab.reorderFolders}
                 scope={lists.favoritesScope}
+                onNew={newInFolder('favorites')}
+                pending={pending}
                 openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
                 onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))}
                 onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
               />
             )}
             {onlyFolder === undefined && favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
+            {listEndField('favorites')}
           </>
         ) : lens === 'focus' ? (
           // The Focus tab (YAZ-2619 D2, D4): the focus lists of the window's vaults (kept in the vault, YAZ-2702) in their own order, each a full
@@ -1988,6 +2030,8 @@ export function Sidebar({
                 onSetScope={lists.focusTab.setFolderScope}
                 onReorderFolders={lists.focusTab.reorderFolders}
                 scope={lists.focusScope}
+                onNew={newInFolder('focus')}
+                pending={pending}
                 openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
                 onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))}
                 onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
@@ -2015,6 +2059,7 @@ export function Sidebar({
                 document.body,
               )}
             {onlyFolder === undefined && focusNodes.length > 0 && <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
+            {listEndField('focus')}
           </>
         ) : (
           <>

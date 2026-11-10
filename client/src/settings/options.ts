@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type TableBandRows, type TableDimPast, type TableNowMark, type TableRowBand, type DailyNoteOpens, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type FindFolds, type SectionLines, type TableBandRows, type TableDimPast, type TableNowMark, type TableRowBand, type DailyNoteOpens, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -120,6 +120,20 @@ export const SECTION_LINES_OPTIONS: readonly Option<SectionLines>[] = [
 ]
 
 /** Outside changes (YAZ-3704 D5): how long changed words glow; the change list in the open note reads it. */
+/** Settings › Editor › Find › Folded bullets (YAZ-4787), in the find bar's order. */
+export const FIND_FOLDS_OPTIONS: readonly Option<FindFolds>[] = [
+  { label: 'Open the one you are on', value: 'current' },
+  { label: 'Open every match', value: 'all' },
+  { label: 'Keep folded', value: 'keep' },
+]
+
+/** Settings › Editor › Code blocks › Width and Tables › All tables › Width (YAZ-4783 layer 3): the text column, or a px typed beside. */
+export type BlockWidthMode = 'column' | 'px'
+export const BLOCK_WIDTH_OPTIONS: readonly Option<BlockWidthMode>[] = [
+  { label: 'Text column', value: 'column' },
+  { label: 'Pixels', value: 'px' },
+]
+
 export const OUTSIDE_CHANGE_GLOW_OPTIONS: readonly Option<OutsideChangeGlow>[] = [
   // The YAZ-4272 demo: timed first, shortest first; 10 seconds was too quick to read.
   { label: '1 minute', value: '60s' },
@@ -128,7 +142,7 @@ export const OUTSIDE_CHANGE_GLOW_OPTIONS: readonly Option<OutsideChangeGlow>[] =
   { label: 'Off', value: 'off' },
 ]
 
-/** Settings › Editor › Cell notes › All notes opens at (YAZ-4276 A1). */
+/** Settings › Tables › Cell notes › All notes opens at (YAZ-4276 A1). */
 export const ALL_NOTES_OPENS_AT_OPTIONS: readonly Option<AllNotesOpensAt>[] = [
   { label: 'The cell I came from', value: 'cell' },
   { label: 'Now', value: 'now' },

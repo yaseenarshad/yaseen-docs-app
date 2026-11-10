@@ -31,8 +31,35 @@ export interface PendingCreate {
    * input mounts under that copy alone. Null (blank space, a search row): under each level that matches.
    */
   top: string | null
+  /**
+   * A create on the Focus or the Favorites tab that is no folder's on the tab (YAZ-4782): its place in the list. Then
+   * the field is NOT the first row of `parentDir`'s level: it mounts at `place` (see `CreatePlace`), and the made item
+   * joins the list there. Absent: the field is the first row of `parentDir`, as ever (Files; a folder row of the tab).
+   */
+  place?: CreatePlace
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
+}
+
+/**
+ * Where a New … picked on the Focus or the Favorites tab goes in that tab's list (YAZ-4782), and where its name field
+ * shows — on the tab, never in Files:
+ * - `after` set (a pinned note or file): right under that row, and the item goes right after it, in its focus folder or at the top level;
+ * - `after` null and `folder` set (a focus folder's own menu; blank space while "Hide all others" shows one folder):
+ *   first inside that folder, and the item goes last in it;
+ * - both null (blank space): after the top level's last row, and the item goes last there.
+ */
+export interface CreatePlace {
+  list: 'focus' | 'favorites'
+  /** The focus or favorite folder (its id) that takes the item; null: the top level. */
+  folder: string | null
+  /** The pinned row the item goes right after; null: last. */
+  after: string | null
+}
+
+/** A placed create's name field (YAZ-4782), at the tree's `level`: a note's, a drawing's and a diagram's one step in, as a file row's label. */
+export function PlacedCreate({ pending, level }: { pending: PendingCreate; level: number }) {
+  return <CreateInline kind={pending.kind} seed={pending.seed} indent={8 + level * 14 + (pending.kind === 'dir' ? 0 : 14)} onSubmit={pending.onSubmit} onCancel={pending.onCancel} />
 }
 
 /** Inline rename replacing one row's label (files E1, GRO-2194; folders E1b, GRO-2241). */
@@ -394,7 +421,10 @@ function TreeLevel({
   const isActive = (node: TreeNode): boolean => node.path === activeFile && (activeTop == null || isShortcutRow(node) || activeTop === topOf(node))
   const isSelected = (node: TreeNode): boolean => selection.paths.has(node.path) && (isShortcutRow(node) || (selection.copies?.get(node.path) ?? topOf(node)) === topOf(node))
   // The top level is no copy of anything: one per tab, so a create there (the root) mounts as before.
-  const createsHere = pending !== null && pending.parentDir === dirPath && (pending.top === null || top === undefined || pending.top === top)
+  // A placed create (YAZ-4782) mounts at its place instead: under its row (below), in a focus folder, or at the list's end.
+  const createsHere = pending !== null && pending.place === undefined && pending.parentDir === dirPath && (pending.top === null || top === undefined || pending.top === top)
+  /** The pinned file row a placed create (YAZ-4782) shows its field under: a top row of Focus or Favorites, in its own copy. */
+  const placedUnder = (node: TreeNode): boolean => pending?.place?.after === node.path && depth === 0 && !isShortcutRow(node) && inCopy(pending.top, node)
   // The reorder gesture lives on the TOP rows alone (YAZ-2631 D3): a favorite, a focus item, a vault row of Files.
   const rowReorder = reorder !== undefined && depth === 0 ? reorder : null
   /** The vault a top row of the Focus tab or of the Favorites tab is in, file or folder (YAZ-2631 D4): said only where the window has two or more. A vault row is in no vault's folder, so it says none — and Files has no other top row. */
@@ -655,6 +685,8 @@ function TreeLevel({
               {vaultTag(node.path)}
               {dates === true && <RowDate node={node} />}
             </button>
+            {/* A New … picked on this pinned row (YAZ-4782): its name field right under it, where the item will stand. */}
+            {pending !== null && placedUnder(node) && <PlacedCreate pending={pending} level={level} />}
           </li>
         ),
       )}
