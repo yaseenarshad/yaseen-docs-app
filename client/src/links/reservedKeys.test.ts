@@ -5,7 +5,7 @@ import { COLUMN_MARKS_KEY, CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_K
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
 import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
-import { OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS } from '@shared/pageSwitches'
+import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { REVIEW_KEY, REVIEWS_KEY } from '@shared/reviews'
 import { reservedKeys } from './reservedKeys'
@@ -55,12 +55,12 @@ describe('reserved keys: a vault that does not use IDs (YAZ-2523 V12)', () => {
   it('`id`, `title`, `also_in` and `in` are ordinary properties there; the comments store, the review log, the read-only switch and the page switches are still the app\u2019s', () => {
     const plain = reservedKeys(false)
     for (const key of [NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY]) expect(plain.has(key)).toBe(false)
-    expect([...plain].sort()).toEqual([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, ...FOLDER_PAGE_KEYS].sort())
+    expect([...plain].sort()).toEqual([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 
   // The folder page cog's keys (FOLDER_PAGE_KEYS) are the app's too: the cog sets them (`show_new_buttons`, YAZ-3746 13BL, the latest).
   it('a vault that uses IDs owns all twenty-two', () => {
-    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, REVIEWS_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, ...FOLDER_PAGE_KEYS].sort())
+    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, REVIEWS_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 })
 
