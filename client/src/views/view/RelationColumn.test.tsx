@@ -189,7 +189,16 @@ function aheadHost() {
   const setColumn = vi.fn(async (key: string, next: PropertyDecl) => {
     settings.columns[key] = next
   })
-  return { setColumn, folder: testFolderHost({ vaultRecords: RECORDS, settings, setColumn }) }
+  return { setColumn, folder: testFolderHost({ vaultRecords: RECORDS, vaultFolders: FOLDER_PAGES, settings, setColumn }) }
+}
+
+/** The vault's folder pages, `People` and `Funnels`: what "Notes from" lists (YAZ-4795 demo). */
+const FOLDER_PAGES: IndexRecord[] = ['Funnels', 'People'].map((name) => ({ ...rec(`/vault/${name}/.folder.md`, {}), title: name }))
+
+/** "Notes from" (YAZ-4795 demo, in place of the "Link target" text box): its button, then a folder by name. */
+function pickNotesFrom(el: ParentNode, label: string, folder: string): void {
+  click(byLabel(el, `Notes from for ${label}`))
+  click([...el.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((o) => o.querySelector('.type-picker__name')?.textContent === folder)!)
 }
 
 /** The column editor's Type is the type picker (YAZ-3746 13L): its button names the type, then a list of every type. */
@@ -224,9 +233,8 @@ describe('column menu relation flow', () => {
     openRelation(el, 'owner') // "Make relation": the declaration is born as a link, immediately
     expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link' }, undefined)
     await settle()
-    setValue(byLabel<HTMLInputElement>(el, 'Link target'), 'People')
-    press(byLabel(el, 'Link target'), 'Enter')
-    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link', target: 'People' }, { kind: 'link' })
+    pickNotesFrom(el, 'Owner', 'People')
+    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link', target: '[[People]]' }, { kind: 'link' })
     expect((await propertiesStub.get('/vault')).properties).toEqual({})
   })
 
@@ -239,18 +247,20 @@ describe('column menu relation flow', () => {
     pickType(el, 'Funnels', 'Multi-link')
     expect(setColumn).toHaveBeenNthCalledWith(2, 'funnels', { kind: 'multi-link' }, { kind: 'link' })
     await settle()
-    setValue(byLabel<HTMLInputElement>(el, 'Link target'), 'Funnels')
-    press(byLabel(el, 'Link target'), 'Enter')
-    expect(setColumn).toHaveBeenNthCalledWith(3, 'funnels', { kind: 'multi-link', target: 'Funnels' }, { kind: 'multi-link' })
+    pickNotesFrom(el, 'Funnels', 'Funnels')
+    expect(setColumn).toHaveBeenNthCalledWith(3, 'funnels', { kind: 'multi-link', target: '[[Funnels]]' }, { kind: 'multi-link' })
     expect((await propertiesStub.get('/vault')).properties).toEqual({})
   })
 
-  it('the target is free text with no obsolete type-name suggestion list', async () => {
+  // YAZ-4795 demo: the free-text target became the "Notes from" folder picker; it still offers no type names, only the
+  // vault's folders after "Any folder".
+  it('the target is the "Notes from" folder picker, with no obsolete type-name suggestion list', async () => {
     const { el } = mount(KPI_BASE, { properties: DECLS, folder: aheadHost().folder })
     openRelation(el, 'owner')
     await settle()
     expect(el.querySelector('datalist')).toBeNull()
-    expect(byLabel<HTMLInputElement>(el, 'Link target').getAttribute('list')).toBeNull()
+    click(byLabel(el, 'Notes from for Owner'))
+    expect([...el.querySelectorAll('[role="menuitemradio"] .type-picker__name')].map((n) => n.textContent)).toEqual(['Any folder', 'Funnels', 'People'])
   })
 
   it('an existing legacy declaration is the seed: nothing is written before the click, and Make relation writes exactly it', async () => {
@@ -263,7 +273,7 @@ describe('column menu relation flow', () => {
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('funnels', { kind: 'multi-link', target: 'Funnels' }, undefined)
     await settle()
     expect(byLabel(el, 'Edit property Funnels').textContent).toBe('Multi-link')
-    expect(byLabel<HTMLInputElement>(el, 'Link target').value).toBe('Funnels')
+    expect(byLabel(el, 'Notes from for Funnels').textContent).toBe('Funnels')
   })
 
   it('file.* rows never offer a relation; note.* rows do', () => {

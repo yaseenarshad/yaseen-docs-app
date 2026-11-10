@@ -180,7 +180,8 @@ describe('moving a note (D44, D46)', () => {
     rightClick(nameCell(el, 'Lead Gen'))
     const groups = [...el.querySelectorAll('.ctx-menu__group')].map((g) => [...g.querySelectorAll('[role^="menuitem"]')].map((b) => b.textContent))
     expect(groups.at(-1)).toEqual(['Delete note…'])
-    expect(groups.at(-2)).toEqual(['Copy path', 'Move to Other files'])
+    // "Add shortcut to ›" (YAZ-4797 demo) sits between them on a note row of a vault with IDs.
+    expect(groups.at(-2)).toEqual(['Copy path', 'Add shortcut to', 'Move to Other files'])
     expect(groups.flat()).toContain('Duplicate note')
     expect(groups.flat()).toContain('Filter') // "Filter ›": Show only this value, Hide this value (YAZ-3746 13AW)
   })

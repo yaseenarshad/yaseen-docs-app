@@ -84,12 +84,19 @@ describe('the menu on a table', () => {
     const parts = [...popupOf(view)!.children].flatMap((el) => {
       if (el.classList.contains('ctx-menu__item')) return [`row:${el.textContent}${(el as HTMLButtonElement).disabled ? ':disabled' : ''}`]
       if (el.classList.contains('block-menu-picker')) return [`${el.querySelector('.block-menu-picker__label')?.textContent}:${el.querySelector('.block-menu-picker__value')?.textContent}`]
-      if (el.classList.contains('ctx-menu__strip')) return [`strip:${el.querySelector('.ctx-menu__strip-caption')?.textContent}`]
+      if (el.classList.contains('ctx-menu__strip')) return [`strip:${el.querySelector('.ctx-menu__strip-caption')?.textContent ?? el.getAttribute('aria-label')}`]
+      if (el.classList.contains('ctx-menu__parent')) return [`parent:${el.querySelector('.ctx-menu__item--parent')?.textContent}`]
       return []
     })
-    expect(parts).toEqual(['strip:Look', 'strip:Text', 'strip:Rows', 'Border thickness:Default (1px) ▾', 'Border darkness:Default (20%) ▾', 'Time slots:Default (Off) ▾'])
-    expect(stripsOf(view)).toEqual([
-      'strip:Look:Shaded header row*|Stripes|Fit columns to the page~',
+    // YAZ-4800: a table in no bullet first has the strip that puts it on one, and Add line above / below. YAZ-4774: the
+    // header row's look is the "Header row ›" flyout, after the strips (no "Shaded header row" button). YAZ-4790: "Cell note button".
+    expect(parts).toEqual([
+      'strip:Turn into', 'row:Add line above', 'row:Add line below',
+      'strip:Look', 'strip:Text', 'strip:Rows', 'parent:Header row',
+      'Border thickness:Default (1px) ▾', 'Border darkness:Default (20%) ▾', 'Time slots:Default (Off) ▾', 'Cell note button:Default (Off) ▾',
+    ])
+    expect(stripsOf(view).slice(1)).toEqual([
+      'strip:Look:Stripes|Fit columns to the page~',
       'strip:Text:Align left*|Align center|Align right|Align top*|Align middle|Align bottom',
       'strip:Rows:Compact rows|Normal rows*|Tall rows|Wrap text*',
     ])
@@ -113,8 +120,11 @@ describe('the menu on a table', () => {
     const { view } = await openOnTable(`${SMALL}\n<!-- table: border 3px 20%, header plain, height tall -->\n`)
     const value = (label: string) => pickerNamed(view, label).querySelector('.block-menu-picker__value')!.textContent
     expect([value('Border thickness'), value('Border darkness')]).toEqual(['3px ▾', 'Default (20%) ▾'])
-    expect(stripsOf(view)).toEqual([
-      'strip:Look:Shaded header row|Stripes|Fit columns to the page~',
+    // `header plain` is the header row's Strength Off (YAZ-4774): the Header row flyout's Fill tab has Off pressed.
+    popupOf(view)!.querySelector<HTMLButtonElement>('.ctx-menu__item--parent')!.click()
+    expect(popupOf(view)!.querySelector('.ctx-menu__sub .fill-target--sub [aria-pressed="true"]')?.textContent).toBe('Off')
+    expect(stripsOf(view).slice(1)).toEqual([
+      'strip:Look:Stripes|Fit columns to the page~',
       'strip:Text:Align left*|Align center|Align right|Align top*|Align middle|Align bottom',
       'strip:Rows:Compact rows|Normal rows|Tall rows*|Wrap text*',
     ])
@@ -147,14 +157,15 @@ describe('the menu on a table', () => {
     }
     const firstHeader = (view: EditorView) => view.dom.querySelector('th')!
     const labels = (view: EditorView) => [...popupOf(view)!.querySelectorAll('.ctx-menu__item, .block-menu-picker__label, .ctx-menu__strip-caption')].map((el) => el.textContent)
-    const SETTINGS = ['Look', 'Text', 'Rows', 'Border thickness', 'Border darkness', 'Time slots']
+    const SETTINGS = ['Look', 'Text', 'Rows', 'Header row', 'Border thickness', 'Border darkness', 'Time slots', 'Cell note button']
 
     it.each([
       ['the first header cell', firstHeader],
       ['the text in it', (view: EditorView) => firstHeader(view).querySelector('p') ?? firstHeader(view)],
     ])('a top-level table: the probe in %s opens the eight settings', async (_where, hit) => {
       const { view } = await openWithHit(SMALL, hit)
-      expect(labels(view)).toEqual(SETTINGS)
+      // A table in no bullet: Add line above / below first (YAZ-4800), with the strip that puts it on a bullet.
+      expect(labels(view)).toEqual(['Add line above', 'Add line below', ...SETTINGS])
     })
 
     it('a table in a bullet: the probe in its first header cell opens the eight settings', async () => {
@@ -195,14 +206,15 @@ describe('each setting saves in the comment, one undo step each', () => {
   ])('%s → %s writes `%s`', async (label, text, part) => {
     const { crepe, view } = await openOnTable()
     pick(view, label, text)
-    expect(popupOf(view)).toBeNull()
+    // A pick keeps the menu open, drawn again from the new state (YAZ-4774 demo: "it keeps on closing").
+    expect(popupOf(view)).not.toBeNull()
+    expect(pickerNamed(view, label).querySelector('.block-menu-picker__value')!.textContent).toBe(`${text} ▾`)
     expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: ${part} -->\n`)
     expect(undo(view.state, view.dispatch)).toBe(true)
     expect(getMarkdownForSave(crepe)).toBe(SMALL)
   })
 
   it.each<[string, string]>([
-    ['Shaded header row', 'header plain'],
     ['Stripes', 'stripes'],
     ['Compact rows', 'height compact'],
     ['Tall rows', 'height tall'],
@@ -225,13 +237,29 @@ describe('each setting saves in the comment, one undo step each', () => {
     expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: ${part} -->\n`)
   })
 
+  // YAZ-4774 / YAZ-4793 / YAZ-4794 replace the "Shaded header row" button: the Header row flyout. Its pick writes the
+  // header part, keeps the menu and the flyout open, and lights the pick; picking it again hands it back to Settings.
+  it('Header row › "Plain, like any row" writes `header off regular` in one undo step; the flyout stays open with its ✓; a second pick goes back', async () => {
+    const { crepe, view } = await openOnTable()
+    const flyoutRow = (label: string) => [...popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].find((b) => b.textContent === label)
+    popupOf(view)!.querySelector<HTMLButtonElement>('.ctx-menu__item--parent')!.click()
+    expect(flyoutRow('Plain, like any row')!.dataset.hint).toBeUndefined()
+    flyoutRow('Plain, like any row')!.click()
+    expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: header off regular -->\n`)
+    expect(flyoutRow('Plain, like any row')!.dataset.hint).toBe('✓')
+    flyoutRow('Plain, like any row')!.click()
+    expect(getMarkdownForSave(crepe)).toBe(SMALL)
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: header off regular -->\n`)
+  })
+
   it('several strip settings go in one visit: Stripes, Tall rows, Align center; Escape then closes the menu', async () => {
     const { crepe, view } = await openOnTable()
     stripButton(view, 'Stripes').click()
     stripButton(view, 'Tall rows').click()
     stripButton(view, 'Align center').click()
-    expect(stripsOf(view)).toEqual([
-      'strip:Look:Shaded header row*|Stripes*|Fit columns to the page~',
+    expect(stripsOf(view).slice(1)).toEqual([
+      'strip:Look:Stripes*|Fit columns to the page~',
       'strip:Text:Align left|Align center*|Align right|Align top*|Align middle|Align bottom',
       'strip:Rows:Compact rows|Normal rows|Tall rows*|Wrap text*',
     ])

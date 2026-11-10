@@ -24,6 +24,15 @@ import { LARGE_CODE_CHARS } from './outline/symbolSource'
 import { keepBackView, MAX_BACK_VIEWS, openCodeAt, takeBackView } from './codeOpener'
 import { applyAppTheme, created, resetFakeMonaco } from './monacoTestKit'
 
+/**
+ * The cog's open menu (YAZ-4776): a portal on the page, under its cog, so a test finds it by the open cog's
+ * `aria-controls`, not inside the cog's pane. `null` while it is closed.
+ */
+function menuIn(scope: ParentNode): HTMLElement | null {
+  const id = scope.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
+  return id == null ? null : document.getElementById(id)
+}
+
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const ROOT = '/vault'
@@ -369,14 +378,14 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
   const chipIn = (id: string) => tab(id).querySelector('.read-only-chip')
   const cogRows = (id: string): string[] => {
     act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    const rows = [...tab(id).querySelectorAll('.page-settings__menu button')].map((b) => b.textContent ?? '')
+    const rows = [...(menuIn(tab(id))?.querySelectorAll('button') ?? [])].map((b) => b.textContent ?? '')
     act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
     return rows
   }
   const clickRow = (id: string, label: string): void => {
     // The menu stays open after a row (as a note's does): open it only when it is closed.
-    if (tab(id).querySelector('.page-settings__menu') === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    act(() => [...tab(id).querySelectorAll<HTMLButtonElement>('.page-settings__menu button')].find((b) => b.textContent?.startsWith(label))!.click())
+    if (menuIn(tab(id)) === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    act(() => [...(menuIn(tab(id))?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent?.startsWith(label))!.click())
   }
 
   afterEach(() => readFile.mockReset())
@@ -387,8 +396,8 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     expect(cogRows('a')).toEqual(['Read only', 'Wrap long lines✓', 'Minimap', 'Table of contents✓'])
     clickRow('a', 'Read only')
     // One line each, under one heading that says they change every code file (the checker's nit on YAZ-3458).
-    expect(tab('a').querySelector('.page-settings__menu [role="group"]')?.getAttribute('aria-label')).toBe('All code files')
-    expect(tab('a').querySelector('.page-settings__menu .page-settings__label')?.textContent).toBe('All code files')
+    expect(menuIn(tab('a'))?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('All code files')
+    expect(menuIn(tab('a'))?.querySelector('.page-settings__label')?.textContent).toBe('All code files')
     expect(changeCode).toHaveBeenLastCalledWith({ codeReadOnly: true })
     clickRow('a', 'Wrap long lines')
     expect(changeCode).toHaveBeenLastCalledWith({ codeWrap: false })
@@ -496,8 +505,8 @@ describe('the cog\'s "Table of contents" row: this file only (YAZ-3506)', () => 
   const tab = (id: string): HTMLElement => container.querySelector<HTMLElement>(`[data-tab="${id}"]`)!
   const toc = (id: string): Element | null => tab(id).querySelector('nav.outline')
   const openCog = (id: string): HTMLButtonElement[] => {
-    if (tab(id).querySelector('.page-settings__menu') === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    return [...tab(id).querySelectorAll<HTMLButtonElement>('.page-settings__menu button')]
+    if (menuIn(tab(id)) === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    return [...(menuIn(tab(id))?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
   }
   const clickToc = (id: string): void => {
     const row = openCog(id).find((b) => b.textContent?.startsWith('Table of contents'))!

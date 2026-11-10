@@ -13,7 +13,9 @@ const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): Settin
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
-const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'textInCells', 'groupIndent', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'calendarScale', 'cardTitles', 'hideWeekends', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
+// Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and
+// their style (YAZ-4798) after Group indent.
+const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'calendarScale', 'cardTitles', 'hideWeekends', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 const ids = (hits: readonly SettingHit[]) => hits.map((h) => h.item.id)
 /** The Hotkeys page's rows, in page order. */
 const hotkeyRows = () => ids(settingCandidates(ctx()).filter((h) => h.section.id === 'hotkeys'))
@@ -78,10 +80,17 @@ describe('settingCandidates', () => {
       'tocOnByDefault',
       'tableOfContents',
       'tocLines',
+      // Settings › Editor › Find (YAZ-4787).
+      'findFolds',
       // Settings › Editor › Outside changes (YAZ-3704 D5).
       'outsideChangeGlow',
       'outsideListPinned',
-      // Settings › Editor › Tables (YAZ-4167 D16, YAZ-4162 D6, D14).
+      // Settings › Editor › Code blocks › Width (YAZ-4783 layer 3).
+      'codeBlockWidth',
+      // Settings › Tables, a page of its own after Editor (YAZ-4775); its "All tables" group (YAZ-4167 D16, YAZ-4162 D6,
+      // D14) starts with Header row (YAZ-4774) and Width (YAZ-4783).
+      'tableHeaderRow',
+      'tableWidth',
       'tableRowBand',
       'tableBandColour',
       'tableBandStrength',
@@ -89,6 +98,8 @@ describe('settingCandidates', () => {
       'tableBandBold',
       'tableCellBulletIndent',
       'tableCellBulletGap',
+      // The cell note "+" (YAZ-4790).
+      'tableCellNoteButton',
       'tableCellNoteTemplate',
       'tableCellNotePinned',
       'tableAllNotesOpensAt',
@@ -172,12 +183,12 @@ describe('settingCandidates', () => {
     expect(ids(settingCandidates(ctx())).filter((id) => REVIEW_ROWS.includes(id))).toEqual([])
   })
 
-  it('includes Storage and Sharing only with their hooks, after Sync and before Hotkeys; Drawings and Images sit between Editor and Files & Links (YAZ-3028 merge)', () => {
+  it('includes Storage and Sharing only with their hooks, after Sync and before Hotkeys; Drawings and Images sit between Editor and Files & Links (YAZ-3028 merge); Tables right after Editor (YAZ-4775)', () => {
     const storage: SettingsCtx['storage'] = { stats: null, failed: false, refresh: () => undefined, shrink: async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 }), lastShrink: null }
     const sharing: SettingsCtx['sharing'] = { root: '/v', status: null, rows: null, listError: null, now: 0, refresh: () => undefined, show: () => undefined }
     const sectionsOf = (c: SettingsCtx) => [...new Set(settingCandidates(c).map((h) => h.section.id))]
-    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'folderPages', 'review', 'sync', 'memory', 'storage', 'sharing', 'hotkeys'])
-    expect(sectionsOf(ctx())).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'folderPages', 'memory', 'hotkeys'])
+    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'tables', 'code', 'canvas', 'images', 'files', 'folderPages', 'review', 'sync', 'memory', 'storage', 'sharing', 'hotkeys'])
+    expect(sectionsOf(ctx())).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'tables', 'code', 'canvas', 'images', 'files', 'folderPages', 'memory', 'hotkeys'])
   })
 
   it('a candidate carries label, hint, keywords, group title and section title, case-folded in `lower`', () => {

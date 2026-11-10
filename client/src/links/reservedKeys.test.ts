@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { COMMENTS_KEY } from '@shared/comments'
-import { COLUMN_MARKS_KEY, CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, INHERIT_COLUMNS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY } from '@shared/folderPage'
+import { COLUMN_MARKS_KEY, CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, INHERIT_COLUMNS_KEY, SHOW_NEW_BUTTONS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY } from '@shared/folderPage'
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
 import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
@@ -17,7 +17,7 @@ const RESERVED_KEYS = reservedKeys(true)
  * split it, `hover_rows` and `hover_links` (demo 13D), `show_other_files` (YAZ-4597), `confirm_changes` (13AN), and
  * YAZ-4713's `inherit_columns` (C12) and `column_marks` (C11).
  */
-const FOLDER_PAGE_KEYS = [SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, HOVER_LINKS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY, COLUMN_MARKS_KEY]
+const FOLDER_PAGE_KEYS = [SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, HOVER_LINKS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY, COLUMN_MARKS_KEY, SHOW_NEW_BUTTONS_KEY]
 
 describe('reserved keys: the folders’ values (D19)', () => {
   it('The `in` key itself: Reserved — never a column, never a name a property is added under', () => {
@@ -58,8 +58,8 @@ describe('reserved keys: a vault that does not use IDs (YAZ-2523 V12)', () => {
     expect([...plain].sort()).toEqual([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 
-  // The folder page cog's keys (FOLDER_PAGE_KEYS) are the app's too: the cog sets them.
-  it('a vault that uses IDs owns all twenty-one', () => {
+  // The folder page cog's keys (FOLDER_PAGE_KEYS) are the app's too: the cog sets them (`show_new_buttons`, YAZ-3746 13BL, the latest).
+  it('a vault that uses IDs owns all twenty-two', () => {
     expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, REVIEWS_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 })

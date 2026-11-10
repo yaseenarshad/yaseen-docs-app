@@ -590,7 +590,8 @@ describe('Open in mini window in every folder view (YAZ-4547 D24)', () => {
   function openItem(type: string, p: string): void {
     rightClick(itemOf(type, p))
     const labels = menuItems().map((item) => item.textContent)
-    expect(labels[labels.indexOf('Open in right panel') + 1]).toBe('Open in mini window')
+    // YAZ-3746 13BO CM1: a card's menu is the table row's — Open, the mini window, then "Open in ›" (the right panel is in it).
+    expect(labels.slice(0, 3)).toEqual(['Open', 'Open in mini window', 'Open in'])
     click(menuItems().find((item) => item.textContent === 'Open in mini window')!)
   }
   /** Every note the card shows from where it opened to the end, by ›. */

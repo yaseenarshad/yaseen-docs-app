@@ -71,8 +71,8 @@ describe('line numbers CSS contract', () => {
     const zoomed = rules.filter(({ body }) => body.includes('--document-zoom'))
     expect(zoomed.map(({ selectors }) => selectors)).toEqual([
       [`${ON} [data-line]::after`, `${ON} .milkdown-table-block[data-line]::before`],
-      // A code block with its own width (YAZ-4783) keeps the same 52px gap, from its left edge.
-      [`${ON} .milkdown-code-block[data-code-width][data-line]::after`],
+      // A code block with its own width, or the note's or Settings' (YAZ-4783 layers 2 and 3), keeps the same 52px gap, from its left edge.
+      [`${ON} .milkdown-code-block[data-code-width][data-line]::after`, `${ON} .milkdown-code-block[data-line]:is([data-code-block-width] *)::after`],
     ])
     expect(zoomed[0].body.match(/\/ var\(--document-zoom, 1\)/g)).toHaveLength(2)
     expect(zoomed[1].body).toMatch(/right:\s*calc\(100% \+ 52px \/ var\(--document-zoom, 1\)\);/)

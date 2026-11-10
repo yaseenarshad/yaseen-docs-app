@@ -152,6 +152,15 @@ import { showSectionIndent } from './outline/sectionIndent'
 import { showFolding } from './outline/foldingSwitch'
 import { outlineFoldKeyStem } from './outline/outlineFoldKeys'
 
+/**
+ * The cog's open menu (YAZ-4776): a portal on the page, under its cog, so a test finds it by the open cog's
+ * `aria-controls`, not inside the cog's pane. `null` while it is closed.
+ */
+function menuIn(scope: ParentNode): HTMLElement | null {
+  const id = scope.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
+  return id == null ? null : document.getElementById(id)
+}
+
 interface FakeCrepe {
   md: string
   onMarkdownUpdated?: (md: string) => void
@@ -552,7 +561,8 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     vi.mocked(storage.setTocSwitch).mockRestore()
   })
 
-  const choices = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__choices button')]
+  // "TOC made from" by its name: the cog has other pill groups now, "Code block width" and "Table width" (YAZ-4783 layer 2).
+  const choices = (el: HTMLElement) => [...(menuIn(el)?.querySelectorAll<HTMLButtonElement>('[aria-label="TOC made from"] button') ?? [])]
   const pressed = (el: HTMLElement) => choices(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)
 
   it('seeds from the app state: the saved source is in the channel when createCrepe gets it, before any scan, and pressed in the cog', async () => {
@@ -603,14 +613,14 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     saved = 'headings'
     const off = await mount(BODY, 1, { tableOfContents: 'auto', tocOnByDefault: false })
     clickCog(off)
-    expect(off.querySelector('.page-settings__menu')).not.toBeNull()
-    expect(off.querySelector('.page-settings__choices')).toBeNull()
+    expect(menuIn(off)).not.toBeNull()
+    expect(menuIn(off)?.querySelector('[aria-label="TOC made from"]') ?? null).toBeNull()
     act(() => root?.unmount())
     container?.remove()
     const el = await mount(BODY, 1, { tableOfContents: 'pinned' })
     clickCog(el)
     expect(pressed(el)).toEqual(['Auto:false', 'Headings:true', 'Bullets:false'])
-    const row = [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((button) => button.textContent?.includes('Table of contents'))
+    const row = [...(menuIn(el)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((button) => button.textContent?.includes('Table of contents'))
     if (row === undefined) throw new Error('no "Table of contents" row')
     // The row writes the note (YAZ-4094 G4): its echo lands as `disk`, and the control follows it.
     writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
@@ -620,7 +630,7 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     await settle()
-    expect(el.querySelector('.page-settings__choices')).toBeNull()
+    expect(menuIn(el)?.querySelector('[aria-label="TOC made from"]') ?? null).toBeNull()
     // Back on: the choice is still the saved one — hiding the control changed nothing.
     diskHas('---\ntoc: false\n---\n' + BODY, 2)
     await act(async () => {
@@ -640,7 +650,7 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
  * YAZ-4094 G4 (`toc: true | false` in its frontmatter), as "Section indent" is.
  */
 describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-2700 D12, YAZ-2950)', () => {
-  const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')]
+  const rows = (el: HTMLElement) => [...(menuIn(el)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])]
   const row = (el: HTMLElement, name: string): HTMLButtonElement => {
     const found = rows(el).find((button) => button.textContent?.startsWith(name))
     if (found === undefined) throw new Error(`no "${name}" row`)
@@ -869,11 +879,11 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(pressCmdJ().defaultPrevented).toBe(false)
     clickCog(el)
     expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Bullet threading:false', 'Heading levels:false', 'Table of contents:false'])
-    expect(el.querySelector('.page-settings__choices')).toBeNull()
+    expect(menuIn(el)?.querySelector('[aria-label="TOC made from"]') ?? null).toBeNull()
     diskHas(BODY, 1)
     await clickRow(el, 'Table of contents')
     expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('true')
-    expect(el.querySelector('.page-settings__choices')).not.toBeNull()
+    expect(menuIn(el)?.querySelector('[aria-label="TOC made from"]') ?? null).not.toBeNull()
     expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
     expect(pressCmdJ().defaultPrevented).toBe(true)
     expect(written()).toEqual([TOC_ON + BODY])
@@ -2108,7 +2118,7 @@ describe('a save repaints only the chips (YAZ-2196 P6)', () => {
 const clickCog = (host: ParentNode): void => act(() => host.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
 
 /** A switch of the cog's menu by its name ("Read only" stands first, YAZ-3076). */
-const menuSwitch = (host: ParentNode, name: string): HTMLButtonElement => [...host.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button[aria-pressed]')].find((button) => button.textContent?.startsWith(name))!
+const menuSwitch = (host: ParentNode, name: string): HTMLButtonElement => [...(menuIn(host)?.querySelectorAll<HTMLButtonElement>(':scope > button[aria-pressed]') ?? [])].find((button) => button.textContent?.startsWith(name))!
 
 /** "Line numbers", through the real cog: opens the menu, clicks the switch, closes the menu. */
 function switchLineNumbers(host: ParentNode): void {
@@ -2232,7 +2242,7 @@ describe('the page settings cog (YAZ-2643)', () => {
   it('counts THIS editor’s body when the menu opens: the title, the properties and the comments are not in it (S16)', async () => {
     const el = await mount(`${FM}one two\n`)
     clickCog(el)
-    const menu = el.querySelector('.page-settings__menu')!
+    const menu = menuIn(el)!
     expect(menu.textContent).toContain('2 words')
     expect(menu.textContent).toContain('8 characters')
   })
@@ -2711,7 +2721,7 @@ describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a 
     // The cog's row while on: the menu closes, the box opens under the chip.
     clickCog(el)
     act(() => menuSwitch(el, 'Read only').click())
-    expect(el.querySelector('.page-settings__menu')).toBeNull()
+    expect(menuIn(el)).toBeNull()
     expect(askBox(el)).not.toBeNull()
     expect(writeFile).not.toHaveBeenCalled()
     diskHas(LOCKED_FM + BODY, 1)
@@ -2933,14 +2943,24 @@ describe('the folder Page tab (YAZ-4584 D38)', () => {
     expect(frontmatter.splitFrontmatter(disk.content).body).toBe('# Intro\n\nraced\n')
   })
 
-  it("the note's page switches show in the folder page's cog, after its own group, and write into `.folder.md` with the body kept (D35)", async () => {
+  // YAZ-3746 13BM PS1, PS2: the folder ⚙ holds the folder page's own settings only; the Page tab's text switches moved to
+  // the Page's own settings button on its view toolbar (the other views' sliders), and still write into `.folder.md`.
+  it("the note's page switches show in the Page tab's own settings button, not in the folder page's cog, and write into `.folder.md` with the body kept (D35, 13BM)", async () => {
     const el = await openFolder(`${SETTINGS}# Intro\n`)
-    expect(el.querySelectorAll('.page-settings')).toHaveLength(1) // ONE cog: the folder page's
+    expect(el.querySelectorAll('.page-settings')).toHaveLength(2) // the folder page's cog, and the Page's own button
     click(el.querySelector<HTMLElement>('.status-chips .page-settings__trigger')!)
-    const menu = el.querySelector('.page-settings__menu')!
-    expect(menu.textContent).toContain('This folder page')
+    const folderMenu = menuIn(el.querySelector('.status-chips')!)!
+    expect(folderMenu.textContent).toContain('Projects (folder page)')
+    expect(folderMenu.textContent).toContain('Page file in the sidebar')
+    expect(folderMenu.textContent).not.toContain('Section indent')
+    expect(folderMenu.textContent).not.toContain('Line numbers')
+    expect(folderMenu.textContent).not.toContain('words')
+    click(el.querySelector<HTMLElement>('.status-chips .page-settings__trigger')!)
+    const pageButton = el.querySelector<HTMLElement>('.view-toolbar__actions .page-settings > button[aria-label="Page settings"]')!
+    click(pageButton)
+    const menu = menuIn(el.querySelector('.view-toolbar__actions')!)!
     expect(menu.textContent).toContain('Section indent')
-    expect(menu.textContent!.indexOf('Line numbers')).toBeGreaterThan(menu.textContent!.indexOf('Show folder page file'))
+    expect(menu.textContent).not.toContain('Page file in the sidebar')
     expect(menu.textContent).toContain('2 words') // the Page body's count (the fake editor's text is its markdown)
     click([...menu.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent?.replace('✓', '').trim() === 'Section indent')!)
     await settle()
@@ -2973,7 +2993,7 @@ describe('the folder Page tab (YAZ-4584 D38)', () => {
     click([...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'Table')!)
     await settle()
     click(el.querySelector<HTMLElement>('.status-chips .page-settings__trigger')!)
-    expect(el.querySelector('.page-settings__menu')!.textContent).not.toContain('Section indent')
+    expect(menuIn(el)!.textContent).not.toContain('Section indent')
   })
 
   const el = (): HTMLElement => container!

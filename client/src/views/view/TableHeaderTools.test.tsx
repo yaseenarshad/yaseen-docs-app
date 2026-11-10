@@ -154,10 +154,22 @@ describe('auto-fit width on a double-click of the resize edge (YAZ-4590 S20)', (
 })
 
 describe('the column description (YAZ-4590 S23)', () => {
+  // YAZ-4772: in the app's hover box (a native title showed nothing in the app), around the column's name.
   it('the header shows a column description on hover; a column with none has no tooltip', () => {
-    const { el } = mount(table(), { status: { kind: 'text', description: 'Where the page stands' } })
-    expect(th(el, 1).title).toBe('Where the page stands')
-    expect(th(el, 2).hasAttribute('title')).toBe(false)
+    vi.useFakeTimers()
+    try {
+      const { el } = mount(table(), { status: { kind: 'text', description: 'Where the page stands' } })
+      const described = th(el, 1).querySelector<HTMLElement>(':scope > span:not([class])')!
+      expect(described.textContent).toBe('Status')
+      act(() => void described.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+      act(() => void vi.advanceTimersByTime(400))
+      expect(document.querySelector('.hover-tip[role="tooltip"]')?.textContent).toBe('Where the page stands')
+      expect(th(el, 1).hasAttribute('title')).toBe(false)
+      expect(th(el, 2).querySelector(':scope > span:not([class])')).toBeNull()
+      expect(th(el, 2).hasAttribute('title')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('Edit column sets it through ONE setColumn, and a blank field removes it', () => {

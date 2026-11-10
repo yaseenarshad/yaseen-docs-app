@@ -86,6 +86,9 @@ const CASES: { type: PropertyType; property: string; op: OperatorId; value: stri
   { type: 'mentions', property: 'note.used_by', op: 'isEmpty', value: '', expr: 'note.used_by.isEmpty()' },
   { type: 'mentions', property: 'note.used_by', op: 'isNotEmpty', value: '', expr: '!note.used_by.isEmpty()' },
   { type: 'mentions', property: 'note.used_by', op: 'contains', value: 'POST orders', expr: 'note.used_by.contains("POST orders")' },
+  // An Image column (YAZ-4802): has a picture or not.
+  { type: 'image', property: 'note.cover', op: 'isEmpty', value: '', expr: 'note.cover.isEmpty()' },
+  { type: 'image', property: 'note.cover', op: 'isNotEmpty', value: '', expr: '!note.cover.isEmpty()' },
 ]
 
 describe('ruleToExpr / exprToRule round trip (GRO-2135)', () => {

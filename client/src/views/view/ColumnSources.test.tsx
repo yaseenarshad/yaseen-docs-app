@@ -108,6 +108,9 @@ describe('Columns ⚙: where each hidden column comes from (YAZ-4713 C4)', () =>
     const setColumns = vi.fn()
     const { el, yaml } = mount({ setColumns })
     click(byLabel(openColumns(el), 'Show Tags'))
+    // It asks first (YAZ-4764, C4A); the answer's Show writes.
+    expect(yaml()).not.toContain('- note.tags')
+    click([...el.querySelectorAll<HTMLElement>('.confirm__btn')].find((b) => b.textContent === 'Show')!)
     expect(yaml()).toContain('- note.tags')
     expect(setColumns).not.toHaveBeenCalled()
   })
@@ -116,6 +119,9 @@ describe('Columns ⚙: where each hidden column comes from (YAZ-4713 C4)', () =>
     const setColumns = vi.fn()
     const { el } = mount({ setColumns })
     click(byLabel(openColumns(el), 'Add Tags to Desserts'))
+    // It asks first (YAZ-4764, C4A); the answer's "Add to Desserts" writes.
+    expect(setColumns).not.toHaveBeenCalled()
+    click([...el.querySelectorAll<HTMLElement>('.confirm__btn')].find((b) => b.textContent === 'Add to Desserts')!)
     expect(setColumns).toHaveBeenCalledOnce()
     const [columns, views] = setColumns.mock.calls[0]
     expect(Object.keys(columns)).toEqual(['status', 'pillar', 'tags'])
@@ -197,30 +203,43 @@ describe('Edit column on a column from a parent folder (YAZ-4713 C6, C7)', () =>
     return q(el, '.column-detail')
   }
 
-  it('names the owner; "Change on Orders only" declares it here; Delete is not offered', async () => {
+  // YAZ-4769 demo: "Change on Orders only" and "Changed on Orders only · Use Schema's" became one row, Settings [Shared | Only here],
+  // with one line under it; Shared again asks first.
+  const settingsOf = (detail: ParentNode, label: string) => [...byLabel(detail, `Settings of ${label}`).querySelectorAll<HTMLButtonElement>('button')]
+  const pressed = (detail: ParentNode, label: string) => settingsOf(detail, label).filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent)
+
+  it('names the owner; "Only here" declares it here; Delete is not offered', async () => {
     const here = vi.fn(async () => undefined)
     const { el } = mount({ sources: { ...testFolderHost().sources, folderName: 'Orders', of: (key) => (key === 'pillar' ? { from: 'Schema' } : {}), here } })
     const detail = openDetail(el, 'Pillar')
-    expect(q(detail, '.column-detail__source-text').textContent).toBe('From Schema. A change here shows on every page under Schema.')
+    expect(pressed(detail, 'Pillar')).toEqual(['Shared'])
+    expect(q(detail, '.column-detail__source').textContent).toBe('Shared with Schema: a change here changes it on every page under Schema. Each note keeps one value.')
     expect(detail.querySelector('[aria-label="Delete column Pillar"]')).toBeNull()
-    await act(async () => click([...detail.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent === 'Change on Orders only')!))
+    await act(async () => click(settingsOf(detail, 'Pillar').find((b) => b.textContent === 'Only here')!))
     expect(here).toHaveBeenCalledExactlyOnceWith('pillar')
   })
 
-  it('this folder\'s own over a parent\'s: "Use Schema\'s" removes the override; own columns keep Delete', async () => {
+  it('this folder\'s own over a parent\'s: "Shared" asks, then removes the override; own columns keep Delete', async () => {
     const useParent = vi.fn(async () => undefined)
     const { el } = mount({ sources: { ...testFolderHost().sources, folderName: 'Orders', of: (key) => (key === 'status' ? { over: 'Schema' } : {}), useParent } })
     const detail = openDetail(el, 'Status')
-    expect(q(detail, '.column-detail__source-text').textContent).toBe('Changed on Orders only.')
+    expect(pressed(detail, 'Status')).toEqual(['Only here'])
+    expect(q(detail, '.column-detail__source').textContent).toBe('Only on Orders: its own type, options and description (Schema keeps the shared ones). Each note keeps one value.')
     expect(detail.querySelector('[aria-label="Delete column Status"]')).toBeNull()
-    await act(async () => click([...detail.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent === "Use Schema's")!))
+    click(settingsOf(detail, 'Status').find((b) => b.textContent === 'Shared')!)
+    expect(useParent).not.toHaveBeenCalled()
+    expect(q(el, '.confirm__text').textContent).toBe('Share the settings of "Status" with Schema again? The own type, options and description on Orders go. The notes keep their values.')
+    await act(async () => click([...el.querySelectorAll<HTMLElement>('.confirm__btn')].find((b) => b.textContent === 'Share again')!))
     expect(useParent).toHaveBeenCalledExactlyOnceWith('status')
   })
 
-  it('a separate column over a parent’s: no "Use Schema’s", and the line says why (7A 24)', () => {
-    const { el } = mount({ sources: { ...testFolderHost().sources, folderName: 'Orders', of: (key) => (key === 'status' ? { over: 'Schema' } : {}) } }, { ...STATUS, separate: true })
+  it('a separate column over a parent’s: "Shared" asks nothing and writes nothing, and the line says why (7A 24)', () => {
+    const useParent = vi.fn(async () => undefined)
+    const { el } = mount({ sources: { ...testFolderHost().sources, folderName: 'Orders', of: (key) => (key === 'status' ? { over: 'Schema' } : {}), useParent } }, { ...STATUS, separate: true })
     const detail = openDetail(el, 'Status')
-    expect([...detail.querySelectorAll('.column-detail__source button')]).toEqual([])
-    expect([...detail.querySelectorAll('.column-detail__source-text')].map((t) => t.textContent)).toEqual(['Changed on Orders only.', 'Turn off Separate value for Orders first.'])
+    click(settingsOf(detail, 'Status').find((b) => b.textContent === 'Shared')!)
+    expect(el.querySelector('.confirm__text')).toBeNull()
+    expect(useParent).not.toHaveBeenCalled()
+    expect(q(detail, '[role="alert"]').textContent).toBe('Turn off Separate value for Orders first.')
   })
 })

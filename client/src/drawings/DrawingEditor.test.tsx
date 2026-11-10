@@ -108,6 +108,15 @@ import { ALLOW_FOLDER_TITLE, allowFolderBody } from './usePicturesFolderAllow'
 import { useCardPreview } from '../tabs/cardPreview'
 import { ENGINE_LOAD_FAILED } from './ExcalidrawSurface'
 
+/**
+ * The cog's open menu (YAZ-4776): a portal on the page, under its cog, so a test finds it by the open cog's
+ * `aria-controls`, not inside the cog's pane. `null` while it is closed.
+ */
+function menuIn(scope: ParentNode): HTMLElement | null {
+  const id = scope.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
+  return id == null ? null : document.getElementById(id)
+}
+
 const load = vi.mocked(api.drawing.load)
 const save = vi.mocked(api.drawing.save)
 const saveDrawing = vi.mocked(api.dialog.saveDrawing)
@@ -681,7 +690,7 @@ describe('page links (YAZ-4039)', () => {
 
 describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5, D13)', () => {
   const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
-  const rows = () => [...container.querySelectorAll<HTMLElement>('.page-settings__menu > button, .page-settings__menu > p')]
+  const rows = () => [...(menuIn(container)?.querySelectorAll<HTMLElement>(':scope > button, :scope > p') ?? [])]
   const row = (label: string) => rows().find((r) => r.textContent === label) as HTMLButtonElement | undefined
   const MB = 1024 * 1024
 
@@ -704,7 +713,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     await openCog()
     expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows:', 'Hover outline:', '6 pictures in this file (3.3 MB)', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     // YAZ-4277 D5: a line above the fold arrow rows too, and above the hover outline's (YAZ-4469 demo).
-    expect(container.querySelectorAll('.page-settings__menu > .page-settings__divider')).toHaveLength(4)
+    expect(menuIn(container)?.querySelectorAll(':scope > .page-settings__divider') ?? []).toHaveLength(4)
     expect(row('6 pictures in this file (3.3 MB)')!.className).not.toContain('warn')
   })
 
@@ -889,7 +898,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
   })
 
   /** The pills of the one "Fold arrows" row (YAZ-4402 3A): text, pressed, disabled, tooltip. */
-  const pills = () => [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu .page-settings__choices[aria-label^="Fold arrows"] button')]
+  const pills = () => [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>('.page-settings__choices[aria-label^="Fold arrows"] button') ?? [])]
   const pill = (label: string) => pills().find((b) => b.textContent === label)!
 
   it('YAZ-4277 D5: "Fold arrows" is the board\'s own choice: a pick writes beside the autosave and reaches the canvas; a board whose file says one opens with it', async () => {
@@ -922,7 +931,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     emit(1)
     act(() => cog().click())
     expect(rows().map((r) => r.textContent).filter((t) => t?.startsWith('Fold arrows'))).toEqual(['Fold arrows (app: always):'])
-    expect(container.querySelector('.page-settings__choices')?.getAttribute('aria-label')).toBe('Fold arrows (app: always)')
+    expect(menuIn(container)?.querySelector('.page-settings__choices')?.getAttribute('aria-label')).toBe('Fold arrows (app: always)')
     expect(pills().map((b) => [b.textContent, b.getAttribute('aria-pressed'), b.title])).toEqual([
       ['App', 'true', 'The app setting: Always'],
       ['Hover', 'false', 'Arrows show on hover'],
@@ -962,11 +971,11 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     for (const b of pills()) act(() => b.click())
     await flush()
     expect(api.setBoardFoldArrows).not.toHaveBeenCalled()
-    expect(container.querySelector('.page-settings__menu')).not.toBeNull()
+    expect(menuIn(container)).not.toBeNull()
   })
 
   /** The pills of the "Hover outline" row (YAZ-4469 4B): text, pressed, disabled. */
-  const outlinePills = () => [...container.querySelectorAll<HTMLButtonElement>('.page-settings__choices[aria-label^="Hover outline"] button')]
+  const outlinePills = () => [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>('.page-settings__choices[aria-label^="Hover outline"] button') ?? [])]
   const outlinePill = (label: string) => outlinePills().find((b) => b.textContent === label)!
 
   it('YAZ-4469 4B: ONE "Hover outline (app: …)" row with App, On and Off; the label names the app value; a pick writes beside the autosave and reaches the canvas; a board whose file says one opens with it', async () => {
@@ -1047,7 +1056,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     container.className = 'tabstack__layer'
     await openCog()
     act(() => row('Export Image or PDF…')!.click())
-    expect(container.querySelector('.page-settings__menu')).toBeNull()
+    expect(menuIn(container)).toBeNull()
     act(() => void requestBoardCommand({ kind: 'export-image' }, document.body))
     // Each one reached the engine's own export box the same way.
     expect(surface.commands).toEqual([{ kind: 'export-image' }, { kind: 'export-image' }])

@@ -1318,12 +1318,15 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
     expect(created(1)).toEqual(born(1, '/vault/stages/archive'))
   })
 
-  it('a shortcut that lives in the vault root sits in a group named after the VAULT, after the folder’s own groups; its "+" creates in the opened folder (YAZ-2541)', async () => {
+  // YAZ-4799: grouped by Folder, a shortcut counts in the folder it is a shortcut in — here the opened folder itself —
+  // so the vault-root note no longer makes a "vault" group of its own.
+  it('a shortcut that lives in the vault root sits in the group of the folder it is a shortcut in, the opened one; that group’s "+" creates in the opened folder (YAZ-2541, YAZ-4799)', async () => {
     const records = vault().map((r) => (r.path === OTHER ? { ...r, properties: { also_in: [STAGES_ID] } } : r))
     const el = await mount({ ...SETTINGS, views: [{ type: 'table', name: 'View', order: ['file.name'], groupBy: { property: 'file.folder' } }] }, records)
-    expect(texts(el, '.view-group__value').at(-1)).toBe('vault')
-    expect(texts(el, '.view-group__value')).not.toContain('No value')
-    click(byLabel(el, 'New note in group vault'))
+    expect(texts(el, '.view-group__value')).toEqual(['stages', 'archive'])
+    // Other is in the first group, stages, before archive's Old.
+    expect(texts(el, '.view-table__name')).toEqual(['Other', 'Lead Gen', 'Sales', 'Old'])
+    click(byLabel(el, 'New note in group stages'))
     await flush()
     expect(created(0).path).toBe(born(0, '/vault/stages').path)
   })
@@ -1568,7 +1571,9 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     el = await open(ORDERS, IN_ORDERS)
     expect(captured.folder!.columns).toEqual({ domain: { decl: domain, owner: 'schema' } })
     expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).toEqual(['Name', 'Domain'])
-    expect(headerMark(el, 'Domain')).toMatchObject({ title: 'From Schema', dataset: { mark: 'parent' } })
+    // The words are the app's hover box and the icon's name (YAZ-4772: a native title showed nothing).
+    expect(headerMark(el, 'Domain')).toMatchObject({ dataset: { mark: 'parent' } })
+    expect(headerMark(el, 'Domain')!.querySelector('svg')!.getAttribute('aria-label')).toBe('From Schema')
 
     // 3. Set Billing on Orders: the note's own field, readable by anyone (C1).
     click(q(cell(el, 'Orders table', 1), '[data-edit]'))
@@ -1860,7 +1865,8 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     feed({ columns: SETTINGS.columns, views: [{ type: 'table', name: 'Table', order: ['file.name', 'file.folder', 'file.tags', 'file.links', 'file.mtime', 'note.secret', 'note.id', 'note.elsewhere'] }] }, [lead])
     await flush()
     const shown = [1, 2, 3, 4, 5, 6, 7].map((column) => cell(el, 'Lead Gen', column).textContent)
-    expect(shown.slice(0, 3)).toEqual(['', 'topic', 'Sales']) // a note directly in the page's folder has an empty Folder cell (YAZ-4564 D26)
+    // A note directly in the page's folder shows the page, never a blank (YAZ-4801 demo: the path from this page).
+    expect(shown.slice(0, 3)).toEqual(['stages', 'topic', 'Sales'])
     expect(shown[3]).toContain('2026')
     expect(shown.slice(4)).toEqual(['own', 'Empty', 'Empty']) // the note's own field shows; its id is the app's; another page's old block is not read
   })
@@ -2112,6 +2118,8 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).toEqual(['Name', 'Points to'])
       click(byLabel(el, 'Columns and view'))
       click(byLabel(el, 'Show Contact'))
+      // An "Other properties" row's Show asks first (YAZ-4764, C4A).
+      click([...el.querySelectorAll<HTMLElement>('.confirm__btn')].find((b) => b.textContent === 'Show')!)
       await flush()
       const ordersView = await open(ORDERS)
       const headers = texts(ordersView, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())
@@ -2336,7 +2344,8 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(el.querySelector('[aria-label="Delete column Owner"]')).toBeNull()
       click(byLabel(el, 'Columns and view'))
       rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][5])
-      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Add column to the right…', 'Sort', 'Group', 'Text', 'Fill column', 'Hide column', 'Freeze up to this column', 'Unfreeze columns'])
+      // "Header row ›" (YAZ-4794) after Fill column.
+      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Add column to the right…', 'Sort', 'Group', 'Text', 'Fill column', 'Header row', 'Hide column', 'Freeze up to this column', 'Unfreeze columns'])
       click(menuItem(el, 'Hide column'))
       await flush()
       expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Title'])

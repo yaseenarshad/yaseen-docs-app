@@ -67,7 +67,7 @@ describe('the table in the file', () => {
     const { view } = await mount(note)
     const [table] = tables(view.state.doc)
     expect(table.attrs).toMatchObject({
-      border: { px: 2, darkness: 40 }, header: 'plain', stripes: true,
+      border: { px: 2, darkness: 40 }, header: { strength: 'off' }, stripes: true,
       height: 'compact', wrap: false, freezeRows: 2, freezeCols: 1,
     })
     expect(cellAttr(table, 'fill')).toEqual([
@@ -170,13 +170,14 @@ describe('parseDOM / toDOM: a copy inside the app keeps the settings', () => {
     const { schema } = view.state
     const dom = DOMSerializer.fromSchema(schema).serializeNode(tables(view.state.doc)[0]) as HTMLElement
     const tableEl = dom.tagName === 'TABLE' ? dom : dom.querySelector('table')!
-    expect(tableEl.getAttribute('data-table-header')).toBe('plain')
+    // `header plain` is the header row's Strength Off (YAZ-4774): one `data-table-header-*` attribute per set part.
+    expect(tableEl.getAttribute('data-table-header-strength')).toBe('off')
     expect(tableEl.querySelector('td')!.getAttribute('data-fill')).toBe('green')
     expect(tableEl.querySelectorAll('td')[1].getAttribute('data-color')).toBe('blue')
     const holder = document.createElement('div')
     holder.appendChild(dom)
     const [copy] = tables(DOMParser.fromSchema(schema).parse(holder))
-    expect(copy.attrs).toMatchObject({ border: { px: 3, darkness: 60 }, header: 'plain', stripes: true, height: 'tall', wrap: false, freezeRows: 1, freezeCols: 1 })
+    expect(copy.attrs).toMatchObject({ border: { px: 3, darkness: 60 }, header: { strength: 'off' }, stripes: true, height: 'tall', wrap: false, freezeRows: 1, freezeCols: 1 })
     expect(cellAttr(copy, 'fill')).toEqual([[null, null], ['green', null]])
     expect(cellAttr(copy, 'color')).toEqual([[null, null], [null, 'blue']])
   })
@@ -248,7 +249,7 @@ describe('the table block shows the table settings to CSS', () => {
   it('data attributes and custom properties on .milkdown-table-block, kept up to date', async () => {
     const { root, view } = await mount(`${SMALL}<!-- table: border 2px 40%, header plain, stripes, height compact, nowrap -->\n`)
     const block = root.querySelector<HTMLElement>('.milkdown-table-block')!
-    expect(block.getAttribute('data-table-header')).toBe('plain')
+    expect(block.getAttribute('data-table-header-strength')).toBe('off')
     expect(block.hasAttribute('data-table-stripes')).toBe(true)
     expect(block.getAttribute('data-table-height')).toBe('compact')
     expect(block.hasAttribute('data-table-nowrap')).toBe(true)

@@ -309,7 +309,8 @@ describe('the header menu (YAZ-1513)', () => {
     const sources = { ...testFolderHost().sources, of: (key: string) => (key === 'status' ? { from: 'Schema' } : {}) }
     const { el } = mount(BASE, {}, { sources })
     const mark = th(el, 1).querySelector('.view-column-mark')!
-    expect(mark.getAttribute('title')).toBe('From Schema')
+    // The app's hover box carries the words (YAZ-4772: a native title showed nothing); the icon is named by them.
+    expect(mark.querySelector('svg')!.getAttribute('aria-label')).toBe('From Schema')
     expect(mark.getAttribute('data-mark')).toBe('parent')
     rightClick(th(el, 1))
     expect([...el.querySelectorAll('.ctx-menu__item')].map((b) => b.textContent)).not.toContain('Delete column…')
@@ -319,7 +320,7 @@ describe('the header menu (YAZ-1513)', () => {
     const settings = { columns: { status: { kind: 'text' as const, separate: true as const } }, views: [], problems: [] }
     const named = mount(BASE, {}, { settings, sources: { ...testFolderHost().sources, folderName: 'Desserts', marks: 'name' } })
     const mark = th(named.el, 1).querySelector('.view-column-mark')!
-    expect(mark.getAttribute('title')).toBe('Separate value for Desserts')
+    expect(mark.querySelector('svg')!.getAttribute('aria-label')).toBe('Separate value for Desserts') // YAZ-4772: no native title
     expect(mark.textContent).toBe('Desserts')
     act(() => root?.unmount())
     container?.remove()
@@ -688,20 +689,38 @@ describe('the Sort, Group and Text flyouts (YAZ-4588 D42)', () => {
     expect(checked(el)).toEqual(['Clip text', 'Auto alignment'])
   })
 
-  it('Header row › (YAZ-4794): Plain, Fill colour, Strength, Weight, Text colour, Align, ✓ at the table; a pick writes the view and the menu stays open', () => {
+  // YAZ-4794 demo ("holy shite thats a long flyout"): Plain, then three tabs, Fill · Text · Style, one short list at a time;
+  // Black fill and White text from the same demo.
+  it('Header row › (YAZ-4794): Plain, then the Fill, Text and Style tabs, ✓ at the table; a pick writes the view and the menu stays open', () => {
     const { el, def } = mount()
     rightClick(th(el, 1))
     click(item(el, 'Header row'))
     const colours = ['Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink']
-    expect(flyoutItems(el)).toEqual(['Plain, like any row', 'Gray', ...colours, 'Off', 'Light', 'Medium', 'Strong', 'Bold', 'Regular', 'Muted', 'Full', ...colours, 'Follow column', 'Left', 'Center', 'Right'])
-    expect([...el.querySelectorAll('.ctx-menu__sub .ctx-menu__heading')].map((h) => h.textContent)).toEqual(['Fill colour', 'Strength', 'Weight', 'Text colour', 'Align'])
-    expect(checked(el)).toEqual(['Gray', 'Light', 'Bold', 'Muted', 'Follow column'])
-    // The second Blue is Text colour's.
-    click(flyout(el).filter((b) => b.textContent === 'Blue')[1])
+    const seg = (label: string) => [...el.querySelectorAll<HTMLElement>(`.ctx-menu__sub [aria-label="${label}"] button`)]
+    const pressed = (label: string) => seg(label).filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent)
+    const tab = (word: string) => click(seg('Header row part').find((b) => b.textContent === word)!)
+    expect(seg('Header row part').map((b) => b.textContent)).toEqual(['Fill', 'Text', 'Style'])
+    expect(pressed('Header row part')).toEqual(['Fill'])
+    // Fill: the strength as one row of choices, then the fill colours.
+    expect(seg('Strength').map((b) => b.textContent)).toEqual(['Off', 'Light', 'Medium', 'Strong'])
+    expect(pressed('Strength')).toEqual(['Light'])
+    expect(flyoutItems(el)).toEqual(['Plain, like any row', 'Gray', ...colours, 'Black'])
+    expect(checked(el)).toEqual(['Gray'])
+    tab('Text')
+    expect(flyoutItems(el)).toEqual(['Plain, like any row', 'Muted', 'Full', 'White', ...colours])
+    expect(checked(el)).toEqual(['Muted'])
+    click(flyout(el).find((b) => b.textContent === 'Blue')!)
+    expect(def().views[0].headerRow).toEqual({ text: 'blue' })
+    expect(el.querySelector('.ctx-menu__sub')).not.toBeNull()
+    expect(checked(el)).toEqual(['Blue'])
+    tab('Style')
+    expect([...el.querySelectorAll('.ctx-menu__sub .ctx-menu__heading')].map((h) => h.textContent)).toEqual(['Weight', 'Align'])
+    expect(flyoutItems(el)).toEqual(['Plain, like any row', 'Bold', 'Regular', 'Follow column', 'Left', 'Center', 'Right'])
+    expect(checked(el)).toEqual(['Bold', 'Follow column'])
     click(flyout(el).find((b) => b.textContent === 'Center')!)
     expect(def().views[0].headerRow).toEqual({ text: 'blue', align: 'center' })
     expect(el.querySelector('.ctx-menu__sub')).not.toBeNull()
-    expect(checked(el)).toEqual(['Gray', 'Light', 'Bold', 'Blue', 'Center'])
+    expect(checked(el)).toEqual(['Bold', 'Center'])
     expect(el.querySelector('.view-table')!.getAttribute('data-table-header-align')).toBe('center')
     // A pick equal to Settings removes the part.
     click(flyout(el).find((b) => b.textContent === 'Follow column')!)

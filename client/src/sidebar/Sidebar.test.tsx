@@ -943,13 +943,15 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     }
   })
 
-  it('folder rows and blank space get no "Open in new window" item', async () => {
+  // YAZ-4778: a folder row has it too (its folder page in a new window); blank space still has none.
+  it('a folder row gets "Open in new window" for its folder page; blank space gets none', async () => {
     // YAZ-4470: the item is top-level now, no longer "Open in ▸ New window".
-    const { el } = await mount()
-    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+    const { el, bridge } = await mount()
+    const dir = el.querySelector<HTMLElement>('.tree__row--dir')!
+    act(() => void dir.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => itemByLabel(el, 'Open in new window')!.click())
+    expect(bridge.window.open).toHaveBeenCalledExactlyOnceWith({ root: '/v', file: '/v/sub' })
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
     expect(itemByLabel(el, 'New note')).toBeDefined()
@@ -1953,11 +1955,12 @@ describe('context menu target matrix (GRO-2296)', () => {
     expect(itemByLabel(el, 'Open in new window')).toBeDefined()
   })
 
-  it('a FOLDER row targets rename and copy path; the file-only items stay hidden', async () => {
+  // YAZ-4778: "Open in new window" is a folder row's too (its folder page).
+  it('a FOLDER row targets rename, copy path and open in new window', async () => {
     const el = await open('.tree__row--dir')
     expect(itemByLabel(el, 'Rename')).toBeDefined()
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+    expect(itemByLabel(el, 'Open in new window')).toBeDefined()
   })
 
   it('BLANK SPACE shows no Rename — the vault root is never renameable (the GRO-2297 guard rail)', async () => {
@@ -3413,8 +3416,9 @@ describe('search-row context menu (YAZ-2050)', () => {
     rightClick(result(el, true))
     expect(expected).not.toContain('Show in sidebar')
     expect(labels(el)).toEqual(['Show in sidebar', ...expected])
-    // YAZ-4470: a single folder row also gets "Open in new tab" in the open group, after "Open folder page".
-    expect(labels(el).slice(0, 4)).toEqual(['Show in sidebar', 'Open folder page', 'Open in new tab', 'Add to focus'])
+    // YAZ-4470: a single folder row also gets "Open in new tab" in the open group, after "Open folder page"; then
+    // "Open in new window" (YAZ-4778).
+    expect(labels(el).slice(0, 5)).toEqual(['Show in sidebar', 'Open folder page', 'Open in new tab', 'Open in new window', 'Add to focus'])
   })
 
   it('follows the FILES rules whichever tab the search was shown from (🔒 D1): from Favorites the same menu, "Add to focus"', async () => {
@@ -3746,8 +3750,8 @@ describe('"Show in sidebar" on a row of Search, Focus and Favorites (YAZ-2638 D1
     expect(menuOf(el, row(el, `${v}/top.md`))).toEqual([ITEM, ...inFiles['/top.md']])
     await type(searchBar(el)!, 'projects')
     expect(menuOf(el, row(el, `${v}/Projects`))).toEqual([ITEM, ...inFiles['/Projects']])
-    // YAZ-4470: one folder row also has "Open in new tab", after "Open folder page".
-    expect(menuOf(el, row(el, `${v}/Projects`)).slice(0, 4)).toEqual([ITEM, 'Open folder page', 'Open in new tab', 'Remove from focus'])
+    // YAZ-4470: one folder row also has "Open in new tab", after "Open folder page"; then "Open in new window" (YAZ-4778).
+    expect(menuOf(el, row(el, `${v}/Projects`)).slice(0, 5)).toEqual([ITEM, 'Open folder page', 'Open in new tab', 'Open in new window', 'Remove from focus'])
     await type(searchBar(el)!, 'plan')
     expect(menuOf(el, row(el, `${v}/Projects`))[0]).toBe(ITEM) // the parent of the match
   })
@@ -11672,8 +11676,9 @@ describe('the folder page file row (YAZ-4587, D37)', () => {
     const { el, props } = await mountPages(ALL, ON)
     act(() => void pageRows(el)[1]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     const labels = menuItems(el).map((b) => b.textContent)
-    // Open, a new tab, Copy path and "Open in ▸" (Finder, VS Code, the default app), all of the folder.
-    expect(labels).toEqual(['Open folder page', 'Open in new tab', 'Copy path', 'Open in'])
+    // Open, a new tab, a new window (YAZ-4778: the folder page in a new window), Copy path and "Open in ▸" (Finder, VS Code,
+    // the default app), all of the folder.
+    expect(labels).toEqual(['Open folder page', 'Open in new tab', 'Open in new window', 'Copy path', 'Open in'])
     act(() => itemByLabel(el, 'Open folder page')?.click())
     expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/Projects')
   })

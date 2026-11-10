@@ -17,6 +17,7 @@ import { ViewsPane, freeName, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import type { ColumnDecl } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
+import type { IndexRecord } from '@shared/types'
 import { liveGapPoint } from '../../test-liveGap'
 import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 
@@ -174,7 +175,27 @@ function aheadHost(columns: Record<string, ColumnDecl>) {
   const setColumn = vi.fn(async (key: string, next: ColumnDecl) => {
     settings.columns[key] = next
   })
-  return { settings, setColumn, folder: testFolderHost({ settings, setColumn }) }
+  return { settings, setColumn, folder: linkHost({ settings, setColumn }) }
+}
+
+/**
+ * The vault's folder pages, each reached by its name (YAZ-4795 demo): what "Notes from", the folder picker that took the
+ * "Link target" text box's place, lists after "Any folder".
+ */
+const FOLDER_PAGES: IndexRecord[] = ['Global People', 'Local People', 'People', 'Teams'].map((title) => ({
+  path: `/vault/${title}/.folder.md`, name: '.folder.md', basename: '.folder', title, folder: title, ext: 'md', size: 0, ctime: 0, mtime: 0,
+  properties: {}, aliases: [], tags: [], links: [], embeds: [],
+}))
+const folderAt = (target: string): string | null => {
+  const name = target.replace(/^\[\[|\]\]$/g, '').toLowerCase()
+  return FOLDER_PAGES.find((f) => f.title.toLowerCase() === name)?.path.replace('/.folder.md', '') ?? null
+}
+/** A host whose vault has `FOLDER_PAGES`. */
+const linkHost = (over: Parameters<typeof testFolderHost>[0] = {}) => testFolderHost({ vaultFolders: FOLDER_PAGES, resolveLink: (t) => folderAt(t) ?? HOST.resolveLink(t), ...over })
+/** "Notes from" (YAZ-4795 demo): its button, then a folder by name ("Any folder" clears the target). */
+function pickNotesFrom(pop: ParentNode, label: string, folder: string): void {
+  click(byLabel(pop, `Notes from for ${label}`))
+  click([...pop.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((o) => o.querySelector('.type-picker__name')?.textContent === folder)!)
 }
 
 /** Type into a TextField and commit with Enter (one onChange). */
@@ -1345,6 +1366,8 @@ views:
     expect(def().views[0].frozenColumns).toBe(1)
 
     click(byLabel(pop, 'Show Status'))
+    // An "Other properties" row's Show asks first (YAZ-4764, YAZ-4713 C4A).
+    click(byText(pop, '.confirm__btn', 'Show'))
     expect(def().views[0].order).toEqual(['file.name', 'note.status'])
     expect(def().views[0].frozenColumns).toBe(1)
     press(byLabel(pop, 'Reorder Status'), 'ArrowUp')
@@ -1360,6 +1383,7 @@ views:
     expect(name.disabled).toBe(false)
 
     click(byLabel(pop, 'Show Status'))
+    click(byText(pop, '.confirm__btn', 'Show')) // an "Other properties" row's Show asks first (YAZ-4764, C4A)
     expect(def().views[0].order).toEqual(['file.name', 'note.status'])
     expect(q(el, '[data-cell="0:1"]').textContent).toBe('idea')
 
@@ -1556,41 +1580,42 @@ views:
     expect(pop.querySelector('[aria-label="Column name"]')).toBeNull()
   })
 
+  // YAZ-4795 demo: the target is "Notes from", a folder picker (it writes the folder's link), not a text box.
   it('the target is offered for link kinds only, and lands in the declaration', () => {
     const setColumns = vi.fn()
-    const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
+    const { el } = mount(undefined, { folder: linkHost({ setColumns }) })
     const pop = openMenu(el, 'Columns and view')
     click(byText(pop, 'button', '+ Add column'))
-    expect(pop.querySelector('[aria-label="Link target"]')).toBeNull()
+    expect(pop.querySelector('[aria-label="Notes from for the new column"]')).toBeNull()
     choosePropertyType(pop, 'Multi-link')
     setValue(byLabel(pop, 'Column name'), 'owner')
-    type(byLabel(pop, 'Link target'), '  People  ')
+    pickNotesFrom(pop, 'the new column', 'People')
     click(byLabel(pop, 'Save column'))
-    expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'multi-link', target: 'People' } })
+    expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'multi-link', target: '[[People]]' } })
   })
 
-  it("a declared link column's target writes on commit — trimmed, against the captured base — and an emptied field removes it against what just landed (3D)", async () => {
+  it("a declared link column's target writes on a pick — against the captured base — and \"Any folder\" removes it against what just landed (3D; YAZ-4795 demo picker)", async () => {
     const base = { kind: 'link' as const, target: 'People' }
     const { setColumn, folder } = aheadHost({ owner: base, tag: { kind: 'text' } })
     const { el } = mount(undefined, { root: '/vault', folder })
     const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Owner'))
-    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('People')
-    type(byLabel(pop, 'Link target'), '  Teams  ')
-    expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link', target: 'Teams' }, base)
+    expect(byLabel(pop, 'Notes from for Owner').textContent).toBe('People')
+    pickNotesFrom(pop, 'Owner', 'Teams')
+    expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link', target: '[[Teams]]' }, base)
     await settle()
-    type(byLabel(pop, 'Link target'), '')
-    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link' }, { kind: 'link', target: 'Teams' })
+    pickNotesFrom(pop, 'Owner', 'Any folder')
+    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link' }, { kind: 'link', target: '[[Teams]]' })
     expect(pop.querySelector('.frontmatter-property-menu__actions')).toBeNull() // no Save / Cancel anywhere
   })
 
   it('a target typed under a link kind does not ride into a non-link declaration', () => {
     const setColumns = vi.fn()
-    const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
+    const { el } = mount(undefined, { folder: linkHost({ setColumns }) })
     const pop = openMenu(el, 'Columns and view')
     click(byText(pop, 'button', '+ Add column'))
     choosePropertyType(pop, 'Link')
-    type(byLabel(pop, 'Link target'), 'People')
+    pickNotesFrom(pop, 'the new column', 'People')
     choosePropertyType(pop, 'Text')
     setValue(byLabel(pop, 'Column name'), 'notes')
     click(byLabel(pop, 'Save column'))
@@ -1753,7 +1778,7 @@ views:
 
   it('the conditional sections (YAZ-1513): Options only for Select kinds, Relation only for note keys with a root, card styling only on a board', () => {
     const settings = { columns: { status: { kind: 'select' as const, options: ['A', 'B'] }, owner: { kind: 'link' as const, target: '[[People]]' } }, views: [], problems: [] }
-    const { el } = mount(undefined, { root: '/vault', folder: testFolderHost({ settings }) })
+    const { el } = mount(undefined, { root: '/vault', folder: linkHost({ settings }) })
     const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     expect([...q(pop, '[aria-label="Property options"]').querySelectorAll('.property-def__chip')].map((c) => c.textContent)).toEqual(['A', 'B'])
@@ -1762,7 +1787,7 @@ views:
     click(byLabel(pop, 'Back to columns'))
     click(byLabel(pop, 'Open Owner'))
     expect(pop.querySelector('[aria-label="Property options"]')).toBeNull()
-    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('[[People]]') // a link kind: the target inline
+    expect(byLabel(pop, 'Notes from for Owner').textContent).toBe('People') // a link kind: the target inline (YAZ-4795 demo picker)
     click(byLabel(pop, 'Back to columns'))
     click(byLabel(pop, 'Open Name'))
     expect(pop.querySelector('[aria-label^="Relation for "]')).toBeNull() // file.name is not a note property
@@ -2445,11 +2470,11 @@ describe('folder-local relation shortcut', () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const base = { kind: 'link' as const, target: '[[Local People]]' }
     const properties = { root: '/vault', version: 1, properties: { owner: { kind: 'multi-link' as const, target: '[[Global People]]' } } }
-    const { el, onChange } = mount(undefined, { root: '/vault', properties, folder: testFolderHost({ settings: { columns: { owner: base }, views: [], problems: [] }, setColumn }) })
+    const { el, onChange } = mount(undefined, { root: '/vault', properties, folder: linkHost({ settings: { columns: { owner: base }, views: [], problems: [] }, setColumn }) })
     const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Owner'))
-    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('[[Local People]]') // the local declaration, not the legacy one
-    type(byLabel(pop, 'Link target'), '[[Teams]]')
+    expect(byLabel(pop, 'Notes from for Owner').textContent).toBe('Local People') // the local declaration, not the legacy one
+    pickNotesFrom(pop, 'Owner', 'Teams')
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('owner', { kind: 'link', target: '[[Teams]]' }, base)
     expect(properties.properties.owner).toEqual({ kind: 'multi-link', target: '[[Global People]]' })
     expect(onChange).not.toHaveBeenCalled()
@@ -2467,7 +2492,7 @@ describe('folder-local relation shortcut', () => {
     await settle()
     // the panel now holds a link kind: the target is inline and the type picker says so
     expect(typeShown(pop, 'Status')).toBe('Multi-link')
-    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe(legacy.target)
+    expect(byLabel(pop, 'Notes from for Status').textContent).toBe('Global People') // legacy.target, in the YAZ-4795 picker
   })
 })
 

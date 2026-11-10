@@ -144,9 +144,40 @@ const expandRaw = (el: HTMLElement) => {
 
 const click = (el: Element | null) => act(() => (el as HTMLElement | null)?.click())
 const buttonNamed = (el: ParentNode, text: string): HTMLButtonElement | null => [...(el === container ? document.body : el).querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === text) ?? null
+/** The confirm box's button (YAZ-4769: a removal asks first, "that is very sensitive"). */
+const confirmButton = (text: string): HTMLButtonElement | null => [...document.querySelectorAll<HTMLButtonElement>('.confirm-overlay button')].find((b) => b.textContent?.trim() === text) ?? null
 const removeProperty = (el: HTMLElement, key: string) => {
   click(byLabel(el, `Configure ${key}`))
-  click(buttonNamed(el, 'Remove from this note'))
+  click(buttonNamed(el, 'Remove from this note…'))
+  click(confirmButton('Remove'))
+}
+
+/**
+ * The Add row's pickers (YAZ-4769, C8A): a button showing the choice, and a list of choices under it — no native
+ * `<select>`. Type: "Edit property the new property"; Column: "Column on".
+ */
+const TYPE_PICKER = 'Edit property the new property'
+const pickerButton = (label: string): HTMLButtonElement => {
+  const b = document.querySelector<HTMLButtonElement>(`button.type-picker__trigger[aria-label="${label}"]`)
+  if (b === null) throw new Error(`no picker ${label}`)
+  return b
+}
+const pickerOrNull = (label: string) => document.querySelector<HTMLButtonElement>(`button.type-picker__trigger[aria-label="${label}"]`)
+/** The choice the picker's button shows: its name, after the quiet lead word ("Column on") if any. */
+const pickerShows = (label: string): string => pickerButton(label).querySelector(':scope > span:last-of-type')?.textContent ?? ''
+/** Open the picker, read each choice's name, and close it again. */
+const pickerChoices = (label: string): string[] => {
+  click(pickerButton(label))
+  const names = [...document.querySelectorAll('.type-picker__list [role="menuitemradio"] .type-picker__name')].map((n) => n.textContent ?? '')
+  click(pickerButton(label))
+  return names
+}
+/** Pick the choice NAMED `name` (a folder's name, "This note only", a type's label). */
+const pick = (label: string, name: string): void => {
+  click(pickerButton(label))
+  const item = [...document.querySelectorAll<HTMLButtonElement>('.type-picker__list [role="menuitemradio"]')].find((b) => b.querySelector('.type-picker__name')?.textContent === name)
+  if (item === undefined) throw new Error(`no choice ${name} in ${label}`)
+  click(item)
 }
 
 /** Where the folder the note at PATH lives in keeps its settings (YAZ-2290 D1), and that folder's id. */
@@ -554,9 +585,9 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expand(el)
     click(btn(el, 'Add property'))
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'rating')
-    expect(byLabel<HTMLSelectElement>(el, 'New property type')?.value).toBe('number')
+    expect(pickerShows(TYPE_PICKER)).toBe('Number')
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'topics')
-    expect(byLabel<HTMLSelectElement>(el, 'New property type')?.value).toBe('list')
+    expect(pickerShows(TYPE_PICKER)).toBe('List')
     click(btn(el, 'Add'))
     await flush()
 
@@ -641,7 +672,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(chipIn(r)).toBeNull()
     expect(r.querySelector('[data-edit]')).not.toBeNull()
     click(byLabel(r, 'Configure folder_settings')!)
-    expect(buttonNamed(el, 'Remove from this note')).not.toBeNull()
+    expect(buttonNamed(el, 'Remove from this note…')).not.toBeNull()
   })
 
   it('A note still carrying `folder_page`, `folder_pages` or `folder_page_settings` (the old model’s keys): ordinary frontmatter — each is the note’s own row, none hidden or Reserved; opening rewrites nothing and nothing is lost', async () => {
@@ -823,7 +854,7 @@ folder_settings:
     expect(byLabel(rowOf(el, 'status'), 'Type of status')).toBeNull()
     expect(byLabel(rowOf(el, 'status'), 'Delete status')).toBeNull()
     click(byLabel(el, 'Configure status'))
-    expect(buttonNamed(el, 'Remove from this note')).not.toBeNull()
+    expect(buttonNamed(el, 'Remove from this note…')).not.toBeNull()
     expect(buttonNamed(el, 'Edit property ›')).toBeNull()
   })
 
@@ -890,12 +921,12 @@ describe('FrontmatterPanel — "Column on" and the columns of the note’s page 
     expand(container)
     return container
   }
-  const columnOn = (el: HTMLElement) => byLabel<HTMLSelectElement>(el, 'Column on')
-  const choices = (el: HTMLElement) => [...(columnOn(el)?.options ?? [])].map((option) => option.textContent)
+  /** "Column on" is a picker (YAZ-4769, C8A): its button shows the folder's name, or "This note only". */
+  const columnOn = () => pickerOrNull('Column on')
   const add = async (el: HTMLElement, name: string, on?: string): Promise<void> => {
     click(btn(el, 'Add property'))
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), name)
-    if (on !== undefined) setValue(columnOn(el), on)
+    if (on !== undefined) pick('Column on', on)
     click(btn(el, 'Add'))
     await flush()
     await flush()
@@ -914,18 +945,19 @@ describe('FrontmatterPanel — "Column on" and the columns of the note’s page 
     expect(header(el)?.textContent).toBe('1')
   })
 
-  it('"Column on" lists the note’s folder (the default), each folder above it — not the vault root — and "No column"', () => {
+  // YAZ-4769 (C8A): "No column" is now "This note only"; the picker's choices are the folders' names.
+  it('"Column on" lists the note’s folder (the default), each folder above it — not the vault root — and "This note only"', () => {
     const el = mountAt(NOTE, 'Body\n')
     click(btn(el, 'Add property'))
-    expect(choices(el)).toEqual(['Column on C', 'Column on B', 'Column on A', 'No column'])
-    expect(columnOn(el)?.value).toBe('/A/B/C')
+    expect(pickerChoices('Column on')).toEqual(['C', 'B', 'A', 'This note only'])
+    expect(pickerShows('Column on')).toBe('C')
   })
 
   it('a name a parent folder already defines: "Column on" starts on that folder, and Add writes no copy of its column (C6, 7A 8)', async () => {
     const el = mountAt(NOTE, 'Body\n')
     click(btn(el, 'Add property'))
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'priority')
-    expect(columnOn(el)?.value).toBe('/A')
+    expect(pickerShows('Column on')).toBe('A')
     click(btn(el, 'Add'))
     await flush()
     await flush()
@@ -943,14 +975,14 @@ describe('FrontmatterPanel — "Column on" and the columns of the note’s page 
 
   it('adding `owner` with "Column on A": the field is the note’s own, and A’s `.folder.md` declares the column — a plain Text too', async () => {
     const el = mountAt(NOTE, 'Body\n')
-    await add(el, 'reviewer', '/A')
+    await add(el, 'reviewer', 'A')
     expect(saved('/vault/A/.folder.md')).toMatchObject({ reviewer: { kind: 'text' } })
     expect(writeFile.mock.calls.at(-1)![0]).toEqual({ path: NOTE, content: '---\nreviewer: ""\n---\nBody\n', expectedMtime: 100 })
   })
 
-  it('"No column" writes only the field', async () => {
+  it('"This note only" (was "No column", YAZ-4769) writes only the field', async () => {
     const el = mountAt(NOTE, 'Body\n')
-    await add(el, 'reviewer', 'no-column')
+    await add(el, 'reviewer', 'This note only')
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOTE, content: '---\nreviewer: ""\n---\nBody\n', expectedMtime: 100 })
   })
 
@@ -961,7 +993,7 @@ describe('FrontmatterPanel — "Column on" and the columns of the note’s page 
     const A_FILE = '---\nreadonly: true\nfolder_settings:\n  columns:\n    effort:\n      kind: text\n    priority:\n      kind: text\n---\n'
     const el = mountAt(NOTE, 'Body\n', feedOf(locked, folderMd('/vault/A/B', { columns: B_COLUMNS, id: B_ID }), folderMd('/vault/A/B/C')))
     readFile.mockImplementation(async (p: string) => ({ path: p, content: p === NOTE ? 'Body\n' : p === '/vault/A/.folder.md' ? A_FILE : '', mtime: 100, size: 1 }))
-    await add(el, 'reviewer', '/A')
+    await add(el, 'reviewer', 'A')
     expect(writeFile.mock.calls.map((c) => c[0].path)).not.toContain('/vault/A/.folder.md')
     expect(el.querySelector('[role="alert"]')?.textContent).toBe('Could not add "reviewer": A\'s folder page is read only')
   })
@@ -997,11 +1029,14 @@ describe('FrontmatterPanel — "Column on" and the columns of the note’s page 
     expect(saved('/vault/A/.folder.md')).toMatchObject({ priority: { kind: 'number', separate: true } })
   })
 
-  it('"Edit property" on a field a parent folder defines saves that folder’s column: "In A"', async () => {
+  // YAZ-4769: the "In A" line is now "Column on [A ⌄]", the Add row's picker, which can also move the column.
+  it('"Edit property" on a field a parent folder defines saves that folder’s column: "Column on A"', async () => {
     const el = mountAt(NOTE, '---\npriority: P1\n---\nBody\n')
     click(byLabel(el, 'Configure priority'))
     click(buttonNamed(el, 'Edit property ›'))
-    expect(document.querySelector('.frontmatter-property-menu__scope')?.textContent).toBe('In A')
+    expect(document.querySelector('.frontmatter-property-menu__scope')).toBeNull()
+    expect(pickerShows('Column on for priority')).toBe('A')
+    expect(pickerChoices('Column on for priority')).toEqual(['C', 'B', 'A', 'This note only'])
   })
 
   it('a folder’s own panel: its own fields, typed by its parent’s page when a parent view shows subfolders as rows (YAZ-3746 2D, D31); the value is its own top-level key', async () => {
@@ -1011,7 +1046,7 @@ describe('FrontmatterPanel — "Column on" and the columns of the note’s page 
     const rowsOfA = { ...a, properties: { folder_settings: { columns: A_COLUMNS, views: [{ type: 'table', name: 'T', subfolders: 'rows' }] } } }
     const el = mountAt(own, bytes, feedOf(rowsOfA, folderMd('/vault/A/B', { columns: B_COLUMNS, id: B_ID })))
     expect(keysOf(el)).toEqual(['id', 'owner', 'effort', 'priority'])
-    expect(columnOn(el)).toBeNull()
+    expect(columnOn()).toBeNull()
     click(rowOf(el, 'priority').querySelector('[data-edit]'))
     setValue(byLabel<HTMLInputElement>(el, 'Edit priority'), 'P1')
     press(byLabel(el, 'Edit priority'), 'Enter')
@@ -1067,8 +1102,8 @@ describe('FrontmatterPanel — a folder\'s own panel (YAZ-2290 D9)', () => {
     const el = mountOwn('---\nowner: Yasin\n---\n')
     expand(el)
     click(byLabel(el, 'Configure owner'))
-    expect(buttonNamed(el, 'Remove from this folder')).not.toBeNull()
-    expect(buttonNamed(el, 'Remove from this note')).toBeNull()
+    expect(buttonNamed(el, 'Remove from this folder…')).not.toBeNull()
+    expect(buttonNamed(el, 'Remove from this note…')).toBeNull()
   })
 
   it('invalid raw YAML on a folder with no settings file is refused BEFORE anything is created', async () => {
@@ -1418,11 +1453,11 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     click(btn(el, 'Add property'))
     expect(byLabel(el, 'New property value')).toBeNull()
     expect(byLabel<HTMLInputElement>(el, 'New property name')?.placeholder).toBe('Property name')
-    const type = byLabel<HTMLSelectElement>(el, 'New property type')!
-    expect(type.value).toBe('text')
-    expect([...type.options].map((o) => o.textContent)).toEqual(['Text', 'Number', 'Date', 'Checkbox', 'List', 'Link', 'Multi-link', 'Select', 'Multi-select'])
+    // The type is the table's type picker (YAZ-4769, C8A): it shows Text, and lists each note kind — Image too (YAZ-4802).
+    expect(pickerShows(TYPE_PICKER)).toBe('Text')
+    expect(pickerChoices(TYPE_PICKER)).toEqual(['Text', 'Number', 'Date', 'Checkbox', 'List', 'Link', 'Multi-link', 'Select', 'Multi-select', 'Image'])
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Due Date')
-    setValue(type, 'date')
+    pick(TYPE_PICKER, 'Date')
     click(btn(el, 'Add'))
     await flush()
     expect((await propertiesStub.get(ROOT)).properties).toEqual({ 'Due Date': { kind: 'date' } })
@@ -1432,21 +1467,21 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
   })
 
   it.each([
-    ['number', 'Score:'],
-    ['date', 'Score:'],
-    ['link', 'Score:'],
-    ['select', 'Score:'],
-    ['text', 'Score: ""'],
-    ['checkbox', 'Score: false'],
-    ['list', 'Score: []'],
-    ['multi-select', 'Score: []'],
+    ['Number', 'Score:'],
+    ['Date', 'Score:'],
+    ['Link', 'Score:'],
+    ['Select', 'Score:'],
+    ['Text', 'Score: ""'],
+    ['Checkbox', 'Score: false'],
+    ['List', 'Score: []'],
+    ['Multi-select', 'Score: []'],
   ])('a new %s property starts as `%s`', async (kind, line) => {
     readFile.mockResolvedValue(fileOf(TYPED))
     const el = mount(TYPED, { root: ROOT })
     expand(el)
     click(btn(el, 'Add property'))
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Score')
-    setValue(byLabel<HTMLSelectElement>(el, 'New property type'), kind)
+    pick(TYPE_PICKER, kind)
     click(btn(el, 'Add'))
     await flush()
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: TYPED.replace('parent: "[[Home]]"', `parent: "[[Home]]"\n${line}`), expectedMtime: 100 })
@@ -1473,7 +1508,7 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     expand(el)
     click(btn(el, 'Add property'))
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Due Date')
-    setValue(byLabel<HTMLSelectElement>(el, 'New property type'), 'date')
+    pick(TYPE_PICKER, 'Date')
     click(btn(el, 'Add'))
     await flush()
     await flush()
@@ -1488,20 +1523,20 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     expect((await propertiesStub.get(ROOT)).properties).toEqual({}) // a folder's property is not vault-wide
   })
 
-  it('a note at the vault root: "Column on <vault>" and "No column" are two choices, and either can be picked again (7A 1)', async () => {
+  it('a note at the vault root: "Column on <vault>" and "This note only" are two choices, and either can be picked again (7A 1)', async () => {
     readFile.mockImplementation(async () => fileOf(FIELD_NOTE))
     const el = mount(FIELD_NOTE, { root: ROOT, wikilinks: folderFeed({ Status: { kind: 'select', options: ['Ready', 'Later'] } }) })
     expand(el)
     click(btn(el, 'Add property'))
     setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Due Date')
-    const columnOn = byLabel<HTMLSelectElement>(el, 'Column on')!
-    expect([...columnOn.options].map((o) => o.textContent)).toEqual(['Column on vault', 'No column'])
-    expect(columnOn.value).toBe('/')
-    setValue(columnOn, 'no-column')
-    expect(byLabel<HTMLSelectElement>(el, 'Column on')!.value).toBe('no-column')
-    setValue(byLabel<HTMLSelectElement>(el, 'Column on')!, '/')
-    expect(byLabel<HTMLSelectElement>(el, 'Column on')!.value).toBe('/')
-    setValue(byLabel<HTMLSelectElement>(el, 'Column on')!, 'no-column')
+    // YAZ-4769 (C8A): a picker; "No column" is "This note only".
+    expect(pickerChoices('Column on')).toEqual(['vault', 'This note only'])
+    expect(pickerShows('Column on')).toBe('vault')
+    pick('Column on', 'This note only')
+    expect(pickerShows('Column on')).toBe('This note only')
+    pick('Column on', 'vault')
+    expect(pickerShows('Column on')).toBe('vault')
+    pick('Column on', 'This note only')
     click(btn(el, 'Add'))
     await flush()
     await flush()
@@ -1517,7 +1552,7 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     expect(event.defaultPrevented).toBe(true)
     expect(document.querySelector('.frontmatter-property-menu')).toBeNull()
     expect(document.querySelector('.ctx-menu .ctx-menu__heading')?.textContent).toBe('Text · status')
-    expect(menuItems()).toEqual(['Change type ›', 'Rename…', 'Copy value', 'Remove from this note'])
+    expect(menuItems()).toEqual(['Change type ›', 'Rename…', 'Copy value', 'Remove from this note…'])
     press(document.body, 'Escape')
     contextMenu(byLabel(el, 'Configure pages'))
     expect(document.querySelector('.ctx-menu .ctx-menu__heading')?.textContent).toBe('Number · pages')
@@ -1588,7 +1623,10 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     expect(writeFile).not.toHaveBeenCalled()
 
     contextMenu(byLabel(el, 'Configure pages'))
-    click(menuItem('Remove from this note'))
+    click(menuItem('Remove from this note…'))
+    // YAZ-4769: it asks first; nothing is written until Remove.
+    expect(writeFile).not.toHaveBeenCalled()
+    click(confirmButton('Remove'))
     await flush()
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: TYPED.replace('pages: 12\n', ''), expectedMtime: 100 })
   })

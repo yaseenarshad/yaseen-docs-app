@@ -18,6 +18,7 @@ import { mount, pressKey, typeText, unmountAll } from '../marks/markTestKit'
 import { noteMenuSections } from '../noteMenu'
 import { canZoomInto, getZoomedItemPos, zoomKeyAt, ZOOM_CRUMB_CLASS, ZOOM_HIDDEN_CLASS } from '../outline/zoom'
 import { cellNoteButtonPlacements } from './cellNoteButton'
+import { setCellNoteButtonSetting } from './timeFormatSetting'
 import { CELL_NOTE_CELL_OPEN_CLASS, CELL_NOTE_OPEN_CLASS, canOpenCellNote, openCellNote, setCellNotePinnedAtStart, setCellNoteTemplate } from './cellNoteCard'
 import { cellNotePreviewLines } from './cellNotePreview'
 import { isCellNoteHidden, openCellNoteLabel } from './cellNotes'
@@ -510,6 +511,9 @@ describe('the mark (D8)', () => {
 describe('the "Add cell note" button (D8, 5A-7)', () => {
   const buttons = () => [...document.querySelectorAll<HTMLButtonElement>('.cell-note-button')]
   const shownButton = () => buttons().find((button) => button.dataset.show === 'true') ?? null
+  // Settings › Tables › Cell notes › Add button is off by default (YAZ-4790 demo): these tests turn it on.
+  beforeEach(() => setCellNoteButtonSetting(true))
+  afterEach(() => setCellNoteButtonSetting(false))
   const hover = (view: EditorView, row: number, col: number) => (view.nodeDOM(cellPos(view, row, col)) as HTMLElement).dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
   /** Each cell a box: 100 × 30 px at (col, row); the editor's box at (10, 20). */
   const boxes = (view: EditorView) => {
@@ -584,6 +588,26 @@ describe('the "Add cell note" button (D8, 5A-7)', () => {
     const button = shownButton()!
     view.dom.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: button.querySelector('svg') }))
     expect(shownButton()).toBe(button)
+  })
+
+  it('YAZ-4790: Settings › Add button off shows none; a table\'s own `notebutton` shows it; `nonotebutton` hides it while Settings is on', async () => {
+    const TABLE = '| a | b |\n| - | - |\n| c | d |\n'
+    setCellNoteButtonSetting(false)
+    let { view } = await mount(TABLE, zoomOpts())
+    boxes(view)
+    hover(view, 1, 0)
+    expect(shownButton()).toBeNull()
+    await unmountAll()
+    ;({ view } = await mount(`${TABLE}\n<!-- table: notebutton -->\n`, zoomOpts()))
+    boxes(view)
+    hover(view, 1, 0)
+    expect(shownButton()?.getAttribute('aria-label')).toBe('Add cell note')
+    await unmountAll()
+    setCellNoteButtonSetting(true)
+    ;({ view } = await mount(`${TABLE}\n<!-- table: nonotebutton -->\n`, zoomOpts()))
+    boxes(view)
+    hover(view, 1, 0)
+    expect(shownButton()).toBeNull()
   })
 
   it('a typed key in the cell places nothing; a read-only note shows no button', async () => {

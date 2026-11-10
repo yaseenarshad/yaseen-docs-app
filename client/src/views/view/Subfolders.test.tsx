@@ -152,13 +152,24 @@ describe('the Folder column (D26)', () => {
     expect(yaml()).toContain('file.folder')
   })
 
-  it('empty for the page’s own notes; a chip with the subfolder’s title for the others, which opens that folder’s page', () => {
+  // YAZ-4801 demo: the column is the path from this page, the page first ("how come no folder showing up here?" — the
+  // page's own notes show the page, never a blank); "Last folder" is the one chip of before.
+  it('the path from this page, by titles, each part opening its folder’s page; "Last folder" shows only the note’s own folder', () => {
     const { el, openFolderPage } = mount(WITH_FOLDER)
-    expect(folderCell(el, 'Plan').textContent).toBe('')
-    expect(folderCell(el, 'Spec').textContent).toBe('Alpha team') // the title the Folder group header uses
-    expect(folderCell(el, 'Notes').textContent).toBe('Beta') // no settings file: its directory's name
-    click(q(folderCell(el, 'Spec'), 'button'))
+    const parts = (name: string) => [...folderCell(el, name).querySelectorAll('.view-folder-path__part')].map((p) => p.textContent)
+    expect(parts('Plan')).toEqual(['Projects'])
+    expect(parts('Spec')).toEqual(['Projects', 'Alpha team']) // the title the Folder group header uses
+    expect(parts('Notes')).toEqual(['Projects', 'Beta']) // no settings file: its directory's name
+    click([...folderCell(el, 'Spec').querySelectorAll('button')].find((b) => b.textContent === 'Alpha team')!)
     expect(openFolderPage).toHaveBeenCalledWith('/vault/Projects/Alpha')
+    act(() => root?.unmount())
+    container?.remove()
+    const last = mount(`${WITH_FOLDER}    folderColumn: last\n`)
+    expect(folderCell(last.el, 'Plan').textContent).toBe('Projects')
+    expect(folderCell(last.el, 'Spec').textContent).toBe('Alpha team')
+    expect(folderCell(last.el, 'Notes').textContent).toBe('Beta')
+    click(q(folderCell(last.el, 'Spec'), 'button'))
+    expect(last.openFolderPage).toHaveBeenCalledWith('/vault/Projects/Alpha')
   })
 })
 

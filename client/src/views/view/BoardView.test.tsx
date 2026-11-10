@@ -503,7 +503,8 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(mainItems(el)).toEqual(['Open in new tab', 'Open in', 'Copy path'])
+    // YAZ-3746 13BO CM1, CM2: a card's menu is the table row's — Open first, then "New card below" before the page group.
+    expect(mainItems(el)).toEqual(['Open', 'Open in new tab', 'Open in', 'New card below', 'Copy path'])
     click(itemNamed(el, 'Open in')!)
     expect(menuItems(el).filter((item) => item.closest('.ctx-menu__sub') !== null).map((item) => item.textContent)).toEqual(['Right panel', 'Reveal in Finder'])
     expect(onOpenFile).not.toHaveBeenCalled()

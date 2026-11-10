@@ -120,10 +120,10 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     const items = SETTINGS_SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.items))
     const hint = (id: string) => String(items.find((item) => item.id === id)!.hint)
     expect(hint('tableRowBand')).toContain('Folder pages › Row band on hover')
-    // No-break spaces after the arrows (YAZ-4643 S7).
-    expect(hint('folderPages.rowBand')).toContain('Editor › Tables › Row band')
+    // No-break spaces after the arrows (YAZ-4643 S7). The table rows moved to Settings › Tables › All tables (YAZ-4775).
+    expect(hint('folderPages.rowBand')).toContain('Tables › All tables › Row band')
     await open('Folder pages')
-    expect(row('folderPages.rowBand')?.querySelector('.setting__hint')?.textContent).toContain('Editor › Tables › Row band')
+    expect(row('folderPages.rowBand')?.querySelector('.setting__hint')?.textContent).toContain('Tables › All tables › Row band')
   })
 
   it('a hint keeps "›" with the word after it (YAZ-4643 S7): a no-break space, so the arrow never ends a line', async () => {

@@ -22,6 +22,8 @@ vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const fp = (over: Partial<FolderPagesSettings>): FolderPagesSettings => ({ ...DEFAULT_FOLDER_PAGES, ...over })
+/** Settings › Folder pages with the YAZ-4779 / YAZ-4798 rows at the look before them: a view with no key needs nothing filled. */
+const BEFORE: Partial<FolderPagesSettings> = { columnTypeIcons: false, stickyGroups: false, groupLines: 'off' }
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const rel = path.slice('/vault/'.length)
@@ -127,11 +129,16 @@ describe('withDefaults and chooseOwn (YAZ-4585)', () => {
   it('fills each key the view lacks from Settings; the view’s own key wins; a view that needs nothing filled is the same object', () => {
     const view: ViewDef = { type: 'table', name: 'T', rowHeight: 'medium' }
     // Show empty groups is on by default (YAZ-3746 demo round 2): a Table with no key of its own shows its empty groups.
-    expect(withDefaults(view, DEFAULT_FOLDER_PAGES)).toEqual({ ...view, showEmptyColumns: true })
+    // Column type icons (YAZ-4779), sticky group headers and group lines on hover (YAZ-4798) are on by default too: every
+    // view with no key of its own takes them (plain lines are the look before, so `groupLineStyle` is not filled).
+    const NEW_ON = { columnTypeIcons: true, stickyGroups: true, groupLines: 'hover' } as const
+    expect(withDefaults(view, DEFAULT_FOLDER_PAGES)).toEqual({ ...view, ...NEW_ON, showEmptyColumns: true })
     const board: ViewDef = { type: 'board', name: 'B' }
-    expect(withDefaults(board, DEFAULT_FOLDER_PAGES)).toBe(board)
-    expect(withDefaults(view, fp({ showEmptyGroups: false }))).toBe(view)
-    const all = fp({ rowHeight: 'tall', rowNumbers: false, groupIndent: 'large', showEmptyGroups: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true })
+    expect(withDefaults(board, DEFAULT_FOLDER_PAGES)).toEqual({ ...board, ...NEW_ON })
+    // Settings at the look before: nothing to fill, the same object.
+    expect(withDefaults(board, fp(BEFORE))).toBe(board)
+    expect(withDefaults(view, fp({ ...BEFORE, showEmptyGroups: false }))).toBe(view)
+    const all = fp({ ...BEFORE, rowHeight: 'tall', rowNumbers: false, groupIndent: 'large', showEmptyGroups: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true })
     expect(withDefaults(view, all)).toEqual({ type: 'table', name: 'T', rowHeight: 'medium', rowNumbers: false, groupIndent: 'large', showEmptyColumns: true, subfolders: 'both', foldersFirst: false, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true })
     expect(view).toEqual({ type: 'table', name: 'T', rowHeight: 'medium' })
   })
@@ -140,9 +147,9 @@ describe('withDefaults and chooseOwn (YAZ-4585)', () => {
     const table: ViewDef = { type: 'table', name: 'T' }
     const board: ViewDef = { type: 'board', name: 'B' }
     expect(withDefaults(table, fp({ showEmptyGroups: true })).showEmptyColumns).toBe(true)
-    expect(withDefaults(board, fp({ showEmptyGroups: true }))).toBe(board)
+    expect(withDefaults(board, fp({ ...BEFORE, showEmptyGroups: true }))).toBe(board)
     expect(withDefaults(board, fp({ showEmptyColumns: true })).showEmptyColumns).toBe(true)
-    expect(withDefaults(table, fp({ showEmptyGroups: false, showEmptyColumns: true }))).toBe(table)
+    expect(withDefaults(table, fp({ ...BEFORE, showEmptyGroups: false, showEmptyColumns: true }))).toBe(table)
     // A choice equal to the part the view reads removes the key; the other part does not count.
     const b: ViewDef = { type: 'board', name: 'B', showEmptyColumns: true }
     chooseOwn(b, 'showEmptyColumns', true, fp({ showEmptyColumns: true, showEmptyGroups: false }))

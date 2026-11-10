@@ -36,7 +36,14 @@ afterEach(() => {
 })
 
 const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
-const menu = () => container.querySelector<HTMLElement>('.page-settings__menu[role="group"]')
+/**
+ * The open menu (YAZ-4776): a portal on the page, under its cog, so it is found by the cog's `aria-controls`, not inside
+ * the container.
+ */
+const menu = () => {
+  const id = cog().getAttribute('aria-controls')
+  return id === null ? null : document.getElementById(id)
+}
 /** A switch of the menu by its name: "Read only" stands first (YAZ-3076), so the rows are found by what they say. */
 const switchNamed = (name: string) => [...menu()!.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')].find((button) => button.textContent?.startsWith(name))!
 const toggle = () => switchNamed('Line numbers')

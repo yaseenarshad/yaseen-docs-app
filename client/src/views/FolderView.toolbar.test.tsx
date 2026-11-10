@@ -82,12 +82,23 @@ afterEach(() => {
 const onDisk = (): string => disk.get(SETTINGS_FILE)?.content ?? ''
 const chips = (el: ParentNode): string[] => [...q(el, '.status-chips').children].map((chip) => chip.className.split(' ')[0])
 const openCog = (el: ParentNode): void => click(q(el, '.page-settings__trigger'))
+/**
+ * The cog's open menu (YAZ-4776): a portal on the page, under its cog, so a test finds it by the open cog's
+ * `aria-controls`, not inside the folder page. Throws while it is closed.
+ */
+const cogMenu = (el: ParentNode): HTMLElement => {
+  const id = el.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
+  const menu = id == null ? null : document.getElementById(id)
+  if (menu === null) throw new Error('missing .page-settings__menu')
+  return menu
+}
 const button = (el: ParentNode, text: string): HTMLButtonElement => {
   const b = [...el.querySelectorAll<HTMLButtonElement>('button')].find((x) => x.textContent?.replace('✓', '').trim() === text)
   if (b === undefined) throw new Error(`no button ${text}`)
   return b
 }
-const pill = (el: ParentNode, text: string): HTMLButtonElement => button(q(el, '[role="group"][aria-label="Show folder page file"]'), text)
+// "Show folder page file" is "Page file in the sidebar" under the "Show" heading (YAZ-3746 13BP).
+const pill = (el: ParentNode, text: string): HTMLButtonElement => button(q(cogMenu(el), '[role="group"][aria-label="Page file in the sidebar"]'), text)
 const duplicateView = (el: ParentNode): void => {
   const tab = [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((x) => x.textContent === 'Pipeline')!
   act(() => void tab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
@@ -107,34 +118,36 @@ describe('the folder page toolbar (D35)', () => {
     expect(chips(el)).toEqual(['page-settings', 'document-zoom', 'save-indicator'])
   })
 
-  // "Show Other files" added by YAZ-4597 (D43): the third row of the group.
-  it('the cog holds the "This folder page" group: Read only, Show folder page file, the two hover switches, Show Other files, the column switches, Confirm changes, Settings chosen', async () => {
+  // YAZ-3746 13BP: the group is named "<folder> (folder page)" (CL6), and its rows stand under three headings — Show,
+  // Preview on hover, Safety — one line each with an (i), the heading saying the rest of the old label. "Read only"
+  // moved under Safety as an On / Off line (CL7); "New buttons" (13BL) joined Show.
+  it('the cog holds the "<folder> (folder page)" group: Show (page file, Other files, New buttons, parent columns, column marks), Preview on hover (Rows, Links), Safety (Read only, Confirm changes), Settings chosen', async () => {
     const el = await mount()
     openCog(el)
-    const group = q(el, '.page-settings__menu [role="group"][aria-label="This folder page"]')
-    // YAZ-4601 D51's "Preview on hover", split in two by demo 13D; YAZ-4597's "Show Other files"; YAZ-4713's
-    // "Show parent folders' columns" (C12) and "Show where columns come from" (C11); "Confirm changes" (13AN) last.
+    const group = q(cogMenu(el), '[role="group"][aria-label="stages (folder page)"]')
     expect([...group.children].map((c) => c.textContent)).toEqual([
-      'This folder page',
-      'Read only',
-      'Show folder page file:',
-      'SettingsOnOff',
-      'Preview rows on hover:',
-      'SettingsOnOff',
-      'Preview links on hover:',
-      'SettingsOnOff',
-      'Show Other files:',
-      'SettingsOnOff',
-      "Show parent folders' columns:",
-      'SettingsOnOff',
-      'Show where columns come from:',
+      'stages (folder page)',
+      'Show',
+      'Page file in the sidebarSettingsOnOff',
+      'Other filesSettingsOnOff',
+      'New buttonsSettingsOnOff',
+      "Parent folders' columnsSettingsOnOff",
+      'Where columns come from',
       'SettingsIconIcon and folder nameOff',
-      'Confirm changes:',
-      'SettingsOnOff',
+      '',
+      'Preview on hover',
+      'RowsSettingsOnOff',
+      'LinksSettingsOnOff',
+      '',
+      'Safety',
+      'Read onlyOnOff',
+      'Confirm changesSettingsOnOff',
     ])
+    // Each row's (i) is named for its row (13BP CL4).
+    expect([...group.querySelectorAll('.page-settings__info')].map((b) => b.getAttribute('aria-label'))).toEqual(['About Page file in the sidebar', 'About Other files', 'About New buttons', "About Parent folders' columns", 'About Where columns come from', 'About Rows', 'About Links', 'About Read only', 'About Confirm changes'])
     expect(pill(el, 'Settings').getAttribute('aria-pressed')).toBe('true')
-    // No word counts and no trailing rows: a folder page off its Page tab has only its own group.
-    expect(q(el, '.page-settings__menu').textContent).not.toContain('words')
+    // No word counts and no trailing rows: the folder ⚙ has only the folder page's own group (13BM PS2).
+    expect(cogMenu(el).textContent).not.toContain('words')
   })
 
   it('zoom is per tab and never stored: the pill zooms the page and writes nothing', async () => {
@@ -168,7 +181,8 @@ describe('Read only (D36)', () => {
   it('the cog writes `readonly: true` into `.folder.md` and the chip shows', async () => {
     const el = await mount()
     openCog(el)
-    click(button(el, 'Read only'))
+    // "Read only" is an On / Off line under Safety (YAZ-3746 13BP CL7): On turns it on at once.
+    click(button(q(cogMenu(el), '[role="group"][aria-label="Read only"]'), 'On'))
     await flush()
     expect(parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties.readonly).toBe(true)
     expect(chips(el)).toEqual(['page-settings', 'document-zoom', 'read-only-chip', 'save-indicator'])
@@ -223,7 +237,8 @@ describe('Show folder page file (D37)', () => {
 })
 
 describe('Preview on hover (YAZ-4601 D51; two switches since demo 13D)', () => {
-  const hoverPill = (el: ParentNode, text: string): HTMLButtonElement => button(q(el, '[role="group"][aria-label="Preview rows on hover"]'), text)
+  // "Preview rows on hover" is "Rows" under the "Preview on hover" heading (YAZ-3746 13BP).
+  const hoverPill = (el: ParentNode, text: string): HTMLButtonElement => button(q(cogMenu(el), '[role="group"][aria-label="Rows"]'), text)
 
   it('"Preview rows on hover" writes `hover_rows` in three states: On is true, Off is false, Settings removes the key', async () => {
     const el = await mount()
@@ -253,7 +268,8 @@ describe('Preview on hover (YAZ-4601 D51; two switches since demo 13D)', () => {
 })
 
 describe('Show Other files (YAZ-4597 D43)', () => {
-  const otherPill = (el: ParentNode, text: string): HTMLButtonElement => button(q(el, '[role="group"][aria-label="Show Other files"]'), text)
+  // "Show Other files" is "Other files" under the "Show" heading (YAZ-3746 13BP).
+  const otherPill = (el: ParentNode, text: string): HTMLButtonElement => button(q(cogMenu(el), '[role="group"][aria-label="Other files"]'), text)
 
   it('writes `show_other_files` in three states, and Off hides the tray; Settings follows Settings › Folder pages', async () => {
     const el = await mount()
@@ -288,7 +304,9 @@ describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar s
     container?.remove()
   })
 
-  it('the note\'s page switches follow the folder group, and the save chip shows the worse of the two saves', () => {
+  // YAZ-3746 13BM PS2: the folder ⚙ holds the folder page's own group only. The Page tab's text switches, handed through
+  // the same store, are on the Page's own settings button in its view toolbar (PS1; `Editor.test.tsx`, the folder Page tab).
+  it('the note\'s page switches stay out of the folder ⚙, and the save chip shows the worse of the two saves', () => {
     const store = createStore<FolderChipsState>({ save: 'saved', page: null, readOnly: false })
     container = document.createElement('div')
     document.body.append(container)
@@ -299,14 +317,15 @@ describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar s
     act(() => store.set({ page: { cog: { lineNumbers: true, onToggleLineNumbers, readText: () => 'a b' }, save: 'unsaved', foldAll: null } }))
     expect(q(container, '.save-indicator').textContent).toBe('Unsaved')
     click(q(container, '.page-settings__trigger'))
-    const menu = q(container, '.page-settings__menu')
-    expect([...menu.children].map((c) => c.textContent)).toEqual([expect.stringContaining('This folder page'), '', 'Line numbers✓', '', '2 words', '3 characters'])
-    click(button(menu, 'Line numbers'))
-    expect(onToggleLineNumbers).toHaveBeenCalledTimes(1)
+    const menu = cogMenu(container)
+    expect([...menu.children].map((c) => c.textContent)).toEqual([expect.stringContaining('Projects (folder page)'), ''])
+    expect(menu.textContent).not.toContain('Line numbers')
+    expect(menu.textContent).not.toContain('words')
+    expect(onToggleLineNumbers).not.toHaveBeenCalled()
     act(() => store.set({ save: 'saving' }))
     expect(q(container, '.save-indicator').textContent).toBe('Saving…')
     act(() => store.set({ page: null }))
-    expect(container.querySelector('.page-settings__menu')?.textContent).not.toContain('Line numbers')
+    expect(q(container, '.save-indicator').textContent).toBe('Saving…')
   })
 })
 
@@ -349,7 +368,7 @@ describe('two folder pages on one `.folder.md` (YAZ-4596 S38)', () => {
       await flush()
       openCog(b)
       duplicateView(a)
-      click(button(q(b, '[role="group"][aria-label="Preview rows on hover"]'), 'Off'))
+      click(button(q(cogMenu(b), '[role="group"][aria-label="Rows"]'), 'Off'))
       await flush()
       await flush()
       expect(conflicts).toBe(2)
