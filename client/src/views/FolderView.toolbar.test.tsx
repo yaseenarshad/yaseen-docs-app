@@ -150,6 +150,26 @@ describe('the folder page toolbar (D35)', () => {
     expect(cogMenu(el).textContent).not.toContain('words')
   })
 
+  // YAZ-4810 5G on the folder ⚙ (merge of PR #257): its menu is on `document.body` too, so Tab crosses between the cog and it.
+  it('Tab on the open folder ⚙ goes to its menu’s first control; Shift+Tab there goes back; Tab on the last closes it on the cog', async () => {
+    const el = await mount()
+    const cog = q<HTMLButtonElement>(el, '.page-settings__trigger')
+    act(() => cog.focus())
+    openCog(el)
+    const tab = (target: Element, shiftKey = false) =>
+      act(() => void target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })))
+    const items = () => [...cogMenu(el).querySelectorAll<HTMLElement>('button:not([disabled]), select:not([disabled]), input:not([disabled])')]
+    tab(cog)
+    expect(document.activeElement).toBe(items()[0])
+    tab(items()[0]!, true)
+    expect(document.activeElement).toBe(cog)
+    const last = items().at(-1)!
+    act(() => last.focus())
+    tab(last)
+    expect(el.querySelector('.page-settings > button[aria-expanded="true"]')).toBeNull()
+    expect(document.activeElement).toBe(cog)
+  })
+
   it('zoom is per tab and never stored: the pill zooms the page and writes nothing', async () => {
     const el = await mount()
     click(q(el, '[aria-label="Zoom in"]'))

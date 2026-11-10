@@ -46,7 +46,6 @@ describe('settingCandidates', () => {
       'commentsOrder',
       'commentsResolved',
       'commentsHint',
-      'diagramDarkColors',
       // Settings › Sidebar (YAZ-3440 D7), after Appearance. The Line set's colour rows show only with that set.
       'sidebarLines',
       'sidebarLineStyle',
@@ -116,6 +115,8 @@ describe('settingCandidates', () => {
       'codeLanguageHelpers',
       // Settings › Drawings (YAZ-3037; "Excalidraw canvas" before the YAZ-3818 demo).
       ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
+      // Its last group, draw.io diagrams (YAZ-4748 D11: "Drawings and diagrams"; before, Appearance's last row).
+      'diagramDarkColors',
       // Settings › Images (YAZ-3038).
       'pixabayApiKey',
       'libraryFolder',
@@ -225,7 +226,8 @@ describe('searchSettings', () => {
     // "dark" is also the draw.io row's word (YAZ-3037), and draw.io's own key for its dark colours (YAZ-3564).
     // And the guide lines' darkness (YAZ-4094 G3), and the calendar tables' shade darkness (YAZ-4163 demo).
     // And "Text color follows the fill" (YAZ-4404 4H): its hint says "A dark fill turns dark text white".
-    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'diagramDarkColors', 'guideLineDarkness', 'tableShadeDarkness', 'canvas.fillSetsTextColor'])
+    // The draw.io row is the last of "Drawings and diagrams" since YAZ-4748 D11, so it comes after the drawing's row.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'guideLineDarkness', 'tableShadeDarkness', 'canvas.fillSetsTextColor', 'diagramDarkColors'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     // The sounds of Settings › Notifications (YAZ-3303) say "the Trash" in their hints.
     // "trash" is also the word of ⌘⌫ in the Window hotkeys (YAZ-3272 D20), and of a folder page's delete (YAZ-4592 S26).

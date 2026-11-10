@@ -5563,3 +5563,26 @@ body.drag-held iframe {
   font-size: 12px;
   color: var(--fg-muted);
 }
+
+/* The (i) inside a row that is a button (YAZ-4748 demo): the label's own (i), a glyph, as quiet. */
+.page-settings__menu button .page-settings__info {
+  display: inline-flex;
+  margin-left: 4px;
+  vertical-align: -2px;
+  color: var(--fg-muted);
+  cursor: help;
+}
+
+.page-settings__menu button .page-settings__info:hover {
+  color: var(--fg);
+}
+
+/* A menu whose rows carry an (i) (a drawing's and a diagram's cog, YAZ-4748 demo): wide enough that each (i) stays on
+   its label's line. At 172px "Link preview on hover" and "Fold arrows (app: hover)" put theirs on a line of its own. */
+.page-settings__menu:has(button .page-settings__info) {
+  width: 212px;
+}
+
+.page-settings__menu button > span:has(> .page-settings__info) {
+  white-space: nowrap;
+}

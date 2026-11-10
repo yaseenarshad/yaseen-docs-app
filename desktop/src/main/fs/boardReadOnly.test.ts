@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BOARD_META_KEY, boardFoldArrowsOf, boardHoverOutlineOf, hoverLinksOff, parseBoardMetaBlock, serializeBoard } from '@shared/drawingAssets'
 import { DIAGRAM_CREATED_ATTR, DIAGRAM_UPDATED_ATTR } from '@shared/diagramFile'
-import { DIAGRAM_READ_ONLY_ATTR, isDiagramReadOnly, isDrawingReadOnly } from '@shared/readOnly'
+import { DIAGRAM_HOVER_LINKS_ATTR, DIAGRAM_READ_ONLY_ATTR, isDiagramHoverLinksOff, isDiagramReadOnly, isDrawingReadOnly } from '@shared/readOnly'
 import { setBoardFoldArrows } from './boardFoldArrows'
 import { setBoardHoverLinks } from './boardHoverLinks'
 import { setBoardHoverOutline } from './boardHoverOutline'
@@ -168,13 +168,83 @@ describe('board:set-hover-links on a drawing', () => {
     expect(parseBoardMetaBlock(await readFile(file, 'utf8'))).toEqual({ createdAt: 1000, updatedAt: 2000, switched: { hoverLinks: expect.any(Number) } })
   })
 
-  it('refuses a bad request and a diagram, and writes nothing', async () => {
+  // A diagram has its own switch since YAZ-4748 D10 (below): a file that is no board is the one refused for its kind.
+  it('refuses a bad request and a file that is no board, and writes nothing', async () => {
     const { file, mtime } = await seed('Sketch.excalidraw', SCENE)
-    await seed('Flow.drawio', DIAGRAM)
+    await seed('Note.md', '# hi\n')
     expect((await failure(setBoardHoverLinks({ root, path: 'Sketch.excalidraw', on: 'no', expectedMtime: mtime }))).code).toBe('BAD_REQUEST')
     expect((await failure(setBoardHoverLinks({ root, path: 'Sketch.excalidraw', on: false }))).code).toBe('BAD_REQUEST')
-    expect((await failure(setBoardHoverLinks({ root, path: 'Flow.drawio', on: false, expectedMtime: mtime }))).code).toBe('UNSUPPORTED_EXTENSION')
+    expect((await failure(setBoardHoverLinks({ root, path: 'Note.md', on: false, expectedMtime: mtime }))).code).toBe('UNSUPPORTED_EXTENSION')
+    expect((await failure(setBoardHoverLinks({ root, path: 'image.drawio.svg', on: false, expectedMtime: mtime }))).code).toBe('UNSUPPORTED_EXTENSION')
     expect(await readFile(file, 'utf8')).toBe(SCENE)
+    expect(await readFile(path.join(root, 'Note.md'), 'utf8')).toBe('# hi\n')
+  })
+})
+
+/** `board:set-hover-links` on a diagram (YAZ-4748 D10): `yaseendraw-hoverlinks="0"` on the root `<mxfile>`, the same rules. */
+describe('YAZ-4748 D10: board:set-hover-links on a diagram', () => {
+  const OFF = DIAGRAM.replace('host="app"', `host="app" ${DIAGRAM_HOVER_LINKS_ATTR}="0"`)
+
+  it('off writes the attribute on <mxfile> only, atomically, and answers the new mtime; on removes it and gives back the same bytes', async () => {
+    const { file, mtime } = await seed('Flow.drawio', DIAGRAM)
+    const { ino } = await stat(file)
+    const off = await setBoardHoverLinks({ root, path: 'Flow.drawio', on: false, expectedMtime: mtime })
+    const written = await readFile(file, 'utf8')
+    expect(written).toBe(OFF)
+    expect(isDiagramHoverLinksOff(written)).toBe(true)
+    const after = await stat(file)
+    expect(off).toEqual({ path: file, mtime: after.mtimeMs, size: after.size })
+    expect(after.ino).not.toBe(ino)
+    expect((await readdir(root)).filter((n) => n.includes('.tmp-'))).toEqual([])
+    expect((await loadDiagram({ root, path: 'Flow.drawio' })).xml).toBe(OFF)
+    const on = await setBoardHoverLinks({ root, path: 'Flow.drawio', on: true, expectedMtime: off.mtime })
+    expect(await readFile(file, 'utf8')).toBe(DIAGRAM)
+    expect(on.mtime).toBe((await stat(file)).mtimeMs)
+  })
+
+  it('the same state again writes nothing; the mtime does not move', async () => {
+    const { file, mtime } = await seed('Flow.drawio', DIAGRAM)
+    const res = await setBoardHoverLinks({ root, path: 'Flow.drawio', on: true, expectedMtime: mtime })
+    expect(res).toEqual({ path: file, mtime, size: Buffer.byteLength(DIAGRAM) })
+    expect((await stat(file)).mtimeMs).toBe(mtime)
+    const marked = await seed('Off.drawio', OFF)
+    expect((await setBoardHoverLinks({ root, path: 'Off.drawio', on: false, expectedMtime: marked.mtime })).mtime).toBe(marked.mtime)
+    expect((await stat(marked.file)).mtimeMs).toBe(marked.mtime)
+    expect(await readFile(marked.file, 'utf8')).toBe(OFF)
+  })
+
+  it('a file that changed on disk is refused with CONFLICT and its mtime, and NOTHING is written', async () => {
+    const { file } = await seed('Flow.drawio', DIAGRAM)
+    const err = await failure(setBoardHoverLinks({ root, path: 'Flow.drawio', on: false, expectedMtime: 1 }))
+    expect(err.code).toBe('CONFLICT')
+    expect(err.mtime).toBe((await stat(file)).mtimeMs)
+    expect(await readFile(file, 'utf8')).toBe(DIAGRAM)
+  })
+
+  it('a .drawio file that is no diagram (cut short, or not draw.io at all) is refused with IO_ERROR and left alone', async () => {
+    for (const [name, body] of [['Cut.drawio', '<mxfile><diagram id="a">'], ['Text.drawio', 'just some text\n'], ['Svg.drawio', '<svg xmlns="http://www.w3.org/2000/svg"/>']] as const) {
+      const { file, mtime } = await seed(name, body)
+      expect((await failure(setBoardHoverLinks({ root, path: name, on: false, expectedMtime: mtime }))).code, name).toBe('IO_ERROR')
+      expect(await readFile(file, 'utf8'), name).toBe(body)
+    }
+  })
+
+  it('it and the read-only switch stand together, each door changing only its own attribute', async () => {
+    const { file, mtime } = await seed('Flow.drawio', DIAGRAM)
+    const locked = await setBoardReadOnly({ root, path: 'Flow.drawio', on: true, expectedMtime: mtime })
+    const off = await setBoardHoverLinks({ root, path: 'Flow.drawio', on: false, expectedMtime: locked.mtime })
+    const both = await readFile(file, 'utf8')
+    expect(both).toBe(DIAGRAM.replace('host="app"', `host="app" ${DIAGRAM_READ_ONLY_ATTR}="1" ${DIAGRAM_HOVER_LINKS_ATTR}="0"`))
+    await setBoardReadOnly({ root, path: 'Flow.drawio', on: false, expectedMtime: off.mtime })
+    expect(await readFile(file, 'utf8')).toBe(OFF)
+  })
+
+  it('a bare <mxGraphModel> is wrapped, then marked', async () => {
+    const { file, mtime } = await seed('Bare.drawio', '<mxGraphModel><root><mxCell id="0" /></root></mxGraphModel>\n')
+    await setBoardHoverLinks({ root, path: 'Bare.drawio', on: false, expectedMtime: mtime })
+    const written = await readFile(file, 'utf8')
+    expect(written.startsWith(`<mxfile ${DIAGRAM_HOVER_LINKS_ATTR}="0"><diagram`)).toBe(true)
+    expect((await loadDiagram({ root, path: 'Bare.drawio' })).xml).toBe(written)
   })
 })
 

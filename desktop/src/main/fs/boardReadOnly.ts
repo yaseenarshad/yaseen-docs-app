@@ -24,8 +24,8 @@ import { parseScene } from './drawing'
 import { atomicWrite, BridgeFailure, fsCall, requireDir } from './fsUtils'
 import { requireRequest } from './validate'
 
-/** The kind by the request path's extension (`fileKind`, as `createBoard` reads it); any other file has no read-only switch of this door's. */
-function kindOf(raw: unknown): BoardKind {
+/** The kind by the request path's extension (`fileKind`, as `createBoard` reads it); any other file has no switch of the board doors. */
+export function boardKindOf(raw: unknown): BoardKind {
   const rel = requireRequest(raw).path
   const kind = typeof rel === 'string' ? fileKind(rel) : null
   if (kind === 'drawing' || kind === 'diagram') return kind
@@ -35,7 +35,7 @@ function kindOf(raw: unknown): BoardKind {
 }
 
 export async function setBoardReadOnly(req: unknown): Promise<BoardReadOnlyResponse> {
-  const kind = kindOf(req)
+  const kind = boardKindOf(req)
   const { dir, file, body } = boardTarget(req, kind)
   const { on, expectedMtime } = body
   if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean", { path: file })

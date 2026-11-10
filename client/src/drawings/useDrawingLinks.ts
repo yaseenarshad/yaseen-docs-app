@@ -58,7 +58,17 @@ export interface DrawingLinkHost {
   onNotice: ((message: string) => void) | undefined
   /** Where the menu, the Edit link box and the picker are put. */
   hostRef: { current: HTMLElement | null }
+  /** The `[[` picker opened or closed (a diagram's frame sends its keys up only while it is open, YAZ-4748). */
+  onPickerShow?: (open: boolean) => void
   props: DrawingLinkProps
+}
+
+/**
+ * The links of one board, for the canvas (`DrawingSurfaceLinks`) and for a diagram's frame (YAZ-4748), which also asks
+ * by paths (`dropPaths`).
+ */
+export interface BoardLinks extends DrawingSurfaceLinks {
+  hostLinks: ReturnType<typeof drawingHostLinks>
 }
 
 export function useDrawingLinks(host: DrawingLinkHost) {
@@ -93,7 +103,7 @@ export function useDrawingLinks(host: DrawingLinkHost) {
   }, [host.theme])
   // The vault joins the window's links before the canvas lays out its text (YAZ-4039 D7).
   useLayoutEffect(() => (props.wikilinks === undefined ? undefined : mountDrawingVault(root, props.wikilinks, props.viewOnlyLinks)), [root, props.wikilinks, props.viewOnlyLinks])
-  const [links] = useState<DrawingSurfaceLinks | undefined>(() => {
+  const [links] = useState<BoardLinks | undefined>(() => {
     const { wikilinks, viewOnlyLinks, onOpenLinkBackground } = props
     if (wikilinks === undefined || onOpenLinkBackground === undefined) return undefined
     const nav: WikilinkNav = {
@@ -112,6 +122,7 @@ export function useDrawingLinks(host: DrawingLinkHost) {
       () => live.current.props.wikilinkCandidates?.candidates ?? [],
       (editor, name) => void createLinkedPage(editor, name, wikilinks, nav),
       { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
+      (open) => live.current.onPickerShow?.(open),
     )
     closePicker.current = picker.close
     const pasteLink = (text: string): string | null => {
@@ -146,7 +157,9 @@ export function useDrawingLinks(host: DrawingLinkHost) {
       },
       picker,
       pasteLink,
-      // A drag from the sidebar (YAZ-3943 4D): each page a pill box, as a paste of its path.
+      // A drag from the sidebar (YAZ-3943 4D): each page a pill box, as a paste of its path. A diagram's frame knows no
+      // file paths, so it asks by the paths themselves (YAZ-4748 D4).
+      dropPaths: (paths) => drawingDropLinks(paths, vaultLinks.current?.roots ?? [root], pasteLink),
       dropLinks: (files) => drawingDropLinks(files.map((file) => api.file.pathFor(file)), vaultLinks.current?.roots ?? [root], pasteLink),
     })
     return { hostLinks: drawingHostLinks(deps), openShapeLink: (link, event) => openShapeLink(link, event, deps()) }

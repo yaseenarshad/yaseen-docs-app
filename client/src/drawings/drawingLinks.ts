@@ -29,6 +29,7 @@ import { isFolderPath, pathTitles } from '../lib/pageLabel'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import type { VaultLinks } from '../links/vaultLinks'
 import type { IconsHere } from '../sidebar/FileIcon'
+import { setDiagramLinkLooks, type WireLook } from '../diagrams/diagramLooks'
 import { drawingLinkIcon, setDrawingLinkIcons, type PillIcon } from './drawingLinkIcons'
 import type { PickerEditor } from './drawingLinkPicker'
 
@@ -178,6 +179,16 @@ function lookOf(inner: string): DrawingLink | null {
   return icon === undefined ? look : { ...look!, icon }
 }
 
+/** A pill's look for draw.io's side (YAZ-4748): the icon as its data URL; null, no icon; absent, not drawn yet. */
+export function wireLook(look: DrawingLink | null): WireLook | null {
+  if (look === null) return null
+  const { label, missing, icon } = look
+  return { label, ...(missing ? { missing } : {}), ...(icon === undefined ? {} : { icon: icon === null ? null : icon.url }) }
+}
+
+// A diagram's previews and Export Image draw its pills with the window's links (YAZ-4748 D9).
+setDiagramLinkLooks((inner) => wireLook(windowLinkLook(inner)))
+
 /** The pills draw again with what the window says now (a theme change: the icons' other look). */
 export function redrawWindowLinks(): void {
   windowChanged()
@@ -219,6 +230,8 @@ export interface DrawingLinkDeps {
   pasteLink?: (text: string) => string | null
   /** Files dropped on the board as their links, or null (`drawingDropLinks`). */
   dropLinks?: (files: readonly File[]) => string[] | null
+  /** The same by the files' paths: a diagram's frame drops pages it has no paths for (YAZ-4748 D4). */
+  dropPaths?: (paths: readonly string[]) => string[] | null
 }
 
 /** The engine's `hostLinks` for one board. `deps` is read at each event, so the host can keep it in a ref. */
@@ -249,6 +262,7 @@ export function drawingHostLinks(deps: () => DrawingLinkDeps) {
     },
     pasteLink: (text: string) => deps().pasteLink?.(text) ?? null,
     dropLinks: (files: readonly File[]) => deps().dropLinks?.(files) ?? null,
+    dropPaths: (paths: readonly string[]) => deps().dropPaths?.(paths) ?? null,
     onEditorChange: (editor: PickerEditor | null) => deps().picker?.change(editor),
     onEditorKeyDown: (event: KeyboardEvent) => deps().picker?.keyDown(event) ?? false,
   }

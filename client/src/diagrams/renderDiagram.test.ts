@@ -52,6 +52,23 @@ async function started(picture: Promise<string>): Promise<Record<string, unknown
 const XML = '<mxfile><diagram id="p"><mxGraphModel><root/></mxGraphModel></diagram></mxfile>'
 const BOUNDS = { maxWidth: 1200, maxHeight: 800, padding: 16 }
 
+describe('the link pills’ looks (YAZ-4748 D9)', () => {
+  it('go with an export and a preview once the window knows its links, and stay off without', async () => {
+    const withLinks = '<mxfile><diagram id="p"><mxGraphModel><root><mxCell id="a" value="[[YAZ-1]]"/></root></mxGraphModel></diagram></mxfile>'
+    void renderer.renderDiagramImage(withLinks, 'svg').catch(() => undefined)
+    await settle()
+    const before = await started(Promise.resolve(''))
+    expect(before).not.toHaveProperty('looks')
+    const { setDiagramLinkLooks } = await import('./diagramLooks')
+    setDiagramLinkLooks((inner) => ({ label: `Page ${inner}` }))
+    void renderer.renderDiagramImage(withLinks, 'png').catch(() => undefined)
+    void renderer.renderDiagramPreview(withLinks, 'dark', 'adapt', BOUNDS).catch(() => undefined)
+    await settle()
+    expect(requests[1]).toMatchObject({ looks: { 'YAZ-1': { label: 'Page YAZ-1' } } })
+    expect(requests[2]).toMatchObject({ looks: { 'YAZ-1': { label: 'Page YAZ-1' } } })
+  })
+})
+
 describe('renderDiagramPreview', () => {
   it('asks the page, once it is ready, for an SVG that fits the bounds in the app theme and colour setting — to the drawio origin only', async () => {
     const picture = renderer.renderDiagramPreview(XML, 'dark', 'keep', BOUNDS)

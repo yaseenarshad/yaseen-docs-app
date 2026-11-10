@@ -83,6 +83,11 @@ export interface DocumentHostOptions extends DocumentHostProps {
    * host never writes one. Absent = true, a board's switch.
    */
   readOnlySwitch?: boolean
+  /**
+   * The switch main just wrote, told before the autosave lets a queued save run (YAZ-4809 5F): a host whose `write`
+   * puts the switch back in the file (a diagram) must know it then, not at its next render.
+   */
+  onReadOnlyWritten?: (on: boolean) => void
   /** The window's ONE passive notice: why the read-only switch did not change. */
   onNotice?: (text: string, icon?: NoticeKind) => void
   onCommand: (command: BoardCommand) => void
@@ -258,7 +263,12 @@ export function useDocumentHost(options: DocumentHostOptions) {
       if (a === null || retired.current || engine.current.readOnlySwitch === false) return
       const { root, path: file } = engine.current
       try {
-        await a.writeBeside((expectedMtime) => api.setBoardReadOnly({ root, path: file, on, expectedMtime }))
+        await a.writeBeside((expectedMtime) =>
+          api.setBoardReadOnly({ root, path: file, on, expectedMtime }).then((res) => {
+            engine.current.onReadOnlyWritten?.(on)
+            return res
+          }),
+        )
         setReadOnlyShown(on)
       } catch (err) {
         if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {

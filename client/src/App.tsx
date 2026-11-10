@@ -75,6 +75,7 @@ import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuReque
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
 import { dailyNoteName } from '@shared/dailyNote'
 import { dailyNoteVault, todaysNote } from './sidebar/dailyNote'
+import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
@@ -2832,7 +2833,8 @@ export function App() {
     landedInApp.current = []
     const left = await stillThere(paths)
     if (left.length === 0 || turn !== dragOuts.current || generation !== renameRootGeneration.current) return
-    if (left.every((path) => landedInApp.current.includes(path))) return
+    // A diagram's frame took the drop (YAZ-4748 A5): the window heard no drop, and its word may come after the end.
+    if (left.every((path) => landedInApp.current.includes(path) || sidebarDroppedInFrame().includes(path))) return
     const inside = (path: string) => left.some((item) => path === item || path.startsWith(`${item}/`))
     const linking = new Set<string>()
     const kinds: DragOutAsk['kinds'] = []
