@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useContext, useState } from 'react'
+import { type ReactNode, useCallback, useContext, useState, useSyncExternalStore } from 'react'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { GroupLevelStepsContext } from '../groupLevelSteps'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
@@ -16,11 +16,17 @@ import { Popover } from './Popover'
 import { PropertiesMenu, rememberPropertiesTab } from './PropertiesMenu'
 import { SortMenu } from './SortMenu'
 import { ViewTabs, type ViewTabsProps } from './ViewTabs'
+import { FolderPageChips } from '../FolderToolbar'
+import { PageSettings } from '../../editor/PageSettings'
 
 type Menu = 'filter' | 'sort' | 'properties'
 
 /** No date columns: a view that is not a calendar. */
 const NO_COLUMNS: readonly string[] = []
+
+/** The Page tab's settings button (YAZ-3746 13BM PS1): the other views' sliders, with their look, over the text switches. */
+const PAGE_TAB_TRIGGER = { icon: <PropertiesIcon />, className: 'view-toolbar__btn', label: 'Page settings', heading: 'Page' }
+const NO_SUBSCRIBE = () => () => {}
 
 export interface ToolbarProps {
   /** A status at the start of the actions: Confirm changes' "Not asking · 4:32 · Resume" (YAZ-3746 13AN). */
@@ -42,8 +48,8 @@ export interface ToolbarProps {
   search: string | null
   onSearch: (next: string | null) => void
   onUpdate: Mutate
-  /** Create a note satisfying this view and open it (5D, GRO-2144). */
-  onNew: () => void
+  /** Create a note satisfying this view and open it (5D, GRO-2144). Absent: no + New (13BL, "Show New buttons" off). */
+  onNew?: () => void
   /** Every group key of the view, and the collapsed subset — the collapse / expand all toggle (YAZ-744); empty when the view is not grouped. */
   allGroupKeys: readonly string[]
   collapsed: readonly string[]
@@ -76,6 +82,9 @@ export const rowsLabel = (shown: number, total: number, folders?: { shown: numbe
 /** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
 export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS, tabId, notice }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
+  /** The Page tab's text switches, which it hands the folder page while it shows (YAZ-4584 D38); null on every other view. */
+  const chips = useContext(FolderPageChips)
+  const pageCog = useSyncExternalStore(chips?.subscribe ?? NO_SUBSCRIBE, () => (documentView ? chips?.getState().page?.cog ?? null : null))
   /** The ⌃'s right-click (YAZ-3746 13AT): one level at a time, beside all; its click still collapses or expands all. */
   const levels = useContext(GroupLevelStepsContext)
   const [foldMenu, setFoldMenu] = useState<{ x: number; y: number } | null>(null)
@@ -159,6 +168,8 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
       />
       <div className="view-toolbar__actions">
         {notice}
+        {/* The Page tab's own settings (YAZ-3746 13BM PS1): its text switches, which the folder ⚙ held before. */}
+        {pageCog !== null && <PageSettings {...pageCog} trigger={PAGE_TAB_TRIGGER} />}
         {button('sort', 'Sort', <SortIcon />, sorts, editing === null ? (
           <SortMenu settings={folder.settings} properties={properties} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} onEditColumn={setEditing} />
         ) : (
@@ -217,10 +228,12 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
             </div>
           </ContextMenuSurface>
         )}
-        <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label="New note" title="New note" onClick={onNew}>
-          <PlusIcon />
-          New
-        </button>
+        {onNew !== undefined && (
+          <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label="New note" title="New note" onClick={onNew}>
+            <PlusIcon />
+            New
+          </button>
+        )}
         {/* An outline is a DOCUMENT, not rows (YAZ-903): search has nothing to filter there. */}
         {!documentView && (
         <div className="view-toolbar__search">

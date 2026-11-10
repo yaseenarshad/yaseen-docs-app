@@ -4,7 +4,7 @@ import { cardWidth } from './cardWidth'
 import { hideWeekendsDefault, hidesWeekends } from '../calendar'
 import { markerStyleOf } from './ListView'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
-import { TableLookSettings } from './TableLookSettings'
+import { GroupGuideSettings, HeaderRowSettings, TableLookSettings } from './TableLookSettings'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
 import { ChoiceSeg, RowLabel } from './settingRow'
 import { CalendarShowBy } from './CalendarView'
@@ -68,6 +68,19 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns 
             />
             <FromSettings own={own} viewKey="rowNumbers" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
+          {/* YAZ-4779: each header's type icon before its name. */}
+          <label className="view-settings-row">
+            <RowLabel icon="columnTypeIcons">Column type icons</RowLabel>
+            <input
+              type="checkbox"
+              aria-label="Column type icons"
+              checked={view.columnTypeIcons === true}
+              onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'columnTypeIcons', e.target.checked, defaults))}
+            />
+            <FromSettings own={own} viewKey="columnTypeIcons" viewIndex={viewIndex} onUpdate={onUpdate} />
+          </label>
+          {/* YAZ-4774: the header row's look, as a note table's "Header row ›". */}
+          <HeaderRowSettings own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
         </>
       )}
       {/* Every view type (YAZ-4579 D30): the one Subfolders switch, in View › Rows since D60. */}
@@ -90,6 +103,8 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns 
           <FromSettings own={own} viewKey="groupIndent" viewIndex={viewIndex} onUpdate={onUpdate} />
         </div>
       )}
+      {/* YAZ-4798: a grouped table's sticky group headers and group lines; an ungrouped table draws neither. */}
+      {table && indents && <GroupGuideSettings view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />}
       {/* A Table shows its empty option groups too (YAZ-3940 S11), under the name "Show empty groups". */}
       {emptyGroups && <div className="property-board-setting">
         <label className="view-settings-row"><RowLabel icon="emptyGroups">{view.type === 'board' ? 'Show empty columns' : 'Show empty groups'}</RowLabel><input type="checkbox" role="switch" checked={view.showEmptyColumns === true} onChange={e => onUpdate(d => chooseOwn(d.views[viewIndex], 'showEmptyColumns', e.target.checked, defaults))} /><FromSettings own={own} viewKey="showEmptyColumns" viewIndex={viewIndex} onUpdate={onUpdate} /></label>

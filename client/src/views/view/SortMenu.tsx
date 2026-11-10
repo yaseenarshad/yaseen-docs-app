@@ -180,11 +180,14 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
 
   const options = (current: string | undefined, without?: ReadonlySet<string>) =>
     propertyOptions(def, keys, current).filter((o) => !without?.has(o.value))
+  /** A group level's columns: never an Image column (YAZ-4802), whose pictures make no groups. */
+  const groupOptions = (current: string | undefined, without?: ReadonlySet<string>) =>
+    options(current, without).filter((o) => o.value === current || columnTyping(o.value, records, properties, settings)?.assigned !== 'image')
   /** A calendar's days are its groups (YAZ-4540 D4): it ignores `groupBy`, so the menu offers only Sort. */
   const grouping = view.type !== 'calendar'
 
   /** The column a new group level starts on: the first one the levels above do not use (Folder aside). */
-  const nextLevel = grouping && levels.length < MAX_GROUP_LEVELS ? options(undefined, above(levels.length))[0] : undefined
+  const nextLevel = grouping && levels.length < MAX_GROUP_LEVELS ? groupOptions(undefined, above(levels.length))[0] : undefined
 
   return (
     <div className="view-menu sort-menu">
@@ -216,7 +219,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
               value={canonicalKey(level.property)}
               // None ends the grouping at this level, as it did for the outer and inner (YAZ-745).
               onChange={(value) => (value ? setLevel(i, { ...level, property: value, direction: level.direction === 'DESC' ? 'DESC' : 'ASC' }) : writeGroup(levels.slice(0, i), groupRows.ids.slice(0, i)))}
-              options={[{ value: '', label: 'None' }, ...options(level.property, above(i))]} />
+              options={[{ value: '', label: 'None' }, ...groupOptions(level.property, above(i))]} />
             <DirectionPicker label={GROUP_DIRECTION_LABELS[i]} spec={level} hasOptions={hasOptions(level.property)} onChange={(patch) => setLevel(i, withOrder({ ...level, property: canonicalKey(level.property) }, patch))} onEditOptions={editOptions(level.property)} />
             <GroupStylePicker label={`Style of group level ${i + 1}`} spec={level} onChange={(next) => setLevel(i, next)} />
             <button type="button" className="view-rule__remove" aria-label={`Remove group level ${i + 1}: ${propertyLabel(def, level.property)}`} title="Remove group level"

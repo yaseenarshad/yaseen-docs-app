@@ -30,6 +30,8 @@ export function testFolderHost(over: Partial<FolderHost> = {}): FolderHost {
       of: () => ({}),
       here: () => Promise.reject(new Error('this test did not expect "Change on <folder> only"')),
       useParent: () => Promise.reject(new Error('this test did not expect "Use <parent>\'s"')),
+      columnOn: () => null,
+      moveTo: () => Promise.reject(new Error('this test did not expect a "Column on" move')),
     },
     vaultRecords: TEST_RECORDS,
     vaultFolders: [],

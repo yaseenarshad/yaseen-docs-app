@@ -15,6 +15,7 @@ import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
+import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
 import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
@@ -60,6 +61,10 @@ export interface BoardViewProps {
   moveError: { path: string; message: string } | null
   /** Create a note seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
+  /** "Show New buttons" (YAZ-3746 13BL): false drops each column's "+ New card" and its header's "+"; the header menu's New note in this group stays. */
+  newCards?: boolean
+  /** The card menu's note items (YAZ-3746 13BO): Open, the new note beside a card, Duplicate, Delete. Absent: none. */
+  noteDoors?: CardNoteDoors
   /** ViewsPane's whole-vault resolver: a column header and a card value read an id link as its note's title (YAZ-2293 D8). */
   resolve?: Resolver
 }
@@ -114,6 +119,8 @@ export function BoardView({
   onMoveToGroup,
   moveError,
   onNewInGroup,
+  newCards = true,
+  noteDoors,
   resolve,
   readOnly = NO_READ_ONLY,
   hover,
@@ -385,7 +392,7 @@ export function BoardView({
     )
   }
   const inlineAdd = (group: Group, key: string, at?: GroupSpot) => {
-    if (onNewInGroup === undefined) return null
+    if (onNewInGroup === undefined || !newCards) return null
     return adding?.key === key ? (
       <input
         className="view-board__add-input"
@@ -438,6 +445,7 @@ export function BoardView({
               collapsed={childCollapsed}
               onToggle={() => onToggleGroup(ck)}
               onNew={onNewInGroup === undefined || !adds[at.level] ? undefined : () => onNewInGroup(child, undefined, at)}
+              newButton={newCards}
               resolve={resolve}
               level={at.level}
             />
@@ -480,6 +488,7 @@ export function BoardView({
               collapsed={isCollapsed}
               onToggle={() => onToggleGroup(gk)}
               onNew={onNewInGroup === undefined || !adds[0] ? undefined : () => onNewInGroup(g)}
+              newButton={newCards}
               resolve={resolve}
               level={0}
             />
@@ -525,6 +534,7 @@ export function BoardView({
           onOpenWindow={onOpenWindow}
           onNotice={onNotice}
           onClose={() => setMenu(null)}
+          {...cardMenuItems(noteDoors, menu.path, () => setMenu(null), noteDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => noteDoors.newBelow!(menu.path) })}
         />
       )}
     </>

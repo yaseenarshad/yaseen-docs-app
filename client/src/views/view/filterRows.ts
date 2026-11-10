@@ -12,7 +12,7 @@ import { canonicalKey } from './keys'
  * in the grammar below (else null → raw row).
  */
 
-export type PropertyType = 'text' | 'number' | 'date' | 'checkbox' | 'list' | 'tags' | 'file' | 'link' | 'multi-link' | 'select' | 'multi-select' | 'mentions'
+export type PropertyType = 'text' | 'number' | 'date' | 'checkbox' | 'list' | 'tags' | 'file' | 'link' | 'multi-link' | 'select' | 'multi-select' | 'image' | 'mentions'
 
 export type OperatorId =
   | 'is' | 'isNot' | 'contains' | 'notContains' | 'startsWith' | 'endsWith' | 'isEmpty' | 'isNotEmpty'
@@ -83,6 +83,8 @@ export const OPERATORS_BY_TYPE: Record<PropertyType, OperatorId[]> = {
   'multi-select': ['contains', 'notContains', 'hasAnyOf', 'hasNoneOf', 'hasAllOf', 'isEmpty', 'isNotEmpty'],
   // A Linked mentions column (YAZ-4738 L3): "is empty" finds a page nothing links to.
   mentions: ['isEmpty', 'isNotEmpty', 'contains'],
+  // An Image column (YAZ-4802): whether a row has a picture.
+  image: ['isEmpty', 'isNotEmpty'],
 }
 
 /** The three file-method rules live on pseudo-properties so they fit the property · operator · value row. */

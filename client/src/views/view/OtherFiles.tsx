@@ -12,16 +12,21 @@
  *    a moved note dragged onto the view body moves back (`trayBackTarget`). No moves while the page is read only (D36).
  *  - OPEN OR CLOSED: per folder page, with the views' collapsed groups (`storage.getViewGroups`), under the page's own
  *    `<folder>::` key, which a folder rename carries.
+ *  - A WHOLE SUBFOLDER (YAZ-4747 OF3): a folder moved here is one line with a chevron, closed at first. Open, it shows
+ *    its subfolders (each with its own chevron), then its files, indented, in the Files tree's order. Which folders
+ *    are open is kept with the tray's own open state. Its right-click has "Move back to the table" (OF4); a line
+ *    inside it has the plain menu.
  *  - HOVER (YAZ-4601 demo 13C): resting on a line opens the sidebar's hover panel beside it (`useCardPreview`), as a
  *    row of the views does, under "Preview rows on hover": a drawing's or diagram's picture, a text file's top with its
  *    colours, a moved note's top, a picture, a PDF's first page (13R; one rule, `hasHoverPreview`).
  */
-import { useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { Fragment, useMemo, useRef, useState, type CSSProperties, type ReactNode, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { BOARD_TYPE_NAME } from '@shared/fileKind'
-import type { DiagramDarkColors, FileKind, IndexRecord, TreeNode } from '@shared/types'
+import { folderSettingsPath, type DiagramDarkColors, type FileKind, type IndexRecord, type TreeNode } from '@shared/types'
 import { FileIcon } from '../../sidebar/FileIcon'
 import { useLatestTrees } from '../../lib/pageLabel'
 import { formatBytes, formatDateTime } from '../../lib/format'
+import { basename } from '../../lib/paths'
 import { storage } from '../../lib/storage'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../../tabs/cardPreview'
 import { PageContextMenu } from './PageContextMenu'
@@ -43,22 +48,33 @@ const TYPE_NAME: Record<FileKind, string> = { markdown: 'Note', text: 'Text', pd
 const filesIn = (nodes: readonly TreeNode[]): OtherFileLine[] =>
   nodes.flatMap((n) => (n.type === 'file' && n.kind !== 'markdown' ? [{ path: n.path, name: n.name, type: n.kind === null ? 'File' : TYPE_NAME[n.kind], size: n.size, mtime: n.mtime, note: false }] : []))
 
-/** The files directly in `dir` that are not notes (D44, D45), off a Files tree of `root`. A subfolder's files are its own page's. */
-export function folderFiles(tree: readonly TreeNode[], root: string, dir: string): OtherFileLine[] {
-  if (dir === root) return filesIn(tree)
+/** What `dir` holds in a Files tree of `root`: its children, or none when the tree does not list it. */
+export function folderNodes(tree: readonly TreeNode[], root: string, dir: string): readonly TreeNode[] {
+  if (dir === root) return tree
   for (const node of tree) {
     if (node.type !== 'dir') continue
-    if (node.path === dir) return filesIn(node.children)
-    if (dir.startsWith(`${node.path}/`)) return folderFiles(node.children, root, dir)
+    if (node.path === dir) return node.children
+    if (dir.startsWith(`${node.path}/`)) return folderNodes(node.children, root, dir)
   }
   return []
 }
+
+/** The files directly in `dir` that are not notes (D44, D45), off a Files tree of `root`. A subfolder's files are its own page's. */
+export const folderFiles = (tree: readonly TreeNode[], root: string, dir: string): OtherFileLine[] => filesIn(folderNodes(tree, root, dir))
+
+/** A line inside a moved folder (YAZ-4747 OF3): every file, a note too (named without `.md`, as the sidebar names it), typed as the tray types them. */
+const nodeLine = (node: Extract<TreeNode, { type: 'file' }>): OtherFileLine => ({ path: node.path, name: node.kind === 'markdown' ? node.name.replace(/\.md$/i, '') : node.name, type: node.kind === null ? 'File' : TYPE_NAME[node.kind], size: node.size, mtime: node.mtime, note: false })
+
+/** A folder's lines, subfolders first (OF3): each `dir` node, then each file, in the tree's order within each. */
+const byFoldersFirst = (nodes: readonly TreeNode[]): TreeNode[] => [...nodes.filter((n) => n.type === 'dir'), ...nodes.filter((n) => n.type === 'file')]
 
 /** A moved note as a line. */
 export const noteLine = (record: IndexRecord): OtherFileLine => ({ path: record.path, name: record.title, type: TYPE_NAME.markdown, size: record.size, mtime: record.mtime, note: true })
 
 /** The tray's collapsed marker in the page's collapsed-groups entry. */
 const CLOSED = 'other-files'
+/** An open folder's marker in the same entry (YAZ-4747 OF3): folders start closed. */
+const OPEN_DIR = 'other-files-open:'
 
 /** The note being dragged out of the tray, between its dragstart and its drop or dragend. */
 let fromTray: string | null = null
@@ -90,6 +106,8 @@ export interface OtherFilesProps {
   dir: string
   /** The notes moved here, in `other_files` order. */
   notes: readonly IndexRecord[]
+  /** The subfolders moved here (YAZ-4747), in `other_files` order; "Move back to the table" takes a folder's directory. */
+  folders?: readonly { dir: string; name: string }[]
   onOpen: (path: string) => void
   onOpenBackground?: (path: string) => void
   onNotice?: (message: string) => void
@@ -104,7 +122,9 @@ export interface OtherFilesProps {
   diagramDarkColors?: DiagramDarkColors
 }
 
-export function OtherFiles({ root, dir, notes, onOpen, onOpenBackground, onNotice, onMoveBack, onTakeRow, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: OtherFilesProps) {
+const NO_FOLDERS: readonly { dir: string; name: string }[] = []
+
+export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onOpenBackground, onNotice, onMoveBack, onTakeRow, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: OtherFilesProps) {
   const roots = useMemo(() => [root], [root])
   const [tree] = useLatestTrees(roots)
   // The hover panel (demo 13C): the tray's own dwell and panel, beside the line under the pointer; a line is found again by its path.
@@ -113,14 +133,18 @@ export function OtherFiles({ root, dir, notes, onOpen, onOpenBackground, onNotic
   const files = useMemo(() => (tree === null ? [] : folderFiles(tree.tree, root, dir)), [tree, root, dir])
   const lines = useMemo(() => [...files, ...notes.map(noteLine)], [files, notes])
   const key = `${dir}::`
-  const [open, setOpen] = useState(() => !storage.getViewGroups(root, key).includes(CLOSED))
+  // One stored entry: the tray's closed marker, and each open folder's (OF3).
+  const [marks, setMarks] = useState(() => storage.getViewGroups(root, key))
+  const open = !marks.includes(CLOSED)
   const [over, setOver] = useState(false)
-  const [menu, setMenu] = useState<{ x: number; y: number; line: OtherFileLine } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; line: OtherFileLine; folder?: boolean } | null>(null)
 
-  const toggle = (): void => {
-    setOpen(!open)
-    storage.setViewGroups(root, key, open ? [CLOSED] : [])
+  const flip = (mark: string): void => {
+    const next = marks.includes(mark) ? marks.filter((m) => m !== mark) : [...marks, mark]
+    setMarks(next)
+    storage.setViewGroups(root, key, next)
   }
+  const toggle = (): void => flip(CLOSED)
   const onClick = (e: ReactMouseEvent, path: string): void => {
     if (e.metaKey && onOpenBackground !== undefined) onOpenBackground(path)
     else onOpen(path)
@@ -148,6 +172,64 @@ export function OtherFiles({ root, dir, notes, onOpen, onOpenBackground, onNotic
           },
         }
 
+  /**
+   * A folder's line and, while it is open, its lines below it (OF3), each `depth` steps in. `moved` = the folder that was
+   * moved here: its right-click moves it back. A folder line opens and closes on a click of its chevron or its name.
+   */
+  const folderLines = (node: { path: string; name: string }, depth: number, moved: boolean): ReactNode => {
+    const mark = `${OPEN_DIR}${node.path}`
+    const opened = marks.includes(mark)
+    const children = opened && tree !== null ? byFoldersFirst(folderNodes(tree.tree, root, node.path)) : []
+    return (
+      <Fragment key={node.path}>
+        <li
+          className="other-files__line other-files__line--folder"
+          data-path={node.path}
+          style={{ '--other-files-depth': depth } as CSSProperties}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setMenu({ x: e.clientX, y: e.clientY, line: { path: node.path, name: node.name, type: 'Folder', size: 0, mtime: 0, note: moved }, folder: true })
+          }}
+        >
+          <button type="button" className="other-files__name" title={node.path} aria-expanded={opened} onClick={() => flip(mark)}>
+            <svg className="other-files__chevron" width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="m6 4 4 4-4 4" />
+            </svg>
+            <FileIcon path={node.path} folder />
+            <span>{node.name}</span>
+          </button>
+          <span className="other-files__type">Folder</span>
+          <span className="other-files__size" />
+          <span className="other-files__date" />
+        </li>
+        {children.map((child) => (child.type === 'dir' ? folderLines({ path: child.path, name: child.name }, depth + 1, false) : fileLine(nodeLine(child), depth + 1)))}
+      </Fragment>
+    )
+  }
+  /** A file inside a moved folder (OF3): it opens and previews as a tray line does; its right-click is the plain menu. */
+  const fileLine = (line: OtherFileLine, depth: number): ReactNode => (
+    <li
+      key={line.path}
+      className="other-files__line"
+      data-path={line.path}
+      style={{ '--other-files-depth': depth } as CSSProperties}
+      onMouseEnter={() => hoverCard(line.path, line.path)}
+      onMouseLeave={() => leaveCard(line.path)}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setMenu({ x: e.clientX, y: e.clientY, line })
+      }}
+    >
+      <button type="button" className="other-files__name" title={line.path} onClick={(e) => onClick(e, line.path)}>
+        <FileIcon path={line.path} />
+        <span>{line.name}</span>
+      </button>
+      <span className="other-files__type">{line.type}</span>
+      <span className="other-files__size">{formatBytes(line.size)}</span>
+      <span className="other-files__date">{formatDateTime(line.mtime)}</span>
+    </li>
+  )
+
   return (
     <section className={`other-files${over ? ' other-files--drop' : ''}`} aria-label="Other files" {...drop}>
       <div className="other-files__header">
@@ -157,13 +239,14 @@ export function OtherFiles({ root, dir, notes, onOpen, onOpenBackground, onNotic
           </svg>
         </button>
         <span className="other-files__title">Other files</span>
-        <span className="other-files__count">{lines.length}</span>
+        <span className="other-files__count">{folders.length + lines.length}</span>
       </div>
       {open &&
-        (lines.length === 0 ? (
+        (lines.length + folders.length === 0 ? (
           <p className="other-files__empty">No other files. Drag a row here to move its note out of the views.</p>
         ) : (
           <ul className="other-files__list" ref={listRef}>
+            {folders.map((f) => folderLines({ path: f.dir, name: f.name }, 0, true))}
             {lines.map((line) => (
               <li
                 key={line.path}
@@ -200,15 +283,16 @@ export function OtherFiles({ root, dir, notes, onOpen, onOpenBackground, onNotic
             ))}
           </ul>
         ))}
-      <CardPreviewHost store={hoverStore} cardOf={(_, path) => ({ root: null, name: lines.find((l) => l.path === path)?.name ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
+      <CardPreviewHost store={hoverStore} cardOf={(_, path) => ({ root: null, name: lines.find((l) => l.path === path)?.name ?? basename(path) })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
       {menu !== null && (
         <PageContextMenu
           x={menu.x}
           y={menu.y}
-          path={menu.line.path}
+          // A folder line is its folder, as a folder row is (YAZ-4579 D32): Copy path and Reveal name the directory.
+          path={menu.folder === true ? folderSettingsPath(menu.line.path) : menu.line.path}
           title={menu.line.name}
-          onOpen={onOpen}
-          onOpenBackground={onOpenBackground}
+          onOpen={menu.folder === true ? undefined : onOpen}
+          onOpenBackground={menu.folder === true ? undefined : onOpenBackground}
           onNotice={onNotice}
           onClose={() => setMenu(null)}
           extra={

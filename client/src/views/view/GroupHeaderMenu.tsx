@@ -11,6 +11,8 @@ interface GroupHeaderMenuProps {
   onToggle: () => void
   /** The header's "+" (5D); absent → no "New note in this group". */
   onNew?: () => void
+  /** A Folder group of a subfolder directly under the page (YAZ-4747 OF1): "Move Desserts (folder) to Other files". */
+  moveFolder?: { name: string; run: () => void }
   onClose: () => void
 }
 
@@ -20,7 +22,7 @@ interface GroupHeaderMenuProps {
  * `document.body`: a frozen table row is translated, and a `position: fixed` menu inside it would be placed by that
  * row, not by the window.
  */
-export function GroupHeaderMenu({ x, y, collapsed, onToggle, onNew, onClose }: GroupHeaderMenuProps) {
+export function GroupHeaderMenu({ x, y, collapsed, onToggle, onNew, moveFolder, onClose }: GroupHeaderMenuProps) {
   // One level at a time (YAZ-3746 13AT): every group of a level, beside this one group; only with two levels or more.
   const levels = useContext(GroupLevelStepsContext)
   const step = (label: string, icon: ReactNode, run: (() => void) | undefined) => (
@@ -73,6 +75,11 @@ export function GroupHeaderMenu({ x, y, collapsed, onToggle, onNew, onClose }: G
         <div className="ctx-menu__group" role="group">
           {step('Collapse one level', <CollapseAllIcon />, levels.collapseOne)}
           {step('Expand one level', <ExpandAllIcon />, levels.expandOne)}
+        </div>
+      )}
+      {moveFolder !== undefined && (
+        <div className="ctx-menu__group" role="group">
+          {step(`Move ${moveFolder.name} (folder) to Other files`, null, moveFolder.run)}
         </div>
       )}
     </ContextMenuSurface>,

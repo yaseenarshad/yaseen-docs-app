@@ -15,7 +15,8 @@
  */
 import { createContext, useSyncExternalStore, type ReactNode } from 'react'
 import type { FolderPagesSettings, GithubSyncStatus } from '@shared/types'
-import { PageSettings, type PageSettingsProps, type PageSwitch } from '../editor/PageSettings'
+import { type Hint, PageSettings, type PageSettingsProps, type PageSwitch } from '../editor/PageSettings'
+import { MarkGlyph } from './view/ColumnMark'
 import { StatusChips } from '../editor/StatusChips'
 import type { SaveStatus } from '../lib/autosave'
 import type { Store } from '../lib/store'
@@ -56,7 +57,7 @@ export const FOLDER_READ_ONLY_TIP = 'This folder page is read only'
 const SAVE_RANK: Record<SaveStatus, number> = { saved: 0, unsaved: 1, saving: 2, error: 3 }
 const worse = (a: SaveStatus, b: SaveStatus): SaveStatus => (SAVE_RANK[a] >= SAVE_RANK[b] ? a : b)
 
-export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, sync, onSyncNow }: {
+export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, showNewButtons, onChangeShowNewButtons, name, sync, onSyncNow }: {
   store: Store<FolderChipsState>
   zoom: number
   onZoom: (zoom: number) => void
@@ -75,6 +76,11 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
   /** "Confirm changes" (YAZ-3746 13AN): the page's own choice; `undefined` follows Settings. */
   confirmChanges?: boolean | undefined
   onChangeConfirmChanges?: (next: boolean | undefined) => void
+  /** The folder's name: the ⚙'s heading says "Launch Kit (folder page)" (YAZ-3746 13BP CL6), as the menus say "(folder)". */
+  name: string
+  /** "Show New buttons" (YAZ-3746 13BL): the page's own choice; `undefined` follows Settings. Absent: no row. */
+  showNewButtons?: boolean | undefined
+  onChangeShowNewButtons?: (next: boolean | undefined) => void
   onChangeHoverRows: (next: boolean | undefined) => void
   /** The folder's own "Preview links on hover" (demo 13D): `undefined` follows Settings. */
   hoverLinks: boolean | undefined
@@ -93,18 +99,33 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
 }) {
   const save = useSyncExternalStore(store.subscribe, () => store.getState().save)
   const page = useSyncExternalStore(store.subscribe, () => store.getState().page)
-  // "Settings" first: the absence of a choice stands first, as the cog's "TOC made from: Auto" does.
-  const choiceRow = (label: string, value: boolean | undefined, onChange: (next: boolean | undefined) => void): PageSwitch => ({
+  // "Settings" first: the absence of a choice stands first, as the cog's "TOC made from: Auto" does. One line each, an (i)
+  // with Settings › Folder pages' hint, under three headings (YAZ-3746 13BP): the heading says the rest of the old label.
+  const choiceRow = (label: string, hint: Hint, value: boolean | undefined, onChange: (next: boolean | undefined) => void): PageSwitch => ({
     label,
+    hint,
+    inline: true,
     choices: [
       { label: 'Settings', on: value === undefined, onPick: () => onChange(undefined), title: 'Follow Settings › Folder pages' },
       { label: 'On', on: value === true, onPick: () => onChange(true) },
       { label: 'Off', on: value === false, onPick: () => onChange(false) },
     ],
   })
-  /** C11's three marks, with Settings first as every row here. */
+  /** C11's three marks, with Settings first as every row here: four choices, so the row keeps its own line for them. */
   const marksRow = (value: FolderPagesSettings['columnMarks'] | undefined, onChange: (next: FolderPagesSettings['columnMarks'] | undefined) => void): PageSwitch => ({
-    label: 'Show where columns come from',
+    label: 'Where columns come from',
+    // A list, each mark at the left as the header draws it (13BP, demo: "reads like a list rather than a paragraph").
+    hint: {
+      lead: "A mark after a column's name says where it comes from:",
+      rows: [
+        [<MarkGlyph key="parent" icon="parent" />, 'From a parent folder'],
+        [<MarkGlyph key="copy" icon="copy" />, "This folder's own settings for a parent's column"],
+        [<MarkGlyph key="below" icon="below" />, 'From a subfolder'],
+        [<MarkGlyph key="lock" icon="lock" />, 'This folder keeps its own value'],
+        [<MarkGlyph key="loose" icon="loose" />, 'Only in the notes: no column'],
+        ['None', "This folder's own column"],
+      ],
+    },
     choices: [
       { label: 'Settings', on: value === undefined, onPick: () => onChange(undefined), title: 'Follow Settings › Folder pages' },
       { label: 'Icon', on: value === 'icon', onPick: () => onChange('icon') },
@@ -112,11 +133,33 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
       { label: 'Off', on: value === 'off', onPick: () => onChange('off') },
     ],
   })
-  const switches = [choiceRow('Show folder page file', showPageFile, onChangeShowPageFile), choiceRow('Preview rows on hover', hoverRows, onChangeHoverRows), choiceRow('Preview links on hover', hoverLinks, onChangeHoverLinks), choiceRow('Show Other files', showOtherFiles, onChangeShowOtherFiles), choiceRow("Show parent folders' columns", inheritColumns, onChangeInheritColumns), ...(onChangeColumnMarks === undefined ? [] : [marksRow(columnMarks, onChangeColumnMarks)]), ...(onChangeConfirmChanges === undefined ? [] : [choiceRow('Confirm changes', confirmChanges, onChangeConfirmChanges)])]
+  const section = (heading: string, rows: PageSwitch[], first = false): PageSwitch[] => rows.map((row, i) => (i === 0 ? { ...row, heading, divider: !first } : row))
+  const switches = [
+    ...section(
+      'Show',
+      [
+        choiceRow('Page file in the sidebar', "This folder's page file in the sidebar, first under its folder.", showPageFile, onChangeShowPageFile),
+        choiceRow('Other files', "A tray at the foot of this page: the folder's files that are not notes, and the notes moved out of its views.", showOtherFiles, onChangeShowOtherFiles),
+        ...(onChangeShowNewButtons === undefined ? [] : [choiceRow('New buttons', { lead: 'Shows or hides:', rows: [['+ New', 'At the top right'], ['+ New', 'At the end of a table and of each group'], ['+ New card', 'At the end of each board column'], ['+', 'On each group header']], foot: 'Off: right-click a row or a group header to add a note.' }, showNewButtons, onChangeShowNewButtons)]),
+        choiceRow("Parent folders' columns", { lead: 'This page shows the columns of the folders above it too.', rows: [['Here', 'For every view of this page'], ['One view', 'Columns › From <parent folder> › Hide all']] }, inheritColumns, onChangeInheritColumns),
+        ...(onChangeColumnMarks === undefined ? [] : [marksRow(columnMarks, onChangeColumnMarks)]),
+      ],
+      true,
+    ),
+    ...section('Preview on hover', [
+      choiceRow('Rows', 'Rest the mouse on a row, a card or a line of Other files to see the file.', hoverRows, onChangeHoverRows),
+      choiceRow('Links', 'Rest the mouse on a link pill in a cell to see the linked note.', hoverLinks, onChangeHoverLinks),
+    ]),
+    ...section('Safety', [
+      { label: 'Read only', readOnlySlot: true, inline: true, hint: "Locks this folder page: its title, its views and its settings. Each note keeps its own Read only." },
+      ...(onChangeConfirmChanges === undefined ? [] : [choiceRow('Confirm changes', 'A change to a note from this page (a typed cell, Delete, Paste, a drag to another group or day, a rename) asks first.', confirmChanges, onChangeConfirmChanges)]),
+    ]),
+  ]
   return (
     <StatusChips zoom={zoom} onZoom={onZoom} readOnly={readOnly ? { asking, onAsk, onAllow, onCancel } : null} sync={sync} onSyncNow={onSyncNow} save={page === null ? save : worse(save, page.save)}>
       {page?.foldAll}
-      <PageSettings {...page?.cog} readOnly={readOnly} onToggleReadOnly={onToggleReadOnly} switches={switches} switchesHeading="This folder page" />
+      {/* The folder page's own settings only (YAZ-3746 13BM PS2): the Page tab's text settings are on its toolbar (`Toolbar`). */}
+      <PageSettings readOnly={readOnly} onToggleReadOnly={onToggleReadOnly} switches={switches} switchesHeading={`${name} (folder page)`} />
     </StatusChips>
   )
 }

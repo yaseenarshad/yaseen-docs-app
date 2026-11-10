@@ -7,9 +7,11 @@
  * where it does not, the note's own top-level key. Nothing else in a note moves. A read-only note
  * is never written (YAZ-3076 D6): it is counted as kept.
  */
-import { folderValues, setFolderValue } from '@shared/folderValues'
-import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { folderValues } from '@shared/folderValues'
+import { FrontmatterWriteError, parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { isRecord } from '@shared/guards'
+import { foldedValue, setFolderValueOneSpelling, setOneSpelling } from '@shared/propertyKeys'
+import { reservedKeys } from '../links/reservedKeys'
 import { isReadOnlyProperties } from '@shared/readOnly'
 import type { IndexRecord } from '@shared/types'
 import { filterMentions } from './deleteColumn'
@@ -39,6 +41,16 @@ export type ValueHome = { block: string } | null
 
 const valuesOf = (properties: Record<string, unknown>, home: ValueHome): Record<string, unknown> => (home === null ? properties : folderValues(properties, home.block))
 
+/** A note's value of `key` where `home` says, in any capitals (YAZ-4769). */
+const valueOf = (properties: Record<string, unknown>, home: ValueHome, key: string): unknown => foldedValue(valuesOf(properties, home), key)
+
+/**
+ * `key`'s value put where `home` says, under `key`'s spelling: the note's other spellings of it go in the same write
+ * (YAZ-4769), the app's keys never.
+ */
+const putValue = (content: string, home: ValueHome, key: string, value: unknown): string =>
+  home === null ? setOneSpelling(content, key, value, reservedKeys(true)) : setFolderValueOneSpelling(content, home.block, key, value)
+
 /**
  * One note's bytes with the rename applied to `key`, and the value it held, or the same bytes when the note does not
  * hold `from` — or is read only on disk (YAZ-4637 M6): a `readonly: true` note is never written, wherever it is.
@@ -47,10 +59,10 @@ export function renameInContent(content: string, home: ValueHome, key: string, f
   const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
   if (parsed.error) throw new FrontmatterWriteError(parsed.error)
   if (isReadOnlyProperties(parsed.properties)) return { content }
-  const before = valuesOf(parsed.properties, home)[key]
+  const before = valueOf(parsed.properties, home, key)
   const next = renamedValue(before, from, to)
   if (next === undefined) return { content }
-  return { content: home === null ? setFrontmatterProperty(content, key, next) : setFolderValue(content, home.block, key, next), before }
+  return { content: putValue(content, home, key, next), before }
 }
 
 /** A note the rename changed, with the exact value it held before (YAZ-4637 M5): what Undo puts back. */
@@ -69,7 +81,7 @@ export interface RenameResult {
 /** The indexed notes holding `from` under `key`, as `home` keeps them. */
 export const notesWithOption = (records: readonly IndexRecord[], home: ValueHome, key: string, from: string): IndexRecord[] =>
   records.filter((record) => {
-    const value = valuesOf(record.properties, home)[key]
+    const value = valueOf(record.properties, home, key)
     return value === from || holds(value, from)
   })
 
@@ -113,7 +125,7 @@ export async function restoreInPaths(changed: readonly ChangedNote[], home: Valu
         const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
         if (parsed.error) throw new FrontmatterWriteError(parsed.error)
         if (isReadOnlyProperties(parsed.properties)) return content
-        return home === null ? setFrontmatterProperty(content, key, before) : setFolderValue(content, home.block, key, before)
+        return putValue(content, home, key, before)
       }),
     ),
   )

@@ -879,9 +879,24 @@
   position: sticky;
   top: 0;
   z-index: 3;
-  font-weight: 600;
-  color: var(--fg-muted);
+  font-weight: var(--table-header-weight, 600);
+  /* A text colour (YAZ-4794, `table.css`) wins over Muted / Full. */
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 1) * 100%), var(--fg)));
   background: var(--bg);
+}
+
+/* The header row's Align (YAZ-4794): the view's own, else Settings' (on `.app`), for every column header; Follow
+   column (no rule) keeps each header as its column (`view-table__cell--align-*`, below). The `#` gutter keeps its own. */
+.view-table[data-table-header-align]:not([data-table-header-align='follow']) thead th:not(.view-table__gutter),
+.app[data-table-header-align]:not([data-table-header-align='follow']) .view-table:not([data-table-header-align]) thead th:not(.view-table__gutter) {
+  text-align: var(--table-header-align);
+}
+
+/* Header row (YAZ-4774): the note table's tint and text (`table.css` sets the variables from Settings and from the
+   view's own `data-table-header-*`), laid on the opaque page colour so the sticky header still hides the rows under it.
+   Muted by default. `[data-table-id]` outranks the frozen cells' and the gutter's `--bg`. */
+.view-table[data-table-id] thead th {
+  background: color-mix(in srgb, var(--table-header-hue, var(--fg)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), var(--bg));
 }
 
 .view-table .view-table__frozen {
@@ -1469,6 +1484,95 @@
   left: calc(8px + var(--view-group-indent, 28px) * var(--depth, 0));
   width: fit-content;
   max-width: 100%;
+}
+
+/* ---------- where you are in a grouped table (YAZ-4798, `view/groupGuides.ts`) ---------- */
+
+/* Sticky group headers: a header row that is not a frozen row rides the column header's counter-scroll offset
+   (`--view-table-header-y`, TableView) plus its own lift, as far as its room (both measured when the table changes,
+   never on a scroll). So it holds its slot under the column header and the frozen rows, one row height per level, while
+   its group scrolls under it, and its group's last row pushes it out with the levels inside it. The part pushed above
+   its slot is clipped, so a header leaves UNDER the level above it, never over it. Its fill shows only while it is
+   moved (`* 1000`: any offset is the full height), so a header in its own place stays see-through and the group lines
+   pass behind it. z-index 3: over the rows, the `#` gutter and the frozen cells (1), a cell being edited (2) and the
+   group lines (2); the column header (3, earlier) never meets it, the clip keeps it below the slots. Transform, clip
+   and fill sit on the row's one cell, which spans the table; its `.view-group` still sticks at the left. */
+.view-table[data-sticky-groups] tbody tr.view-table__group:not(.view-table__row--frozen) > td {
+  --view-group-shift: calc(var(--view-table-header-y, 0px) + var(--view-group-lift, -100000px));
+  position: relative;
+  z-index: 3;
+  transform: translateY(clamp(0px, var(--view-group-shift), var(--view-group-room, 0px)));
+  clip-path: inset(max(0px, var(--view-group-shift) - var(--view-group-room, 0px)) 0 0 0);
+  background-image: linear-gradient(var(--bg), var(--bg));
+  background-repeat: no-repeat;
+  background-size: 100% clamp(0px, var(--view-group-shift) * 1000, 100%);
+}
+
+/* A drop on a stuck header (5C) still shows, over its fill. */
+.view-table[data-sticky-groups] tbody tr.view-table__group--drop:not(.view-table__row--frozen) > td {
+  background-image: linear-gradient(var(--accent-soft), var(--accent-soft)), linear-gradient(var(--bg), var(--bg));
+  background-size: 100% 100%, 100% clamp(0px, var(--view-group-shift) * 1000, 100%);
+}
+
+/* Group lines: a caption of no height holds them, so their box (`.view-table__lines`) spans the table's width and
+   sticks at the left while the table scrolls sideways, as each header's `.view-group` does. One 1px line per open
+   group, under the middle of its chevron (`.view-group` at 8px + the indent per level, the 18px toggle's middle 9px
+   in), from just under the chevron to its last row's bottom (`--view-line-top`, `--view-line-h`, `groupGuides.ts`).
+   z-index 2, first in the table: over the rows, the `#` gutter and the frozen cells (1); under the frozen rows, a
+   stuck header and the column header, which are opaque, so a line passes behind them. All grey, no target, as the
+   sidebar's level lines (YAZ-3309); `data-group-lines` on the table says when they show. "On hover" reads
+   `data-mouse-in`, written on the lines' own box only (`groupLinesHover`): never a state on an ancestor of the rows. */
+.view-table > caption.view-table__guides {
+  height: 0;
+  padding: 0;
+  caption-side: top;
+  /* A caption centres its content: the lines' zero-width box sat mid-table (YAZ-4798 demo check). */
+  text-align: left;
+}
+
+.view-table__lines {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.view-table__lines > i {
+  position: absolute;
+  top: var(--view-line-top, 0px);
+  left: calc(16px + var(--view-group-indent, 28px) * var(--depth, 0));
+  width: 1px;
+  height: var(--view-line-h, 0px);
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.view-table[data-group-lines='always'] .view-table__lines > i,
+.view-table[data-group-lines='hover'] .view-table__lines[data-mouse-in] > i {
+  opacity: 1;
+}
+
+/* Thread (as the sidebar's Thread to the row, YAZ-3309 D7): the lines and headers of the groups that hold the row
+   under the pointer (`data-on-path`, `groupThread`) take the Bullet threading colour, else the accent, and its width. */
+.view-table[data-group-line-style='thread'] {
+  --view-thread: var(--thread-color, var(--accent));
+}
+
+.view-table[data-group-line-style='thread'] .view-table__lines > i[data-on-path] {
+  width: var(--thread-width, 2px);
+  margin-left: calc(0.5px - var(--thread-width, 2px) / 2);
+  background: var(--view-thread);
+}
+
+.view-table[data-group-line-style='thread'] tbody tr.view-table__group[data-on-path] > td {
+  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--view-thread) 10%, transparent);
+}
+
+.view-table[data-group-line-style='thread'] tbody tr.view-table__group[data-on-path] .view-group__toggle {
+  color: var(--view-thread);
 }
 
 /* A row's first cell steps in with its group levels (YAZ-4532 D10; the first column, Name or not, since YAZ-3746 13AG).
@@ -2687,7 +2791,11 @@
   align-items: start;
   gap: 8px;
 }
-.sort-menu .view-rule__main > .column-picker { grid-column: 2; }
+.sort-menu .view-rule__main > .column-picker > .column-picker__trigger { grid-column: 2; }
+/* The column list opens as the order list does (YAZ-3746 13BN): a full-width second line of the row. In the column's
+   own slot (about 100px) "Sweetness" and "File name" broke in two and the search said "Search c". */
+.sort-menu .column-picker { display: contents; }
+.sort-menu .column-picker__panel { grid-row: 2; grid-column: 1 / -1; }
 /* The order menu (YAZ-3940): its button sits in the row's order column, and the open list takes a full-width second line of the row. */
 .direction-picker { display: contents; }
 .direction-picker__trigger { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; min-width: 0; height: 30px; padding: 0 7px; color: var(--fg); }
@@ -2714,7 +2822,7 @@
 /* "Sort" heads the popover (D60): no line over the first section. */
 .sort-menu > .view-menu__label:first-child { border-top: 0; padding-top: 0; margin-top: 2px; }
 .sort-menu > .view-rule__main { grid-template-columns: minmax(0, 1fr) 118px; padding: 0 28px 0 26px; margin-bottom: 6px; }
-.sort-menu > .view-rule__main > .column-picker { grid-column: 1; }
+.sort-menu > .view-rule__main > .column-picker > .column-picker__trigger { grid-column: 1; }
 /* A group level's row has one more column, the "Aa" style chip (YAZ-3742). A sort row leaves that column empty, so
    its × stands under the group rows' × (YAZ-4643 S6). */
 .sort-menu .view-rule__main.sort-menu__level { grid-template-columns: 18px minmax(0, 1fr) 118px 30px 20px; }
@@ -2836,6 +2944,17 @@
 .view-settings-row__label { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .view-settings-row__icon { flex: none; color: var(--fg-muted); }
 .view-settings .view-seg__opt { padding: 2px 8px; }
+/* Header row (YAZ-4774, `TableLookSettings.tsx`): Color, Strength and Text under it, their words where the icons end. */
+.view-settings .view-settings-row--sub > span:first-child { padding-left: 22px; color: var(--fg-muted); }
+.view-header-colors { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 1px; }
+.view-header-colors > button { padding: 2px; border: 1px solid transparent; border-radius: 4px; }
+.view-header-colors > button[aria-pressed='true'] { border-color: var(--accent); }
+.view-header-colors .table-menu-swatch { width: 12px; height: 12px; }
+.view-header-text { display: flex; gap: 4px; }
+/* YAZ-4794: Text colour (Muted / Full and eight swatches) and Align (four words) drop under their name when the tab is
+   too narrow for them, right-aligned, instead of pushing the tab wider. */
+.view-settings .view-settings-row--wrap { flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; padding-top: 3px; padding-bottom: 3px; }
+.view-settings .view-settings-row--wrap .view-header-text { flex-wrap: wrap; justify-content: flex-end; align-items: center; }
 .view-settings .property-board-setting small { display: block; margin: -6px 0 4px; padding-left: 30px; font-size: 11px; color: var(--fg-muted); }
 .view-from-settings { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: -4px; }
 .view-from-settings--reset { color: var(--accent); text-decoration: none; border-radius: 4px; }
@@ -2902,7 +3021,11 @@
 .column-detail__row { gap: 12px; min-height: 32px; margin-bottom: 0; padding: 0 4px 0 8px; border-radius: 6px; }
 .column-detail__row:hover { background: var(--bg-hover); }
 .column-detail__row > .view-settings-row__label { flex: none; color: var(--fg); }
-.column-detail__row--type { flex-wrap: wrap; }
+/* A long label ("Separate value for 8 Layers of Software - DB") wraps instead of pushing the 300px panel sideways (YAZ-4799 demo check). */
+.column-detail__row > span.view-settings-row__label { flex-shrink: 1; min-width: 0; white-space: normal; }
+/* A picker's list opens inline under its row (Type, and YAZ-4769's Column on). */
+.column-detail__row--type,
+.column-detail__row--picker { flex-wrap: wrap; }
 .column-detail__row .view-input,
 .column-detail__row .view-select { height: 26px; border-color: transparent; background-color: color-mix(in srgb, var(--fg) 6%, transparent); }
 .column-detail__row .view-select {
@@ -2924,12 +3047,18 @@
 .type-picker__trigger > svg:first-child,
 .type-picker__option > svg { flex: none; width: 14px; height: 14px; color: var(--fg-muted); }
 .type-picker__chevron { color: var(--fg-muted); }
+/* The list's search box (YAZ-4795 demo), a full-width line above the choices. */
+.type-picker__search { width: 100%; margin-bottom: 4px; }
 .type-picker__list { display: flex; flex-direction: column; flex-basis: 100%; gap: 1px; padding: 4px; margin: 2px -4px 6px -8px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1); }
 .type-picker__option { display: grid; grid-template-columns: 14px auto minmax(0, 1fr) 12px; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; font-size: 12px; text-align: left; color: var(--fg); border-radius: 5px; }
 .type-picker__option:hover,
 .type-picker__option:focus-visible { background: var(--bg-hover); outline: none; }
 .type-picker__about { overflow: hidden; font-size: 11px; color: var(--fg-muted); text-overflow: ellipsis; white-space: nowrap; }
 .type-picker__check { color: var(--accent); }
+/* A searchable list ("Notes from" lists every folder, YAZ-4795 demo) scrolls inside its own box, the search kept on top, so it never stretches the panel past the window. */
+.type-picker__list:has(> .type-picker__search) { max-height: 320px; overflow-y: auto; }
+.type-picker__list:has(> .type-picker__search) > * { flex: none; }
+.type-picker__list > .type-picker__search { position: sticky; top: -4px; z-index: 1; box-shadow: 0 -4px 0 var(--bg); }
 .column-detail__actions { gap: 0; padding: 6px 0 0; margin-top: 6px; }
 .column-detail__action { display: flex; align-items: center; min-height: 30px; padding: 0 8px; border-radius: 6px; }
 .column-detail__action:hover:not(:disabled) { background: var(--bg-hover); }
@@ -3328,3 +3457,54 @@
   color: var(--fg-muted);
   font-size: 0.92em;
 }
+
+/* YAZ-4769 demo: the Settings row (Shared / Only here) and its line under it, as one group. */
+.column-detail__settings .column-detail__source {
+  margin: 0;
+  padding: 0 4px 6px 8px;
+}
+
+/* "Column type icons" (YAZ-4779): the column's type, quiet, before its name — the header's muted grey, 12px. */
+.view-table thead th .view-table__type-icon {
+  display: inline-flex;
+  margin-right: 5px;
+  vertical-align: -2px;
+  color: var(--fg-muted);
+}
+
+.view-table thead th .view-table__type-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* YAZ-4781: "One way" and "Both ways" each on one line in Edit column's narrow panel. */
+.column-detail__row--pair .view-seg__opt {
+  white-space: nowrap;
+}
+
+/* "Add shortcut to ›" (YAZ-4797 demo): a search box over the folders, and the list scrolls inside the flyout. */
+.ctx-menu__search { width: 100%; min-width: 200px; }
+.ctx-menu__group--scroll { max-height: 280px; overflow-y: auto; }
+.ctx-menu__empty { display: block; padding: 4px 10px; color: var(--fg-muted); font-size: 12px; }
+
+/* Option parents (YAZ-4799): each option and its parent picker, one row each, the option's name left. */
+/* The panel is narrow (300px): the option and its picker share the row, neither pushes it wider (no sideways scroll). */
+.column-detail__parents { overflow-x: hidden; }
+.column-detail__parents .column-detail__row { gap: 8px; min-width: 0; }
+.column-detail__parents .column-detail__row > span.column-detail__parent-option { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
+.column-detail__parents .view-select { flex: 0 0 56%; min-width: 0; max-width: 56%; text-overflow: ellipsis; }
+
+/* The Folder column's path (YAZ-4801): the folders from this page down, › between; a narrow column shrinks the middle
+   parts to "…" and keeps the last one whole. */
+.view-folder-path { display: inline-flex; align-items: center; gap: 3px; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; vertical-align: middle; }
+.view-folder-path .shortcut-mark { flex: none; margin-right: 2px; }
+.view-folder-path__sep { flex: none; color: var(--fg-muted); font-size: 11px; }
+.view-folder-path__part { flex: 0 1 auto; min-width: 1.6em; overflow: hidden; text-overflow: ellipsis; }
+.view-folder-path__part--last { flex: 0 0 auto; }
+
+/* "Header row ›"'s Strength (YAZ-4794 demo): a second, quieter switch under the Fill · Text · Style tabs. */
+.fill-target--sub { margin-top: 0; }
+.fill-target--sub .fill-target__opt { font-size: 11px; }
+
+/* "None" in a picker list (YAZ-4799 demo): a quiet dash where a type icon would be. */
+.type-picker__none { display: inline-flex; justify-content: center; width: 14px; color: var(--fg-muted); }

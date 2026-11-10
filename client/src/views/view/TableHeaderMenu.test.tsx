@@ -131,6 +131,7 @@ describe('the header menu (YAZ-1513)', () => {
       'Group',
       'Text',
       'Fill column', // YAZ-3746 13AQ: the column's fill, in its own group after the edits
+      'Header row', // YAZ-4794: the whole header row's look, as the View tab's
       'Hide column',
       '✓ Frozen up to this column', // BASE freezes two: Status is the last frozen column
       'Unfreeze columns',
@@ -542,6 +543,29 @@ describe('"Add column to the right…" takes any name (YAZ-4535)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
+  it('YAZ-4769: a name the page has in other capitals is that column — refused when shown, in its own spelling; an app key too', () => {
+    const { el, setColumns } = mount()
+    rightClick(th(el, 0))
+    click(item(el, 'Add column to the right…'))
+    setValue(q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Column name"]'), 'STATUS')
+    click(q(el, '.ctx-menu [aria-label="Save column"]'))
+    expect(q(el, '.ctx-menu [role="alert"]').textContent).toBe('"status" is already a column')
+    setValue(q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Column name"]'), 'ReadOnly')
+    click(q(el, '.ctx-menu [aria-label="Save column"]'))
+    expect(q(el, '.ctx-menu [role="alert"]').textContent).toBe("readonly is the app's own property — it is set where it belongs, not here")
+    expect(setColumns).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4769: a hidden note property in other capitals is shown under its own spelling — no twin, no declaration', () => {
+    const { el, setColumns, def } = mount(BASE, { records: [...TEST_RECORDS, DUE] })
+    rightClick(th(el, 0))
+    click(item(el, 'Add column to the right…'))
+    setValue(q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Column name"]'), 'due date')
+    click(q(el, '.ctx-menu [aria-label="Save column"]'))
+    expect(setColumns).not.toHaveBeenCalled()
+    expect(def().views[0].order).toEqual(['file.name', 'note.Due Date', 'note.status', 'note.priority'])
+  })
+
   it('an empty name is refused: "Type a name"', () => {
     const { el, setColumns } = mount()
     rightClick(th(el, 0))
@@ -662,6 +686,26 @@ describe('the Sort, Group and Text flyouts (YAZ-4588 D42)', () => {
     click(item(el, 'Text'))
     expect(flyoutItems(el)).toEqual(['Wrap text', 'Clip text', 'Auto alignment', 'Align left', 'Align center', 'Align right'])
     expect(checked(el)).toEqual(['Clip text', 'Auto alignment'])
+  })
+
+  it('Header row › (YAZ-4794): Plain, Fill colour, Strength, Weight, Text colour, Align, ✓ at the table; a pick writes the view and the menu stays open', () => {
+    const { el, def } = mount()
+    rightClick(th(el, 1))
+    click(item(el, 'Header row'))
+    const colours = ['Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink']
+    expect(flyoutItems(el)).toEqual(['Plain, like any row', 'Gray', ...colours, 'Off', 'Light', 'Medium', 'Strong', 'Bold', 'Regular', 'Muted', 'Full', ...colours, 'Follow column', 'Left', 'Center', 'Right'])
+    expect([...el.querySelectorAll('.ctx-menu__sub .ctx-menu__heading')].map((h) => h.textContent)).toEqual(['Fill colour', 'Strength', 'Weight', 'Text colour', 'Align'])
+    expect(checked(el)).toEqual(['Gray', 'Light', 'Bold', 'Muted', 'Follow column'])
+    // The second Blue is Text colour's.
+    click(flyout(el).filter((b) => b.textContent === 'Blue')[1])
+    click(flyout(el).find((b) => b.textContent === 'Center')!)
+    expect(def().views[0].headerRow).toEqual({ text: 'blue', align: 'center' })
+    expect(el.querySelector('.ctx-menu__sub')).not.toBeNull()
+    expect(checked(el)).toEqual(['Gray', 'Light', 'Bold', 'Blue', 'Center'])
+    expect(el.querySelector('.view-table')!.getAttribute('data-table-header-align')).toBe('center')
+    // A pick equal to Settings removes the part.
+    click(flyout(el).find((b) => b.textContent === 'Follow column')!)
+    expect(def().views[0].headerRow).toEqual({ text: 'blue' })
   })
 
   it('a flyout opens on hover; hovering another row swaps or closes it after the hover wait', () => {

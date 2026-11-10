@@ -116,6 +116,22 @@
   font-size: 13px;
 }
 
+/* A line inside a moved folder (YAZ-4747 OF3) steps in 18px a level: the chevron and its gap. */
+.other-files__line {
+  padding-left: calc(2px + var(--other-files-depth, 0) * 18px);
+}
+
+.other-files__chevron {
+  flex: none;
+  align-self: center;
+  color: var(--fg-muted);
+  transition: transform 120ms ease;
+}
+
+.other-files__name[aria-expanded='true'] > .other-files__chevron {
+  transform: rotate(90deg);
+}
+
 .other-files__line:hover {
   background: var(--bg-side);
 }

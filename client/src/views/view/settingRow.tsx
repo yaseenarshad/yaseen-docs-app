@@ -9,9 +9,15 @@ const ICONS = {
   rowHeight: <path d="M2 3h12M2 13h12M8 5.5v5M6.5 7 8 5.5 9.5 7M6.5 9 8 10.5 9.5 9" />,
   textInCells: <path d="M2 4h12M2 8h9.5a2 2 0 0 1 0 4H8.5M10 10.5 8.5 12l1.5 1.5M2 12h3.5" />,
   rowNumbers: <path d="M6.2 2.5 5 13.5M11.2 2.5 10 13.5M3 6h10.5M2.5 10H13" />,
+  columnTypeIcons: <><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" /><path d="M5 6.5h1.5M8.5 6.5H11M5 9.5h1.5M8.5 9.5H11" /></>,
+  headerRow: <><rect x="2.5" y="3" width="11" height="10" rx="1.5" /><path d="M2.5 6.5h11M3.5 4.75h9" /></>,
   subfolders: <path d="M2.5 2.5v8.5h3M2.5 5.5h3M7 8.6a.8.8 0 0 1 .8-.8h2l1 1h2.9a.8.8 0 0 1 .8.8v3.1a.8.8 0 0 1-.8.8H7.8a.8.8 0 0 1-.8-.8zM7 3.6a.8.8 0 0 1 .8-.8h2l1 1h2.9a.8.8 0 0 1 .8.8" />,
   groupIndent: <path d="M2 3h12M7 7.5h7M7 12h7M2 6.5l2.5 2.5L2 11.5" />,
   emptyGroups: <rect x="2.5" y="3" width="11" height="10" rx="1.5" strokeDasharray="2 2" />,
+  // YAZ-4798: a header held over rows; a line down from a header; a line lit to the row.
+  stickyGroups: <><rect x="2.5" y="2.5" width="11" height="3.5" rx="1" /><path d="M4.5 9h9M4.5 12.5h9" /></>,
+  groupLines: <path d="M2.5 3h6M4 4.5v9M6.5 8h7M6.5 12h7" />,
+  groupLineStyle: <path d="M2.5 3h6M4 4.5v4.5a3 3 0 0 0 3 3h6.5M8 8h5.5" />,
   columnWidth: <path d="M3 8h10M5 6 3 8l2 2M11 6l2 2-2 2M1.5 3v10M14.5 3v10" />,
   opensIn: <path d="M2.5 3.5h11v10h-11zM2.5 7h11M6.2 7v6.5M9.8 7v6.5" />,
   cardTitles: <><rect x="2" y="4" width="12" height="8" rx="1.5" /><path d="M4.5 7h7M4.5 9.5h4" /></>,
@@ -31,6 +37,7 @@ const ICONS = {
   decimals: <><circle cx="4" cy="11.5" r=".9" /><path d="M7.5 5.5h1.8v6M7.5 11.5h3.6M12.8 5.5v6" /></>,
   lock: <><rect x="3.5" y="7" width="9" height="6.5" rx="1.2" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></>,
   eyeOff: <path d="M2 2l12 12M6.6 4.2A6.8 6.8 0 0 1 8 4c4.1 0 6.5 4 6.5 4a11 11 0 0 1-1.9 2.4M10.4 10.6A3 3 0 0 1 8 11.8C3.9 11.8 1.5 8 1.5 8a11.4 11.4 0 0 1 2.9-3.1M6.6 6.6a2 2 0 0 0 2.8 2.8" />,
+  folder: <path d="M2 4.6a1 1 0 0 1 1-1h3l1.3 1.3H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />,
   trash: <path d="M2.5 4.5h11M6.5 4.5V3a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1.5M4 4.5l.6 8.6a1 1 0 0 0 1 .9h4.8a1 1 0 0 0 1-.9l.6-8.6M6.8 7v4.5M9.2 7v4.5" />,
 } as const
 

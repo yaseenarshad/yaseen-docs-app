@@ -6,6 +6,7 @@ import { NO_READ_ONLY } from '../readOnlyRows'
 import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
 import { type NoteWindowLink, currentItemClass, useNoteWindowItems } from './NoteWindow'
 import { PageContextMenu } from './PageContextMenu'
+import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
 import { ReadOnlyName } from './ReadOnlyMark'
 import { FolderIcon } from './icons'
 import { isFolderRow } from '../../links/shortcuts'
@@ -34,6 +35,8 @@ export interface CalendarViewProps {
   moveError: { path: string; message: string } | null
   /** "+" on a day (S10): a new note with that date. */
   onNewOnDay?: (day: DayKey) => void
+  /** The card menu's note items (YAZ-3746 13BO): Open, the new note beside a card, Duplicate, Delete. Absent: none. */
+  noteDoors?: CardNoteDoors
   /** The tab's `calendarScale` (YAZ-4558 D22): a month grid, or one week of 7 tall days. */
   scale: 'month' | 'week'
   /** The Month / Week switch: ViewsPane writes `calendarScale` (Settings' scale deletes it). */
@@ -74,7 +77,7 @@ const SCALES = [
  * order; ‹ › step a week. Both scales show the month or the week that holds `anchor`, so the switch
  * keeps the place.
  */
-export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, noteDoors, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
@@ -83,7 +86,7 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   const [drag, setDrag] = useState<{ path: string; from: DayKey | null } | null>(null)
   const [over, setOver] = useState<string | null>(null)
   /** The card's right-click menu (YAZ-4547 D24), as the board's. */
-  const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string; day: DayKey | null } | null>(null)
   const { days, undated } = useMemo(() => bucketByDay(rows, dateKey), [rows, dateKey])
   // The grid with its weekends; `weeks` is what shows.
   const allWeeks = useMemo(() => (scale === 'week' ? [weekDays(anchor, sundayFirst)] : monthWeeks(month.y, month.m, sundayFirst)), [scale, anchor, month.y, month.m, sundayFirst])
@@ -203,7 +206,7 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
         onClick={(e) => open(e, path)}
         onContextMenu={(e) => {
           e.preventDefault()
-          setMenu({ x: e.clientX, y: e.clientY, path, title: row.record.title })
+          setMenu({ x: e.clientX, y: e.clientY, path, title: row.record.title, day: from })
         }}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget || e.key !== 'Enter') return
@@ -340,6 +343,8 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
           onOpenWindow={onOpenWindow}
           onNotice={onNotice}
           onClose={() => setMenu(null)}
+          // A dated card's new note goes on its day (13BO CM2), as the day's "+"; an undated one has none.
+          {...cardMenuItems(noteDoors, menu.path, () => setMenu(null), menu.day === null || onNewOnDay === undefined ? undefined : { label: 'New note on this day', run: () => onNewOnDay(menu.day!) })}
         />
       )}
     </div>

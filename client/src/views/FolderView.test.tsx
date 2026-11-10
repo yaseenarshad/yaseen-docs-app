@@ -33,13 +33,14 @@ vi.mock('../api', async (importOriginal) => ({
   api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), mintNoteId: vi.fn(), tree: vi.fn() },
 }))
 /** The real pane, wrapped, so a test can reach the host's bundle directly. */
-const captured = vi.hoisted(() => ({ folder: null as FolderHost | null }))
+const captured = vi.hoisted(() => ({ folder: null as FolderHost | null, records: [] as readonly IndexRecord[] }))
 vi.mock('./ViewsPane', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./ViewsPane')>()
   return {
     ...actual,
     ViewsPane: (props: ViewsPaneProps) => {
       captured.folder = props.folder
+      captured.records = props.records
       return <actual.ViewsPane {...props} />
     },
   }
@@ -1228,6 +1229,27 @@ describe('cell editing writes the NOTE’s own field, typed by the page’s colu
     press(byLabel(el, 'Edit related'), 'Enter') // empty input commits the list
     expect(writeValues).toHaveBeenCalledExactlyOnceWith(LEAD, [{ key: 'related', value: ['[[CAC]]'] }], SHARED, undefined)
     expect(write).not.toHaveBeenCalled()
+  })
+})
+
+describe('one key, capitals ignored (YAZ-4769, option B)', () => {
+  // The view still names the column in the other capitals too, as a page's view may from before.
+  const settings = { columns: { 'Dessert Column': { kind: 'text' as const } }, views: [{ type: 'table', name: 'Table', order: ['file.name', 'note.Dessert Column', 'note.dessert column'] }] }
+  const records = (): IndexRecord[] => vault().map((r) => (r.path === LEAD ? { ...r, properties: held({ 'dessert column': 'Pie', 'DESSERT COLUMN': 'Tart' }) } : r))
+
+  it('a note’s `dessert column` is the page’s `Dessert Column` cell, the first of two spellings winning; a view that names it in both capitals shows ONE column', async () => {
+    const el = await mount(settings, records())
+    selectView(el, 'Table')
+    expect(q(el, '[data-cell="0:1"]').textContent).toBe('Pie')
+    expect(el.querySelector('[data-cell="0:2"]')).toBeNull()
+    // One key on the row the views read: no second spelling waits under "Other properties".
+    expect(captured.records.find((r) => r.path === LEAD)?.properties).toEqual({ 'Dessert Column': 'Pie' })
+  })
+
+  it('a write in any capitals goes through the one door under the column’s spelling', async () => {
+    await mount(settings, records())
+    await act(() => captured.folder!.writeValues!(LEAD, [{ key: 'dessert column', value: 'Cake' }]))
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(LEAD, [{ key: 'Dessert Column', value: 'Cake' }], SHARED, undefined)
   })
 })
 

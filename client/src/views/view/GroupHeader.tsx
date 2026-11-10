@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, type CSSProperties, type ReactNode } from 'react'
+import { createContext, Fragment, useContext, useState, type CSSProperties, type ReactNode } from 'react'
+import { ImageOf } from './imageCell'
 import { isFolderRow, isShortcut } from '../../links/shortcuts'
 import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
 import { type ViewSet, type ViewDef, type GroupBySpec, shownGroupLevels } from '../viewSchema'
@@ -13,8 +14,10 @@ import { WIKILINK_RE } from '@shared/linkRewrite'
 import '../../editor/wikilink/wikilink.css'
 import { summarize } from '../summaries'
 import { FolderIcon, ShortcutIcon } from './icons'
+import { HoverTip } from '../../components/HoverTip'
 import { canonicalKey } from './keys'
 import { GroupHeaderMenu } from './GroupHeaderMenu'
+import { OtherFilesFolderMove } from './otherFilesMove'
 
 /**
  * One group's header content (4C, GRO-2137), shared by Table today and Cards / List / Board
@@ -148,6 +151,8 @@ export interface FolderPagesValue {
   open?: (dir: string) => void
   /** How many notes a folder's page shows (YAZ-4579 D32): a folder row's "N inside". */
   inside?: (dir: string) => number
+  /** The Folder column's look (YAZ-4801): the path from the page, or the last folder only (the look before). */
+  folderColumn?: 'path' | 'full' | 'last'
 }
 export const FolderPages = createContext<FolderPagesValue | null>(null)
 
@@ -171,6 +176,8 @@ export const MENTIONS_SHOWN = 3
 
 function NoteCell({ value, name, resolve }: { value: Value; name: string; resolve?: Resolver }) {
   const decl = useContext(ColumnDecls)[name]
+  // An Image column's picture (YAZ-4802), at its column's size and shape: a board card's line, a read-only cell.
+  if (decl?.kind === 'image') return <ImageOf value={value} decl={decl} />
   if (decl?.kind === 'mentions' && Array.isArray(value) && value.length > MENTIONS_SHOWN) {
     const rest = value.slice(MENTIONS_SHOWN)
     return (
@@ -186,14 +193,15 @@ function NoteCell({ value, name, resolve }: { value: Value; name: string; resolv
 }
 
 /**
- * Empty for a note directly in the page's folder; else the chip of the folder the note lives in, by the title
- * its Folder group shows. A click opens that folder's page; the vault root has no page, so its chip opens nothing.
+ * The chip of the folder the note lives in, by the title its Folder group shows (YAZ-4801 demo: "how come no folder
+ * showing up here?" — a note directly in the page shows the page, never a blank). A click opens that folder's page;
+ * the vault root has no page, so its chip opens nothing.
  */
 function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?: Resolver }) {
   const pages = useContext(FolderPages)
   if (pages === null) return <>{cellContent(value, resolve)}</>
   const dir = row.record.folder
-  if (dir === pages.folder) return null
+  if (pages.folderColumn !== 'last') return <FolderPath dir={dir} pages={pages} />
   const title = pages.title(dir)
   const open = pages.open
   if (open === undefined || dir === '') return <span className="view-table__chip" title={title}>{title}</span>
@@ -209,6 +217,47 @@ function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?:
     >
       {title}
     </button>
+  )
+}
+
+/**
+ * The Folder column as a path (YAZ-4801: "the breadcrumb … wouldnt u want to know what category (aka page) that thing is
+ * in regardless?"): the folders from this page down to the note's, by title, each a link to its page, › between. A
+ * note that lives outside this page (a shortcut) shows where it lives from the vault's top, after ↗. A narrow column
+ * lets the middle parts shrink to "…"; the last part keeps its width.
+ */
+function FolderPath({ dir, pages }: { dir: string; pages: FolderPagesValue }) {
+  const inside = pages.folder === '' || dir === pages.folder || dir.startsWith(`${pages.folder}/`)
+  // Every folder from the vault's top down to the note's; "From this page" (YAZ-4801 demo: "does it hide recipes?")
+  // starts at the page itself, "Full path" and a note outside the page keep them all.
+  const all = dir.split('/').filter(Boolean).map((_, i, segs) => segs.slice(0, i + 1).join('/'))
+  const from = inside && pages.folderColumn !== 'full' && pages.folder !== '' ? all.indexOf(pages.folder) : 0
+  const parts = all.slice(Math.max(0, from))
+  if (parts.length === 0) return null
+  const whole = parts.map((p) => pages.title(p)).join(' › ')
+  return (
+    <span className="view-folder-path" title={inside ? whole : `Lives in ${whole}`}>
+      {!inside && <ShortcutIcon />}
+      {parts.map((p, i) => (
+        <Fragment key={p}>
+          {i > 0 && <span className="view-folder-path__sep" aria-hidden="true">›</span>}
+          {pages.open === undefined ? (
+            <span className={`view-table__chip view-folder-path__part${i === parts.length - 1 ? ' view-folder-path__part--last' : ''}`}>{pages.title(p)}</span>
+          ) : (
+            <button
+              type="button"
+              className={`view-table__chip view-table__chip--link view-folder-chip view-folder-path__part${i === parts.length - 1 ? ' view-folder-path__part--last' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation() // a board card's click opens the card
+                pages.open!(p)
+              }}
+            >
+              {pages.title(p)}
+            </button>
+          )}
+        </Fragment>
+      ))}
+    </span>
   )
 }
 
@@ -229,7 +278,12 @@ function RowTitle({ row }: { row: Row }) {
   return (
     <>
       {row.record.title}
-      {folder !== null && isShortcut(row.record, folder) && <ShortcutIcon />}
+      {/* YAZ-4797 demo: the ↗ says where the note lives, on hover. */}
+      {folder !== null && isShortcut(row.record, folder) && (
+        <HoverTip className="view-shortcut-tip" text={`Shortcut. Lives in ${row.record.folder === '' ? 'the vault' : row.record.folder.split('/').join(' › ')}`}>
+          <ShortcutIcon />
+        </HoverTip>
+      )}
     </>
   )
 }
@@ -299,13 +353,15 @@ export interface GroupHeaderProps {
   onToggle: () => void
   /** Create a note in this group (5D, GRO-2144); absent → no "+" affordance. */
   onNew?: () => void
+  /** "Show New buttons" (YAZ-3746 13BL, demo): false hides the "+"; the right-click "New note in this group" stays. */
+  newButton?: boolean
   /** The vault's resolver: a group keyed by an id link is headed by that note's title (YAZ-2293 D8). */
   resolve?: Resolver
   /** The group's `groupBy` level, outer = 0 (the default): its spec gives the header's style (YAZ-3742). */
   level?: number
 }
 
-export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, resolve, level = 0 }: GroupHeaderProps) {
+export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, newButton = true, resolve, level = 0 }: GroupHeaderProps) {
   // `level` counts the levels that group (YAZ-4544): an entry with no property is none.
   const look = groupValueLook(shownGroupLevels(view)[level])
   // A Folder level's group (YAZ-4564 D27) opens that folder's page; the page's own folder and the vault root have none.
@@ -318,6 +374,11 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
   // The right-click menu (YAZ-4604, D55): the app's own, never the system's. The event stops here, so no row or
   // selection menu of the view around it opens too. Only this header re-renders when it opens or closes.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  // A Folder group of a subfolder directly under the page moves that folder to Other files (YAZ-4747 OF1). Read when
+  // the menu opens, so a header that never opens its menu does nothing here.
+  const folderTray = useContext(OtherFilesFolderMove)
+  const subfolder = menu !== null && folderTray !== null && typeof groupKey === 'string' && shownGroupLevels(view)[level]?.property === 'file.folder' ? folderTray.folderAt(groupKey) : null
+  const moveFolder = subfolder === null || folderTray === null ? undefined : { name: subfolder.name, run: () => folderTray.move(subfolder.dir) }
   return (
     <div
       className="view-group"
@@ -327,7 +388,7 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
         setMenu({ x: e.clientX, y: e.clientY })
       }}
     >
-      {menu !== null && <GroupHeaderMenu x={menu.x} y={menu.y} collapsed={collapsed} onToggle={onToggle} onNew={onNew} onClose={() => setMenu(null)} />}
+      {menu !== null && <GroupHeaderMenu x={menu.x} y={menu.y} collapsed={collapsed} onToggle={onToggle} onNew={onNew} moveFolder={moveFolder} onClose={() => setMenu(null)} />}
       <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
         <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />
@@ -343,7 +404,7 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
           ↗
         </button>
       )}
-      {onNew !== undefined && (
+      {onNew !== undefined && newButton && (
         <button type="button" className="view-group__new" aria-label={`New note in group ${label}`} title="New note" onClick={onNew}>
           <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M8 3v10M3 8h10" />

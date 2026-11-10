@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { TEST_RECORDS } from './testRecords'
-import { byFolder, folderName, foldersTaking, pageColumns, selfAndAncestors, takesFrom } from './columnInheritance'
+import { byFolder, declarationOf, folderName, foldersTaking, pageColumns, selfAndAncestors, takesFrom } from './columnInheritance'
 
 /** A folder's `.folder.md` record declaring `columns` (YAZ-4713 C2). */
 const folderMd = (folder: string, columns?: Record<string, unknown>, title = folder.slice(folder.lastIndexOf('/') + 1)): IndexRecord => ({
@@ -68,5 +68,36 @@ describe('columns flow down (YAZ-4713 C2)', () => {
     expect(takesFrom(folders, true, 'schema/orders', 'schema', 'domain')).toBe(true)
     expect(takesFrom(folders, true, 'schema/billing/old', 'schema', 'domain')).toBe(false)
     expect(foldersTaking(folders, true, 'schema', 'domain').map((r) => r.folder)).toEqual(['schema/orders'])
+  })
+})
+
+describe('one key, capitals ignored (YAZ-4769, option B)', () => {
+  const dessert = { kind: 'text' as const }
+  const recipes = byFolder([folderMd('recipes', { 'Dessert Column': { kind: 'select', options: ['Cake'] } }, 'Recipes'), folderMd('recipes/desserts', { 'dessert column': dessert }, 'Desserts')])
+
+  it('Recipes’ `Dessert Column` and Desserts’ `dessert column` are ONE column on Desserts: Desserts’ own copy over Recipes’, in Desserts’ spelling', () => {
+    expect(pageColumns({ 'dessert column': dessert }, 'recipes/desserts', recipes, true, true)).toEqual({
+      'dessert column': { decl: dessert, owner: 'recipes/desserts', over: 'recipes' },
+    })
+  })
+
+  it('a page with no copy of its own spells the column as the nearest parent does', () => {
+    expect(Object.keys(pageColumns({}, 'recipes/desserts/cakes', recipes, true, true))).toEqual(['dessert column'])
+    expect(Object.keys(pageColumns({}, 'recipes/mains', recipes, true, true))).toEqual(['Dessert Column'])
+  })
+
+  it('one folder declaring two spellings shows one column, the first', () => {
+    expect(Object.keys(pageColumns({ Dessert: dessert, DESSERT: dessert }, 'x', byFolder([]), true, true))).toEqual(['Dessert'])
+  })
+
+  it('takesFrom: Desserts declares the key in other capitals, so its page and the ones below take it from Desserts, not Recipes', () => {
+    expect(takesFrom(recipes, true, 'recipes/desserts', 'recipes', 'Dessert Column')).toBe(false)
+    expect(takesFrom(recipes, true, 'recipes/desserts/cakes', 'recipes', 'Dessert Column')).toBe(false)
+    expect(foldersTaking(recipes, true, 'recipes', 'Dessert Column')).toEqual([])
+  })
+
+  it('declarationOf: a folder’s own declaration in any capitals, with its spelling', () => {
+    expect(declarationOf(recipes, true, 'recipes', 'dessert column')).toEqual({ key: 'Dessert Column', decl: { kind: 'select', options: ['Cake'] } })
+    expect(declarationOf(recipes, true, 'recipes/desserts', 'Nope')).toBeUndefined()
   })
 })

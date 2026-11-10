@@ -1232,3 +1232,19 @@ describe('runView: option order (YAZ-3940)', () => {
     expect(calls).toBeLessThanOrEqual(3)
   })
 })
+
+describe('one key, capitals ignored (YAZ-4769)', () => {
+  const recs = (values: Record<string, unknown>[]): IndexRecord[] => values.map((properties, i) => ({ ...TEST_RECORDS[0], path: `/vault/n${i}.md`, name: `n${i}.md`, basename: `n${i}`, title: `n${i}`, properties }))
+
+  it('propertyKeys: a view key naming a page column in other capitals is the column’s key, shown once where it is first named', () => {
+    const view: ViewDef = { type: 'table', name: 'T', order: ['file.name', 'note.Dessert Column', 'note.dessert column', 'note.other', 'formula.Dessert Column'] }
+    expect(propertyKeys({ views: [] }, view, [], ['dessert column'])).toEqual(['file.name', 'note.dessert column', 'note.other', 'formula.Dessert Column'])
+    expect(propertyKeys({ views: [] }, view, [])).toEqual(view.order) // no page columns: as written
+  })
+
+  it('a sort that names the column in other capitals sorts by it', () => {
+    const view: ViewDef = { type: 'table', name: 'T', sort: [{ property: 'note.SCORE', direction: 'DESC' }] }
+    const r = runView({ views: [] }, view, recs([{ score: 1 }, { score: 3 }, { score: 2 }]), { declared: ['score'] })
+    expect(names(r)).toEqual(['n1', 'n2', 'n0'])
+  })
+})

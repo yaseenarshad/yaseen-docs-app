@@ -19,6 +19,8 @@ import { byFolder, folderName } from '../columnInheritance'
 import { declarationForKind } from './declarationForKind'
 import { ViewSettings } from './ViewSettings'
 import { ColumnMark, columnMark } from './ColumnMark'
+import { ConfirmSheet } from '../../components/ConfirmSheet'
+import { InfoTip } from '../../components/InfoTip'
 
 export { normalizeBoardWidth } from './ViewSettings'
 
@@ -91,6 +93,8 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const [query, setQuery] = useState('')
   /** The DETAIL level (YAZ-1513): the open column's key, or null for the list. Its editor is `ColumnDetail` (YAZ-4533). */
   const [detail, setDetail] = useState<string | null>(null)
+  /** An "Other properties" row's Show or "Add to <folder>" asks first, every time (YAZ-4713 C4A). */
+  const [ask, setAsk] = useState<{ key: string; label: string; add: boolean } | null>(null)
   /** Settings › Folder pages (YAZ-4585): `view` has them filled in; `own` is the view as written, for "from Settings". */
   const own = def.views[viewIndex] ?? view
   const shown = propertyKeys(def, view, records, pageColumnKeys(folder.settings))
@@ -166,9 +170,9 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const folderMap = useMemo(() => byFolder(folder.vaultFolders), [folder.vaultFolders])
   /** The hidden rows in their parts (C4): this folder, each parent folder nearest first, then the other properties. */
   const owners = [...new Set(hiddenMatches.map(ownerOf).filter((o): o is string => o !== null && o !== here))].sort((a, b) => b.length - a.length)
-  const hiddenParts: { title: string; keys: string[] }[] = [
+  const hiddenParts: { title: string; keys: string[]; parent?: boolean }[] = [
     { title: folderTitle, keys: hiddenMatches.filter((key) => ownerOf(key) === here) },
-    ...owners.map((owner) => ({ title: `From ${folderName(folderMap, owner, folder.vaultName)}`, keys: hiddenMatches.filter((key) => ownerOf(key) === owner) })),
+    ...owners.map((owner) => ({ title: `From ${folderName(folderMap, owner, folder.vaultName)}`, keys: hiddenMatches.filter((key) => ownerOf(key) === owner), parent: true })),
     { title: 'Other properties in these notes', keys: hiddenMatches.filter((key) => ownerOf(key) === null) },
   ].filter((part) => part.keys.length > 0)
   /** Hide all / Show all: Table and Board may hide every column; Cards and List keep the name (as before). */
@@ -180,28 +184,36 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
     if (c.startsWith('formula.')) return 'Formula'
     return PROPERTY_LABELS[kindOf(key)]
   }
-  /** "Add to <folder>" (C4): the field becomes a column of this folder, of the kind it shows, and shows in this view, in one write. */
-  const addToFolder = (key: string) => {
+  /**
+   * "Add to <folder>" (C4): the field becomes a column of this folder, of the kind it shows, and shows in this view, in
+   * one write. A subfolder's column (YAZ-4713 C11) brings its agreed definition, options and all. The host's Undo and
+   * ⌘Z take both back in one write (C4A).
+   */
+  const addToFolder = (key: string, label: string) => {
     const name = canonicalKey(key).slice('note.'.length)
-    // A subfolder's column (YAZ-4713 C11): its agreed definition, options and all, becomes this folder's own; then it shows.
-    if (folder.settings.fromBelow?.includes(name)) {
-      void folder.setColumn(name, folder.settings.columns[name], undefined).then(() => writeOrder([...shown, key]), () => undefined)
-      return
-    }
     const kind = kindOf(key)
-    folder.setColumns(
-      { ...folder.settings.columns, [name]: declarationForKind({ kind }, kind) },
-      def.views.map((v, i) => (i === viewIndex ? withOrder(v, [...shown, key]) : v)),
-    )
+    const decl = folder.settings.fromBelow?.includes(name) ? folder.settings.columns[name] : declarationForKind({ kind }, kind)
+    const views = def.views.map((v, i) => (i === viewIndex ? withOrder(v, [...shown, key]) : v))
+    if (folder.addColumn !== undefined) folder.addColumn(name, decl, views, viewIndex, `Added ${label} to ${folderTitle}`)
+    else folder.setColumns({ ...folder.settings.columns, [name]: decl }, views)
   }
-  /** An "Other properties" row's two buttons, in place of the switch (C4). An app key is never a column, so it is only shown. */
+  /** The subfolders that define an "Other properties" key ("Desserts", "Desserts, Pies"), or none: a field no column declares. */
+  const belowOf = (key: string): string | undefined => folder.sources.of(canonicalKey(key).slice('note.'.length)).below
+  /** The ask's words (C4A): what the click does, in the folders' names. */
+  const askText = ({ key, label, add }: { key: string; label: string; add: boolean }): string => {
+    const below = belowOf(key)
+    if (!add) return `Show ${label} in this view? Only this view shows it. ${below === undefined ? 'No folder gets a column.' : `The column stays on ${below}.`}`
+    const becomes = below === undefined ? `It becomes a column of ${folderTitle}.` : `${folderTitle} takes the ${label} column from ${below}, with its type and options.`
+    return `Add ${label} to ${folderTitle}? ${becomes} It shows here and on every folder page below ${folderTitle}.`
+  }
+  /** An "Other properties" row's two buttons, in place of the switch (C4). An app key is never a column, so it is only shown. Each asks first (C4A). */
   const otherActions = (key: string, label: string) => (
     <>
-      <button type="button" className="view-menu__action" aria-label={`Show ${label}`} onClick={() => writeOrder([...shown, key])}>
+      <button type="button" className="view-menu__action" aria-label={`Show ${label}`} onClick={() => setAsk({ key, label, add: false })}>
         Show
       </button>
       {!reserved.has(canonicalKey(key).slice('note.'.length)) && (
-        <button type="button" className="view-menu__action view-prop__add" aria-label={`Add ${label} to ${folderTitle}`} title={`Add to ${folderTitle}`} onClick={() => addToFolder(key)}>
+        <button type="button" className="view-menu__action view-prop__add" aria-label={`Add ${label} to ${folderTitle}`} title={`Add to ${folderTitle}`} onClick={() => setAsk({ key, label, add: true })}>
           Add to {folderTitle}
         </button>
       )}
@@ -235,6 +247,13 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
                 // The groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none.
                 e.dataTransfer?.setData('text/plain', key)
                 if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+                // The whole row is the drag's picture (YAZ-4803: "the name is white or empty"): the grip alone gave a picture
+                // of six dots while the row left the list. Held where it was grabbed, as SortMenu's rows are.
+                const row = e.currentTarget.closest('li')
+                if (row !== null) {
+                  const at = row.getBoundingClientRect()
+                  e.dataTransfer?.setDragImage?.(row, e.clientX - at.left, e.clientY - at.top)
+                }
                 live.start(e, i)
               }}
               onDragEnd={live.end}
@@ -354,7 +373,11 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
               </div>
               {hiddenParts.map((part) => (
                 <div key={part.title} className="column-section__part">
-                  <p className="view-menu__label column-section__part-title">{part.title}</p>
+                  <p className="view-menu__label column-section__part-title">
+                    {part.title}
+                    {/* YAZ-4770: a parent's part says what its Hide all reaches, and where the page-wide switch is. */}
+                    {part.parent && <InfoTip text="Hide them here for this view only. The ⚙'s Parent folders' columns turns them off for every view of this page." />}
+                  </p>
                   <ul className="view-menu__list column-section--hidden">{part.keys.map(row)}</ul>
                 </div>
               ))}
@@ -375,6 +398,23 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
             }
           />
         </>
+      )}
+      {/* The ask (C4A): inside the popover, its keys and click-away kept in it, so the popover stays under it. */}
+      {ask !== null && (
+        <ConfirmSheet
+          labelId="other-property-ask-text"
+          text={askText(ask)}
+          confirmLabel={ask.add ? `Add to ${folderTitle}` : 'Show'}
+          keys="contained"
+          focusConfirm
+          onConfirm={() => {
+            const { key, label, add } = ask
+            setAsk(null)
+            if (add) addToFolder(key, label)
+            else writeOrder([...shown, key], `Showed ${label}`)
+          }}
+          onCancel={() => setAsk(null)}
+        />
       )}
     </div>
   )

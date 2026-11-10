@@ -1,7 +1,8 @@
-import { setFolderValue } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { setFolderValueOneSpelling, setOneSpelling } from '@shared/propertyKeys'
 import { isFolderSettingsPath, type FileResponse } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
+import { columnReservedKeys } from '../links/reservedKeys'
 
 export type ContentTransform = (content: string) => string
 
@@ -103,9 +104,15 @@ export async function writeProperty(path: string, key: string, value: unknown, r
  * A folder page's values for one note (YAZ-4713 C1/C3), in ONE guarded whole-file transformation: each key is the
  * note's own top-level field, or, when its column is separate on this page, a field of this page's block (`pageId`).
  * Every cell edit, paste, fill, Undo, board drag and calendar drag of a folder page comes through here.
+ *
+ * YAZ-4769 (one key, capitals ignored): each value is written under the column's spelling, and the note's other
+ * spellings of that key go in the same write (`setOneSpelling`) — a note's `dessert column` becomes `Dessert Column`
+ * when its cell is edited. The app's keys are never removed by that fold — every vault's (`columnReservedKeys(true)`):
+ * where the vault does not use IDs, an `id`, `title` or `in` field then simply stays beside a column of its name.
  */
 export function writeRouted(path: string, writes: readonly PropertyWrite[], separate: ReadonlySet<string>, pageId: string | undefined): Promise<{ mtime: number }> {
+  const keep = columnReservedKeys(true)
   return transformFile(path, (content) =>
-    writes.reduce((next, { key, value }) => (pageId !== undefined && separate.has(key) ? setFolderValue(next, pageId, key, value) : setFrontmatterProperty(next, key, value)), content),
+    writes.reduce((next, { key, value }) => (pageId !== undefined && separate.has(key) ? setFolderValueOneSpelling(next, pageId, key, value) : setOneSpelling(next, key, value, keep)), content),
   )
 }

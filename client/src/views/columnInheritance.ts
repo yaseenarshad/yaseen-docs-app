@@ -3,6 +3,7 @@
  * column's DEFINITION lives in the `.folder.md` of the folder that declares it (its OWNER); when two folders on the
  * chain declare the same key, the nearest one wins. A note's VALUE is one field of the note (C1), whatever page shows it.
  */
+import { findKey, keyFold } from '@shared/propertyKeys'
 import { isReadOnlyProperties } from '@shared/readOnly'
 import { basename, dirname } from '../lib/paths'
 import { inFolder, type FolderPagesSettings, type IndexRecord } from '@shared/types'
@@ -32,20 +33,43 @@ export function selfAndAncestors(folder: string): string[] {
  * The columns of the page of `folder`: `own` (the page's live declarations) first, then, with `inherit`, each parent
  * folder's from the index, nearest first. "Separate value for <folder>" (C3) is each page's own switch, so an inherited
  * definition never carries it. Pure; the page memoizes it per index snapshot.
+ *
+ * YAZ-4769 (one key, capitals ignored): keys are compared by `keyFold`, so Desserts' `dessert column` under Recipes'
+ * `Dessert Column` is ONE column — Desserts' own copy over Recipes' (`over`), never a second column. The page spells a
+ * column as the declaration it uses spells it: its own copy's, else the nearest parent's. A folder that declares two
+ * spellings of one key keeps the first.
  */
 export function pageColumns(own: Readonly<Record<string, ColumnDecl>>, folder: string, folders: FolderMap, ids: boolean, inherit: boolean): Record<string, PageColumn> {
   const out: Record<string, PageColumn> = {}
-  for (const [key, decl] of Object.entries(own)) out[key] = { decl, owner: folder }
+  /** The page's spelling of each key, by fold. */
+  const spelled = new Map<string, string>()
+  for (const [key, decl] of Object.entries(own)) {
+    const fold = keyFold(key)
+    if (spelled.has(fold)) continue
+    spelled.set(fold, key)
+    out[key] = { decl, owner: folder }
+  }
   if (!inherit) return out
   for (const dir of selfAndAncestors(folder).slice(1)) {
     const record = folders.get(dir)
     if (record === undefined) continue
     for (const [key, { separate: _own, ...decl }] of Object.entries(folderSettings(record, ids).columns)) {
-      if (!(key in out)) out[key] = { decl, owner: dir }
-      else if (out[key].owner === folder && out[key].over === undefined) out[key] = { ...out[key], over: dir }
+      const fold = keyFold(key)
+      const at = spelled.get(fold)
+      if (at === undefined) {
+        spelled.set(fold, key)
+        out[key] = { decl, owner: dir }
+      } else if (out[at].owner === folder && out[at].over === undefined) out[at] = { ...out[at], over: dir }
     }
   }
   return out
+}
+
+/** `folder`'s own declaration of `key` (YAZ-4769: under whichever spelling it uses), and that spelling; undefined when it declares none. */
+export function declarationOf(folders: FolderMap, ids: boolean, folder: string, key: string): { key: string; decl: ColumnDecl } | undefined {
+  const columns = folderSettings(folders.get(folder), ids).columns
+  const held = Object.hasOwn(columns, key) ? key : findKey(Object.keys(columns), key)
+  return held === undefined ? undefined : { key: held, decl: columns[held] }
 }
 
 /**
@@ -58,7 +82,8 @@ export function takesFrom(folders: FolderMap, ids: boolean, dir: string, owner: 
   const known = cache.get(dir)
   if (known !== undefined) return known
   const record = folders.get(dir)
-  const answer = !(record !== undefined && key in folderSettings(record, ids).columns) && takesFrom(folders, ids, dirname(dir), owner, key, cache)
+  // YAZ-4769: a subfolder that declares `key` in any capitals declares it.
+  const answer = !(record !== undefined && findKey(Object.keys(folderSettings(record, ids).columns), key) !== undefined) && takesFrom(folders, ids, dirname(dir), owner, key, cache)
   cache.set(dir, answer)
   return answer
 }
@@ -76,6 +101,18 @@ export function foldersTaking(folders: FolderMap, ids: boolean, owner: string, k
 export function folderName(folders: FolderMap, dir: string, vaultName: string): string {
   if (dir === '') return vaultName
   return folders.get(dir)?.title ?? basename(dir)
+}
+
+/**
+ * The ask's words for a column move (YAZ-4769), in a note's Edit property and a folder page's Edit column alike: what
+ * each folder gains or loses. `from` or `to` null: making a column, or removing one. The notes keep their values.
+ */
+export function moveColumnText(key: string, from: string | null, to: string | null, down = false): string {
+  // A move down (YAZ-4769 demo): the folder it leaves and its other subfolders lose it, so the ask says so.
+  if (from !== null && to !== null && down) return `Move the "${key}" column from ${from} down to ${to}? ${to} and every folder below it show it. ${from} and its other folders stop showing it. The notes keep their values.`
+  if (from !== null && to !== null) return `Move the "${key}" column from ${from} to ${to}? ${to} and every folder below it show it. ${from} no longer defines it. The notes keep their values.`
+  if (from !== null) return `Remove the "${key}" column from ${from}? No folder page shows it as a column. The notes keep their values.`
+  return `Make "${key}" a column on ${to}? ${to} and every folder below it show it. The notes keep their values.`
 }
 
 /**
@@ -104,6 +141,8 @@ export interface ColumnSource {
   over?: string
   /** C11: a column shown here through "Other properties" whose definition lives on a subfolder: the subfolders' names ("From Desserts", "From Desserts, Pies"). */
   below?: string
+  /** No column on this page or below: a field only in the notes, shown through "Other properties" (YAZ-4713 C11B): the ◌ mark. */
+  loose?: true
 }
 
 /**
@@ -120,4 +159,13 @@ export interface ColumnSources {
   here: (key: string) => Promise<unknown>
   /** "Use <parent>'s": this folder's own declaration goes, and the parent's shows again. A toast offers Undo. */
   useParent: (key: string) => Promise<unknown>
+  /**
+   * "Column on" (YAZ-4769, the note's Edit property's picker): the folder that defines the column now and the folders
+   * that may: this one, each above it (nearest first), then each below it (the YAZ-4769 demo: "I want to move it down
+   * to desserts"), each with its name and its place. Null where the column does not move from here: none of this
+   * folder's, one "Desserts only" copy, a separate value, a Linked mentions column, a read-only page, or nowhere to go.
+   */
+  columnOn: (key: string) => { at: string; choices: { dir: string; name: string; place: 'here' | 'above' | 'below' }[] } | null
+  /** Move the column's definition to folder `to`, one of `columnOn`'s choices. The notes keep their values; a toast offers Undo. */
+  moveTo: (key: string, to: string) => Promise<unknown>
 }

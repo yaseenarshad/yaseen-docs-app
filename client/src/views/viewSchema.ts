@@ -1,5 +1,6 @@
 import { type Document, isMap, parseDocument } from 'yaml'
 import { isRecord } from '@shared/guards'
+import { headerRowOwn, type HeaderRowOwn } from '@shared/types'
 
 /**
  * The Obsidian Bases view-schema model — the shape a folder's `views` block round-trips
@@ -52,11 +53,26 @@ export interface ViewDef {
   frozenRows?: number
   /** The `#` gutter (YAZ-1513). Absent = shown. */
   rowNumbers?: boolean
+  /** "Column type icons" (YAZ-4779): each header's type icon before its name. Absent = Settings › Folder pages (on). */
+  columnTypeIcons?: boolean
+  /** The header row's own parts (YAZ-4774): color, strength, weight, text. An absent part = Settings › Tables › Header row. */
+  headerRow?: HeaderRowOwn
   rowHeight?: string
   /** Text in cells for the whole view (YAZ-4544 10A, D34): `kind` (chip columns wrap), `wrap` or `clip`. A column's `columnWrap` beats it; absent = Settings. */
   textInCells?: 'kind' | 'wrap' | 'clip'
   /** The step of each nested group level (YAZ-4532 D10): `small` 14px, `medium` 28px, `large` 42px. Absent = medium. */
   groupIndent?: 'small' | 'medium' | 'large'
+  /** "Sticky group headers" (YAZ-4798): a grouped table's headers of the groups in view stay under the column header. Absent = Settings › Folder pages (on). */
+  stickyGroups?: boolean
+  /** "Group lines" (YAZ-4798): `hover` (while the pointer is over the table), `always` or `off`. Absent = Settings › Folder pages (on hover). */
+  groupLines?: 'hover' | 'always' | 'off'
+  /** "Group line style" (YAZ-4798): `plain` grey lines, or `thread` to the row under the pointer. Absent = Settings › Folder pages (plain). */
+  groupLineStyle?: 'plain' | 'thread'
+  /**
+   * The Folder column (YAZ-4801): absent, the path from this page, the page first; `full` the path from the vault's top;
+   * `last` only the note's own folder.
+   */
+  folderColumn?: 'last' | 'full'
   image?: string
   cardSize?: string | number
   imageFit?: string
@@ -105,6 +121,13 @@ export const groupByLevels = (view: ViewDef): GroupBySpec[] =>
 /** The most group levels a view honours (YAZ-4531); `groupBy` entries past it are ignored. */
 export const MAX_GROUP_LEVELS = 5
 
+/**
+ * A view's own header row parts (YAZ-4774): `headerRow`, else the first build's `shadedHeader` (`false` Off, `true`
+ * Light), which the next header pick replaces. None: Settings.
+ */
+export const headerRowOfView = (view: ViewDef): HeaderRowOwn =>
+  view.headerRow !== undefined ? headerRowOwn(view.headerRow) : typeof view.shadedHeader === 'boolean' ? { strength: view.shadedHeader ? 'light' : 'off' } : {}
+
 /** The levels the engine groups by: those with a property name, the first `MAX_GROUP_LEVELS` of them. */
 export const shownGroupLevels = (view: ViewDef): GroupBySpec[] =>
   groupByLevels(view).filter(g => g && typeof g.property === 'string').slice(0, MAX_GROUP_LEVELS)
@@ -115,6 +138,17 @@ export const GROUP_INDENTS = { small: 14, medium: 28, large: 42 } as const
 /** A view's group indent in px. An absent or unknown `groupIndent` gives the medium step. */
 export const groupIndentOf = (view: ViewDef): number =>
   typeof view.groupIndent === 'string' && Object.hasOwn(GROUP_INDENTS, view.groupIndent) ? GROUP_INDENTS[view.groupIndent] : GROUP_INDENTS.medium
+
+/**
+ * A grouped table's Group lines (YAZ-4798) as the table draws them: `hover`, `always` or `off`. A value the app does
+ * not know reads `off`, the look before; a view with no key has Settings' value filled in already (`withDefaults`).
+ */
+export const groupLinesOf = (view: ViewDef): 'hover' | 'always' | 'off' => (view.groupLines === 'hover' || view.groupLines === 'always' ? view.groupLines : 'off')
+
+/** A grouped table's Group line style (YAZ-4798): `thread` only when the view says so; anything else is plain lines. */
+export const groupLineStyleOf = (view: ViewDef): 'plain' | 'thread' => (view.groupLineStyle === 'thread' ? 'thread' : 'plain')
+/** The Folder column's look (YAZ-4801): the path from the page (default), or the last folder only. */
+export const folderColumnOf = (view: ViewDef): 'path' | 'full' | 'last' => (view.folderColumn === 'last' || view.folderColumn === 'full' ? view.folderColumn : 'path')
 
 export interface ViewSet {
   filters?: FilterNode

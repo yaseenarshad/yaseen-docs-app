@@ -1,4 +1,5 @@
 import './propertyDefinitionEditor.css'
+import { NotesFromPicker, useLinkFolders } from './NotesFromPicker'
 import { useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import { NOTE_PROPERTY_KINDS, type PropertyDecl, type PropertyKind } from '@shared/types'
@@ -8,12 +9,12 @@ import { DragHandleIcon } from './icons'
 
 export const PROPERTY_LABELS: Record<PropertyKind, string> = {
   text: 'Text', number: 'Number', date: 'Date', checkbox: 'Checkbox', list: 'List',
-  link: 'Link', 'multi-link': 'Multi-link', select: 'Select', 'multi-select': 'Multi-select', mentions: 'Linked mentions',
+  link: 'Link', 'multi-link': 'Multi-link', select: 'Select', 'multi-select': 'Multi-select', image: 'Image', mentions: 'Linked mentions',
 }
 export const DESCRIPTIONS: Record<PropertyKind, string> = {
   text: 'Write any text.', number: 'Store a numeric value.', date: 'Choose a calendar date.', checkbox: 'Check or uncheck.',
   list: 'Keep a list of free-form values.', link: 'Link to one page.', 'multi-link': 'Link to multiple pages.',
-  select: 'Choose one option.', 'multi-select': 'Choose multiple options.', mentions: 'The notes that link here. Worked out by the app; read only.',
+  select: 'Choose one option.', 'multi-select': 'Choose multiple options.', image: 'One picture from the vault.', mentions: 'The notes that link here. Worked out by the app; read only.',
 }
 
 /** Shared monochrome type symbols for definitions and property rows. */
@@ -28,6 +29,7 @@ export function PropertyTypeIcon({ kind }: { kind: PropertyKind }) {
     'multi-link': <><path d="M4 6h10M4 10h7M4 14h5" /><path d="m12 12 2 2 3-4" /></>,
     select: <><circle cx="9" cy="9" r="6" /><path d="m6 8 3 3 3-3" /></>,
     'multi-select': <><path d="M3 4h12M3 9h7M3 14h7" /><path d="m12 12 2 2 3-4" /></>,
+    image: <><rect x="2.5" y="3.5" width="13" height="11" rx="2" /><circle cx="6.5" cy="7.5" r="1.3" /><path d="m3 13 4-4 3 3 2-2 3.5 3.5" /></>,
     mentions: <><path d="M15 6H6M9 3 6 6l3 3" /><path d="M3 12h9M9 9l3 3-3 3" /></>,
   }
   return <svg className="property-kind-icon" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{symbols[kind]}</svg>
@@ -138,6 +140,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
 export function PropertyDefinitionEditor({ value, onChange, observed = [], kinds = NOTE_PROPERTY_KINDS }: {
   value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]; kinds?: readonly PropertyKind[]
 }) {
+  const linkFolders = useLinkFolders()
   const [choosing, setChoosing] = useState(false)
   const [query, setQuery] = useState('')
   const typeButton = useRef<HTMLButtonElement>(null)
@@ -168,7 +171,13 @@ export function PropertyDefinitionEditor({ value, onChange, observed = [], kinds
         <span className="property-def__muted">Type</span><span className="property-def__current-type"><PropertyTypeIcon kind={value.kind} />{PROPERTY_LABELS[value.kind]}<span className="property-def__chevron" aria-hidden="true">›</span></span>
       </button>
       {!choice && <p className="property-def__description">{DESCRIPTIONS[value.kind]}</p>}
-      {(value.kind === 'link' || value.kind === 'multi-link') && <label className="property-def__target"><span>Link to</span><TextField className="property-def__input" aria-label="Link target" placeholder="Any page, or [[Folder]]" value={value.target ?? ''} onCommit={target => {
+      {/* YAZ-4795 demo: the same "Notes from" folder picker as Edit column, where the folders are known (a folder page). */}
+      {(value.kind === 'link' || value.kind === 'multi-link') && linkFolders !== null && <div className="property-def__target"><span>Notes from</span><NotesFromPicker target={value.target} label="the new column" source={linkFolders} onPick={target => {
+        const next = { ...value }
+        if (target !== undefined) next.target = target; else delete next.target
+        onChange(next)
+      }} /></div>}
+      {(value.kind === 'link' || value.kind === 'multi-link') && linkFolders === null && <label className="property-def__target"><span>Link to</span><TextField className="property-def__input" aria-label="Link target" placeholder="Any page, or [[Folder]]" value={value.target ?? ''} onCommit={target => {
         const next = { ...value }
         if (target.trim()) next.target = target.trim(); else delete next.target
         onChange(next)

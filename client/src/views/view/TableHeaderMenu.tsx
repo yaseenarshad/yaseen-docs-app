@@ -20,7 +20,9 @@ import { type ColumnAlign, columnAlignOf, setColumnAlign } from './columnAlign'
 import { columnFillOf, setColumnFill } from './columnFill'
 import { FillMenu, type FillTarget } from './FillMenu'
 import { TextField } from './TextField'
-import { textInCellsOf } from './TableLookSettings'
+import { plainHeaderRow, setHeaderRowPart, shownHeaderRow, textInCellsOf, toggleHeaderRowPlain } from './TableLookSettings'
+import { HEADER_ROW_CHOICES, headerRowLabel, type HeaderRowOwn } from '@shared/types'
+import { headerSwatch } from '../../editor/table/colours'
 
 /** The header's one Fill flyout (YAZ-3746 13AQ). */
 const COLUMN_ONLY: readonly FillTarget[] = ['column']
@@ -95,10 +97,18 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
  * `columnWrap[<canonical key>]` (`true` Wrap, `false` Clip); the choice its kind (or Settings › Folder pages, YAZ-4585) makes anyway deletes the
  * entry in any spelling, and an empty map. Text › also holds the column's alignment (YAZ-3746 13Y): "Auto alignment" /
  * "Align left" / "Align center" / "Align right", ✓ on the current one, each one write of `columnAlign[<canonical key>]`
- * through `view/columnAlign.ts` (Auto deletes the entry).
+ * through `view/columnAlign.ts` (Auto deletes the entry). "Header row ›" (YAZ-4794), after Fill column ›, is the whole
+ * header row's look, the View tab's Header row: Plain, Fill colour, Strength, Weight, Text colour and Align, each ✓ at
+ * what the table shows; a pick writes the view's `headerRow` (`TableLookSettings.setHeaderRowPart`) and keeps the menu open.
  */
+/** "Header row ›"'s tabs (YAZ-4794 demo): Fill (strength and colour), Text (its colour), Style (weight and align). */
+type HeaderTab = 'fill' | 'text' | 'style'
+const HEADER_TABS: readonly (readonly [HeaderTab, string])[] = [['fill', 'Fill'], ['text', 'Text'], ['style', 'Style']]
+
 export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewIndex, keys, takenKeys, reserved, records, wrapKind, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
+  /** "Header row ›"'s tab (YAZ-4794 demo: "holy shite thats a long flyout"), as Fill's Cell · Row · Column. */
+  const [headerTab, setHeaderTab] = useState<HeaderTab>('fill')
   /** The menu's ONE open flyout: Sort, Group, Text and Fill column's (YAZ-3746 13AU). */
   const flyout = useFlyout<string>()
   // The view's own Text in cells, else Settings' (YAZ-4544 10A).
@@ -175,6 +185,39 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
   const alignRow = (label: string, next: ColumnAlign | null) => <FlyoutItem label={label} checked={align === next} onSelect={write((v) => setColumnAlign(v, key, next))} />
   /** The last frozen column, or not (the table block's ✓ rule, YAZ-3696): a click on ✓ unfreezes. */
   const frozenHere = index >= 0 && frozen === index + 1
+  /**
+   * "Header row ›" (YAZ-4794): the View tab's Header row from the column header, ✓ at what the table shows. A pick is
+   * one write of the view's own `headerRow` (`setHeaderRowPart`, the View tab's writer) and the menu stays open, so
+   * fill, strength, weight, text colour and align go in one visit, as a note table's "Header row ›".
+   */
+  const header = shownHeaderRow(view)
+  const headerItem = (part: keyof HeaderRowOwn, value: string, swatch?: string) => (
+    <button
+      key={value}
+      type="button"
+      role="menuitem"
+      className="ctx-menu__item"
+      data-hint={header[part] === value ? '✓' : undefined}
+      onClick={() => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], part, value))}
+    >
+      {swatch === undefined ? (
+        headerRowLabel(value)
+      ) : (
+        <span className="ctx-menu__label">
+          <span className="table-menu-swatch" style={{ background: swatch }} />
+          {headerRowLabel(value)}
+        </span>
+      )}
+    </button>
+  )
+  const headerGroup = (heading: string, items: ReturnType<typeof headerItem>[]) => (
+    <div className="ctx-menu__group" role="group">
+      <div className="ctx-menu__heading" role="presentation">
+        {heading}
+      </div>
+      {items}
+    </div>
+  )
 
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>
@@ -264,13 +307,14 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
               </FlyoutParent>
               <FlyoutParent label="Group" open={flyout.open === 'group'} onHover={() => flyout.hover('group')} onOpen={() => flyout.openNow('group')} onCloseFlyout={() => flyout.openNow(null)}>
                 <div className="ctx-menu__group" role="group">
-                  <FlyoutItem label="Group by this column" onSelect={write((v) => groupOnly(v, key))} />
+                  {/* An Image column has no groups (YAZ-4802): each picture is its own. */}
+                  <FlyoutItem label="Group by this column" disabled={kind === 'image'} tip={kind === 'image' ? 'An Image column can not be grouped' : undefined} onSelect={write((v) => groupOnly(v, key))} />
                   {/* Hidden when this column is a level; Folder may group twice (YAZ-2541). Hidden with nothing grouped, where it is "Group by this column" (YAZ-4544 4F, D42). */}
                   {levels.length > 0 && (ownLevel === -1 || c === 'file.folder') && (
                     <FlyoutItem
                       label="Add as next group level"
-                      disabled={levels.length >= MAX_GROUP_LEVELS}
-                      tip={levels.length >= MAX_GROUP_LEVELS ? 'Five levels at most' : undefined}
+                      disabled={levels.length >= MAX_GROUP_LEVELS || kind === 'image'}
+                      tip={kind === 'image' ? 'An Image column can not be grouped' : levels.length >= MAX_GROUP_LEVELS ? 'Five levels at most' : undefined}
                       onSelect={write((v) => groupAppend(v, key))}
                     />
                   )}
@@ -318,6 +362,47 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
                 }}
                 onClose={onClose}
               />
+            </div>
+            {/* The table's header row (YAZ-4794): the whole row's look, as the View tab's Header row. */}
+            <div className="ctx-menu__group">
+              <FlyoutParent label="Header row" open={flyout.open === 'header'} onHover={() => flyout.hover('header')} onOpen={() => flyout.openNow('header')} onCloseFlyout={() => flyout.openNow(null)}>
+                <div className="ctx-menu__group" role="group">
+                  <FlyoutItem label="Plain, like any row" checked={plainHeaderRow(header)} onSelect={() => onUpdate((d) => toggleHeaderRowPlain(d.views[viewIndex]))} />
+                </div>
+                {/* Three tabs, as Fill's Cell · Row · Column (YAZ-4794 demo): one short list at a time, not thirty rows. */}
+                <div className="fill-target" role="group" aria-label="Header row part">
+                  {HEADER_TABS.map(([tab, word]) => (
+                    <button key={tab} type="button" className="fill-target__opt" aria-pressed={tab === headerTab} onClick={() => setHeaderTab(tab)}>
+                      {word}
+                    </button>
+                  ))}
+                </div>
+                {headerTab === 'fill' && (
+                  <>
+                    <div className="fill-target fill-target--sub" role="group" aria-label="Strength">
+                      {HEADER_ROW_CHOICES.strength.map((v) => (
+                        <button key={v} type="button" className="fill-target__opt" aria-pressed={header.strength === v} onClick={() => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], 'strength', v))}>
+                          {headerRowLabel(v)}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="ctx-menu__group" role="group">
+                      {HEADER_ROW_CHOICES.color.map((c) => headerItem('color', c, headerSwatch(c)))}
+                    </div>
+                  </>
+                )}
+                {headerTab === 'text' && (
+                  <div className="ctx-menu__group" role="group">
+                    {HEADER_ROW_CHOICES.text.map((v) => headerItem('text', v, v === 'muted' || v === 'full' ? undefined : headerSwatch(v)))}
+                  </div>
+                )}
+                {headerTab === 'style' && (
+                  <>
+                    {headerGroup('Weight', HEADER_ROW_CHOICES.weight.map((v) => headerItem('weight', v)))}
+                    {headerGroup('Align', HEADER_ROW_CHOICES.align.map((v) => headerItem('align', v)))}
+                  </>
+                )}
+              </FlyoutParent>
             </div>
             {/* The view group (YAZ-4608 C8): what shows and what freezes, after the edits and before Delete. */}
             <div className="ctx-menu__group" onMouseEnter={() => flyout.hover(null)}>

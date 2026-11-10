@@ -20,7 +20,7 @@ import { canonicalKey } from './view/keys'
  * `.obsidian/types.json` chain came out with it: a foreign app's file is not our schema.
  */
 
-export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link' | 'select' | 'multi-select'
+export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link' | 'select' | 'multi-select' | 'image'
 
 /** Per-column typing facts; null = the column is read-only (`file.*` / `formula.*`). `target` rides along from a declared link/multi-link property to constrain the picker. */
 export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind | null; target?: string; options?: readonly string[] } | null
@@ -67,6 +67,8 @@ const DECLARED_KIND: Record<Exclude<PropertyKind, 'mentions'>, EditorKind> = {
   'multi-link': 'multi-link',
   select: 'select',
   'multi-select': 'multi-select',
+  // An Image column's cell opens the picture picker (YAZ-4802).
+  image: 'image',
 }
 
 /**
@@ -87,8 +89,9 @@ export function columnTyping(
   // construction — two folders may type the same key differently and neither wins globally,
   // so there is no conflict to resolve here and none may be built.
   const own = settings?.columns[bare]
-  // A Linked mentions column is worked out from the index (YAZ-4738 L1): read-only, like a formula.
-  if (own?.kind === 'mentions') return null
+  // A Linked mentions column is worked out from the index (YAZ-4738 L1): read-only, like a formula. A tied one (YAZ-4781
+  // R2) edits as a multi-link, its picker the link column's folder.
+  if (own?.kind === 'mentions') return own.pair === true ? { assigned: 'multi-link', dominant: null, target: own.from?.folder } : null
   if (own !== undefined) return { assigned: DECLARED_KIND[own.kind], dominant, target: own.target, options: orderedPropertyOptions(own) }
   const declared = properties?.properties[bare]
   if (declared !== undefined && declared.kind !== 'mentions') return { assigned: DECLARED_KIND[declared.kind], dominant, target: declared.target, options: orderedPropertyOptions(declared) }
@@ -109,6 +112,14 @@ export function optionOrderFor(records: readonly IndexRecord[], properties: Prop
     known.set(key, options)
     return options
   }
+}
+
+/**
+ * A Select or Multi-select column's option parents (YAZ-4799), by the key a view names it (`Layer` or `note.Layer`): its
+ * parent column and each option's parent option; undefined for a column with none.
+ */
+export function optionParentFor(settings: FolderSettings): (key: string) => { column: string; of: Readonly<Record<string, string>>; any?: readonly string[] } | undefined {
+  return (key) => settings.columns[key.startsWith('note.') ? key.slice(5) : key]?.parent
 }
 
 /** The editor for one cell; null = read-only. */

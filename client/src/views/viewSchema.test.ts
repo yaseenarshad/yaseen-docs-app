@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_GROUP_LEVELS, ViewParseError, parseViews, serializeViews, shownGroupLevels, updateViews } from './viewSchema'
+import { MAX_GROUP_LEVELS, ViewParseError, groupLineStyleOf, groupLinesOf, headerRowOfView, parseViews, serializeViews, shownGroupLevels, updateViews } from './viewSchema'
 
 /** Yasin's real file, verbatim (trailing newline included). */
 const YASIN_BASE = `views:
@@ -298,5 +298,37 @@ describe('parse errors', () => {
 
   it('a non-map root → ViewParseError', () => {
     expect(() => parseViews('- a\n- b\n')).toThrow(ViewParseError)
+  })
+})
+
+describe("a view's header row (YAZ-4794)", () => {
+  it('keeps a text colour and an align, and drops a value that is no choice, part by part', () => {
+    const [view] = parseViews('views:\n  - type: table\n    name: T\n    headerRow:\n      color: green\n      text: blue\n      align: center\n').def.views
+    expect(headerRowOfView(view)).toEqual({ color: 'green', text: 'blue', align: 'center' })
+    const [bad] = parseViews('views:\n  - type: table\n    name: T\n    headerRow:\n      text: gray\n      align: middle\n      weight: regular\n').def.views
+    expect(headerRowOfView(bad)).toEqual({ weight: 'regular' })
+  })
+})
+
+describe('a grouped table\'s sticky group headers and group lines (YAZ-4798)', () => {
+  it('the three keys round-trip in .folder.md, and a write that removes one leaves the rest of the file as it was', () => {
+    const text = 'views:\n  - type: table\n    name: T\n    stickyGroups: false\n    groupLines: always\n    groupLineStyle: thread\n'
+    const parsed = parseViews(text)
+    expect(serializeViews(parsed)).toBe(text)
+    expect(parsed.def.views[0]).toMatchObject({ stickyGroups: false, groupLines: 'always', groupLineStyle: 'thread' })
+    const back = updateViews(parsed, (def) => {
+      delete def.views[0].groupLines
+    })
+    expect(serializeViews(back)).toBe(text.replace('    groupLines: always\n', ''))
+  })
+
+  it('the readers: a value the app does not know reads as no lines and plain lines', () => {
+    const view = (extra: Record<string, unknown>) => ({ type: 'table', name: 'T', ...extra })
+    expect(groupLinesOf(view({ groupLines: 'hover' }))).toBe('hover')
+    expect(groupLinesOf(view({ groupLines: 'always' }))).toBe('always')
+    expect(groupLinesOf(view({ groupLines: 'sometimes' }))).toBe('off')
+    expect(groupLinesOf(view({}))).toBe('off')
+    expect(groupLineStyleOf(view({ groupLineStyle: 'thread' }))).toBe('thread')
+    expect(groupLineStyleOf(view({ groupLineStyle: 'dotted' }))).toBe('plain')
   })
 })

@@ -25,8 +25,9 @@
  * Built-in columns are never deletable — `file.*`, `formula.*` and the reserved keys — only
  * hidden. `undeletableReason` is the one rule both menus disable their item by.
  */
-import { folderValues, setFolderValue } from '@shared/folderValues'
-import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { folderValues } from '@shared/folderValues'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { foldedValue, heldKey, setFolderValueOneSpelling, setOneSpelling } from '@shared/propertyKeys'
 import { isRecord } from '@shared/guards'
 import { isReadOnlyProperties } from '@shared/readOnly'
 import type { IndexRecord } from '@shared/types'
@@ -54,15 +55,19 @@ export function undeletableReason(key: string): string | null {
  */
 export function notesHolding(records: readonly IndexRecord[], home: ValueHome, key: string): IndexRecord[] {
   const bare = bareOf(key)
-  return records.filter((record) => Object.prototype.hasOwnProperty.call(home === null ? record.properties : folderValues(record.properties, home.block), bare))
+  // YAZ-4769: a note holds the column in any capitals.
+  return records.filter((record) => heldKey(home === null ? record.properties : folderValues(record.properties, home.block), bare) !== undefined)
 }
 
-/** One note's bytes with `value` put where `home` says (`undefined` removes it); a note read only on disk stays as it is (YAZ-3076 D6). */
+/**
+ * One note's bytes with `value` put where `home` says (`undefined` removes it); a note read only on disk stays as it is (YAZ-3076 D6).
+ * YAZ-4769: under the column's spelling, the note's other spellings going in the same write; the app's keys never.
+ */
 function setValue(content: string, home: ValueHome, bare: string, value: unknown): string {
   const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
   // A file that does not parse is refused by the writer below, in its own words.
   if (!parsed.error && isReadOnlyProperties(parsed.properties)) return content
-  return home === null ? setFrontmatterProperty(content, bare, value) : setFolderValue(content, home.block, bare, value)
+  return home === null ? setOneSpelling(content, bare, value, reservedKeys(true)) : setFolderValueOneSpelling(content, home.block, bare, value)
 }
 
 /** Every `"…"` / `'…'` literal blanked (escapes honoured), so a key spelled INSIDE a string is not a reference. */
@@ -204,7 +209,7 @@ export interface DeleteColumnHost {
 }
 
 /** The references a delete takes out of one stored views list and its labels (C7): a list that is not one stays as it is. */
-const pruneStored = (key: string) => (views: unknown, properties: unknown) => ({
+export const pruneStored = (key: string) => (views: unknown, properties: unknown) => ({
   views: Array.isArray(views) ? pruneColumnFromViews(views as ViewDef[], key) : views,
   properties: isRecord(properties) ? pruneColumnLabel(properties as ViewSet['properties'], key) : properties,
 })
@@ -223,7 +228,7 @@ export async function deleteColumn(key: string, host: DeleteColumnHost, clear = 
   const { home } = host
   // Each note's value, kept before the strip, so the Undo puts it back (YAZ-3746 13AY).
   const strip = clear ? notesHolding(host.records, home, key) : []
-  const values = strip.map((note) => ({ note, value: (home === null ? note.properties : folderValues(note.properties, home.block))[bare] }))
+  const values = strip.map((note) => ({ note, value: foldedValue(home === null ? note.properties : folderValues(note.properties, home.block), bare) }))
   const columns: Record<string, ColumnDecl> = { ...host.columns }
   delete columns[bare]
   const pruned = { views: pruneColumnFromViews(host.def.views, key), properties: pruneColumnLabel(host.def.properties, key) }

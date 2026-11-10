@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { findKey, keyFold } from '@shared/propertyKeys'
 import { PROPERTY_KINDS, builtInPrefixRefusal, isPropertyName } from '@shared/types'
 import { reservedKeyText } from '../../links/reservedKeys'
 import type { ColumnDecl } from '../folderSettings'
@@ -34,12 +35,28 @@ export function AddColumn({ taken, shown, reserved, onSave, onShow, autoOpen = f
   const [name, setName] = useState('')
   const [definition, setDefinition] = useState<ColumnDecl>({ kind: 'text' })
   const [error, setError] = useState<string | null>(null)
+  /** YAZ-4769: the line after a name that was an existing column in other capitals, "Using "Dessert Column", which already exists." */
+  const [using, setUsing] = useState<string | null>(null)
 
   if (!open)
     return (
-      <button type="button" className="view-menu__action" onClick={() => setOpen(true)}>
-        + Add column
-      </button>
+      <>
+        <button
+          type="button"
+          className="view-menu__action"
+          onClick={() => {
+            setUsing(null)
+            setOpen(true)
+          }}
+        >
+          + Add column
+        </button>
+        {using !== null && (
+          <span className="view-relation__dest" role="status">
+            {using}
+          </span>
+        )}
+      </>
     )
 
   const save = () => {
@@ -48,8 +65,10 @@ export function AddColumn({ taken, shown, reserved, onSave, onShow, autoOpen = f
       setError('Type a name')
       return
     }
-    if (reserved.has(key)) {
-      setError(reservedKeyText(key))
+    // In any capitals (YAZ-4769): "ReadOnly" is the app's `readonly`.
+    const app = findKey(reserved, key)
+    if (app !== undefined) {
+      setError(reservedKeyText(app))
       return
     }
     // A built-in prefix (YAZ-4637 M7): `file.x` would read as a file field, never as this column.
@@ -58,12 +77,15 @@ export function AddColumn({ taken, shown, reserved, onSave, onShow, autoOpen = f
       setError(clash)
       return
     }
-    const c = canonicalKey(key)
-    const existing = taken.find((k) => canonicalKey(k) === c)
-    if (existing !== undefined && shown.some((k) => canonicalKey(k) === c)) {
-      setError(`${key} is already a column`)
+    // YAZ-4769 (one key, capitals ignored): "dessert column" names the existing "Dessert Column", in its spelling.
+    const c = keyFold(canonicalKey(key))
+    const existing = taken.find((k) => keyFold(canonicalKey(k)) === c)
+    const spelled = existing === undefined ? key : canonicalKey(existing).slice('note.'.length)
+    if (existing !== undefined && shown.some((k) => keyFold(canonicalKey(k)) === c)) {
+      setError(spelled === key ? `${key} is already a column` : `"${spelled}" is already a column`)
       return
     }
+    setUsing(existing !== undefined && spelled !== key ? `Using "${spelled}", which already exists.` : null)
     if (existing !== undefined) onShow(existing)
     else {
       // The one kind rule (YAZ-1549): a target typed under a link kind never rides into a non-link

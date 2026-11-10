@@ -1,4 +1,5 @@
-import { type ReactNode, useContext } from 'react'
+import { Fragment, type ReactNode, useContext } from 'react'
+import { rowPage } from '../../links/shortcuts'
 import { FlyoutParent, MenuFlyout } from '../../components/Flyout'
 import type { Value } from '../expr'
 import type { FilterNode } from '../viewSchema'
@@ -43,4 +44,40 @@ export function deleteNoteItem(onDelete: (() => void) | undefined): ReactNode {
       Delete note…
     </button>
   )
+}
+
+/** The note doors a card view's menu offers (YAZ-3746 13BO CM1): ViewsPane's, as it hands the table its own. */
+export interface CardNoteDoors {
+  open?: (path: string) => void
+  /** "New card below" (CM2): a note seeded as the table's New row below, beside this card; it opens. Absent: no item. */
+  newBelow?: (path: string) => void
+  duplicate?: (path: string) => void
+  remove?: (paths: readonly string[]) => void
+}
+
+/**
+ * A card's note items (YAZ-3746 13BO CM1), the table row's, for `PageContextMenu`: Open; the new note beside it and
+ * Duplicate note as one edit group; Delete note… last. A folder row (YAZ-4579 D32) is no note: no Duplicate, no Delete.
+ * `newItem` names the new note's item ("New card below", the calendar's "New note on this day").
+ */
+export function cardMenuItems(doors: CardNoteDoors | undefined, path: string, close: () => void, newItem?: { label: string; run: () => void }): { onOpen?: (path: string) => void; extra?: ReactNode[]; danger?: ReactNode } {
+  if (doors === undefined) return {}
+  const run = (action: () => void) => () => {
+    close()
+    action()
+  }
+  const note = rowPage(path) === path
+  const duplicate = note ? doors.duplicate : undefined
+  const remove = note ? doors.remove : undefined
+  const edit = (newItem !== undefined || duplicate !== undefined) && (
+    <Fragment key="note">
+      {newItem !== undefined && (
+        <button type="button" className="ctx-menu__item" role="menuitem" onClick={run(newItem.run)}>
+          {newItem.label}
+        </button>
+      )}
+      {duplicateNoteItem(duplicate && run(() => duplicate(path)))}
+    </Fragment>
+  )
+  return { onOpen: doors.open, extra: edit === false ? undefined : [edit], danger: deleteNoteItem(remove && run(() => remove([path]))) }
 }

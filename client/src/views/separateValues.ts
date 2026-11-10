@@ -7,8 +7,10 @@
  */
 import { folderValues, setFolderValue } from '@shared/folderValues'
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { foldedValue, heldKey, setFolderValueOneSpelling, setOneSpelling } from '@shared/propertyKeys'
 import { isReadOnlyProperties } from '@shared/readOnly'
 import type { IndexRecord } from '@shared/types'
+import { reservedKeys } from '../links/reservedKeys'
 import { transformFile } from './writeProperty'
 
 /** How the page's values meet the notes' own: `total` notes hold a page value; `differ` of them hold another value in the note field. */
@@ -27,14 +29,14 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.str
 
 /** The notes holding a page value for `key` in the block of the page `pageId`. */
 export const separateHolders = (records: readonly IndexRecord[], pageId: string | undefined, key: string): IndexRecord[] =>
-  records.filter((record) => Object.hasOwn(folderValues(record.properties, pageId), key))
+  records.filter((record) => heldKey(folderValues(record.properties, pageId), key) !== undefined)
 
-/** The ask's numbers, off the index. */
+/** The ask's numbers, off the index. YAZ-4769: the field and the page value in any capitals. */
 export function separateCounts(records: readonly IndexRecord[], pageId: string | undefined, key: string): SeparateCounts {
   const holders = separateHolders(records, pageId, key)
   const differ = holders.filter((record) => {
-    const field = record.properties[key]
-    return !empty(field) && !same(field, folderValues(record.properties, pageId)[key])
+    const field = foldedValue(record.properties, key)
+    return !empty(field) && !same(field, foldedValue(folderValues(record.properties, pageId), key))
   }).length
   return { total: holders.length, fill: holders.length - differ, differ }
 }
@@ -52,11 +54,14 @@ function mergeInContent(content: string, pageId: string, key: string, keep: Sepa
   if (parsed.error) throw new FrontmatterWriteError(parsed.error)
   if (isReadOnlyProperties(parsed.properties)) return { content }
   const block = folderValues(parsed.properties, pageId)
-  if (!Object.hasOwn(block, key)) return { content }
-  const field = parsed.properties[key]
-  const cleared = setFolderValue(content, pageId, key, undefined)
+  // YAZ-4769: the page value and the note field in any capitals; the field is written in the column's, its other spellings out.
+  const held = heldKey(block, key)
+  if (held === undefined) return { content }
+  const value = block[held]
+  const field = foldedValue(parsed.properties, key)
+  const cleared = setFolderValueOneSpelling(content, pageId, key, undefined)
   const take = keep === 'page' || empty(field)
-  return { content: take && !same(field, block[key]) ? setFrontmatterProperty(cleared, key, block[key]) : cleared, before: { field, block: block[key] } }
+  return { content: take && !same(field, value) ? setOneSpelling(cleared, key, value, reservedKeys(true)) : cleared, before: { field, block: value } }
 }
 
 /** The merge over the given notes, one guarded write each, all at once. Resolves with the notes it changed and how many writes failed. */

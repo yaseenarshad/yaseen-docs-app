@@ -13,6 +13,7 @@ import { canonicalKey } from './keys'
 import { GroupHeader, rowCell, rowTitle } from './GroupHeader'
 import { type GroupSpot, TOP_SPOT, childSpot, groupTakesNew, spotKey } from './groupDrag'
 import { PageContextMenu } from './PageContextMenu'
+import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
 import { openByKey } from '../../lib/openGesture'
 import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
@@ -43,6 +44,8 @@ export interface ListViewProps {
   onNotice?: (message: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
+  /** The card menu's note items (YAZ-3746 13BO): Open, the new note beside a card, Duplicate, Delete. Absent: none. */
+  noteDoors?: CardNoteDoors
   /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846). */
   root: string
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
@@ -88,7 +91,7 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY, hover }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onNewInGroup, noteDoors, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY, hover }: ListViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   // The note window (YAZ-4547 D24): the order shown through the groups, once per rows, groups or collapse change.
   const windowOrder = useMemo(() => shownRows(groups, rows, collapsed), [groups, rows, collapsed])
@@ -223,7 +226,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
       {groups === null
         ? items(rows)
         : groups.map((g) => section(g, TOP_SPOT))}
-      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onOpenWindow={onOpenWindow} onNotice={onNotice} onClose={() => setMenu(null)} />}
+      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onOpenWindow={onOpenWindow} onNotice={onNotice} onClose={() => setMenu(null)} {...cardMenuItems(noteDoors, menu.path, () => setMenu(null), noteDoors?.newBelow === undefined ? undefined : { label: 'New row below', run: () => noteDoors.newBelow!(menu.path) })} />}
     </div>
   )
 }

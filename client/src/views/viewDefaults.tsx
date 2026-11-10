@@ -20,7 +20,11 @@ const DEFAULTED = {
   rowHeight: 'rowHeight',
   textInCells: 'textInCells',
   rowNumbers: 'rowNumbers',
+  columnTypeIcons: 'columnTypeIcons',
   groupIndent: 'groupIndent',
+  stickyGroups: 'stickyGroups',
+  groupLines: 'groupLines',
+  groupLineStyle: 'groupLineStyle',
   showEmptyColumns: 'showEmptyGroups',
   subfolders: 'subfolders',
   foldersFirst: 'foldersFirst',
@@ -46,7 +50,13 @@ const ABSENT: { readonly [K in DefaultedKey]: unknown } = {
   rowHeight: 'short',
   textInCells: 'kind',
   rowNumbers: true,
+  // Before YAZ-4779 a header had no type icon: a view with no key takes Settings (on by default).
+  columnTypeIcons: false,
   groupIndent: 'medium',
+  // Before YAZ-4798 a grouped table had no sticky group headers and no group lines: a view with no key takes Settings (on, on hover).
+  stickyGroups: false,
+  groupLines: 'off',
+  groupLineStyle: 'plain',
   showEmptyColumns: false,
   subfolders: 'notes',
   foldersFirst: true,
@@ -80,20 +90,22 @@ export function chooseOwn<K extends DefaultedKey>(view: ViewDef, key: K, value: 
  * The slot after a menu row's control (D34, polished in the YAZ-3746 demo): empty while the view follows Settings
  * (the View tab's footer says where defaults come from); once the view has its own value, an accent ↺ that removes
  * the key, so the view follows Settings again. The empty slot keeps every control in the same place.
- * `own` is the view as written, never `withDefaults`'.
+ * `own` is the view as written, never `withDefaults`'. `headerRow` (YAZ-4774) reads Settings › Tables, and its reset
+ * takes the first build's `shadedHeader` too.
  */
-export function FromSettings({ own, viewKey, viewIndex, onUpdate }: { own: ViewDef; viewKey: DefaultedKey; viewIndex: number; onUpdate: Mutate }) {
-  if (own[viewKey] === undefined) return <span className="view-from-settings" aria-hidden="true" />
+export function FromSettings({ own, viewKey, viewIndex, onUpdate }: { own: ViewDef; viewKey: DefaultedKey | 'headerRow'; viewIndex: number; onUpdate: Mutate }) {
+  if (own[viewKey] === undefined && (viewKey !== 'headerRow' || own.shadedHeader === undefined)) return <span className="view-from-settings" aria-hidden="true" />
   return (
     <button
       type="button"
       className="view-from-settings view-from-settings--reset"
       aria-label="Reset to Settings"
-      title="Changed for this view. Click to use the value from Settings › Folder pages."
+      title={`Changed for this view. Click to use the value from Settings › ${viewKey === 'headerRow' ? 'Tables' : 'Folder pages'}.`}
       onClick={(e) => {
         e.preventDefault()
         onUpdate((d) => {
           delete d.views[viewIndex][viewKey]
+          if (viewKey === 'headerRow') delete d.views[viewIndex].shadedHeader
         })
       }}
     >

@@ -9,6 +9,7 @@ import { Popover } from './Popover'
 import { SelectValueEditor } from './SelectValueEditor'
 import { READ_ONLY_TIP } from '../readOnlyRows'
 import { CHANGE_CANCELLED } from '../confirmChanges'
+import { ImageCellEditor } from './imageCell'
 
 /** A text cell's editor completes `[[` (YAZ-4601 D48): on in a folder page's views (`ViewsPane`), off in the properties panel. */
 export const TextLinkPicker = createContext(false)
@@ -116,6 +117,8 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
 
   if (editor === null) return <>{cellContent(value, resolve, decl)}</>
   if (readOnly) {
+    // An Image cell (YAZ-4802) shows its picture, read only too.
+    if (editor === 'image') return <ImageCellEditor raw={raw} decl={decl} label={`Edit ${propKey}`} readOnly onCommit={() => {}} />
     return editor === 'checkbox' ? (
       <span className="view-cell-edit">
         <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={READ_ONLY_TIP} />
@@ -159,6 +162,9 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
       Save failed
     </span>
   )
+
+  // An Image cell (YAZ-4802): the picture picker, its writes this cell's own commit (optimistic, ordered, Undo).
+  if (editor === 'image') return <ImageCellEditor raw={current} decl={decl} label={`Edit ${propKey}`} readOnly={false} onCommit={commit} after={failure} />
 
   // Checkboxes toggle in place: no edit mode, every click is one typed commit.
   if (editor === 'checkbox') {

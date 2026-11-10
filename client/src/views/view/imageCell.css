@@ -1,0 +1,159 @@
+/* YAZ-4802: an Image column's picture, its hover preview, the slot before a name, and the picker. */
+
+.image-thumb {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  vertical-align: middle;
+  object-fit: contain;
+}
+.image-thumb--rounded {
+  object-fit: cover;
+  border-radius: 22%;
+}
+.image-thumb--circle {
+  object-fit: cover;
+  border-radius: 50%;
+}
+.image-thumb--broken {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-radius: 3px;
+}
+
+/* The hover box's wrapper sits like the picture it wraps: no extra line height. */
+.image-thumb__hover {
+  display: inline-flex;
+  vertical-align: middle;
+}
+.image-thumb__preview {
+  display: block;
+  max-width: 200px;
+  max-height: 200px;
+  object-fit: contain;
+}
+
+/* The cell's picture is the button; it keeps the column's alignment (an inline box) and the row's one line. */
+.image-cell .view-cell-edit__display {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  line-height: 0;
+  cursor: pointer;
+}
+.image-cell .property-empty {
+  line-height: normal;
+}
+.image-cell__empty {
+  display: inline-flex;
+  color: var(--fg-muted);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+tr:hover .image-cell__empty,
+.image-cell:hover .image-cell__empty,
+.image-cell :focus-visible .image-cell__empty,
+td[data-selected] .image-cell__empty {
+  opacity: 0.7;
+}
+
+/* A table cell owns the mouse (`views.css`, pointer-events none on its value); the picture takes the pointer for its
+   hover preview, as a link pill does. A click on it still only selects the cell (`ImageCellEditor`). */
+.view-table tbody td .image-cell .image-thumb__hover {
+  pointer-events: auto;
+}
+
+.image-picker {
+  width: 340px;
+}
+.image-picker__tabs {
+  margin-bottom: 8px;
+}
+.image-picker__search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+}
+.image-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 4px;
+  max-height: 264px;
+  overflow-y: auto;
+}
+.image-picker__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 4px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.image-picker__item:hover {
+  background: var(--bg-hover);
+}
+.image-picker__item[aria-selected='true'] {
+  border-color: var(--accent);
+}
+.image-picker__name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.image-picker__upload {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.image-picker__link {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.image-picker__link .view-input {
+  flex: 1;
+  min-width: 0;
+}
+.image-picker__note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* Edit column's Size row: the quick sizes, then the px box. */
+/* The row wraps when the panel is narrow: the label keeps its width and the controls move under it, on the right. */
+.column-detail__row:has(> .column-detail__image-size) {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding-block: 4px;
+}
+.column-detail__row:has(> .column-detail__image-size) > :first-child {
+  flex: none;
+}
+.column-detail__image-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+/* Beats `.column-detail__row .view-input` (58%): the box fits "240". */
+.column-detail__row .column-detail__image-size .column-detail__px {
+  flex: none;
+  width: 52px;
+}
+.column-detail__px-unit {
+  font-size: 12px;
+  color: var(--fg-muted);
+}

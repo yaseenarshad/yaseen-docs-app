@@ -164,11 +164,12 @@ describe('the pure pruners', () => {
     expect(pruneColumnLabel(undefined, 'status')).toBeUndefined()
   })
 
-  it('notesHolding lists the notes whose block for THIS folder holds the exact field — never a top-level field, never another folder’s', () => {
+  it('notesHolding lists the notes whose block for THIS folder holds the field — never a top-level field, never another folder’s', () => {
     const records = [...host().records, rec('/vault/own.md', { status: 'mine' }), rec('/vault/theirs.md', { in: { [OTHER_ID]: { status: 'x' } } })]
     expect(notesHolding(records, { block: FOLDER_ID }, 'note.status').map((m) => m.basename)).toEqual(['a', 'c'])
     expect(notesHolding(records, { block: FOLDER_ID }, 'owner').map((m) => m.basename)).toEqual(['a', 'b'])
-    expect(notesHolding(records, { block: FOLDER_ID }, 'Status')).toEqual([]) // names compare exactly
+    // YAZ-4769 (one key, capitals ignored): `Status` is the `status` field.
+    expect(notesHolding(records, { block: FOLDER_ID }, 'Status').map((m) => m.basename)).toEqual(['a', 'c'])
     // A shared column (YAZ-4713 C1): the note's own field, never a block.
     expect(notesHolding(records, null, 'status').map((m) => m.basename)).toEqual(['own'])
   })
