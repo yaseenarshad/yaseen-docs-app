@@ -1,4 +1,4 @@
-import { type FocusEvent, Fragment, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { type FocusEvent, Fragment, type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { OutsideChangeGlow, TocSource } from '@shared/types'
 import { OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
@@ -251,6 +251,27 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         <span>{label}{rowInfoOf(label, hint)}</span><span aria-hidden="true">{on ? '✓' : ''}</span>
       </button>}
   </Fragment>
+  /**
+   * YAZ-4810 5G: the menu is on `document.body` (YAZ-4776), so the page's Tab order no longer runs from the cog into it.
+   * Tab on the cog goes to the menu's first control; Shift+Tab on that one goes back to the cog; Tab on the last one
+   * closes the menu on the cog, as Esc does. (A portal's keys still reach this root through React.)
+   */
+  const tabAcross = (event: KeyboardEvent<HTMLDivElement>) => {
+    const items = [...(menuRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), select:not([disabled]), input:not([disabled])') ?? [])]
+    if (items.length === 0) return
+    const at = event.target
+    const into = at === triggerRef.current && !event.shiftKey
+    const back = at === items[0] && event.shiftKey
+    const out = at === items[items.length - 1] && !event.shiftKey
+    if (!into && !back && !out) return
+    event.preventDefault()
+    if (into) {
+      items[0]!.focus()
+      return
+    }
+    if (out) setOpen(false)
+    triggerRef.current?.focus()
+  }
   const switchRows = switches?.map(rowOf)
   // Read while the menu is open, never while it is closed (a drawing's rows count its pictures).
   const rowList = open ? rows?.() : undefined
@@ -258,7 +279,12 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   return (
     <div ref={rootRef} className="page-settings"
       onKeyDown={(event) => {
-        if (!open || event.key !== 'Escape') return
+        if (!open) return
+        if (event.key === 'Tab') {
+          tabAcross(event)
+          return
+        }
+        if (event.key !== 'Escape') return
         event.preventDefault()
         event.stopPropagation()
         setOpen(false)
@@ -337,7 +363,7 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
           <p>{text.length.toLocaleString()} characters</p>
         </>}
       </div>, document.body)}
-      {/* BESIDE the menu, not in it: the menu scrolls and is 172px wide, and this is a short text to read. */}
+      {/* BESIDE the menu, not in it: the menu scrolls and is 172px wide (212px when rows have an (i)), and this is a short text to read. */}
       {open && hintTip !== null && createPortal(<div id={hintTipId} role="tooltip" className="page-settings__tip page-settings__tip--hint" style={{ left: hintTip.left, top: hintTip.top }}>
         {typeof hintTip.hint === 'string' ? <p>{hintTip.hint}</p> : <>
           {hintTip.hint.lead !== undefined && <p>{hintTip.hint.lead}</p>}

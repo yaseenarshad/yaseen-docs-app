@@ -409,6 +409,29 @@ describe('read only: a change draw.io queued before the switch landed (YAZ-3116 
     expect(written.expectedMtime).toBe(300)
     expect(written.xml).toBe(EDITED.replace('<mxfile>', '<mxfile yaseendraw-readonly="1">'))
   })
+
+  it('YAZ-4809 5F: an autosave already due while the switch is written runs right after it, and still saves WITH the switch', async () => {
+    await opened()
+    let answer!: (res: { path: string; mtime: number; size: number }) => void
+    setBoardReadOnly.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    save.mockResolvedValue({ path: PATH, mtime: 350, size: 50 })
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    const row = [...document.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith('Read only'))!
+    await act(async () => {
+      row.click()
+      await Promise.resolve()
+    })
+    // draw.io's edit lands, and its 500 ms debounce runs out while the switch's write is still in flight.
+    drawio({ event: 'autosave', xml: EDITED })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await act(async () => answer({ path: PATH, mtime: 300, size: 1 }))
+    await settle()
+    await settle()
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(isDiagramReadOnly(save.mock.calls[0]![0].xml)).toBe(true)
+  })
 })
 
 /** The diagram's own "Link preview on hover" (YAZ-4748 D10): `yaseendraw-hoverlinks="0"` on the root `<mxfile>`. */
@@ -563,6 +586,28 @@ describe('YAZ-4748 D10: the diagram\u2019s own "Link preview on hover"', () => {
     expect(isDiagramReadOnly(written)).toBe(true)
     expect(isDiagramHoverLinksOff(written)).toBe(true)
     expect(written).toBe(EDITED.replace('<mxfile>', '<mxfile yaseendraw-readonly="1" yaseendraw-hoverlinks="0">'))
+  })
+
+  it('YAZ-4809 5F: an autosave already due while the switch is written runs right after it, and keeps the NEW switch', async () => {
+    await openedWith(XML)
+    let answer!: (res: { path: string; mtime: number; size: number }) => void
+    setBoardHoverLinks.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    save.mockResolvedValue({ path: PATH, mtime: 350, size: 50 })
+    act(() => cog().click())
+    await act(async () => {
+      row('Link preview on hover').click()
+      await Promise.resolve()
+    })
+    drawio({ event: 'autosave', xml: EDITED })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await act(async () => answer({ path: PATH, mtime: 300, size: 1 }))
+    await settle()
+    await settle()
+    expect(row('Link preview on hover').getAttribute('aria-pressed')).toBe('false')
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(isDiagramHoverLinksOff(save.mock.calls[0]![0].xml)).toBe(true)
   })
 })
 

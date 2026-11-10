@@ -22,6 +22,9 @@ import { lastSidebarDrag, onSidebarDrag, sidebarDragOn, sidebarDropInFrame } fro
 import type { WireLook } from './diagramLooks'
 import type { DrawioEditorState, DrawioLinkMessage } from './drawioProtocol'
 
+/** One whole `[[link]]` and nothing else, as the frame's `WHOLE_LINK` reads it. */
+const WHOLE_LINK = /^\[\[[^[\]]+\]\]$/
+
 const COMBOS: readonly MouseMods[] = Array.from({ length: 16 }, (_, bits) => ({ metaKey: (bits & 1) !== 0, ctrlKey: (bits & 2) !== 0, altKey: (bits & 4) !== 0, shiftKey: (bits & 8) !== 0 }))
 
 /** The held modifiers as the iframe names them (`modsKey` in yaseen-links.js): ⌘, ⌃, ⌥, ⇧. */
@@ -165,8 +168,10 @@ export function useDrawioLinkBridge(links: BoardLinks | undefined, frame: RefObj
         return
       }
       case 'yaseenPaste': {
-        // A13: the link's look goes with it, so the frame sizes a new box for the pill.
-        const link = hostLinks.pasteLink(msg.text)
+        // A13: the link's look goes with it, so the frame sizes a new box for the pill. A whole `[[link]]` (the frame asks
+        // only on the canvas) is already a link: it comes back as it is, so its box is a pill too (YAZ-4808 5E).
+        const whole = msg.text.trim()
+        const link = hostLinks.pasteLink(msg.text) ?? (WHOLE_LINK.test(whole) ? whole : null)
         post({ action: 'yaseenPasteAnswer', id: msg.id, link, ...(link === null ? {} : { looks: looksOf(innersOf([link])) }) })
         return
       }

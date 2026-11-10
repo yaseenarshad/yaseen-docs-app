@@ -103,10 +103,12 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   const shownReadOnly = useRef(false)
   /** draw.io reported a change while read only: never saved, and the canvas is put back to the disk at "Allow edits". */
   const strayWhileReadOnly = useRef(false)
-  /** The diagram's own "Link preview on hover" off (YAZ-4748 D10), as the file last said it; the ref is what a save keeps. */
+  /**
+   * The diagram's own "Link preview on hover" off (YAZ-4748 D10), as the file last said it. The ref is what a save keeps:
+   * it changes the moment main wrote the switch (or a reload read it), before a queued save runs (YAZ-4809 5F).
+   */
   const [hoverLinksOff, setHoverLinksOff] = useState(() => isDiagramHoverLinksOff(loaded.xml))
   const keptHoverLinksOff = useRef(hoverLinksOff)
-  keptHoverLinksOff.current = hoverLinksOff
 
   const post = useCallback((msg: Record<string, unknown>) => {
     frameRef.current?.contentWindow?.postMessage(JSON.stringify(msg), DRAWIO_ORIGIN)
@@ -183,6 +185,10 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     onSyncNow,
     // The switch is read off the LOADED XML, never `latestXml`: draw.io drops attributes it does not know (YAZ-3076 D1).
     readOnly: loadedReadOnly,
+    // YAZ-4809 5F: a save queued behind the switch's write runs before the next render, and must keep the new switch.
+    onReadOnlyWritten: (on) => {
+      wantedReadOnly.current = on
+    },
     onNotice,
     // A change draw.io queued before "on" landed saves after it: it keeps the switches, which draw.io's
     // XML never carries (it drops attributes it does not know — YAZ-3116 A3; the hover switch, YAZ-4748 D10).
@@ -192,7 +198,8 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       const res = await api.diagram.load({ root, path })
       a.reset(version.current, res.mtime)
       sendLoad(res.xml, res.mtime, true)
-      setHoverLinksOff(isDiagramHoverLinksOff(res.xml))
+      keptHoverLinksOff.current = isDiagramHoverLinksOff(res.xml)
+      setHoverLinksOff(keptHoverLinksOff.current)
       return isDiagramReadOnly(res.xml)
     },
     // Export Image… is the one board command a diagram answers.
@@ -223,7 +230,12 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     const a = autosave.current
     if (a === null || retired.current) return
     try {
-      await a.writeBeside((expectedMtime) => api.setBoardHoverLinks({ root, path, on, expectedMtime }))
+      await a.writeBeside((expectedMtime) =>
+        api.setBoardHoverLinks({ root, path, on, expectedMtime }).then((res) => {
+          keptHoverLinksOff.current = !on
+          return res
+        }),
+      )
       setHoverLinksOff(!on)
     } catch (err) {
       if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {

@@ -208,6 +208,16 @@ describe('useDrawioLinkBridge', () => {
     expect(links.openShapeLink).toHaveBeenCalledWith('[[YAZ-1]]', mods)
   })
 
+  it('YAZ-4808 5E: a whole [[link]] pasted on the canvas comes back as that link with its look, so the frame makes a pill box (2A)', () => {
+    render()
+    send({ event: 'yaseenPaste', id: 7, text: ' [[YAZ-1]] ' })
+    send({ event: 'yaseenPaste', id: 8, text: '[[YAZ-1]] and more' })
+    expect(posted).toEqual([
+      { action: 'yaseenPasteAnswer', id: 7, link: '[[YAZ-1]]', looks: { 'YAZ-1': { label: 'Page YAZ-1', icon: null } } },
+      { action: 'yaseenPasteAnswer', id: 8, link: null },
+    ])
+  })
+
   it('with no link source the pills stay text: nothing is resolved, no keys are sent, and a paste or a drop is answered with nothing (A3)', () => {
     render(undefined, false)
     act(() => bridge.ready())

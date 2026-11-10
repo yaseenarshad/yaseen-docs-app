@@ -835,3 +835,41 @@ describe('YAZ-4776, YAZ-4748: the menu on the page, and the (i) of a row', () =>
     expect(hintBox()).toBeNull()
   })
 })
+
+describe('YAZ-4810 5G: Tab between the cog and its menu, which is on document.body', () => {
+  const tab = (element: Element, shiftKey = false) =>
+    act(() => void element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })))
+  const items = () => [...menu()!.querySelectorAll<HTMLButtonElement>('button:not([disabled])')]
+
+  it('Tab on the open cog goes to the first row; Shift+Tab there goes back to the cog, and the menu stays open', () => {
+    mount()
+    cog().focus()
+    click(cog())
+    tab(cog())
+    expect(document.activeElement).toBe(items()[0])
+    tab(items()[0]!, true)
+    expect(document.activeElement).toBe(cog())
+    expect(menu()).not.toBeNull()
+  })
+
+  it('Tab on the last row closes the menu on the cog, as Esc does; a Tab between rows is the browser\u2019s own', () => {
+    mount()
+    click(cog())
+    const all = items()
+    expect(all.length).toBeGreaterThan(1)
+    const middle = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    act(() => void all[0]!.dispatchEvent(middle))
+    expect(middle.defaultPrevented).toBe(false)
+    all[all.length - 1]!.focus()
+    tab(all[all.length - 1]!)
+    expect(menu()).toBeNull()
+    expect(document.activeElement).toBe(cog())
+  })
+
+  it('a closed cog leaves Tab alone', () => {
+    mount()
+    const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    act(() => void cog().dispatchEvent(event))
+    expect(event.defaultPrevented).toBe(false)
+  })
+})
