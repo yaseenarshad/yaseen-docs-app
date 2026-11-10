@@ -1144,6 +1144,9 @@
 			}
 
 			hostDrag = false;
+			// YAZ-4811: the window hears no drop in this frame and takes the drag as gone to Finder; every sidebar drop here
+			// says it landed, also one this frame does not link (a read-only diagram, a label in edit, only pictures).
+			post({event: 'yaseenDropLanded'});
 			var files = (evt.dataTransfer != null) ? Array.prototype.slice.call(evt.dataTransfer.files || []) : [];
 
 			if (graph.isEditing() || files.length == 0 || files.every(isPicture))

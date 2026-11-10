@@ -193,6 +193,16 @@ describe('useDrawioLinkBridge', () => {
     expect(sidebarDroppedInFrame()).toEqual(['/vault/A.md', '/vault/B.md'])
   })
 
+  it('YAZ-4811: a sidebar drop the frame did not link (read only, a label in edit, only pictures) still landed in the app', () => {
+    render()
+    act(() => setSidebarDrag(['/vault/C.md']))
+    act(() => setSidebarDrag([]))
+    posted = []
+    send({ event: 'yaseenDropLanded' })
+    expect(sidebarDroppedInFrame()).toEqual(['/vault/C.md'])
+    expect(posted).toEqual([])
+  })
+
   it('A6: links only the pages the frame took — a picture of the drag is the frame’s own import, never a pill', () => {
     render()
     act(() => setSidebarDrag(['/vault/A.md', '/vault/pics/p.png', '/vault/B.md']))

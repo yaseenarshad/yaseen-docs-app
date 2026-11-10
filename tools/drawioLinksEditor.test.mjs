@@ -342,7 +342,7 @@ describe('the sidebar drop (2B, D4)', () => {
     over()
     expect(drop([file('A.md', 'text/markdown'), file('B.md', 'text/markdown'), file('p.png', 'image/png')]).defaultPrevented).toBe(true)
     // A6: the host links only the pages, by their names; the picture is the frame's.
-    expect(posted).toEqual([{ event: 'yaseenDrop', id: 1, names: ['A.md', 'B.md'] }])
+    expect(posted).toEqual([{ event: 'yaseenDropLanded' }, { event: 'yaseenDrop', id: 1, names: ['A.md', 'B.md'] }])
     answer({ action: 'yaseenDropLinks', id: 1, links: ['[[YAZ-1]]', '[[YAZ-7]]'] })
     expect(inserted).toEqual([
       { value: '[[YAZ-1]]', x: 100, y: 200, depth: 1 },
@@ -365,7 +365,9 @@ describe('the sidebar drop (2B, D4)', () => {
     // No end came from the host: the next drag (from Finder) is still not ours.
     over()
     expect(drop([file('C.md', 'text/markdown')]).defaultPrevented).toBe(false)
-    expect(posted.map((m) => m.id)).toEqual([1, 2])
+    expect(posted.filter((m) => m.event === 'yaseenDrop').map((m) => m.id)).toEqual([1, 2])
+    // YAZ-4811: each of the two taken drops said it landed; the Finder drop is draw.io's and says nothing.
+    expect(posted.filter((m) => m.event === 'yaseenDropLanded')).toHaveLength(2)
   })
 
   it('A5: a sidebar drag that left the page and ended elsewhere leaves the next drop to draw.io', () => {
@@ -387,7 +389,8 @@ describe('the sidebar drop (2B, D4)', () => {
     answer({ action: 'yaseenSidebarDrag', on: true })
     over()
     expect(drop([file('A.md', 'text/markdown')]).defaultPrevented).toBe(true)
-    expect(posted).toEqual([])
+    // No pill and no drop to link; each sidebar drop still says it landed (YAZ-4811).
+    expect(posted).toEqual([{ event: 'yaseenDropLanded' }, { event: 'yaseenDropLanded' }])
   })
   /**
    * The graph's own box, as draw.io has it: its `dragleave` handler takes away the orange "drop here" frame
@@ -426,7 +429,7 @@ describe('the sidebar drop (2B, D4)', () => {
     expect(frameShown()).toBe(false)
     // draw.io's own drop never runs: it would add the file a second time.
     expect(drawioDrop).not.toHaveBeenCalled()
-    expect(posted).toEqual([{ event: 'yaseenDrop', id: 1, names: ['A.md'] }])
+    expect(posted).toEqual([{ event: 'yaseenDropLanded' }, { event: 'yaseenDrop', id: 1, names: ['A.md'] }])
   })
 
   it('YAZ-4748 demo: on a read-only diagram the drop goes on to draw.io (which adds nothing and clears its frame); no `dragleave` is sent', () => {
@@ -438,7 +441,23 @@ describe('the sidebar drop (2B, D4)', () => {
     expect(drop([file('A.md', 'text/markdown')]).defaultPrevented).toBe(true)
     expect(drawioDrop).toHaveBeenCalledTimes(1)
     expect(left).not.toHaveBeenCalled()
-    expect(posted).toEqual([])
+    // YAZ-4811: the sidebar's drop still landed in the app, so the "dragged out to Finder" box must not ask.
+    expect(posted).toEqual([{ event: 'yaseenDropLanded' }])
+  })
+
+  it('YAZ-4811: every sidebar drop the frame does not link still tells the host it landed: a label in edit, only pictures', () => {
+    const { graph, posted, answer } = load()
+    withFrame(graph)
+    graph.isEditing = () => true
+    answer({ action: 'yaseenSidebarDrag', on: true })
+    over()
+    drop([file('A.md', 'text/markdown')])
+    expect(posted).toEqual([{ event: 'yaseenDropLanded' }])
+    graph.isEditing = () => false
+    answer({ action: 'yaseenSidebarDrag', on: true })
+    over()
+    drop([file('p.png', 'image/png')])
+    expect(posted).toEqual([{ event: 'yaseenDropLanded' }, { event: 'yaseenDropLanded' }])
   })
 
   it('YAZ-4748 demo: a drop that is not the sidebar\u2019s (Finder, or only pictures) is draw.io\u2019s own, frame and all: no `dragleave` from here', () => {

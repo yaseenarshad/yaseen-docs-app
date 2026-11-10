@@ -182,6 +182,10 @@ export function useDrawioLinkBridge(links: BoardLinks | undefined, frame: RefObj
         // The board's picker reads only the key.
         hostLinks.onEditorKeyDown({ key: msg.key, isComposing: false } as KeyboardEvent)
         return
+      case 'yaseenDropLanded':
+        // A5, YAZ-4811: a sidebar drop landed in the app, though the window heard none; the Finder box does not ask.
+        sidebarDropInFrame()
+        return
       case 'yaseenDrop': {
         // A6: only the drag's paths the frame took as pages (by name); its pictures are the frame's own import.
         const names = new Set(msg.names)
