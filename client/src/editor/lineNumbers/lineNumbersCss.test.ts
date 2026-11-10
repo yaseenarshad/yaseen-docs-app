@@ -69,8 +69,13 @@ describe('line numbers CSS contract', () => {
 
   it('divides the number’s size and its gap by the document zoom, and nothing else: 11px and 52px on screen at every zoom (S53)', () => {
     const zoomed = rules.filter(({ body }) => body.includes('--document-zoom'))
-    expect(zoomed.map(({ selectors }) => selectors)).toEqual([[`${ON} [data-line]::after`, `${ON} .milkdown-table-block[data-line]::before`]])
+    expect(zoomed.map(({ selectors }) => selectors)).toEqual([
+      [`${ON} [data-line]::after`, `${ON} .milkdown-table-block[data-line]::before`],
+      // A code block with its own width (YAZ-4783) keeps the same 52px gap, from its left edge.
+      [`${ON} .milkdown-code-block[data-code-width][data-line]::after`],
+    ])
     expect(zoomed[0].body.match(/\/ var\(--document-zoom, 1\)/g)).toHaveLength(2)
+    expect(zoomed[1].body).toMatch(/right:\s*calc\(100% \+ 52px \/ var\(--document-zoom, 1\)\);/)
     // The zoom the two lengths undo is the one on the note body itself.
     expect(appCss).toMatch(/\.editor-instance \.milkdown > \.ProseMirror\s*\{\s*zoom:\s*var\(--document-zoom, 1\);\s*\}/)
   })

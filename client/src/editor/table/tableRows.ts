@@ -2,13 +2,17 @@
  * The table's settings in the block handle menu (YAZ-3767, YAZ-3696 🔒 D6 / D7 option 2; CONTRACTS
  * rule 41a): a right-click on a table's six dots shows three captioned icon strips (the YAZ-4163 demo, D23: `caption`
  * and `stay` of `MenuStrip`; a click sets one and the menu stays open, drawn again by `blockHandleMenu.ts`'s `refresh`):
- * Look (Shaded header row, Stripes, Fit columns to the page), Text (Align left / center / right for all columns,
+ * Look (Stripes, Fit columns to the page), Text (Align left / center / right for all columns,
  * Align top / middle / bottom, the table's default; a cell's own wins, YAZ-4166 D10) and Rows (Compact / Normal / Tall
- * rows, Wrap text); then "Border thickness" and "Border darkness" (number fields, as `line/lineRows.ts`) and "Time
- * slots" (Off / 15 min / 30 min / 1 hour, YAZ-4163 D7: `setTimeSlots` in `tableCalendar.ts` makes any table a calendar
- * table and keeps its text, D8). A calendar table also has "Now button" (On / Off, the table's `nowButton`, saved as
+ * rows, Wrap text); then "Header row ›" (YAZ-4774: "Plain, like any row" (YAZ-4793: Strength Off, Regular, Full at
+ * once), then Color, Strength, Weight and Text (YAZ-4794: Fill colour, Strength, Weight, Text colour and Align), each ✓ at what the table shows; a pick
+ * that equals Settings › Tables › Header row saves no part, so the table follows Settings again); then "Border
+ * thickness" and "Border darkness" (number fields, as `line/lineRows.ts`) and "Time slots" (Off / 15 min / 30 min /
+ * 1 hour, YAZ-4163 D7: `setTimeSlots` in `tableCalendar.ts` makes any table a calendar table and keeps its text, D8). A calendar table also has "Now button" (On / Off, the table's `nowButton`, saved as
  * `nonow`, D22), "Go to now" (a row, YAZ-4164 D11: `goToNow`), disabled while no row holds the current time, and "Fill
- * the calendar day" (the YAZ-4163 demo: `fillCalendarDay`), disabled while the table has every slot of the day.
+ * the calendar day" (the YAZ-4163 demo: `fillCalendarDay`), disabled while the table has every slot of the day. Every
+ * table has "Cell note button" (Default / On / Off, the table's `noteButton`, saved as `notebutton` / `nonotebutton`,
+ * YAZ-4790; Default is Settings › Tables › Cell notes › Add button).
  *
  * A strip's lit button is the table's current value; a value that IS the default saves no part. Each pick
  * is ONE transaction with the history closed first, so one ⌘Z (R4); the save writes it in the table
@@ -25,13 +29,14 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TableMap } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { formatTime } from '@shared/timeFormat'
-import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, MenuStrip, RowProvider } from '../blockHandleMenu'
+import { HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowLabel, headerRowOwn, type HeaderRowOwn } from '@shared/types'
+import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, MenuRow, MenuStrip, RowProvider } from '../blockHandleMenu'
 import { isListItem } from '../outline/listNodes'
 import { tablerIcon, type TablerIcon } from './tableIcons'
 import { setCellsAttr } from './cells'
 import { fillCalendarDay, goToNow, minutesOf, missingDayTimes, nowPlace, setTimeSlots } from './tableCalendar'
-import { calendarDaySetting, timeFormatSetting } from './timeFormatSetting'
-import { capital } from './colours'
+import { calendarDaySetting, cellNoteButtonSetting, headerRowSetting, timeFormatSetting } from './timeFormatSetting'
+import { capital, headerSwatch } from './colours'
 import { CELL_ALIGNS, VALIGNS, type TableAttrs } from './tableStyle'
 
 /** The strips' icons (the YAZ-4163 demo, `tableIcons.ts`). */
@@ -53,6 +58,9 @@ function targetTable(doc: ProseNode, inside: number): { node: ProseNode; pos: nu
   if (inside < 0 || inside >= doc.content.size) return null
   const node = doc.nodeAt(inside)
   if (node?.type.name === 'table') return { node, pos: inside }
+  // A bullet whose first block is a table (YAZ-4800): its handle stands left of the dot, as a code block's does, and
+  // carries the table's settings too, so the table's own handle no longer covers the dot.
+  if (node !== null && isListItem(node) && node.firstChild?.type.name === 'table') return { node: node.firstChild, pos: inside + 1 }
   if (node !== null && isListItem(node)) return null
   const $pos = doc.resolve(inside)
   for (let depth = $pos.depth; depth > 0; depth--) {
@@ -95,6 +103,72 @@ function border(current: TableAttrs['border'], half: 'px' | 'darkness', value: n
   return next.px === BORDER_DEFAULT.px && next.darkness === BORDER_DEFAULT.darkness ? null : next
 }
 
+/** A colour's swatch as a row's glyph (YAZ-4774), the cell palette's colour. */
+const swatchIcon = (background: string) => (): SVGElement => {
+  const template = document.createElement('template')
+  template.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="0.5" y="0.5" width="13" height="13" rx="3" stroke="currentColor" stroke-opacity="0.2"/></svg>'
+  const svg = template.content.firstElementChild as SVGElement
+  svg.querySelector('rect')!.style.fill = background
+  return svg
+}
+
+/**
+ * "Header row ›" (YAZ-4774): Color, Strength and Text, a ✓ at what the table shows: its own part, else Settings'
+ * (no Text colour in Settings is Full, a note table's look). A pick that equals Settings removes the part.
+ * YAZ-4794: Text colour (Muted, Full, the eight colours) and Align (Follow column, Left, Center, Right) are parts too.
+ */
+function headerRowParent(view: EditorView, pos: number, own: HeaderRowOwn): MenuRow {
+  const settings = headerRowSetting()
+  const fallback: Required<HeaderRowOwn> = { ...settings, text: settings.text ?? 'full' }
+  const shown = { ...fallback, ...headerRowOwn(own) }
+  const child = <K extends keyof HeaderRowOwn>(part: K, value: NonNullable<HeaderRowOwn[K]>, icon?: () => SVGElement): MenuRow => ({
+    label: headerRowLabel(value),
+    icon,
+    hint: shown[part] === value ? '✓' : undefined,
+    run: () => {
+      const next: HeaderRowOwn = { ...headerRowOwn(own), [part]: value }
+      for (const p of HEADER_ROW_PARTS) if (next[p] === fallback[p]) delete next[p]
+      setTable(view, pos, { header: next })
+    },
+  })
+  // YAZ-4793: one pick makes the header row look like any other row (no shade, regular, full text); a second pick hands
+  // the three parts back to Settings › Tables › Header row.
+  const plain = shown.strength === 'off' && shown.weight === 'regular' && shown.text === 'full'
+  const plainRow: MenuRow = {
+    label: 'Plain, like any row',
+    hint: plain ? '✓' : undefined,
+    run: () => {
+      const next: HeaderRowOwn = { ...headerRowOwn(own) }
+      if (plain) {
+        delete next.strength
+        delete next.weight
+        delete next.text
+      } else Object.assign(next, { strength: 'off', weight: 'regular', text: 'full' } satisfies HeaderRowOwn)
+      for (const p of HEADER_ROW_PARTS) if (next[p] === fallback[p]) delete next[p]
+      setTable(view, pos, { header: next })
+    },
+  }
+  return {
+    label: 'Header row',
+    run: () => {},
+    // A pick keeps the flyout open, so colour, strength and text go in one visit (YAZ-4774 demo).
+    stay: true,
+    // YAZ-4794 demo ("holy shite thats a long flyout"): Plain on top, then Fill · Text · Style tabs, as Fill's Cell · Row · Column. YAZ-4794: Text is "Text colour"
+    // (Muted, Full, then the eight colours' swatches) and Align follows it; Color is "Fill colour" beside it.
+    children: [[plainRow]],
+    tabs: [
+      {
+        label: 'Fill',
+        // Strength as a short switch, as the folder table's (YAZ-4794 demo: "shouldnt it follow?").
+        bar: HEADER_ROW_CHOICES.strength.map((v) => child('strength', v)),
+        children: [HEADER_ROW_CHOICES.color.map((c) => child('color', c, swatchIcon(headerSwatch(c))))],
+      },
+      { label: 'Text', children: [HEADER_ROW_CHOICES.text.map((v) => child('text', v, v === 'muted' || v === 'full' ? undefined : swatchIcon(headerSwatch(v))))] },
+      { label: 'Style', headings: ['Weight', 'Align'], children: [HEADER_ROW_CHOICES.weight.map((v) => child('weight', v)), HEADER_ROW_CHOICES.align.map((v) => child('align', v))] },
+    ],
+  }
+}
+
 /** `null` (the picker follows the default) when `value` is the default. */
 const orNull = <T>(value: T, fallback: T): T | null => (value === fallback ? null : value)
 
@@ -105,6 +179,7 @@ const choice = (label: string, value: string, fallback: string, choices: MenuCho
   choices,
   fallback,
   defaultOnce: true,
+  stay: true,
   run: (picked) => run(picked ?? fallback),
 })
 
@@ -114,6 +189,7 @@ export const tableRows: RowProvider = (view, target) => {
   if (table === null) return []
   const { pos } = table
   const attrs = table.node.attrs as TableAttrs
+  const noteDefault = cellNoteButtonSetting() ? 'on' : 'off'
   const current = attrs.border ?? BORDER_DEFAULT
   const cells = cellsOf(table.node)
   // No alignment on every cell (GFM's `---`) is the default; so are mixed columns. A cell's own
@@ -131,6 +207,7 @@ export const tableRows: RowProvider = (view, target) => {
     min: 1,
     max: 6,
     error: 'Use a whole number from 1–6px.',
+    stay: true,
     run: (value) => setTable(view, pos, { border: border(attrs.border, 'px', value) }),
   }
   const darkness: MenuNumberField = {
@@ -144,6 +221,7 @@ export const tableRows: RowProvider = (view, target) => {
     min: 5,
     max: 100,
     error: 'Use a whole number from 5–100%.',
+    stay: true,
     run: (value) => setTable(view, pos, { border: border(attrs.border, 'darkness', value) }),
   }
   const columnsAlign = aligns.size === 1 ? [...aligns][0]! : null
@@ -154,7 +232,6 @@ export const tableRows: RowProvider = (view, target) => {
     caption: true,
     stay: true,
     buttons: [
-      { label: 'Shaded header row', icon: tablerIcon('tableRow'), active: attrs.header === 'shaded', run: () => setTable(view, pos, { header: attrs.header === 'shaded' ? 'plain' : 'shaded' }) },
       { label: 'Stripes', icon: tablerIcon('baselineDensityMedium'), active: attrs.stripes, run: () => setTable(view, pos, { stripes: !attrs.stripes }) },
       { label: 'Fit columns to the page', icon: tablerIcon('arrowsHorizontal'), active: false, disabled: cells.every((cell) => cell.attrs.colwidth === null), run: () => setCells(view, pos, { colwidth: null }) },
     ],
@@ -191,6 +268,7 @@ export const tableRows: RowProvider = (view, target) => {
     look,
     text,
     rowsStrip,
+    headerRowParent(view, pos, attrs.header),
     thickness,
     darkness,
     choice(
@@ -199,6 +277,12 @@ export const tableRows: RowProvider = (view, target) => {
       '0',
       [{ value: '0', label: 'Off' }, { value: '15', label: '15 min' }, { value: '30', label: '30 min' }, { value: '60', label: '1 hour' }],
       (slot) => setTimeSlots(view, pos, Number(slot)),
+    ),
+    // YAZ-4790: this table's cell note "+"; Settings › Tables › Cell notes › Add button turns off every one. A cell's
+    // right-click still has "Add cell note", and a note already there still shows its corner.
+    // YAZ-4790 demo: Default follows Settings › Tables › Cell notes › Add button (off by default); a pick of Settings' value saves no part.
+    choice('Cell note button', attrs.noteButton === null ? noteDefault : attrs.noteButton ? 'on' : 'off', noteDefault, [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) =>
+      setTable(view, pos, { noteButton: on === noteDefault ? null : on === 'on' }),
     ),
   ]
   if (attrs.calendar > 0) {

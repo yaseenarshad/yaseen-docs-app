@@ -46,7 +46,7 @@ const tableAttrs = (view: EditorView) => {
 }
 
 describe('the Table part', () => {
-  it('shows after the paste rows when the right-click is in a cell, in six groups (YAZ-3820, YAZ-3818 D8)', async () => {
+  it('shows after the paste rows when the right-click is in a cell, in six groups (YAZ-3820, YAZ-3818 D8, Merge cells YAZ-4792)', async () => {
     const { view } = await mount(TABLE)
     const sections = sectionsAt(view, 1, 0).filter((s) => s.length > 0)
     const labels = sections.map((s) => s.map((item) => (item.children === undefined ? item.label : `${item.label} [${item.children.map((g) => g.map((c) => c.label).join(', ')).join(' | ')}]`)))
@@ -54,7 +54,7 @@ describe('the Table part', () => {
     expect(labels.slice(-6)).toEqual([
       ['Add cell note', 'Move to cell note'],
       ['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column'],
-      ['Delete row', 'Delete column', 'Clear cells'],
+      ['Delete row', 'Delete column', 'Clear cells', 'Merge cells'],
       ['Align [Left, Center, Right | Top, Middle, Bottom]', `Fill [No fill | ${colours} | Custom colour…]`, `Text colour [Default colour | ${colours} | Custom colour…]`],
       ['Sort A to Z', 'Sort Z to A'],
       ['Freeze up to this row', 'Freeze up to this column', 'Unfreeze rows', 'Unfreeze columns'],
@@ -373,7 +373,7 @@ describe('whole rows and whole columns count what is selected, as any cells (the
   it('rows 2 to 3 of a 4-column table: 2 rows and 4 columns; Insert 4 columns right adds 4', async () => {
     const { view } = await mount(WIDE)
     selectRows(view, 1, 2)
-    expect(labelsOf(view, 1, 1)).toEqual(['Insert 2 rows above', 'Insert 2 rows below', 'Insert 4 columns left', 'Insert 4 columns right', 'Duplicate 2 rows', 'Duplicate 4 columns', 'Delete 2 rows', 'Delete 4 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows'])
+    expect(labelsOf(view, 1, 1)).toEqual(['Insert 2 rows above', 'Insert 2 rows below', 'Insert 4 columns left', 'Insert 4 columns right', 'Duplicate 2 rows', 'Duplicate 4 columns', 'Delete 2 rows', 'Delete 4 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows'])
     row(view, 1, 1, 'table-insert-col-right').onSelect()
     expect(texts(view)[0]).toEqual(['h1', 'h2', 'h3', 'h4', '', '', '', ''])
   })
@@ -382,12 +382,12 @@ describe('whole rows and whole columns count what is selected, as any cells (the
 describe('the labels count the selection (YAZ-3801)', () => {
   it('one cell: the labels as before', async () => {
     const { view } = await mount(WIDE)
-    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column', 'Delete row', 'Delete column', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A'])
+    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column', 'Delete row', 'Delete column', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A'])
   })
 
   it.each<[[number, number], [number, number], string[]]>([
-    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Duplicate 2 columns', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows']],
-    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Duplicate row', 'Duplicate 3 columns', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A']],
+    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Duplicate 2 columns', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows']],
+    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Duplicate row', 'Duplicate 3 columns', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A']],
   ])('cells %j to %j', async (from, to, labels) => {
     const { view } = await mount(WIDE)
     selectCells(view, from, to)

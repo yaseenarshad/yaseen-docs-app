@@ -50,6 +50,9 @@
   --table-fill-solid-pink: rgb(255, 120, 180);
   --table-fill-solid-grey: rgb(150, 150, 150);
   --table-fill-solid-brown: rgb(170, 120, 70);
+  /* The header row's Black fill and White text (YAZ-4794 demo), as swatches and as the header's colours. */
+  --table-fill-solid-black: rgb(18, 18, 18);
+  --table-fill-solid-white: rgb(255, 255, 255);
 }
 
 [data-theme='dark'] {
@@ -81,6 +84,13 @@
   border-color: color-mix(in srgb, var(--crepe-color-outline) var(--table-border-darkness, 20%), transparent);
 }
 
+/* A narrow column (YAZ-4791, `data-narrow` under 56 px, `tableStyle.ts`): 4 px padding, so a column of numbers can be
+   dragged close to them. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-narrow] {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
 /* Each cell's tint: the header shade, the stripes and the fills set `--table-cell-tint`, and this one
    rule paints it. A frozen cell paints it over a solid page colour instead (below). The row band
    (`--table-band`, YAZ-4167, below) is a layer over it, so the fill shows under the band. */
@@ -89,13 +99,59 @@
   background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none);
 }
 
-/* Header row: shaded by default, plain on request. */
+/* Header row (YAZ-4774): Settings › Tables › Header row on `.app`, a note table's own parts on its block, a folder
+   table's on its `.view-table` (`views.css`), each as `data-table-header-*`; the nearest one sets each variable. Gray
+   (and Bold) unset theirs, so each kind of table keeps its own text colour (and bold). A colour is its fill swatch at
+   2.5 times the strength: Light is 6% of the text colour, the look of before, or 15% of the colour. Muted is 1. */
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='gray'] { --table-header-hue: initial; --table-header-scale: 1; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='red'] { --table-header-hue: var(--table-fill-solid-red); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='orange'] { --table-header-hue: var(--table-fill-solid-orange); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='yellow'] { --table-header-hue: var(--table-fill-solid-yellow); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='green'] { --table-header-hue: var(--table-fill-solid-green); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='teal'] { --table-header-hue: var(--table-fill-solid-teal); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='blue'] { --table-header-hue: var(--table-fill-solid-blue); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='purple'] { --table-header-hue: var(--table-fill-solid-purple); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='pink'] { --table-header-hue: var(--table-fill-solid-pink); --table-header-scale: 2.5; }
+/* Black (YAZ-4794 demo) at 5 times the strength: Light 30%, Medium 60%, Strong solid black. */
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='black'] { --table-header-hue: var(--table-fill-solid-black); --table-header-scale: 5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-strength='off'] { --table-header-strength: 0; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-strength='light'] { --table-header-strength: 6; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-strength='medium'] { --table-header-strength: 12; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-strength='strong'] { --table-header-strength: 20; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-weight='bold'] { --table-header-weight: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-weight='regular'] { --table-header-weight: 400; }
+/* Text colour (YAZ-4794): Muted and Full unset `--table-header-ink`, so a nearer Muted or Full beats a colour from
+   further out; a colour is its cell text colour (above, darker in light and lighter in dark), which wins over the mute. */
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='muted'] { --table-header-mute: 1; --table-header-ink: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='full'] { --table-header-mute: 0; --table-header-ink: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='white'] { --table-header-ink: #fff; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='red'] { --table-header-ink: var(--table-text-red); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='orange'] { --table-header-ink: var(--table-text-orange); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='yellow'] { --table-header-ink: var(--table-text-yellow); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='green'] { --table-header-ink: var(--table-text-green); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='teal'] { --table-header-ink: var(--table-text-teal); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='blue'] { --table-header-ink: var(--table-text-blue); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='purple'] { --table-header-ink: var(--table-text-purple); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='pink'] { --table-header-ink: var(--table-text-pink); }
+/* Align (YAZ-4794): Follow column unsets it. The rules that use it (below, `views.css`) apply only where the nearest
+   `data-table-header-align` is not `follow`, so a header cell keeps its column's own alignment until someone picks. */
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-align='follow'] { --table-header-align: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-align='left'] { --table-header-align: left; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-align='center'] { --table-header-align: center; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-align='right'] { --table-header-align: right; }
+
+/* A note table's header row: bold in the text colour by default. A cell's own fill and text colour still win (below). */
 .milkdown .ProseMirror .milkdown-table-block th {
-  --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background) 6%, transparent);
+  --table-cell-tint: color-mix(in srgb, var(--table-header-hue, var(--crepe-color-on-background)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), transparent);
+  font-weight: var(--table-header-weight, bold);
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 0) * 100%), currentColor));
 }
 
-.milkdown .ProseMirror .milkdown-table-block[data-table-header='plain'] th {
-  --table-cell-tint: transparent;
+/* The header row's Align (YAZ-4794): the table's own, else Settings' (on `.app`). `!important`, as GFM's column
+   alignment and a cell's own are inline `text-align` (`tableStyle.ts`); the row's choice is for every header cell. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-header-align]:not([data-table-header-align='follow']) th,
+.app[data-table-header-align]:not([data-table-header-align='follow']) .milkdown .ProseMirror .milkdown-table-block:not([data-table-header-align]) th {
+  text-align: var(--table-header-align) !important;
 }
 
 /* Stripes: every second body row. Row 1 of the tbody is the header row. */
@@ -137,7 +193,7 @@
 }
 
 /* Bullets in a cell and in an open cell note card are compact (the YAZ-3818 demo): space is short there. Each setting
-   moves one thing (Settings › Editor › Tables, set on `.app`): `--cell-bullet-indent` is the step from a level to its
+   moves one thing (Settings › Tables › All tables, set on `.app`): `--cell-bullet-indent` is the step from a level to its
    child (20px), `--cell-bullet-gap` the space from the dot's column to the text (4px); the dot's column is a fixed
    16px. bullets.css, guideLines.css and bulletThreading.css read `--list-indent`, `--list-label-gap` and
    `--list-gutter`, so the dots, the guide lines and the thread move together; Crepe's li gap is a fixed 10px, so it
@@ -282,7 +338,7 @@
    down its slot now is). Its cells paint the mark as background layers, so no cell changes its `position` and a
    frozen cell stays sticky; `::after` is the selected-cell wash and `::before` the fill-down range. The line is 2px
    red with a dot in column A; the tint is a light red over the cell's own fill. `data-table-now` on `.app`
-   (Settings › Editor › Calendar tables) picks the line (the default), the tint or both: a change restyles, no decoration. */
+   (Settings › Tables › Calendar tables) picks the line (the default), the tint or both: a change restyles, no decoration. */
 .milkdown .ProseMirror .milkdown-table-block .table-now-row {
   --table-now-colour: var(--table-text-red);
   --table-now-at: calc(var(--table-now, 0) * 100%);
@@ -367,7 +423,7 @@
 
 /* The row band (YAZ-4167, D16, `tableRowBand.ts`): a light accent band across the body row under the caret
    (`table-band-row`, one decoration) or the mouse (`:hover`, never the header row), its first cell bold.
-   `data-table-row-band` on `.app` (Settings › Editor › Tables › Row band) picks all tables, calendar tables or
+   `data-table-row-band` on `.app` (Settings › Tables › All tables › Row band) picks all tables, calendar tables or
    none (`off` has no rule). The band is `--table-band`, a background layer each cell rule paints (above): a fill
    shows under it, a frozen cell stays sticky, and the now mark's line and tint paint over it on the same row.
    The YAZ-3818 demo: its colour (`--table-band-colour`, the accent by default) and strength (`--table-band-strength`,
@@ -425,8 +481,10 @@
 /* The cell toolbar (YAZ-3768, D8, `cellToolbar.ts`): Crepe's selection toolbar look (toolbar.css),
    on its own class, so Crepe's rules for its own toolbar do not reach it. Crepe's variables follow
    light and dark. */
+/* Above the table's column and row handles (Crepe's `.cell-handle`, z-index 50), as the editor's menus are (app.css,
+   60): at 10 a column handle drew over the align buttons (YAZ-4789). */
 .milkdown .cell-toolbar {
-  z-index: 10;
+  z-index: 60;
   position: absolute;
   display: flex;
   align-items: center;
@@ -465,6 +523,13 @@
 
 .milkdown .cell-toolbar .toolbar-item:hover {
   background: var(--crepe-color-hover);
+}
+
+/* Merge cells (YAZ-4792) while the selection cannot merge: greyed, no hover, no hand. */
+.milkdown .cell-toolbar .toolbar-item:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
 }
 
 .milkdown .cell-toolbar .toolbar-item:active {
@@ -1121,6 +1186,7 @@
   background: var(--crepe-color-surface);
 }
 
+/* A table that shows no button (YAZ-4790: its own Off, or Settings' Add button off) is `cellNoteButton.ts`'s `target`. */
 .milkdown > .cell-note-button[data-show='false'] {
   display: none;
 }
@@ -1188,4 +1254,12 @@
   content: '';
   position: absolute;
   inset: -6px;
+}
+
+/* Merged cells (YAZ-4792): the table block's column handle finds its column by the hovered cell's place in its row
+   (the vendored `@milkdown/components` table block), which a merged cell shifts, so it stood over the wrong column. A
+   table with a merged cell shows no column handle until the vendored block maps it through the grid; the cell's
+   right-click has the column's actions. The row handle is right (rows are not shifted). */
+.milkdown-table-block:has(:is(td, th)[colspan]:not([colspan='1']), :is(td, th)[rowspan]:not([rowspan='1'])) [data-role='col-drag-handle'] {
+  display: none;
 }

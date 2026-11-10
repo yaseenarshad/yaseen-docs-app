@@ -85,9 +85,12 @@ export function FlyoutParent({ label, open, onHover, onOpen, onCloseFlyout, onCh
       if (!(e.target instanceof Element)) return
       if (row.contains(e.target)) return void window.clearTimeout(timer)
       const item = e.target.closest('.ctx-menu__item')
-      // Another flyout parent swaps the flyout itself, through the menu's one controller.
-      if (item === null || !menu.contains(item) || item.closest('.ctx-menu') !== menu || item.classList.contains('ctx-menu__item--parent')) return
+      if (item === null || !menu.contains(item) || item.closest('.ctx-menu') !== menu) return
       window.clearTimeout(timer)
+      // Another flyout parent swaps the flyout itself, through the menu's one controller. A close still pending from a
+      // plain row on the way would clear that swap's wait (`openNow` clears it), and the pointer, resting in the new
+      // row, sends no second hover: the new flyout never opened (YAZ-4747, "Move to Other files ›" after "Open in ›").
+      if (item.classList.contains('ctx-menu__item--parent')) return
       timer = window.setTimeout(() => close.current(), SWITCH_MS)
     }
     menu.addEventListener('mouseover', over)

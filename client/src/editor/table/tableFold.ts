@@ -20,6 +20,10 @@
  * a cell's text step over a run, to the row past it (or out of the table below a run at its end): `tableEditing`
  * would put the caret in the run's hidden cells. "Fold N rows" is in
  * the table menu (`tableMenu.ts`, `foldRows`). Fill down and a paste never write a folded row (`unfoldedRows`).
+ *
+ * MERGED CELLS (YAZ-4792): a run may hold a merged cell whole; "Fold N rows" is refused while a merged cell crosses the
+ * rows' edge (its mark would fold the row it starts in too). The bar's times and the caret's step over a run read a
+ * column through the table map, not the row's child at that index.
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -31,7 +35,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
 import { verticalScrollParent } from '../../lib/pinnedHeader'
 import { beforeTableEditing } from './beforeTableEditing'
-import { rowFolded, setCellsAttr } from './cells'
+import { cellTextAt, mergeCrosses, rowFolded, setCellsAttr } from './cells'
 import { atEndOfCell } from './tableShiftArrow'
 import { changedTables, typingOnly } from './tableStyle'
 import { timeFormatSetting } from './timeFormatSetting'
@@ -62,13 +66,14 @@ export function foldLabel(table: ProseNode, run: FoldRun): string {
   const n = run.to - run.from + 1
   const rows = `${n} row${n === 1 ? '' : 's'}`
   if (!((table.attrs.calendar as number) > 0)) return rows
-  const timeOf = (r: number) => readTime(table.child(r).firstChild?.textContent ?? '')
+  // Column A's cell of each row through the map: a merged cell's row has its own first cell elsewhere (YAZ-4792).
+  const timeOf = (r: number) => readTime(cellTextAt(table, r, 0))
   const first = timeOf(run.from)
   const last = timeOf(run.to)
   if (first === null || last === null) return rows
   const texts: string[] = []
-  table.forEach((row, _, r) => {
-    if (r > 0) texts.push(row.firstChild?.textContent ?? '')
+  table.forEach((_, __, r) => {
+    if (r > 0) texts.push(cellTextAt(table, r, 0))
   })
   const format = detectTimeFormat(texts) ?? timeFormatSetting()
   return `${formatTime(format, first)} – ${formatTime(format, last)} · ${rows}`
@@ -109,13 +114,18 @@ export function unfoldRun(tr: Transaction, tablePos: number, row: number): Trans
   return tr
 }
 
-/** "Fold N rows": every cell of the target's body rows (the header row never folds), whole rows, gets `fold`. */
+/**
+ * "Fold N rows": every cell of the target's body rows (the header row never folds), whole rows, gets `fold`. Not while a
+ * merged cell crosses the rows' edge (YAZ-4792): the mark would fold the row it starts in too.
+ */
 export function foldRows(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
   const rect = selectedRect(state)
   if (rect.bottom - Math.max(rect.top, 1) < 2) return false
+  const map = TableMap.get(rect.table)
+  const rows = { ...rect, top: Math.max(rect.top, 1), left: 0, right: map.width }
+  if (mergeCrosses(rows)) return false
   if (dispatch) {
-    const map = TableMap.get(rect.table)
-    const tr = setCellsAttr(state.tr, { ...rect, top: Math.max(rect.top, 1), left: 0, right: map.width }, 'fold', true)
+    const tr = setCellsAttr(state.tr, rows, 'fold', true)
     // The caret leaves the rows it hid (the YAZ-4163 demo): a selection in hidden rows made the browser put it, and
     // the scroll, somewhere else. It goes to the first row below the fold, else to the last row above it.
     const row = rect.bottom < map.height ? rect.bottom : Math.max(rect.top, 1) - 1
@@ -276,10 +286,10 @@ function caretOutOfRuns(transactions: readonly Transaction[], oldState: EditorSt
   }
   const target = forward && run.to + 1 < table.childCount ? run.to + 1 : run.from - 1
   if (cells) {
-    const col = $head.index(depth)
-    const row = table.child(target)
-    let cellPos = rowStart(target) + 1
-    for (let c = 0; c < Math.min(col, row.childCount - 1); c++) cellPos += row.child(c).nodeSize
+    // The head cell's column through the map, and the cell that covers it in the target row (YAZ-4792).
+    const map = TableMap.get(table)
+    const col = map.findCell($head.pos - tableStart).left
+    const cellPos = tableStart + map.map[target * map.width + col]!
     tr.setSelection(new CellSelection((selection as CellSelection).$anchorCell, doc.resolve(cellPos)))
     return
   }

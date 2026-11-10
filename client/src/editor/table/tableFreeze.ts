@@ -41,19 +41,27 @@
  *   the rows. When the offset changes, the block gets `TABLE_HANDLE_PLACE` and places its shown
  *   handles again; over a pinned header, the column handle goes inside its top edge (YAZ-4170).
  * An unfrozen or removed table drops its listeners, its custom properties and its rows' animations.
+ *
+ * MERGED CELLS (YAZ-4792): the columns are the table map's. A merged cell is frozen when its left column is, and the
+ * freeze line is drawn after it when it reaches or crosses the line; the columns a merged header cell spans share
+ * its left edge.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import { TableMap } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
 import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
 import { changedTables, typingOnly } from './tableStyle'
 
+/** The table's columns: the grid's, not the header row's children (a merged header cell is one child, YAZ-4792). */
+const widthOf = (table: ProseNode): number => TableMap.get(table).width
+
 /** A table's freeze counts, inside the table. */
 function counts(table: ProseNode): { rows: number; cols: number } {
   const rows = Math.min(table.attrs.freezeRows as number, table.childCount)
-  const cols = Math.min(table.attrs.freezeCols as number, table.firstChild?.childCount ?? 0)
+  const cols = Math.min(table.attrs.freezeCols as number, widthOf(table))
   return { rows: Math.max(0, rows), cols: Math.max(0, cols) }
 }
 
@@ -65,18 +73,31 @@ const overCounts = (table: ProseNode): boolean => {
 /** What the decorations of a table depend on, besides its positions: the counts, rows and columns. */
 const shapeOf = (table: ProseNode): string => {
   const { rows, cols } = counts(table)
-  return `${rows} ${cols} ${table.childCount} ${table.firstChild?.childCount ?? 0}`
+  return `${rows} ${cols} ${table.childCount} ${widthOf(table)}`
+}
+
+/**
+ * Each cell of `table` whose grid column (its left one, for a merged cell) is before `cols`, with its position in the
+ * table and whether the freeze line ends at or inside it (YAZ-4792: the column is the map's, not the row's child index).
+ */
+function frozenCells(table: ProseNode, cols: number): Array<{ pos: number; cell: ProseNode; left: number; end: boolean }> {
+  const map = TableMap.get(table)
+  const out: Array<{ pos: number; cell: ProseNode; left: number; end: boolean }> = []
+  const seen = new Set<number>()
+  for (const pos of map.map) {
+    if (seen.has(pos)) continue
+    seen.add(pos)
+    const { left, right } = map.findCell(pos)
+    if (left < cols) out.push({ pos, cell: table.nodeAt(pos)!, left, end: right >= cols })
+  }
+  return out
 }
 
 /** How many decorations `frozenDecorations` gives the table. */
 function decorationCount(table: ProseNode): number {
   const { rows, cols } = counts(table)
   if (rows === 0 && cols === 0) return 0
-  let n = 1 + rows
-  table.forEach((row) => {
-    n += Math.min(cols, row.childCount)
-  })
-  return n
+  return 1 + rows + (cols > 0 ? frozenCells(table, cols).length : 0)
 }
 
 /** The decorations of one table: none when nothing is frozen. */
@@ -87,13 +108,13 @@ function frozenDecorations(table: ProseNode, pos: number): Decoration[] {
   table.forEach((row, rowOffset, r) => {
     const rowPos = pos + 1 + rowOffset
     if (r < rows) out.push(Decoration.node(rowPos, rowPos + row.nodeSize, { class: r === rows - 1 ? 'table-frozen-row table-frozen-row-end' : 'table-frozen-row' }))
-    row.forEach((cell, cellOffset, c) => {
-      if (c >= cols) return
-      const cellPos = rowPos + 1 + cellOffset
-      const className = c === cols - 1 ? 'table-frozen-col table-frozen-col-end' : 'table-frozen-col'
-      out.push(Decoration.node(cellPos, cellPos + cell.nodeSize, { class: className, style: `--table-frozen-left: var(--table-frozen-x-${c}, 0px)` }))
-    })
   })
+  if (cols > 0) {
+    for (const { pos: cellPos, cell, left, end } of frozenCells(table, cols)) {
+      const className = end ? 'table-frozen-col table-frozen-col-end' : 'table-frozen-col'
+      out.push(Decoration.node(pos + 1 + cellPos, pos + 1 + cellPos + cell.nodeSize, { class: className, style: `--table-frozen-left: var(--table-frozen-x-${left}, 0px)` }))
+    }
+  }
   return out
 }
 
@@ -203,12 +224,16 @@ class Freezer {
     if (parts === null) return
     if (this.#measure) {
       this.#measure = false
+      // The header row's cells, each over its columns: a merged header cell (YAZ-4792) gives every column it spans
+      // its own left edge, so the columns under it stick together.
       const first = parts.body.rows[0]
       let left = 0
-      for (let c = 0; c < this.#cols; c++) {
-        this.block.style.setProperty(`--table-frozen-x-${c}`, `${left}px`)
-        left += (first?.cells[c] as HTMLElement | undefined)?.offsetWidth ?? 0
+      let c = 0
+      for (const cell of first?.cells ?? []) {
+        for (let span = 0; span < Math.max(1, cell.colSpan) && c < this.#cols; span++, c++) this.block.style.setProperty(`--table-frozen-x-${c}`, `${left}px`)
+        left += (cell as HTMLElement).offsetWidth
       }
+      for (; c < this.#cols; c++) this.block.style.setProperty(`--table-frozen-x-${c}`, `${left}px`)
       this.block.toggleAttribute('data-table-scrolls', this.#cols > 0 && this.block.scrollWidth > this.block.clientWidth)
     }
     const scroller = this.#scroller

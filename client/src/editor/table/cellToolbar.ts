@@ -7,8 +7,8 @@
  * light and dark follow).
  *
  * Left to right, with dividers: Fill and Text; Bold, Italic, Strikethrough; Align left, center,
- * right; Clear cells. Each button acts on EVERY selected cell in one transaction with the history
- * closed, so each click is one undo step (R4), and the cells stay selected.
+ * right; Merge cells (YAZ-4792); Clear cells. Each button acts on EVERY selected cell in one transaction with the
+ * history closed, so each click is one undo step (R4), and the cells stay selected.
  * - Fill and Text set the cells' `fill` / `color` (`tableStyle.ts`; the save writes the comment).
  *   Each is a label, three fixed quick swatches (Fill: yellow, green, blue; Text: red, blue, green)
  *   and a ▾ that opens a palette (YAZ-3817, demo round 2): the labeled clear item ("No fill" /
@@ -24,6 +24,10 @@
  * - Align sets the selected cells' own `align` (YAZ-3819), saved in the table comment; it wins over
  *   the column's GFM alignment (the `:-` row), which stays. A pick equal to a cell's column alignment
  *   clears the cell's own, so the cell follows its column again.
+ * - Merge cells is `mergeCells` (`tableMerge.ts`): the selected cells become one, with every cell's text, top-left
+ *   first. The button is disabled while the selection cannot merge (`mergeRect`: it cuts through a merged cell, runs
+ *   from the header row into the body, or holds a folded row); the merged cell stays selected, as one cell, so the
+ *   toolbar hides; its right-click has "Unmerge cells".
  * - Clear cells is prosemirror-tables' `deleteCellSelection` (Delete's own): the text goes, the
  *   cells keep their attributes.
  *
@@ -44,6 +48,7 @@ import { setCellsAlign, setCellsAttr } from './cells'
 import { ColourBox } from '../highlightColourBox'
 import { capital, customStart, fillSwatch, setCustomColour, textSwatch } from './colours'
 import { TABLE_HANDLE_MENU } from './tableMenu'
+import { mergeCells, mergeRect } from './tableMerge'
 import { CELL_ALIGNS, TABLE_COLORS, type CellAlign, type TableColor } from './tableStyle'
 
 const SVG = (body: string) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${body}</svg>`
@@ -58,6 +63,8 @@ const alignIcon = (align: CellAlign) => {
   return SVG(`<path d="M5 7h14M${x} 12h8M5 17h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`)
 }
 const CLEAR = SVG('<path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
+/** A grid of four cells whose top two are one (YAZ-4792). */
+const MERGE = SVG('<path d="M4 6h16v12H4zM4 12h16M12 12v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>')
 
 /** One cell attribute on every selected cell, in one transaction. */
 function setCells(view: EditorView, attr: 'fill' | 'color', value: string | null): void {
@@ -107,7 +114,13 @@ function clearCells(view: EditorView): void {
   deleteWithNotes(view, clearSelected, (gone) => deleteText('cells', count, gone))
 }
 
-type Part = { name: string; icon: string; run: (view: EditorView) => void } | 'divider' | 'colours'
+/** Merge the selected cells (YAZ-4792, `tableMerge.ts`): one undo step; the merged cell stays selected. */
+function merge(view: EditorView): void {
+  mergeCells(view.state, view.dispatch)
+}
+
+/** A button's `enabled` says when it can run; the toolbar sets `disabled` on each update. One without it always can. */
+type Part = { name: string; icon: string; run: (view: EditorView) => void; enabled?: (state: EditorState) => boolean } | 'divider' | 'colours'
 
 const PARTS: Part[] = [
   'colours',
@@ -117,6 +130,8 @@ const PARTS: Part[] = [
   { name: 'Strikethrough', icon: letter('S', 'text-decoration="line-through"'), run: (v) => toggleMark(v, 'strike_through') },
   'divider',
   ...CELL_ALIGNS.map((a) => ({ name: `Align ${a}`, icon: alignIcon(a), run: (v: EditorView) => alignCells(v, a) })),
+  'divider',
+  { name: 'Merge cells', icon: MERGE, run: merge, enabled: (state) => mergeRect(state.selection) !== null },
   'divider',
   { name: 'Clear cells', icon: CLEAR, run: clearCells },
 ]
@@ -257,12 +272,13 @@ const TEXT: ColourGroup = {
   name: (c) => `${capital(c)} text`, menu: 'Text colours', clear: 'Default colour', swatch: textSwatch,
 }
 
-/** The strip's DOM: Crepe's toolbar shape (`.divider`, `.toolbar-item`) on our own class. */
-function renderStrip(view: EditorView, palettes: Palettes): HTMLElement {
+/** The strip's DOM: Crepe's toolbar shape (`.divider`, `.toolbar-item`) on our own class, and the buttons with an `enabled` test. */
+function renderStrip(view: EditorView, palettes: Palettes): { strip: HTMLElement; gated: Array<{ button: HTMLButtonElement; enabled: (state: EditorState) => boolean }> } {
   const strip = document.createElement('div')
   strip.className = 'cell-toolbar'
   strip.setAttribute('role', 'toolbar')
   strip.setAttribute('aria-label', 'Cells')
+  const gated: Array<{ button: HTMLButtonElement; enabled: (state: EditorState) => boolean }> = []
   for (const part of PARTS) {
     if (part === 'divider') {
       const line = document.createElement('div')
@@ -273,10 +289,11 @@ function renderStrip(view: EditorView, palettes: Palettes): HTMLElement {
     } else {
       const button = toolButton(part.name, part.icon)
       button.addEventListener('click', () => part.run(view))
+      if (part.enabled !== undefined) gated.push({ button, enabled: part.enabled })
       strip.appendChild(button)
     }
   }
-  return strip
+  return { strip, gated }
 }
 
 /** Two or more cells selected. */
@@ -285,12 +302,15 @@ const manyCells = (state: EditorState): boolean => state.selection instanceof Ce
 class CellToolbarView {
   #provider: TooltipProvider
   #strip: HTMLElement
+  /** The buttons that are disabled while their test fails (Merge cells, YAZ-4792). */
+  #gated: Array<{ button: HTMLButtonElement; enabled: (state: EditorState) => boolean }>
   #dragging = false
   #menu = false
 
   constructor(readonly view: EditorView) {
-    const strip = renderStrip(view, { toggle: this.#togglePalette, close: this.#closePalettes })
+    const { strip, gated } = renderStrip(view, { toggle: this.#togglePalette, close: this.#closePalettes })
     this.#strip = strip
+    this.#gated = gated
     this.#provider = new TooltipProvider({
       content: strip,
       debounce: 20,
@@ -362,6 +382,8 @@ class CellToolbarView {
 
   update(view: EditorView, prevState?: EditorState) {
     if (this.#open !== null && !manyCells(view.state)) this.#closePalettes()
+    // Only while the strip can show: a key press elsewhere reads no table map.
+    if (manyCells(view.state)) for (const { button, enabled } of this.#gated) button.disabled = !enabled(view.state)
     this.#provider.update(view, prevState)
   }
 

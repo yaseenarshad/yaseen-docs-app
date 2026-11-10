@@ -15,9 +15,10 @@
  */
 import { TextSelection, type Command, type EditorState, type Selection } from '@milkdown/kit/prose/state'
 import type { Node } from '@milkdown/kit/prose/model'
-import type { MenuStrip, RowProvider } from '../blockHandleMenu'
+import type { MenuRow, MenuStrip, RowProvider } from '../blockHandleMenu'
 import { allLinesAre, listLines, toggleListKind, turnLinesIntoText, type LinePick, type ListKind } from '../listButtons'
 import { ownIcon, TOOLBAR_LABELS } from '../toolbarButtons'
+import { addLineBeside } from './addLineBeside'
 import { getZoomedItemPos } from './zoom'
 
 /**
@@ -33,6 +34,44 @@ function menuLine(doc: Node, inside: number): number | null {
   if ($pos.parent.type.spec.code) return null
   for (let depth = $pos.depth; depth > 0; depth--) if ($pos.node(depth).type.spec.tableRole !== undefined) return null
   return pos
+}
+
+/**
+ * A bullet whose first block is a code block or a table (YAZ-4800: "i have a code block that is on a bullet and i cant
+ * figure out how to remove the bullet // the same is the case for tables"): the item's first block and its kind, from
+ * the item itself (its dot) or its first block (the handle on it); null for any other target.
+ */
+function blockItem(doc: Node, inside: number): { pos: number; kind: ListKind | null } | null {
+  if (inside < 0 || inside >= doc.content.size) return null
+  const node = doc.nodeAt(inside)
+  let itemPos: number | null = null
+  if (node?.type.name === 'list_item') itemPos = inside
+  else {
+    const $pos = doc.resolve(inside)
+    if ($pos.parent.type.name === 'list_item' && $pos.index() === 0) itemPos = $pos.before()
+    // A code block or a table in no bullet (YAZ-4800 demo: "a table that doesnt have any bullet doesnt show the option
+    // to put it on a bullet … same for code block"): the strip makes it the first block of a new bullet.
+    else if (node !== null && (node.type.name === 'table' || node.type.spec.code === true)) return { pos: inside, kind: null }
+    else {
+      // A table's handle points into its first cell (YAZ-3795): the table is an ancestor.
+      for (let depth = $pos.depth; depth > 0; depth--) {
+        if ($pos.node(depth).type.name !== 'table') continue
+        const tablePos = $pos.before(depth)
+        const $table = doc.resolve(tablePos)
+        if ($table.parent.type.name === 'list_item' && $table.index() === 0) itemPos = $table.before()
+        else if ($table.parent.type.name === 'list_item') return null
+        else return { pos: tablePos, kind: null }
+        break
+      }
+    }
+  }
+  if (itemPos === null) return null
+  const item = doc.nodeAt(itemPos)
+  const first = item?.firstChild
+  if (item == null || first == null || (first.isTextblock && first.type.spec.code !== true)) return null
+  const list = doc.resolve(itemPos).parent
+  const kind: ListKind = typeof item.attrs.checked === 'boolean' ? 'checklist' : list.type.name === 'ordered_list' ? 'numberedList' : 'bulletList'
+  return { pos: itemPos + 1, kind }
 }
 
 /** Highlighted text that covers the line: its lines are the ones that change. */
@@ -64,7 +103,7 @@ const glyph = (id: ListKind | 'text') => (): SVGElement => {
 
 export const turnIntoRows: RowProvider = (view, target) => {
   const line = view.editable ? menuLine(view.state.doc, target.inside) : null
-  if (line === null) return []
+  if (line === null) return view.editable ? blockItemStrip(view, target.inside) : []
   // What the strip shows lit is read on the lines it would change; a lone line is read with the caret on it. A
   // right-click on the text reads the selection from before it (D15): the word it selected is no highlight.
   const highlighted = coversLine(view.state, target.selection ?? view.state.selection, line)
@@ -90,4 +129,40 @@ export const turnIntoRows: RowProvider = (view, target) => {
     buttons: [...STRIP_KINDS.map((kind) => button(kind, toggleListKind(kind, pick))), button('text', turnLinesIntoText(pick))],
   }
   return [strip]
+}
+
+/**
+ * The strip of a bullet that holds a code block or a table (YAZ-4800): Bullet list, Numbered list and Checklist, on
+ * that item alone (a block is no line of its siblings' list). The lit one takes the bullet away and leaves the block
+ * in place (the list rule's lift); another changes the item's kind. No T: it would make the code text a paragraph.
+ */
+function blockItemStrip(view: Parameters<RowProvider>[0], inside: number): (MenuStrip | MenuRow)[] {
+  const block = blockItem(view.state.doc, inside)
+  if (block === null) return []
+  const pick: LinePick = () => [{ pos: block.pos, kind: block.kind, paragraph: false }]
+  // A new line beside the block, as Enter makes one on a bullet (YAZ-4800 demo); its keys, `addLineBeside.ts`.
+  const addLine = (side: 'above' | 'below'): MenuRow => ({
+    label: side === 'above' ? 'Add line above' : 'Add line below',
+    hint: side === 'above' ? '⌘⇧↵' : '⌘↵',
+    group: 'addLine',
+    run: () => void addLineBeside(view, block.pos, side),
+  })
+  return [
+    {
+      kind: 'strip',
+      label: 'Turn into',
+      group: 'kind',
+      buttons: STRIP_KINDS.map((kind) => ({
+        label: block.kind === kind ? `${TOOLBAR_LABELS[kind]} (click to remove)` : block.kind === null ? `Put on a ${kind === 'bulletList' ? 'bullet' : kind === 'numberedList' ? 'numbered line' : 'checklist line'}` : TOOLBAR_LABELS[kind],
+        icon: glyph(kind),
+        active: block.kind === kind,
+        run: () => {
+          toggleListKind(kind, pick)(view.state, view.dispatch, view)
+          view.focus()
+        },
+      })),
+    },
+    addLine('above'),
+    addLine('below'),
+  ]
 }

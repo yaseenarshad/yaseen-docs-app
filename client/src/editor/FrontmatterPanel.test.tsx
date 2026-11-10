@@ -1594,3 +1594,84 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
   })
 })
 
+
+/** YAZ-4769 (option B): property and column keys that differ only by capitals are ONE key. */
+describe('FrontmatterPanel — one key, capitals ignored (YAZ-4769)', () => {
+  const NOTE = '/vault/Recipes/Cake.md'
+  const recipes = () => feedOf(folderMd('/vault/Recipes', { columns: { 'Dessert Column': { kind: 'text' } }, id: 'r1e2c3i4p5e6', title: 'Recipes' }))
+  const mountAt = (content: string, extra: Partial<FrontmatterPanelProps> = {}): HTMLElement => {
+    readFile.mockImplementation(async (p: string) => ({ path: p, content: p === NOTE ? content : '', mtime: 100, size: 1 }))
+    writeFile.mockImplementation(async (w) => ({ path: w.path, mtime: 200, size: w.content.length }))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<FrontmatterPanel file={{ path: NOTE, content, mtime: 100 }} root={ROOT} wikilinks={recipes()} {...extra} />))
+    expand(container)
+    return container
+  }
+  const contextMenu = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 30, clientY: 40 })))
+  const menuItem = (text: string): HTMLButtonElement => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((n) => n.textContent === text)!
+
+  it('the note’s `dessert column` is the page column `Dessert Column`: one row, in the column’s spelling, on Recipes; a second spelling is no second row', () => {
+    const el = mountAt('---\ndessert column: Pie\nDESSERT COLUMN: Tart\n---\nBody\n')
+    expect(keysOf(el)).toEqual(['Dessert Column'])
+    expect(rowOf(el, 'Dessert Column').querySelector('.frontmatter-panel__key')?.getAttribute('title')).toBe('Column on Recipes')
+    expect(rowOf(el, 'Dessert Column').textContent).toContain('Pie')
+  })
+
+  it('an edit writes the column’s spelling and takes the other spellings out, in ONE write', async () => {
+    const el = mountAt('---\ndessert column: Pie\nDESSERT COLUMN: Tart\n---\nBody\n')
+    click(rowOf(el, 'Dessert Column').querySelector('[data-edit]'))
+    const input = rowOf(el, 'Dessert Column').querySelector<HTMLInputElement>('input')!
+    setValue(input, 'Cake')
+    press(input, 'Enter')
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOTE, content: '---\nDessert Column: Cake\n---\nBody\n', expectedMtime: 100 })
+  })
+
+  it('Add property "dessert COLUMN" adds the existing column, in its spelling, and says so', async () => {
+    const onNotice = vi.fn()
+    const el = mountAt('---\nother: 1\n---\nBody\n', { onNotice })
+    click(btn(el, 'Add property'))
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'dessert COLUMN')
+    click(btn(el, 'Add'))
+    await flush()
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOTE, content: '---\nother: 1\nDessert Column: ""\n---\nBody\n', expectedMtime: 100 })
+    expect(onNotice).toHaveBeenCalledWith('Using "Dessert Column", which already exists.', 'info')
+  })
+
+  it('Add property refuses a name the note holds in other capitals; so does an app key in other capitals', () => {
+    const el = mountAt('---\ndessert column: Pie\n---\nBody\n')
+    click(btn(el, 'Add property'))
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Dessert Column')
+    click(btn(el, 'Add'))
+    expect(errorLine(el)?.textContent).toBe('"dessert column" is already a property of this page')
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'Comments')
+    click(btn(el, 'Add'))
+    expect(errorLine(el)?.textContent).toBe("comments is the app's own property — it is set where it belongs, not here")
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('Rename… refuses another property’s name in other capitals, and writes nothing', () => {
+    const el = mountAt('---\ndessert column: Pie\nother: 1\n---\nBody\n')
+    contextMenu(byLabel(el, 'Configure other'))
+    click(menuItem('Rename…'))
+    const field = byLabel<HTMLInputElement>(el, 'Rename other')!
+    setValue(field, 'DESSERT column')
+    press(field, 'Enter')
+    expect(errorLine(el)?.textContent).toBe('"dessert column" is already a property of this page')
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('Rename… of a field shown in its column’s capitals renames the note’s own spelling', async () => {
+    const el = mountAt('---\ndessert column: Pie\n---\nBody\n')
+    contextMenu(byLabel(el, 'Configure Dessert Column'))
+    click(menuItem('Rename…'))
+    const field = byLabel<HTMLInputElement>(el, 'Rename Dessert Column')!
+    setValue(field, 'Course')
+    press(field, 'Enter')
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOTE, content: '---\nCourse: Pie\n---\nBody\n', expectedMtime: 100 })
+  })
+})

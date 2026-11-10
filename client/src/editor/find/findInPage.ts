@@ -15,6 +15,9 @@
  * SILENTLY — `setOutlineFoldSet(..., { silent: true })`, which leaves ⌘Z panic-undo pointing at
  * whatever it pointed at before. `close()` puts every one of them back EXCEPT the ones hiding the
  * active match: the search hands the reader a landing, not a re-opened outline.
+ * What find opens is the channel's `folds` (YAZ-4787): `all` opens every fold that hides a match, as above; `current`
+ * (the default) opens only the folds that hide the ACTIVE match, and folds them again on the next step; `keep` opens
+ * nothing, and a match that a fold hides is no match: the count is what shows, and a fold or unfold re-counts.
  * Collapsed HEADING sections (YAZ-1140) hide matches the same way and get the same treatment, on
  * their own books: two revealed sets, never merged, because the two kinds are separate plugin
  * states and each must be handed back only its own positions.
@@ -37,15 +40,17 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { collapsedHeadingsHiding, setHeadingFoldSet } from '../outline/headingFolding'
+import { collapsedHeadingsHiding, hasHeadingFoldMeta, setHeadingFoldSet } from '../outline/headingFolding'
 import { cellPosAround } from '../outline/listNodes'
-import { collapsedItemsHiding, setOutlineFoldSet } from '../outline/outlineFolding'
+import { collapsedItemsHiding, hasOutlineFoldMeta, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos } from '../outline/zoom'
 import { closeCellNote, openCellNote, revealOpenCell, showInCard } from '../table/cellNoteCard'
 import { cellNoteAround, cellNoteCardKey, isCellNoteHidden, markPosOf } from '../table/cellNotes'
 import { pillLinks, type PillLink, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { FindChannel, FindController, FindResult } from './findChannel'
+import type { EditorView as CodeMirrorView } from '@codemirror/view'
+import { paintCodeBlocks, scrollCodeMatch } from './codeBlockFind'
 
 export const FIND_MATCH_CLASS = 'find-match'
 /** The active match carries this IN ADDITION to `FIND_MATCH_CLASS`. */
@@ -166,8 +171,11 @@ const blockMatches = (node: ProseNode, pos: number, needle: string, pills: reado
   return pills.length === 0 ? matches : matches.sort((a, b) => a.from - b.from)
 }
 
-/** Every case-insensitive literal occurrence of `query`, in document order; `zoom` filters to the zoomed subtree. */
-const findMatches = (state: EditorState, query: string, zoom: Match | null, links: FindLinks | undefined): Match[] => {
+/** No fold hides `pos` (YAZ-4787 `keep`). Find runs after both fold plugins, so `state` holds their new folds. */
+const shows = (state: EditorState, pos: number): boolean => collapsedItemsHiding(state, pos).length === 0 && collapsedHeadingsHiding(state, pos).length === 0
+
+/** Every case-insensitive literal occurrence of `query`, in document order; `zoom` filters to the zoomed subtree, `shownOnly` to what no fold hides. */
+const findMatches = (state: EditorState, query: string, zoom: Match | null, links: FindLinks | undefined, shownOnly = false): Match[] => {
   const needle = query.toLowerCase()
   if (needle === '') return []
   const matches: Match[] = []
@@ -175,7 +183,7 @@ const findMatches = (state: EditorState, query: string, zoom: Match | null, link
     if (!node.isTextblock) return true
     const pills = links === undefined || node.type.spec.code === true ? [] : pillLinks(node, pos, state.selection, links.wikilinks, links.viewOnly)
     for (const match of blockMatches(node, pos, needle, pills)) {
-      if (zoom === null || (match.from >= zoom.from && match.from < zoom.to)) matches.push(match)
+      if ((zoom === null || (match.from >= zoom.from && match.from < zoom.to)) && (!shownOnly || shows(state, match.from))) matches.push(match)
     }
     return false
   })
@@ -242,7 +250,7 @@ const hiddenNoteAt = (state: EditorState, pos: number): number | null => {
 }
 
 /** The engine behind the channel's commands. Every step is metadata-only, and synchronous. */
-const createController = (view: EditorView): FindController => {
+const createController = (view: EditorView, channel: FindChannel): FindController => {
   const findState = (): FindState => findKey.getState(view.state) ?? EMPTY
   const result = (): FindResult => {
     const { matches, activeIndex } = findState()
@@ -285,7 +293,10 @@ const createController = (view: EditorView): FindController => {
     const previous = findState()
     fold([...previous.revealed], true)
     foldHeadings([...previous.revealedHeadings], true)
-    const positions = findState().matches.map((match) => match.from)
+    // YAZ-4787: `current` opens what hides the active match only; `keep` opens nothing (no match is hidden then).
+    const folds = channel.getState().folds
+    const active = activeMatch()
+    const positions = folds === 'keep' ? [] : folds === 'current' ? (active === null ? [] : [active.from]) : findState().matches.map((match) => match.from)
     const revealed = hiders(positions)
     const revealedHeadings = headingHiders(positions)
     fold([...revealed], false)
@@ -327,6 +338,8 @@ const createController = (view: EditorView): FindController => {
   const scrollToActive = (): void => {
     const match = activeMatch()
     if (match === null) return
+    // A match in a code block (YAZ-4787 demo): CodeMirror draws only the lines on screen, so it scrolls there itself.
+    if (scrollCodeMatch(view, match)) return
     const { node } = view.domAtPos(match.from)
     const element = view.dom.querySelector(`.${FIND_ACTIVE_CLASS}`) ?? (node instanceof Element ? node : node.parentElement)
     // A match in the open cell note card (YAZ-3818, round 4 of the demo): its cell shows, the least scroll, and the
@@ -393,8 +406,12 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
             const meta: FindMeta | undefined = transaction.getMeta(findKey)
             if (meta?.type === 'clear') return EMPTY
             const query = meta?.type === 'query' ? meta.query : previous.query
-            // Matches are RECOMPUTED, not mapped: an edit creates and destroys them, not just moves them.
-            const recompute = meta?.type === 'query' || (transaction.docChanged && query !== '')
+            // Matches are RECOMPUTED, not mapped: an edit creates and destroys them, not just moves them. With `keep`
+            // (YAZ-4787) a fold or an unfold changes what shows, so it re-counts too.
+            const shownOnly = channel.getState().folds === 'keep'
+            const recompute =
+              meta?.type === 'query' ||
+              (query !== '' && (transaction.docChanged || (shownOnly && (hasOutlineFoldMeta(transaction) || hasHeadingFoldMeta(transaction)))))
             const revealed = carryRevealed(transaction, meta?.type === 'revealed' ? meta.revealed : undefined, previous.revealed)
             const revealedHeadings = carryRevealed(
               transaction,
@@ -420,7 +437,7 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
               opened === previous.opened
             )
               return previous
-            const matches = recompute ? findMatches(newState, query, zoomedRange(transaction, oldState, newState), links) : previous.matches
+            const matches = recompute ? findMatches(newState, query, zoomedRange(transaction, oldState, newState), links, shownOnly) : previous.matches
             return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed, revealedHeadings, opened, onMatch }
           },
         },
@@ -443,13 +460,16 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
           },
         },
         view: (editorView) => {
-          const unbind = channel.bind(createController(editorView))
+          const unbind = channel.bind(createController(editorView, channel))
           /**
            * The title widgets this search marked (S9). Marked again when the find state or the doc changed, or when a redraw
            * took a marked widget away (a new one has no classes); not on each caret move (YAZ-3910 A12). ProseMirror ignores
            * a widget's class changes (no DOM read, no transaction).
            */
           let marked: HTMLElement[] = []
+          // The code blocks this search painted (YAZ-4787 demo), cleared when their matches go.
+          let painted: ReadonlySet<CodeMirrorView> = new Set()
+          let paintedBlocks = 0
           const markTitles = (matches: readonly Match[], activeIndex: number) => {
             for (const el of marked) el.classList.remove(FIND_MATCH_CLASS, FIND_ACTIVE_CLASS)
             marked = []
@@ -468,7 +488,15 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
           const sync = (_view: EditorView, prevState: EditorState) => {
             const find = findKey.getState(editorView.state) ?? EMPTY
             const { matches, activeIndex } = find
-            if (find !== findKey.getState(prevState) || editorView.state.doc !== prevState.doc || marked.some((el) => !el.isConnected)) markTitles(matches, activeIndex)
+            const changed = find !== findKey.getState(prevState) || editorView.state.doc !== prevState.doc
+            if (changed || marked.some((el) => !el.isConnected)) markTitles(matches, activeIndex)
+            // A code block drawn after the search (a fold opened, a block drawn again) has no marks yet: while there are
+            // matches, a change in the page's code blocks paints again. No search: nothing is counted (typing stays light).
+            const blocks = matches.length === 0 && painted.size === 0 ? 0 : editorView.dom.querySelectorAll('.cm-content').length
+            if (changed || blocks !== paintedBlocks || [...painted].some((cm) => !cm.dom.isConnected)) {
+              painted = paintCodeBlocks(editorView, matches, activeIndex, painted)
+              paintedBlocks = blocks
+            }
             channel.sync({ total: matches.length, activeIndex })
           }
           return { update: sync, destroy: unbind }

@@ -16,8 +16,12 @@
  * Focus: the input does not exist yet on the CMD+F that OPENS the bar, so that focus lands in a
  * layout effect on the open; a CMD+F on an already-open bar has an input to focus and refocuses it
  * from the handler itself — one call site, told apart by the ref being null or not.
+ *
+ * Folds (YAZ-4787): a note's bar has a fold button beside the count. Its menu sets what find does with folded bullets
+ * for this note (`find-folds` in the note); "Use the default" hands it back to Settings › Editor › Find.
  */
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type MouseEvent, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent, type RefObject } from 'react'
+import type { FindFolds } from '@shared/types'
 import { storage } from '../../lib/storage'
 import { isNoteKey } from '../noteKeys'
 import type { FindChannel } from './findChannel'
@@ -30,7 +34,25 @@ export interface FindBarProps {
   scope: 'note' | 'page' | 'views'
   /** The Page bar's own editor mount: its claim IS focus standing inside it. Unread for `note`. */
   hostRef: RefObject<HTMLElement | null>
+  /** A note's fold menu (YAZ-4787): the note's own choice (null: none), the app's, and the door that writes the note's. */
+  folds?: { own: FindFolds | null; app: FindFolds; onChange: (folds: FindFolds | null) => void }
 }
+
+/** The fold menu's rows (YAZ-4787), in Settings' order. */
+const FOLD_CHOICES: { value: FindFolds; label: string; hint: string }[] = [
+  { value: 'current', label: 'Open the one you are on', hint: 'Every match counts. Only the current one opens, and it folds again when you move on.' },
+  { value: 'all', label: 'Open every match', hint: 'Every folded bullet that holds a match opens.' },
+  { value: 'keep', label: 'Keep folded', hint: 'Finds only what shows. Text in folded bullets does not count.' },
+]
+const foldLabel = (folds: FindFolds): string => FOLD_CHOICES.find((choice) => choice.value === folds)?.label ?? ''
+
+/** The fold button's glyph: a fold chevron pair. */
+const FoldGlyph = () => (
+  <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="m7 15 5 5 5-5" />
+    <path d="m7 9 5-5 5 5" />
+  </svg>
+)
 
 /** One glyph for both directions; the previous button rotates it (find.css). */
 const Chevron = () => (
@@ -39,9 +61,24 @@ const Chevron = () => (
   </svg>
 )
 
-export function FindBar({ channel, scope, hostRef }: FindBarProps) {
+export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
   const state = useSyncExternalStore(channel.subscribe, channel.getState)
   const inputRef = useRef<HTMLInputElement>(null)
+  const [foldMenu, setFoldMenu] = useState(false)
+  const foldRef = useRef<HTMLDivElement>(null)
+
+  // The fold menu closes on a press outside it, and with the bar.
+  useEffect(() => {
+    if (!foldMenu) return
+    const onDown = (event: PointerEvent): void => {
+      if (!(event.target instanceof Node) || foldRef.current?.contains(event.target) !== true) setFoldMenu(false)
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    return () => window.removeEventListener('pointerdown', onDown, true)
+  }, [foldMenu])
+  useEffect(() => {
+    if (!state.open) setFoldMenu(false)
+  }, [state.open])
 
   const focusInput = (): void => {
     const input = inputRef.current
@@ -120,12 +157,79 @@ export function FindBar({ channel, scope, hostRef }: FindBarProps) {
                 else channel.next()
               } else if (event.key === 'Escape') {
                 event.preventDefault()
-                channel.close()
+                // An open fold menu closes first (YAZ-4787).
+                if (foldMenu) setFoldMenu(false)
+                else channel.close()
               }
             }}
           />
           {/* Nothing has been asked yet on an empty query, so there is no count to answer with. */}
           {state.query !== '' && <span className="find-bar__count">{state.total === 0 ? '0 of 0' : `${state.activeIndex + 1} of ${state.total}`}</span>}
+          {folds !== undefined && (
+            <div className="find-bar__folds" ref={foldRef}>
+              <button
+                type="button"
+                className={`find-bar__btn find-bar__btn--folds${foldMenu ? ' find-bar__btn--on' : ''}`}
+                aria-label="Folded bullets"
+                aria-haspopup="menu"
+                aria-expanded={foldMenu}
+                onMouseDown={hold}
+                onClick={() => setFoldMenu((open) => !open)}
+              >
+                <FoldGlyph />
+              </button>
+              {foldMenu && (
+                <div className="find-folds" role="menu" aria-label="Folded bullets while finding">
+                  <div className="find-folds__head">Folded bullets while finding</div>
+                  {FOLD_CHOICES.map((choice) => (
+                    <button
+                      key={choice.value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={state.folds === choice.value}
+                      className="find-folds__row"
+                      onMouseDown={hold}
+                      onClick={() => {
+                        setFoldMenu(false)
+                        // The app's own choice with no note choice yet: nothing to write.
+                        if (folds.own === null && choice.value === folds.app) return
+                        folds.onChange(choice.value)
+                      }}
+                    >
+                      <span className="find-folds__check" aria-hidden>
+                        {state.folds === choice.value ? '✓' : ''}
+                      </span>
+                      <span className="find-folds__text">
+                        <span className="find-folds__label">{choice.label}</span>
+                        <span className="find-folds__hint">{choice.hint}</span>
+                      </span>
+                    </button>
+                  ))}
+                  <div className="find-folds__rule" />
+                  {folds.own === null ? (
+                    <div className="find-folds__foot">For this note. The default is in Settings › Editor › Find.</div>
+                  ) : (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="find-folds__row find-folds__row--reset"
+                      onMouseDown={hold}
+                      onClick={() => {
+                        setFoldMenu(false)
+                        folds.onChange(null)
+                      }}
+                    >
+                      <span className="find-folds__check" aria-hidden />
+                      <span className="find-folds__text">
+                        <span className="find-folds__label">Use the default</span>
+                        <span className="find-folds__hint">{foldLabel(folds.app)} (Settings › Editor › Find)</span>
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <button type="button" className="find-bar__btn find-bar__btn--prev" aria-label="Previous match" onMouseDown={hold} onClick={() => channel.prev()}>
             <Chevron />
           </button>

@@ -18,6 +18,8 @@ import { $prose } from '@milkdown/kit/utils'
 import { cellPosAround } from '../outline/listNodes'
 import { openCellNote } from './cellNoteCard'
 import { CELL_NOTE_CELL_CLASS } from './cellNotes'
+import { GRIP_WIDTH } from './tableColumnResize'
+import { cellNoteButtonSetting } from './timeFormatSetting'
 
 /** How many times the button was placed: a test proves that a typed key places none. */
 export const cellNoteButtonPlacements = { runs: 0 }
@@ -70,13 +72,24 @@ function buttonView(view: EditorView) {
     label(cell.classList.contains(CELL_NOTE_CELL_CLASS))
     const box = cell.getBoundingClientRect()
     const host = button.parentElement!.getBoundingClientRect()
-    button.style.left = `${box.right - INSET - SIZE - host.left}px`
+    // A header cell's right edge is the column's grip (YAZ-4788): the button stays clear of it.
+    const right = cell.tagName === 'TH' ? GRIP_WIDTH : INSET
+    button.style.left = `${box.right - right - SIZE - host.left}px`
     button.style.top = `${box.top + INSET - host.top}px`
   }
 
   /** The cell the button goes to now: the pointer's, else the caret's while focused, but a cell with a note only under the pointer. */
   function target(): HTMLElement | null {
     if (!view.editable) return null
+    const cell = candidate()
+    // YAZ-4790: a table's own On (`notebutton`) or Off (`nonotebutton`), else Settings › Tables › Cell notes › Add
+    // button (off by default, the YAZ-4790 demo).
+    const block = cell?.closest('.milkdown-table-block')
+    const on = block?.hasAttribute('data-table-nonotebutton') === true ? false : block?.hasAttribute('data-table-notebutton') === true ? true : cellNoteButtonSetting()
+    return on ? cell : null
+  }
+
+  function candidate(): HTMLElement | null {
     // A cell the editor drew again is no longer under the pointer.
     const pointer = hovered?.isConnected === true ? hovered : null
     if (pointer !== null) return pointer

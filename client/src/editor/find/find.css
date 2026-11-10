@@ -32,11 +32,14 @@
   pointer-events: none;
 }
 
+/* The note's bar opens over the status chips row (zoom, sync, save), which sits at z-index 7 (app.css), so it goes one
+   above it. At 3 the chips drew through the open bar (YAZ-4784). */
 .find-bar-dock--note {
   position: absolute;
   top: 8px;
   right: 0;
   left: 0;
+  z-index: 8;
 }
 
 .find-bar-dock--page,
@@ -107,4 +110,81 @@
 .find-bar__btn--close {
   font-size: 15px;
   line-height: 1;
+}
+
+/* The fold button and its menu (YAZ-4787): what find does with folded bullets, for this note. */
+.find-bar__folds {
+  position: relative;
+  display: flex;
+}
+
+.find-bar__btn--on {
+  color: var(--accent);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.14));
+}
+
+.find-folds {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: -70px;
+  width: 300px;
+  padding: 6px;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
+.find-folds__head {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.find-folds__row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.find-folds__row:hover {
+  background: var(--bg-hover, rgba(127, 127, 127, 0.14));
+}
+
+.find-folds__check {
+  flex: 0 0 14px;
+  color: var(--accent);
+}
+
+.find-folds__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.find-folds__hint {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.find-folds__rule {
+  margin: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.find-folds__foot {
+  padding: 4px 8px 4px 30px;
+  font-size: 11px;
+  color: var(--fg-muted);
 }

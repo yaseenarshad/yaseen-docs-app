@@ -112,6 +112,8 @@ interface FoldSetMeta {
    * and carries no view-action stamp, so ⌘Z panic-undo (fold and zoom alike) is untouched by it.
    */
   silent?: boolean
+  /** Items opened in the same step, so one ⌘Z restores both: a level fold opens the bullets above it (YAZ-4786). */
+  opened?: readonly number[]
 }
 
 /** Every fold transaction: the plugin meta plus the shared view-action stamp (zoom.ts watches for it). */
@@ -224,6 +226,36 @@ export const setOutlineFoldSet =
     if (set.length === 0) return false
     const meta: FoldSetMeta = { set, collapsed, silent: options?.silent }
     dispatch?.(meta.silent === true ? state.tr.setMeta(pluginKey, meta) : foldTransaction(state, meta))
+    return true
+  }
+
+/** How deep the list_item at `itemPos` sits: 1 for a top-level bullet, 2 for its children, and so on. */
+const itemLevel = (doc: ProseNode, itemPos: number): number => {
+  const $pos = doc.resolve(itemPos)
+  let level = 1
+  for (let depth = $pos.depth; depth > 0; depth--) if ($pos.node(depth).type.name === 'list_item') level++
+  return level
+}
+
+/**
+ * Collapse this level / Expand this level (YAZ-4786), from a bullet's menu: the level is the bullet's depth, across the
+ * whole note. Collapse folds every foldable bullet at that level and opens every one above it, so they all show.
+ * Expand opens every foldable bullet at that level and above; deeper bullets keep their folds. One user fold: one ⌘Z.
+ * With no dispatch, says whether the bullet's level has a foldable bullet at all.
+ */
+export const setOutlineFoldLevel =
+  (itemPos: number, collapsed: boolean): Command =>
+  (state, dispatch) => {
+    const foldingState = pluginKey.getState(state)
+    if (!foldingState || state.doc.nodeAt(itemPos)?.type.name !== 'list_item') return false
+    const level = itemLevel(state.doc, itemPos)
+    const levels = foldingState.entries.map(({ itemPos: pos }) => ({ pos, level: itemLevel(state.doc, pos) }))
+    if (!levels.some((entry) => entry.level === level)) return false
+    if (dispatch === undefined) return true
+    if (foldingBlocked(state, dispatch)) return true
+    const at = levels.filter((entry) => entry.level === level).map((entry) => entry.pos)
+    const above = levels.filter((entry) => entry.level < level).map((entry) => entry.pos)
+    dispatch(foldTransaction(state, collapsed ? { set: at, collapsed: true, opened: above } : { set: [...above, ...at], collapsed: false }))
     return true
   }
 
@@ -500,6 +532,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                 if (meta.collapsed && foldablePositions.has(pos)) collapsedItemPositions.add(pos)
                 else if (!meta.collapsed) collapsedItemPositions.delete(pos)
               }
+              for (const pos of meta.opened ?? []) collapsedItemPositions.delete(pos)
               // A silent set is not a user fold action: ⌘Z keeps whatever it was already pointing at.
               if (meta.silent !== true) lastToggle = { kind: 'set', previousCollapsed }
             } else if (transaction.docChanged && isFoldingOn(newState)) carryDecorations(previousState, entries, collapsedItemPositions, transaction.mapping, newState.doc)

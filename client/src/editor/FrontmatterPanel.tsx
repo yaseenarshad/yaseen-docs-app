@@ -7,9 +7,10 @@
  */
 import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, folderBlocks, folderValues, setFolderValue } from '@shared/folderValues'
+import { findKey, foldedValue, heldKey, keyFold, respell, setFolderValueOneSpelling, setOneSpelling, spellings } from '@shared/propertyKeys'
 import { inheritColumnsOf } from '@shared/folderPage'
 import { storage } from '../lib/storage'
 import { TITLE_KEY } from '@shared/noteName'
@@ -18,21 +19,27 @@ import { BridgeRequestError, api } from '../api'
 import { titleCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
 import { absFrom, dirname, relTo } from '../lib/paths'
-import { reservedKeyText as reservedText, reservedKeys } from '../links/reservedKeys'
+import { columnReservedKeys, reservedKeyText as reservedText, reservedKeys } from '../links/reservedKeys'
 import { folderId, foldersById, foldersShowing } from '../links/shortcuts'
-import { byFolder, folderName, pageColumns, readOnlyRefusal, selfAndAncestors } from '../views/columnInheritance'
+import { byFolder, declarationOf, folderName, moveColumnText, pageColumns, readOnlyRefusal, selfAndAncestors } from '../views/columnInheritance'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
-import { folderSettings, writeFolderColumn, type FolderSettings } from '../views/folderSettings'
+import { folderSettings, moveFolderColumn, writeFolderColumn, type ColumnDecl, type FolderSettings } from '../views/folderSettings'
 import { PROPERTY_LABELS, PropertyDefinitionEditor, PropertyTypeIcon } from '../views/view/PropertyDefinitionEditor'
+import { MenuPicker, TypePicker } from '../views/view/TypePicker'
+import { FileIcon } from '../sidebar/FileIcon'
+import { InfoTip } from '../components/InfoTip'
 import { declarationForKind } from '../views/view/declarationForKind'
 import { TextField } from '../views/view/TextField'
 import { properties as vaultProperties } from '../views/useProperties'
 import { showsFolderRows } from '../views/viewSchema'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
+import { ConfirmSheet } from '../components/ConfirmSheet'
+import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import { Popover } from '../views/view/Popover'
 import { EditableCell } from '../views/view/EditableCell'
+import { ImageVault } from '../views/view/imageCell'
 import { ColumnSearch } from '../views/view/ColumnSearch'
 import { LinkPills, cellContent } from '../views/view/GroupHeader'
 import { openByGesture, type OpenHandlers } from '../lib/openGesture'
@@ -43,6 +50,8 @@ import type { WikilinkHover } from './wikilink/wikilinkHover'
 import '../views/views.css'
 
 export interface FrontmatterPanelProps {
+  /** The app's toast (YAZ-4769): "Removed …" with Undo. Absent: no toast. */
+  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType, action?: Notice['action']) => void
   /** The open note as the Editor loaded it — the panel's disk truth until its own write moves it. */
   file: Pick<FileResponse, 'path' | 'content' | 'mtime'>
   /** The vault root: the scope of `.yaseendocs/properties.json`. Absent → rows carry no type affordance. */
@@ -186,8 +195,12 @@ export function FrontmatterPanel(props: FrontmatterPanelProps) {
   )
 }
 
-function Panel({ file, root, properties: decls = null, wikilinks, readOnly = false, links, inheritColumns = DEFAULT_FOLDER_PAGES.inheritColumns }: FrontmatterPanelProps) {
+function Panel({ file, root, properties: decls = null, wikilinks, readOnly = false, links, inheritColumns = DEFAULT_FOLDER_PAGES.inheritColumns, onNotice }: FrontmatterPanelProps) {
   /** The definition popover: `file` is the `.folder.md` whose column it edits (a column's owner, or a separate column's page); none = the vault's `properties.json`. */
+  /** Edit property's "Column on" (YAZ-4769), awaiting its confirm: the column's folder now (`from`) and the one picked (`to`); null is no folder. */
+  const [moving, setMoving] = useState<{ key: string; from: string | null; to: string | null; decl: ColumnDecl } | null>(null)
+  /** "Remove from this note" awaiting its confirm (YAZ-4769): the key and where its value lives. */
+  const [removing, setRemoving] = useState<{ key: string; home: Home | null } | null>(null)
   const [propertyMenu, setPropertyMenu] = useState<{ key: string; home: Home | null; file: string | undefined; dir: string | undefined; scope: string; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; editing: boolean } | null>(null)
   // The panel follows the folder settings FILES (YAZ-2196): every index refetch hands over a new
   // array, and one that moved no `.folder.md` — a save anywhere in the vault — re-renders nothing here.
@@ -199,6 +212,8 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   const folderMap = useMemo(() => byFolder(folders), [folders])
   const ids = wikilinks?.ids === true
   const reserved = reservedKeys(ids)
+  /** The keys no capitals fold ever moves or removes (YAZ-4769): the app's, and a `.folder.md`'s settings block. */
+  const keep = columnReservedKeys(ids)
   const dir = dirname(file.path)
   // A folder's OWN panel (YAZ-2290 D9) is mounted on the settings file itself. Its properties are
   // facts about the folder: the columns it declares for its notes neither type nor list here,
@@ -281,13 +296,16 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    * and a later raw Save cannot silently revert it. A note field is the note's top level (YAZ-4713 C1); a separate
    * value (C3) is that page's block of `in`, and a page with no id is given one first, the path its first shortcut
    * uses. Nothing else in the note moves: a value no page shows stays until it is cleared (C9).
+   *
+   * YAZ-4769 (one key, capitals ignored): the value is written under the row's spelling — its column's — and the
+   * note's other spellings of the key go in the same write (`setOneSpelling`); the app's keys never.
    */
   const commit = async (key: string, value: unknown, home: Home | null): Promise<void> => {
     if (readOnly) return
-    let change: ContentTransform = (content) => setFrontmatterProperty(content, key, value)
+    let change: ContentTransform = (content) => setOneSpelling(content, key, value, keep)
     if (home !== null) {
       const id = home.id ?? (await folderId(absOf(home.dir)))
-      change = (content) => setFolderValue(content, id, key, value)
+      change = (content) => setFolderValueOneSpelling(content, id, key, value)
     }
     await transformFile(file.path, change)
     setSnap((s) => ({ seen: s.seen, content: applied(s.content, change), draft: null }))
@@ -337,7 +355,15 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    * The note's own fields: everything at the top level but `in` — and `title`, a note's or a folder's, which the page
    * title above shows (YAZ-2420 🔒 D27). Where the vault does not use IDs both are fields like any other (YAZ-2523 🔒 V12).
    */
-  const ownFields = useMemo(() => Object.fromEntries(Object.entries(parsed).filter(([key]) => !ids || (key !== FOLDER_VALUES_KEY && key !== TITLE_KEY))), [parsed, ids])
+  /** The page's column spellings by fold (YAZ-4769), and the page column a typed name is, in any capitals (its spelling). */
+  const colSpell = useMemo(() => spellings(Object.keys(pageCols)), [pageCols])
+  const columnKey = (name: string): string => colSpell.get(keyFold(name)) ?? name
+  /**
+   * YAZ-4769: a field whose key is a page column's in other capitals is that column's row, under the column's spelling
+   * (`respell`): the note's `dessert column` is the `Dessert Column` row, typed and placed by its column. A note holding
+   * two spellings shows the column's; the other stays in the file (Edit as YAML shows it) and goes with the next write.
+   */
+  const ownFields = useMemo(() => respell(Object.fromEntries(Object.entries(parsed).filter(([key]) => !ids || (key !== FOLDER_VALUES_KEY && key !== TITLE_KEY))), colSpell, keep), [parsed, ids, colSpell, keep])
   /**
    * "Other folders' values for this note" (C9): every value in a block of `in` that no separate row above shows — a
    * page the note left, a page whose column is no longer separate or was deleted with Keep, a folder the app cannot
@@ -345,10 +371,11 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    */
   const keptValues = useMemo(() => {
     if (!ids) return []
-    const shownHere = new Set(separatePages.flatMap(({ home, keys }) => (home.id === undefined ? [] : keys.map((key) => `${home.id}\0${key}`))))
+    // A separate row shows its value in any capitals (YAZ-4769), so the fold says what it shows.
+    const shownHere = new Set(separatePages.flatMap(({ home, keys }) => (home.id === undefined ? [] : keys.map((key) => `${home.id}\0${keyFold(key)}`))))
     return folderBlocks(parsed).flatMap(([id, values]) =>
       Object.entries(values)
-        .filter(([key]) => !shownHere.has(`${id}\0${key}`))
+        .filter(([key]) => !shownHere.has(`${id}\0${keyFold(key)}`))
         .map(([key, raw]) => ({ id, key, raw, name: byId.get(id)?.title ?? id })),
     )
   }, [ids, separatePages, parsed, byId])
@@ -360,7 +387,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   }
   const hidden = own && Object.prototype.hasOwnProperty.call(parsed, FOLDER_SETTINGS_KEY)
   const separateRows = useMemo(() => separatePages.flatMap(({ home, settings, keys }) => rowsOf(Object.fromEntries(keys.flatMap((key) => {
-    const value = folderValues(parsed, home.id)[key]
+    const value = foldedValue(folderValues(parsed, home.id), key)
     return value === undefined ? [] : [[key, value]]
   })), reserved, decls, settings, home, keys)), [separatePages, parsed, reserved, decls])
   // The fields the note holds: its own, and each page's own values shown above.
@@ -391,10 +418,13 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    * Rename… (YAZ-4551 D21): THIS note only — one write that moves the key and keeps its value, its
    * comment and its place (`renameFrontmatterKey`); a separate value moves inside its page's block.
    */
-  const renameKey = (from: string, typed: string, home: Home | null): void => {
-    const to = typed.trim()
-    if (readOnly || to === from) return
-    const refusal = nameRefusal(to, home)
+  const renameKey = (shownKey: string, typed: string, home: Home | null): void => {
+    // YAZ-4769: the row may show the key in its column's capitals; the file's own spelling is the one renamed. A new name
+    // that is a page column in other capitals takes the column's spelling.
+    const from = heldKey(home === null ? parsed : folderValues(parsed, home.id), shownKey) ?? shownKey
+    const to = home === null ? columnKey(typed.trim()) : typed.trim()
+    if (readOnly || to === from || typed.trim() === shownKey) return
+    const refusal = nameRefusal(to, home, from)
     if (refusal !== null) {
       setError(refusal)
       return
@@ -411,8 +441,23 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
       .catch((err: unknown) => setError(`Could not rename "${from}": ${messageOf(err)}`))
   }
 
+  /**
+   * Remove one property's value (YAZ-4769): after its confirm, ONE write, then a toast with Undo that writes the value
+   * back. A note's ⌘Z belongs to its text, so the toast is the undo here.
+   */
   const remove = (key: string, home: Home | null): void => {
-    void commit(key, undefined, home).catch((err: unknown) => setError(`Could not delete "${key}": ${messageOf(err)}`))
+    // YAZ-4769: the value under whichever spelling the note holds it; `commit` removes every spelling, Undo writes the row's.
+    const before = home === null ? foldedValue(parsed, key) : home.id === undefined ? undefined : foldedValue(folderValues(parsed, home.id), key)
+    void commit(key, undefined, home)
+      .then(() => {
+        if (before === undefined) return
+        onNotice?.(`Removed "${key}"`, 'info', 'undo', {
+          label: 'Undo',
+          run: () => void commit(key, before, home).catch((err: unknown) => setError(`Could not put "${key}" back: ${messageOf(err)}`)),
+          fades: true,
+        })
+      })
+      .catch((err: unknown) => setError(`Could not delete "${key}": ${messageOf(err)}`))
   }
 
   /** Clear (C9): one value a page that does not show the note still keeps, out of its block. */
@@ -427,21 +472,28 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
       .catch((err: unknown) => setError(`Could not clear "${key}": ${messageOf(err)}`))
   }
 
-  /** Why a new name cannot be a key here, or null: the one name rule (YAZ-4551 D19), a key the page holds, an app key. */
-  const nameRefusal = (name: string, home: Home | null): string | null => {
+  /**
+   * Why a new name cannot be a key here, or null: the one name rule (YAZ-4551 D19), a key the page holds, an app key.
+   * YAZ-4769: in any capitals — "dessert column" is the "Dessert Column" the note holds. `from` (a rename's own key) is
+   * no clash, so a rename that only changes capitals goes through.
+   */
+  const nameRefusal = (name: string, home: Home | null, from?: string): string | null => {
     if (!isPropertyName(name)) return 'Type a property name'
-    if (Object.prototype.hasOwnProperty.call(home === null ? parsed : folderValues(parsed, home.id), name)) return `"${name}" is already a property of this page`
+    const fold = keyFold(name)
+    const held = Object.keys(home === null ? parsed : folderValues(parsed, home.id)).find((key) => key !== from && keyFold(key) === fold)
+    if (held !== undefined) return `"${held}" is already a property of this page`
     // A built-in prefix (YAZ-4637 M7): the views would read `file.x` as a file field, never as this key.
     const clash = builtInPrefixRefusal(name)
     if (clash !== null) return clash
     // The app's own keys have their own doors: a row added here would be read-only on a note and
-    // hidden on a folder, and its value would stand where the app's belongs.
-    if (reserved.has(name) || name === FOLDER_SETTINGS_KEY) return reservedText(name)
+    // hidden on a folder, and its value would stand where the app's belongs. In any capitals, a new name (YAZ-4769).
+    const app = findKey([...reserved, FOLDER_SETTINGS_KEY], name)
+    if (app !== undefined) return reservedText(app)
     return null
   }
 
   /** The type a name already has here: its page's column, else the vault's declaration (the ladder's top rungs). */
-  const assignedKind = (name: string): NotePropertyKind | null => columnTyping(name, NO_RECORDS, decls, typing)?.assigned ?? null
+  const assignedKind = (name: string): NotePropertyKind | null => columnTyping(columnKey(name), NO_RECORDS, decls, typing)?.assigned ?? null
   /** The folder whose `.folder.md` holds a row's definition: a separate value's page, else the folder that defines the column (C2). */
   const definitionDir = (row: Row): string | undefined => (row.home !== null ? row.home.dir : row.owner)
   const definitionFile = (row: Row): string | undefined => {
@@ -461,17 +513,19 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    * vault, or with no index feed (no folder is known to configure).
    */
   const columnChoices = (name: string): string[] =>
-    own || relDir === null || wikilinks === undefined ? [] : selfAndAncestors(relDir).filter((folder) => folder !== '' || relDir === '' || pageCols[name]?.owner === '')
-  /** The chosen folder, null for "No column". Not chosen: the folder that defines `name` already (C6, 7A 8), else the note's. */
+    own || relDir === null || wikilinks === undefined ? [] : selfAndAncestors(relDir).filter((folder) => folder !== '' || relDir === '' || pageCols[columnKey(name)]?.owner === '')
+  /** The chosen folder, null for "No column". Not chosen: the folder that defines `name` already, in any capitals (C6, 7A 8, YAZ-4769), else the note's. */
   const columnOn = (on: string | null | undefined, name: string): string | null => {
     if (on !== undefined) return on
     const choices = columnChoices(name)
-    return choices.length === 0 ? null : pageCols[name]?.owner ?? choices[0]
+    return choices.length === 0 ? null : pageCols[columnKey(name)]?.owner ?? choices[0]
   }
 
   const addKey = (): void => {
     if (adding === null) return
-    const name = adding.name.trim()
+    const typed = adding.name.trim()
+    // YAZ-4769: a page column in other capitals is that column: the note's field takes its spelling, and the line says so.
+    const name = columnKey(typed)
     const refusal = nameRefusal(name, null)
     if (refusal !== null) {
       setError(refusal)
@@ -482,22 +536,45 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     const kind = adding.kind ?? assigned ?? 'text'
     // C8: a column on the chosen folder is ALWAYS declared there, so every page under it shows it — unless it already
     // stands there as this kind. "No column" writes the note field alone; a type other than the one the name reads as
-    // is then saved for the vault (YAZ-4551 D20).
+    // is then saved for the vault (YAZ-4551 D20). The chosen folder may spell the column in other capitals (YAZ-4769):
+    // its declaration is written under its own spelling, never beside it.
     const declare = async (): Promise<void> => {
       if (on !== null) {
-        const base = folderSettings(folderMap.get(on), ids).columns[name]
+        const stored = declarationOf(folderMap, ids, on, name)
+        const base = stored?.decl
         if (base?.kind !== kind) {
           refuseReadOnly(on)
-          await writeFolderColumn(folderSettingsPath(absOf(on)), name, declarationForKind(base ?? typing.columns[name], kind), base, ids)
+          await writeFolderColumn(folderSettingsPath(absOf(on)), stored?.key ?? name, declarationForKind(base ?? typing.columns[name], kind), base, ids)
         }
       } else if (kind !== (assigned ?? 'text') && typeof root === 'string' && root !== '') await vaultProperties.setProperty(root, name, declarationForKind(decls?.properties[name], kind))
     }
     setSaving(true)
     void declare()
       .then(() => commit(name, seedValue(kind), null))
-      .then(() => setAdding(null))
+      .then(() => {
+        setAdding(null)
+        if (name !== typed) onNotice?.(`Using "${name}", which already exists.`, 'info')
+      })
       .catch((err: unknown) => setError(`Could not add "${name}": ${messageOf(err)}`))
       .finally(() => setSaving(false))
+  }
+
+  /** Which folder defines this note field now (C8), for Edit property's picker: the owner, or null when no folder does. */
+  const ownerOfKey = (key: string): string | null => pageCols[key]?.owner ?? null
+  /** The ask's words for a move (YAZ-4769): what each folder gains or loses; the notes keep their values every time. */
+  const moveText = ({ key, from, to }: { key: string; from: string | null; to: string | null }): string =>
+    moveColumnText(key, from === null ? null : nameOf(from), to === null ? null : nameOf(to))
+  /**
+   * Move one column's definition (YAZ-4769, `moveFolderColumn`): on `to` first, then off `from`. A toast's Undo puts
+   * both folders back as they were. A note's value never changes.
+   */
+  const moveColumn = async ({ key, from, to, decl }: { key: string; from: string | null; to: string | null; decl: ColumnDecl }): Promise<void> => {
+    if (to !== null) refuseReadOnly(to)
+    if (from !== null) refuseReadOnly(from)
+    const side = (dir: string | null) => (dir === null ? null : { path: folderSettingsPath(absOf(dir)), columns: folderSettings(folderMap.get(dir), ids).columns })
+    const undo = await moveFolderColumn({ key, decl, from: side(from), to: side(to), ids })
+    const said = from !== null && to !== null ? `Moved "${key}" to ${nameOf(to)}` : from !== null ? `Removed the "${key}" column from ${nameOf(from)}` : `Made "${key}" a column on ${nameOf(to!)}`
+    onNotice?.(said, 'info', 'undo', { label: 'Undo', run: () => void undo().catch((err: unknown) => setError(`Could not undo: ${messageOf(err)}`)), fades: true })
   }
 
   const saveDefinition = async (): Promise<void> => {
@@ -516,7 +593,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   }
 
   /** What the menu's row holds, as a definition's observed options. */
-  const menuValue = propertyMenu === null ? undefined : (propertyMenu.home === null ? parsed : folderValues(parsed, propertyMenu.home.id))[propertyMenu.key]
+  const menuValue = propertyMenu === null ? undefined : foldedValue(propertyMenu.home === null ? parsed : folderValues(parsed, propertyMenu.home.id), propertyMenu.key)
 
   /** A row's column: a separate value's page's, else its page's (C2); none for a field no folder defines. */
   const columnOf = (row: Row): PropertyDecl | undefined => (row.home !== null ? separatePages.find((p) => p.home.dir === row.home!.dir)?.settings.columns[row.key] : pageCols[row.key]?.decl)
@@ -563,16 +640,19 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
               )}
             </>
           ) : (
-            <EditableCell
-              propKey={row.key}
-              raw={row.raw}
-              value={fromYaml(row.raw)}
-              editor={row.editor}
-              options={columnTyping(row.key, NO_RECORDS, decls, definition)?.options}
-              titles={titles}
-              resolve={resolve}
-              onCommit={(next) => commit(row.key, next, row.home)}
-            />
+            // An Image row (YAZ-4802) loads its thumbnail from this vault.
+            <ImageVault.Provider value={root ?? null}>
+              <EditableCell
+                propKey={row.key}
+                raw={row.raw}
+                value={fromYaml(row.raw)}
+                editor={row.editor}
+                options={columnTyping(row.key, NO_RECORDS, decls, definition)?.options}
+                titles={titles}
+                resolve={resolve}
+                onCommit={(next) => commit(row.key, next, row.home)}
+              />
+            </ImageVault.Provider>
           )}
         </span>
 
@@ -616,7 +696,36 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
       {propertyMenu && createPortal(<Popover label={`Property ${propertyMenu.key}`} anchor={propertyMenu.anchor} onClose={() => { if (!saving) setPropertyMenu(null) }} className="frontmatter-property-menu">
         <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{propertyMenu.key}</strong></div>
         {propertyMenu.editing ? <>
-          <p className="frontmatter-property-menu__scope">{propertyMenu.scope}</p>
+          {/* YAZ-4769: a note field's column says where it is, and moves, with the Add row's picker; other rows keep the line. */}
+          {propertyMenu.home === null && columnChoices(propertyMenu.key).length > 0 ? (
+            <div className="frontmatter-property-menu__column">
+              <span className="frontmatter-property-menu__column-label">
+                Column on
+                <InfoTip text="The folder whose page has this column. It also shows on every folder page below it. The value is always saved in this note." />
+              </span>
+              <MenuPicker
+                value={ownerOfKey(propertyMenu.key) === null ? NO_COLUMN : `/${ownerOfKey(propertyMenu.key)}`}
+                options={[
+                  ...columnChoices(propertyMenu.key).map((folder) => ({
+                    value: `/${folder}`,
+                    icon: <FileIcon path={folder} folder />,
+                    label: nameOf(folder),
+                    about: folder === relDir ? "This note's folder: a column on its page" : 'Folder above: a column on it and every folder below',
+                  })),
+                  { value: NO_COLUMN, icon: <FileIcon path="note.md" />, label: 'This note only', about: 'No folder page gets a column (◌ if you show it)' },
+                ]}
+                menuLabel={`Column on for ${propertyMenu.key}`}
+                triggerLabel={`Column on for ${propertyMenu.key}`}
+                stacked
+                onPick={(value) => {
+                  const to = value === NO_COLUMN ? null : value.slice(1)
+                  setMoving({ key: propertyMenu.key, from: ownerOfKey(propertyMenu.key), to, decl: propertyMenu.base ?? (propertyMenu.definition as ColumnDecl) })
+                }}
+              />
+            </div>
+          ) : (
+            <p className="frontmatter-property-menu__scope">{propertyMenu.scope}</p>
+          )}
           <fieldset disabled={saving} className="property-settings-fields">
           <PropertyDefinitionEditor value={propertyMenu.definition} onChange={definition => setPropertyMenu({ ...propertyMenu, definition })} observed={Array.isArray(menuValue) ? menuValue.map(String) : menuValue == null ? [] : [String(menuValue)]} />
           {error && <p role="alert" className="frontmatter-panel__error">{error}</p>}
@@ -625,9 +734,46 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
         </> : <>
           {/* A column's row edits that column on its folder (C2, C6); a field no folder defines, with a vault root, the vault's declaration (YAZ-4551 D21). */}
           {(propertyMenu.file !== undefined || (typeof root === 'string' && root !== '')) && <button className="view-popover__item" type="button" onClick={() => setPropertyMenu({ ...propertyMenu, editing: true })}>Edit property <span>›</span></button>}
-          <button className="view-popover__item" type="button" onClick={() => { remove(propertyMenu.key, propertyMenu.home); setPropertyMenu(null) }}>Remove from this {own ? 'folder' : 'note'}</button>
+          <button className="view-popover__item" type="button" onClick={() => { setRemoving({ key: propertyMenu.key, home: propertyMenu.home }); setPropertyMenu(null) }}>Remove from this {own ? 'folder' : 'note'}…</button>
         </>}
       </Popover>, document.body)}
+      {/* YAZ-4769: a column's move asks first, with what each folder gains or loses; then Undo. */}
+      {moving !== null && createPortal(
+        <ConfirmSheet
+          labelId="confirm-move-column-text"
+          text={moveText(moving)}
+          confirmLabel={moving.from !== null && moving.to !== null ? 'Move column' : moving.from !== null ? 'Remove column' : 'Make column'}
+          danger={moving.to === null}
+          keys="contained"
+          onConfirm={() => {
+            const move = moving
+            setMoving(null)
+            setSaving(true)
+            void moveColumn(move)
+              .then(() => setPropertyMenu(null))
+              .catch((err: unknown) => setError(`Could not move "${move.key}": ${messageOf(err)}`))
+              .finally(() => setSaving(false))
+          }}
+          onCancel={() => setMoving(null)}
+        />,
+        document.body,
+      )}
+      {/* YAZ-4769: a removal asks first ("that is very sensitive"), then offers Undo. */}
+      {removing !== null && createPortal(
+        <ConfirmSheet
+          labelId="confirm-remove-property-text"
+          text={`Remove "${removing.key}" from this ${own ? 'folder' : 'note'}? Its value goes from the ${own ? 'folder page' : 'note'}. You can undo it.`}
+          confirmLabel="Remove"
+          danger
+          onConfirm={() => {
+            const { key, home } = removing
+            setRemoving(null)
+            remove(key, home)
+          }}
+          onCancel={() => setRemoving(null)}
+        />,
+        document.body,
+      )}
       {rowMenu && createPortal(<ContextMenuSurface x={rowMenu.x} y={rowMenu.y} onClose={() => setRowMenu(null)}>
         {rowMenu.renaming ? (
           <TextField
@@ -648,7 +794,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
             void navigator.clipboard.writeText(copyText(rowMenu.row.raw)).catch((err: unknown) => setError(`Could not copy "${rowMenu.row.key}": ${messageOf(err)}`))
             setRowMenu(null)
           }}>Copy value</button>
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => { remove(rowMenu.row.key, rowMenu.row.home); setRowMenu(null) }}>Remove from this {own ? 'folder' : 'note'}</button>
+          <button type="button" className="ctx-menu__item ctx-menu__item--danger" role="menuitem" onClick={() => { setRemoving({ key: rowMenu.row.key, home: rowMenu.row.home }); setRowMenu(null) }}>Remove from this {own ? 'folder' : 'note'}…</button>
         </>}
       </ContextMenuSurface>, document.body)}
       {expanded && (
@@ -704,9 +850,11 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
                 </div>
               )}
               {adding !== null && !readOnly && (
-                <div className="frontmatter-panel__new">
+                // YAZ-4713 C8A, YAZ-4769: ONE row, as a property's: the name where the names stand, then Type, Column, Cancel and
+                // Add where the values stand. A picker's list opens as a full line under the row.
+                <div className="frontmatter-add" role="group" aria-label="Add a property">
                   <input
-                    className="view-input frontmatter-panel__name"
+                    className="view-input frontmatter-add__name"
                     aria-label="New property name"
                     autoFocus
                     placeholder="Property name"
@@ -716,51 +864,50 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
                       if (e.key === 'Enter') addKey()
                     }}
                   />
-                  {/* "Column on" (YAZ-4713 C8): the folder page that shows it — the note's folder, a folder above, or none. */}
-                  {columnChoices(adding.name.trim()).length > 0 && (
-                    <select
-                      className="view-select"
-                      aria-label="Column on"
-                      value={columnOn(adding.on, adding.name.trim()) === null ? NO_COLUMN : `/${columnOn(adding.on, adding.name.trim())}`}
-                      onChange={(e) => setAdding({ ...adding, on: e.currentTarget.value === NO_COLUMN ? null : e.currentTarget.value.slice(1) })}
+                  <div className="frontmatter-add__controls">
+                    {/* The type (YAZ-4551 D20): it starts on the type the name has already, else Text. A note holds no Linked mentions. */}
+                    {(columnOn(adding.on, adding.name.trim()) !== null || (typeof root === 'string' && root !== '')) && (
+                      <TypePicker kind={adding.kind ?? assignedKind(adding.name.trim()) ?? 'text'} label="the new property" kinds={NOTE_PROPERTY_KINDS} onPick={(kind) => setAdding({ ...adding, kind: kind as NotePropertyKind })} />
+                    )}
+                    {/* "Column on" (YAZ-4713 C8): the folder page that shows it — the note's folder, a folder above, or this note only (C8A). */}
+                    {columnChoices(adding.name.trim()).length > 0 && (
+                      <>
+                        <MenuPicker
+                          value={columnOn(adding.on, adding.name.trim()) === null ? NO_COLUMN : `/${columnOn(adding.on, adding.name.trim())}`}
+                          options={[
+                            ...columnChoices(adding.name.trim()).map((folder) => ({
+                              value: `/${folder}`,
+                              icon: <FileIcon path={folder} folder />,
+                              label: nameOf(folder),
+                              about: folder === relDir ? "This note's folder: a column on its page" : 'Folder above: a column on it and every folder below',
+                            })),
+                            { value: NO_COLUMN, icon: <FileIcon path="note.md" />, label: 'This note only', about: 'No folder page gets a column (◌ if you show it)' },
+                          ]}
+                          menuLabel="Column on"
+                          triggerLabel="Column on"
+                          lead="Column on"
+                          stacked
+                          onPick={(value) => setAdding({ ...adding, on: value === NO_COLUMN ? null : value.slice(1) })}
+                        />
+                        <InfoTip text="Where this property shows as a column. The value is always saved in this note." />
+                      </>
+                    )}
+                    <span className="frontmatter-add__gap" />
+                    <button
+                      type="button"
+                      className="frontmatter-panel__btn"
+                      disabled={saving}
+                      onClick={() => {
+                        setAdding(null)
+                        setError(null)
+                      }}
                     >
-                      {columnChoices(adding.name.trim()).map((folder) => (
-                        <option key={folder} value={`/${folder}`}>
-                          {`Column on ${nameOf(folder)}`}
-                        </option>
-                      ))}
-                      <option value={NO_COLUMN}>No column</option>
-                    </select>
-                  )}
-                  {/* The type (YAZ-4551 D20): it starts on the type the name has already, else Text. */}
-                  {(columnOn(adding.on, adding.name.trim()) !== null || (typeof root === 'string' && root !== '')) && (
-                    <select
-                      className="view-select"
-                      aria-label="New property type"
-                      value={adding.kind ?? assignedKind(adding.name.trim()) ?? 'text'}
-                      onChange={(e) => setAdding({ ...adding, kind: e.currentTarget.value as NotePropertyKind })}
-                    >
-                      {NOTE_PROPERTY_KINDS.map((k) => (
-                        <option key={k} value={k}>
-                          {PROPERTY_LABELS[k]}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  <button type="button" className="frontmatter-panel__btn" disabled={saving} onClick={addKey}>
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    className="frontmatter-panel__btn"
-                    disabled={saving}
-                    onClick={() => {
-                      setAdding(null)
-                      setError(null)
-                    }}
-                  >
-                    Cancel
-                  </button>
+                      Cancel
+                    </button>
+                    <button type="button" className="frontmatter-panel__btn frontmatter-add__add" disabled={saving} onClick={addKey}>
+                      Add
+                    </button>
+                  </div>
                 </div>
               )}
             </>

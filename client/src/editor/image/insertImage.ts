@@ -99,6 +99,25 @@ export async function writeImage(root: string, noteBase: string, bytes: Uint8Arr
 }
 
 /**
+ * `writeImage` for a picture that has a name of its own (YAZ-4802, an Image cell's chosen file or downloaded link):
+ * `assets/images/<stem>.<ext>`, then `<stem>-2`, `<stem>-3`, … — never over a file. Resolves the root-relative path.
+ */
+export async function writeImageNamed(root: string, stem: string, bytes: Uint8Array, ext: string): Promise<string> {
+  // A wikilink can not hold `[ ] | # ^`, and a space-free name keeps the link plain (as `imageName`).
+  const base = stem.trim().replace(/\s+/g, '-').replace(/[[\]|#^\\/:*?"<>]+/g, '') || 'image'
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const path = `${IMAGES_DIR}/${base}${attempt === 0 ? '' : `-${attempt + 1}`}.${ext}`
+    try {
+      await api.writeAsset({ root, path, content: bytes, create: true })
+      return path
+    } catch (err) {
+      if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
+    }
+  }
+  throw new Error(`${MAX_ATTEMPTS} names in ${IMAGES_DIR} are already taken`)
+}
+
+/**
  * The display width a pasted image starts at, in px. The FILE is always saved at full resolution
  * (`writeImage` never re-encodes); only the markdown carries `|W`, the same Obsidian syntax the
  * resize handle writes — so a screenshot lands at a manageable size instead of filling the column,

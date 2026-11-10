@@ -9,7 +9,11 @@
  *
  * `close()` keeps the query so the next CMD+F can offer it again, but the engine has dropped its
  * matches by then — which is why the counter goes back to 0 / −1 and reopening re-runs the search.
+ *
+ * Folds (YAZ-4787): the channel also holds what find does with folds (`FindFolds`). The editor sets it from the note's
+ * `find-folds` key or the app setting; a change while a search is open runs the search again.
  */
+import type { FindFolds } from '@shared/types'
 
 export interface FindSnapshot {
   open: boolean
@@ -18,6 +22,8 @@ export interface FindSnapshot {
   total: number
   /** Index of the active match, −1 when there are none. */
   activeIndex: number
+  /** What find does with folds that hide a match (YAZ-4787). */
+  folds: FindFolds
 }
 
 /** What every engine command answers with; the channel copies it straight into the snapshot. */
@@ -41,6 +47,8 @@ export interface FindChannel {
   setQuery(query: string): void
   next(): void
   prev(): void
+  /** What find does with folds (YAZ-4787); an open search runs again. */
+  setFolds(folds: FindFolds): void
   getState(): FindSnapshot
   subscribe(listener: () => void): () => void
   /** Engine side: bind at view creation, call the returned unbind on destroy. */
@@ -53,7 +61,7 @@ const NO_MATCHES: FindResult = { total: 0, activeIndex: -1 }
 
 export function createFindChannel(): FindChannel {
   let controller: FindController | null = null
-  let snapshot: FindSnapshot = { open: false, query: '', ...NO_MATCHES }
+  let snapshot: FindSnapshot = { open: false, query: '', folds: 'current', ...NO_MATCHES }
   const listeners = new Set<() => void>()
 
   const set = (next: FindSnapshot): void => {
@@ -61,7 +69,8 @@ export function createFindChannel(): FindChannel {
       next.open === snapshot.open &&
       next.query === snapshot.query &&
       next.total === snapshot.total &&
-      next.activeIndex === snapshot.activeIndex
+      next.activeIndex === snapshot.activeIndex &&
+      next.folds === snapshot.folds
     )
       return
     snapshot = next
@@ -69,7 +78,7 @@ export function createFindChannel(): FindChannel {
   }
   const setQuery = (query: string): void => {
     if (!snapshot.open) return
-    set({ open: true, query, ...(controller?.search(query) ?? NO_MATCHES) })
+    set({ ...snapshot, open: true, query, ...(controller?.search(query) ?? NO_MATCHES) })
   }
   const step = (delta: 1 | -1): void => {
     if (!snapshot.open) return
@@ -90,6 +99,12 @@ export function createFindChannel(): FindChannel {
       controller?.close()
     },
     setQuery,
+    setFolds(folds) {
+      if (folds === snapshot.folds) return
+      snapshot = { ...snapshot, folds }
+      if (snapshot.open && snapshot.query !== '') setQuery(snapshot.query)
+      listeners.forEach((listener) => listener())
+    },
     next: () => step(1),
     prev: () => step(-1),
     sync(result) {
