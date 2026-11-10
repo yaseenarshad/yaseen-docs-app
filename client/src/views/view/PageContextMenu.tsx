@@ -1,4 +1,4 @@
-import { Children, Fragment, useContext, useState, type ReactNode } from 'react'
+import { Fragment, useContext, useState, type ReactNode } from 'react'
 import { FlyoutParent, MenuFlyout, useFlyout } from '../../components/Flyout'
 import { PageActions } from '../../lib/pageActions'
 import { CopyIcon, EyeIcon, HeartIcon } from './icons'
@@ -95,7 +95,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
           .filter((section) => section.length > 0)
           .map((section, i) => (
             <div key={i} className="ctx-menu__group" role="group">
-              {Children.toArray(section)}
+              {section.map((n, k) => <Fragment key={k}>{n}</Fragment>)}
             </div>
           ))}
         <div className="ctx-menu__group" role="group">
@@ -138,10 +138,11 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
   const shortcutItems = (): ReactNode[] => {
     if (!noteRow || shortcuts === null) return []
     const needle = folderQuery.trim().toLowerCase()
+    const held = shortcuts.holders(path)
     const choices = shortcuts
       .folders()
-      // The folder the note lives in shows it already.
-      .filter((f) => f.dir !== path.slice(0, path.lastIndexOf('/')))
+      // Every folder that shows the note already: where it lives, and each one it is a shortcut in, this page too (checker 8A).
+      .filter((f) => !held.has(f.dir))
       .filter((f) => needle === '' || f.name.toLowerCase().includes(needle) || f.path.toLowerCase().includes(needle))
     return [
       ...(home === null
@@ -197,7 +198,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
     ...trayItems(),
   ]
   // Keys for the rows of each list (the open items and the shortcut items): React warned on the arrays (YAZ-4797 test).
-  const groups = [...(extra ?? []), <Fragment key="page">{Children.toArray(pageGroup)}</Fragment>, ...(danger === undefined || danger === null ? [] : [danger])]
+  const groups = [...(extra ?? []), <Fragment key="page">{pageGroup.map((n, k) => <Fragment key={k}>{n}</Fragment>)}</Fragment>, ...(danger === undefined || danger === null ? [] : [danger])]
 
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>
@@ -208,7 +209,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
         </div>
         {groups.map((group, i) => (
           <div key={i} className="ctx-menu__group" role="group">
-            {Array.isArray(group) ? Children.toArray(group) : group}
+            {Array.isArray(group) ? group.map((n, k) => <Fragment key={k}>{n}</Fragment>) : group}
           </div>
         ))}
       </MenuFlyout.Provider>

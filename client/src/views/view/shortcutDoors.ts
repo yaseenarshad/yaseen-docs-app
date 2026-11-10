@@ -18,6 +18,11 @@ export interface ShortcutDoors {
   add: (path: string, dir: string) => void
   /** The folders a shortcut can go to, for "Add shortcut to ›": each folder of the vault, its name and its path. */
   folders: () => { dir: string; name: string; path: string }[]
+  /**
+   * The folders (absolute) a note already shows in (checker 8A): where it lives and each folder its `also_in` names.
+   * "Add shortcut to ›" leaves them out, so a pick never adds what is there (and its Undo never removes it).
+   */
+  holders: (path: string) => ReadonlySet<string>
   /** A note no write may touch (read-only): no shortcut items. */
   locked: (path: string) => boolean
 }

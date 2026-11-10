@@ -38,6 +38,8 @@ function doors(over: Partial<ShortcutDoors> = {}): ShortcutDoors {
     remove: vi.fn(),
     add: vi.fn(),
     folders: () => FOLDERS,
+    // Where a row shows already, as FolderView answers: Tiramisu lives in Desserts and is a shortcut on Party menu.
+    holders: (path) => new Set(path.includes('Tiramisu') ? ['/vault/Recipes/Desserts', '/vault/Recipes/Party menu'] : [path.slice(0, path.lastIndexOf('/'))]),
     locked: () => false,
     ...over,
   }
@@ -151,5 +153,13 @@ describe('YAZ-4778 demo: Open in new window is its own row', () => {
     expect(subItems().map((b) => b.textContent)).not.toContain('New window')
     act(() => mainItems().find((b) => b.textContent === 'Open in new window')!.click())
     expect(openNewWindow).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+  })
+})
+
+describe('checker 8A: Add shortcut to never offers this page', () => {
+  it('on a shortcut row of Party menu, "Add shortcut to ›" does not list Party menu', () => {
+    menu(TIRAMISU, doors())
+    openAddShortcut()
+    expect(subItems().map((b) => b.textContent)).not.toContain('Party menu')
   })
 })

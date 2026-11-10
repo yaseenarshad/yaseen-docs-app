@@ -57,6 +57,7 @@ import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from '../links/BacklinksSection'
+import { alsoIn } from '@shared/alsoIn'
 import { addShortcut, folderId, folderRecord, folderRows, isShortcut, removeShortcut, rowPage, subfolderRows } from '../links/shortcuts'
 import { ShortcutActions, type ShortcutDoors } from './view/shortcutDoors'
 import { columnReservedKeys, reservedKeyText } from '../links/reservedKeys'
@@ -430,6 +431,13 @@ export function FolderView({
       remove: (note) => remove(note),
       add: (note, dir) => add(note, dir),
       folders: () => vaultDirs(root).map((dir) => ({ dir, name: nameAt(relTo(root, dir)), path: relTo(root, dir) })),
+      holders: (note) => {
+        const record = rows.find((r) => r.path === note)
+        if (record === undefined) return new Set([note.slice(0, note.lastIndexOf('/'))])
+        const ids = new Set(alsoIn(record.properties))
+        const shortcutDirs = [...folderMap].filter(([, f]) => f.id != null && ids.has(f.id)).map(([rel]) => absFrom(root, rel))
+        return new Set([absFrom(root, record.folder), ...shortcutDirs])
+      },
       locked: (note) => locked.has(note),
     }
   }, [ids, folderMap, vaultName, rows, folder, path, root, feed.folders, onNotice, onOpenFolderPage, locked])
