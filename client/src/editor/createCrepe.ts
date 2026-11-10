@@ -791,7 +791,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // bullet's dot and took its right-click). The handle goes to the bullet, left of the dot, as a code block's does; its
   // menu holds the bullet strip and the table's settings (`tableRows`). Crepe's own rule stays: nothing inside a table,
   // a quote or inline math.
+  // Only where the handle is on: an editor built without it (a preview) has no `blockConfig` to set.
   crepe.editor.config((ctx) =>
+    ctx.isInjected(blockConfig.key) &&
     ctx.set(blockConfig.key, {
       filterNodes: (pos, node) => {
         if (node.type.name === 'table' && pos.parent.type.name === 'list_item' && pos.index() === 0) return false
