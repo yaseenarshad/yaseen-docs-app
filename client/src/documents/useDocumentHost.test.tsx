@@ -351,7 +351,7 @@ describe('exportWithNotice', () => {
 /** The two user doors of the switch (YAZ-3076 D3, D4): the cog's row turns it on; the chip's "Allow edits" turns it off. */
 async function turnReadOnlyOn(): Promise<void> {
   act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-  const row = [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith('Read only'))!
+  const row = [...document.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith('Read only'))!
   await act(async () => row.click())
   await settle()
 }
@@ -426,7 +426,7 @@ describe('the read-only switch in the file (YAZ-3076 D1)', () => {
 
 describe('the cog, the "Read only" chip and the "Allow edits?" box on a board (YAZ-3076 D3, D4)', () => {
   const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
-  const menuRows = () => [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu > *')]
+  const menuRows = () => [...document.querySelectorAll<HTMLButtonElement>('.page-settings__menu > *')]
   const chip = () => container.querySelector<HTMLButtonElement>('.read-only-chip__button')
   const ask = () => container.querySelector<HTMLElement>('.read-only-chip__ask')
   const chipOrder = () => [...container.querySelector('.chips')!.children].map((c) => c.className.split(' ')[0])
@@ -457,7 +457,7 @@ describe('the cog, the "Read only" chip and the "Allow edits?" box on a board (Y
     expect(ask()).toBeNull()
     act(() => cog().click())
     act(() => menuRows()[0].click())
-    expect(container.querySelector('.page-settings__menu')).toBeNull()
+    expect(document.querySelector('.page-settings__menu')).toBeNull()
     expect(ask()).not.toBeNull()
     expect(setBoardReadOnly).not.toHaveBeenCalled()
     const allow = [...ask()!.querySelectorAll('button')].find((b) => b.textContent === 'Allow edits')!

@@ -11,13 +11,18 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import type { DiagramDarkColors } from '@shared/types'
-import { setDiagramReadOnly } from '@shared/readOnly'
+import { isDiagramHoverLinksOff, isDiagramReadOnly, setDiagramReadOnly } from '@shared/readOnly'
 
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
   return { ...actual, api: { ...actual.api, diagram: { load: vi.fn(), save: vi.fn() }, dialog: { saveImage: vi.fn() } } }
 })
 vi.mock('./renderDiagram', () => ({ renderDiagramImage: vi.fn() }))
+// The link card's dwell: a spy that calls through, so a test can read whether hover is on for this diagram (YAZ-4748 D10).
+vi.mock('../tabs/cardPreview', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../tabs/cardPreview')>()
+  return { ...actual, useCardPreview: vi.fn(actual.useCardPreview) }
+})
 
 import { api, BridgeRequestError } from '../api'
 import { BOARD_COMMAND_EVENT } from '../documents/boardCommand'
@@ -27,12 +32,16 @@ import { BROKEN_DIAGRAM_DOCUMENT, DrawioEditor } from './DrawioEditor'
 import { renderDiagramImage } from './renderDiagram'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { DrawioEditorProps } from './DrawioEditor'
+import { useCardPreview } from '../tabs/cardPreview'
+import { linkPreviewHint, readOnlyHint } from '../drawings/cogHints'
 
 const load = vi.mocked(api.diagram.load)
 const save = vi.mocked(api.diagram.save)
 const saveImage = vi.mocked(api.dialog.saveImage)
 /** `board:set-read-only` (YAZ-3076), on the bridge itself: `api` reaches it through `window.yaseenDocs`. */
 const setBoardReadOnly = vi.fn()
+/** `board:set-hover-links` (YAZ-4748 D10), on the bridge too. */
+const setBoardHoverLinks = vi.fn()
 const notice = vi.fn()
 
 const ROOT = '/vault'
@@ -101,6 +110,7 @@ beforeEach(() => {
     writable: true,
     value: {
       setBoardReadOnly,
+      setBoardHoverLinks,
       window: {
         onFlush: () => () => {},
       },
@@ -367,10 +377,10 @@ describe('read only (YAZ-3076 D2)', () => {
 })
 
 describe("the cog on a diagram (YAZ-3943 D13: the drawing's rows are a drawing's only)", () => {
-  it('has only "Read only": no pictures row, no export rows', async () => {
+  it('YAZ-4748 D10: has "Read only", then "Link preview on hover": no pictures row, no export rows', async () => {
     await opened()
     act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    expect([...container.querySelectorAll('.page-settings__menu > *')].map((r) => r.textContent)).toEqual(['Read only'])
+    expect([...document.querySelectorAll('.page-settings__menu > *')].map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓'])
   })
 })
 
@@ -380,7 +390,7 @@ describe('read only: a change draw.io queued before the switch landed (YAZ-3116 
     let answer!: (res: { path: string; mtime: number; size: number }) => void
     setBoardReadOnly.mockReturnValue(new Promise((resolve) => (answer = resolve)))
     act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    const row = [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith('Read only'))!
+    const row = [...document.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith('Read only'))!
     await act(async () => {
       row.click()
       await Promise.resolve()
@@ -398,6 +408,161 @@ describe('read only: a change draw.io queued before the switch landed (YAZ-3116 
     const written = save.mock.calls[0]![0]
     expect(written.expectedMtime).toBe(300)
     expect(written.xml).toBe(EDITED.replace('<mxfile>', '<mxfile yaseendraw-readonly="1">'))
+  })
+})
+
+/** The diagram's own "Link preview on hover" (YAZ-4748 D10): `yaseendraw-hoverlinks="0"` on the root `<mxfile>`. */
+describe('YAZ-4748 D10: the diagram\u2019s own "Link preview on hover"', () => {
+  const HOVER_OFF = XML.replace('<mxfile>', '<mxfile yaseendraw-hoverlinks="0">')
+  const LOCKED = XML.replace('<mxfile>', '<mxfile yaseendraw-readonly="1">')
+  const preview = vi.mocked(useCardPreview)
+  const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
+  const row = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith(name))!
+  const tooltip = () => document.querySelector<HTMLElement>('.page-settings__tip--hint[role="tooltip"]')
+
+  /** Mount with the app's "Links in drawings and diagrams" on, and walk draw.io to a loaded document of `xml`. */
+  async function openedWith(xml: string): Promise<void> {
+    load.mockResolvedValue({ path: PATH, xml, mtime: 100, size: xml.length })
+    const source = createWikilinkResolveSource()
+    act(() => root?.render(<DrawioEditor root={ROOT} path={PATH} watch={watch} darkColors="adapt" onNotice={notice} wikilinks={source} onOpenLink={vi.fn()} onOpenLinkBackground={vi.fn()} hoverLinks />))
+    await settle()
+    tapFrame()
+    drawio({ event: 'yaseenReady' })
+    drawio({ event: 'configure' })
+    drawio({ event: 'init' })
+    drawio({ event: 'load', xml })
+  }
+
+  it('each row has its (i): the mouse on it shows the diagram\u2019s words, beside the menu', async () => {
+    await openedWith(XML)
+    act(() => cog().click())
+    for (const [name, hint] of [['Read only', readOnlyHint('diagram')], ['Link preview on hover', linkPreviewHint('diagram')]] as const) {
+      const info = row(name).querySelector('.page-settings__info')!
+      act(() => void info.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: null })))
+      expect(tooltip()?.textContent, name).toBe(hint)
+      expect(document.querySelector('.page-settings__menu')!.contains(tooltip())).toBe(false)
+      act(() => void info.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: null })))
+      expect(tooltip()).toBeNull()
+    }
+    expect(readOnlyHint('diagram')).toContain('diagram')
+  })
+
+  it('on by default, and the link card is on; off writes the switch beside the autosave and stops the card; on again writes it back', async () => {
+    setBoardHoverLinks.mockResolvedValue({ path: PATH, mtime: 300, size: 10 })
+    await openedWith(XML)
+    expect(preview.mock.lastCall?.[0]).toBe(true)
+    act(() => cog().click())
+    expect(row('Link preview on hover').getAttribute('aria-pressed')).toBe('true')
+    await act(async () => row('Link preview on hover').click())
+    await settle()
+    expect(setBoardHoverLinks).toHaveBeenCalledExactlyOnceWith({ root: ROOT, path: PATH, on: false, expectedMtime: 100 })
+    expect(preview.mock.lastCall?.[0]).toBe(false)
+    // The menu stays open, the row off.
+    expect(row('Link preview on hover').getAttribute('aria-pressed')).toBe('false')
+    setBoardHoverLinks.mockResolvedValue({ path: PATH, mtime: 400, size: 10 })
+    await act(async () => row('Link preview on hover').click())
+    await settle()
+    expect(setBoardHoverLinks).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, on: true, expectedMtime: 300 })
+    expect(preview.mock.lastCall?.[0]).toBe(true)
+    expect(row('Link preview on hover').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('a diagram whose file says off opens with the row off and no link card', async () => {
+    await openedWith(HOVER_OFF)
+    expect(preview.mock.lastCall?.[0]).toBe(false)
+    act(() => cog().click())
+    expect(row('Link preview on hover').getAttribute('aria-pressed')).toBe('false')
+    expect(row('Link preview on hover').textContent).toBe('Link preview on hover')
+  })
+
+  it('Read only greys the row out (it writes the file); a click writes nothing', async () => {
+    await openedWith(LOCKED)
+    act(() => cog().click())
+    expect(row('Read only').getAttribute('aria-pressed')).toBe('true')
+    expect(row('Link preview on hover').disabled).toBe(true)
+    await act(async () => row('Link preview on hover').click())
+    await settle()
+    expect(setBoardHoverLinks).not.toHaveBeenCalled()
+  })
+
+  it('a file that changed on disk is refused: one notice, the clean diagram reloads, and the row stays on', async () => {
+    setBoardHoverLinks.mockRejectedValue({ code: 'CONFLICT', message: 'changed', mtime: 900 })
+    await openedWith(XML)
+    expect(load).toHaveBeenCalledTimes(1)
+    act(() => cog().click())
+    await act(async () => row('Link preview on hover').click())
+    await settle()
+    await settle()
+    expect(notice).toHaveBeenCalledExactlyOnceWith('The file changed on disk. Try again.', 'error')
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(preview.mock.lastCall?.[0]).toBe(true)
+  })
+
+  it('any other refusal is one notice with main\u2019s reason, and the switch stays', async () => {
+    setBoardHoverLinks.mockRejectedValue({ code: 'IO_ERROR', message: 'the file is cut short' })
+    await openedWith(XML)
+    act(() => cog().click())
+    await act(async () => row('Link preview on hover').click())
+    await settle()
+    expect(notice).toHaveBeenCalledExactlyOnceWith('the file is cut short', 'error')
+    expect(row('Link preview on hover').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('an edit saves WITH the switch: draw.io\u2019s XML has no attribute of ours', async () => {
+    await openedWith(HOVER_OFF)
+    drawio({ event: 'autosave', xml: EDITED })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await settle()
+    expect(save).toHaveBeenCalledExactlyOnceWith({ root: ROOT, path: PATH, xml: EDITED.replace('<mxfile>', '<mxfile yaseendraw-hoverlinks="0">'), expectedMtime: 100 })
+  })
+
+  it('a switch turned off here is kept by the next save; turned on again, the next save drops it', async () => {
+    setBoardHoverLinks.mockResolvedValue({ path: PATH, mtime: 300, size: 10 })
+    save.mockResolvedValue({ path: PATH, mtime: 350, size: 50 })
+    await openedWith(XML)
+    act(() => cog().click())
+    await act(async () => row('Link preview on hover').click())
+    await settle()
+    drawio({ event: 'autosave', xml: EDITED })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await settle()
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ xml: EDITED.replace('<mxfile>', '<mxfile yaseendraw-hoverlinks="0">'), expectedMtime: 300 }))
+    setBoardHoverLinks.mockResolvedValue({ path: PATH, mtime: 400, size: 10 })
+    await act(async () => row('Link preview on hover').click())
+    await settle()
+    drawio({ event: 'autosave', xml: `${EDITED} ` })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await settle()
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ xml: `${EDITED} `, expectedMtime: 400 }))
+  })
+
+  it('both switches: a change queued while "Read only" is written saves with read only AND hover off', async () => {
+    await openedWith(HOVER_OFF)
+    let answer!: (res: { path: string; mtime: number; size: number }) => void
+    setBoardReadOnly.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    act(() => cog().click())
+    await act(async () => {
+      row('Read only').click()
+      await Promise.resolve()
+    })
+    drawio({ event: 'autosave', xml: EDITED })
+    await act(async () => answer({ path: PATH, mtime: 300, size: 1 }))
+    await settle()
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await settle()
+    expect(save).toHaveBeenCalledTimes(1)
+    const written = save.mock.calls[0]![0].xml
+    expect(isDiagramReadOnly(written)).toBe(true)
+    expect(isDiagramHoverLinksOff(written)).toBe(true)
+    expect(written).toBe(EDITED.replace('<mxfile>', '<mxfile yaseendraw-readonly="1" yaseendraw-hoverlinks="0">'))
   })
 })
 

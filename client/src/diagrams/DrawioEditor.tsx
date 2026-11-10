@@ -9,11 +9,11 @@
  * the rules to the board document. Theme (D12) and the dark-mode colour setting (D16) apply live
  * by message. Keys and export: docs/CONTRACTS.md › Editor rules, rule 37.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { boardBaseName } from '@shared/fileKind'
-import { isDiagramReadOnly, setDiagramReadOnly } from '@shared/readOnly'
+import { isDiagramHoverLinksOff, isDiagramReadOnly, setDiagramHoverLinksOff, setDiagramReadOnly } from '@shared/readOnly'
 import type { DiagramDarkColors } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
@@ -24,6 +24,7 @@ import { storage } from '../lib/storage'
 import { basename } from '../lib/paths'
 import { useAppliedTheme } from '../lib/theme'
 import { useDrawingLinks, type DrawingLinkProps } from '../drawings/useDrawingLinks'
+import { linkPreviewHint, readOnlyHint } from '../drawings/cogHints'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { useDrawioLinkBridge } from './drawioLinkBridge'
 import { drawioAdaptiveColors, drawioConfig, drawioFrameUrl, readDrawioMessage } from './drawioProtocol'
@@ -102,6 +103,10 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   const shownReadOnly = useRef(false)
   /** draw.io reported a change while read only: never saved, and the canvas is put back to the disk at "Allow edits". */
   const strayWhileReadOnly = useRef(false)
+  /** The diagram's own "Link preview on hover" off (YAZ-4748 D10), as the file last said it; the ref is what a save keeps. */
+  const [hoverLinksOff, setHoverLinksOff] = useState(() => isDiagramHoverLinksOff(loaded.xml))
+  const keptHoverLinksOff = useRef(hoverLinksOff)
+  keptHoverLinksOff.current = hoverLinksOff
 
   const post = useCallback((msg: Record<string, unknown>) => {
     frameRef.current?.contentWindow?.postMessage(JSON.stringify(msg), DRAWIO_ORIGIN)
@@ -179,13 +184,15 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     // The switch is read off the LOADED XML, never `latestXml`: draw.io drops attributes it does not know (YAZ-3076 D1).
     readOnly: loadedReadOnly,
     onNotice,
-    // A change draw.io queued before "on" landed saves after it: it keeps the switch, which draw.io's
-    // XML never carries (it drops attributes it does not know — YAZ-3116 A3).
-    write: (expectedMtime) => api.diagram.save({ root, path, xml: wantedReadOnly.current ? setDiagramReadOnly(latestXml.current, true) : latestXml.current, expectedMtime }),
+    // A change draw.io queued before "on" landed saves after it: it keeps the switches, which draw.io's
+    // XML never carries (it drops attributes it does not know — YAZ-3116 A3; the hover switch, YAZ-4748 D10).
+    write: (expectedMtime) =>
+      api.diagram.save({ root, path, xml: setDiagramHoverLinksOff(setDiagramReadOnly(latestXml.current, wantedReadOnly.current), keptHoverLinksOff.current), expectedMtime }),
     reload: async (a) => {
       const res = await api.diagram.load({ root, path })
       a.reset(version.current, res.mtime)
       sendLoad(res.xml, res.mtime, true)
+      setHoverLinksOff(isDiagramHoverLinksOff(res.xml))
       return isDiagramReadOnly(res.xml)
     },
     // Export Image… is the one board command a diagram answers.
@@ -207,8 +214,37 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     hostRef: board.hostRef,
     // D5: the frame sends the picker's keys up only while it is open.
     onPickerShow: (open) => post({ action: 'yaseenPickerOpen', open }),
-    props: { ...linkProps, diagramDarkColors: darkColors },
+    // D10: the app's "Links in drawings and diagrams" AND this diagram's own switch; clicks stay.
+    props: { ...linkProps, hoverLinks: linkProps.hoverLinks === true && !hoverLinksOff, diagramDarkColors: darkColors },
   })
+
+  /** The cog's "Link preview on hover" (D10): `board:set-hover-links`, beside the autosave, as on a board. */
+  const setHoverLinks = async (on: boolean): Promise<void> => {
+    const a = autosave.current
+    if (a === null || retired.current) return
+    try {
+      await a.writeBeside((expectedMtime) => api.setBoardHoverLinks({ root, path, on, expectedMtime }))
+      setHoverLinksOff(!on)
+    } catch (err) {
+      if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {
+        onNotice?.('The file changed on disk. Try again.', 'error')
+        if (!a.dirty) void board.reload()
+        return
+      }
+      onNotice?.(err instanceof BridgeRequestError && err.message !== '' ? err.message : "The switch couldn't be saved.", 'error')
+    }
+  }
+  const setHoverLinksNow = useRef(setHoverLinks)
+  setHoverLinksNow.current = setHoverLinks
+  // The cog: "Read only", then this diagram's own row, greyed out by Read only, as a board's (D10).
+  const { chips } = board
+  useLayoutEffect(
+    () =>
+      chips.set({
+        pageRows: () => [{ label: 'Read only', readOnlySlot: true, hint: readOnlyHint('diagram') }, { label: 'Link preview on hover', hint: linkPreviewHint('diagram'), on: !hoverLinksOff, onToggle: () => void setHoverLinksNow.current(hoverLinksOff), disabled: board.readOnly }],
+      }),
+    [chips, hoverLinksOff, board.readOnly],
+  )
   const bridge = useDrawioLinkBridge(links, frameRef, post, { readOnly: board.readOnly, hotkeys })
   const bridgeNow = useRef(bridge)
   bridgeNow.current = bridge

@@ -2,11 +2,11 @@
  * The page settings cog and its menu (YAZ-2643, cases S2–S6 and S13–S20). The host keeps the
  * switch; the menu only shows it, and counts the text ONCE, when it opens.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { OutsideChangeGlow, TocSource } from '@shared/types'
-import { PageSettings } from './PageSettings'
+import { PageSettings, type PageSwitch } from './PageSettings'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -36,7 +36,8 @@ afterEach(() => {
 })
 
 const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
-const menu = () => container.querySelector<HTMLElement>('.page-settings__menu[role="group"]')
+/** The menu: on the page, in `document.body` (YAZ-4776), not under the cog. */
+const menu = () => document.querySelector<HTMLElement>('.page-settings__menu[role="group"]')
 /** A switch of the menu by its name: "Read only" stands first (YAZ-3076), so the rows are found by what they say. */
 const switchNamed = (name: string) => [...menu()!.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')].find((button) => button.textContent?.startsWith(name))!
 const toggle = () => switchNamed('Line numbers')
@@ -613,5 +614,224 @@ describe('PageSettings: Outside changes glow', () => {
     expect(select()!.value).toBe('')
     expect(changed).toHaveBeenCalledTimes(2)
     expect(menu()).not.toBeNull()
+  })
+})
+
+/**
+ * The menu on the page (YAZ-4776) and the (i) of a row (13BP CL4, YAZ-4748 demo): the menu is a portal in `document.body`,
+ * placed under its cog and inside the window; a row's hint is an (i) whose box stands beside the menu, also on the page.
+ */
+describe('YAZ-4776, YAZ-4748: the menu on the page, and the (i) of a row', () => {
+  /** What jsdom does not lay out: the cog's box, the menu's box and width, and each (i)'s box. */
+  let boxes: { trigger: Partial<DOMRect>; menu: Partial<DOMRect>; info: Partial<DOMRect> }
+  const at = (box: Partial<DOMRect>) => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}), ...box }) as DOMRect
+  let innerWidth: number
+  beforeEach(() => {
+    innerWidth = window.innerWidth
+    boxes = { trigger: { left: 580, right: 600, top: 10, bottom: 30 }, menu: { left: 400, right: 600, top: 36, bottom: 336 }, info: { left: 500, right: 512, top: 60, bottom: 72 } }
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.classList.contains('page-settings__trigger')) return at(boxes.trigger)
+      if (this.classList.contains('page-settings__menu')) return at(boxes.menu)
+      if (this.classList.contains('page-settings__info')) return at(boxes.info)
+      return at({})
+    })
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('page-settings__menu') ? 200 : 0
+    })
+  })
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: innerWidth })
+    vi.restoreAllMocks()
+  })
+  const setWindowWidth = (width: number) => Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width })
+
+  let onToggle: ReturnType<typeof vi.fn<() => void>>
+  let onReadOnly: ReturnType<typeof vi.fn<() => void>>
+  const LIST_HINT = { lead: 'The arrows left of a bullet.', rows: [['App', 'Follows Settings'], ['Off', 'No folding']] as const, foot: 'Saved in this file.' }
+  function mountRows(rows: () => PageSwitch[]) {
+    onReadOnly = vi.fn()
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<><PageSettings readOnly={false} onToggleReadOnly={onReadOnly} rows={rows} readText={() => 'one two'} /><button data-outside>Outside</button></>))
+    click(cog())
+  }
+  /** A drawing's rows: "Read only" where it stands, a switch and an action with an (i) each, and a choice row with a list (i). */
+  function mountDrawingRows() {
+    onToggle = vi.fn()
+    mountRows(() => [
+      { label: 'Read only', readOnlySlot: true, hint: 'Stops edits to this drawing.' },
+      { label: 'Link preview on hover', hint: 'Rest the mouse on a link pill.', on: true, onToggle },
+      { label: 'Fold arrows', hint: LIST_HINT, divider: true, choices: [{ label: 'App', on: true, onPick: () => undefined }] },
+      { label: 'Export Image or PDF…', hint: 'Saves a picture of this drawing.', onToggle, divider: true },
+    ])
+  }
+  const row = (name: string) => [...menu()!.querySelectorAll<HTMLButtonElement>(':scope > button')].find((b) => b.textContent?.startsWith(name))!
+  const infoIn = (el: Element) => el.querySelector<HTMLElement>('.page-settings__info')!
+  const hintBox = () => document.querySelector<HTMLElement>('.page-settings__tip--hint')
+  const hover = (el: Element, type: 'mouseover' | 'mouseout') => act(() => void el.dispatchEvent(new MouseEvent(type, { bubbles: true, relatedTarget: null })))
+  /** jsdom never matches `:focus-visible`: here the focused element matches it (a Tab), or never does (a mouse press). */
+  const focusVisible = (visible: boolean) => {
+    const matches = Element.prototype.matches
+    vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, selector: string) {
+      return selector === ':focus-visible' ? visible && this === document.activeElement : matches.call(this, selector)
+    })
+  }
+
+  it('the menu is in `document.body`, not under the cog, placed fixed with `--placed`, and closing it takes it away', () => {
+    mountDrawingRows()
+    expect(menu()!.parentElement).toBe(document.body)
+    expect(container.querySelector('.page-settings__menu')).toBeNull()
+    expect(menu()!.classList.contains('page-settings__menu--placed')).toBe(true)
+    expect(cog().getAttribute('aria-controls')).toBe(menu()!.id)
+    click(cog())
+    expect(document.querySelector('.page-settings__menu')).toBeNull()
+  })
+
+  it('under its cog, right-aligned to it; moved left or right to stay inside the window, 8px from its edge', () => {
+    mountDrawingRows()
+    // The cog's right edge (600) less the menu's width (200), 6px under the cog.
+    expect([menu()!.style.left, menu()!.style.top, menu()!.style.visibility]).toEqual(['400px', '36px', ''])
+    click(cog())
+    // A cog at the right edge of a narrow window: the menu ends 8px inside it.
+    setWindowWidth(500)
+    boxes.trigger = { left: 480, right: 500, top: 10, bottom: 30 }
+    click(cog())
+    expect([menu()!.style.left, menu()!.style.top]).toEqual(['292px', '36px'])
+    click(cog())
+    // A cog near the left edge (a sidebar would cover the menu): the menu starts 8px inside the window.
+    boxes.trigger = { left: 40, right: 60, top: 100, bottom: 120 }
+    click(cog())
+    expect([menu()!.style.left, menu()!.style.top]).toEqual(['8px', '126px'])
+  })
+
+  it('a press inside the menu is not "outside", though the menu is not inside the cog’s box; a press outside both closes it', () => {
+    mountDrawingRows()
+    expect(container.contains(menu())).toBe(false)
+    press(menu()!.querySelector('.page-settings__label')!)
+    press(menu()!.lastElementChild!)
+    expect(menu()).not.toBeNull()
+    press(container.querySelector('[data-outside]')!)
+    expect(menu()).toBeNull()
+  })
+
+  it('"Read only" stands where its row asks (`readOnlySlot`), once, with its (i); its (i) shows the hint and does not flip it', () => {
+    onToggle = vi.fn()
+    mountRows(() => [
+      { label: 'Pictures: 2', warn: true },
+      { label: 'Read only', readOnlySlot: true, hint: 'Stops edits to this drawing.' },
+      { label: 'Export Image or PDF…', onToggle },
+    ])
+    expect([...menu()!.children].map((c) => c.className || c.textContent)).toEqual(['page-settings__warn', 'Read only', 'Export Image or PDF…', 'page-settings__divider', '2 words', '7 characters'])
+    expect([...menu()!.querySelectorAll('button')].filter((b) => b.textContent === 'Read only')).toHaveLength(1)
+    hover(infoIn(row('Read only')), 'mouseover')
+    expect(hintBox()?.textContent).toBe('Stops edits to this drawing.')
+    click(infoIn(row('Read only')))
+    expect(onReadOnly).not.toHaveBeenCalled()
+    expect(row('Read only').getAttribute('aria-pressed')).toBe('false')
+    click(row('Read only'))
+    expect(onReadOnly).toHaveBeenCalledTimes(1)
+  })
+
+  it('a host with no `readOnlySlot` row keeps "Read only" first, with no (i)', () => {
+    mountRows(() => [{ label: 'Export Image or PDF…', onToggle: () => undefined }])
+    expect(menu()!.querySelector('button')?.textContent).toBe('Read only')
+    expect(infoIn(menu()!.querySelector('button')!)).toBeNull()
+  })
+
+  it('a row’s (i) is a glyph inside its button, hidden from the screen reader; the mouse on it shows the box on the page, beside the menu', () => {
+    mountDrawingRows()
+    const info = infoIn(row('Link preview on hover'))
+    expect(info.tagName).toBe('SPAN')
+    expect(info.getAttribute('aria-hidden')).toBe('true')
+    expect(row('Link preview on hover').textContent).toBe('Link preview on hover✓')
+    expect(hintBox()).toBeNull()
+    hover(info, 'mouseover')
+    expect(hintBox()!.getAttribute('role')).toBe('tooltip')
+    expect(hintBox()!.textContent).toBe('Rest the mouse on a link pill.')
+    expect(hintBox()!.parentElement).toBe(document.body)
+    expect(menu()!.contains(hintBox())).toBe(false)
+    hover(info, 'mouseout')
+    expect(hintBox()).toBeNull()
+  })
+
+  it('a click on a switch’s (i) shows the box and does not flip the switch; a click on an action’s (i) neither acts nor closes the menu', () => {
+    mountDrawingRows()
+    click(infoIn(row('Link preview on hover')))
+    expect(hintBox()?.textContent).toBe('Rest the mouse on a link pill.')
+    expect(onToggle).not.toHaveBeenCalled()
+    click(infoIn(row('Export Image or PDF…')))
+    expect(hintBox()?.textContent).toBe('Saves a picture of this drawing.')
+    expect(onToggle).not.toHaveBeenCalled()
+    expect(menu()).not.toBeNull()
+    // The row itself still works.
+    click(row('Link preview on hover'))
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('the keyboard on the row (focus-visible) shows the box, and the row names it (`aria-describedby`); blur takes it away', () => {
+    mountDrawingRows()
+    const link = row('Link preview on hover')
+    expect(link.hasAttribute('aria-describedby')).toBe(false)
+    focusVisible(true)
+    act(() => link.focus())
+    expect(hintBox()?.textContent).toBe('Rest the mouse on a link pill.')
+    expect(link.getAttribute('aria-describedby')).toBe(hintBox()!.id)
+    act(() => link.blur())
+    expect(hintBox()).toBeNull()
+    expect(link.hasAttribute('aria-describedby')).toBe(false)
+  })
+
+  it('a focus that is not focus-visible (a mouse press) shows no box', () => {
+    mountDrawingRows()
+    const link = row('Link preview on hover')
+    focusVisible(false)
+    act(() => link.focus())
+    expect(hintBox()).toBeNull()
+  })
+
+  it('a choice row with a hint: its label ends in an (i) button, not a colon; a list hint is a line, the terms with their meanings, and a last line', () => {
+    mountDrawingRows()
+    const label = [...menu()!.querySelectorAll('.page-settings__label')].find((p) => p.textContent?.startsWith('Fold arrows'))!
+    expect(label.textContent).toBe('Fold arrows')
+    const info = label.querySelector<HTMLButtonElement>('button.page-settings__info')!
+    expect(info.getAttribute('aria-label')).toBe('About Fold arrows')
+    hover(info, 'mouseover')
+    expect([...hintBox()!.querySelectorAll(':scope > p')].map((p) => p.textContent)).toEqual(['The arrows left of a bullet.', 'Saved in this file.'])
+    expect([...hintBox()!.querySelectorAll('dt')].map((dt) => dt.textContent)).toEqual(['App', 'Off'])
+    expect([...hintBox()!.querySelectorAll('dd')].map((dd) => dd.textContent)).toEqual(['Follows Settings', 'No folding'])
+    expect(info.getAttribute('aria-describedby')).toBe(hintBox()!.id)
+  })
+
+  it('the box stands left of the menu, level with its (i); with no room there, right of it; with no room either side, under the (i)', () => {
+    mountDrawingRows()
+    const info = infoIn(row('Link preview on hover'))
+    // Left: the menu's left (400) less the box (240) and its 8px gap; 10px above the (i)'s top.
+    hover(info, 'mouseover')
+    expect([hintBox()!.style.left, hintBox()!.style.top]).toEqual(['152px', '50px'])
+    hover(info, 'mouseout')
+    boxes.menu = { left: 100, right: 300, top: 36, bottom: 336 }
+    hover(info, 'mouseover')
+    expect([hintBox()!.style.left, hintBox()!.style.top]).toEqual(['308px', '50px'])
+    hover(info, 'mouseout')
+    setWindowWidth(400)
+    boxes.menu = { left: 100, right: 300, top: 36, bottom: 336 }
+    hover(info, 'mouseover')
+    expect([hintBox()!.style.left, hintBox()!.style.top]).toEqual(['152px', '78px'])
+  })
+
+  it('closing the menu takes the box with it, and the menu opened again starts without it', () => {
+    mountDrawingRows()
+    hover(infoIn(row('Link preview on hover')), 'mouseover')
+    expect(hintBox()).not.toBeNull()
+    // Esc from the row: the mouse still rests on the (i), so no `mouseleave` comes.
+    act(() => void row('Link preview on hover').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(menu()).toBeNull()
+    expect(hintBox()).toBeNull()
+    click(cog())
+    expect(hintBox()).toBeNull()
+    hover(infoIn(row('Link preview on hover')), 'mouseover')
+    press(container.querySelector('[data-outside]')!)
+    expect(hintBox()).toBeNull()
   })
 })

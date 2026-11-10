@@ -1152,12 +1152,17 @@
 			}
 
 			evt.preventDefault();
-			evt.stopPropagation();
 
+			// A read-only diagram: draw.io's own drop adds nothing while the graph is off, and clears its "drop here" frame.
 			if (!graph.isEnabled())
 			{
 				return;
 			}
+
+			evt.stopPropagation();
+			// draw.io removes its "drop here" frame (`highlightElement`) in its own drop handler, which this drop never
+			// reaches; its `dragleave` handler on the graph's container removes it the same way.
+			graph.container.dispatchEvent(new Event('dragleave'));
 
 			var id = ++dropCount;
 			drops[id] = {point: graphPoint(evt.clientX, evt.clientY), pictures: files.filter(isPicture)};

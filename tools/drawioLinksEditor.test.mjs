@@ -389,4 +389,67 @@ describe('the sidebar drop (2B, D4)', () => {
     expect(drop([file('A.md', 'text/markdown')]).defaultPrevented).toBe(true)
     expect(posted).toEqual([])
   })
+  /**
+   * The graph's own box, as draw.io has it: its `dragleave` handler takes away the orange "drop here" frame
+   * (`highlightElement`), which its drop handler would take away too, had the drop reached it.
+   */
+  const bodyDrops = []
+  afterEach(() => {
+    for (const listener of bodyDrops.splice(0)) document.body.removeEventListener('drop', listener)
+  })
+  function withFrame(graph) {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    graph.container = container
+    const frame = document.createElement('div')
+    frame.className = 'drop-here'
+    document.body.appendChild(frame)
+    const left = vi.fn(() => frame.remove())
+    container.addEventListener('dragleave', left)
+    /** What reaches the page below the script: draw.io's own drop. */
+    const drawioDrop = vi.fn()
+    document.body.addEventListener('drop', drawioDrop)
+    bodyDrops.push(drawioDrop)
+    return { container, left, drawioDrop, frameShown: () => document.querySelector('.drop-here') !== null }
+  }
+
+  it('YAZ-4748 demo: a page dropped on an editable diagram clears draw.io\u2019s "drop here" frame: a `dragleave` on the graph\u2019s box, and the drop stops there', () => {
+    const { graph, posted, answer } = load()
+    const { left, drawioDrop, frameShown } = withFrame(graph)
+    answer({ action: 'yaseenSidebarDrag', on: true })
+    over()
+    expect(frameShown()).toBe(true)
+    const evt = drop([file('A.md', 'text/markdown')])
+    expect(evt.defaultPrevented).toBe(true)
+    expect(left).toHaveBeenCalledTimes(1)
+    expect(left.mock.calls[0][0].type).toBe('dragleave')
+    expect(frameShown()).toBe(false)
+    // draw.io's own drop never runs: it would add the file a second time.
+    expect(drawioDrop).not.toHaveBeenCalled()
+    expect(posted).toEqual([{ event: 'yaseenDrop', id: 1, names: ['A.md'] }])
+  })
+
+  it('YAZ-4748 demo: on a read-only diagram the drop goes on to draw.io (which adds nothing and clears its frame); no `dragleave` is sent', () => {
+    const { graph, posted, answer } = load()
+    const { left, drawioDrop } = withFrame(graph)
+    graph.enabled = false
+    answer({ action: 'yaseenSidebarDrag', on: true })
+    over()
+    expect(drop([file('A.md', 'text/markdown')]).defaultPrevented).toBe(true)
+    expect(drawioDrop).toHaveBeenCalledTimes(1)
+    expect(left).not.toHaveBeenCalled()
+    expect(posted).toEqual([])
+  })
+
+  it('YAZ-4748 demo: a drop that is not the sidebar\u2019s (Finder, or only pictures) is draw.io\u2019s own, frame and all: no `dragleave` from here', () => {
+    const { graph, answer } = load()
+    const { left, drawioDrop } = withFrame(graph)
+    over()
+    expect(drop([file('A.md', 'text/markdown')]).defaultPrevented).toBe(false)
+    answer({ action: 'yaseenSidebarDrag', on: true })
+    over()
+    expect(drop([file('p.png', 'image/png')]).defaultPrevented).toBe(false)
+    expect(drawioDrop).toHaveBeenCalledTimes(2)
+    expect(left).not.toHaveBeenCalled()
+  })
 })

@@ -549,7 +549,7 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     vi.mocked(storage.setTocSwitch).mockRestore()
   })
 
-  const choices = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__choices button')]
+  const choices = (el: HTMLElement) => [...(cogMenu(el)?.querySelectorAll<HTMLButtonElement>('.page-settings__choices button') ?? [])]
   const pressed = (el: HTMLElement) => choices(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)
 
   it('seeds from the app state: the saved source is in the channel when createCrepe gets it, before any scan, and pressed in the cog', async () => {
@@ -600,14 +600,14 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     saved = 'headings'
     const off = await mount(BODY, 1, { tableOfContents: 'auto', tocOnByDefault: false })
     clickCog(off)
-    expect(off.querySelector('.page-settings__menu')).not.toBeNull()
-    expect(off.querySelector('.page-settings__choices')).toBeNull()
+    expect(cogMenu(off)).not.toBeNull()
+    expect(cogMenu(off)?.querySelector('.page-settings__choices') ?? null).toBeNull()
     act(() => root?.unmount())
     container?.remove()
     const el = await mount(BODY, 1, { tableOfContents: 'pinned' })
     clickCog(el)
     expect(pressed(el)).toEqual(['Auto:false', 'Headings:true', 'Bullets:false'])
-    const row = [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((button) => button.textContent?.includes('Table of contents'))
+    const row = [...(cogMenu(el)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((button) => button.textContent?.includes('Table of contents'))
     if (row === undefined) throw new Error('no "Table of contents" row')
     // The row writes the note (YAZ-4094 G4): its echo lands as `disk`, and the control follows it.
     writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
@@ -617,7 +617,7 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     await settle()
-    expect(el.querySelector('.page-settings__choices')).toBeNull()
+    expect(cogMenu(el)?.querySelector('.page-settings__choices') ?? null).toBeNull()
     // Back on: the choice is still the saved one — hiding the control changed nothing.
     diskHas('---\ntoc: false\n---\n' + BODY, 2)
     await act(async () => {
@@ -637,7 +637,7 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
  * YAZ-4094 G4 (`toc: true | false` in its frontmatter), as "Section indent" is.
  */
 describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-2700 D12, YAZ-2950)', () => {
-  const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')]
+  const rows = (el: HTMLElement) => [...(cogMenu(el)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])]
   const row = (el: HTMLElement, name: string): HTMLButtonElement => {
     const found = rows(el).find((button) => button.textContent?.startsWith(name))
     if (found === undefined) throw new Error(`no "${name}" row`)
@@ -866,11 +866,11 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(pressCmdJ().defaultPrevented).toBe(false)
     clickCog(el)
     expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Bullet threading:false', 'Heading levels:false', 'Table of contents:false'])
-    expect(el.querySelector('.page-settings__choices')).toBeNull()
+    expect(cogMenu(el)?.querySelector('.page-settings__choices') ?? null).toBeNull()
     diskHas(BODY, 1)
     await clickRow(el, 'Table of contents')
     expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('true')
-    expect(el.querySelector('.page-settings__choices')).not.toBeNull()
+    expect(cogMenu(el)?.querySelector('.page-settings__choices') ?? null).not.toBeNull()
     expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
     expect(pressCmdJ().defaultPrevented).toBe(true)
     expect(written()).toEqual([TOC_ON + BODY])
@@ -1982,11 +1982,17 @@ describe('a save repaints only the chips (YAZ-2196 P6)', () => {
   })
 })
 
+/** The cog's menu: on the page, in `document.body` (YAZ-4776), found by the host's cog's `aria-controls`; null while closed. */
+const cogMenu = (host: ParentNode): HTMLElement | null => {
+  const id = host.querySelector('.page-settings__trigger')?.getAttribute('aria-controls')
+  return id ? document.getElementById(id) : null
+}
+
 /** One click on the page settings cog: opens the menu, or closes it. */
 const clickCog = (host: ParentNode): void => act(() => host.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
 
 /** A switch of the cog's menu by its name ("Read only" stands first, YAZ-3076). */
-const menuSwitch = (host: ParentNode, name: string): HTMLButtonElement => [...host.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button[aria-pressed]')].find((button) => button.textContent?.startsWith(name))!
+const menuSwitch = (host: ParentNode, name: string): HTMLButtonElement => [...(cogMenu(host)?.querySelectorAll<HTMLButtonElement>(':scope > button[aria-pressed]') ?? [])].find((button) => button.textContent?.startsWith(name))!
 
 /** "Line numbers", through the real cog: opens the menu, clicks the switch, closes the menu. */
 function switchLineNumbers(host: ParentNode): void {
@@ -2108,7 +2114,7 @@ describe('the page settings cog (YAZ-2643)', () => {
   it('counts THIS editor’s body when the menu opens: the title, the properties and the comments are not in it (S16)', async () => {
     const el = await mount(`${FM}one two\n`)
     clickCog(el)
-    const menu = el.querySelector('.page-settings__menu')!
+    const menu = cogMenu(el)!
     expect(menu.textContent).toContain('2 words')
     expect(menu.textContent).toContain('8 characters')
   })
@@ -2587,7 +2593,7 @@ describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a 
     // The cog's row while on: the menu closes, the box opens under the chip.
     clickCog(el)
     act(() => menuSwitch(el, 'Read only').click())
-    expect(el.querySelector('.page-settings__menu')).toBeNull()
+    expect(cogMenu(el)).toBeNull()
     expect(askBox(el)).not.toBeNull()
     expect(writeFile).not.toHaveBeenCalled()
     diskHas(LOCKED_FM + BODY, 1)

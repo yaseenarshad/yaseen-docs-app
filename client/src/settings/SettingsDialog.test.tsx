@@ -129,7 +129,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
 const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'commentsResolved', 'commentsHint', 'diagramDarkColors']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
@@ -139,8 +139,11 @@ const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkne
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
 const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Typing', 'Table of contents', 'Outside changes', 'Tables', 'Cell notes', 'Calendar tables']
-/** Settings › Drawings (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
-const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`)
+/**
+ * Settings › Drawings and diagrams (YAZ-3037; the name since YAZ-4748 D11): one row per `CanvasPrefs` key the page shows, in
+ * its groups, then the draw.io diagrams group, whose one row moved here from Appearance.
+ */
+const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'diagramDarkColors']
 /** Settings › Images (YAZ-3038): the Pixabay key, the library folder and the favorites (YAZ-4363), then the icon packs (YAZ-4359). */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPacks', 'mediaHoverZoom', 'mediaHoverZoomSize']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
@@ -280,13 +283,13 @@ describe('SettingsDialog shell (D1)', () => {
 describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
   it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', 'Sync', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Sync', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
-    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Memory', 'Hotkeys'])
   })
 
   it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
@@ -323,7 +326,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Notifications', 'settings-notifications', NOTIFICATIONS_ROWS),
       page('Editor', 'settings-editor', EDITOR_ROWS),
       page('Code', 'settings-code', CODE_ROWS),
-      page('Drawings', 'settings-canvas', CANVAS_ROWS),
+      page('Drawings and diagrams', 'settings-canvas', CANVAS_ROWS),
       page('Images', 'settings-images', IMAGES_ROWS),
       page('Files & Links', 'settings-files', FILES_ROWS),
       page('Review', 'settings-review', REVIEW_ROWS),
@@ -341,8 +344,9 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(hints()).toEqual([])
 
     clickNav(el, 'Appearance')
-    // Appearance with no vault: Spacing, Comments (the sidebar's groups have their own page since YAZ-3440 D7), then draw.io diagrams (YAZ-3037). Text formatting needs a vault (YAZ-3068).
-    expect(groupTitles(el)).toEqual(['Spacing', 'Comments', 'draw.io diagrams'])
+    // Appearance with no vault: Spacing, Comments (the sidebar's groups have their own page since YAZ-3440 D7). draw.io
+    // diagrams (YAZ-3037) is on "Drawings and diagrams" since YAZ-4748 D11. Text formatting needs a vault (YAZ-3068).
+    expect(groupTitles(el)).toEqual(['Spacing', 'Comments'])
     expect(hints()).toEqual([])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
     expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
@@ -381,7 +385,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Notifications', []],
       ['Editor', []],
       ['Code', []],
-      ['Drawings', []],
+      ['Drawings and diagrams', []],
       ['Images', []],
       ['Files & Links', []],
       ['Review', [['settings-review', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
@@ -406,7 +410,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Notifications', []],
       ['Editor', []],
       ['Code', []],
-      ['Drawings', []],
+      ['Drawings and diagrams', []],
       ['Images', []],
       ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
       ['Review', [{ text: 'Vault: Work', under: 'Review', className: 'settings-section__note' }]],
@@ -449,7 +453,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Sync')
     expect(currentNav(el)).toBe('Sync')
     act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
     expect(headings(el)).toEqual(['General'])
     expect(currentNav(el)).toBe('General')
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
@@ -511,7 +515,7 @@ describe('Settings › Code (YAZ-3449)', () => {
 })
 
 describe('Settings › Drawings (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)', () => {
-  const mountCanvas = () => mountOn('Drawings', { ...DEFAULT_SETTINGS })
+  const mountCanvas = () => mountOn('Drawings and diagrams', { ...DEFAULT_SETTINGS })
 
   it('writes the whole SettingsState with only the one canvas key changed', () => {
     const { el, onChange } = mountCanvas()
@@ -590,11 +594,35 @@ describe('Settings › Drawings (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, foldArrowsOpen: 'off' } })
   })
 
-  it('Appearance › draw.io diagrams › In dark mode writes `diagramDarkColors` (YAZ-3037)', () => {
-    const { el, onChange } = mountOn('Appearance')
+  it('YAZ-4748 D11: Drawings and diagrams › draw.io diagrams › In dark mode writes `diagramDarkColors` (YAZ-3037)', () => {
+    const { el, onChange } = mountCanvas()
     expect(rowButtons(el, 'diagramDarkColors').map((b) => b.textContent)).toEqual(['Adapt colours', 'Keep original colours'])
     act(() => rowButtons(el, 'diagramDarkColors')[1].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, diagramDarkColors: 'keep' })
+  })
+
+  it('YAZ-4748 D11: the page is "Drawings and diagrams" in the nav; its last group is "draw.io diagrams" with the dark-mode row, and Appearance has that row no more', () => {
+    const { el } = mount()
+    expect(navShape(el)).toContain('Drawings and diagrams')
+    expect(navShape(el)).not.toContain('Drawings')
+    clickNav(el, 'Drawings and diagrams')
+    expect(headings(el)).toEqual(['Drawings and diagrams'])
+    expect(groupTitles(el).at(-1)).toBe('draw.io diagrams')
+    expect(rowIds(el).at(-1)).toBe('diagramDarkColors')
+    expect(row(el, 'diagramDarkColors')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('draw.io diagrams')
+    expect(row(el, 'diagramDarkColors')?.querySelector('.setting__label')?.textContent).toBe('In dark mode')
+    clickNav(el, 'Appearance')
+    expect(row(el, 'diagramDarkColors')).toBeNull()
+    expect(groupTitles(el)).not.toContain('draw.io diagrams')
+  })
+
+  it('YAZ-4748 D11: the search finds the page by "draw.io", "drawio" and "diagram", as by "excalidraw"', () => {
+    const { el } = mount()
+    for (const word of ['draw.io', 'drawio', 'diagram', 'excalidraw']) {
+      type(searchInput(el), word)
+      expect(rowIds(el), word).toContain('diagramDarkColors')
+      expect(rowIds(el), word).toContain('canvas.gridModeEnabled')
+    }
   })
 })
 
@@ -1019,7 +1047,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
     it('one vault: the group "Text formatting" after Spacing, its hint, one bare row (no label on screen, no gap) and no dropdown; a Text line, then H1 to H6 at their rounded default sizes', () => {
       const { el } = mountTf([vaultOf('/notes', 'Notes')])
-      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments', 'draw.io diagrams'])
+      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments'])
       const group = tf(el).closest('.settings-group') as HTMLElement
       expect(group.querySelector('.settings-group__hint')?.textContent).toBe(TEXT_FORMATTING_HINT)
       // No "Vault: name" line: the dropdown replaces it (D15), and with one vault there is none.
@@ -1314,7 +1342,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     const { el } = mount()
     expect(navByTitle(el, 'Review')).toBeUndefined()
     const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
-    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', 'Memory', 'Hotkeys'])
+    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Memory', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 
@@ -1425,14 +1453,15 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
 })
 
 describe('SettingsDialog search (D6)', () => {
-  it('"dark" shows the Theme row and the draw.io dark-mode row (YAZ-3037) under Appearance headings, then the drawing\'s and the diagram\'s dark keys (YAZ-3564) — and the row still works', () => {
+  it('"dark" shows the Theme row under Appearance, the draw.io dark-mode row (YAZ-3037) under Drawings and diagrams (YAZ-4748 D11), then the drawing\'s and the diagram\'s dark keys (YAZ-3564) — and the row still works', () => {
     const { el, onChange } = mount({ ...DEFAULT_SETTINGS }, status())
     type(searchInput(el), 'dark')
     // On Hotkeys each hit is under its key's card (YAZ-3564): draw.io's ⌘⇧6, and the canvas's no-key row.
     // And the guide lines' darkness (YAZ-4094 G3) and the calendar tables' shade darkness (YAZ-4163 demo), on the Editor page.
-    // And "Text color follows the fill" (YAZ-4404 4H) on the Drawings page: its hint says "A dark fill".
-    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams', 'Editor › Outline', 'Editor › Calendar tables', 'Drawings › New elements', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
-    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors', 'guideLineDarkness', 'tableShadeDarkness', 'canvas.fillSetsTextColor', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
+    // And "Text color follows the fill" (YAZ-4404 4H) on the Drawings and diagrams page: its hint says "A dark fill".
+    // The draw.io row is that page's last group since YAZ-4748 D11.
+    expect(headings(el)).toEqual(['Appearance', 'Editor › Outline', 'Editor › Calendar tables', 'Drawings and diagrams › New elements', 'Drawings and diagrams › draw.io diagrams', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
+    expect(rowIds(el)).toEqual(['theme', 'guideLineDarkness', 'tableShadeDarkness', 'canvas.fillSetsTextColor', 'diagramDarkColors', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
     expect(sections(el)).toEqual([]) // the page is gone while the query stands
     act(() => rowButtons(el, 'theme')[2].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, theme: 'dark' })
@@ -1466,7 +1495,7 @@ describe('SettingsDialog search (D6)', () => {
     type(searchInput(el), 'bullet')
     // The bullets in cells (YAZ-3818 demo): Tables and Cell notes too.
     // The fold arrows of a drawing's text boxes (YAZ-4277 D5, D7): their group's hint names a bullet.
-    const settingsHits = ['Sidebar › Level lines', 'Editor › Outline', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents', 'Editor › Tables', 'Editor › Cell notes', 'Drawings › Fold arrows']
+    const settingsHits = ['Sidebar › Level lines', 'Editor › Outline', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents', 'Editor › Tables', 'Editor › Cell notes', 'Drawings and diagrams › Fold arrows']
     expect(headings(el).slice(0, 9)).toEqual(settingsHits)
     // On Hotkeys a hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5), under its key's card (YAZ-3564).
     // The clicks follow the keys (YAZ-3936): the three "Bullet dots" rows, and the built-in clicks of bullet lines and fold arrows.
