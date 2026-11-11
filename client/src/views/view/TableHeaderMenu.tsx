@@ -19,6 +19,11 @@ import { canonicalKey } from './keys'
 import { type ColumnAlign, columnAlignOf, setColumnAlign } from './columnAlign'
 import { columnFillOf, setColumnFill } from './columnFill'
 import { FillMenu, type FillTarget } from './FillMenu'
+import { ColumnFilterMenu } from './ColumnFilterMenu'
+import { withColumnRules } from './columnFilter'
+import { type Rule, inferType, propertyValues } from './filterRows'
+import { columnTyping } from '../editorType'
+import { isMentionsColumn } from '../mentionsColumn'
 import { TextField } from './TextField'
 import { plainHeaderRow, setHeaderRowPart, shownHeaderRow, textInCellsOf, toggleHeaderRowPlain } from './TableLookSettings'
 import { HEADER_ROW_CHOICES, headerRowLabel, type HeaderRowOwn } from '@shared/types'
@@ -55,6 +60,8 @@ export interface TableHeaderMenuProps {
   declareColumn: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
   /** "Delete column…" (YAZ-1513): hands the key to the table, which asks first (`ConfirmDeleteColumn`). Absent → no such item. */
   onDeleteColumn?: (key: string) => void
+  /** Filter › "Open the filter panel…" (YAZ-4919): opens the toolbar's Filter popover. Absent → no such row. */
+  onOpenFilter?: () => void
   onClose: () => void
 }
 
@@ -97,7 +104,9 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
  * `columnWrap[<canonical key>]` (`true` Wrap, `false` Clip); the choice its kind (or Settings › Folder pages, YAZ-4585) makes anyway deletes the
  * entry in any spelling, and an empty map. Text › also holds the column's alignment (YAZ-3746 13Y): "Auto alignment" /
  * "Align left" / "Align center" / "Align right", ✓ on the current one, each one write of `columnAlign[<canonical key>]`
- * through `view/columnAlign.ts` (Auto deletes the entry). "Header row ›" (YAZ-4794), after Fill column ›, is the whole
+ * through `view/columnAlign.ts` (Auto deletes the entry). "Filter ›" (YAZ-4919), right under Group ›, writes this column's
+ * rules in the view's `filters` — the Filter panel's own grammar (`ColumnFilterMenu.tsx`, `columnFilter.ts`): one write
+ * per pick, ✓ on the parent while the column has a rule. "Header row ›" (YAZ-4794), after Fill column ›, is the whole
  * header row's look, the View tab's Header row: Plain, Fill colour, Strength, Weight, Text colour and Align, each ✓ at
  * what the table shows; a pick writes the view's `headerRow` (`TableLookSettings.setHeaderRowPart`) and keeps the menu open.
  */
@@ -105,7 +114,7 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
 type HeaderTab = 'fill' | 'text' | 'style'
 const HEADER_TABS: readonly (readonly [HeaderTab, string])[] = [['fill', 'Fill'], ['text', 'Text'], ['style', 'Style']]
 
-export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewIndex, keys, takenKeys, reserved, records, wrapKind, properties, folder, onUpdate, declareColumn, onDeleteColumn, onClose }: TableHeaderMenuProps) {
+export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewIndex, keys, takenKeys, reserved, records, wrapKind, properties, folder, onUpdate, declareColumn, onDeleteColumn, onOpenFilter, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
   /** "Header row ›"'s tab (YAZ-4794 demo: "holy shite thats a long flyout"), as Fill's Cell · Row · Column. */
   const [headerTab, setHeaderTab] = useState<HeaderTab>('fill')
@@ -117,6 +126,8 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
   /** Once per menu, not per keystroke in its fields: the kind may walk the rows. */
   const typeLabel = useMemo(() => (columnKey === null ? '' : columnTypeLabel(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
   const kind = useMemo(() => (columnKey === null ? null : columnKind(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
+  /** The column's rung of the typing ladder, for Filter ›'s type and checklist: the Filter panel's own reading (YAZ-4919). */
+  const typing = useMemo(() => (columnKey === null ? null : columnTyping(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
   /** A Select or Multi-select column (YAZ-4544): its "Sort A to Z" sorts by value, not in option order (D1). */
   const hasOptions = kind === 'select' || kind === 'multi-select'
   const columns = folder.settings.columns
@@ -185,6 +196,20 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
   const alignRow = (label: string, next: ColumnAlign | null) => <FlyoutItem label={label} checked={align === next} onSelect={write((v) => setColumnAlign(v, key, next))} />
   /** The last frozen column, or not (the table block's ✓ rule, YAZ-3696): a click on ✓ unfreezes. */
   const frozenHere = index >= 0 && frozen === index + 1
+  /**
+   * Filter › (YAZ-4919): this column's rules replace its own in the view's `filters`, one write (one ⌘Z) per pick;
+   * Clear is a gesture that takes something away, so its toast offers Undo (S29).
+   */
+  const setColumnFilter = (rules: readonly Rule[], close: boolean, undo?: string) => {
+    onUpdate((d) => {
+      const v = d.views[viewIndex]
+      const next = withColumnRules(v.filters, c, rules)
+      if (next === undefined) delete v.filters
+      else v.filters = next
+    }, undo)
+    if (close) onClose()
+  }
+  const filterType = isMentionsColumn(columns, key) ? 'mentions' : inferType(c, records, typing)
   /**
    * "Header row ›" (YAZ-4794): the View tab's Header row from the column header, ✓ at what the table shows. A pick is
    * one write of the view's own `headerRow` (`setHeaderRowPart`, the View tab's writer) and the menu stays open, so
@@ -336,6 +361,24 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
                   </div>
                 )}
               </FlyoutParent>
+              {/* Quick rules on this column (YAZ-4919), in the Filter panel's grammar. */}
+              <ColumnFilterMenu
+                flyout={flyout}
+                property={c}
+                type={filterType}
+                values={() => propertyValues(c, records, typing)}
+                filters={view.filters}
+                weekStartsOn={defaults.weekStartsOn}
+                onRules={setColumnFilter}
+                onClear={() => setColumnFilter([], true, `Cleared the filter on ${label}`)}
+                onOpenPanel={
+                  onOpenFilter &&
+                  (() => {
+                    onClose()
+                    onOpenFilter()
+                  })
+                }
+              />
               <FlyoutParent label="Text" open={flyout.open === 'text'} onHover={() => flyout.hover('text')} onOpen={() => flyout.openNow('text')} onCloseFlyout={() => flyout.openNow(null)}>
                 <div className="ctx-menu__group" role="group">
                   <FlyoutItem label="Wrap text" checked={wrapped} onSelect={setWrap(true)} />

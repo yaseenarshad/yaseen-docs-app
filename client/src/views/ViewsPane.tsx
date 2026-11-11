@@ -356,6 +356,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // The note window (YAZ-4547): `opens` mounts a new card per open and renders each open and close; the link to the
   // table; the place, size and pin of the last card closed here, for the next open while this folder page is mounted.
   const [opens, setOpens] = useState(0)
+  /** The header menu's "Open the filter panel…" (YAZ-4919): each ask opens the toolbar's Filter popover. */
+  const [filterAsks, setFilterAsks] = useState(0)
+  const openFilter = useCallback(() => setFilterAsks((n) => n + 1), [])
   const windowLink = useMemo(noteWindowLink, [])
   const lastWindow = useRef<NoteWindowMemory | null>(null)
   const itemProps = useCallback((path: string) => (rowPage(path) !== path || !hoverPreview ? { 'data-hover-item': path, onMouseEnter: noHover, onMouseLeave: noHover } : { 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard, hoverPreview])
@@ -1059,6 +1062,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         dateColumns={calendarColumns}
         tabId={tabId}
         notice={pauseChip}
+        filterAsks={filterAsks}
       />
       {/* ⌘F (YAZ-4613): on the Page tab the note's own find answers. */}
       {!isPage && <FindBar channel={find.channel} scope="views" hostRef={paneRef} />}
@@ -1082,6 +1086,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         <div className="view-page">{folder.renderPage?.()}</div>
       ) : view.type === 'table' ? (
         <TableView
+          onOpenFilter={openFilter}
           hover={viewHover}
           readOnly={readOnly}
           def={def}

@@ -129,6 +129,7 @@ describe('the header menu (YAZ-1513)', () => {
       'Add column to the right…',
       'Sort', // YAZ-4588 D42: three flyouts replace the flat sort, group and wrap items
       'Group',
+      'Filter', // YAZ-4919: quick rules on this column, right under Group
       'Text',
       'Fill column', // YAZ-3746 13AQ: the column's fill, in its own group after the edits
       'Header row', // YAZ-4794: the whole header row's look, as the View tab's
@@ -770,6 +771,245 @@ describe('the Sort, Group and Text flyouts (YAZ-4588 D42)', () => {
     expect(menuItems(el)).toContain('Sort')
     press(window.document.body, 'Escape')
     expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('the Filter flyout (YAZ-4919)', () => {
+  const view = (def: () => ViewSet) => def().views[0]
+  /** Every kind the flyout fits, declared on the folder; the headers after `#`: Name 0, Status 1, Priority 2, Published 3, Date 4, Pillar 5, Tags 6. */
+  const ORDER = `views:
+  - type: table
+    name: T
+    order:
+      - file.name
+      - note.status
+      - note.priority
+      - note.published
+      - note.date
+      - note.pillar
+      - note.tags
+`
+  const HOST: Partial<FolderHost> = {
+    settings: {
+      columns: {
+        status: { kind: 'select', options: ['idea', 'drafting', 'published'] },
+        priority: { kind: 'number' },
+        published: { kind: 'checkbox' },
+        date: { kind: 'date' },
+        pillar: { kind: 'text' },
+        tags: { kind: 'multi-select', options: ['agentic', 'creator'] },
+      },
+      views: [],
+      problems: [],
+    },
+  }
+  const FILTERED = `${ORDER}    filters:
+      and:
+        - 'note.status == "idea"'
+        - '!note.priority.isEmpty() && note.priority > 1'
+`
+  /** The checklist's rows and their ticks (`menuitemcheckbox`, a ✓ box each). */
+  const checks = (el: ParentNode): HTMLElement[] => [...el.querySelectorAll<HTMLElement>('.ctx-menu__sub [role="menuitemcheckbox"]')]
+  const checkLabels = (el: ParentNode): string[] => checks(el).map((b) => b.textContent?.replace('✓', '') ?? '')
+  const ticked = (el: ParentNode): string[] => checks(el).filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.textContent?.replace('✓', '') ?? '')
+  const check = (el: ParentNode, label: string): void => {
+    const n = checks(el).find((b) => b.textContent?.replace('✓', '') === label)
+    if (n === undefined) throw new Error(`missing tick ${label}: ${checkLabels(el).join(', ')}`)
+    click(n)
+  }
+  const box = (el: ParentNode, label: string): HTMLInputElement => q(el, `.ctx-menu__sub input[aria-label="${label}"]`)
+  const opButton = (el: ParentNode, word: string): HTMLElement => {
+    const n = [...el.querySelectorAll<HTMLElement>('.ctx-menu__sub .fill-target__opt')].find((b) => b.textContent === word)
+    if (n === undefined) throw new Error(`missing operator ${word}`)
+    return n
+  }
+  const pressed = (el: ParentNode): string[] => [...el.querySelectorAll<HTMLElement>('.ctx-menu__sub .fill-target__opt[aria-pressed="true"]')].map((b) => b.textContent ?? '')
+  const badge = (el: ParentNode): string | null => el.querySelector('.view-toolbar__btn[aria-label="Filter"] .view-toolbar__badge')?.textContent ?? null
+  /** Types into a flyout box and presses Enter: the one write, and the menu closes. */
+  const enter = (el: ParentNode, label: string, value: string): void => {
+    const input = box(el, label)
+    setValue(input, value)
+    press(input, 'Enter')
+  }
+
+  it('Filter › sits right under Group ›; a text column: a Contains box, Is empty, Is not empty, then Open the filter panel…; no ✓ and no Clear', () => {
+    const { el, onChange } = mount(ORDER, {}, HOST)
+    rightClick(th(el, 5))
+    const items = menuItems(el)
+    expect(items.indexOf('Filter')).toBe(items.indexOf('Group') + 1)
+    expect(item(el, 'Filter').getAttribute('data-hint')).toBeNull()
+    click(item(el, 'Filter'))
+    expect(flyoutItems(el)).toEqual(['Is empty', 'Is not empty', 'Open the filter panel…'])
+    expect(box(el, 'Contains').value).toBe('')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('a text column: Contains + Enter writes ONE `contains` rule into the view\'s filters (one ⌘Z), the menu closes, and the toolbar\'s badge counts it', () => {
+    const { el, def, onChange } = mount(ORDER, {}, HOST)
+    expect(badge(el)).toBeNull()
+    rightClick(th(el, 5))
+    click(item(el, 'Filter'))
+    enter(el, 'Contains', 'Agentic')
+    expect(view(def).filters).toEqual({ and: ['note.pillar.contains("Agentic")'] })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(badge(el)).toBe('1')
+    // Back in: ✓ on the parent, the box holds the text, and Clear is offered.
+    rightClick(th(el, 5))
+    expect(item(el, 'Filter').getAttribute('data-hint')).toBe('✓')
+    click(item(el, 'Filter'))
+    expect(box(el, 'Contains').value).toBe('Agentic')
+    expect(flyoutItems(el)).toEqual(['Is empty', 'Is not empty', "Clear this column's filter", 'Open the filter panel…'])
+    // Is not empty replaces the column's rule: still one rule.
+    click(item(el, 'Is not empty'))
+    expect(view(def).filters).toEqual({ and: ['!note.pillar.isEmpty()'] })
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it('a Select column: its options as a checklist; each tick is one write of ONE "is any of" rule and the menu stays open; the last untick takes the rule away', () => {
+    const { el, def, yaml, onChange } = mount(ORDER, {}, HOST)
+    rightClick(th(el, 1))
+    click(item(el, 'Filter'))
+    expect(checkLabels(el)).toEqual(['idea', 'drafting', 'published'])
+    expect(flyoutItems(el)).toEqual(['Is empty', 'Open the filter panel…'])
+    check(el, 'idea')
+    expect(view(def).filters).toEqual({ and: ['["idea"].contains(note.status)'] })
+    expect(el.querySelector('.ctx-menu__sub')).not.toBeNull()
+    expect(ticked(el)).toEqual(['idea'])
+    expect(item(el, 'Filter').getAttribute('data-hint')).toBe('✓')
+    check(el, 'drafting')
+    expect(view(def).filters).toEqual({ and: ['["idea", "drafting"].contains(note.status)'] })
+    expect(onChange).toHaveBeenCalledTimes(2)
+    check(el, 'idea')
+    check(el, 'drafting')
+    expect(yaml()).not.toContain('filters:')
+    expect(item(el, 'Filter').getAttribute('data-hint')).toBeNull()
+    expect(onChange).toHaveBeenCalledTimes(4)
+  })
+
+  it('a Multi-select column ticks write "has any of"; a Checkbox column offers Checked · Unchecked, and the second replaces the first', () => {
+    const { el, def } = mount(ORDER, {}, HOST)
+    rightClick(th(el, 6))
+    click(item(el, 'Filter'))
+    check(el, 'creator')
+    expect(view(def).filters).toEqual({ and: ['note.tags.containsAny("creator")'] })
+    press(window.document.body, 'Escape')
+    press(window.document.body, 'Escape')
+
+    rightClick(th(el, 3))
+    click(item(el, 'Filter'))
+    expect(flyoutItems(el)).toEqual(['Checked', 'Unchecked', 'Open the filter panel…'])
+    click(item(el, 'Checked'))
+    expect(view(def).filters).toEqual({ and: ['note.tags.containsAny("creator")', 'note.published == true'] })
+    rightClick(th(el, 3))
+    pick(el, 'Filter', 'Unchecked')
+    expect(view(def).filters).toEqual({ and: ['note.tags.containsAny("creator")', 'note.published == false'] })
+    rightClick(th(el, 3))
+    click(item(el, 'Filter'))
+    expect(checked(el)).toEqual(['Unchecked'])
+  })
+
+  it('a Number column: = ≠ > < over one box; > 1 + Enter writes the guarded rule, and back in, > is pressed and the box holds 1; Is empty', () => {
+    const { el, def, onChange } = mount(ORDER, {}, HOST)
+    rightClick(th(el, 2))
+    click(item(el, 'Filter'))
+    expect(pressed(el)).toEqual(['='])
+    expect(flyoutItems(el)).toEqual(['Is empty', 'Open the filter panel…'])
+    click(opButton(el, '>'))
+    enter(el, 'Number', '1')
+    expect(view(def).filters).toEqual({ and: ['!note.priority.isEmpty() && note.priority > 1'] })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    rightClick(th(el, 2))
+    click(item(el, 'Filter'))
+    expect(pressed(el)).toEqual(['>'])
+    expect(box(el, 'Number').value).toBe('1')
+    click(item(el, 'Is empty'))
+    expect(view(def).filters).toEqual({ and: ['note.priority.isEmpty()'] })
+  })
+
+  it('a Date column: Today · This week · This month write fixed days in the grammar, ✓ on the one that matches; Before / After over a date box', () => {
+    vi.useFakeTimers({ now: new Date(2026, 10, 11, 9, 0) }) // Wednesday
+    try {
+      const { el, def } = mount(ORDER, {}, HOST)
+      rightClick(th(el, 4))
+      click(item(el, 'Filter'))
+      expect(flyoutItems(el)).toEqual(['Today', 'This week', 'This month', 'Is empty', 'Open the filter panel…'])
+      expect(pressed(el)).toEqual(['Before'])
+      click(item(el, 'Today'))
+      expect(view(def).filters).toEqual({ and: ['note.date == date("2026-11-11")'] })
+      rightClick(th(el, 4))
+      click(item(el, 'Filter'))
+      expect(checked(el)).toEqual(['Today'])
+      click(item(el, 'This week')) // Settings' Week starts on: Sunday by default
+      expect(view(def).filters).toEqual({ and: ['!note.date.isEmpty() && note.date > date("2026-11-07")', '!note.date.isEmpty() && note.date < date("2026-11-15")'] })
+      rightClick(th(el, 4))
+      click(item(el, 'Filter'))
+      expect(checked(el)).toEqual(['This week'])
+      click(item(el, 'This month'))
+      expect(view(def).filters).toEqual({ and: ['!note.date.isEmpty() && note.date > date("2026-10-31")', '!note.date.isEmpty() && note.date < date("2026-12-01")'] })
+      rightClick(th(el, 4))
+      click(item(el, 'Filter'))
+      click(opButton(el, 'After'))
+      enter(el, 'Date', '2026-12-01')
+      expect(view(def).filters).toEqual({ and: ['!note.date.isEmpty() && note.date > date("2026-12-01")'] })
+      rightClick(th(el, 4))
+      click(item(el, 'Filter'))
+      expect(pressed(el)).toEqual(['After'])
+      expect(box(el, 'Date').value).toBe('2026-12-01')
+      expect(checked(el)).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a filter the panel wrote shows its ✓ and its tick; Clear this column\'s filter removes only that column\'s rules, one write; the last rule takes the key with it', () => {
+    const { el, def, yaml, onChange } = mount(FILTERED, {}, HOST)
+    expect(badge(el)).toBe('2')
+    rightClick(th(el, 1))
+    expect(item(el, 'Filter').getAttribute('data-hint')).toBe('✓')
+    click(item(el, 'Filter'))
+    expect(ticked(el)).toEqual(['idea'])
+    expect(flyoutItems(el)).toEqual(['Is empty', "Clear this column's filter", 'Open the filter panel…'])
+    click(item(el, "Clear this column's filter"))
+    expect(view(def).filters).toEqual({ and: ['!note.priority.isEmpty() && note.priority > 1'] })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(badge(el)).toBe('1')
+    // A column with no rule: no ✓, no Clear.
+    rightClick(th(el, 5))
+    expect(item(el, 'Filter').getAttribute('data-hint')).toBeNull()
+    click(item(el, 'Filter'))
+    expect(flyoutItems(el)).not.toContain("Clear this column's filter")
+    press(window.document.body, 'Escape')
+    press(window.document.body, 'Escape')
+    rightClick(th(el, 2))
+    pick(el, 'Filter', "Clear this column's filter")
+    expect(yaml()).not.toContain('filters:')
+    expect(badge(el)).toBeNull()
+  })
+
+  it('Open the filter panel… closes the menu and opens the toolbar\'s Filter popover; nothing is written', () => {
+    const { el, onChange } = mount(ORDER, {}, HOST)
+    const button = q<HTMLElement>(el, '.view-toolbar__btn[aria-label="Filter"]')
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    rightClick(th(el, 1))
+    pick(el, 'Filter', 'Open the filter panel…')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(el.querySelector('.view-popover--filter .filter-menu')).not.toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('Esc in a box closes the flyout alone and writes nothing; a tick keeps the menu, and Esc then closes the flyout', () => {
+    const { el, onChange } = mount(ORDER, {}, HOST)
+    rightClick(th(el, 5))
+    click(item(el, 'Filter'))
+    const input = box(el, 'Contains')
+    setValue(input, 'Agen')
+    press(input, 'Escape')
+    expect(el.querySelector('.ctx-menu__sub')).toBeNull()
+    expect(menuItems(el)).toContain('Filter')
     expect(onChange).not.toHaveBeenCalled()
   })
 })

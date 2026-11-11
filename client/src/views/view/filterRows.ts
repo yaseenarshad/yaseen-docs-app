@@ -1,4 +1,5 @@
 import type { IndexRecord } from '@shared/types'
+import { stripBrackets } from '@shared/linkResolver'
 import type { ColumnTyping } from '../editorType'
 import { DateValue, type Expr, LinkValue, type Value, compile, fromYaml, isEmpty, typeOf } from '../expr'
 import { renderDate } from '../expr/dates'
@@ -134,6 +135,34 @@ export function inferType(property: string, records: readonly IndexRecord[], typ
     return 'text'
   }
   return 'text'
+}
+
+/**
+ * The values `records` already hold for one property, distinct and in first-seen order (YAZ-1232): a Select's declared
+ * options first. The Filter panel's suggestions and the column menu's Filter › checklist (YAZ-4919) read one list.
+ */
+export function propertyValues(property: string, records: readonly IndexRecord[], typing: ColumnTyping, limit = Infinity): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const add = (s: string) => {
+    if (s === '' || seen.has(s) || out.length >= limit) return
+    seen.add(s)
+    out.push(s)
+  }
+  if (property === 'file.tags') for (const r of records) for (const tag of r.tags) add(tag)
+  else if (property === 'file.folder') for (const r of records) add(r.folder)
+  else if (property === 'file.links') for (const r of records) for (const link of r.links) add(link)
+  else if (property === 'file.kind') for (const kind of ['note', 'folder']) add(kind)
+  else if (!property.startsWith('file.') && !property.startsWith('formula.')) {
+    for (const option of typing?.options ?? []) add(option)
+    const bare = property.startsWith('note.') ? property.slice(5) : property
+    for (const r of records) {
+      const raw = r.properties[bare]
+      if (typeof raw === 'string') add(stripBrackets(raw))
+      else if (Array.isArray(raw)) for (const v of raw) if (typeof v === 'string') add(stripBrackets(v))
+    }
+  }
+  return out
 }
 
 // ---------- rule → expression ----------
