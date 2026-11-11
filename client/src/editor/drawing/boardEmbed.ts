@@ -48,7 +48,8 @@ import { OPEN_ID_LINK } from '../wikilink/idLinkCaret'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { linkPath, type LinkLook, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { boardEmbedAt, boardEmbedKey, boardEmbedsIn, embedRevealed, type BoardEmbedMatch } from './boardEmbedScan'
-import { boardEmbedName } from './boardEmbedText'
+import { boardEmbedName, isIdTarget, type BoardCheck } from './boardEmbedText'
+import { isBoardTarget } from '@shared/embedOptions'
 import './boardEmbed.css'
 
 export { boardEmbedKey }
@@ -58,6 +59,10 @@ export const BOARD_EMBED_SYNTAX_CLASS = 'drawing-embed__syntax'
 export const BOARD_EMBED_CLASS = 'board-embed'
 /** Set on a view write (D4): not the user's typing, not an undo step. */
 export const BOARD_VIEW_META = 'mdapp-board-view'
+/** The resolver changed and the note has an id embed (YAZ-4920): every textblock is scanned again, the ids kept. */
+const BOARD_RESCAN = 'mdapp-board-rescan'
+/** An id-shaped embed in a block's text, resolved or not: the resolver's next change scans again. */
+const ID_EMBED_RE = /!\[\[[A-Za-z]{2,5}-[1-9]\d{0,14}(?:[|#\]])/
 
 export interface BoardEmbedOptions {
   /** The vault root the boards load from. */
@@ -114,11 +119,19 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
     const mounts = new Map<HTMLElement, Mount>()
     const byId = new Map<number, Mount>()
     let closeMenu = () => {}
+    /** An id link's kind (YAZ-4920): the id resolves to a board file. The scan, the find, the caret and the menus ask it. */
+    const isBoard: BoardCheck = (target) => {
+      const path = linkPath(target, opts.source, opts.viewOnly)
+      return path !== null && isBoardTarget(path)
+    }
+    /** The note has shown an id-shaped embed (resolved or not): the resolver's next change scans the note again. */
+    let sawIdEmbed = false
 
     /** One textblock's decorations; `idFor` gives each embed its id (inherited, or new). */
     const decorateBlock = (out: Decoration[], doc: ProseNode, block: ProseNode, pos: number, sel: Selection, idFor: (target: string) => number): void => {
       boardEmbedStats.blocksScanned++
-      const found = boardEmbedsIn(block, pos)
+      if (!sawIdEmbed && block.textContent.includes('![[') && ID_EMBED_RE.test(block.textContent)) sawIdEmbed = true
+      const found = boardEmbedsIn(block, pos, isBoard)
       const cell = found.length > 0 && inCellOrNote(doc.resolve(pos + 1))
       for (const m of found) {
         if (embedRevealed(sel, m.from, m.to)) continue
@@ -151,6 +164,36 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       return out.length === 0 ? DecorationSet.empty : DecorationSet.create(state.doc, out)
     }
 
+    /** The blocks given scanned again: each embed keeps its id (`olds`), so its window stays. */
+    const refresh = (set: DecorationSet, doc: ProseNode, blocks: ReadonlyMap<number, ProseNode>, sel: Selection): DecorationSet => {
+      const stale: Decoration[] = []
+      const out: Decoration[] = []
+      for (const [pos, block] of blocks) {
+        const old = set.find(pos, pos + block.nodeSize)
+        stale.push(...old)
+        if (block.type.name === 'code_block') continue
+        // The old embeds of this block, in order: each new one of the same target takes the first unused id.
+        const olds = old.filter((d) => d.spec.board !== undefined).sort((a, b) => a.from - b.from).map((d) => d.spec.board as EmbedFact)
+        const idFor = (target: string) => {
+          const i = olds.findIndex((f) => f.target === target)
+          return i < 0 ? fresh() : olds.splice(i, 1)[0]!.id
+        }
+        decorateBlock(out, doc, block, pos, sel, idFor)
+      }
+      return stale.length === 0 && out.length === 0 ? set : set.remove(stale).add(doc, out)
+    }
+
+    /** Every textblock scanned again (YAZ-4920: the resolver changed, so an id embed may be a board now, or no more). */
+    const rescan = (set: DecorationSet, state: EditorState): DecorationSet => {
+      const blocks = new Map<number, ProseNode>()
+      state.doc.descendants((node, pos) => {
+        if (!node.isTextblock) return true
+        blocks.set(pos, node)
+        return false
+      })
+      return refresh(set, state.doc, blocks, state.selection)
+    }
+
     /** The touched blocks only (see the module doc); the wikilink plugin's ranges, exactly. */
     const update = (set: DecorationSet, tr: Transaction, oldState: EditorState, state: EditorState): DecorationSet => {
       const { doc } = state
@@ -175,21 +218,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
           return false
         })
       }
-      const stale: Decoration[] = []
-      const out: Decoration[] = []
-      for (const [pos, block] of blocks) {
-        const old = set.find(pos, pos + block.nodeSize)
-        stale.push(...old)
-        if (block.type.name === 'code_block') continue
-        // The old embeds of this block, in order: each new one of the same target takes the first unused id.
-        const olds = old.filter((d) => d.spec.board !== undefined).sort((a, b) => a.from - b.from).map((d) => d.spec.board as EmbedFact)
-        const idFor = (target: string) => {
-          const i = olds.findIndex((f) => f.target === target)
-          return i < 0 ? fresh() : olds.splice(i, 1)[0]!.id
-        }
-        decorateBlock(out, doc, block, pos, state.selection, idFor)
-      }
-      return stale.length === 0 && out.length === 0 ? set : set.remove(stale).add(doc, out)
+      return refresh(set, doc, blocks, state.selection)
     }
 
     // ---- the windows ----
@@ -201,14 +230,16 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       // Before the index lands nothing is known: the target as written (vault-relative) is the best guess.
       const path = linkPath(target, opts.source, opts.viewOnly) ?? (ready ? null : page)
       const icon = path === null || opts.look === undefined ? undefined : opts.look.icon(path, false)
-      return { root: opts.root, path, kind: fileKind(page) === 'diagram' ? 'diagram' : 'drawing', name: boardEmbedName(target), vault: null, ...(icon === undefined ? {} : { icon }) }
+      // An id link's kind and name are its file's (YAZ-4920); a name embed's are its own text.
+      const file = isIdTarget(page) && path !== null ? path : target
+      return { root: opts.root, path, kind: fileKind(file.split('#')[0]!.trim()) === 'diagram' ? 'diagram' : 'drawing', name: boardEmbedName(file), vault: null, ...(icon === undefined ? {} : { icon }) }
     }
     const keyOf = (ref: BoardRef) => `${ref.path ?? ''}|${JSON.stringify(ref.icon ?? null)}`
 
     /** The embed a mount stands for, in the CURRENT doc: at its widget's live position, with the same target. */
     const matchOf = (view: EditorView, mount: Mount): BoardEmbedMatch | null => {
       const pos = mount.getPos()
-      const m = pos === undefined ? null : boardEmbedAt(view.state.doc, pos, 'start')
+      const m = pos === undefined ? null : boardEmbedAt(view.state.doc, pos, 'start', isBoard)
       return m !== null && m.target === mount.target ? m : null
     }
 
@@ -339,9 +370,11 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
 
     return new Plugin({
       key: boardEmbedKey,
+      // The scan's board check, for the find, the caret, the menus and the embed's own line (`boardCheckOf`).
+      isBoard,
       state: {
         init: (_, state) => build(state),
-        apply: (tr, set, oldState, state) => (tr.docChanged || tr.selectionSet ? update(set, tr, oldState, state) : set),
+        apply: (tr, set, oldState, state) => (tr.getMeta(BOARD_RESCAN) === true ? rescan(set, state) : tr.docChanged || tr.selectionSet ? update(set, tr, oldState, state) : set),
       },
       props: {
         decorations: (state) => boardEmbedKey.getState(state),
@@ -365,8 +398,13 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
         let editable = editorView.editable
         let selected: number | null = null
         let folds = embedFolds(editorView.state)
-        const offSource = opts.source.subscribe(resolved)
-        const offViewOnly = opts.viewOnly?.subscribe(resolved)
+        /** The resolver changed (YAZ-4920): a note with an id embed scans again, then the windows hear their refs. */
+        const resolvedAll = (): void => {
+          if (sawIdEmbed) editorView.dispatch(editorView.state.tr.setMeta(BOARD_RESCAN, true))
+          resolved()
+        }
+        const offSource = opts.source.subscribe(resolvedAll)
+        const offViewOnly = opts.viewOnly?.subscribe(resolvedAll)
         const offFlush = onFlush(editorView, () => mounts.forEach((mount) => mount.handle?.flush()))
         /** Each window's fold, from the outline's state: only when that state changed. */
         const syncFolds = (before: ReadonlyMap<number, unknown> | null) => {

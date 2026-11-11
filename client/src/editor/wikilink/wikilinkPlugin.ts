@@ -48,12 +48,13 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { isBoardTarget } from '@shared/embedOptions'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
 import { boardBaseName, fileKind } from '@shared/fileKind'
 import { basename, type IndexRecord } from '@shared/types'
 import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
-import { boardEmbedName, boardEmbedTarget } from '../drawing/boardEmbedText'
+import { boardEmbedName, boardEmbedTarget, isIdTarget } from '../drawing/boardEmbedText'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
 
@@ -273,8 +274,17 @@ export function linksAsShown(text: string, source: WikilinkResolveSource, viewOn
     const id = withId ? linkNoteId(target, source) : undefined
     return title === undefined || id === undefined ? title : nameAndId(title, id)
   }
-  return text.replace(WIKILINK_RE, (raw, bang: string, inner: string) =>
-    bang === '!' ? (boardEmbedTarget(inner) === null ? raw : boardEmbedName(inner)) : linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly)) || raw)
+  // An id embed (YAZ-4920) is a board when the id resolves to one; it copies as the board's name.
+  const isBoard = (target: string) => {
+    const path = linkPath(target, source, viewOnly)
+    return path !== null && isBoardTarget(path)
+  }
+  return text.replace(WIKILINK_RE, (raw, bang: string, inner: string) => {
+    if (bang !== '!') return linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly)) || raw
+    if (boardEmbedTarget(inner, isBoard) === null) return raw
+    const page = inner.split('|')[0]!.split('#')[0]!
+    return boardEmbedName(isIdTarget(page) ? linkPath(inner, source, viewOnly) ?? inner : inner)
+  })
 }
 
 /** Its decorations are read by `pillSelection.ts`: a selected link's pieces. */

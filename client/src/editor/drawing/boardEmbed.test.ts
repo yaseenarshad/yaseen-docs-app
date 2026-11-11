@@ -563,3 +563,66 @@ describe('plain text of a board image node (2B, item 16)', () => {
     expect(text).toBe('CloudFront and a')
   })
 })
+
+describe('YAZ-4920: an id link to a board embeds (D1 on YAZ-4821: id links keep working)', () => {
+  /** An ID vault: `EMB-40` is `Boards/Slides with frames.excalidraw`, `YAZ-12` a note. */
+  const idVault = () => {
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update((t) => (t === 'EMB-40' ? '/v/Boards/Slides with frames.excalidraw' : t === 'YAZ-12' ? '/v/Plan.md' : t.endsWith('.excalidraw') || t.endsWith('.drawio') ? `/v/${t}` : null), [], [], true, ['EMB', 'YAZ'])
+    return wikilinks
+  }
+
+  it('`![[EMB-40]]` in a file is a window into the board the id names, with the board\'s name and kind; `![[YAZ-12]]` (a note) stays text', async () => {
+    const { root } = await mount('![[EMB-40]]\n\n![[YAZ-12]]\n', { wikilinks: idVault() })
+    await windows(1)
+    expect(fakes.list[0]!.host.ref).toMatchObject({ root: '/v', path: '/v/Boards/Slides with frames.excalidraw', kind: 'drawing', name: 'Slides with frames' })
+    expect(hidden(root)).toBe('![[EMB-40]]')
+    expect(root.textContent).toContain('![[YAZ-12]]')
+  })
+
+  it('the resolver lands after the text: the embed shows then, and the same window stays on the next index', async () => {
+    const wikilinks = createWikilinkResolveSource()
+    const { root } = await mount('![[EMB-40]]\n', { wikilinks })
+    await Promise.resolve()
+    expect(fakes.list).toHaveLength(0)
+    expect(root.textContent).toContain('![[EMB-40]]')
+    wikilinks.update((t) => (t === 'EMB-40' ? '/v/Boards/Slides with frames.excalidraw' : null), [], [], true, ['EMB'])
+    await windows(1)
+    expect(fakes.list[0]!.host.ref.path).toBe('/v/Boards/Slides with frames.excalidraw')
+    wikilinks.update((t) => (t === 'EMB-40' ? '/v/Boards/Slides with frames.excalidraw' : null), [], [], true, ['EMB'])
+    await Promise.resolve()
+    expect(fakes.list.filter((f) => !f.destroyed)).toHaveLength(1)
+  })
+
+  it('paste the board\'s path, then "Embed": the text is the id embed, and it is a window', async () => {
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([{ name: 'Slides with frames.excalidraw', insert: 'EMB-40', label: 'Slides with frames', path: '/v/Boards/Slides with frames.excalidraw' }])
+    const { crepe, view } = await mount('Next:\n', { wikilinks: idVault(), pathPaste: { root: '/v', notePath: '/v/a/today.md', candidates } })
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.doc.content.size - 1)))
+    const event = { clipboardData: { getData: (type: string) => (type === 'text/plain' ? '/v/Boards/Slides with frames.excalidraw' : '') }, preventDefault() {} } as unknown as ClipboardEvent
+    view.pasteText('/v/Boards/Slides with frames.excalidraw', event)
+    expect(md(crepe)).toBe('Next:[[EMB-40]]\n')
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.path-paste-chip button'))
+    expect(buttons.map((b) => b.textContent)).toEqual(['Keep as path', 'Embed'])
+    buttons[1]!.click()
+    expect(md(crepe)).toBe('Next:![[EMB-40]]\n')
+    await windows(1)
+    expect(fakes.list[0]!.host.ref.path).toBe('/v/Boards/Slides with frames.excalidraw')
+  })
+
+  it('⌥Enter in the `[[` picker on a board with an id: the id embed, a window; the pill\'s right-click offers "Show as embed" on an id link to a board', async () => {
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([{ name: 'Slides with frames.excalidraw', insert: 'EMB-40', label: 'Slides with frames', path: '/v/Boards/Slides with frames.excalidraw' }])
+    const { crepe, view } = await mount('x [[EMB-40]]\n', { wikilinks: idVault(), wikilinkCandidates: candidates, wikilinkNav: nav() })
+    // The link pill's menu first: an id link to a board can become its embed.
+    const pill = view.dom.querySelector<HTMLElement>('.wikilink')!
+    pill.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    expect(Array.from(document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')).map((b) => b.textContent)).toContain('Show as embed')
+    document.querySelectorAll('.ctx-menu').forEach((el) => el.remove())
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)).insertText('[[Slid'))
+    expect(key(view, { key: 'Enter', altKey: true })).toBe(true)
+    expect(md(crepe)).toBe('x![[EMB-40]] [[EMB-40]]\n')
+    await windows(1)
+    expect(fakes.list[0]!.host.ref.path).toBe('/v/Boards/Slides with frames.excalidraw')
+  })
+})

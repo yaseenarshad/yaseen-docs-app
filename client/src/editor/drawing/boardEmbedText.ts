@@ -6,10 +6,21 @@
 import { isBoardTarget, splitEmbed } from '@shared/embedOptions'
 import { boardBaseName } from '@shared/fileKind'
 
-/** The board an `![[inner]]` embeds (with any `#…`), or null when it is no board: `![[img.png]]`, `![[note]]`. */
-export function boardEmbedTarget(inner: string): string | null {
+/** The host's word on an id-shaped target (YAZ-4920): does the id resolve to a board file? */
+export type BoardCheck = (target: string) => boolean
+
+/** An id-shaped link target (`EMB-40`, the vault's note ids): no ending to read, so only a resolver knows its kind. */
+export const isIdTarget = (page: string): boolean => /^[A-Za-z]{2,5}-[1-9]\d{0,14}$/.test(page.trim())
+
+/**
+ * The board an `![[inner]]` embeds (with any `#…`), or null when it is no board: `![[img.png]]`, `![[note]]`. An id
+ * link (`![[EMB-40]]`, YAZ-4920: the paste chip's "Embed" and the picker's ⌥Enter write the id in an ID vault, D1 on
+ * YAZ-4821) is a board when `isBoard`, the host's resolver, says the id names a board file; without it, no id is.
+ */
+export function boardEmbedTarget(inner: string, isBoard?: BoardCheck): string | null {
   const { target } = splitEmbed(inner)
-  return isBoardTarget(target.split('#')[0]!) ? target : null
+  const page = target.split('#')[0]!
+  return isBoardTarget(page) || (isBoard !== undefined && isIdTarget(page) && isBoard(page)) ? target : null
 }
 
 /** The page part of a board target: no `#…`, no folders. */

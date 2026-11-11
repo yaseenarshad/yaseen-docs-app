@@ -23,7 +23,7 @@
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { boardEmbedAt, boardEmbedsIn } from '../drawing/boardEmbedScan'
+import { boardCheckOf, boardEmbedAt, boardEmbedsIn } from '../drawing/boardEmbedScan'
 import { markdownPillsAround } from '../markdownLink'
 import { wikilinkMatchAt } from './wikilinkClick'
 import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, isLinkUnit } from './wikilinkPlugin'
@@ -35,7 +35,7 @@ export const OPEN_ID_LINK = 'mdapp-open-id-link'
 function linkAround(state: EditorState, pos: number): { from: number; to: number } | null {
   const match = wikilinkMatchAt(state.doc, pos)
   if (match !== null && pos > match.from && isLinkUnit(match.inner)) return match
-  const embed = boardEmbedAt(state.doc, pos, 'inside')
+  const embed = boardEmbedAt(state.doc, pos, 'inside', boardCheckOf(state))
   if (embed !== null) return embed
   return markdownPillsAround(state, pos).find((pill) => pill.from < pos && pos < pill.to) ?? null
 }
@@ -46,7 +46,7 @@ function linkBeside(state: EditorState, pos: number, back: boolean): { from: num
   const match = wikilinkMatchAt(state.doc, at)
   if (match !== null && at > match.from && isLinkUnit(match.inner)) return (back ? match.to : match.from) === pos ? match : null
   const $pos = state.doc.resolve(pos)
-  const embed = $pos.parent.isTextblock ? boardEmbedsIn($pos.parent, $pos.before()).find((m) => (back ? m.to : m.from) === pos) : undefined
+  const embed = $pos.parent.isTextblock ? boardEmbedsIn($pos.parent, $pos.before(), boardCheckOf(state)).find((m) => (back ? m.to : m.from) === pos) : undefined
   if (embed !== undefined) return embed
   // One search of the pills: a one-letter pill has no position strictly inside it, so its edge is matched, not `at`.
   return markdownPillsAround(state, pos).find((pill) => (back ? pill.to : pill.from) === pos) ?? null

@@ -20,6 +20,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pathTitles } from '../../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
+import { boardCheckOf } from '../drawing/boardEmbedScan'
 import { boardEmbedTarget } from '../drawing/boardEmbedText'
 import { inCellOrNote } from '../table/cellBlocks'
 import { OPEN_ID_LINK } from './idLinkCaret'
@@ -62,7 +63,8 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
   // A drawing's or a diagram's link (YAZ-4829 D8): `!` before it, and an alias goes, as the embed shows the board's name.
   const target = inner.split('|')[0]!
   // Not in a table cell: embeds there are out of scope (the checker's round 1).
-  if (view.editable && boardEmbedTarget(target) !== null && !inCellOrNote(view.state.doc.resolve(from))) menu.showAsEmbed = () => view.dispatch(view.state.tr.insertText(`![[${target}]]`, from, to))
+  // An id link to a board (YAZ-4920) is one too: the host's check says so.
+  if (view.editable && boardEmbedTarget(target, boardCheckOf(view.state)) !== null && !inCellOrNote(view.state.doc.resolve(from))) menu.showAsEmbed = () => view.dispatch(view.state.tr.insertText(`![[${target}]]`, from, to))
   return menu
 }
 
