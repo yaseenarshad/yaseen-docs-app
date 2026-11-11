@@ -170,6 +170,13 @@
   height: 14px;
 }
 
+/* The file's own icon (YAZ-4905): `app.css` draws it on the span's `::before` as a 14px box with a 6px right margin,
+   the sidebar's gap before a name. In this 14px flex box that margin squeezed the box to 8px and cut the icon on both
+   sides. The box keeps its 14px; the margin overflows into the pill's own gap, where it shows nothing. */
+:is(.milkdown, .board-window-overlay) .board-window__icon::before {
+  flex: none;
+}
+
 /* Resting (D9): a quiet note on hover; one click wakes the window. */
 :is(.milkdown, .board-window-overlay) .board-window__rest {
   position: absolute;
