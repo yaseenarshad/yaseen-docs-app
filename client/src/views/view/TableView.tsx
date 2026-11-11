@@ -276,6 +276,8 @@ function cutCellCard(cell: HTMLElement): { box: HTMLElement; dwell: number; unde
   const full = cell.dataset.clipTitle
   if (full === undefined || !cellIsCut(cell)) return null
   const box = cardShell()
+  // YAZ-4903: the card's text is the cell's own size (a folder page cell's text is smaller than the card's 12.5px).
+  box.style.fontSize = getComputedStyle(cell.querySelector<HTMLElement>('.view-cell-edit__display') ?? cell).fontSize
   box.appendChild(textPart([full]))
   return { box, dwell: CUT_CARD_DWELL_MS, under: true }
 }

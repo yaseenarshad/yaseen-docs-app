@@ -694,7 +694,7 @@ describe('the full-text card of a cut cell (YAZ-4901)', () => {
     return view
   }
 
-  it('a cut cell with no note: its lines (a bullet as "• ") after 250 ms, under the cell at its left edge, at least 240 wide; no title; a cell that is not cut shows nothing', async () => {
+  it('a cut cell with no note: its lines (a bullet as "• ") after 250 ms, under the cell at its left edge, as wide as its text up to 240; no title; a cell that is not cut shows nothing', async () => {
     const view = await open()
     cut(view, 2, 1)
     inCell(view, 'mousemove', 2, 1, 150, 45)
@@ -705,8 +705,9 @@ describe('the full-text card of a cut cell (YAZ-4901)', () => {
     expect(textLines(box)).toEqual(['Museum', '• Park', '• Zoo'])
     expect(box.querySelector('.cell-note-preview__header')).toBeNull()
     expect(view.dom.hasAttribute('title')).toBe(false)
-    // `inCell` gives the cell a 100×30 box at (100, 30): under it, at its left, the cell's 100 clamped to 240.
-    expect([box.style.left, box.style.top, box.style.width]).toEqual(['100px', '64px', '240px'])
+    // `inCell` gives the cell a 100×30 box at (100, 30): under it, at its left; as wide as its text (YAZ-4903), up to
+    // the cell's 100 clamped to 240.
+    expect([box.style.left, box.style.top, box.style.width, box.style.maxWidth]).toEqual(['100px', '64px', 'max-content', '240px'])
     // "free" is not cut: nothing, at any wait.
     inCell(view, 'mousemove', 3, 1, 150, 45)
     expect(card()).toBeNull()

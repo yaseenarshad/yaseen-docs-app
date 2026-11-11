@@ -23,7 +23,7 @@ export const CUT_CARD_DWELL_MS = 250
 export const CARD_WARM_MS = 500
 /** The full-text part shows this many lines, then "…". */
 export const CARD_TEXT_LINES = 12
-/** The full-text card's width is the cell's, clamped. */
+/** The full-text card is as wide as its text, up to the cell's width clamped to these (YAZ-4903). */
 const MIN_WIDTH = 240
 const MAX_WIDTH = 420
 /** Between the cell and the card, in px. */
@@ -68,14 +68,18 @@ export function textPart(lines: string[]): HTMLElement {
   return part
 }
 
-/** Under the cell at its left edge, as wide as the cell (clamped); above it when there is no room under; inside the window. */
+/**
+ * Under the cell at its left edge; above it when there is no room under; inside the window. As wide as its text
+ * (YAZ-4903: no empty room beside a short text), up to the cell's width clamped to 240–420 px, then the text wraps.
+ */
 function placeUnder(box: HTMLElement, cell: HTMLElement): void {
   const rect = cell.getBoundingClientRect()
-  const width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, rect.width))
-  box.style.width = `${width}px`
-  box.style.left = `${Math.max(0, Math.min(rect.left, window.innerWidth - width))}px`
+  box.style.width = 'max-content'
+  box.style.maxWidth = `${Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, rect.width))}px`
   box.style.top = `${rect.bottom + GAP}px`
   document.body.appendChild(box)
+  const width = box.offsetWidth
+  box.style.left = `${Math.max(0, Math.min(rect.left, window.innerWidth - width))}px`
   const height = box.offsetHeight
   if (rect.bottom + GAP + height > window.innerHeight) box.style.top = `${Math.max(0, rect.top - GAP - height)}px`
 }
