@@ -10,7 +10,7 @@ import { createSystemHotkeys } from '../systemHotkeys'
 import { broadcastAll } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
 
-/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `name` / `key`, each type-checked. */
+/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `name` / `key` / `in`, each type-checked. */
 function requireFolderPatch(raw: unknown): FolderPatch {
   if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
   const patch: FolderPatch = {}
@@ -28,6 +28,11 @@ function requireFolderPatch(raw: unknown): FolderPatch {
   if (raw.key !== undefined) {
     if (raw.key !== null && typeof raw.key !== 'number') throw new BridgeFailure('BAD_REQUEST', "'key' must be a number or null")
     patch.key = raw.key
+  }
+  // "A folder of <vault>" (YAZ-4922 D3): the vault's path, or null; the store keeps it only for a folder inside that vault.
+  if (raw.in !== undefined) {
+    if (raw.in !== null && typeof raw.in !== 'string') throw new BridgeFailure('BAD_REQUEST', "'in' must be a string or null")
+    patch.in = raw.in
   }
   return patch
 }

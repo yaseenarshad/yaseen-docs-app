@@ -121,6 +121,7 @@ import {
   mergeFavoritesOrder,
   normalizeRoots,
   rootOfPath,
+  placeVaults,
   stripSlash,
   type AppState,
   type CodeOutlineSort,
@@ -1043,6 +1044,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     tocSwitches: sanitizeSwitches(raw.tocSwitches),
     name: cleanVaultName(raw.name),
     key: cleanVaultKey(raw.key),
+    // "A folder of <vault>" (YAZ-4922 D3): kept only as an absolute path; whether it holds the bucket is `sanitizeFolders`'.
+    ...(typeof raw.in === 'string' && isAbsolute(raw.in) && { in: stripSlash(raw.in) }),
   }
 }
 
@@ -1058,6 +1061,8 @@ function sanitizeFolders(raw: unknown): Record<string, FolderState> {
       if (taken.has(clean.key)) clean.key = null
       else taken.add(clean.key)
     }
+    // A folder of a vault must sit inside that vault (YAZ-4922 D3): any other `in` is dropped.
+    if (clean.in != null && !root.startsWith(`${clean.in}/`)) delete clean.in
     out[root] = clean
   }
   return out
@@ -1391,6 +1396,8 @@ export function createStore(filePath: string): Store {
         ...(patch.lastFile !== undefined ? { lastFile: patch.lastFile } : {}),
         ...(patch.name !== undefined ? { name: cleanVaultName(patch.name) } : {}),
         ...(key !== undefined ? { key } : {}),
+        // "A folder of <vault>" (YAZ-4922 D3): an absolute folder strictly inside the vault, else nothing; null ends it.
+        ...(patch.in !== undefined ? { in: typeof patch.in === 'string' && isAbsolute(patch.in) && root.startsWith(`${stripSlash(patch.in)}/`) ? stripSlash(patch.in) : null } : {}),
       }
       // One vault per number (YAZ-2555 D2): the same commit takes it from the vault that had it.
       commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })
@@ -1449,7 +1456,8 @@ export function createStore(filePath: string): Store {
       const normalized = withTabStrip({ ...entry, roots: normalizeRoots(entry.roots ?? [], entry.root), tabs, rightPanel: normalizeRightPanel(entry.rightPanel, tabs) }, entry.tabStrip)
       const windows = state.windows.some((w) => w.id === entry.id) ? state.windows.map((w) => (w.id === entry.id ? normalized : w)) : [...state.windows, normalized]
       // The use goes in the commit of the window (YAZ-2663 R2): one write, one broadcast. Its vault is the one of the window that holds the page.
-      const vault = opened === null ? null : rootOfPath(normalized.roots, opened)
+      // A folder of a vault (YAZ-4922 D3) counts the use for its vault: its Recents are the vault's, under the folder.
+      const vault = opened === null ? null : rootOfPath(placeVaults(state.folders, normalized.roots), opened)
       const folders = opened === null || vault === null ? state.folders : { ...state.folders, [vault]: { ...folderOf(vault), opens: addOpen(folderOf(vault).opens, opened, now) } }
       // The board's places of tabs this window no longer has go in the same commit (D28): a stale card would take a cell.
       commit({ ...state, windows, folders, tabCanvas: pruneCanvas(state.tabCanvas, normalized) })
@@ -1570,6 +1578,8 @@ export function createStore(filePath: string): Store {
           remap(root),
           {
             ...folder,
+            // A folder of a vault (YAZ-4922 D3) follows its vault's folder, as its own path follows its own.
+            ...(folder.in != null && { in: remap(folder.in) }),
             expanded: folder.expanded.map(remapFold),
             lastFile: folder.lastFile === null ? null : remap(folder.lastFile),
             folds: remapKeys(folder.folds, remap),

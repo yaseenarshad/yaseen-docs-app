@@ -515,6 +515,27 @@ describe('registerFsIpc', () => {
       }
     })
 
+    it('a window that is "a folder of" the vault (YAZ-4922 D3): a note made there gets the vault\'s next ID, and nothing writes an `ids.json` or any `.yaseendocs` into the folder', async () => {
+      const vault = await open(true)
+      const folder = path.join(vault, 'Plans')
+      try {
+        const before = await readFile(path.join(vault, '.yaseendocs', 'ids.json'), 'utf8')
+        store.setFolder(folder, { in: vault })
+        store.upsertWindow({ id: 'w-kind', root: folder, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+        expect(await call(CONTRACT.mintNoteId, folder)).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.createFile, { path: path.join(folder, 'idea-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
+        expect(await call(CONTRACT.createFile, path.join(folder, 'Bare.md'))).toMatchObject({ ok: true, value: { id: expect.stringMatching(/^YAZ-[2-9]$/) } })
+        // The vault's own doors take the vault from this window too: its IDs are the vault's.
+        expect(await call(CONTRACT.ids.check, vault)).toMatchObject({ ok: true })
+        expect(await call(CONTRACT.ids.check, folder)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(Object.keys(await vaultFiles(folder)).filter((rel) => rel.startsWith('.yaseendocs'))).toEqual([])
+        expect(await readFile(path.join(vault, '.yaseendocs', 'ids.json'), 'utf8')).toBe(before)
+      } finally {
+        store.setFolder(folder, { in: null })
+        await close(vault)
+      }
+    })
+
     it('`fs:make-daily-note` finds or makes today\'s note of a vault of the calling window, by the app\'s settings, one note for many asks (YAZ-4269 D2)', async () => {
       const yes = await open(true)
       const before = store.get().settings

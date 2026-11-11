@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileKind } from '@shared/fileKind'
 import { fileLink, isAppLink, parseFileLink } from '@shared/links'
-import { FILES_PREVIEW_FRAME, MEMORY_SAMPLE_MS, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
+import { FILES_PREVIEW_FRAME, MEMORY_SAMPLE_MS, placeVaults, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createSpellWait } from '@shared/spelling'
@@ -297,7 +297,8 @@ app.on('browser-window-focus', (_event, win) => {
   // YAZ-1081 D2: focusing a vault's window is a PULL trigger — alt-tabbing back from another
   // machine should converge without waiting out a timer. The manager's own cooldown throttles it.
   // Every vault the window shows (YAZ-2602 S43).
-  for (const root of store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.roots ?? []) gitSync?.notifyFocus(root)
+  // A folder of a vault (YAZ-4922 D3) pulls its vault.
+  for (const root of placeVaults(store.get().folders, store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.roots ?? [])) gitSync?.notifyFocus(root)
 })
 
 app.whenReady().then(() => {

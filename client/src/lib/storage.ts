@@ -16,6 +16,9 @@ import {
   mergeFavoritesOrder,
   normalizeFilesZoom,
   normalizeRoots,
+  placeName,
+  placeVault,
+  placeVaults,
   rootOfPath,
   type AppState,
   type FolderState,
@@ -133,7 +136,8 @@ export const storage = {
     }
   },
 
-  getRoot: (): string | null => identity.root,
+  /** The window's first vault (a folder of a vault reads as its vault, YAZ-4922 D3). */
+  getRoot: (): string | null => (identity.root === null ? null : placeVault(state.folders, identity.root)),
   /**
    * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and lands the
    * lens on Files (🔒 D2, YAZ-1846), in the same write; re-setting the same root keeps them. The
@@ -149,21 +153,37 @@ export const storage = {
     send('window.setIdentity', () => api.window.setIdentity(patch))
   },
 
-  /** Every vault this window shows, `root` first (YAZ-2602 D1). */
-  getRoots: (): string[] => identity.roots,
+  /**
+   * Every vault this window shows, `root` first (YAZ-2602 D1). A window that is "a folder of" a vault (YAZ-4922 🔒 D3)
+   * shows that vault here: its index, IDs, links, sync and `.yaseendocs` are the vault's. What the window IS — its
+   * places, which main stores and the recents and the vault switcher name — is `getPlaces`.
+   */
+  getRoots: (): string[] => placeVaults(state.folders, identity.roots),
+  /** The window's places (YAZ-4922 D3): each vault it shows, or the folder of a vault it shows in its place. */
+  getPlaces: (): string[] => identity.roots,
+  /** The folder of `vault` that this window shows in its place (YAZ-4922 D3); null where it shows the whole vault, or not that vault. */
+  folderIn: (vault: string): string | null => (identity.roots ?? []).find((place) => place !== vault && placeVault(state.folders, place) === vault) ?? null,
   /**
    * Add or remove a vault (YAZ-2602 D2, D7). Unlike `setRoot`, this keeps the tabs and the lens:
    * the caller closes a removed vault's tabs first. `root` follows `roots[0]`. A vault that leaves
    * takes its rows off the Focus tab and keeps its focus list, which is in the vault (YAZ-2702 S9).
+   * `roots` are vaults as `getRoots` gives them, and a new place: a vault of the window that is shown as a folder of it
+   * stays that place (YAZ-4922 D3).
    */
   setRoots(roots: readonly string[]): void {
-    const next = normalizeRoots(roots, roots[0] ?? null)
+    const places = roots.map((root) => identity.roots.find((place) => place === root || placeVault(state.folders, place) === root) ?? root)
+    const next = normalizeRoots(places, places[0] ?? null)
     identity = { ...identity, roots: next, root: next[0] ?? null }
     send('window.setIdentity', () => api.window.setIdentity({ roots: next }))
   },
-  /** Main's store already moved a renamed vault folder (`store.renamePath`): mirror it in the cache, with no identity write. */
+  /** Main's store already moved a renamed vault folder (`store.renamePath`): mirror it in the cache, with no identity write. A folder of a vault follows its vault (YAZ-4922 D3). */
   mirrorRoots(roots: readonly string[]): void {
-    identity = { ...identity, root: roots[0] ?? null, roots: [...roots] }
+    const places = roots.map((root, i) => {
+      const was = identity.roots[i]
+      const vault = was === undefined ? undefined : placeVault(state.folders, was)
+      return was !== undefined && vault !== undefined && was !== vault && was.startsWith(`${vault}/`) ? root + was.slice(vault.length) : root
+    })
+    identity = { ...identity, root: places[0] ?? null, roots: places }
   },
 
   getRecentRoots: (): RecentRoots => state.recents,
@@ -270,8 +290,19 @@ export const storage = {
     send('state.removeRecent', () => api.state.removeRecent(path))
   },
 
-  /** What the app calls a vault (YAZ-1974 D4): its display name, else its folder name. */
-  vaultName: (root: string): string => folderOf(root).name ?? basename(root),
+  /**
+   * What the app calls a vault (YAZ-1974 D4): its display name, else its folder name. A vault this window shows as a
+   * folder of it, and such a place itself, read "<folder> · in <vault>" (YAZ-4922 D3): the title, the switcher and the vault rows.
+   */
+  vaultName: (root: string): string => placeName(state.folders, storage.folderIn(root) ?? root),
+  /** Every bucket of per-folder state, by its path: what a picked folder's vault is asked of (YAZ-4922 D4). Read-only. */
+  getFolders: (): Readonly<Record<string, FolderState>> => state.folders,
+  /** A place is "a folder of" `vault` (YAZ-4922 🔒 D3), or with null its own vault again: the cache at once, then main's store. */
+  setFolderIn(place: string, vault: string | null): void {
+    if ((folderOf(place).in ?? null) === vault) return
+    patchFolder(place, { in: vault })
+    send('state.setFolder', () => api.state.setFolder(place, { in: vault }))
+  },
   /** Set (or, with null / empty / the folder's own name, clear) a vault's display name (D3, D5). */
   setVaultName(root: string, raw: string | null): void {
     const clean = cleanVaultName(raw)

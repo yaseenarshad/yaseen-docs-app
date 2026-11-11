@@ -23,6 +23,7 @@ import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
 import { atOrBelow } from '../lib/treeState'
+import { placeOnly } from '../vault/placeScope'
 import { fileCandidates, folderCandidates, searchCandidates, searchRows, type SearchCandidate } from './searchCandidates'
 
 /** One vault the search covers: its folder, its watcher, and its folders and its files that are no notes (the Sidebar's own `allDirs` and `otherFiles`). */
@@ -31,10 +32,23 @@ export interface SearchVault {
   watch: WatchSource
   dirs: readonly string[]
   files: readonly string[]
+  /** "A folder of" the vault (YAZ-4922 🔒 D3): the vault's index is read, and only the notes under this folder are found (`placeOnly`). */
+  folder?: string
 }
 
 type Snapshot = Readonly<{ records: readonly IndexRecord[]; folders: readonly IndexRecord[]; letters?: readonly string[] }>
 const NO_SNAPSHOT: Snapshot = { records: [], folders: [] }
+
+/** A snapshot cut to a folder of its vault (YAZ-4922 D3), once per snapshot and folder: the rows built from it are kept while both stay. */
+const cuts = new WeakMap<Snapshot, { folder: string; cut: Snapshot }>()
+function scoped(snapshot: Snapshot, folder: string | undefined): Snapshot {
+  if (folder === undefined) return snapshot
+  const held = cuts.get(snapshot)
+  if (held !== undefined && held.folder === folder) return held.cut
+  const cut = { ...snapshot, records: placeOnly(folder, snapshot.records), folders: placeOnly(folder, snapshot.folders) }
+  cuts.set(snapshot, { folder, cut })
+  return cut
+}
 
 /** One vault's rows as they were last built, with what each part was built from. */
 type Rows = Snapshot & { dirs: readonly string[]; files: readonly string[]; folderRows: SearchCandidate[]; noteRows: SearchCandidate[]; fileRows: SearchCandidate[]; all: SearchCandidate[] }
@@ -117,9 +131,9 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string, 
   const built = useRef(new Map<string, Rows>())
   const candidates = useMemo(() => {
     const next = new Map<string, Rows>()
-    for (const { root, dirs, files } of vaults) {
+    for (const { root, dirs, files, folder } of vaults) {
       // `letters` arrive with the snapshot they belong to (YAZ-2677 D9, S77), so the rows built from it carry them.
-      const { records, folders, letters } = snapshots.get(root) ?? NO_SNAPSHOT
+      const { records, folders, letters } = scoped(snapshots.get(root) ?? NO_SNAPSHOT, folder)
       const last = built.current.get(root)
       const folderRows = last !== undefined && last.dirs === dirs && last.folders === folders ? last.folderRows : folderCandidates(root, dirs, folders, letters)
       const noteRows = last !== undefined && last.records === records ? last.noteRows : searchCandidates(records, letters)

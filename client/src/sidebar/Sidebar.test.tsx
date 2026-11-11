@@ -451,6 +451,30 @@ const asPerson = (type: string, target: EventTarget | null | undefined, dispatch
   if (type === 'dragend') window.dispatchEvent(new MouseEvent('mousemove', { buttons: 0 }))
 }
 
+describe('a window that is "a folder of" the vault (YAZ-4922 D3): the sidebar is rooted at the folder', () => {
+  const VAULT_TREE: TreeNode[] = [
+    { type: 'dir', name: 'Projects', path: '/v/Projects', children: [{ type: 'file', name: 'plan.md', path: '/v/Projects/plan.md', size: 1, mtime: 1, kind: 'markdown' }] },
+    {
+      type: 'dir',
+      name: 'Wiki',
+      path: '/v/Wiki',
+      children: [
+        { type: 'dir', name: 'React', path: '/v/Wiki/React', children: [] },
+        { type: 'file', name: 'hooks.md', path: '/v/Wiki/hooks.md', size: 1, mtime: 1, kind: 'markdown' },
+      ],
+    },
+    { type: 'file', name: 'home.md', path: '/v/home.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+
+  it('the Files tab shows only the folder\'s own folders and notes, and the vault\'s tree is read', async () => {
+    const vaults = oneVault({}).map((vault) => ({ ...vault, folder: '/v/Wiki' }))
+    const { el, bridge } = await mount({ vaults }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: VAULT_TREE, generatedAt: 1 } as never))
+    const labels = () => [...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)
+    expect(bridge.tree).toHaveBeenCalledWith('/v')
+    expect(labels()).toEqual(['React', 'hooks'])
+  })
+})
+
 describe('drawing and diagram rows (YAZ-3028 D11)', () => {
   const BOARD_TREE: TreeNode[] = [
     { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },

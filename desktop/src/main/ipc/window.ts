@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, rootOfPath, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, placeVaults, rootOfPath, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isFiniteNumber, isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -180,6 +180,8 @@ function requireFilesPreview(v: unknown): FilesPreviewRequest {
  * answered here too, because it needs the caller's window: `link:ready` (YAZ-2589 A2).
  */
 export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void {
+  /** The vaults of a window's places (YAZ-4922 D3): a tab of a folder of a vault may be any note of that vault. */
+  const vaultsOf = (entry: WindowEntry): string[] => placeVaults(store.get().folders, entry.roots)
   const entryFor = (e: IpcMainInvokeEvent): WindowEntry => {
     const id = windows.idFor(e.sender)
     if (id === undefined) throw new BridgeFailure('BAD_REQUEST', 'sender is not a registered window')
@@ -280,7 +282,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   handleWithEvent(CONTRACT.window.popOut, async (e, path: unknown, carry: unknown) => {
     const from = entryFor(e)
     const target = requireAbsPath(path, 'path')
-    if (rootOfPath(from.roots, target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
+    if (rootOfPath(vaultsOf(from), target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
     windows.popOut(from, target, optionalPopOutCarry(carry))
   })
 
@@ -290,7 +292,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   handleWithEvent(CONTRACT.window.tearOff, async (e, path: unknown, carry: unknown, point: unknown, alone: unknown) => {
     const from = entryFor(e)
     const target = requireAbsPath(path, 'path')
-    if (rootOfPath(from.roots, target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
+    if (rootOfPath(vaultsOf(from), target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
     // What "Move to ▸" carries (D9), and no more: a torn-off tab opens in front, at no slot.
     const { view, name } = optionalPopOutCarry(carry)
     return windows.tearOff(from, target, { view, name }, requirePoint(point), alone === true)
@@ -440,13 +442,13 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
 
   // `window:note-closed` (YAZ-3487 D10): the notes of tabs the caller closed go to "Recently closed" of ITS vaults.
   handleWithEvent(CONTRACT.window.noteClosed, async (e, files: unknown) => {
-    const roots = entryFor(e).roots
+    const roots = vaultsOf(entryFor(e))
     if (!Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be a list of absolute paths")
     store.addClosed(roots, files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
   })
   // `window:forget-closed` (YAZ-3487 D14): drop notes from "Recently closed", or with null clear it, for the caller's vaults.
   handleWithEvent(CONTRACT.window.forgetClosed, async (e, files: unknown) => {
-    const roots = entryFor(e).roots
+    const roots = vaultsOf(entryFor(e))
     if (files !== null && !Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be null or a list of absolute paths")
     store.forgetClosed(roots, files === null ? null : files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
   })
