@@ -5,10 +5,12 @@
  * for the horizontal alignment, in the GFM `:-` row; each is one undo step; read-only shows no rows. The look settings
  * are three icon strips, Look, Text and Rows (the YAZ-4163 demo); the border and Time slots stay pickers.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { undo } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { closeSubmenu } from '../blockHandleMenu'
+import { SWITCH_MS } from '../../components/Flyout'
 import { getMarkdownForSave } from '../createCrepe'
 import { mountNote, unmountAll } from './tableTestKit'
 import { setTextInCellsSetting } from './timeFormatSetting'
@@ -370,5 +372,63 @@ describe('Text in cells (YAZ-4900): the table\'s own Wrap or Clip', () => {
     setTextInCellsSetting('wrap')
     const back = await openOnTable(`${SMALL}\n<!-- table: nowrap -->\n`)
     expect(pickerNamed(back.view, 'Text in cells').querySelector('.block-menu-picker__value')!.textContent).toBe('Clip ▾')
+  })
+})
+
+describe('one flyout at a time (YAZ-4899 demo: "if you go fast the other menu shows behind the other")', () => {
+  const parentOf = (view: EditorView, label: string): HTMLElement => {
+    const button = [...popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === label)
+    if (button === undefined) throw new Error(`no parent ${label}`)
+    return button.closest<HTMLElement>('.ctx-menu__parent')!
+  }
+  /** The pointer moves onto the parent row `label`: the menu sees it over the row, then the row's box sees it enter. */
+  const moveTo = (view: EditorView, label: string) => {
+    const wrap = parentOf(view, label)
+    wrap.firstElementChild!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    wrap.dispatchEvent(new MouseEvent('mouseenter'))
+  }
+  const openFlyouts = (view: EditorView) => [...popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent[aria-expanded="true"]')].map((b) => b.textContent)
+  const subs = (view: EditorView) => popupOf(view)!.querySelectorAll('.ctx-menu__sub').length
+
+  it('a move from "Header row" to "Subheader row" swaps the one flyout after the app\'s hover wait, never two at once; back the same; Escape closes whichever is open', async () => {
+    vi.useFakeTimers()
+    try {
+      const { view } = await openOnTable()
+      moveTo(view, 'Header row')
+      expect([openFlyouts(view), subs(view)]).toEqual([['Header row'], 1])
+      moveTo(view, 'Subheader row')
+      // The swap waits the hover wait (`Flyout.tsx`'s `SWITCH_MS`), with the first flyout still up alone.
+      expect([openFlyouts(view), subs(view)]).toEqual([['Header row'], 1])
+      vi.advanceTimersByTime(SWITCH_MS)
+      expect([openFlyouts(view), subs(view)]).toEqual([['Subheader row'], 1])
+      moveTo(view, 'Header row')
+      vi.advanceTimersByTime(SWITCH_MS)
+      expect([openFlyouts(view), subs(view)]).toEqual([['Header row'], 1])
+      // Back and forth fast, before the wait is up: the one open stays until the wait, then the last row under the pointer wins.
+      moveTo(view, 'Subheader row')
+      moveTo(view, 'Header row')
+      moveTo(view, 'Subheader row')
+      vi.advanceTimersByTime(SWITCH_MS)
+      expect([openFlyouts(view), subs(view)]).toEqual([['Subheader row'], 1])
+      // Escape's first press (`closeSubmenu`) closes the open one, whichever parent it belongs to.
+      expect(closeSubmenu(popupOf(view)!)).toBe(true)
+      expect([openFlyouts(view), subs(view)]).toEqual([[], 0])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a click or ArrowRight on the other parent swaps at once, with no wait', async () => {
+    vi.useFakeTimers()
+    try {
+      const { view } = await openOnTable()
+      moveTo(view, 'Header row')
+      parentOf(view, 'Subheader row').querySelector<HTMLButtonElement>('.ctx-menu__item--parent')!.click()
+      expect([openFlyouts(view), subs(view)]).toEqual([['Subheader row'], 1])
+      parentOf(view, 'Header row').querySelector<HTMLButtonElement>('.ctx-menu__item--parent')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+      expect([openFlyouts(view), subs(view)]).toEqual([['Header row'], 1])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

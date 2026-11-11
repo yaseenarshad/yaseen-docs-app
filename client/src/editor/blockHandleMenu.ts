@@ -439,15 +439,45 @@ export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, re
   show(Math.min(lastTab.get(row.label) ?? 0, tabs.length - 1))
 }
 
-/** How each open menu closes its flyout alone: `closeSubmenu`. */
-const submenuClosers = new WeakMap<HTMLElement, () => boolean>()
+/**
+ * Each open menu's ONE flyout (YAZ-4899 demo: "sometimes if you go fast the other menu shows behind the other"): the
+ * shut of the flyout that is open, and the one hover wait that swaps or closes it, as the right-click menu's
+ * `useFlyout` (`components/Flyout.tsx`). Before, each parent row kept its own flyout and its own wait, so a move from
+ * "Header row ›" to "Subheader row ›" opened the second at once while the first closed 200 ms later: two panels, the
+ * earlier row's drawn behind, and Escape knew only the last row's.
+ */
+interface MenuFlyouts {
+  shut: (() => boolean) | null
+  timer?: ReturnType<typeof setTimeout>
+}
+const menuFlyouts = new WeakMap<HTMLElement, MenuFlyouts>()
+
+/** The menu's flyout record, made once with the menu's one `mouseover` rule: a plain row under the pointer closes the open flyout after the wait. */
+function flyoutsOf(menu: HTMLElement): MenuFlyouts {
+  let state = menuFlyouts.get(menu)
+  if (state === undefined) {
+    const made: MenuFlyouts = { shut: null }
+    state = made
+    menuFlyouts.set(menu, made)
+    menu.addEventListener('mouseover', (event) => {
+      // A parent row, or the open flyout inside it, handles itself (`renderParent`).
+      if (made.shut === null || !(event.target instanceof Element) || event.target.closest('.ctx-menu__parent') !== null) return
+      clearTimeout(made.timer)
+      made.timer = setTimeout(() => made.shut?.(), SWITCH_MS)
+    })
+  }
+  return state
+}
 
 /**
  * Closes the open flyout of `menu` (YAZ-3901), the menu staying: true when one was open. Escape's first press. The
  * menu's own close calls it too, so the flyout's `SWITCH_MS` wait never runs on a removed menu.
  */
 export function closeSubmenu(menu: HTMLElement): boolean {
-  return submenuClosers.get(menu)?.() ?? false
+  const state = menuFlyouts.get(menu)
+  if (state === undefined) return false
+  clearTimeout(state.timer)
+  return state.shut?.() ?? false
 }
 
 /**
@@ -471,10 +501,10 @@ function renderParent(row: MenuRow, menu: HTMLElement, close: () => void, refres
   button.textContent = row.label
   if (row.hint !== undefined) button.dataset.hint = row.hint
   wrap.appendChild(button)
+  const state = flyoutsOf(menu)
   let flyout: HTMLElement | null = null
-  let timer: ReturnType<typeof setTimeout> | undefined
   const shut = (): boolean => {
-    clearTimeout(timer)
+    if (state.shut === shut) state.shut = null
     if (flyout === null) return false
     // The focus was in the flyout (the keys): it goes back to the parent row, not to the page.
     const hadFocus = flyout.contains(document.activeElement)
@@ -485,8 +515,11 @@ function renderParent(row: MenuRow, menu: HTMLElement, close: () => void, refres
     return true
   }
   const open = (focus: boolean) => {
-    clearTimeout(timer)
+    clearTimeout(state.timer)
     if (flyout === null) {
+      // The menu's other flyout goes in the same step: never two at once, and this one is on top.
+      state.shut?.()
+      state.shut = shut
       flyout = document.createElement('div')
       flyout.className = 'ctx-menu ctx-menu--editor ctx-menu__sub'
       flyout.setAttribute('role', 'menu')
@@ -508,13 +541,12 @@ function renderParent(row: MenuRow, menu: HTMLElement, close: () => void, refres
     }
     if (focus) flyout.querySelector<HTMLButtonElement>('.ctx-menu__item:not(:disabled)')?.focus({ preventScroll: true })
   }
-  wrap.addEventListener('mouseenter', () => open(false))
-  // Another row of the menu under the pointer: the flyout goes after the wait, unless the pointer comes back.
-  menu.addEventListener('mouseover', (event) => {
-    if (flyout !== null && event.target instanceof Node && !wrap.contains(event.target) && menu.contains(event.target)) {
-      clearTimeout(timer)
-      timer = setTimeout(shut, SWITCH_MS)
-    }
+  // Hover (`useFlyout`): the menu's first flyout opens at once; with another row's open, the swap waits `SWITCH_MS`,
+  // so a pointer on its way into a flyout may cross the next row; the pointer back on this row keeps its own.
+  wrap.addEventListener('mouseenter', () => {
+    clearTimeout(state.timer)
+    if (state.shut === null || state.shut === shut) open(false)
+    else state.timer = setTimeout(() => open(false), SWITCH_MS)
   })
   button.addEventListener('mousedown', (e) => e.preventDefault())
   button.addEventListener('click', () => open(false))
@@ -524,7 +556,6 @@ function renderParent(row: MenuRow, menu: HTMLElement, close: () => void, refres
     event.stopPropagation()
     open(true)
   })
-  submenuClosers.set(menu, shut)
   return wrap
 }
 
