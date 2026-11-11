@@ -160,7 +160,7 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
   const live = useMemo(() => layers.filter((l) => !leaving.has(l.id)), [layers, leaving])
   const top = live[live.length - 1]
 
-  /** A note layer's mode flips (item 5): Edit / E / ⌘E to edit; Done / Esc / ⌘E back to reading, the note saved as typed. */
+  /** A note layer's mode flips (item 5): Edit / E to edit; Done / Esc back to reading, the note saved as typed. */
   const toggleEdit = useCallback((id: number) => setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'note' ? { ...l, mode: l.mode === 'read' ? 'edit' : 'read' } : l))), [])
 
   const toTab = useCallback(() => {
@@ -211,11 +211,9 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
       toTab()
       return
     }
-    if ((event.key === 'e' || event.key === 'E') && !event.altKey && top.kind === 'note') {
-      const command = event.metaKey || event.ctrlKey
-      // E on the reading surface edits; ⌘E flips both ways (item 5). In the editor ⌘E is Inline code (`note.inlineCode`), which
-      // takes it first: there Esc and Done go back to reading.
-      if (event.defaultPrevented || (!command && (top.mode !== 'read' || inField(event.target)))) return
+    // E on the reading surface edits (item 5); Esc and Done leave edit. No ⌘E: it is the note's Inline code, and
+    // Yaseen's own ⌘E goes to his emoji app ("i thought leaving edit was esc?").
+    if ((event.key === 'e' || event.key === 'E') && !event.metaKey && !event.ctrlKey && !event.altKey && top.kind === 'note' && top.mode === 'read' && !inField(event.target)) {
       event.preventDefault()
       toggleEdit(top.id)
     }

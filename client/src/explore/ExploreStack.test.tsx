@@ -384,13 +384,17 @@ describe('the explore stack', () => {
     expect(top().querySelector('.explore__title')?.textContent).toBe('beta')
   })
 
-  it('round 1, item 5: Esc in edit goes back to reading (the same layer, the note read again); Done does the same; ⌘E edits from reading; a second Esc closes the layer', async () => {
+  it('round 1, item 5: Esc in edit goes back to reading (the same layer, the note read again); Done does the same; ⌘E is no key of the stack; a second Esc closes the layer', async () => {
     await mount()
     await typeQuery('alp')
     await openResult()
     const layer = top()
     expect(readFile).toHaveBeenCalledTimes(1)
+    // ⌘E does nothing here (Yaseen's ⌘E is his emoji app's; in the editor it is Inline code): E alone edits.
     key(document.activeElement as Element, { key: 'e', metaKey: true })
+    await flush()
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    key(document.activeElement as Element, { key: 'e' })
     await flush()
     expect(top().querySelector('.explore__mode')?.textContent).toBe('Editing')
     expect(top().querySelector('.explore__head .fold-all__trigger')).toBeNull()

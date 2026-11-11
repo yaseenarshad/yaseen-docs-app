@@ -50,7 +50,7 @@ interface ExploreNoteProps {
   createFolder: (sourcePath: string) => string
   linkActions?: LinkActions
   onNotice: (message: string) => void
-  /** Edit (reading) / Done (editing): the layer's mode flips; E, ⌘E and Esc reach it too (`ExploreStack`). */
+  /** Edit (reading) / Done (editing): the layer's mode flips; E and Esc reach it too (`ExploreStack`). */
   onToggleEdit: () => void
   /** The comment stream's order (YAZ-1515), the setting, and its toggle: as every page layer has them. */
   commentsOrder: CommentsOrder
