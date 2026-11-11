@@ -8,7 +8,7 @@ import { SubfoldersSwitch } from './SubfoldersSwitch'
 import { GroupGuideSettings, HeaderRowSettings, TableLookSettings } from './TableLookSettings'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
 import { ChoiceSeg, RowLabel } from './settingRow'
-import { CalendarShowBy } from './CalendarView'
+import { CalendarEndBy, CalendarShowBy } from './CalendarView'
 
 export interface ViewSettingsProps {
   def: ViewSet
@@ -39,7 +39,7 @@ const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large
  * type reads. Rows (a table's look and Row numbers, then Subfolders — moved here from the ⇅ popover by D60), Groups
  * (Group indent, D60, where the view indents its groups; Show empty groups), the type's own section (Board, Calendar,
  * List), then Folder › Default view. Frozen columns and rows live only on the header and row right-clicks, and a
- * calendar's Show by only here, first in Calendar (YAZ-3746 13AD: off the toolbar, over C3 and D11). Each row: an icon and label, then a segmented choice, a switch or a quiet select; a Settings ›
+ * calendar's Start date and End date only here, first in Calendar (YAZ-3746 13AD: off the toolbar, over C3 and D11). Each row: an icon and label, then a segmented choice, a switch or a quiet select; a Settings ›
  * Folder pages default shows the ↺ reset only once this view has its own value (D34). Page-level settings stay in the
  * page cog (D35).
  */
@@ -144,12 +144,19 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
       {view.type === 'calendar' && (
         <>
           <p className="view-menu__label">Calendar</p>
-          {/* Show by (YAZ-3746 13AD): the date column the calendar places notes on; only here, no longer on the toolbar. */}
+          {/* Start date, once Show by (YAZ-3746 13AD, YAZ-4858): the date column the calendar places notes on; only here, not on the toolbar. */}
           {(dateColumns.length > 0 || typeof view.dateProperty === 'string') && (
-            <label className="view-settings-row">
-              <RowLabel icon="showBy">Show by</RowLabel>
-              <CalendarShowBy def={def} view={view} viewIndex={viewIndex} columns={dateColumns} onUpdate={onUpdate} />
-            </label>
+            <>
+              <label className="view-settings-row">
+                <RowLabel icon="showBy">Start date</RowLabel>
+                <CalendarShowBy def={def} view={view} viewIndex={viewIndex} columns={dateColumns} onUpdate={onUpdate} />
+              </label>
+              {/* End date (YAZ-4858): None, or another date column; a card that ends later is a bar over its days. */}
+              <label className="view-settings-row">
+                <RowLabel icon="endDate">End date</RowLabel>
+                <CalendarEndBy def={def} view={view} viewIndex={viewIndex} columns={dateColumns} onUpdate={onUpdate} />
+              </label>
+            </>
           )}
           {/* The toolbar's Month / Week switch as a setting (D59): the same write as `ViewsPane`'s `onScale`. */}
           <div className="view-settings-row">

@@ -17,10 +17,10 @@ vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi
 // The real date rules, with `dateColumns` counted (YAZ-4544).
 vi.mock('../calendar', async (load) => {
   const real = await load<typeof import('../calendar')>()
-  return { ...real, dateColumns: vi.fn(real.dateColumns) }
+  return { ...real, dateColumns: vi.fn(real.dateColumns), bucketByDay: vi.fn(real.bucketByDay) }
 })
-import { dateColumns } from '../calendar'
-import { writeProperty } from '../writeProperty'
+import { bucketByDay, dateColumns } from '../calendar'
+import { writeProperties, writeProperty } from '../writeProperty'
 
 const write = vi.mocked(writeProperty)
 
@@ -257,10 +257,10 @@ describe('calendar "+" on a day (YAZ-4540 S10) and "Show by"', () => {
   it('"Show by" lists the date columns and saves the choice; it sits in the view settings, not on the toolbar (YAZ-3746 13AD)', () => {
     const records = [...RECORDS, rec('Started', { start: '2026-12-21', due: '2026-12-01' })]
     const { el, yaml } = mount(CALENDAR, { records })
-    expect(el.querySelector('.view-toolbar [aria-label="Show by"]')).toBeNull()
+    expect(el.querySelector('.view-toolbar [aria-label="Start date"]')).toBeNull()
     click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // the View tab (YAZ-4607 D59)
-    const select = q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Show by"]')
+    const select = q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Start date"]')
     expect([...select.options].map((o) => o.value)).toEqual(['note.due', 'note.start'])
     act(() => {
       select.value = 'note.start'
@@ -287,7 +287,7 @@ describe('calendar "+" on a day (YAZ-4540 S10) and "Show by"', () => {
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // the View tab (YAZ-4607 D59)
     const pop = q(el, '.view-popover--properties')
     expect([...pop.querySelectorAll('.view-menu__label')].map((l) => l.textContent)).toContain('Calendar')
-    expect(q<HTMLSelectElement>(pop, '[aria-label="Show by"]').value).toBe('note.due')
+    expect(q<HTMLSelectElement>(pop, '[aria-label="Start date"]').value).toBe('note.due')
   })
 })
 
@@ -343,11 +343,11 @@ describe('"Show by" works out the date columns once (YAZ-4544, finding 9)', () =
     const { el } = mount(CALENDAR)
     click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // the View tab (YAZ-4607 D59)
-    expect(document.querySelectorAll('[aria-label="Show by"]')).toHaveLength(1)
+    expect(document.querySelectorAll('[aria-label="Start date"]')).toHaveLength(1)
     vi.mocked(dateColumns).mockClear()
     // New records (an index refetch): one run, not one for each "Show by" too.
     act(() => root?.render(<ViewsPane parsed={parseViews(CALENDAR)} onChange={vi.fn()} root="/vault" folderPath="/vault/Tasks" records={[...RECORDS]} folder={testFolderHost()} onOpenFile={vi.fn()} />))
-    expect(document.querySelectorAll('[aria-label="Show by"]')).toHaveLength(1)
+    expect(document.querySelectorAll('[aria-label="Start date"]')).toHaveLength(1)
     expect(vi.mocked(dateColumns)).toHaveBeenCalledTimes(1)
   })
 })
@@ -758,5 +758,263 @@ describe('"Cross out when" (YAZ-4864)', () => {
     click(q(el, '.view-toolbar [aria-label="Filter"]'))
     expect(q(el, '.view-popover--filter').textContent).toContain('No filters')
     expect(yaml()).toContain('crossOut')
+  })
+})
+
+describe('cards over several days (YAZ-4858)', () => {
+  const writeMany = vi.mocked(writeProperties)
+  beforeEach(() => {
+    writeMany.mockReset()
+    writeMany.mockResolvedValue({ mtime: 1 })
+  })
+  const SPAN = `views:\n  - type: calendar\n    name: C\n    endDateProperty: note.end\n`
+  const records = [
+    ...RECORDS,
+    rec('Trip', { due: '2026-12-08 09:00', end: '2026-12-10' }),
+    rec('Weekend', { due: '2026-12-11', end: '2026-12-14' }),
+    rec('Ends only', { end: '2026-12-17' }),
+    rec('One day', { due: '2026-12-22' }),
+  ]
+  const barsOf = (el: ParentNode, title: string) => [...el.querySelectorAll<HTMLElement>('.view-cal__bar')].filter((b) => b.querySelector('.view-cal__card-name')?.textContent === title)
+  const mouse = (target: EventTarget, type: string, init: MouseEventInit = {}) => {
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init })))
+    draw()
+  }
+  /** An edge drag: the press on the edge, a move onto each day in turn (the hit test points at that day), then the release. */
+  const stretch = (card: HTMLElement, edge: 'start' | 'end', ...to: HTMLElement[]) => {
+    const at = vi.spyOn(document, 'elementFromPoint')
+    mouse(q(card, `.view-cal__edge--${edge}`), 'mousedown')
+    for (const target of to) {
+      at.mockReturnValue(target)
+      mouse(window, 'mousemove', { clientX: 1, clientY: 1 })
+    }
+    return {
+      release: () => {
+        mouse(window, 'mouseup')
+        at.mockRestore()
+      },
+      escape: () => {
+        act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+        draw()
+        at.mockRestore()
+      },
+    }
+  }
+
+  it('a card that ends after its start is one bar over its days, in the week row, not in a day', () => {
+    const { el } = mount(SPAN, { records })
+    const [bar] = barsOf(el, 'Trip')
+    expect(bar.dataset.barDays).toBe('2026-12-08 2026-12-09 2026-12-10')
+    // Sunday first: Tuesday is the 3rd column; the bar's lane is the first row after the day heads.
+    expect(bar.style.gridColumn).toBe('3 / span 3')
+    expect(bar.style.gridRow).toBe('2')
+    expect(titlesIn(day(el, '2026-12-08'))).toEqual([])
+    expect(q(bar, '.view-cal__time').textContent).toBe('09:00')
+  })
+
+  it('at the week\'s edge the bar goes on in the next row, with cut ends that have no edge', () => {
+    const { el } = mount(SPAN, { records })
+    const pieces = barsOf(el, 'Weekend')
+    expect(pieces.map((b) => b.dataset.barDays)).toEqual(['2026-12-11 2026-12-12', '2026-12-13 2026-12-14'])
+    expect(pieces[0].classList.contains('view-cal__bar--cut-end')).toBe(true)
+    expect(pieces[0].querySelector('.view-cal__edge--end')).toBeNull()
+    expect(pieces[0].querySelector('.view-cal__edge--start')).not.toBeNull()
+    expect(pieces[1].classList.contains('view-cal__bar--cut-start')).toBe(true)
+    expect(pieces[1].querySelector('.view-cal__edge--start')).toBeNull()
+  })
+
+  it('a note with an end and no start goes on its end day (item 5); with no End date chosen, every card is on its start', () => {
+    const { el } = mount(SPAN, { records })
+    expect(titlesIn(day(el, '2026-12-17'))).toEqual(['Ends only'])
+    act(() => root?.unmount())
+    container?.remove()
+    const plain = mount(CALENDAR, { records })
+    expect(plain.el.querySelector('.view-cal__bar')).toBeNull()
+    expect(titlesIn(day(plain.el, '2026-12-08'))).toEqual(['Trip'])
+    expect(titlesIn(q(plain.el, '.view-cal__tray'))).toContain('Ends only')
+  })
+
+  it('Month: the bars on a day count in its 3 cards, and "+N more" counts the rest; Week shows them all', () => {
+    const many = [...RECORDS, ...['W', 'X', 'Y', 'Z'].map((n) => rec(`Span ${n}`, { due: '2026-12-14', end: '2026-12-16' }))]
+    const { el } = mount(SPAN, { records: many })
+    // Four bars over Dec 14–16 in four lanes: Month shows three, so Dec 15 shows no one-day card and "+6 more" (5 cards, 1 bar).
+    expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(3)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual([])
+    expect(q(day(el, '2026-12-15'), '.view-cal__more').textContent).toBe('+6 more')
+    click(q(day(el, '2026-12-15'), '.view-cal__more'))
+    expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(4)
+    expect(titlesIn(day(el, '2026-12-15'))).toHaveLength(5)
+    expect(q(day(el, '2026-12-15'), '.view-cal__more').textContent).toBe('Show less')
+    // One bar on a day leaves room for two cards.
+    act(() => root?.unmount())
+    container?.remove()
+    const one = mount(SPAN, { records: [...RECORDS, rec('Span', { due: '2026-12-14', end: '2026-12-16' })] })
+    expect(titlesIn(day(one.el, '2026-12-15'))).toHaveLength(2)
+    expect(q(day(one.el, '2026-12-15'), '.view-cal__more').textContent).toBe('+3 more')
+    act(() => root?.unmount())
+    container?.remove()
+    const week = mount(`${SPAN}    calendarScale: week\n`, { records: many })
+    click(q(week.el, '[aria-label="Next week"]'))
+    expect(week.el.querySelectorAll('.view-cal__bar')).toHaveLength(4)
+    expect(titlesIn(day(week.el, '2026-12-15'))).toHaveLength(5)
+  })
+
+  it('a drag of the whole bar moves both dates by the same days, in one write, each keeping its time', () => {
+    const onNotice = vi.fn()
+    const { el } = mount(SPAN, { records, folder: testFolderHost({ onNotice }) })
+    // Taken on its first day (jsdom has no layout), dropped two days later.
+    drag(barsOf(el, 'Trip')[0], day(el, '2026-12-10'))
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/Trip.md', [
+      { key: 'due', value: '2026-12-10 09:00', prevRaw: '2026-12-08 09:00' },
+      { key: 'end', value: '2026-12-12', prevRaw: '2026-12-10' },
+    ])
+    expect(barsOf(el, 'Trip')[0].dataset.barDays).toBe('2026-12-10 2026-12-11 2026-12-12')
+  })
+
+  it('a drop on "No date" clears both dates; a one-day card with no end moves as before', () => {
+    const { el } = mount(SPAN, { records })
+    drag(barsOf(el, 'Trip')[0], q(el, '.view-cal__tray'))
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/Trip.md', [
+      { key: 'due', value: undefined, prevRaw: '2026-12-08 09:00' },
+      { key: 'end', value: undefined, prevRaw: '2026-12-10' },
+    ])
+    drag(cardOf(el, 'One day'), day(el, '2026-12-23'))
+    expect(write).toHaveBeenLastCalledWith('/vault/One day.md', 'due', '2026-12-23')
+  })
+
+  it('the right edge stretches a one-day card a day per step; the release writes once, with the move\'s toast', () => {
+    const onNotice = vi.fn()
+    const { el } = mount(SPAN, { records, folder: testFolderHost({ onNotice }) })
+    const s = stretch(cardOf(el, 'One day'), 'end', day(el, '2026-12-23'), day(el, '2026-12-24'))
+    // The card shows its new days while the pointer goes; nothing is written yet.
+    expect(barsOf(el, 'One day')[0].dataset.barDays).toBe('2026-12-22 2026-12-23 2026-12-24')
+    expect(write).not.toHaveBeenCalled()
+    s.release()
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/One day.md', 'end', '2026-12-24')
+  })
+
+  it('the left edge moves the start and keeps its time; on a one-day card the old day becomes the end', () => {
+    const { el } = mount(SPAN, { records })
+    stretch(barsOf(el, 'Trip')[0], 'start', day(el, '2026-12-06')).release()
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Trip.md', 'due', '2026-12-06 09:00')
+    stretch(cardOf(el, 'One day'), 'start', day(el, '2026-12-20')).release()
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/One day.md', [
+      { key: 'due', value: '2026-12-20', prevRaw: '2026-12-22' },
+      { key: 'end', value: '2026-12-22', prevRaw: undefined },
+    ])
+  })
+
+  it('the edges stop at each other: the end is never before the start', () => {
+    const { el } = mount(SPAN, { records })
+    stretch(barsOf(el, 'Trip')[0], 'end', day(el, '2026-12-05')).release()
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Trip.md', 'end', '2026-12-08')
+  })
+
+  it('Escape stops an edge drag and writes nothing; the press never starts the card\'s own drag', () => {
+    const { el } = mount(SPAN, { records })
+    const edge = q(cardOf(el, 'One day'), '.view-cal__edge--end')
+    const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })
+    const at = vi.spyOn(document, 'elementFromPoint').mockReturnValue(day(el, '2026-12-25'))
+    act(() => void edge.dispatchEvent(press))
+    expect(press.defaultPrevented).toBe(true)
+    mouse(window, 'mousemove', { clientX: 1, clientY: 1 })
+    expect(barsOf(el, 'One day')).toHaveLength(1)
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    draw()
+    at.mockRestore()
+    mouse(window, 'mouseup')
+    expect(write).not.toHaveBeenCalled()
+    expect(writeMany).not.toHaveBeenCalled()
+    expect(titlesIn(day(el, '2026-12-22'))).toEqual(['One day'])
+  })
+
+  it('a read-only note has no edges', () => {
+    const { el } = mount(SPAN, { records, readOnly: new Set(['/vault/Trip.md']) })
+    expect(barsOf(el, 'Trip')[0].querySelector('.view-cal__edge')).toBeNull()
+    expect(cardOf(el, 'Bare').querySelector('.view-cal__edge')).not.toBeNull()
+  })
+
+  it('no End date column: an edge press shows the message, and "Choose End date" picks one; nothing is written before', () => {
+    const withStart = [...records, rec('Started', { start: '2026-12-21' })]
+    const { el, yaml } = mount(CALENDAR, { records: withStart })
+    mouse(q(cardOf(el, 'Bare'), '.view-cal__edge--end'), 'mousedown')
+    const ask = q<HTMLElement>(document, '.view-cal__end-ask')
+    expect(ask.textContent).toContain('To stretch a card over days, choose an End date column.')
+    expect(write).not.toHaveBeenCalled()
+    click(byText(ask, 'button', 'Choose End date'))
+    const select = q<HTMLSelectElement>(document, '.view-cal__end-ask [aria-label="End date"]')
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'note.end', 'note.start'])
+    act(() => {
+      select.value = 'note.start'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    draw()
+    expect(yaml()).toContain('endDateProperty: note.start')
+    expect(document.querySelector('.view-cal__end-ask')).toBeNull()
+  })
+
+  it('no other date column: "Add a date column" makes one only on that click, and Escape closes the message', () => {
+    const setColumns = vi.fn()
+    const { el } = mount(CALENDAR, { folder: testFolderHost({ setColumns }) })
+    mouse(q(cardOf(el, 'Bare'), '.view-cal__edge--start'), 'mousedown')
+    expect(q(document, '.view-cal__end-ask').textContent).not.toContain('Choose End date')
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    draw()
+    expect(document.querySelector('.view-cal__end-ask')).toBeNull()
+    expect(setColumns).not.toHaveBeenCalled()
+    mouse(q(cardOf(el, 'Bare'), '.view-cal__edge--start'), 'mousedown')
+    click(byText(q(document, '.view-cal__end-ask'), 'button', 'Add a date column'))
+    expect(setColumns).toHaveBeenCalledExactlyOnceWith({ 'End date': { kind: 'date' } }, [expect.objectContaining({ type: 'calendar', endDateProperty: 'note.End date' })])
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('the View tab: Start date, then End date with None first; a choice writes endDateProperty and None deletes it', () => {
+    const withStart = [...records, rec('Started', { start: '2026-12-21' })]
+    const { el, yaml } = mount(CALENDAR, { records: withStart })
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+    const end = q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="End date"]')
+    expect([...end.options].map((o) => o.textContent)).toEqual(['None', 'End', 'Start'])
+    const choose = (value: string) => {
+      act(() => {
+        end.value = value
+        end.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      draw()
+    }
+    choose('note.end')
+    expect(yaml()).toContain('endDateProperty: note.end')
+    expect(barsOf(el, 'Trip')).toHaveLength(1)
+    choose('')
+    expect(yaml()).not.toContain('endDateProperty')
+    expect(el.querySelector('.view-cal__bar')).toBeNull()
+  })
+
+  it('counts: a dragover buckets nothing again; an edge drag buckets once per day it reaches, not per mouse move', () => {
+    // One host for every draw, as the app's: a new host each draw would be a new folder, and new rows.
+    const { el } = mount(SPAN, { records, folder: testFolderHost() })
+    const bucket = vi.mocked(bucketByDay)
+    bucket.mockClear()
+    fire(cardOf(el, 'One day'), 'dragstart')
+    for (const key of ['2026-12-09', '2026-12-10', '2026-12-11']) fire(day(el, key), 'dragover')
+    fire(cardOf(el, 'One day'), 'dragend')
+    expect(bucket).not.toHaveBeenCalled()
+    const at = vi.spyOn(document, 'elementFromPoint')
+    mouse(q(cardOf(el, 'One day'), '.view-cal__edge--end'), 'mousedown')
+    const start = bucket.mock.calls.length
+    for (const key of ['2026-12-23', '2026-12-23', '2026-12-23', '2026-12-24', '2026-12-24']) {
+      at.mockReturnValue(day(el, key))
+      mouse(window, 'mousemove', { clientX: 1, clientY: 1 })
+    }
+    expect(bucket.mock.calls.length - start).toBe(2)
+    mouse(window, 'mouseup')
+    at.mockRestore()
+  })
+
+  it('hide weekends: a bar over Saturday and Sunday alone is a one-day card on the Friday, marked Sat', () => {
+    const { el } = mount(`${SPAN}    hideWeekends: true\n`, { records: [...RECORDS, rec('Away', { due: '2026-12-12', end: '2026-12-13' })] })
+    expect(el.querySelector('.view-cal__bar')).toBeNull()
+    expect(titlesIn(day(el, '2026-12-11'))).toContain('Away')
+    expect(cardOf(el, 'Away').querySelector('.view-cal__weekend')?.textContent).toBe('Sat')
   })
 })

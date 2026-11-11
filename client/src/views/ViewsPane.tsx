@@ -22,9 +22,11 @@ import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CalendarView } from './view/CalendarView'
-import { type DayKey, calendarDateKey, dateColumns, dayLabel, hideWeekendsDefault, hidesWeekends, movedDate } from './calendar'
+import { type DayKey, calendarDateKey, calendarEndKey, dateColumns, dayLabel, dayOf, hideWeekendsDefault, hidesWeekends, movedDate, spanLabel } from './calendar'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
+import { allPropertyKeys } from './view/properties'
+import { declarationForKind } from './view/declarationForKind'
 import type { CardNoteDoors } from './view/rowMenuItems'
 import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
 import { ListView } from './view/ListView'
@@ -774,6 +776,37 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     const prevRaw = records.find((r) => r.path === path)?.properties[dateKey]
     moveValues(path, [{ key: dateKey, value: day === null ? undefined : movedDate(prevRaw, day), prevRaw }], day === null ? 'No date' : dayLabel(day))
   }
+  // The End date (YAZ-4858): a card's start and end in ONE move (`PendingMove` is a list), each keeping its time; a date
+  // left out stays, `null` clears it. The toast names the days the card is on after it.
+  const endKey = view.type === 'calendar' ? calendarEndKey(view, dateKey, folder.settings.columns) : null
+  const onMoveSpan = (path: string, next: { start?: DayKey | null; end?: DayKey | null }) => {
+    if (dateKey === null || readOnly.has(path)) return
+    const props = records.find((r) => r.path === path)?.properties
+    const writes: PendingMove = []
+    const add = (key: string | null, day: DayKey | null | undefined) => {
+      if (key === null || day === undefined) return
+      const prevRaw = props?.[key]
+      writes.push({ key, value: day === null ? undefined : movedDate(prevRaw, day), prevRaw })
+    }
+    add(dateKey, next.start)
+    add(endKey, next.end)
+    if (writes.length === 0) return
+    const start = next.start !== undefined ? next.start : dayOf(props?.[dateKey])
+    const end = next.end !== undefined ? next.end : endKey === null ? null : dayOf(props?.[endKey])
+    const on = start ?? end
+    moveValues(path, writes, on === null ? 'No date' : spanLabel(on, end !== null && end > on ? end : on))
+  }
+  // "Add a date column" (YAZ-4858 item 4): a Date column named "End date" ("End date 2" when taken), chosen as this
+  // view's End date, in ONE settings write. Nothing is written into a note.
+  const addEndColumn = () => {
+    const taken = new Set(allPropertyKeys(def, view, records, folder.settings.columns).map((k) => canonicalKey(k).toLowerCase()))
+    let name = 'End date'
+    for (let n = 2; taken.has(`note.${name}`.toLowerCase()); n++) name = `End date ${n}`
+    folder.setColumns(
+      { ...folder.settings.columns, [name]: declarationForKind(undefined, 'date') },
+      def.views.map((v, i) => (i === index ? { ...v, endDateProperty: `note.${name}` } : v)),
+    )
+  }
 
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
   // view — filter-derived seed, plus the group's raw value when created inside a group. It is born
@@ -1113,6 +1146,15 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           resolve={resolve}
           rows={rows}
           dateKey={dateKey}
+          endKey={endKey}
+          dateColumns={calendarColumns}
+          onMoveSpan={onMoveSpan}
+          onChooseEnd={(column) =>
+            update((d) => {
+              d.views[index].endDateProperty = column
+            })
+          }
+          onAddEndColumn={addEndColumn}
           onOpenFile={openRow}
           onOpenFileRight={openRowRight}
           onOpenFileBackground={openRowBackground}

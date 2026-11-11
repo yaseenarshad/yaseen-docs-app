@@ -82,8 +82,10 @@ export interface ViewDef {
   propertySeparator?: string
   /** Board card styling (YAZ-1206, reshaped by YAZ-1217): per canonical property key — bold/underline the value's row, hide its label, or `join` it onto the row being built instead of starting a new one. */
   cardStyle?: Record<string, { bold?: boolean; underline?: boolean; hideLabel?: boolean; join?: boolean }>
-  /** A calendar's "Show by" (YAZ-4540 D4): the canonical date column it places notes on. Absent = the first date column. */
+  /** A calendar's "Start date", once "Show by" (YAZ-4540 D4): the canonical date column it places notes on. Absent = the first date column. */
   dateProperty?: string
+  /** A calendar's "End date" (YAZ-4858): the canonical date column a card ends on; a later end makes it a bar over its days. Absent = none. */
+  endDateProperty?: string
   /** A calendar's scale (YAZ-4558 D22): `week` = 7 tall day columns. Absent = month. */
   calendarScale?: 'month' | 'week'
   /** A calendar's card titles (YAZ-4558 D23): `wrap` = the full title on more lines. Absent = clip, one line with "…". */

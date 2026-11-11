@@ -135,6 +135,12 @@ describe('the pure pruners', () => {
     expect(pruneColumnFromViews([calendar], 'owner')[0]).toBe(calendar)
   })
 
+  it('prunes a calendar\'s End date (YAZ-4858) as its Start date; the other stays', () => {
+    const calendar: ViewDef = { type: 'calendar', name: 'C', dateProperty: 'note.due', endDateProperty: 'note.end' }
+    expect(pruneColumnFromViews([calendar], 'end')[0]).toEqual({ type: 'calendar', name: 'C', dateProperty: 'note.due' })
+    expect(pruneColumnFromViews([calendar], 'due')[0]).toEqual({ type: 'calendar', name: 'C', endDateProperty: 'note.end' })
+  })
+
   it('prunes a cards `image` that names the key, and leaves one that names another', () => {
     expect(pruneColumnFromViews([{ type: 'cards', name: 'C', image: 'note.status' }], 'status')[0]).toEqual({ type: 'cards', name: 'C' })
     const other: ViewDef = { type: 'cards', name: 'C', image: 'note.cover' }
