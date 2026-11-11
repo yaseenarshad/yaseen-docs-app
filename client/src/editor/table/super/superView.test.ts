@@ -193,7 +193,19 @@ describe('YAZ-4876 S5: edit in a view, header rename, find', () => {
     merged.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     await wait(0)
     expect(viewRoot(view).querySelector('.super-view__edit')).toBeNull()
-    expect(viewRoot(view).querySelector('.table-super-view__tip')!.textContent).toBe('Edit merged cells, cell notes and cell lists in Table.')
+    expect(viewRoot(view).querySelector('.table-super-view__tip')!.textContent).toBe('Edit styled text, merged cells, cell notes and cell lists in Table.')
     expect(getMarkdownForSave(crepe)).toBe(saved)
+  })
+
+  it('item 5: a cell with styled text (part bold) is edited in "Table": the view never drops its bold', async () => {
+    const styled = TABLE.replace('| Wall | Middle | 12 |', '| **Big** wall | Middle | 12 |')
+    const { view, crepe, saved } = await showView(`${styled}\n\n<!-- table: super, view All -->\n`, 'All')
+    const cell = [...viewRoot(view).querySelectorAll('td')].find((td) => td.textContent === 'Big wall')!
+    cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await wait(0)
+    expect(viewRoot(view).querySelector('.super-view__edit')).toBeNull()
+    expect(viewRoot(view).querySelector('.table-super-view__tip')!.textContent).toBe('Edit styled text, merged cells, cell notes and cell lists in Table.')
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+    expect(saved).toContain('**Big** wall')
   })
 })

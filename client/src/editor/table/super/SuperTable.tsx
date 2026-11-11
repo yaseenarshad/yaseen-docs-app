@@ -11,7 +11,7 @@
  *   plain or a thread to the row under the pointer (`groupSpans`). A row dragged onto another group gets that group's
  *   values in its group cells: one transaction. Table folds act in "Table" only (item 19): a view shows every row.
  * - EDIT (S5 item 5): a double-click on a cell edits its first line in a small box; Enter or leaving the box writes it,
- *   one undo step. A merged cell, a cell note, or a cell that starts with a list is edited in "Table" (a tip says so).
+ *   one undo step. A merged cell, a cell note, a list or styled text (bold, a link…) is edited in "Table" (a tip says so).
  * - COPY (item 21): ⌘C on rows of a view copies them in the view's order, a Markdown table as text and a `<table>` as HTML.
  * - FIND (item 25): ⌘F's current match in this table's row shows that row here (`found`), marked, its groups open.
  * - ABOVE 500 LINES only the lines on screen mount, padded by spacer rows (the windowing idea of the folder table).
@@ -332,7 +332,7 @@ export function SuperTable({ editor, getPos, table, active, found }: SuperTableP
       const text = group.key === null || source === null ? '' : (data.cells[source]?.[column]?.text ?? '')
       if (cell.text === text) continue
       if (!cell.plain || cell.merged || cell.note) {
-        setTip('That row’s group cell is merged, holds a cell note or a list: move it in Table.')
+        setTip('That row’s group cell is merged, styled, or holds a cell note or a list: move it in Table.')
         return
       }
       writes.push([cell.pos, text])
@@ -348,7 +348,7 @@ export function SuperTable({ editor, getPos, table, active, found }: SuperTableP
     const cell = data.cells[row]?.[col]
     if (!editable || cell === undefined) return
     if (cell.merged || cell.note || !cell.plain) {
-      setTip('Edit merged cells, cell notes and cell lists in Table.')
+      setTip('Edit styled text, merged cells, cell notes and cell lists in Table.')
       return
     }
     setTip(null)

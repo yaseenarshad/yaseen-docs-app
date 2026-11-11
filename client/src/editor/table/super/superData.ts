@@ -37,7 +37,7 @@ export interface ViewCell {
   merged: boolean
   /** It holds a cell note's mark. */
   note: boolean
-  /** Its first block is a paragraph: a view can edit it (S5). */
+  /** One paragraph of plain text: a view can edit it (S5); styled text, lists and notes are edited in "Table". */
   plain: boolean
 }
 
@@ -105,7 +105,7 @@ export function tableData(table: ProseNode): TableData {
       const text = firstLine(cell)
       const span = Math.min((cell.attrs.colspan as number) ?? 1, map.width - c)
       const merged = span > 1 || (cell.attrs.rowspan as number) > 1
-      row.push({ text, fill: (cell.attrs.fill as string | null) ?? null, color: (cell.attrs.color as string | null) ?? null, span, pos, merged, note: hasNoteMark(cell), plain: cell.firstChild?.type.name === 'paragraph' })
+      row.push({ text, fill: (cell.attrs.fill as string | null) ?? null, color: (cell.attrs.color as string | null) ?? null, span, pos, merged, note: hasNoteMark(cell), plain: isPlainCell(cell) })
       properties[keys[c]!] = typedValue(text)
     }
     cells.push(row)
@@ -223,4 +223,19 @@ export function groupsHolding(result: ViewResult, row: number): Set<string> {
 export function markdownTable(keys: readonly string[], rows: readonly string[][]): string {
   const line = (cells: readonly string[]) => `| ${cells.map((c) => c.replace(/\|/g, '\\|')).join(' | ')} |`
   return [line(keys), line(keys.map(() => '---')), ...rows.map(line)].join('\n')
+}
+
+/**
+ * A cell a view may edit (YAZ-4876): one paragraph of plain text — no bold, link, code or other mark, no break or other
+ * inline node. A view's edit writes the text alone, so anything richer is edited in "Table" (the tip says so); else a
+ * part-bold cell would lose its bold.
+ */
+function isPlainCell(cell: ProseNode): boolean {
+  const first = cell.firstChild
+  if (cell.childCount !== 1 || first === null || first.type.name !== 'paragraph') return false
+  let plain = true
+  first.forEach((child) => {
+    if (!child.isText || child.marks.length > 0) plain = false
+  })
+  return plain
 }
