@@ -139,11 +139,11 @@ describe('auto-fit width on a double-click of the resize edge (YAZ-4590 S20)', (
     expect(def().views[0].columnSize).toEqual({ 'note.priority': 230 + pads })
   })
 
-  it('the header label counts too, and the width is clamped to 60–600', () => {
+  it('the header label counts too, and the width is clamped to 40–600 (YAZ-4819: 40px, was 60px)', () => {
     let { el, def } = mount(table())
     layout(el, 2)
     doubleClick(el)
-    expect(def().views[0].columnSize).toEqual({ 'note.priority': 60 }) // "Priority" is 56px: under the floor
+    expect(def().views[0].columnSize).toEqual({ 'note.priority': 56 }) // "Priority" is 56px: over the 40px floor, so it fits the label
     act(() => root?.unmount())
     container?.remove()
     ;({ el, def } = mount(table()))

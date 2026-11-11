@@ -151,15 +151,16 @@ export interface TableViewProps {
 }
 
 const DEFAULT_WIDTH = 150
-const MIN_WIDTH = 60
+/** The narrowest a text column goes (YAZ-4819: 40px, was 60px); a header name may clip there. */
+const MIN_WIDTH = 40
 /** Auto-fit's ceiling (YAZ-4590 S20): a long value does not make a column wider than this. */
 const MAX_FIT_WIDTH = 600
 /** The Name cell's room for the title that its group indent leaves (YAZ-4544): 60px of title and the cell's two 8px paddings. */
 const NAME_TITLE_ROOM = 60 + 2 * 8
 /**
  * The first column's room for its value beside the DEEPEST group indent (YAZ-3746 13AL): 120px and the two paddings.
- * A grouped table's first column is never narrower than every level's indent plus this, so a deep row sits under its
- * group and its value still reads; the user's own width wins whenever it is wider.
+ * A grouped table's first column STARTS at every level's indent plus this, so a deep row sits under its group and its
+ * value still reads. A width the user set always wins (YAZ-4819); `nameIndent` shrinks the indent to fit it.
  */
 const INDENT_VALUE_ROOM = 120 + 2 * 8
 /** The Fill flyouts (YAZ-3746 13AQ): whole columns fill a cell or the column; one cell or a range, all three. */
@@ -437,15 +438,16 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const firstText = typings.findIndex((t) => t?.assigned !== 'image')
   const indentCol = firstText < 0 ? 0 : firstText
   const indentFloor = groupLevelCount === 0 ? 0 : groupIndentOf(view) * groupLevelCount + INDENT_VALUE_ROOM
-  /** The narrowest a column goes: an Image column down to its picture and the two paddings (YAZ-4802 demo), others 60px. */
+  /** The narrowest a column goes: an Image column down to its picture and the two paddings (YAZ-4802 demo), others 40px. */
   const minWidthOf = (c: number): number => {
     if (typings[c]?.assigned !== 'image') return MIN_WIDTH
     const bare = bares[c]
     return (bare === null ? IMAGE_SIZE_DEFAULT : (settings.columns[bare]?.size ?? IMAGE_SIZE_DEFAULT)) + 2 * 8
   }
   const widthOf = (key: string) => {
-    const width = drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH
-    return key === keys[indentCol] ? Math.max(width, indentFloor) : width
+    const own = drag?.key === key ? drag.width : view.columnSize?.[key]
+    if (own !== undefined) return own
+    return key === keys[indentCol] ? Math.max(DEFAULT_WIDTH, indentFloor) : DEFAULT_WIDTH
   }
   const frozen = frozenColumnCount(view.frozenColumns, keys.length)
   const sorts = view.sort ?? []
@@ -775,7 +777,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
 
   /**
    * Auto-fit (YAZ-4590 S20): a double-click on the resize edge sets the column's width to its widest shown content,
-   * the header and the MOUNTED rows' cells, measured once here (no observer), clamped to 60–600. ONE write.
+   * the header and the MOUNTED rows' cells, measured once here (no observer), clamped to 40–600 (YAZ-4819). ONE write.
    */
   const autoFit = (key: string, c: number) => (e: ReactMouseEvent<HTMLElement>) => {
     const th = e.currentTarget.closest('th')
@@ -1563,7 +1565,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // THE COLUMN DRAG (YAZ-4606 D58): the tab bar's live gap, across the table. The grabbed column leaves it, and the other
   // columns part, each moving as one: its header, its mounted body cells and its summary cell.
   const live = useLiveGapReorder<HTMLTableRowElement>({ axis: 'x', keys, onMove: moveColumn, slotAt: columnSlot, roomOf: (c) => widthOf(keys[c]), scroller: () => wrapRef.current, cells: columnCells, keyOfCell: columnOfCell })
-  /** The property headers' drag wiring (YAZ-1548); the `#` gutter gets none — not a source, not a target. */
+  /**
+   * The property headers' drag wiring (YAZ-1548): each header is a source; the `#` gutter is none. The drop is the whole
+   * table's (`.view-table-wrap`, YAZ-4819), as the slot is read from the pointer's x alone.
+   */
   const headerDrag = (index: number) => ({
     draggable: true,
     onDragStart: (e: ReactDragEvent<HTMLTableCellElement>) => {
@@ -1578,9 +1583,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
       live.start(e, index)
     },
-    onDragEnter: live.over,
-    onDragOver: live.over,
-    onDrop: live.drop,
     onDragEnd: live.end,
   })
   // Each column's slide and the grabbed column's lift, as ONE rule per moved column for this table (YAZ-4606): a slot
@@ -1943,6 +1945,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         data-resizing={drag !== null ? '' : undefined}
         style={slack > 0 ? ({ '--view-table-slack': `${slack}px` } as CSSProperties) : undefined}
         onScroll={windowed ? (e) => setPast(scrolledPast(e.currentTarget)) : undefined}
+        // The column drop (YAZ-4819): the whole table takes it. The parted columns leave a gap under the pointer with no
+        // header in it, so a drop on the headers alone was lost. With no column drag these do nothing (`live.over` is false).
+        onDragEnter={live.over}
+        onDragOver={live.over}
+        onDrop={live.drop}
         // No page text menu (Cut / Copy / Paste) anywhere in the table (YAZ-3746 13AH): a right-click no menu of the
         // table takes (a gap, the scroll room) opens nothing. A cell being edited keeps it, for its text.
         onContextMenu={(e) => {

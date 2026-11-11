@@ -649,7 +649,7 @@ describe('column resize', () => {
     mouse(handle, 'mousedown', 200)
     mouse(window, 'mousemove', 0)
     mouse(window, 'mouseup', 0)
-    expect(def().views[0].columnSize).toEqual({ 'note.priority': 60 })
+    expect(def().views[0].columnSize).toEqual({ 'note.priority': 40 }) // YAZ-4819: 40px, was 60px
   })
 
   it.each([0.5, 1, 1.25, 2])('turns a pointer drag into the same logical width at %× document zoom', (zoom) => {

@@ -195,7 +195,7 @@ describe('picking', () => {
     expect(pressed).toEqual([['false', ''], ['false', ''], ['true', '✓']])
   })
 
-  it('S78: "Line style" offers Solid (default), Dotted, Dashed with a sample each; a pick applies, closes, and one ⌘Z undoes it', async () => {
+  it('S78: "Line style" offers Solid (default), Dotted, Dashed with a sample each; a pick applies, keeps the menu open (YAZ-4812), and one ⌘Z undoes it', async () => {
     const { crepe, view, item } = await openOnLine('a\n\n***\n\nb\n')
     const choices = presetButtons(view, 2)
     expect(choices.map((b) => b.querySelector('.block-menu-picker__sample')?.className)).toEqual([
@@ -206,9 +206,11 @@ describe('picking', () => {
     expect(choices.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false'])
     expect(defaultButton(view, 2).lastElementChild?.textContent).toBe('✓')
     choices[2].click()
-    expect(popupOf(view)).toBeNull()
+    expect(popupOf(view)).not.toBeNull()
     expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: style dashed -->\n\nb\n')
-    rightClick(item)
+    // The menu is drawn again in place, the style panel still open, the new choice ticked.
+    expect(valueOf(view, 2).getAttribute('aria-expanded')).toBe('true')
+    expect(valueOf(view, 2).textContent).toContain('Dashed')
     expect(presetButtons(view, 2).map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true'])
     presetButtons(view, 2)[1].click()
     expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: style dotted -->\n\nb\n')
@@ -223,13 +225,16 @@ describe('picking', () => {
     expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: style solid -->\n\nb\n')
   })
 
-  it('S44: Enter applies a typed value and closes; the unit is optional', async () => {
+  it('S44: Enter applies a typed value and keeps the menu open (YAZ-4812); the unit is optional', async () => {
     const { crepe, view, item } = await openOnLine('a\n\n***\n\nb\n')
     type(box(view, 0), '80')
     press(box(view, 0), 'Enter')
-    expect(popupOf(view)).toBeNull()
+    expect(popupOf(view)).not.toBeNull()
     expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 80% -->\n\nb\n')
-    expect(view.dom.contains(document.activeElement)).toBe(true)
+    // The darkness panel is open again, its box focused with the new value, ready for the next number.
+    expect(valueOf(view, 0).getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement).toBe(box(view, 0))
+    expect(box(view, 0).value).toBe('80%')
     rightClick(item)
     type(box(view, 1), '6px')
     press(box(view, 1), 'Enter')
@@ -266,25 +271,31 @@ describe('picking', () => {
     expect(popupOf(view)!.querySelector('.document-zoom__error')?.textContent).toBe('Use a whole number from 1–24px.')
   })
 
-  it('S46: a preset click applies and closes', async () => {
+  it('S46: a preset click applies and keeps the menu open, the new preset ticked (YAZ-4812)', async () => {
     const { crepe, view } = await openOnLine('***\n')
     presetButtons(view, 1)[2].click()
-    expect(popupOf(view)).toBeNull()
+    expect(popupOf(view)).not.toBeNull()
     expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: thickness 6px -->\n')
+    expect(presetButtons(view, 1).map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true'])
+    // Darkness and style in the same visit: each pick is its own undo step.
+    presetButtons(view, 0)[0].click()
+    listButtons(view, 2)[3].click()
+    expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: darkness 10%, thickness 6px, style dashed -->\n')
+    expect(popupOf(view)).not.toBeNull()
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: darkness 10%, thickness 6px -->\n')
   })
 
-  it('S47, S78: the current value, typed, picked or chosen, closes the menu with no document change', async () => {
-    const { view, item } = await openOnLine('***\n<!-- line: darkness 100%, thickness 6px, style dotted -->\n')
+  it('S47, S78: the current value, typed, picked or chosen, keeps the menu open with no document change (YAZ-4812)', async () => {
+    const { view } = await openOnLine('***\n<!-- line: darkness 100%, thickness 6px, style dotted -->\n')
     const doc = view.state.doc
     presetButtons(view, 0)[2].click()
-    expect(popupOf(view)).toBeNull()
-    rightClick(item)
+    expect(popupOf(view)).not.toBeNull()
     presetButtons(view, 2)[1].click()
-    expect(popupOf(view)).toBeNull()
-    rightClick(item)
+    expect(popupOf(view)).not.toBeNull()
     type(box(view, 1), '6')
     press(box(view, 1), 'Enter')
-    expect(popupOf(view)).toBeNull()
+    expect(popupOf(view)).not.toBeNull()
     expect(view.state.doc).toBe(doc)
     expect(undo(view.state)).toBe(false)
   })

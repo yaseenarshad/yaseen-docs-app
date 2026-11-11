@@ -11,7 +11,9 @@
  * `setNodeMarkup` (one ⌘Z, S50), written as picked, also when it equals the default (YAZ-3208 D9,
  * S93). Each list starts with "Default (<the vault's current default>)", read from the line's
  * computed `--line-default-*`; only it stores `null`, which leaves the comment (D11, S94). The
- * current value never runs (the menu's rule, S47). The menu's close puts the focus back.
+ * current value never runs (the menu's rule, S47). A pick keeps the menu open, drawn again from the new
+ * state with its picker open, so darkness, thickness and style go in one visit (YAZ-4812, as the table's
+ * pickers since YAZ-4774). The menu's close puts the focus back.
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -87,6 +89,7 @@ export const lineRows: RowProvider = (view, target) => {
     min: DARKNESS_MIN,
     max: DARKNESS_MAX,
     error: `Use a whole number from ${DARKNESS_MIN}–${DARKNESS_MAX}%.`,
+    stay: true,
     run: (value) => setPart(view, line.pos, 'darkness', value),
   }
   const thickness: MenuNumberField = {
@@ -99,6 +102,7 @@ export const lineRows: RowProvider = (view, target) => {
     min: THICKNESS_MIN,
     max: THICKNESS_MAX,
     error: `Use a whole number from ${THICKNESS_MIN}–${THICKNESS_MAX}px.`,
+    stay: true,
     run: (value) => setPart(view, line.pos, 'thickness', value),
   }
   const pattern: MenuChoiceField = {
@@ -111,6 +115,7 @@ export const lineRows: RowProvider = (view, target) => {
       { value: 'dashed', label: 'Dashed', sample: 'line-sample line-sample--dashed' },
     ],
     fallback: defaults.pattern,
+    stay: true,
     run: (value) => setPart(view, line.pos, 'pattern', value),
   }
   return [darkness, thickness, pattern]

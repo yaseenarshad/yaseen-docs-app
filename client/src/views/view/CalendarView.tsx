@@ -1,4 +1,4 @@
-import { type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { openByKey, openTarget } from '../../lib/openGesture'
 import { type DayKey, bucketByDay, addDays, dayLabel, dayOf, monthStart, monthWeeks, timeFirst, timeOf, todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from '../calendar'
 import { type Row, propertyLabel } from '../engine'
@@ -9,6 +9,7 @@ import { PageContextMenu } from './PageContextMenu'
 import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
 import { ReadOnlyName } from './ReadOnlyMark'
 import { FolderIcon } from './icons'
+import { FolderPages } from './GroupHeader'
 import { isFolderRow } from '../../links/shortcuts'
 import type { ViewHover } from './viewHover'
 
@@ -78,6 +79,8 @@ const SCALES = [
  * keeps the place.
  */
 export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, noteDoors, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+  // The view's "Folder icon" (YAZ-4848), through the page's folder context; on outside a folder page.
+  const folderIcons = useContext(FolderPages)?.folderIcons !== false
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
@@ -223,8 +226,8 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
         )}
         {/* Clip shows the full title on a hover (D23); a wrapped title is all there. */}
         <span className="view-cal__card-title" title={wrap ? undefined : row.record.title}>
-          {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too. */}
-          {isFolderRow(row.record) && <FolderIcon size={12} className="view-folder-row__icon" />}
+          {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too, unless the view's "Folder icon" is off (YAZ-4848). */}
+          {isFolderRow(row.record) && folderIcons && <FolderIcon size={12} className="view-folder-row__icon" />}
           {locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}
         </span>
         {moveError?.path === path && (

@@ -151,6 +151,9 @@ export interface FolderPagesValue {
   open?: (dir: string) => void
   /** How many notes a folder's page shows (YAZ-4579 D32): a folder row's "N inside". */
   inside?: (dir: string) => number
+  /** The view's "Folder icon" and "Notes inside count" (YAZ-4848), Settings filled in. Absent: the icon shows, the count does not. */
+  folderIcons?: boolean
+  folderCounts?: boolean
   /** The Folder column's look (YAZ-4801): the path from the page, or the last folder only (the look before). */
   folderColumn?: 'path' | 'full' | 'last'
 }
@@ -264,12 +267,13 @@ function FolderPath({ dir, pages }: { dir: string; pages: FolderPagesValue }) {
 function RowTitle({ row }: { row: Row }) {
   const folder = useContext(ViewFolder)
   const pages = useContext(FolderPages)
-  // A subfolder's row (YAZ-4579 D32): the folder icon, its title, and how many notes its page shows.
+  // A subfolder's row (YAZ-4579 D32): the folder icon, its title, and how many notes its page shows; each one the
+  // view's switch (YAZ-4848: the icon on, the count off by default).
   if (isFolderRow(row.record)) {
-    const inside = pages?.inside?.(folderOfRow(row.record))
+    const inside = pages?.folderCounts === true ? pages.inside?.(folderOfRow(row.record)) : undefined
     return (
       <>
-        <FolderIcon size={13} className="view-folder-row__icon" />
+        {pages?.folderIcons !== false && <FolderIcon size={13} className="view-folder-row__icon" />}
         {row.record.title}
         {inside !== undefined && <span className="view-folder-row__inside">{inside} inside</span>}
       </>

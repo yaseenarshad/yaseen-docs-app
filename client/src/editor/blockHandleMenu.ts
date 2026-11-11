@@ -19,7 +19,7 @@
  * divider, then its presets. A choice's panel lists its choices, each with an optional sample. Each
  * list starts with "Default (<the current default>)", which picks null, and a picker that follows
  * the default reads that on its value button (YAZ-3208 D11). Enter in the box, a preset or a choice
- * applies and closes the whole menu (S83); a bad number shows the field's error, marks the box
+ * applies and closes the whole menu (S83), unless the field says `stay` (then the menu is drawn again, YAZ-4774); a bad number shows the field's error, marks the box
  * `aria-invalid` and keeps the menu open, and typing clears it. The current one is pressed and
  * shows ✓, and picking it applies nothing — no run, so no document change and no undo step. Tab
  * from the editor, while the menu shows, goes to the first value button (the outliner would take it
@@ -203,7 +203,8 @@ const optionList = (label: string, buttons: HTMLButtonElement[]): HTMLElement =>
 /** A number field's panel: the box, a divider and the presets — DocumentZoom's markup, built by hand. Returns the box too. */
 function numberPanel(field: MenuNumberField, id: string, close: () => void, refresh?: (run: () => void) => void): { parts: HTMLElement[]; box: HTMLInputElement } {
   const apply = (value: number | null) => {
-    if (value === field.value) return close()
+    // The current value changes nothing: a `stay` menu stays open for the next setting (YAZ-4812), any other closes.
+    if (value === field.value) return field.stay === true && refresh !== undefined ? undefined : close()
     if (field.stay === true && refresh !== undefined) return refresh(() => field.run(value))
     field.run(value)
     close()
@@ -265,7 +266,7 @@ function numberPanel(field: MenuNumberField, id: string, close: () => void, refr
 /** A choice field's panel: one button per choice, with its sample. */
 function choicePanel(field: MenuChoiceField, close: () => void, refresh?: (run: () => void) => void): HTMLElement[] {
   const pick = (value: string | null) => () => {
-    if (value === field.value) return close()
+    if (value === field.value) return field.stay === true && refresh !== undefined ? undefined : close()
     if (field.stay === true && refresh !== undefined) return refresh(() => field.run(value))
     field.run(value)
     close()
