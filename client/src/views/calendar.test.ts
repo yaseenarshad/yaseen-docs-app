@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_FOLDER_PAGES, type IndexRecord } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
-import { addDays, bucketByDay, calendarDateKey, calendarEndKey, daysBetween, layoutWeek, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
+import { addDays, bucketByDay, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -200,6 +200,14 @@ describe('dateColumns and calendarDateKey (YAZ-4540 D4)', () => {
     expect(calendarDateKey({ ...view, dateProperty: 'note.seen_in' }, ['note.due'], { seen_in: { kind: 'mentions' } })).toBeNull() // 7A 28
     expect(calendarDateKey(view, [], {})).toBeNull()
   })
+  it('YAZ-4866: with no dateProperty, the start is the first date column that is not the End date', () => {
+    const withEnd: ViewDef = { ...view, endDateProperty: 'note.end' }
+    expect(calendarDateKey(withEnd, ['note.end', 'note.start'], {})).toBe('start')
+    expect(calendarStartColumn(withEnd, ['note.end', 'note.start'])).toBe('note.start')
+    // Its own dateProperty always wins; a lone date column is still the start.
+    expect(calendarDateKey({ ...withEnd, dateProperty: 'note.end' }, ['note.end', 'note.start'], {})).toBe('end')
+    expect(calendarDateKey(withEnd, ['note.end'], {})).toBe('end')
+  })
 })
 
 describe('hide weekends (YAZ-4595 S33)', () => {
@@ -315,8 +323,22 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(daysBetween('2026-12-05', '2026-11-30')).toBe(-5)
     // Across the change to summer time the count stays whole.
     expect(daysBetween('2026-03-28', '2026-03-30')).toBe(2)
-    expect(spanLabel('2026-12-03', '2026-12-05')).toBe('Dec 3 – Dec 5, 2026')
     expect(spanLabel('2026-12-03', '2026-12-03')).toBe('Dec 3, 2026')
+  })
+
+  it('YAZ-4866: spanLabel leaves the year out when both days are in this year, else names it once at the end', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date(2026, 10, 10, 12, 0))
+      expect(spanLabel('2026-11-10', '2026-11-13')).toBe('Nov 10 – Nov 13')
+      expect(spanLabel('2027-01-04', '2027-01-06')).toBe('Jan 4 – Jan 6, 2027')
+      // Across two years each day keeps its year: one year alone would name the wrong one.
+      expect(spanLabel('2026-12-30', '2027-01-02')).toBe('Dec 30, 2026 – Jan 2, 2027')
+      vi.setSystemTime(new Date(2025, 5, 1, 12, 0))
+      expect(spanLabel('2026-12-03', '2026-12-05')).toBe('Dec 3 – Dec 5, 2026')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('calendarEndKey: only the view\'s own choice, and never the start column itself', () => {

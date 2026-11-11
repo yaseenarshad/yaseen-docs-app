@@ -2,7 +2,7 @@ import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type Ke
 import { holdColResize } from '../../lib/colResize'
 import { openByKey, openTarget } from '../../lib/openGesture'
 import {
-  type BarPlace, type DayKey, type Span, type SpanPreview, bucketByDay, addDays, calLine, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
+  type BarPlace, type DayKey, type Span, type SpanPreview, bucketByDay, addDays, calLine, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
   todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
 } from '../calendar'
 import type { IndexRecord } from '@shared/types'
@@ -703,7 +703,7 @@ export interface CalendarShowByProps {
 
 /** "Start date", once "Show by" (D4, YAZ-4858): every date column of the folder, one per calendar tab; in the View tab's Calendar section (YAZ-3746 13AD). */
 export function CalendarShowBy({ def, view, viewIndex, columns, onUpdate }: CalendarShowByProps) {
-  const current = typeof view.dateProperty === 'string' ? view.dateProperty : columns[0]
+  const current = calendarStartColumn(view, columns)
   if (current === undefined) return null
   const options = columns.includes(current) ? columns : [current, ...columns]
   return (
@@ -728,7 +728,7 @@ export function CalendarShowBy({ def, view, viewIndex, columns, onUpdate }: Cale
 
 /** "End date" (YAZ-4858): None, or a date column other than the start; one per calendar tab. None deletes the key. */
 export function CalendarEndBy({ def, view, viewIndex, columns, onUpdate }: CalendarShowByProps) {
-  const start = typeof view.dateProperty === 'string' ? view.dateProperty : columns[0]
+  const start = calendarStartColumn(view, columns)
   const current = typeof view.endDateProperty === 'string' ? view.endDateProperty : ''
   const others = columns.filter((k) => k !== start)
   const options = current === '' || others.includes(current) ? others : [current, ...others]

@@ -153,8 +153,15 @@ export function daysBetween(from: DayKey, to: DayKey): number {
   return Math.round((localDay(to).getTime() - localDay(from).getTime()) / 86_400_000)
 }
 
-/** A span as a move's toast names it (YAZ-4858): `Dec 3 – Dec 5, 2026`; one day as `dayLabel`. */
-export const spanLabel = (start: DayKey, end: DayKey): string => (end > start ? weekLabel([start, end]) : dayLabel(start))
+/**
+ * A span as a move's question and toast name it (YAZ-4858): `Dec 3 – Dec 5` in this year (the question's chip cut the
+ * year, YAZ-4866), else `Dec 3 – Dec 5, 2027`, and across two years each day with its year (`weekLabel`); one day as `dayLabel`.
+ */
+export function spanLabel(start: DayKey, end: DayKey): string {
+  if (end <= start) return dayLabel(start)
+  const year = String(new Date().getFullYear())
+  return start.slice(0, 4) === year && end.slice(0, 4) === year ? `${monthDay(start)} – ${monthDay(end)}` : weekLabel([start, end])
+}
 
 /** The days from the week's first day to `date`: Monday first (D11), or Sunday first (Settings › Folder pages, YAZ-4585). */
 const intoWeek = (date: Date, sundayFirst: boolean): number => (sundayFirst ? date.getDay() : (date.getDay() + 6) % 7)
@@ -275,9 +282,13 @@ export function dateColumns(
   })
 }
 
-/** The bare key a calendar shows by: its own `dateProperty`, else the first date column; null = none. `decls`: the page's columns, so a Linked mentions column is never one. */
+/** A calendar's start column: its own `dateProperty`, else the first date column that is not its End date (YAZ-4866), else the first. */
+export const calendarStartColumn = (view: ViewDef, columns: readonly string[]): string | undefined =>
+  typeof view.dateProperty === 'string' ? view.dateProperty : (columns.find((key) => key !== view.endDateProperty) ?? columns[0])
+
+/** The bare key a calendar shows by (`calendarStartColumn`); null = none. `decls`: the page's columns, so a Linked mentions column is never one. */
 export function calendarDateKey(view: ViewDef, columns: readonly string[], decls: FolderSettings['columns']): string | null {
-  const chosen = typeof view.dateProperty === 'string' ? view.dateProperty : columns[0]
+  const chosen = calendarStartColumn(view, columns)
   return chosen === undefined ? null : writableKey(chosen, decls)
 }
 
