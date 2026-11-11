@@ -72,6 +72,8 @@ export interface MenuRow {
   path: string
   /** A SHORTCUT row only (YAZ-2290 D2): the folder the row stands in — `path` is the note where it lives. */
   shortcutIn?: string
+  /** A FOLDER PAGE row only (YAZ-4587, D37): the folder whose page file the row is — `path` is that folder too. */
+  pageOf?: string
   /** The top row the right-clicked row stands under (YAZ-2845 D1): which copy of a row that shows twice. */
   top?: string
 }

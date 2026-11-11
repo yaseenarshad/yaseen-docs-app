@@ -14,8 +14,11 @@
  * - Cells from HTML bring their `fill`, `color` and own `align` (none from Sheets, so the target's go, as in
  *   Sheets); text changes the text only. A pasted cell takes its target row's type (header or
  *   body) and keeps its column's `alignment` and `colwidth`.
- * - WRITE: GFM tables have no merged cells, so the changed rows are built here and written by ONE
- *   `replaceWith` — not `insertCells`, which assumes one row type (GFM has two) and steps per row.
+ * - WRITE: the changed rows are built here and written by ONE `replaceWith` — not `insertCells`, which assumes one
+ *   row type (GFM has two) and steps per row. The rows are built from the table map (YAZ-4792): a merged cell stands
+ *   at its top-left grid position and takes the value pasted there (it keeps its spans); a value that lands on a
+ *   cell it covers is dropped, as that cell is not there. Copied merged cells paste as their grid: the merged cell's
+ *   text at its top-left, the cells it covered empty, and no spans (`sliceCells`).
  * - FOLDED ROWS (YAZ-4165) are never written: the pasted rows go to the rows that are not folded, from the start
  *   cell down (`unfoldedRows`), and a folded row keeps its text. One value fills the selected rows that are not folded.
  * - OUTSIDE A TABLE (S2) a Sheets `<table>` already makes a table (Milkdown's `tablePasteRule`).
@@ -27,7 +30,7 @@ import { Fragment, Slice, type Node as ProseNode, type Schema } from '@milkdown/
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { CellSelection, TableMap, __pastedCells, isInTable, selectedRect } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cellPosAt, rowFolded, unfoldedRows } from './cells'
+import { cellPosAt, cellStartsAt, rowFolded, unfoldedRows } from './cells'
 
 /** One pasted cell: its block content, and its `fill` / `color` / `align` when it came from HTML (or the source cell, for fill down). */
 export interface Cell {
@@ -51,17 +54,35 @@ function tsvRows(text: string): string[][] | null {
   return lines.some((line) => line.startsWith('\t')) ? null : lines.map((line) => line.split('\t'))
 }
 
-/** The slice's cells, as a rectangle. A row of empty header cells that Milkdown added to a `<table>` with no `<th>` is dropped. */
+/**
+ * The slice's cells, as a rectangle: each cell at its grid position, a merged cell's text at its top-left and the
+ * cells it covered empty (YAZ-4792). A row of empty header cells that Milkdown added to a `<table>` with no `<th>` is dropped.
+ */
 function sliceCells(slice: Slice, html: string): Cell[][] | null {
   const pasted = __pastedCells(slice)
   if (pasted === null) return null
-  const rows = pasted.rows.map((row) => {
-    const cells: Cell[] = []
-    row.forEach((cell) => cells.push({ content: cell.content, style: { fill: cell.attrs.fill ?? null, color: cell.attrs.color ?? null, align: cell.attrs.align ?? null } }))
-    return { cells, header: row.firstChild?.type.spec.tableRole === 'header_cell', empty: row.textBetween(0, row.size) === '' }
+  const grid: Cell[][] = Array.from({ length: pasted.height }, () => [])
+  const taken = new Set<string>()
+  pasted.rows.forEach((row, r) => {
+    let c = 0
+    row.forEach((cell) => {
+      while (taken.has(`${r},${c}`)) c++
+      const { colspan = 1, rowspan = 1 } = cell.attrs as { colspan?: number; rowspan?: number }
+      grid[r]![c] = { content: cell.content, style: { fill: cell.attrs.fill ?? null, color: cell.attrs.color ?? null, align: cell.attrs.align ?? null } }
+      for (let i = 0; i < rowspan; i++) {
+        for (let j = 0; j < colspan; j++) {
+          if (i === 0 && j === 0) continue
+          taken.add(`${r + i},${c + j}`)
+          if (grid[r + i] !== undefined) grid[r + i]![c + j] = textCell(cell.type.schema, '')
+        }
+      }
+      c += colspan
+    })
   })
-  if (rows.length > 1 && rows[0]!.header && rows[0]!.empty && !/<th[\s>]/i.test(html)) rows.shift()
-  return rows.map((row) => row.cells)
+  const first = pasted.rows[0]
+  const header = first?.firstChild?.type.spec.tableRole === 'header_cell'
+  if (grid.length > 1 && first !== undefined && header && first.textBetween(0, first.size) === '' && !/<th[\s>]/i.test(html)) grid.shift()
+  return grid
 }
 
 /** The one value of a slice: a single textblock's inline content, as a cell. */
@@ -79,7 +100,8 @@ function oneValue(schema: Schema, slice: Slice): Cell | null {
 export function writeCells(tr: Transaction, tableStart: number, top: number, left: number, grid: Cell[][]): Transaction {
   const { schema } = tr.doc.type
   const table = tr.doc.nodeAt(tableStart - 1)!
-  const width = TableMap.get(table).width
+  const map = TableMap.get(table)
+  const { width } = map
   const gridWidth = Math.max(...grid.map((row) => row.length))
   const newWidth = Math.max(width, left + gridWidth)
   const at = unfoldedRows(table, top, grid.length)
@@ -89,21 +111,30 @@ export function writeCells(tr: Transaction, tableStart: number, top: number, lef
   // Rows `first` up to `end` change: the pasted rows, and every row when columns are added.
   const first = grows ? 0 : top
   const end = grows ? newHeight : (at.at(-1) ?? top - 1) + 1
-  const header = table.firstChild!
+  /** A new cell's column attributes, from the header row's cell that covers column `c`: its GFM alignment and its width of that column. */
+  const column = (c: number): { alignment: unknown; colwidth: number[] | null } => {
+    if (c >= width) return { alignment: null, colwidth: null }
+    const pos = map.map[c]!
+    const header = table.nodeAt(pos)!
+    const w = (header.attrs.colwidth as number[] | null)?.[c - map.findCell(pos).left]
+    return { alignment: header.attrs.alignment, colwidth: typeof w === 'number' && w > 0 ? [w] : null }
+  }
   const rows: ProseNode[] = []
   for (let r = first; r < end; r++) {
     const old = r < table.childCount ? table.child(r) : null
     const cellType = r === 0 ? schema.nodes.table_header : schema.nodes.table_cell
     const cells: ProseNode[] = []
     for (let c = 0; c < newWidth; c++) {
-      const oldCell = old !== null && c < old.childCount ? old.child(c) : null
+      // The cell of the grid position (YAZ-4792): none in this row when a merged cell above or left of it covers it.
+      const inGrid = old !== null && c < width
+      if (inGrid && !cellStartsAt(map, r, c)) continue
+      const oldCell = inGrid ? table.nodeAt(map.map[r * width + c]!)! : null
       const pasted = gridRow.has(r) && c >= left ? grid[gridRow.get(r)!]?.[c - left] : undefined
       if (pasted === undefined && oldCell !== null) {
         cells.push(oldCell)
         continue
       }
-      const column = c < header.childCount ? header.child(c).attrs : null
-      const attrs = { ...(oldCell?.attrs ?? { alignment: column?.alignment ?? null, colwidth: column?.colwidth ?? null }), ...pasted?.style }
+      const attrs = { ...(oldCell?.attrs ?? column(c)), ...pasted?.style }
       cells.push((pasted && cellType.createAndFill(attrs, pasted.content)) ?? cellType.createAndFill(attrs)!)
     }
     rows.push((old ?? schema.nodes.table_row.create()).copy(Fragment.from(cells)))

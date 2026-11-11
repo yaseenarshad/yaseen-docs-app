@@ -31,6 +31,8 @@ export const capital = (word: string) => word[0].toUpperCase() + word.slice(1)
 /** Each swatch's colour: a fill at full strength in light and dark (`table.css`; the cells keep their wash). */
 export const fillSwatch = (c: TableColor) => `var(--table-fill-solid-${c})`
 export const textSwatch = (c: TableColor) => `var(--table-text-${c})`
+/** A header row colour's swatch (YAZ-4794): the fill swatches, plus the header's own Black and White (`table.css`). */
+export const headerSwatch = (c: string) => `var(--table-fill-solid-${c === 'gray' ? 'grey' : c})`
 
 /** A custom fill's see-through wash: `table.css` `--table-fill-wash` (35%), and a copy to Docs (`clipboardCopyOut.ts`). */
 export const FILL_WASH = 0.35

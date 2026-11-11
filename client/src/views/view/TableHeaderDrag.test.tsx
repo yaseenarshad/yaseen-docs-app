@@ -66,8 +66,19 @@ function q<T extends Element>(el: ParentNode, sel: string): T {
   return n
 }
 
+/**
+ * The slot is read from where the LAYOUT puts each column (YAZ-4606): the header row starts at x 0 in jsdom, and each
+ * cell is as wide as its own style says. On a property header, `half` is px from its midpoint (negative: its left half).
+ */
+function headerPoint(th: Element, half: number): number {
+  const cells = [...(th.parentElement?.children ?? [])] as HTMLElement[]
+  const left = cells.slice(0, cells.indexOf(th as HTMLElement)).reduce((x, cell) => x + parseFloat(cell.style.width), 0)
+  return left + parseFloat((th as HTMLElement).style.width) / 2 + half
+}
+
 /** A synthetic drag event: jsdom has no `DragEvent`, so a `MouseEvent` carries the pointer and `dataTransfer` is absent. */
-function fire(target: Element, type: string, clientX = 0): MouseEvent {
+function fire(target: Element, type: string, half = 0): MouseEvent {
+  const clientX = target.matches('thead th[data-col]') ? headerPoint(target, half) : half
   const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX })
   act(() => void target.dispatchEvent(event))
   draw()
@@ -83,7 +94,7 @@ function pressEscape(): void {
 const ths = (el: ParentNode): HTMLElement[] => [...el.querySelectorAll<HTMLElement>('.view-table thead th:not(.view-table__gutter)')]
 const headers = (el: ParentNode): string[] => ths(el).map((t) => t.textContent ?? '')
 const gutter = (el: ParentNode): HTMLElement => q(el, '.view-table thead th.view-table__gutter')
-/** Left half of a header (jsdom rects sit at 0): the slot BEFORE it; right half: AFTER it. */
+/** Left half of a header: the slot BEFORE it; right half: AFTER it. */
 const LEFT = -5
 const RIGHT = 5
 
@@ -99,22 +110,23 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
   it('moves a column RIGHT: dropping on the right half of a later header lands after it, in ONE write', () => {
     const { el, onChange, def, yaml } = mount()
     fire(ths(el)[0], 'dragstart')
-    expect(ths(el)[0].classList.contains('view-table__th--drag-source')).toBe(true)
+    expect(q(el, '.view-table').hasAttribute('data-live-parting')).toBe(true) // the gap is the marker: no marker class (YAZ-4606)
     fire(ths(el)[2], 'dragover', RIGHT)
-    expect(ths(el)[2].classList.contains('view-table__th--insert-after')).toBe(true) // the end slot
+    expect(rules(el)).toMatch(/th\[data-col="2"\][^{]*\{transform:translateX\(-/) // the end slot: the columns after the grab slide left
     fire(ths(el)[2], 'drop', RIGHT)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
     expect(headers(el)).toEqual(['Status', 'Priority', 'Name'])
     expect(yaml()).toContain('- note.status\n      - note.priority\n      - file.name')
-    expect(el.querySelector('[class*="view-table__th--"]')).toBeNull() // indicators cleared
+    expect(rules(el)).toBe('') // the slides cleared
+    expect(q(el, '.view-table').hasAttribute('data-live-parting')).toBe(false)
   })
 
   it('moves a column LEFT: dropping on the left half of an earlier header lands before it', () => {
     const { el, onChange, def } = mount()
     fire(ths(el)[2], 'dragstart')
     fire(ths(el)[0], 'dragover', LEFT)
-    expect(ths(el)[0].classList.contains('view-table__th--insert-before')).toBe(true)
+    expect(rules(el)).toMatch(/th\[data-col="0"\][^{]*\{transform:translateX\(\d/) // Name slides right: the gap opens before it
     fire(ths(el)[0], 'drop', LEFT)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
@@ -124,7 +136,8 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     const { el, def } = mount()
     fire(ths(el)[2], 'dragstart')
     fire(ths(el)[0], 'dragover', RIGHT)
-    expect(ths(el)[1].classList.contains('view-table__th--insert-before')).toBe(true)
+    expect(rules(el)).toMatch(/th\[data-col="1"\][^{]*\{transform:translateX\(\d/) // Status slides right, Name stays
+    expect(rules(el)).not.toContain('th[data-col="0"]')
     fire(ths(el)[0], 'drop', RIGHT)
     expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status'])
   })
@@ -183,7 +196,7 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     const grip = q<HTMLElement>(ths(el)[0], '.view-table__resize')
     const start = fire(grip, 'dragstart')
     expect(start.defaultPrevented).toBe(true)
-    expect(el.querySelector('.view-table__th--drag-source')).toBeNull()
+    expect(q(el, '.view-table').hasAttribute('data-live-parting')).toBe(false)
     const over = fire(ths(el)[2], 'dragover', RIGHT)
     expect(over.defaultPrevented).toBe(false)
     fire(ths(el)[2], 'drop', RIGHT)
@@ -194,9 +207,10 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     const { el, onChange } = mount()
     fire(ths(el)[0], 'dragstart')
     fire(ths(el)[2], 'dragover', RIGHT)
-    expect(el.querySelector('.view-table__th--insert-after')).not.toBeNull()
+    expect(rules(el)).toContain('transform:translateX(-')
     pressEscape()
-    expect(el.querySelector('[class*="view-table__th--"]')).toBeNull()
+    expect(rules(el)).toBe('')
+    expect(q(el, '.view-table').hasAttribute('data-live-parting')).toBe(false)
     fire(ths(el)[2], 'drop', RIGHT)
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -211,6 +225,109 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     fire(ths(el)[0], 'drop', LEFT)
     const [first, second, ...rest] = before
     expect(def().views[0].order).toEqual([second, first, ...rest])
+  })
+
+  /** The rule TableView writes for the drag (YAZ-4606): one per moved column. */
+  const rules = (el: ParentNode): string => el.querySelector('style')?.textContent ?? ''
+  /** A column's width, from its header's style. */
+  const widthAt = (el: ParentNode, i: number): number => parseFloat(ths(el)[i].style.width)
+
+  it('LIVE GAP (YAZ-4606): the columns between the grab and the slot part by its room — header, body cells and summary cell — and the grabbed column leaves one frame on', async () => {
+    const { el } = mount()
+    fire(ths(el)[0], 'dragstart')
+    expect(rules(el)).toBe('') // the Mac takes its picture first
+    await act(() => new Promise<void>((done) => requestAnimationFrame(() => done())))
+    draw()
+    expect(rules(el)).toContain('th[data-col="0"]')
+    expect(rules(el)).toContain('opacity:0')
+    fire(ths(el)[2], 'dragover', RIGHT) // the end slot
+    const room = widthAt(el, 0)
+    for (const c of [1, 2]) {
+      expect(rules(el)).toMatch(new RegExp(`th\\[data-col="${c}"\\],[^{]*td\\[data-cell\\$=":${c}"\\],[^{]*tfoot td:nth-child\\(${c + 2}\\)\\{transform:translateX\\(-${room}px\\)`))
+    }
+    expect(el.querySelector('.view-table')!.hasAttribute('data-live-parting')).toBe(true)
+    // A body cell of a parted column is one the rule names.
+    expect(el.querySelector('td[data-cell$=":1"]')).not.toBeNull()
+    fire(ths(el)[2], 'drop', RIGHT)
+    expect(rules(el)).toBe('')
+    expect(el.querySelector('.view-table')!.hasAttribute('data-live-parting')).toBe(false)
+  })
+
+  it('LIVE GAP across the freeze line (YAZ-4606, coordinator ruling B): a column dragged into the frozen part parts the frozen column too, and the drop freezes it', () => {
+    const { el, def } = mount(`${BASE}    frozenColumns: 1\n`)
+    fire(ths(el)[2], 'dragstart')
+    fire(ths(el)[0], 'dragover', LEFT)
+    const room = widthAt(el, 2)
+    expect(rules(el)).toContain(`tfoot td:nth-child(2){transform:translateX(${room}px);}`)
+    expect(rules(el)).toContain(`tfoot td:nth-child(3){transform:translateX(${room}px);}`)
+    fire(ths(el)[0], 'drop', LEFT)
+    expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
+    expect(def().views[0].frozenColumns).toBe(1)
+  })
+
+  it('the gap in the frozen part is COVERED (YAZ-4643 S2): the first parted frozen cell paints the grabbed column\'s room of background on its left, so no scrolled column shows in it', () => {
+    const { el } = mount(`${BASE}    frozenColumns: 1\n`)
+    fire(ths(el)[2], 'dragstart')
+    fire(ths(el)[0], 'dragover', LEFT)
+    const room = widthAt(el, 2)
+    expect(widthAt(el, 0)).toBeGreaterThanOrEqual(room) // one shadow covers the room
+    // A box-shadow, not a pseudo-element: the cell's `overflow: hidden` would clip that. Its header goes over the scrolled headers.
+    expect(rules(el)).toMatch(new RegExp(`th\\[data-col="0"\\],[^{]*td\\[data-cell\\$=":0"\\],[^{]*tfoot td:nth-child\\(2\\)\\{box-shadow:-${room}px 0 0 var\\(--bg\\);\\}`))
+    expect(rules(el)).toContain('thead th[data-col="0"]{z-index:4;}')
+    // The same drag with the gap right of the freeze line: no cover.
+    fire(ths(el)[1], 'dragover', LEFT)
+    expect(rules(el)).not.toContain('box-shadow')
+  })
+
+  it('a lifted FROZEN column\'s own place is covered the same way, by the gutter cell on its right (YAZ-4643 S2)', () => {
+    const { el } = mount(`${BASE}    frozenColumns: 1\n`)
+    fire(ths(el)[0], 'dragstart')
+    fire(ths(el)[0], 'dragover', LEFT) // its own slot: no gap
+    const room = widthAt(el, 0)
+    expect(rules(el)).not.toContain('transform')
+    // The slim gutter lays its shadows end to end; the last ends one room on. Its header goes over the scrolled headers.
+    expect(rules(el)).toMatch(new RegExp(`th\\.view-table__gutter,[^{]*td\\.view-table__gutter,[^{]*tfoot td\\.view-table__gutter\\{box-shadow:[^}]*?${room}px 0 0 var\\(--bg\\);\\}`))
+    expect(rules(el)).toContain('thead th.view-table__gutter{z-index:4;}')
+    // A lifted SCROLLED column keeps the plain lift.
+    pressEscape()
+    fire(ths(el)[2], 'dragstart')
+    fire(ths(el)[2], 'dragover', LEFT)
+    expect(rules(el)).not.toContain('box-shadow')
+  })
+
+  it('with row numbers off the slim gutter cell is still the first, so the summary cells that part are still the ones after it (YAZ-4636 T8)', () => {
+    const { el } = mount(`${BASE}    rowNumbers: false\n`)
+    fire(ths(el)[2], 'dragstart')
+    fire(ths(el)[0], 'dragover', LEFT)
+    const room = widthAt(el, 2)
+    expect(rules(el)).toContain(`tfoot td:nth-child(2){transform:translateX(${room}px);}`)
+    expect(rules(el)).toContain(`tfoot td:nth-child(3){transform:translateX(${room}px);}`)
+    expect(rules(el)).not.toContain('tfoot td:nth-child(1)')
+  })
+
+  it('the slot is read from the layout, not the drawn header: a parted header under the pointer does not move the gap', () => {
+    const { el } = mount()
+    fire(ths(el)[2], 'dragstart')
+    fire(ths(el)[0], 'dragover', LEFT) // the first slot: Name and Status slide right
+    expect(rules(el)).toMatch(/th\[data-col="0"\][^{]*\{transform:translateX\(\d/)
+    // Name is drawn one room on now; a pointer on its drawn left half is on Status's right half in the layout.
+    fire(ths(el)[1], 'dragover', RIGHT)
+    expect(rules(el)).not.toContain('transform') // the slot next to Priority: no gap
+  })
+
+  it('COUNT (YAZ-4606): a dragover reads the header row\'s place and the scroller\'s, and no cell', () => {
+    const { el } = mount(`${BASE}    frozenColumns: 1\n`)
+    fire(ths(el)[0], 'dragstart')
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect')
+    const style = vi.spyOn(window, 'getComputedStyle')
+    for (let i = 0; i < 10; i++) {
+      act(() => void ths(el)[2].dispatchEvent(new MouseEvent('dragover', { bubbles: true, cancelable: true, clientX: headerPoint(ths(el)[2], i - 5) })))
+    }
+    expect(rect.mock.instances.filter((t) => t instanceof HTMLTableCellElement)).toHaveLength(0)
+    expect(rect).toHaveBeenCalledTimes(20) // the header row (the slot) and the table's scroller (its end zones), once each
+    expect(style).not.toHaveBeenCalled()
+    rect.mockRestore()
+    style.mockRestore()
   })
 
   it('keyboard navigation, resize and the header menu keep working around the drag wiring', () => {

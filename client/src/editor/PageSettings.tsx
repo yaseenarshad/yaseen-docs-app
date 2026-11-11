@@ -1,6 +1,6 @@
 import { type FocusEvent, Fragment, type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { OutsideChangeGlow, TocSource } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, type OutsideChangeGlow, type TocSource } from '@shared/types'
 import { OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
 import { CogIcon } from '../settings/SettingsButton'
 
@@ -31,9 +31,17 @@ export interface PageSwitch {
   title?: string
   /** A CHOICE row (YAZ-4277 demo): the label, then pills, one pressed, as "TOC made from". The menu stays open. */
   choices?: readonly { label: string; on: boolean; onPick: () => void; title?: string }[]
+  /** A small heading above the row: it starts a section (the folder ⚙'s "Show", "Preview on hover", "Safety", YAZ-3746 13BP). */
+  heading?: string
   /** An (i) after the label: hover shows this sentence (13BP CL4). */
   hint?: Hint
-  /** The menu's own "Read only" row stands here, with its hint (YAZ-4748 demo: a drawing's and a diagram's cog). */
+  /** A choice row on ONE line: the label left, the choices right (13BP CL3). */
+  inline?: boolean
+  /**
+   * The menu's own "Read only" row stands here, under this row's heading, with its hint (13BP: the folder ⚙'s "Safety";
+   * YAZ-4748 demo: a drawing's and a diagram's cog). With `inline`, it is an On / Off choice on one line, as the rows
+   * around it (CL7).
+   */
   readOnlySlot?: boolean
 }
 
@@ -43,31 +51,8 @@ export interface PageSwitch {
  */
 export type Hint = string | { lead?: string; rows: readonly (readonly [ReactNode, string])[]; foot?: string }
 
-/** An (i)'s box width (YAZ-4776): `.page-settings__tip--hint` draws it at this width. */
-const HINT_WIDTH = 240
-
-/**
- * The page's own quick switches (YAZ-2643): a cog left of the zoom pill, and a small menu under it.
- * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
- * all but section indent (YAZ-2709), "Guide lines" and "Folding" (YAZ-4094), "Table of contents" (YAZ-2950)
- * and "TOC made from" (YAZ-2700 D14), which the host saves with the note. "Line numbers" and "Heading
- * levels" are never saved. "Outside changes glow" (YAZ-4272 D5) is a native dropdown: Default (Settings' glow) or one
- * of the four glows, saved in the note.
- *
- * "Read only" (YAZ-3076 D3) is the FIRST row on a note, a drawing and a diagram, and is stored IN
- * the file by the host. A file with no switch (a code file, YAZ-3448) gives no `onToggleReadOnly`. A board's menu has only that row: every Markdown-only row
- * and the counts show only when their handler is given, the rule "Table of contents" already had.
- * While read only is on, the row closes the menu and the host opens the chip's "Allow edits?" box
- * (D4, S47); while it is off, the row turns it on at once and the menu stays open (S43).
- *
- * A code tab (YAZ-3449) passes its own rows instead, as `switches`: "Read only", "Wrap long lines" and
- * "Minimap", under the heading "All code files", each one an app setting for every code file; then "Table of
- * contents" (YAZ-3506), this file's only. The menu stays open, as for any row.
- *
- * A drawing (YAZ-3943 D5, D13) passes `rows`, read while the menu is open and never while it is closed:
- * the pictures' size, "Move pictures out" or "Keep pictures inside", and the two exports.
- */
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, switches, switchesHeading, rows, readText }: {
+/** The cog's props: also what a folder page's Page tab hands its cog (YAZ-3746 D35, `FolderPageTab`). */
+export interface PageSettingsProps {
   /** The file's read-only switch (YAZ-3076 D1): a note, a drawing and a diagram have it. */
   readOnly?: boolean
   /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). Absent → no row (a file with no switch, YAZ-3448). */
@@ -104,6 +89,14 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   appGlow?: OutsideChangeGlow
   /** Absent → no "Outside changes glow" row (a board, a drawing, a diagram, a code file). `null` is Default. */
   onChangeOutsideGlow?: (glow: OutsideChangeGlow | null) => void
+  /** This note's width for every code block (YAZ-4783 layer 2): whole px, or `null` (Default), which follows Settings › Editor › Code blocks › Width. */
+  codeWidth?: number | null
+  /** Absent → no "Code block width" row (a board, a drawing, a diagram, a code file). `null` is Default. */
+  onChangeCodeWidth?: (width: number | null) => void
+  /** This note's width for every table (YAZ-4783 layer 2): whole px, or `null` (Default), which follows Settings › Tables › All tables › Width. */
+  tableWidth?: number | null
+  /** Absent → no "Table width" row. `null` is Default. */
+  onChangeTableWidth?: (width: number | null) => void
   /** Plain rows after "Read only" (a code tab's three, YAZ-3449); absent or empty → none. */
   switches?: readonly PageSwitch[]
   /** A small heading over `switches`, which then form one group (a code tab: "All code files"), and a line after it. */
@@ -112,7 +105,72 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   rows?: () => readonly PageSwitch[]
   /** The page's plain text. Read once when the menu opens, never while it is closed. Absent → no counts (a board). */
   readText?: () => string
-}) {
+  /**
+   * Another button for the menu (YAZ-3746 13BM PS1): the folder page's Page tab opens its text settings from its own
+   * toolbar, with that toolbar's look and icon, under a small heading. Absent → the cog.
+   */
+  trigger?: { icon: ReactNode; className: string; label: string; heading: string }
+}
+
+/**
+ * The page's own quick switches (YAZ-2643): a cog left of the zoom pill, and a small menu under it.
+ * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
+ * all but section indent (YAZ-2709), "Guide lines" and "Folding" (YAZ-4094), "Table of contents" (YAZ-2950)
+ * and "TOC made from" (YAZ-2700 D14), which the host saves with the note. "Line numbers" and "Heading
+ * levels" are never saved. "Outside changes glow" (YAZ-4272 D5) is a native dropdown: Default (Settings' glow) or one
+ * of the four glows, saved in the note. "Code block width" and "Table width" (YAZ-4783 layer 2) are Default (Settings')
+ * or a px you type, saved in the note too (`code-width`, `table-width`).
+ *
+ * "Read only" (YAZ-3076 D3) is the FIRST row on a note, a drawing and a diagram, and is stored IN
+ * the file by the host. A file with no switch (a code file, YAZ-3448) gives no `onToggleReadOnly`. A board's menu has only that row: every Markdown-only row
+ * and the counts show only when their handler is given, the rule "Table of contents" already had.
+ * While read only is on, the row closes the menu and the host opens the chip's "Allow edits?" box
+ * (D4, S47); while it is off, the row turns it on at once and the menu stays open (S43).
+ *
+ * A folder page (YAZ-3746 D35) passes "Read only" and its `switches` under the heading "This folder page": the
+ * "Read only" row then stands first IN that group. Its Page tab adds a note's rows after them (`FolderPageTab`).
+ *
+ * A code tab (YAZ-3449) passes its own rows instead, as `switches`: "Read only", "Wrap long lines" and
+ * "Minimap", under the heading "All code files", each one an app setting for every code file; then "Table of
+ * contents" (YAZ-3506), this file's only. The menu stays open, as for any row.
+ *
+ * A drawing (YAZ-3943 D5, D13) passes `rows`, read while the menu is open and never while it is closed:
+ * the pictures' size, "Move pictures out" or "Keep pictures inside", and the two exports.
+ */
+/** An (i)'s box width (YAZ-4776): `.page-settings__tip--hint` draws it at this width. */
+const HINT_WIDTH = 240
+
+/**
+ * "Code block width" / "Table width" (YAZ-4783 layer 2): Default (the Settings row `settingsRow` names) or this note's px,
+ * typed into the field and kept on ⏎ or when the field loses the focus, clamped to `BLOCK_WIDTH_MIN`–`BLOCK_WIDTH_MAX`. An
+ * emptied field is Default too. The menu stays open.
+ */
+function BlockWidthRow({ label, value, settingsRow, onChange }: { label: string; value: number | null; settingsRow: string; onChange: (width: number | null) => void }) {
+  const [draft, setDraft] = useState(value === null ? '' : String(value))
+  useEffect(() => setDraft(value === null ? '' : String(value)), [value])
+  const keep = () => {
+    const n = Number.parseInt(draft, 10)
+    const next = draft === '' ? null : Number.isFinite(n) ? Math.min(BLOCK_WIDTH_MAX, Math.max(BLOCK_WIDTH_MIN, n)) : value
+    setDraft(next === null ? '' : String(next))
+    if (next !== value) onChange(next)
+  }
+  return <>
+    <p className="page-settings__label">{label}:</p>
+    <div className="page-settings__choices" role="group" aria-label={label}>
+      <button type="button" aria-pressed={value === null} title={`Default follows Settings › ${settingsRow}`} onClick={() => onChange(null)}>Default</button>
+      <label className="page-settings__px" data-own={value === null ? undefined : ''}>
+        <input aria-label={`${label} in px`} inputMode="numeric" placeholder={`${BLOCK_WIDTH_MIN}–${BLOCK_WIDTH_MAX}`} value={draft} spellCheck={false}
+          onChange={(event) => setDraft(event.target.value.replace(/[^0-9]/g, ''))} onBlur={keep}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') keep()
+          }} />
+        px
+      </label>
+    </div>
+  </>
+}
+
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, codeWidth = null, onChangeCodeWidth, tableWidth = null, onChangeTableWidth, switches, switchesHeading, rows, readText, trigger }: PageSettingsProps) {
   // The text counted at the open IS the open state: the counts cannot drift while the menu shows.
   // A board has no text to count: its open menu holds '' and shows no counts.
   const [text, setText] = useState<string | null>(null)
@@ -224,6 +282,8 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
     },
     onBlur: () => setHintTip(null),
   }
+  // Under a heading, "Read only" is the group's first row (a folder page's "This folder page", YAZ-3746 D35), or where a row
+  // asks for it (`readOnlySlot`, 13BP's "Safety", a drawing's and a diagram's cog); else the menu's.
   const readOnlyRow = (hint?: Hint) => onToggleReadOnly !== undefined && <button type="button" aria-pressed={readOnly} {...rowHintProps('Read only', hint)} onClick={() => {
     // On: the one box, under the chip (D4) — so the menu makes way for it.
     if (readOnly) setOpen(false)
@@ -231,17 +291,40 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   }}>
     <span>Read only{rowInfoOf('Read only', hint)}</span><span aria-hidden="true">{readOnly ? '✓' : ''}</span>
   </button>
-  const rowOf = ({ label, on, onToggle, disabled, warn, divider, title, choices, hint, readOnlySlot }: PageSwitch) => <Fragment key={label}>
+  /**
+   * "Read only" as a choice on one line (13BP CL7): On / Off, no "Settings" (no app-wide Read only to follow). On turns it
+   * on at once; Off is the chip's "Allow edits?" box, as the check row's click (D4), so the menu makes way for it.
+   */
+  const readOnlyLine = (hint?: Hint) => onToggleReadOnly !== undefined && <div className="page-settings__line">
+    <p className="page-settings__label">Read only{infoOf('Read only', hint)}</p>
+    <div className="page-settings__choices" role="group" aria-label="Read only">
+      <button type="button" aria-pressed={readOnly} onClick={() => { if (!readOnly) onToggleReadOnly() }}>On</button>
+      <button type="button" aria-pressed={!readOnly} onClick={() => {
+        if (!readOnly) return
+        setOpen(false)
+        onToggleReadOnly()
+      }}>Off</button>
+    </div>
+  </div>
+  const choicesOf = (label: string, choices: NonNullable<PageSwitch['choices']>, disabled: boolean | undefined) => (
+    <div className="page-settings__choices" role="group" aria-label={label}>
+      {choices.map((choice) => (
+        <button key={choice.label} type="button" aria-pressed={choice.on} disabled={disabled} title={choice.title} onClick={choice.onPick}>{choice.label}</button>
+      ))}
+    </div>
+  )
+  const rowOf = ({ label, on, onToggle, disabled, warn, divider, title, choices, heading, hint, inline, readOnlySlot }: PageSwitch) => <Fragment key={label}>
     {divider === true && <div className="page-settings__divider" aria-hidden="true" />}
-    {readOnlySlot === true ? readOnlyRow(hint)
-      : choices !== undefined ? <>
-      <p className="page-settings__label">{label}{hint === undefined ? ':' : infoOf(label, hint)}</p>
-      <div className="page-settings__choices" role="group" aria-label={label}>
-        {choices.map((choice) => (
-          <button key={choice.label} type="button" aria-pressed={choice.on} disabled={disabled} title={choice.title} onClick={choice.onPick}>{choice.label}</button>
-        ))}
+    {heading !== undefined && <p className="page-settings__label page-settings__heading">{heading}</p>}
+    {readOnlySlot === true ? (inline === true ? readOnlyLine(hint) : readOnlyRow(hint))
+      : choices !== undefined && inline === true ? <div className="page-settings__line">
+        <p className="page-settings__label">{label}{infoOf(label, hint)}</p>
+        {choicesOf(label, choices, disabled)}
       </div>
-    </>
+      : choices !== undefined ? <>
+        <p className="page-settings__label">{label}{hint === undefined ? ':' : infoOf(label, hint)}</p>
+        {choicesOf(label, choices, disabled)}
+      </>
       : onToggle === undefined ? <p className={warn === true ? 'page-settings__warn' : undefined} title={title}>{label}</p>
       : on === undefined ? <button type="button" disabled={disabled} {...rowHintProps(label, hint)} onClick={() => {
         setOpen(false)
@@ -275,6 +358,8 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   const switchRows = switches?.map(rowOf)
   // Read while the menu is open, never while it is closed (a drawing's rows count its pictures).
   const rowList = open ? rows?.() : undefined
+  // A row may ask for "Read only" where it stands, with its (i) (`readOnlySlot`, in `switches` or `rows`); else it is the first row.
+  const readOnlyFirst = [...(switches ?? []), ...(rowList ?? [])].some((s) => s.readOnlySlot === true) !== true && readOnlyRow()
 
   return (
     <div ref={rootRef} className="page-settings"
@@ -290,18 +375,19 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         setOpen(false)
         triggerRef.current?.focus()
       }}>
-      <button ref={triggerRef} type="button" className="page-settings__trigger" aria-label="Page settings"
-        aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={() => setOpen(!open)}>
-        <CogIcon size={13} />
+      <button ref={triggerRef} type="button" className={trigger?.className ?? 'page-settings__trigger'} aria-label={trigger?.label ?? 'Page settings'}
+        title={trigger?.label} aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={() => setOpen(!open)}>
+        {trigger?.icon ?? <CogIcon size={13} />}
       </button>
-      {text !== null && createPortal(<div ref={menuRef} id={menuId} className="page-settings__menu page-settings__menu--placed" role="group" aria-label="Page settings"
+      {text !== null && createPortal(<div ref={menuRef} id={menuId} className="page-settings__menu page-settings__menu--placed" role="group" aria-label={trigger?.label ?? 'Page settings'}
         style={menuAt === null ? { visibility: 'hidden' } : { left: menuAt.left, top: menuAt.top }}>
-        {/* A row may ask for "Read only" where it stands, with its (i) (`readOnlySlot`); else it is the first row. */}
-        {rowList?.some((row) => row.readOnlySlot === true) !== true && readOnlyRow()}
+        {trigger !== undefined && <p className="page-settings__label" aria-hidden="true">{trigger.heading}</p>}
+        {switchesHeading === undefined && readOnlyFirst}
         {rowList?.map(rowOf)}
         {switchesHeading === undefined ? switchRows : <>
           <div role="group" aria-label={switchesHeading}>
-            <p className="page-settings__label" aria-hidden="true">{switchesHeading}</p>
+            <p className="page-settings__label page-settings__title" aria-hidden="true" title={switchesHeading}>{switchesHeading}</p>
+            {readOnlyFirst}
             {switchRows}
           </div>
           <div className="page-settings__divider" aria-hidden="true" />
@@ -357,6 +443,10 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
             {OUTSIDE_CHANGE_GLOW_OPTIONS.map(({ label, value }) => <option key={value} value={value}>{label}</option>)}
           </select>
         </>}
+        {/* This note's width for its code blocks and its tables (YAZ-4783 layer 2), saved in the note. */}
+        {(onChangeCodeWidth !== undefined || onChangeTableWidth !== undefined) && <div className="page-settings__divider" aria-hidden="true" />}
+        {onChangeCodeWidth !== undefined && <BlockWidthRow label="Code block width" value={codeWidth} settingsRow="Editor › Code blocks › Width" onChange={onChangeCodeWidth} />}
+        {onChangeTableWidth !== undefined && <BlockWidthRow label="Table width" value={tableWidth} settingsRow="Tables › All tables › Width" onChange={onChangeTableWidth} />}
         {readText !== undefined && <>
           <div className="page-settings__divider" aria-hidden="true" />
           <p>{(text.match(/\S+/g)?.length ?? 0).toLocaleString()} words</p>

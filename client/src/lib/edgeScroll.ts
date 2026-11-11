@@ -16,7 +16,14 @@ export interface EdgeScroller {
   stop: () => void
 }
 
-export function edgeScroller(strip: () => HTMLElement | null, onScroll?: () => void): EdgeScroller {
+/** `axis` 'y' scrolls up and down, for the folder table's drag select (YAZ-4612 S47); `at` then takes the pointer's y. */
+export function edgeScroller(strip: () => HTMLElement | null, onScroll?: () => void, axis: 'x' | 'y' = 'x'): EdgeScroller {
+  const horizontal = axis === 'x'
+  const get = (el: HTMLElement) => (horizontal ? el.scrollLeft : el.scrollTop)
+  const set = (el: HTMLElement, to: number) => {
+    if (horizontal) el.scrollLeft = to
+    else el.scrollTop = to
+  }
   /** -1…1: the way and how deep into an end zone the pointer is. */
   let pull = 0
   let frame = 0
@@ -33,20 +40,22 @@ export function edgeScroller(strip: () => HTMLElement | null, onScroll?: () => v
     }
     const ms = last === null ? 1000 / 60 : Math.min(MAX_STEP_MS, now - last)
     last = now
-    const before = el.scrollLeft
-    const end = el.scrollWidth - el.clientWidth
+    const before = get(el)
+    const end = horizontal ? el.scrollWidth - el.clientWidth : el.scrollHeight - el.clientHeight
     pos = (pos ?? before) + (pull * EDGE_SPEED * ms) / 1000
     if (Number.isFinite(end)) pos = Math.max(0, Math.min(end, pos))
-    el.scrollLeft = pos
+    set(el, pos)
     // At an end nothing moves, and the line under the pointer has nothing to follow.
-    if (el.scrollLeft !== before) onScroll?.()
+    if (get(el) !== before) onScroll?.()
     frame = requestAnimationFrame(tick)
   }
   const at = (x: number): void => {
-    const r = strip()?.getBoundingClientRect()
-    if (r === undefined) return
-    // How far into an end zone the pointer is, in px: negative at the left, positive at the right, 0 between.
-    const depth = x < r.left + EDGE_PX ? x - (r.left + EDGE_PX) : x > r.right - EDGE_PX ? x - (r.right - EDGE_PX) : 0
+    const box = strip()?.getBoundingClientRect()
+    // No box, or one not laid out (a zero size): no end zone.
+    if (box === undefined || (horizontal ? box.width : box.height) === 0) return
+    const [start, end] = horizontal ? [box.left, box.right] : [box.top, box.bottom]
+    // How far into an end zone the pointer is, in px: negative at the start, positive at the end, 0 between.
+    const depth = x < start + EDGE_PX ? x - (start + EDGE_PX) : x > end - EDGE_PX ? x - (end - EDGE_PX) : 0
     pull = Math.max(-1, Math.min(1, depth / EDGE_PX))
     if (pull !== 0 && frame === 0) frame = requestAnimationFrame(tick)
   }

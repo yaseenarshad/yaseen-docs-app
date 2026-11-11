@@ -54,6 +54,24 @@ export interface MenuRow {
    * the whole menu. `run` is not called.
    */
   children?: MenuRow[][]
+  /** A small grey heading over each flyout group, by index (YAZ-4774: a table's "Header row ›"); none for an absent one. */
+  headings?: (string | undefined)[]
+  /**
+   * A child's pick keeps the menu and this flyout open, drawn again from the new state (YAZ-4774 demo: "it keeps on
+   * closing, which is really annoying"), as a `stay` strip does. Without the menu's `refresh`, a pick closes it.
+   */
+  stay?: boolean
+  /**
+   * Tabs under `children` (YAZ-4794 demo: "holy shite thats a long flyout"): a Fill · Row · Column-style switch, and
+   * the groups of the picked tab under it. The picked tab is kept per row label, so a `stay` pick draws the same tab.
+   */
+  tabs?: {
+    label: string
+    children: MenuRow[][]
+    headings?: (string | undefined)[]
+    /** A short switch under the tabs (YAZ-4794 demo: Strength as the folder table's Off · Light · Medium · Strong): its rows as segments, ✓ pressed. */
+    bar?: MenuRow[]
+  }[]
 }
 
 /** A typed number with presets (YAZ-3164 D3): a picker row whose panel is the zoom menu's box and presets. */
@@ -75,6 +93,8 @@ export interface MenuNumberField {
   error: string
   /** A new value only (null: the "Default" item): the current value never runs. */
   run: (value: number | null) => void
+  /** A pick keeps the menu open, this picker's panel too, drawn again from the new state (YAZ-4774 demo). */
+  stay?: boolean
 }
 
 /** One choice of a choice picker; `sample` is a class list for a small drawn sample before the label. */
@@ -97,6 +117,8 @@ export interface MenuChoiceField {
   defaultOnce?: boolean
   /** A new value only (null: the "Default" item): the current value never runs. */
   run: (value: string | null) => void
+  /** A pick keeps the menu open, this picker's panel too, drawn again from the new state (YAZ-4774 demo). */
+  stay?: boolean
 }
 
 /** One button of a strip: an icon, its name as the tooltip and the accessible name, lit when `active`. */
@@ -179,9 +201,11 @@ const optionList = (label: string, buttons: HTMLButtonElement[]): HTMLElement =>
 }
 
 /** A number field's panel: the box, a divider and the presets — DocumentZoom's markup, built by hand. Returns the box too. */
-function numberPanel(field: MenuNumberField, id: string, close: () => void): { parts: HTMLElement[]; box: HTMLInputElement } {
+function numberPanel(field: MenuNumberField, id: string, close: () => void, refresh?: (run: () => void) => void): { parts: HTMLElement[]; box: HTMLInputElement } {
   const apply = (value: number | null) => {
-    if (value !== field.value) field.run(value)
+    if (value === field.value) return close()
+    if (field.stay === true && refresh !== undefined) return refresh(() => field.run(value))
+    field.run(value)
     close()
   }
   const custom = document.createElement('div')
@@ -239,9 +263,11 @@ function numberPanel(field: MenuNumberField, id: string, close: () => void): { p
 }
 
 /** A choice field's panel: one button per choice, with its sample. */
-function choicePanel(field: MenuChoiceField, close: () => void): HTMLElement[] {
+function choicePanel(field: MenuChoiceField, close: () => void, refresh?: (run: () => void) => void): HTMLElement[] {
   const pick = (value: string | null) => () => {
-    if (value !== field.value) field.run(value)
+    if (value === field.value) return close()
+    if (field.stay === true && refresh !== undefined) return refresh(() => field.run(value))
+    field.run(value)
     close()
   }
   const fallback = field.choices.find((c) => c.value === field.fallback)
@@ -268,7 +294,7 @@ function valueLabel(field: MenuNumberField | MenuChoiceField): string {
  * One picker: the row (name left, value button right) and its panel, closed. `toggle` opens this
  * panel and closes the menu's others, or closes it when it is open.
  */
-function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElement, close: () => void): HTMLElement {
+function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElement, close: () => void, refresh?: (run: () => void) => void): HTMLElement {
   const id = `block-menu-picker-${++fieldIds}`
   const picker = document.createElement('div')
   picker.className = 'block-menu-picker'
@@ -298,10 +324,10 @@ function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElemen
   panel.hidden = true
   let box: HTMLInputElement | null = null
   if (field.kind === 'number') {
-    const built = numberPanel(field, id, close)
+    const built = numberPanel(field, id, close, refresh)
     panel.append(...built.parts)
     box = built.box
-  } else panel.append(...choicePanel(field, close))
+  } else panel.append(...choicePanel(field, close, refresh))
   value.addEventListener('click', () => {
     const open = !panel.hidden
     for (const other of menu.querySelectorAll<HTMLElement>('.block-menu-picker__panel')) other.hidden = true
@@ -318,8 +344,8 @@ function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElemen
   return picker
 }
 
-/** One row's button: a click runs it, then `close`. */
-function rowButton(row: MenuRow, close: () => void): HTMLButtonElement {
+/** One row's button: a click runs it, then `close`; with `refresh` (a `stay` flyout's child), the menu is drawn again instead. */
+function rowButton(row: MenuRow, close: () => void, refresh?: (run: () => void) => void): HTMLButtonElement {
   const item = document.createElement('button')
   item.type = 'button'
   item.className = `ctx-menu__item${row.danger === true ? ' ctx-menu__item--danger' : ''}`
@@ -335,11 +361,15 @@ function rowButton(row: MenuRow, close: () => void): HTMLButtonElement {
   if (row.hint !== undefined) item.dataset.hint = row.hint
   item.addEventListener('mousedown', (e) => e.preventDefault())
   item.addEventListener('click', () => {
+    if (refresh !== undefined) return refresh(row.run)
     row.run()
     close()
   })
   return item
 }
+
+/** The tab each tabbed flyout showed last, by its row's label (YAZ-4794 demo): a `stay` pick draws it again. */
+const lastTab = new Map<string, number>()
 
 /** How each open menu closes its flyout alone: `closeSubmenu`. */
 const submenuClosers = new WeakMap<HTMLElement, () => boolean>()
@@ -361,7 +391,7 @@ export function closeSubmenu(menu: HTMLElement): boolean {
  * the focus on its first row; ArrowLeft in it, and Escape (`closeSubmenu`), close it alone, and a focus that was in
  * it goes back to the parent row. One parent for each menu.
  */
-function renderParent(row: MenuRow, children: MenuRow[][], menu: HTMLElement, close: () => void): HTMLElement {
+function renderParent(row: MenuRow, children: MenuRow[][], menu: HTMLElement, close: () => void, refresh?: (run: () => void) => void): HTMLElement {
   const wrap = document.createElement('div')
   wrap.className = 'ctx-menu__parent'
   const button = document.createElement('button')
@@ -393,9 +423,65 @@ function renderParent(row: MenuRow, children: MenuRow[][], menu: HTMLElement, cl
       flyout.className = 'ctx-menu ctx-menu--editor ctx-menu__sub'
       flyout.setAttribute('role', 'menu')
       // An empty group is left out here, the one place (a caller hands its groups as they are).
-      for (const group of children.filter((list) => list.length > 0)) {
-        if (flyout.childElementCount > 0) flyout.appendChild(divider())
-        for (const child of group) flyout.appendChild(rowButton(child, close))
+      const sub = flyout
+      const groups = (into: HTMLElement, list: MenuRow[][], headings: (string | undefined)[] | undefined) =>
+        list.forEach((group, i) => {
+          if (group.length === 0) return
+          if (into.childElementCount > 0) into.appendChild(divider())
+          const heading = headings?.[i]
+          if (heading !== undefined) {
+            const el = document.createElement('div')
+            el.className = 'ctx-menu__heading'
+            el.setAttribute('role', 'presentation')
+            el.textContent = heading
+            into.appendChild(el)
+          }
+          for (const child of group) into.appendChild(rowButton(child, close, row.stay === true ? refresh : undefined))
+        })
+      groups(sub, children, row.headings)
+      // YAZ-4794 demo: the tabs, then the picked tab's groups in a box of their own, drawn again at a tab click.
+      const tabs = row.tabs
+      if (tabs !== undefined && tabs.length > 0) {
+        const bar = document.createElement('div')
+        bar.className = 'fill-target'
+        bar.setAttribute('role', 'group')
+        bar.setAttribute('aria-label', row.label)
+        const body = document.createElement('div')
+        const show = (at: number) => {
+          lastTab.set(row.label, at)
+          for (const [i, b] of [...bar.children].entries()) b.setAttribute('aria-pressed', String(i === at))
+          body.replaceChildren()
+          const segments = tabs[at]!.bar
+          if (segments !== undefined && segments.length > 0) {
+            const seg = document.createElement('div')
+            seg.className = 'fill-target fill-target--sub'
+            seg.setAttribute('role', 'group')
+            for (const option of segments) {
+              const b = document.createElement('button')
+              b.type = 'button'
+              b.className = 'fill-target__opt'
+              b.textContent = option.label
+              b.setAttribute('aria-pressed', String(option.hint === '✓'))
+              b.addEventListener('mousedown', (e) => e.preventDefault())
+              b.addEventListener('click', () => (row.stay === true && refresh !== undefined ? refresh(option.run) : (option.run(), close())))
+              seg.appendChild(b)
+            }
+            body.appendChild(seg)
+          }
+          groups(body, tabs[at]!.children, tabs[at]!.headings)
+        }
+        tabs.forEach((tab, i) => {
+          const b = document.createElement('button')
+          b.type = 'button'
+          b.className = 'fill-target__opt'
+          b.textContent = tab.label
+          b.addEventListener('mousedown', (e) => e.preventDefault())
+          b.addEventListener('click', () => show(i))
+          bar.appendChild(b)
+        })
+        if (sub.childElementCount > 0) sub.appendChild(divider())
+        sub.append(bar, body)
+        show(Math.min(lastTab.get(row.label) ?? 0, tabs.length - 1))
       }
       flyout.addEventListener('keydown', (event) => {
         if (event.key !== 'ArrowLeft') return
@@ -490,7 +576,7 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
       // One divider between the rows and the pickers; the pickers sit together.
       if (!pickers && el.childElementCount > 0) el.appendChild(divider())
       pickers = true
-      el.appendChild(renderPicker(row, el, close))
+      el.appendChild(renderPicker(row, el, close, refresh))
       continue
     }
     // A line parts two kinds of rows (YAZ-3646 D9) and stands above a row that asks for one (YAZ-3609 D23).
@@ -500,7 +586,7 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
       el.appendChild(renderStrip(row, close, refresh))
       continue
     }
-    el.appendChild(row.children === undefined ? rowButton(row, close) : renderParent(row, row.children, el, close))
+    el.appendChild(row.children === undefined ? rowButton(row, close) : renderParent(row, row.children, el, close, refresh))
   }
   parent?.appendChild(el)
   return el
@@ -575,7 +661,8 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             popup.style.left = `${Math.max(0, Math.min(e.clientX, window.innerWidth - r.width))}px`
             popup.style.top = `${Math.max(0, Math.min(e.clientY, window.innerHeight - r.height))}px`
           }
-          // A `stay` strip's click: run it, then draw the menu again in its place from the new state.
+          // A `stay` click (a strip, a flyout's child, a picker's choice): run it, then draw the menu again in its place
+          // from the new state, the flyout or picker panel that was open opened again (YAZ-4774 demo).
           const refresh = (run: () => void) => {
             holding = true
             try {
@@ -586,9 +673,16 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             if (popup === null || openTarget === null) return
             const items = rows(view, openTarget, ctx)
             const { left, top } = popup.style
+            const flyout = popup.querySelector('.ctx-menu__item--parent[aria-expanded="true"]')?.textContent ?? null
+            const picker = popup.querySelector('.block-menu-picker__value[aria-expanded="true"]')?.closest('.block-menu-picker')?.querySelector('.block-menu-picker__label')?.textContent ?? null
+            closeSubmenu(popup)
             popup.remove()
             popup = items.length === 0 ? null : renderMenu(view.dom.parentElement, items, close, refresh)
-            if (popup !== null) Object.assign(popup.style, { left, top })
+            if (popup === null) return
+            Object.assign(popup.style, { left, top })
+            if (flyout !== null) [...popup.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === flyout)?.click()
+            if (picker !== null)
+              [...popup.querySelectorAll('.block-menu-picker')].find((p) => p.querySelector('.block-menu-picker__label')?.textContent === picker)?.querySelector<HTMLButtonElement>('.block-menu-picker__value')?.click()
           }
           const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') close()

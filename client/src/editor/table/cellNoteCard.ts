@@ -41,6 +41,7 @@
 import { parserCtx, serializerCtx } from '@milkdown/kit/core'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, Selection, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import { TableMap } from '@milkdown/kit/prose/tables'
 import type { ReplaceStep } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
@@ -49,6 +50,7 @@ import { rowShortcuts } from '../noteKeys'
 import { wikilinkPickerOpen } from '../wikilink/wikilinkPicker'
 import { cellPosAround } from '../outline/listNodes'
 import { cellBlocksOf } from './cellBlocks'
+import { cellStartsAt, cellTextAt } from './cells'
 import { cellNotePreviewLines } from './cellNotePreview'
 import {
   addCellNote,
@@ -185,7 +187,7 @@ export function setAllCellNotes(view: EditorView, all: boolean): void {
  */
 export const CELL_NOTE_CALENDAR_CLASS = 'cell-note--calendar'
 
-/** Settings › Editor › Cell notes › All notes opens at (A1): the cell you came from, or now. App sets it. */
+/** Settings › Tables › Cell notes › All notes opens at (A1): the cell you came from, or now. App sets it. */
 let allOpensAt: AllNotesOpensAt = 'cell'
 
 /** "Only filled" (A3), kept for each editor (a tab) while it lives: the view opens with it as it was left. */
@@ -233,25 +235,27 @@ function timeBlocks(doc: ProseNode, table: TableAt, column: number): TimeBlock[]
     at += $end.parent.child(index).nodeSize
   }
   const blocks: TimeBlock[] = []
-  let rowPos = table.pos + 1
-  table.node.forEach((row, _offset, r) => {
-    if (r > 0 && column < row.childCount) {
-      let cell = rowPos + 1
-      for (let c = 0; c < column; c++) cell += row.child(c).nodeSize
-      const label = cellNoteLabelsIn(row.child(column))[0] ?? null
-      blocks.push({ row: r, time: row.firstChild!.textContent.trim(), cell, label, note: label === null ? null : (notes.get(label) ?? null) })
-    }
-    rowPos += row.nodeSize
-  })
+  // The column's cells through the table map (YAZ-4792): a row that a merged cell covers in this column is part of the
+  // block above it, so it has no block of its own.
+  const map = TableMap.get(table.node)
+  if (column >= map.width) return blocks
+  for (let r = 1; r < map.height; r++) {
+    if (!cellStartsAt(map, r, column)) continue
+    const pos = map.map[r * map.width + column]!
+    const label = cellNoteLabelsIn(table.node.nodeAt(pos)!)[0] ?? null
+    blocks.push({ row: r, time: cellTextAt(table.node, r, 0).trim(), cell: table.pos + 1 + pos, label, note: label === null ? null : (notes.get(label) ?? null) })
+  }
   return blocks
 }
 
-/** The columns a view can show (A2): each one but the first, which holds the times, with its header's words. */
+/** The columns a view can show (A2): each one but the first, which holds the times, with its header's words (a merged header cell's for each column it spans, YAZ-4792). */
 function calendarColumns(table: ProseNode): Array<{ column: number; name: string }> {
   const columns: Array<{ column: number; name: string }> = []
-  table.firstChild!.forEach((cell, _offset, c) => {
-    if (c > 0) columns.push({ column: c, name: cell.textBetween(0, cell.content.size, ' ').trim() || `Column ${c + 1}` })
-  })
+  const map = TableMap.get(table)
+  for (let c = 1; c < map.width; c++) {
+    const cell = table.nodeAt(map.map[c]!)!
+    columns.push({ column: c, name: cell.textBetween(0, cell.content.size, ' ').trim() || `Column ${c + 1}` })
+  }
   return columns
 }
 
@@ -872,7 +876,7 @@ interface CardMemory {
 }
 const memories = new WeakMap<EditorView, CardMemory>()
 
-/** Settings › Editor › Cell notes › Keep cell notes open (round 3 of the demo): a new tab's card starts pinned. App sets it. */
+/** Settings › Tables › Cell notes › Keep cell notes open (round 3 of the demo): a new tab's card starts pinned. App sets it. */
 let pinnedAtStart = true
 
 /** Set whether a new tab's card starts pinned: App, when the setting changes. An open tab's card keeps its pin. */
@@ -880,7 +884,10 @@ export function setCellNotePinnedAtStart(on: boolean): void {
   pinnedAtStart = on
 }
 
-/** The new cell note template (Settings › Editor › Tables › New cell note starts with), as Markdown; App sets it. */
+/** Whether a new card starts pinned: the folder table's note window reads it too (YAZ-4547). */
+export const cellNotePinnedAtStart = (): boolean => pinnedAtStart
+
+/** The new cell note template (Settings › Tables › All tables › New cell note starts with), as Markdown; App sets it. */
 let template = ''
 
 /** Set the new cell note template (round 3 of the demo): App, when the setting changes. */

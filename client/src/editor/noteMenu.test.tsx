@@ -317,7 +317,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
   it('on a bullet with children: Open in new tab, the strip, the children rows, then the clipboard rows, in groups', async () => {
     const { crepe, view } = await open('* a\n  * kid\n* b\n', { onOpen: vi.fn() })
     await rightClickOn(view, posOf(crepe, 'a'))
-    expect(groups()).toEqual([['Open in new tab'], [STRIP('Bullet list', 'Text')], ['Number children', 'Collapse all⌘⇧U', 'Expand all⌘⇧I', 'Lock open'].map((label) => label.replace(/⌘.*/, '')), ...CLIPBOARD])
+    expect(groups()).toEqual([['Open in new tab'], [STRIP('Bullet list', 'Text')], ['Number children', 'Collapse all⌘⇧U', 'Expand all⌘⇧I', 'Collapse this level', 'Expand this level', 'Lock open'].map((label) => label.replace(/⌘.*/, '')), ...CLIPBOARD])
     // D19: no glyph, so no row is pushed right to line up after one.
     expect(document.querySelector('.ctx-menu')!.classList.contains('ctx-menu--glyphs')).toBe(false)
     // D17: no "⇧-click" hint here (on the text it only extends the selection), so the menu is no wider than the strip.
@@ -395,7 +395,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
       chevron.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 }))
       await guessesAnswered()
     })
-    expect(groups().slice(0, 2)).toEqual([[STRIP('Bullet list', 'Text')], ['Number children', 'Collapse all', 'Expand all', 'Lock open']])
+    expect(groups().slice(0, 2)).toEqual([[STRIP('Bullet list', 'Text')], ['Number children', 'Collapse all', 'Expand all', 'Collapse this level', 'Expand this level', 'Lock open']])
     const items = () => {
       const found: number[] = []
       view.state.doc.descendants((node, pos) => {

@@ -2,8 +2,8 @@
  * The rename confirm (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes): a rename
  * triggers a chain — the file on disk, then links across the vault — so a NAME change asks first,
  * with the honest count from `countLinkReferences`. A move never asks THIS (a confirm on every
- * drag would be hostile, and bare links keep resolving); one that would clear a folder's values
- * asks through `ConfirmMove` (D21). The sheet itself lands with YAZ-888; the
+ * drag would be hostile, and bare links keep resolving), and a move clears no value (YAZ-4713 C9).
+ * The sheet itself lands with YAZ-888; the
  * LOCKED copy lives here first, `deleteConfirmMessage`'s idiom, so the component stays trivial.
  */
 import { useCallback, useRef } from 'react'

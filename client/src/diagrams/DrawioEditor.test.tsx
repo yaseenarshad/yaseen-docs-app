@@ -35,6 +35,15 @@ import type { DrawioEditorProps } from './DrawioEditor'
 import { useCardPreview } from '../tabs/cardPreview'
 import { linkPreviewHint, readOnlyHint } from '../drawings/cogHints'
 
+/**
+ * The cog's open menu (YAZ-4776): a portal on the page, under its cog, so a test finds it by the open cog's
+ * `aria-controls`, not inside the cog's pane. `null` while it is closed.
+ */
+function menuIn(scope: ParentNode): HTMLElement | null {
+  const id = scope.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
+  return id == null ? null : document.getElementById(id)
+}
+
 const load = vi.mocked(api.diagram.load)
 const save = vi.mocked(api.diagram.save)
 const saveImage = vi.mocked(api.dialog.saveImage)
@@ -380,7 +389,7 @@ describe("the cog on a diagram (YAZ-3943 D13: the drawing's rows are a drawing's
   it('YAZ-4748 D10: has "Read only", then "Link preview on hover": no pictures row, no export rows', async () => {
     await opened()
     act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    expect([...document.querySelectorAll('.page-settings__menu > *')].map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓'])
+    expect([...(menuIn(container)?.querySelectorAll(':scope > *') ?? [])].map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓'])
   })
 })
 
@@ -390,7 +399,7 @@ describe('read only: a change draw.io queued before the switch landed (YAZ-3116 
     let answer!: (res: { path: string; mtime: number; size: number }) => void
     setBoardReadOnly.mockReturnValue(new Promise((resolve) => (answer = resolve)))
     act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    const row = [...document.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith('Read only'))!
+    const row = [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((b) => b.textContent?.startsWith('Read only'))!
     await act(async () => {
       row.click()
       await Promise.resolve()

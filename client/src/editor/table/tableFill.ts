@@ -15,13 +15,17 @@
  *   and `color` of its source cell in the repeated pattern. Read-only: no handle (R3).
  * - FOLDED ROWS (YAZ-4165) are never read or written: the series runs in the rows that are not folded, so a drag
  *   across a folded run goes on below it, and the run keeps its text.
+ * - MERGED CELLS (YAZ-4792): a source that holds a merged cell has no handle (its series would count one cell for
+ *   several), and a drag stops at the row (column) before the first merged cell in its way, so the fill never writes
+ *   into one.
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import { TableMap, cellAround, isInTable, selectedRect } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { cellPosAt, rowFolded } from './cells'
+import { cellPosAt, isMerged, rectHasMerge, rowFolded } from './cells'
 import { fillSeries } from './fillSeries'
 import { selectCells, textCell, writeCells, type Cell } from './tablePaste'
 
@@ -46,11 +50,28 @@ interface FillState {
 
 const key = new PluginKey<FillState>('mdapp-table-fill')
 
-/** The selected cells, or the caret's cell; `null` outside a table. */
+/** The selected cells, or the caret's cell; `null` outside a table, and when the cells hold a merged cell (YAZ-4792). */
 export function fillSource(state: EditorState): FillSource | null {
   if (!isInTable(state)) return null
-  const { tableStart, top, left, bottom, right } = selectedRect(state)
+  const rect = selectedRect(state)
+  if (rectHasMerge(rect)) return null
+  const { tableStart, top, left, bottom, right } = rect
   return { tableStart, top, left, bottom, right }
+}
+
+/** How many cells past `source` a fill may go in `axis` before the first merged cell in its way, at most `count` (YAZ-4792). */
+function mergeFreeCount(table: ProseNode, source: FillSource, axis: FillAxis, count: number): number {
+  const map = TableMap.get(table)
+  const limit = axis === 'down' ? Math.min(count, map.height - source.bottom) : Math.min(count, map.width - source.right)
+  for (let n = 0; n < limit; n++) {
+    const line = axis === 'down' ? source.bottom + n : source.right + n
+    const across = axis === 'down' ? [source.left, source.right] : [source.top, source.bottom]
+    for (let i = across[0]!; i < across[1]!; i++) {
+      const pos = axis === 'down' ? map.map[line * map.width + i]! : map.map[i * map.width + line]!
+      if (isMerged(table.nodeAt(pos)!)) return n
+    }
+  }
+  return limit
 }
 
 /** Fill `count` cells past `source` down or right, stopped at the table's edge; `null` when nothing is passed. */
@@ -95,7 +116,9 @@ function dragTo(view: EditorView, source: FillSource, event: MouseEvent): Drag |
   const { top, left } = TableMap.get($cell.node(-1)).findCell($cell.pos - source.tableStart)
   const down = top - (source.bottom - 1)
   const right = left - (source.right - 1)
-  return down >= right ? { axis: 'down', count: Math.max(down, 0) } : { axis: 'right', count: right }
+  const drag: Drag = down >= right ? { axis: 'down', count: Math.max(down, 0) } : { axis: 'right', count: right }
+  // Never into a merged cell (YAZ-4792): the drag stops before the first one in its way.
+  return { ...drag, count: mergeFreeCount($cell.node(-1), source, drag.axis, drag.count) }
 }
 
 /** A running drag's document listeners, by view: the plugin view removes them when the note closes mid-drag. */

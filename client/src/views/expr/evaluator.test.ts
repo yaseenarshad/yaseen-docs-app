@@ -253,6 +253,7 @@ describe('global functions', () => {
     expect(ev('date(date("2026-08-21"))')).toEqual(new DateValue(new Date(2026, 7, 21).getTime(), false))
     expect(ev('date(0)')).toEqual(new DateValue(0, true))
     expect(err(ev('date("nope")'))).toMatch(/invalid date/)
+    expect(err(ev('date("2026-02-30")'))).toMatch(/invalid date/) // an impossible day is not March 2 (YAZ-4644 E3)
     const today = ev('today()') as DateValue
     expect(today.hasTime).toBe(false)
     expect(today.ms).toBe(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime())
@@ -508,6 +509,12 @@ describe('link and regex methods', () => {
 })
 
 describe('file methods', () => {
+  it('a record with no file yet (times 0, the row of a folder with no `.folder.md`) has no Created or Modified, never 1970 (YAZ-3746 2D)', () => {
+    const none = scope({}, { file: new FileValue({ ...record, ctime: 0, mtime: 0 }) })
+    expect(ev('file.ctime', none)).toBeNull()
+    expect(ev('file.mtime', none)).toBeNull()
+  })
+
   it('hasTag is case-insensitive, nested-aware and # tolerant', () => {
     expect(ev('file.hasTag("tag")')).toBe(false)
     expect(ev('file.hasTag("book")')).toBe(true)

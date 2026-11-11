@@ -417,8 +417,112 @@ button {
   align-items: center;
 }
 
+/* The add form is 371px with its type (YAZ-4551): on a narrow note, Add and Cancel wrap to the next line (YAZ-4544). */
+.frontmatter-panel__new {
+  flex-wrap: wrap;
+}
+
 .frontmatter-panel__name {
   width: 150px;
+}
+
+/* The note's Add property row (YAZ-4713 C8A, YAZ-4769): one row, as a property's — the name in the names' column, then
+   Type, Column on, Cancel and Add in the values' place, on a light wash so it reads as the row being added. A picker's
+   list opens as a full line under the row. */
+.frontmatter-add {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 2px 0;
+  padding: 3px 0;
+  font-size: 13px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.frontmatter-add .frontmatter-add__name {
+  flex: none;
+  width: min(180px, 38%);
+  box-sizing: border-box;
+  margin-top: 1px;
+}
+
+.frontmatter-add__controls {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-right: 4px;
+}
+
+.frontmatter-add__gap {
+  flex: 1;
+}
+
+/* An open list goes under the whole row: the (i), Cancel and Add stay on the first line. */
+.frontmatter-add__controls .type-picker__list {
+  order: 1;
+}
+
+.type-picker__lead {
+  color: var(--fg-muted);
+}
+
+/* A choice's line under its name (YAZ-4769): a long folder name never cuts it. */
+.type-picker__option.type-picker__option--stacked {
+  grid-template-columns: 14px minmax(0, 1fr) 12px;
+  padding: 4px 8px;
+}
+
+.type-picker__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.frontmatter-panel__btn.frontmatter-add__add {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.frontmatter-panel__btn.frontmatter-add__add:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+
+/* A small (i) and its sentence in a box under it (C8A). */
+.info-tip {
+  position: relative;
+  display: inline-flex;
+}
+
+.info-tip__button {
+  display: inline-flex;
+  padding: 1px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  cursor: help;
+}
+
+.info-tip__box {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  width: 240px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg);
+  white-space: normal;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
 }
 
 /* Raw YAML is code: monospace, so indentation reads as the structure it is. */
@@ -515,6 +619,8 @@ button {
    divider 10 px; now 4 px between buttons, 6 px either side of a divider, the same height. */
 .milkdown .milkdown-toolbar {
   padding: 0 4px;
+  /* Above a table's column and row handles (z-index 50), as the cell toolbar is (YAZ-4789); Crepe's own is 10. */
+  z-index: 60;
 }
 .milkdown .milkdown-toolbar .toolbar-item {
   margin: 6px 2px;
@@ -1040,6 +1146,48 @@ button {
 .editor-instance .milkdown .milkdown-code-block {
   max-width: 100%;
   overflow-x: auto;
+}
+
+/* Zoom keeps the column as wide as at 100%, so a full-width code box stayed as wide on screen while its code shrank
+   (YAZ-4785). Zoomed out, the box narrows by the zoom; at 100% and above it fills the column as before. */
+.editor-instance .milkdown .milkdown-code-block {
+  width: min(100%, calc(100% * var(--document-zoom, 1)));
+}
+
+/* A code block's own width (YAZ-4783, `code/codeWidth.ts`): a node decoration gives the box `data-code-width` and
+   `--code-width` in px at 100% zoom. The box is inside the zoomed `.ProseMirror`, so the px already scale with the page
+   zoom, and it may reach past the text column into the room on the right (the drag stops at the scroller's edge). */
+.editor-instance .milkdown .milkdown-code-block[data-code-width] {
+  width: var(--code-width);
+  max-width: none;
+}
+
+/* Its grip: the right edge takes the mouse with the table column grip's cursor and bar (4px of the theme colour, half
+   in and half out of the box, as `.column-resize-handle` is). While the edge drags, the cursor stays over the code. */
+.editor-instance .milkdown .milkdown-code-block.code-width-grip {
+  cursor: col-resize;
+  box-shadow: inset -2px 0 0 var(--crepe-color-primary), 2px 0 0 var(--crepe-color-primary);
+}
+.editor-instance .milkdown .ProseMirror.code-width-dragging,
+.editor-instance .milkdown .ProseMirror.code-width-dragging * {
+  cursor: col-resize;
+}
+
+/* The width for EVERY code block and every table (YAZ-4783 layers 2 and 3): `--code-block-width` / `--table-width`, each
+   with its `data-code-block-width` / `data-table-width`, on the editor's mount (this note's `code-width` / `table-width`
+   key, the page cog) or on `.app` (Settings › Editor › Code blocks › Width, Settings › Tables › All tables › Width). The
+   nearest one wins, as a CSS variable does, and `:is([data-…] *)` finds either. A code box with its own width
+   (`data-code-width`) and a table whose every column has a width (`data-table-sized`) keep theirs, so a change in
+   Settings moves only what follows it. px at 100% zoom inside the zoomed `.ProseMirror`, so they scale with the page
+   zoom; past the text column into the room on the right, never past the editor's scroll area or under the Contents rail
+   (`--block-room`, `blockRoom.ts`). A table that takes the width shares it evenly among its columns at `auto`. */
+.editor-instance .milkdown .milkdown-code-block:not([data-code-width]):is([data-code-block-width] *) {
+  width: var(--code-block-width);
+  max-width: calc(100% + var(--block-room, 0px));
+}
+.editor-instance .milkdown .milkdown-table-block:not([data-table-sized]):is([data-table-width] *) {
+  width: var(--table-width);
+  max-width: calc(100% + var(--block-room, 0px));
 }
 
 /* Column resize (YAZ-3696 D2): the grip at a header cell's edge (YAZ-3800) takes the theme colour
@@ -1684,6 +1832,9 @@ button {
    its stored width comes back when the window does. A Files window is only the sidebar. */
 .app:not(.app--files) > .sidebar {
   max-width: calc(100vw - 360px);
+  /* In a window under 360 px that leaves no width at all: nothing of the sidebar shows beside its edge (YAZ-4643 S10).
+     `clip`, not `hidden`: no scroll container, so a focus inside it never shifts its content. Menus portal out. */
+  overflow: clip;
 }
 
 /* A Files window (YAZ-3357 D1, D8) is only the sidebar: it fills the window, with no edge to drag. While Tabs Mission
@@ -2716,12 +2867,18 @@ body.drag-held iframe {
 .ctx-menu {
   position: fixed;
   z-index: 40;
+  /* As wide as its longest item wherever it opens (YAZ-3746 13AW): near the window's right edge a fixed box shrank to
+     the room left of the click, its labels wrapped, and the menu ran off the bottom. */
+  width: max-content;
+  max-width: calc(100vw - 16px);
   min-width: 140px;
   padding: 4px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  /* A menu that scrolls (taller than the window, YAZ-3746 13AO) keeps its wheel: at its end the page does not move. */
+  overscroll-behavior: contain;
 }
 
 /* A panel, not a popup (YAZ-1767 D5): the vault switcher's surface hangs off the sidebar header's
@@ -2977,6 +3134,16 @@ body.drag-held iframe {
 /* A third answer (YAZ-3818 D17's "Cells only"): on the buttons' row, at its left end; no button breaks its words. */
 .confirm__btn--other {
   margin-right: auto;
+}
+
+/* Three answers need a wider sheet (YAZ-4747: "Move the folder only" · Cancel · "Move the folder and its notes"; the
+   delete column sheet's "Keep the values in the notes"); a window too narrow for one row wraps them. */
+.confirm:has(.confirm__btn--other) {
+  width: min(500px, calc(100vw - 24px));
+}
+
+.confirm:has(.confirm__btn--other) .confirm__actions {
+  flex-wrap: wrap;
 }
 
 .confirm__actions > .confirm__btn {
@@ -3880,6 +4047,11 @@ body.drag-held iframe {
   background: var(--border);
 }
 
+/* A line with nothing under it (a folder page's cog off its Page tab, YAZ-3746 D35): no line. */
+.page-settings__menu > .page-settings__divider:last-child {
+  display: none;
+}
+
 /* The in-note menus' line between groups (the bullet's and the link's, `renderMenu`) spaces as the app menus'
    (`.ctx-menu__group + .ctx-menu__group`): 4px above and below (YAZ-3727 D21). */
 .ctx-menu--editor > .document-zoom__divider {
@@ -3974,6 +4146,39 @@ body.drag-held iframe {
    showed over the 6-dot menu (the YAZ-4163 demo). */
 .ctx-menu--editor {
   z-index: 60;
+}
+
+/* The tabs and the Off · Light · Medium · Strong switch of a table's Header row (YAZ-4794 demo: "it does not look how it
+   is for folder pages"): the folder page's `.fill-target` (views.css), restated under `.ctx-menu--editor` so Crepe's
+   `.milkdown button` reset (no padding, no height, its own font) does not squeeze them. */
+.ctx-menu--editor .fill-target {
+  margin: 2px 4px 6px;
+  padding: 2px;
+}
+.ctx-menu--editor .fill-target--sub {
+  margin-top: 0;
+}
+.ctx-menu--editor .fill-target__opt {
+  flex: 1;
+  height: 22px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 22px;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.ctx-menu--editor .fill-target__opt[aria-pressed='true'] {
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.ctx-menu--editor .fill-target--sub .fill-target__opt {
+  font-size: 11px;
 }
 
 /* A captioned strip (a table's Look, Text and Rows, the YAZ-4163 demo, as the approved mockup): its name at the left,
@@ -4395,6 +4600,41 @@ body.drag-held iframe {
   border-color: var(--accent);
 }
 
+/* "Code block width" / "Table width" (YAZ-4783 layer 2): beside Default, the note's own px as a field, pressed (the
+   accent) while the note has one. */
+.page-settings__px {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 6px 0 2px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.page-settings__px[data-own] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.page-settings__px input {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: right;
+}
+
+.page-settings__px input:focus {
+  outline: none;
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+
 /* The small "i" beside the label: a quiet glyph, not one more row of the menu. */
 .page-settings__menu .page-settings__label .page-settings__info {
   display: inline-flex;
@@ -4475,6 +4715,80 @@ body.drag-held iframe {
   font-size: 11px;
 }
 
+/* A row of four choices (the folder cog's "Show where columns come from", YAZ-4713 C11): each choice on one line, and
+   the menu wide enough for them. At 172px "Icon and folder name" broke over four lines. */
+.page-settings__menu:has(.page-settings__choices > button:nth-child(4)) {
+  width: 268px;
+}
+
+.page-settings__choices:has(> button:nth-child(4)) button {
+  white-space: nowrap;
+}
+
+/* The folder ⚙ in sections (YAZ-3746 13BP): a small heading starts each; a setting is ONE line, its label in the text
+   colour and its choices quieter at the right; an (i) after the label holds the hint. Wider, so a line fits. */
+.page-settings__menu:has(.page-settings__line) {
+  min-width: 316px;
+  max-height: min(480px, calc(100vh - 64px));
+}
+
+.page-settings__menu .page-settings__heading {
+  padding-top: 4px;
+  color: var(--fg-muted);
+}
+
+.page-settings__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.page-settings__menu .page-settings__line .page-settings__label {
+  padding: 3px 0 3px 7px;
+  color: var(--fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.page-settings__line .page-settings__choices {
+  flex: 0 0 auto;
+}
+
+.page-settings__menu .page-settings__line .page-settings__choices button {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  color: var(--fg-muted);
+}
+
+.page-settings__menu .page-settings__line .page-settings__choices button[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+/* The ⚙'s heading names the folder (13BP CL6): a long name ends in "…", and its hover gives it whole. */
+.page-settings__menu .page-settings__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An (i)'s sentence (13BP CL4): the "TOC made from" box, level with its row, left of the wider folder ⚙. */
+/* The menu on the page (YAZ-4776): fixed under its button and kept inside the window, so no pane or sidebar covers it. */
+.page-settings__menu.page-settings__menu--placed {
+  position: fixed;
+  right: auto;
+  z-index: 1000;
+}
+
+.page-settings__tip.page-settings__tip--hint {
+  position: fixed;
+  right: auto;
+  z-index: 1000;
+  width: 240px;
+  pointer-events: none;
+}
+
 /* Line numbers (YAZ-2643). A numbered block carries `data-line`; the number is that block's own
    pseudo-element, parked left of the column. A block's RIGHT edge is the column's right edge at
    every bullet depth, and 100cqw is the column's width, so one rule puts all numbers in one column.
@@ -4540,6 +4854,13 @@ body.drag-held iframe {
 .editor-host[data-line-numbers] .ProseMirror .line-view[data-line],
 .editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-line] {
   overflow: visible;
+}
+
+/* A code block with its own width, or the note's or Settings' (YAZ-4783), has no right edge on the column's, so its number goes from its LEFT edge,
+   the column's at the top level. */
+.editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-code-width][data-line]::after,
+.editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-line]:is([data-code-block-width] *)::after {
+  right: calc(100% + 52px / var(--document-zoom, 1));
 }
 
 .editor-host[data-line-numbers] .ProseMirror .line-view[data-line]::after {
@@ -5207,20 +5528,40 @@ body.drag-held iframe {
   margin: 0;
 }
 
-/* The menu on the page (YAZ-4776): fixed under its button and kept inside the window, so no pane or sidebar covers it. */
-.page-settings__menu.page-settings__menu--placed {
+/* The app's own hover box (YAZ-4772, `components/HoverTip.tsx`): fixed on the page, so a clipping cell can not cut it. */
+.hover-tip {
   position: fixed;
-  right: auto;
   z-index: 1000;
+  max-width: 260px;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--fg);
+  white-space: normal;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  pointer-events: none;
 }
 
-/* An (i)'s sentence (13BP CL4): the "TOC made from" box, level with its row, fixed on the page (YAZ-4776). */
-.page-settings__tip.page-settings__tip--hint {
-  position: fixed;
-  right: auto;
-  z-index: 1000;
-  width: 240px;
-  pointer-events: none;
+/* Edit property's "Column on" (YAZ-4769): the label and (i), the picker at the right; its list opens as a full line under it. */
+.frontmatter-property-menu__column {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+
+.frontmatter-property-menu__column-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg-muted);
 }
 
 /* The (i) inside a row that is a button (YAZ-4748 demo): the label's own (i), a glyph, as quiet. */

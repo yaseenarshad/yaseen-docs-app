@@ -8,9 +8,9 @@ export const APP_CLIPBOARD = 'data-yaseendocs-clipboard'
 type PasteNode = MdNode & { [key: string]: unknown; children?: PasteNode[]; ordered?: boolean; start?: number; checked?: boolean }
 
 /**
- * Can this editor hold a numbered list? The folder outline's bullets-only lock (`outline/bulletsOnly.ts`) narrows
- * `list_item` to `paragraph bullet_list?` and flattens a pasted list to bullet text; there a plain run keeps its
- * labels as text, as before YAZ-3727 D6, so its numbers never vanish.
+ * Can this editor hold a numbered list? A schema whose `list_item` cannot (the folder outline's bullets-only lock had
+ * one, until the Outline view became the Page tab, YAZ-4584) keeps a plain run's labels as text, as before YAZ-3727
+ * D6, so its numbers never vanish.
  */
 export function holdsNumbers(schema: Schema): boolean {
   const { list_item: item, paragraph, ordered_list: ordered } = schema.nodes

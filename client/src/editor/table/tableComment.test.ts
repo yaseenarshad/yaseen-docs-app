@@ -27,7 +27,7 @@ describe('each part', () => {
     ['fill B3 green', { fill: new Map([['B3', 'green']]) }],
     ['color B2 red', { color: new Map([['B2', 'red']]) }],
     ['border 2px 40%', { border: { px: 2, darkness: 40 } }],
-    ['header plain', { header: 'plain' }],
+    ['header plain', { header: { strength: 'off' } }],
     ['stripes', { stripes: true }],
     ['height compact', { height: 'compact' }],
     ['height tall', { height: 'tall' }],
@@ -217,5 +217,42 @@ describe('a known part with a value this build cannot read (YAZ-4176)', () => {
 
   it('a comment with only such parts is still not ours: the editor keeps it as its text', () => {
     expect(parseTableComment('<!-- table: calendar 45m, zoom 500% -->')).toBeNull()
+  })
+})
+
+describe('the header row part, text colour and align (YAZ-4794)', () => {
+  it.each<[string, Partial<TableStyle>]>([
+    ['header text-blue', { header: { text: 'blue' } }],
+    ['header align-center', { header: { align: 'center' } }],
+    ['header align-follow', { header: { align: 'follow' } }],
+    ['header green strong regular text-pink align-right', { header: { color: 'green', strength: 'strong', weight: 'regular', text: 'pink', align: 'right' } }],
+    ['header red muted align-left', { header: { color: 'red', text: 'muted', align: 'left' } }],
+  ])('`%s` reads and writes back the same', (part, parts) => {
+    const comment = `<!-- table: ${part} -->`
+    expect(parseTableComment(comment)).toEqual(style(parts))
+    expect(formatTableComment(style(parts))).toBe(comment)
+  })
+
+  it('every older comment reads as before: a bare colour is the fill, muted / full the text, plain is Off, shaded nothing', () => {
+    expect(parseTableComment('<!-- table: header blue -->')).toEqual(style({ header: { color: 'blue' } }))
+    expect(parseTableComment('<!-- table: header red strong regular muted -->')).toEqual(style({ header: { color: 'red', strength: 'strong', weight: 'regular', text: 'muted' } }))
+    expect(parseTableComment('<!-- table: header full -->')).toEqual(style({ header: { text: 'full' } }))
+    expect(parseTableComment('<!-- table: header plain -->')).toEqual(style({ header: { strength: 'off' } }))
+    expect(parseTableComment('<!-- table: header shaded, stripes -->')).toEqual(style({ stripes: true }))
+  })
+
+  it('words in any order; text-muted / text-full read as muted / full and write their bare word', () => {
+    expect(parseTableComment('<!-- table: header align-right text-teal blue -->')).toEqual(style({ header: { color: 'blue', text: 'teal', align: 'right' } }))
+    const parsed = parseTableComment('<!-- table: header text-muted -->')!
+    expect(parsed.header).toEqual({ text: 'muted' })
+    expect(formatTableComment(parsed)).toBe('<!-- table: header muted -->')
+  })
+
+  it('a word it cannot read keeps the whole part as its text: a bare align word, an unknown colour, two text colours', () => {
+    for (const part of ['header left', 'header text-gray', 'header align-middle', 'header blue text-red text-blue']) {
+      const parsed = parseTableComment(`<!-- table: stripes, ${part} -->`)!
+      expect(parsed.header).toBeUndefined()
+      expect(formatTableComment(parsed)).toBe(`<!-- table: stripes, ${part} -->`)
+    }
   })
 })

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
-import { type ViewResult, basenameKey, defaultLabel, folderAt, makeResolver, propertyKeys, propertyLabel, resolverFor, runView, targetBasename, targetKey } from './engine'
+import { basenameKey, makeResolver, targetBasename, targetKey } from '@shared/linkResolver'
+import { type ViewResult, defaultLabel, folderAt, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
 import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
 import { groupKeyOf } from './view/GroupHeader'
 import { DateValue, ErrorValue, FileValue } from './expr'
@@ -354,7 +355,7 @@ describe('runView: nested group by (YAZ-745)', () => {
     expect(lead.direct).toEqual([])
     expect(lead.children!.map(c => c.label)).toEqual(['1 Cross', '2 Paid'])
     expect(lead.children![1].rows.map(x => x.record.basename)).toEqual(['a1', 'a3'])
-    expect(lead.children![0].children).toBeUndefined() // two levels only
+    expect(lead.children![0].children).toBeUndefined() // the last level has no children
     expect(r.groups![1].children!.map(c => c.label)).toEqual(['3 Email'])
   })
 
@@ -446,11 +447,86 @@ describe('runView: nested group by (YAZ-745)', () => {
     expect(r.groups![0].children!.map(c => c.summaries['file.name'])).toEqual([1, 1, 1])
   })
 
-  it('entries beyond two are ignored in v1', () => {
-    const recs = [rec('a', { dept: 'A', proc: 'p', extra: 'x' })]
-    const r = T([{ property: 'dept' }, { property: 'proc' }, { property: 'extra' }], recs)
-    expect(r.groups![0].children![0].label).toBe('p')
-    expect(r.groups![0].children![0].children).toBeUndefined()
+  it('entries beyond five are ignored (YAZ-4531; five since YAZ-3746 13AF)', () => {
+    const recs = [rec('a', { dept: 'A', proc: 'p', step: 's', part: 'q', unit: 'u', extra: 'x' })]
+    const r = T([{ property: 'dept' }, { property: 'proc' }, { property: 'step' }, { property: 'part' }, { property: 'unit' }, { property: 'extra' }], recs)
+    const fifth = r.groups![0].children![0].children![0].children![0].children![0]
+    expect(fifth.label).toBe('u')
+    expect(fifth.children).toBeUndefined()
+  })
+})
+
+describe('runView: three group levels (YAZ-4531)', () => {
+  const rec = (name: string, properties: Record<string, unknown>) =>
+    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties }) as IndexRecord
+  const T = (recs: IndexRecord[], extra: Partial<ViewDef> = {}) =>
+    runView({ views: [] }, { type: 'table', name: 'T', groupBy: [{ property: 'a' }, { property: 'b' }, { property: 'c' }], ...extra }, recs, {})
+  const names = (rows: readonly { record: IndexRecord }[] | undefined) => rows!.map(x => x.record.basename)
+
+  it('rows sit under the innermost group; each group spans its branch; only the last level has no children', () => {
+    const recs = [rec('x1', { a: 'A', b: 'B1', c: 'C1' }), rec('x2', { a: 'A', b: 'B1', c: 'C2' }), rec('x3', { a: 'A', b: 'B2', c: 'C1' })]
+    const r = T(recs, { summaries: { 'file.name': 'Count' } })
+    const [a] = r.groups!
+    expect(names(a.rows)).toEqual(['x1', 'x2', 'x3'])
+    expect(a.children!.map(g => g.label)).toEqual(['B1', 'B2'])
+    const b1 = a.children![0]
+    expect(names(b1.rows)).toEqual(['x1', 'x2'])
+    expect(b1.direct).toEqual([])
+    expect(b1.children!.map(g => [g.label, names(g.rows)])).toEqual([['C1', ['x1']], ['C2', ['x2']]])
+    expect(b1.children![0].children).toBeUndefined()
+    expect(b1.children![0].direct).toBeUndefined()
+    expect(b1.summaries['file.name']).toBe(2)
+  })
+
+  it('the merge rule applies against each parent: at depth 2 the row is direct under level 1, at depth 3 under level 2', () => {
+    const recs = [rec('d2', { a: 'S', b: 'S', c: 'z' }), rec('d3', { a: 'S', b: 'T', c: 'T' }), rec('deep', { a: 'S', b: 'T', c: 'U' })]
+    const [s] = T(recs).groups!
+    expect(names(s.direct)).toEqual(['d2'])
+    expect(s.children!.map(g => g.label)).toEqual(['T'])
+    const t = s.children![0]
+    expect(names(t.direct)).toEqual(['d3'])
+    expect(t.children!.map(g => [g.label, names(g.rows)])).toEqual([['U', ['deep']]])
+  })
+
+  it('No value at level 3: a valued parent gets a "No value" child; a "No value" parent keeps those rows direct', () => {
+    const recs = [rec('v', { a: 'A', b: 'B' }), rec('n', { a: 'A' }), rec('nc', { a: 'A', c: 'C' })]
+    const [a] = T(recs).groups!
+    expect(a.children!.map(g => g.label)).toEqual(['B', 'No value'])
+    const [b, nv] = a.children!
+    expect(b.children!.map(g => [g.key, names(g.rows)])).toEqual([[null, ['v']]])
+    expect(nv.key).toBe(null)
+    expect(names(nv.direct)).toEqual(['n'])
+    expect(nv.children!.map(g => [g.label, names(g.rows)])).toEqual([['C', ['nc']]])
+  })
+
+  it('a branch with no inner keys keeps children: []; fan-out is one flag per level across all its groups', () => {
+    const recs = [rec('m', { a: 'A', b: 'B', c: ['c1', 'c2'] }), rec('o', { a: 'A', b: 'D', c: 'c1' }), rec('m2', { a: 'E', b: 'E' })]
+    const r = T(recs)
+    expect(r.groups!.every(g => !g.fannedOut)).toBe(true)
+    expect(r.groups!.flatMap(g => g.children!).every(g => !g.fannedOut)).toBe(true)
+    const third = r.groups!.flatMap(g => g.children!).flatMap(g => g.children!)
+    expect(third.map(g => g.label)).toEqual(['c1', 'c2', 'c1'])
+    expect(third.every(g => g.fannedOut)).toBe(true)
+    const e = r.groups![1]
+    expect(names(e.direct)).toEqual(['m2'])
+    expect(e.children).toEqual([])
+  })
+
+  it('Folder then Folder then Folder under a page: each level one step further down; a folder\'s own notes sit directly under it', () => {
+    const at = (path: string) => {
+      const basename = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
+      return { ...TEST_RECORDS[0], path: `/vault/${path}`, basename, title: basename, folder: path.slice(0, path.lastIndexOf('/')), properties: {} } as IndexRecord
+    }
+    const recs = [at('p/a/Top.md'), at('p/a/b/Mid.md'), at('p/a/b/c/Low.md'), at('p/a/b/c/d/Lower.md')]
+    const r = runView({ views: [] }, { type: 'table', name: 'T', groupBy: [{ property: 'file.folder' }, { property: 'file.folder' }, { property: 'file.folder' }] }, recs,
+      { page: { folder: 'p', folders: [], vault: 'V' } })
+    const [a] = r.groups!
+    expect(a.key).toBe('p/a')
+    expect(names(a.direct)).toEqual(['Top'])
+    const b = a.children![0]
+    expect(b.key).toBe('p/a/b')
+    expect(names(b.direct)).toEqual(['Mid'])
+    expect(b.children!.map(g => [g.key, g.label, names(g.rows)])).toEqual([['p/a/b/c', 'c', ['Low', 'Lower']]])
   })
 })
 
@@ -561,15 +637,15 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [])).toEqual(['file.name'])
   })
 
-  it('propertyKeys: every key the rows hold is a default column — `id`, `also_in` and `title` like any other (YAZ-2523 V12)', () => {
+  it('propertyKeys: on a page with no column, every key the rows hold is a default column — `id`, `also_in` and `title` like any other (YAZ-2523 V12; the folder host takes the app’s keys out first)', () => {
     const own = [{ ...TEST_RECORDS[0], properties: { id: 'k3m9x2pq7abc', also_in: ['f7n2w8rt4xyz'], title: 'Zebra', status: 'idea' } }]
     expect(propertyKeys(yasin, yasin.views[1], own)).toEqual(['file.name', 'note.also_in', 'note.id', 'note.status', 'note.title'])
   })
 
   it('propertyKeys: a DECLARED column is a column before any member carries it (YAZ-1549)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [], ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
-    // seen and declared merge, once each
-    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status', 'owner'])).toContain('note.owner')
+    // A page with columns shows them alone (YAZ-4713 C4): the rows' other fields wait in Columns ⚙ › Other properties.
+    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
     expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status']).filter((k) => k === 'note.status')).toHaveLength(1)
     // an explicit order still wins
     expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name'] }, TEST_RECORDS, ['status'])).toEqual(['file.name'])
@@ -634,6 +710,44 @@ describe('runView: Name is the title, File name its own column (YAZ-2420 D18)', 
 
   it('a file value sorts by its title', () => {
     expect(titles(table({ sort: [{ property: 'formula.self', direction: 'ASC' }] }, { formulas: { self: 'file' } }))).toEqual(['UP-001 - Abdul', 'Zebra'])
+  })
+})
+
+describe('runView: subfolder rows (YAZ-4579 D31/D33)', () => {
+  const note = (path: string, title: string): IndexRecord => ({ ...TEST_RECORDS[0], path: `/vault/${path}`, name: path.slice(path.lastIndexOf('/') + 1), basename: title, title, folder: 'Schema', properties: {} })
+  /** A subfolder's row: its `.folder.md`, titled as the folder, `folder` = the page. */
+  const folderRow = (dir: string): IndexRecord => ({ ...note(`Schema/${dir}/.folder.md`, dir), basename: '.folder' })
+  /** In the order ViewsPane hands them: the notes, then the folder rows. */
+  const records = [note('Schema/Apple.md', 'Apple'), note('Schema/Zoo.md', 'Zoo'), folderRow('Users'), folderRow('Orders')]
+  const table = (view: Partial<ViewDef>): ViewResult => {
+    const v: ViewDef = { type: 'table', name: 'T', ...view }
+    return runView({ views: [v] }, v, records)
+  }
+  const titles = (r: ViewResult): string[] => r.rows.map(row => row.record.title)
+  const byName: Partial<ViewDef> = { sort: [{ property: 'file.name', direction: 'ASC' }] }
+
+  it('`file.kind` is `folder` for a folder row and `note` for a note, under the label "Kind"; a filter on it keeps one kind', () => {
+    expect(table({ order: ['file.name', 'file.kind'] }).rows.map(row => row.values['file.kind'])).toEqual(['folder', 'folder', 'note', 'note'])
+    expect(titles(table({ filters: 'file.kind == "folder"' }))).toEqual(['Users', 'Orders'])
+    expect(titles(table({ filters: 'file.kind == "note"' }))).toEqual(['Apple', 'Zoo'])
+    expect(defaultLabel('file.kind')).toBe('Kind')
+  })
+
+  it('Folders first (D33), the default: folder rows before the notes, each part in the view’s sort — or, with none, as handed in', () => {
+    expect(titles(table(byName))).toEqual(['Orders', 'Users', 'Apple', 'Zoo'])
+    expect(titles(table({ sort: [{ property: 'file.name', direction: 'DESC' }] }))).toEqual(['Users', 'Orders', 'Zoo', 'Apple'])
+    expect(titles(table({}))).toEqual(['Users', 'Orders', 'Apple', 'Zoo'])
+  })
+
+  it('`foldersFirst: false`: the folder rows sort among the notes by the view’s sort alone', () => {
+    expect(titles(table({ ...byName, foldersFirst: false }))).toEqual(['Apple', 'Orders', 'Users', 'Zoo'])
+    expect(titles(table({ foldersFirst: false }))).toEqual(['Apple', 'Zoo', 'Users', 'Orders'])
+  })
+
+  it('folders first holds inside each group, and before a limit cuts', () => {
+    const grouped = table({ ...byName, groupBy: { property: 'file.folder', direction: 'ASC' } })
+    expect(grouped.groups!.map(g => g.rows.map(row => row.record.title))).toEqual([['Orders', 'Users', 'Apple', 'Zoo']])
+    expect(titles(table({ ...byName, limit: 1 }))).toEqual(['Orders'])
   })
 })
 
@@ -1065,5 +1179,72 @@ describe('runView: RunOptions.resolve (🔒 D2, YAZ-819)', () => {
     expect(runView(def, view, members).rows[0].values['formula.out']).toBe(null)
     // …and over the full snapshot the default resolves it, which is every whole-vault caller.
     expect(runView(def, view, TEST_RECORDS).rows[0].values['formula.out']).toBeInstanceOf(FileValue)
+  })
+})
+
+describe('runView: option order (YAZ-3940)', () => {
+  const OPTIONS = ['Later', 'Ready', 'Done']
+  const notes = (statuses: unknown[]): IndexRecord[] => statuses.map((status, i) => ({
+    ...TEST_RECORDS[0], path: `/vault/n${i}.md`, basename: `n${i}`, title: `n${i}`, properties: { status },
+  }))
+  const optionOrder = (property: string) => (property === 'note.status' || property === 'status' ? OPTIONS : undefined)
+  const recs = notes(['Done', 'Legacy', 'Ready', null, 'Archive', 'Later'])
+  const one = (view: Partial<ViewDef>, opts: Parameters<typeof runView>[3] = { optionOrder }) => {
+    const v: ViewDef = { type: 'table', name: 'T', order: ['file.name', 'note.status'], ...view }
+    return runView({ views: [v] }, v, recs, opts)
+  }
+  const statuses = (r: ViewResult) => r.rows.map(row => row.record.properties.status ?? null)
+
+  it('groups follow the option order; values that are not options come after the options, A to Z; No value last', () => {
+    expect(one({ groupBy: { property: 'note.status' } }).groups!.map(g => g.key)).toEqual(['Later', 'Ready', 'Done', 'Archive', 'Legacy', null])
+  })
+
+  it('DESC reverses the options; the values that are not options stay A to Z after them', () => {
+    expect(one({ groupBy: { property: 'note.status', direction: 'DESC' } }).groups!.map(g => g.key)).toEqual(['Done', 'Ready', 'Later', 'Archive', 'Legacy', null])
+  })
+
+  it('sorts follow the option order too, with a missing value last whatever the direction', () => {
+    expect(statuses(one({ sort: [{ property: 'note.status', direction: 'ASC' }] }))).toEqual(['Later', 'Ready', 'Done', 'Archive', 'Legacy', null])
+    expect(statuses(one({ sort: [{ property: 'note.status', direction: 'DESC' }] }))).toEqual(['Done', 'Ready', 'Later', 'Archive', 'Legacy', null])
+  })
+
+  it('`by: value` sorts and groups by the value, A to Z or Z to A, as without options', () => {
+    expect(statuses(one({ sort: [{ property: 'note.status', direction: 'ASC', by: 'value' }] }))).toEqual(['Archive', 'Done', 'Later', 'Legacy', 'Ready', null])
+    expect(one({ groupBy: { property: 'note.status', direction: 'DESC', by: 'value' } }).groups!.map(g => g.key)).toEqual(['Ready', 'Legacy', 'Later', 'Done', 'Archive', null])
+  })
+
+  it('without `optionOrder` the engine orders by value as before', () => {
+    expect(one({ groupBy: { property: 'note.status' } }, {}).groups!.map(g => g.key)).toEqual(['Archive', 'Done', 'Later', 'Legacy', 'Ready', null])
+  })
+
+  it('a Multi-select list sorts by its first element and groups each element in option order', () => {
+    const tagged = notes([['Done', 'Later'], ['Ready']])
+    const v: ViewDef = { type: 'table', name: 'T', sort: [{ property: 'note.status', direction: 'ASC' }], groupBy: { property: 'note.status' } }
+    const r = runView({ views: [v] }, v, tagged, { optionOrder })
+    expect(r.rows.map(row => row.record.basename)).toEqual(['n1', 'n0'])
+    expect(r.groups!.map(g => g.key)).toEqual(['Later', 'Ready', 'Done'])
+  })
+
+  it('asks for the options once per sort or group level, not once per comparison', () => {
+    let calls = 0
+    const counted = (property: string) => { calls++; return optionOrder(property) }
+    one({ sort: [{ property: 'note.status', direction: 'ASC' }], groupBy: [{ property: 'file.folder' }, { property: 'note.status' }] }, { optionOrder: counted })
+    expect(calls).toBeLessThanOrEqual(3)
+  })
+})
+
+describe('one key, capitals ignored (YAZ-4769)', () => {
+  const recs = (values: Record<string, unknown>[]): IndexRecord[] => values.map((properties, i) => ({ ...TEST_RECORDS[0], path: `/vault/n${i}.md`, name: `n${i}.md`, basename: `n${i}`, title: `n${i}`, properties }))
+
+  it('propertyKeys: a view key naming a page column in other capitals is the column’s key, shown once where it is first named', () => {
+    const view: ViewDef = { type: 'table', name: 'T', order: ['file.name', 'note.Dessert Column', 'note.dessert column', 'note.other', 'formula.Dessert Column'] }
+    expect(propertyKeys({ views: [] }, view, [], ['dessert column'])).toEqual(['file.name', 'note.dessert column', 'note.other', 'formula.Dessert Column'])
+    expect(propertyKeys({ views: [] }, view, [])).toEqual(view.order) // no page columns: as written
+  })
+
+  it('a sort that names the column in other capitals sorts by it', () => {
+    const view: ViewDef = { type: 'table', name: 'T', sort: [{ property: 'note.SCORE', direction: 'DESC' }] }
+    const r = runView({ views: [] }, view, recs([{ score: 1 }, { score: 3 }, { score: 2 }]), { declared: ['score'] })
+    expect(names(r)).toEqual(['n1', 'n2', 'n0'])
   })
 })

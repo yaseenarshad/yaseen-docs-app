@@ -16,7 +16,7 @@ import { TEST_RECORDS } from '../testRecords'
 import '../views.css'
 
 /** No store behind this mount: collapse state stays in the pane. */
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
+vi.mock('../../lib/storage', () => ({ storage: { getSettings: () => undefined, getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
 import { writeProperty } from '../writeProperty'
 
@@ -149,7 +149,7 @@ const open = (el: ParentNode, r: number, c: number) => doubleClick(cell(el, r, c
 // ---------- tests ----------
 
 describe('text editor', () => {
-  it('Enter commits the string through writeProperty, optimistically updates and refocuses the cell', () => {
+  it('Enter commits the string through writeProperty, optimistically updates and moves the focus down a row (YAZ-4612 S43)', () => {
     const { el } = mount(EDIT_BASE)
     open(el, 0, 1) // status: idea
     const input = byLabel<HTMLInputElement>(el, 'Edit status')
@@ -159,7 +159,8 @@ describe('text editor', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'status', 'done')
     expect(el.querySelector('[aria-label="Edit status"]')).toBeNull()
     expect(cell(el, 0, 1).textContent).toBe('done')
-    expect(document.activeElement).toBe(cell(el, 0, 1))
+    // The cell took the focus back, and Enter moved it on, as in a spreadsheet (S43; it was the edited cell).
+    expect(document.activeElement).toBe(cell(el, 1, 1))
   })
 
   it('blur commits too; committing the unchanged value never writes', () => {

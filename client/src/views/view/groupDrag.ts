@@ -1,10 +1,10 @@
 import { type DragEvent as ReactDragEvent, useEffect, useState } from 'react'
-import type { IndexRecord } from '@shared/types'
-import { type ViewDef, groupByLevels } from '../viewSchema'
+import type { IndexRecord, PropertyDecl } from '@shared/types'
+import { type ViewDef, shownGroupLevels } from '../viewSchema'
 import type { Group } from '../engine'
 import type { Value } from '../expr'
 import { canonicalKey } from './keys'
-import { groupKeyOf, nestedGroupKeyOf } from './GroupHeader'
+import { groupKeyOf, groupPathKeyOf } from './GroupHeader'
 import { writableKey } from '../readOnlyRows'
 
 /**
@@ -37,9 +37,10 @@ export interface PendingWrite {
 }
 
 /**
- * One committed-but-not-yet-indexed move, keyed by note path in ViewsPane's state. A cross-outer
- * inner drop (🔒 YAZ-745) carries BOTH writes, inner first: they apply, clear and — on either one
- * failing — drop as a single unit, so the row is never left half-moved.
+ * One committed-but-not-yet-indexed move, keyed by note path in ViewsPane's state. A drop into a
+ * different branch (🔒 YAZ-745, every level since YAZ-4531) carries one write per level that
+ * differs, innermost first: they apply, clear and — on any one failing — drop as a single unit, so
+ * the row is never left half-moved.
  */
 export type PendingMove = PendingWrite[]
 
@@ -48,20 +49,21 @@ export type PendingMove = PendingWrite[]
  * property — what a drop there writes, and what its group "+" seeds. Null disables the level's
  * own drag and "+" (YAZ-1101) while the other level keeps working.
  */
-export function groupByKey(view: ViewDef, level = 0): string | null {
-  const property = groupByLevels(view)[level]?.property
-  // A key the app owns (`readonly`, YAZ-3122) is grouped by, never written by a drop or seeded by a "+".
-  return typeof property === 'string' ? writableKey(property) : null
+export function groupByKey(view: ViewDef, level: number, columns: Readonly<Record<string, PropertyDecl>>): string | null {
+  // `level` counts the engine's levels (`shownGroupLevels`, YAZ-4531), as a `GroupSpot` does.
+  const property = shownGroupLevels(view)[level]?.property
+  // A key the app owns (`readonly`, YAZ-3122), or a Linked mentions column (YAZ-4738), is grouped by, never written by a drop or seeded by a "+".
+  return typeof property === 'string' ? writableKey(property, columns) : null
 }
 
 /** Whether `groupBy` at `level` is the Folder: nothing to write or drag there, but its group "+" has a place — that folder. */
 export const groupsByFolder = (view: ViewDef, level = 0): boolean => {
-  const property = groupByLevels(view)[level]?.property
+  const property = shownGroupLevels(view)[level]?.property
   return typeof property === 'string' && canonicalKey(property) === 'file.folder'
 }
 
 /** Whether a level's groups take a new note: one it can seed, or — grouped by Folder — place. */
-export const groupTakesNew = (view: ViewDef, level: number): boolean => groupByKey(view, level) !== null || groupsByFolder(view, level)
+export const groupTakesNew = (view: ViewDef, level: number, columns: Readonly<Record<string, PropertyDecl>>): boolean => groupByKey(view, level, columns) !== null || groupsByFolder(view, level)
 
 /** `records` with the pending moves patched in, for the engine (same clearing discipline as 5B). */
 export function applyMoves(records: readonly IndexRecord[], moves: Record<string, PendingMove>): IndexRecord[] {
@@ -78,29 +80,43 @@ export function applyMoves(records: readonly IndexRecord[], moves: Record<string
 }
 
 /**
- * Where a group sits in a two-level view (YAZ-1101): its `groupBy` level and, for an inner group,
- * the outer it hangs under. Omitted = a top-level group — the only kind board / cards / list and
- * single-level tables have, so they pass nothing and behave exactly as before.
+ * Where a group sits in a nested view (YAZ-1101): its `groupBy` level and the groups it hangs
+ * under, outer first — one per level above it (YAZ-4531). Omitted = a top-level group, which
+ * single-level views pass nothing for and behave exactly as before.
  */
 export interface GroupSpot {
   level: number
-  outer: Group
+  ancestors: readonly Group[]
 }
+
+/** A top-level group's spot. */
+export const TOP_SPOT: GroupSpot = { level: 0, ancestors: [] }
+
+/** The spot of a group's children, one level down. */
+export const childSpot = (parent: Group, at: GroupSpot): GroupSpot => ({ level: at.level + 1, ancestors: [...at.ancestors, parent] })
+
+/** A group's persisted collapse key and drop identity at its spot (`groupPathKeyOf`). */
+export const spotKey = (group: Group, at: GroupSpot): string =>
+  at.level === 0 ? groupKeyOf(group.key) : groupPathKeyOf([...at.ancestors.map((a) => a.key), group.key])
 
 /**
  * The level-aware half of a drop (YAZ-1101): the level the row landed on — which property the move
- * writes — and, when it crossed into a DIFFERENT outer, that outer's own write, committed second so
- * the row lands where it was dropped (🔒 YAZ-745). Absent when the level's outer is unwritable.
+ * writes — and, for each ancestor level whose value differs from the row's own branch, that
+ * ancestor's write, nearest first, committed after the level's own so the row lands where it was
+ * dropped (🔒 YAZ-745, YAZ-4531). An ancestor level that is unwritable writes nothing.
  */
 export interface GroupDrop {
   level: number
-  outer?: { key: string; value: unknown }
+  /** Each differing ancestor level's write: its whole `value`, or — a fanned-out level (YAZ-4636 T2) — the `swap` inside the row's list. */
+  ancestors?: { key: string; value?: unknown; swap?: GroupSwap }[]
 }
 
+type DragState = { path: string; gk: string; key: Value | null; branch: readonly string[]; values: readonly (Value | null)[] }
+
 export interface GroupDrag {
-  /** The dragged card's path, its source group key, that group's VALUE (the element a swap removes) and its outer's key. */
-  drag: { path: string; gk: string; key: Value | null; outer: string } | null
-  /** Group key of the hovered drop target (never the source group), inner groups scoped by their outer. */
+  /** The dragged card's path, its source group key, that group's VALUE (the element a swap removes) and, for each group on its branch, outer first, its `groupKeyOf` and its value. */
+  drag: DragState | null
+  /** Group key of the hovered drop target (never the source group), inner groups scoped by their ancestors. */
   over: string | null
   /**
    * Spread on each draggable card/row, with the group it is being dragged out of and where that group
@@ -128,10 +144,8 @@ export function useGroupDrag(
   keys: readonly (string | null)[],
   onMove: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void,
 ): GroupDrag {
-  const [drag, setDrag] = useState<{ path: string; gk: string; key: Value | null; outer: string } | null>(null)
+  const [drag, setDrag] = useState<DragState | null>(null)
   const [over, setOver] = useState<string | null>(null)
-  /** Inner groups are identified by their outer too, so the same value under two outers is two targets. */
-  const spotKey = (group: Group, at: GroupSpot) => (at.level === 0 ? groupKeyOf(group.key) : nestedGroupKeyOf(at.outer.key, group.key))
 
   const clear = () => {
     setDrag(null)
@@ -151,7 +165,7 @@ export function useGroupDrag(
     drag,
     over,
     // A row stays draggable while ANY level accepts drops; the target side rejects the rest.
-    source: (path, group, at = { level: 0, outer: group }, locked = false) =>
+    source: (path, group, at = TOP_SPOT, locked = false) =>
       locked || !keys.some((k) => k !== null)
         ? {}
         : {
@@ -159,11 +173,11 @@ export function useGroupDrag(
             onDragStart: (e: ReactDragEvent) => {
               e.dataTransfer?.setData('text/plain', path)
               if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-              setDrag({ path, gk: spotKey(group, at), key: group.key, outer: groupKeyOf(at.outer.key) })
+              setDrag({ path, gk: spotKey(group, at), key: group.key, branch: [...at.ancestors, group].map((g) => groupKeyOf(g.key)), values: [...at.ancestors, group].map((g) => g.key) })
             },
             onDragEnd: clear,
           },
-    target: (group, at = { level: 0, outer: group }) => {
+    target: (group, at = TOP_SPOT) => {
       const key = keys[at.level] ?? null
       if (key === null) return {}
       const gk = spotKey(group, at)
@@ -183,13 +197,24 @@ export function useGroupDrag(
           const d = drag
           clear()
           if (d === null || d.gk === gk) return
-          // 🔒 YAZ-745: an inner drop under a DIFFERENT outer carries the outer's write too — read
-          // off that outer's first row, like the level's own value — so the row LANDS where it was
-          // dropped. Same-outer inner drops and outer drops write their own level alone.
-          const outerKey = at.level > 0 && d.outer !== groupKeyOf(at.outer.key) ? keys[0] ?? null : null
-          const outerRaw = outerKey === null ? undefined : at.outer.rows[0]?.record.properties[outerKey] ?? (at.outer.optionValue === undefined ? undefined : at.outer.fannedOut ? [at.outer.optionValue] : at.outer.optionValue)
+          // 🔒 YAZ-745, YAZ-4531: a nested drop carries the write of each ancestor level whose value
+          // differs from the row's own branch — read off that ancestor's first row, like the level's
+          // own value — so the row LANDS where it was dropped. A level that matches writes nothing.
           const drop: GroupDrop = { level: at.level }
-          if (outerKey !== null && outerRaw !== undefined) drop.outer = { key: outerKey, value: outerRaw }
+          for (let level = at.level - 1; level >= 0; level--) {
+            const ancestor = at.ancestors[level]
+            const ancestorKey = d.branch[level] === groupKeyOf(ancestor.key) ? null : keys[level] ?? null
+            if (ancestorKey === null) continue
+            // A fanned-out ancestor level (YAZ-4636 T2): the row is in several of its groups, so the level swaps the
+            // element it left for the one it entered, as the row's own level does below; a neighbour's whole list
+            // would drop the row's other elements and add the neighbour's.
+            if (ancestor.fannedOut) {
+              ;(drop.ancestors ??= []).push({ key: ancestorKey, swap: { remove: d.values[level], add: ancestor.key } })
+              continue
+            }
+            const raw = ancestor.rows[0]?.record.properties[ancestorKey] ?? (ancestor.optionValue === undefined ? undefined : ancestor.optionValue)
+            if (raw !== undefined) (drop.ancestors ??= []).push({ key: ancestorKey, value: raw })
+          }
           // Fanned out (D3): the row is in several groups, so swap the element it left for the
           // one it entered rather than overwriting the whole value with a neighbour's list.
           if (group.fannedOut) return onMove(d.path, undefined, { remove: d.key, add: group.key }, drop)

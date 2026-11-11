@@ -72,6 +72,7 @@ vi.mock('./folderShortcuts', async (importOriginal) => {
 })
 
 import { testDoor } from '../testNoteIds'
+import { onPageTabAsk, takePageTab } from '../views/pageTabRequest'
 import { LIFT_PX } from './hooks/rowGestures'
 import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
 import { useSameList } from './hooks/useVaultTree'
@@ -942,13 +943,15 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     }
   })
 
-  it('folder rows and blank space get no "Open in new window" item', async () => {
+  // YAZ-4778: a folder row has it too (its folder page in a new window); blank space still has none.
+  it('a folder row gets "Open in new window" for its folder page; blank space gets none', async () => {
     // YAZ-4470: the item is top-level now, no longer "Open in ▸ New window".
-    const { el } = await mount()
-    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+    const { el, bridge } = await mount()
+    const dir = el.querySelector<HTMLElement>('.tree__row--dir')!
+    act(() => void dir.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => itemByLabel(el, 'Open in new window')!.click())
+    expect(bridge.window.open).toHaveBeenCalledExactlyOnceWith({ root: '/v', file: '/v/sub' })
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
     expect(itemByLabel(el, 'New note')).toBeDefined()
@@ -1399,7 +1402,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     expect(bridge.tree.mock.calls.length).toBeGreaterThan(reads)
     // A move gesture for the undo list (YAZ-3255 S40): App records it and says the toast with Undo.
     expect(props.onMoved).toHaveBeenLastCalledWith(
-      { moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/sub/Plan.md', kind: 'file' }, { oldPath: '/Users/yasin/Downloads/Trip', newPath: '/v/sub/Trip', kind: 'dir' }], cleared: [] },
+      { moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/sub/Plan.md', kind: 'file' }, { oldPath: '/Users/yasin/Downloads/Trip', newPath: '/v/sub/Trip', kind: 'dir' }] },
       'Moved 1 folder and 1 file (Plan.md, Trip) from Finder',
       false,
     )
@@ -1416,7 +1419,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     await act(async () => {})
     expect(bridge.file.import).toHaveBeenLastCalledWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: '/v' })
     // Copies are not moves (S18): only the moved item is for undo.
-    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md), copied 1 folder and 1 file (Trip, Log.md) from another disk', false)
+    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Plan.md', kind: 'file' }] }, 'Moved 1 file (Plan.md), copied 1 folder and 1 file (Trip, Log.md) from another disk', false)
   })
 
   it('a clash is named and the rest moved (S19); items of another open vault say the cut-and-paste rule (S22)', async () => {
@@ -1428,7 +1431,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     })
     fire(dirRow(el), 'drop', finder('Plan.md', 'a.md'))
     await act(async () => {})
-    expect(props.onMoved).toHaveBeenLastCalledWith(expect.objectContaining({ cleared: [] }), 'Moved 1 file (Plan.md) from Finder, skipped 1: a.md — a file with this name already exists', true)
+    expect(props.onMoved).toHaveBeenLastCalledWith(expect.objectContaining({ moves: expect.any(Array) }), 'Moved 1 file (Plan.md) from Finder, skipped 1: a.md — a file with this name already exists', true)
     bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [{ from: '/w/x.md', code: 'BAD_REQUEST', message: 'To move between vaults, use cut and paste' }] })
     fire(dirRow(el), 'drop', finder('x.md'))
     await act(async () => {})
@@ -1952,11 +1955,12 @@ describe('context menu target matrix (GRO-2296)', () => {
     expect(itemByLabel(el, 'Open in new window')).toBeDefined()
   })
 
-  it('a FOLDER row targets rename and copy path; the file-only items stay hidden', async () => {
+  // YAZ-4778: "Open in new window" is a folder row's too (its folder page).
+  it('a FOLDER row targets rename, copy path and open in new window', async () => {
     const el = await open('.tree__row--dir')
     expect(itemByLabel(el, 'Rename')).toBeDefined()
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+    expect(itemByLabel(el, 'Open in new window')).toBeDefined()
   })
 
   it('BLANK SPACE shows no Rename — the vault root is never renameable (the GRO-2297 guard rail)', async () => {
@@ -3412,8 +3416,9 @@ describe('search-row context menu (YAZ-2050)', () => {
     rightClick(result(el, true))
     expect(expected).not.toContain('Show in sidebar')
     expect(labels(el)).toEqual(['Show in sidebar', ...expected])
-    // YAZ-4470: a single folder row also gets "Open in new tab" in the open group, after "Open folder page".
-    expect(labels(el).slice(0, 4)).toEqual(['Show in sidebar', 'Open folder page', 'Open in new tab', 'Add to focus'])
+    // YAZ-4470: a single folder row also gets "Open in new tab" in the open group, after "Open folder page"; then
+    // "Open in new window" (YAZ-4778).
+    expect(labels(el).slice(0, 5)).toEqual(['Show in sidebar', 'Open folder page', 'Open in new tab', 'Open in new window', 'Add to focus'])
   })
 
   it('follows the FILES rules whichever tab the search was shown from (🔒 D1): from Favorites the same menu, "Add to focus"', async () => {
@@ -3745,8 +3750,8 @@ describe('"Show in sidebar" on a row of Search, Focus and Favorites (YAZ-2638 D1
     expect(menuOf(el, row(el, `${v}/top.md`))).toEqual([ITEM, ...inFiles['/top.md']])
     await type(searchBar(el)!, 'projects')
     expect(menuOf(el, row(el, `${v}/Projects`))).toEqual([ITEM, ...inFiles['/Projects']])
-    // YAZ-4470: one folder row also has "Open in new tab", after "Open folder page".
-    expect(menuOf(el, row(el, `${v}/Projects`)).slice(0, 4)).toEqual([ITEM, 'Open folder page', 'Open in new tab', 'Remove from focus'])
+    // YAZ-4470: one folder row also has "Open in new tab", after "Open folder page"; then "Open in new window" (YAZ-4778).
+    expect(menuOf(el, row(el, `${v}/Projects`)).slice(0, 5)).toEqual([ITEM, 'Open folder page', 'Open in new tab', 'Open in new window', 'Remove from focus'])
     await type(searchBar(el)!, 'plan')
     expect(menuOf(el, row(el, `${v}/Projects`))[0]).toBe(ITEM) // the parent of the match
   })
@@ -5795,7 +5800,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     const fold = items(el)[1]
     expect([items(el)[0], ['Expand all', 'Collapse all'].includes(fold)]).toEqual(['Sort…', true]) // the fold button's own label
     act(() => itemByLabel(el, 'Sort…')?.click())
-    expect(menuItems(el).map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated'])
+    expect(menuItems(el).map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated', 'Kind first'])
     act(() => itemByLabel(el, 'Last updated')?.click())
     expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...withTabs({ hiddenButtons: ['sort', 'fold'] }).settings, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } })
     mouseClick(more(el))
@@ -6257,6 +6262,77 @@ describe('focus tab (YAZ-2619)', () => {
     expect(isOpen(el, `${v}/Projects`)).toBe('false')
   })
 
+  it('YAZ-4782 (3): a focus folder\'s menu has New note, New drawing and New folder; a folded one opens, its field stands first in it, and the item, made in the vault\'s root, goes last in it — the tab stays, the top level does not change; Escape makes nothing', async () => {
+    const stack: FocusFolder = { id: 'g', name: 'Launch', created: 1, at: 1, items: [] }
+    const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects'] }, (b) => {
+      b.focusFolders.get.mockImplementation(async (root: string, scope?: unknown) => (scope === 'vault' ? [{ ...stack, items: [{ vault: root.slice(1), path: 'top.md' }] }] : []))
+    })
+    const head = () => el.querySelector<HTMLButtonElement>('[data-focus-folder="g"]')
+    const field = () => el.querySelector<HTMLInputElement>('.create-inline__input')
+    const stackItems = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    act(() => head()?.click()) // folded shut
+    expect(head()?.getAttribute('aria-expanded')).toBe('false')
+    rightClick(head())
+    expect(stackItems().map((b) => b.textContent)).toEqual(expect.arrayContaining(['New note', 'New drawing', 'New folder']))
+    await act(async () => stackItems().find((b) => b.textContent === 'New note')?.click())
+    expect(head()?.getAttribute('aria-expanded')).toBe('true')
+    expect(field()?.closest('.focus-folder__items')).toBe(head()?.closest('li')?.querySelector('.focus-folder__items'))
+    await act(async () => void field()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(field()).toBeNull()
+    expect(bridge.createFile).not.toHaveBeenCalled()
+    rightClick(head())
+    await act(async () => stackItems().find((b) => b.textContent === 'New note')?.click())
+    await act(async () => {
+      field()!.value = 'Kickoff'
+      field()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    const made = vi.mocked(props.onOpenFile).mock.calls.at(-1)?.[0] ?? ''
+    expect(made.slice(0, made.lastIndexOf('/'))).toBe(v)
+    const written = (bridge.focusFolders.set.mock.calls.at(-1)?.[2] as readonly FocusFolder[] | undefined)?.find((f) => f.id === 'g')
+    expect(written?.items.map((i) => i.path)).toEqual(['top.md', made.slice(v.length + 1)])
+    expect(bridge.focus.set).not.toHaveBeenCalled()
+    expect(props.onLensChange).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4782: a real folder inside a focus folder — its New note opens the field inside it, in that folder\'s tree, and makes the note in it on disk; its subfolder\'s New folder too; a pinned file there puts its field under the row — the tab stays Focus', async () => {
+    const stack: FocusFolder = { id: 'g', name: 'Launch', created: 1, at: 1, items: [] }
+    const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Notes'] }, (b) => {
+      b.focusFolders.get.mockImplementation(async (root: string, scope?: unknown) => (scope === 'vault' ? [{ ...stack, items: [{ vault: root.slice(1), path: 'Projects' }, { vault: root.slice(1), path: 'top.md' }] }] : []))
+    })
+    const items = () => el.querySelector('[data-focus-folder="g"]')?.closest('li')?.querySelector('.focus-folder__items')
+    const field = () => el.querySelector<HTMLInputElement>('.create-inline__input')
+    const pick = async (path: string, label: string) => {
+      rightClick(rowByPath(el, path))
+      await act(async () => itemByLabel(el, label)?.click())
+    }
+    // The folder: the field inside it, in the focus folder's tree.
+    await pick(`${v}/Projects`, 'New note')
+    expect(items()?.contains(field())).toBe(true)
+    expect(field()?.closest('[role="treeitem"]')?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, `${v}/Projects`))
+    await act(async () => {
+      field()!.value = 'Kickoff'
+      field()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    const made = vi.mocked(props.onOpenFile).mock.calls.at(-1)?.[0] ?? ''
+    expect(made.slice(0, made.lastIndexOf('/'))).toBe(`${v}/Projects`)
+    // Its subfolder: the field inside Alpha, still in the focus folder; the folder made in Alpha.
+    await pick(`${v}/Projects/Alpha`, 'New folder')
+    expect(items()?.contains(field())).toBe(true)
+    expect(field()?.closest('[role="treeitem"]')?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, `${v}/Projects/Alpha`))
+    await act(async () => {
+      field()!.value = 'Plans'
+      field()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    const dir = bridge.createDir.mock.calls.at(-1)?.[0].path ?? ''
+    expect(dir.slice(0, dir.lastIndexOf('/'))).toBe(`${v}/Projects/Alpha`)
+    // A pinned file in the focus folder: the field under its row, in the folder.
+    await pick(`${v}/top.md`, 'New note')
+    expect(items()?.contains(field())).toBe(true)
+    expect(field()?.closest('li')?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, `${v}/top.md`))
+    await act(async () => void field()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(props.onLensChange).not.toHaveBeenCalled()
+  })
+
   it('YAZ-4475: a focus folder made a moment ago is in the next row menu\'s flyout, with no second right-click; a move into it puts the ✓ on it', async () => {
     const { el, v } = await mountVault({ lens: 'focus' }, { focus: ['/top.md'] })
     await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__focus-bar .sidebar__focus-clear')].find((b) => b.textContent === '+ Folder')?.click())
@@ -6481,14 +6557,16 @@ describe('focus tab (YAZ-2619)', () => {
     expect(topLabels(el)).toEqual(['Projects'])
   })
 
-  it('S35, S36, R7: "New note" on a folder the tab shows opens the input inside it; a target the tab does not show — or an empty list, the heart tab\'s as well — goes to Files; blank space has no focus item', async () => {
+  it('S35, R7; YAZ-4782: "New note" on a folder the tab shows opens the input inside it; on a pinned file whose folder the tab does not show, under that row; on blank space of an empty list (the heart tab\'s as well), at the list\'s end — never in Files; blank space has no focus item', async () => {
     const { el, v, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/Notes/n.md'] })
     await pick(el, `${v}/Projects`, 'New note')
     expect(props.onLensChange).not.toHaveBeenCalled()
     expect(rowByPath(el, `${v}/Projects`)?.closest('[role="treeitem"]')?.querySelector('.create-inline__input')).not.toBeNull()
     act(() => void el.querySelector('.create-inline__input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    await pick(el, `${v}/Notes/n.md`, 'New note') // its folder, Notes, is not on the tab
-    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    await pick(el, `${v}/Notes/n.md`, 'New note') // its folder, Notes, is not on the tab: the field stands under the row (YAZ-4782)
+    expect(props.onLensChange).not.toHaveBeenCalled()
+    expect(el.querySelectorAll('.create-inline__input')).toHaveLength(1)
+    expect(rowByPath(el, `${v}/Notes/n.md`)?.closest('li')?.querySelector('.create-inline__input')).not.toBeNull()
     act(() => root?.unmount())
     container?.remove()
     for (const lens of ['focus', 'favorites'] as const) {
@@ -6496,8 +6574,7 @@ describe('focus tab (YAZ-2619)', () => {
       rightClick(empty.el.querySelector('.sidebar__body'))
       expect(focusLabels(empty.el)).toEqual([])
       await act(async () => itemByLabel(empty.el, 'New note')?.click())
-      expect(empty.props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
-      await empty.rerender({ lens: 'files' })
+      expect(empty.props.onLensChange).not.toHaveBeenCalled()
       expect(empty.el.querySelector('.create-inline__input')).not.toBeNull()
       act(() => root?.unmount())
       container?.remove()
@@ -6678,6 +6755,100 @@ describe('favorites (YAZ-1766)', () => {
     await act(async () => [...(bar()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Show all')?.click())
     expect(props.onFocusOnly).toHaveBeenCalledExactlyOnceWith(null)
   })
+  describe('a New … that stays on the tab (YAZ-4782)', () => {
+    const field = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
+    const commit = (el: HTMLElement, name: string) =>
+      act(async () => {
+        field(el)!.value = name
+        field(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      })
+    const escape = (el: HTMLElement) => act(() => void field(el)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    /** The page the made note opened: its path on disk. */
+    const opened = (props: SidebarProps) => vi.mocked(props.onOpenFile).mock.calls.at(-1)?.[0] ?? ''
+    const dirOf = (path: string) => path.slice(0, path.lastIndexOf('/'))
+    /** The items (paths in the vault) of favorite folder `f` as the last write left it. */
+    const itemsOfF = (bridge: ReturnType<typeof installBridge>) => (bridge.favoriteFolders.set.mock.calls.at(-1)?.[2] as readonly FocusFolder[] | undefined)?.find((f) => f.id === 'f')?.items.map((i) => i.path)
+
+    it('(1, 4, 5): a pinned note\'s New note opens its field under the row; Escape makes and adds nothing; Enter makes the note in the row\'s folder, puts it right after the row, and opens it; blank space\'s goes in the vault\'s root, last — and the tab stays', async () => {
+      const { el, v, bridge, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes/n.md', '/top.md'] })
+      await pick(el, `${v}/Notes/n.md`, 'New note')
+      expect(field(el)?.closest('li')?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, `${v}/Notes/n.md`))
+      await escape(el)
+      expect(field(el)).toBeNull()
+      expect(bridge.createFile).not.toHaveBeenCalled()
+      expect(bridge.favorites.set).not.toHaveBeenCalled()
+      await pick(el, `${v}/Notes/n.md`, 'New note')
+      await commit(el, 'Fresh')
+      const fresh = opened(props)
+      expect(dirOf(fresh)).toBe(`${v}/Notes`)
+      expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/Notes/n.md`, fresh, `${v}/top.md`], 'vault')
+      // Blank space (4): the field after the list's last row; the note in the vault's root, last in the list.
+      rightClick(el.querySelector('.sidebar__body'))
+      await act(async () => itemByLabel(el, 'New note')?.click())
+      expect(field(el)?.closest('ul.tree')?.matches('[role="tree"]')).toBe(false)
+      await commit(el, 'At the root')
+      const atRoot = opened(props)
+      expect(dirOf(atRoot)).toBe(v)
+      expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/Notes/n.md`, fresh, `${v}/top.md`, atRoot], 'vault')
+      expect(bridge.favoriteFolders.set).not.toHaveBeenCalled()
+      expect(props.onLensChange).not.toHaveBeenCalled()
+    })
+
+    it('(1, 3, 4): in a favorite folder — an item\'s New note goes right after it in the folder; the folder\'s own "New folder" makes it in the vault\'s root, last in the folder; blank space with "Hide all others" adds to the folder shown', async () => {
+      const folders = (name: string): FocusFolder[] => [{ id: 'f', name: 'Client files', created: 1, at: 1, items: [{ vault: name, path: 'top.md' }, { vault: name, path: 'Notes/n.md' }] }]
+      const { el, v, bridge, props, rerender } = await mountVault({ lens: 'favorites', onFocusOnly: vi.fn() }, { favorites: ['/Projects'], folders })
+      const head = () => el.querySelector<HTMLButtonElement>('[data-focus-folder="f"]')
+      // (1) An item of the folder: the field under it, inside the folder; the note right after it there.
+      await pick(el, `${v}/top.md`, 'New note')
+      expect(field(el)?.closest('li')?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, `${v}/top.md`))
+      expect(head()?.closest('li')?.contains(field(el))).toBe(true)
+      await commit(el, 'Fresh')
+      const fresh = opened(props)
+      expect(dirOf(fresh)).toBe(v)
+      expect(itemsOfF(bridge)).toEqual(['top.md', fresh.slice(v.length + 1), 'Notes/n.md'])
+      // (3) The folder's own menu: New note, New drawing, New folder; the field first in the folder.
+      rightClick(head())
+      const stackItems = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+      expect(stackItems().map((b) => b.textContent)).toEqual(expect.arrayContaining(['New note', 'New drawing', 'New folder']))
+      await act(async () => stackItems().find((b) => b.textContent === 'New folder')?.click())
+      expect(field(el)?.closest('.focus-folder__items')).toBe(head()?.closest('li')?.querySelector('.focus-folder__items'))
+      await commit(el, 'Big plans')
+      const dir = bridge.createDir.mock.calls.at(-1)?.[0].path ?? ''
+      expect(dirOf(dir)).toBe(v)
+      expect(itemsOfF(bridge)).toEqual(['top.md', fresh.slice(v.length + 1), 'Notes/n.md', dir.slice(v.length + 1)])
+      // (4) "Hide all others": blank space adds to the one folder shown, last; the field shows in it.
+      await rerender({ focusOnly: 'f' })
+      rightClick(el.querySelector('.sidebar__body'))
+      await act(async () => itemByLabel(el, 'New note')?.click())
+      expect(head()?.closest('li')?.querySelector('.focus-folder__items')?.contains(field(el))).toBe(true)
+      await commit(el, 'Later')
+      const later = opened(props)
+      expect(dirOf(later)).toBe(v)
+      expect(itemsOfF(bridge)?.at(-1)).toBe(later.slice(v.length + 1))
+      expect(itemsOfF(bridge)).toHaveLength(5)
+      expect(bridge.favorites.set).not.toHaveBeenCalled()
+      expect(props.onLensChange).not.toHaveBeenCalled()
+    })
+
+    it('a real folder inside a favorite folder: New note opens the field inside it, in that folder\'s tree, and makes the note in it on disk; New folder on its subfolder too — the tab stays Favorites, no list changes', async () => {
+      const folders = (name: string): FocusFolder[] => [{ id: 'f', name: 'Client files', created: 1, at: 1, items: [{ vault: name, path: 'Projects' }] }]
+      const { el, v, bridge, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes'], folders })
+      const items = () => el.querySelector('[data-focus-folder="f"]')?.closest('li')?.querySelector('.focus-folder__items')
+      await pick(el, `${v}/Projects`, 'New note')
+      expect(items()?.contains(field(el))).toBe(true)
+      expect(field(el)?.closest('[role="treeitem"]')?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, `${v}/Projects`))
+      await commit(el, 'Fresh')
+      expect(dirOf(opened(props))).toBe(`${v}/Projects`)
+      await pick(el, `${v}/Projects/Alpha`, 'New folder')
+      expect(items()?.contains(field(el))).toBe(true)
+      await commit(el, 'Plans')
+      expect(dirOf(bridge.createDir.mock.calls.at(-1)?.[0].path ?? '')).toBe(`${v}/Projects/Alpha`)
+      expect(bridge.favorites.set).not.toHaveBeenCalled()
+      expect(bridge.favoriteFolders.set).not.toHaveBeenCalled()
+      expect(props.onLensChange).not.toHaveBeenCalled()
+    })
+  })
+
   it('YAZ-2648 S5: a row of Favorites and a row of Focus open their page as a row of Files does: a click asks for it — the page ALREADY open too — and a double click keeps it', async () => {
     for (const lens of ['favorites', 'focus'] as const) {
       const { el, v, props, rerender } = await mountVault({ lens }, { favorites: ['/top.md'], focus: ['/top.md'] })
@@ -6699,12 +6870,12 @@ describe('favorites (YAZ-1766)', () => {
     expect(el.querySelector('.tree')).toBeNull()
   })
 
-  it('New note from a ROOT favorited FILE hops to Files — its parent dir is not on the tab; from a favorited FOLDER the input mounts in place (3B1)', async () => {
+  it('New note from a ROOT favorited FILE stays on the tab — its field stands under the row, though its parent dir is not on the tab (YAZ-4782); from a favorited FOLDER the input mounts in place (3B1)', async () => {
     const { el, v, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes/n.md', '/Projects'] })
     await pick(el, `${v}/Notes/n.md`, 'New note')
-    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
-    expect(el.querySelector('.create-inline')).toBeNull() // the tab has no `Notes` node to mount it under
-    vi.mocked(props.onLensChange).mockClear()
+    expect(props.onLensChange).not.toHaveBeenCalled()
+    expect(rowByPath(el, `${v}/Notes/n.md`)?.closest('li')?.querySelector('.create-inline')).not.toBeNull()
+    act(() => void el.querySelector('.create-inline__input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     await pick(el, `${v}/Projects`, 'New note')
     expect(props.onLensChange).not.toHaveBeenCalled()
     expect(el.querySelector('.create-inline')).not.toBeNull()
@@ -7369,25 +7540,19 @@ describe('favorites (YAZ-1766)', () => {
       expect(props.onLensChange).not.toHaveBeenCalled()
     })
 
-    it.each(['favorites', 'focus'] as const)('S11, S12 on %s: on blank space of a tab with rows, "New folder" goes to Files — the tab could never show it — and "New note" stays (YAZ-2619 R18)', async (lens) => {
-      const { el, props, rerender } = await mountWork(lens)
-      rightClick(el.querySelector('.sidebar__body'))
-      await act(async () => itemByLabel(el, 'New note')?.click())
-      expect(props.onLensChange).not.toHaveBeenCalled()
-      expect(inputs(el)).toHaveLength(1)
-      act(() => void inputs(el)[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-      for (const label of ['New folder', 'New dated folder']) {
-        vi.mocked(props.onLensChange).mockClear()
+    it.each(['favorites', 'focus'] as const)('S11, S12 on %s; YAZ-4782: on blank space of a tab with rows, "New note", "New folder" and "New dated folder" all stay on the tab, the field after the list\'s last row — no copy of a folder takes it', async (lens) => {
+      const { el, props } = await mountWork(lens)
+      for (const label of ['New note', 'New folder', 'New dated folder']) {
         rightClick(el.querySelector('.sidebar__body'))
         // The row's click, then the dated twin through the "New folder ▸" flyout (YAZ-3085 D3).
-        if (label === 'New folder') await act(async () => itemByLabel(el, label)?.click())
+        if (label !== 'New dated folder') await act(async () => itemByLabel(el, label)?.click())
         else await clickSubAsync(el, label, 'New folder')
-        expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+        expect(props.onLensChange, label).not.toHaveBeenCalled()
+        expect(inputs(el), label).toHaveLength(1)
+        expect(copyOf(el, inputs(el)[0]!), label).toBe(-1) // in no top row's copy
+        expect(inputs(el)[0]?.closest('ul.tree')?.previousElementSibling?.matches('ul.tree[role="tree"]'), label).toBe(true)
+        act(() => void inputs(el)[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
       }
-      // In Files the input stands at the top of the vault: the tab's copy means nothing there.
-      await rerender({ lens: 'files' })
-      expect(inputs(el)).toHaveLength(1)
-      expect(el.querySelector('ul.tree[role="tree"] > li')?.contains(inputs(el)[0]!)).toBe(true)
     })
   })
 
@@ -7401,7 +7566,7 @@ describe('favorites (YAZ-1766)', () => {
       const { el, props, rerender } = await mountVault({ lens: 'files' })
       expect(sortButton(el)?.nextElementSibling?.classList.contains('sidebar__expand-all')).toBe(true)
       openSort(el)
-      expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated'])
+      expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated', 'Kind first'])
       await act(async () => itemByLabel(el, 'Last updated')?.click())
       expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...TEST_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } })
       expect(items(el)).toEqual([]) // a pick closes the menu
@@ -7409,6 +7574,34 @@ describe('favorites (YAZ-1766)', () => {
       expect(sortButton(el)).not.toBeNull()
       await rerender({ lens: 'sessions' })
       expect(sortButton(el)).toBeNull()
+    })
+
+    it('YAZ-4614 D66: "Kind first" follows "Show last updated" on Files, not Search; off, the rows keep today\'s order; a click writes the tab\'s sort once; on, the rows go folders, notes, drawings, images, other files, then by name, and ✓ marks it', async () => {
+      const mixed = (v: string): TreeNode[] => [
+        { type: 'file', name: 'b.md', path: `${v}/b.md`, size: 1, mtime: 1, kind: 'markdown' },
+        { type: 'file', name: 'a.png', path: `${v}/a.png`, size: 1, mtime: 1, kind: 'image' },
+        { type: 'file', name: 'a.excalidraw', path: `${v}/a.excalidraw`, size: 1, mtime: 1, kind: 'drawing' },
+        { type: 'dir', name: 'z', path: `${v}/z`, children: [] },
+        { type: 'file', name: 'a.zip', path: `${v}/a.zip`, size: 1, mtime: 1, kind: null },
+        { type: 'file', name: 'a.md', path: `${v}/a.md`, size: 1, mtime: 1, kind: 'markdown' },
+      ]
+      const topNames = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('ul.tree[role="tree"] > li > .tree__row')].map((r) => r.dataset.path?.split('/').pop())
+      const { el, props, rerender } = await mountVault({ lens: 'files' }, { nodes: mixed })
+      expect(topNames(el)).toEqual(['z', 'a.excalidraw', 'a.md', 'a.png', 'a.zip', 'b.md']) // off: folders, then every file by name
+      openSort(el)
+      expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated', 'Kind first'])
+      await act(async () => itemByLabel(el, 'Kind first')?.click())
+      const on = { ...TEST_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'name' as const, reverse: false, kinds: true } } }
+      expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith(on)
+      await rerender({ settings: on })
+      expect(topNames(el)).toEqual(['z', 'a.md', 'b.md', 'a.excalidraw', 'a.png', 'a.zip'])
+      openSort(el)
+      expect(items(el).at(-1)).toBe('Kind first✓')
+      await act(async () => itemByLabel(el, 'Kind first')?.click())
+      expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...on, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'name', reverse: false, kinds: false } } })
+      await rerender({ lens: 'search' })
+      openSort(el)
+      expect(items(el)).not.toContain('Kind first')
     })
 
     it('D5: a second click on the button closes its menu', async () => {
@@ -7424,7 +7617,7 @@ describe('favorites (YAZ-1766)', () => {
       const { el, v, bridge, rerender } = await mountVault({ lens: 'favorites' }, { favorites: ['/top.md', '/Projects', '/Notes'] })
       expect(topLabels(el)).toEqual(['top', 'Projects', 'Notes'])
       openSort(el)
-      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated', 'Show last updated']) // no way group under Manual, but the date row (YAZ-3511 D10)
+      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated', 'Show last updated', 'Kind first']) // no way group under Manual, but the date row (YAZ-3511 D10)
       closeMenu(el)
       await rerender(withSort('favorites', 'name'))
       expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top']) // folders first, then files
@@ -7443,7 +7636,7 @@ describe('favorites (YAZ-1766)', () => {
       const { el, rerender } = await mountVault({ lens: 'focus' }, { focus: ['/top.md', '/Notes'] })
       expect(topLabels(el)).toEqual(['top', 'Notes'])
       openSort(el)
-      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated', 'Show last updated'])
+      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated', 'Show last updated', 'Kind first'])
       closeMenu(el)
       await rerender(withSort('favorites', 'name')) // another tab's sort leaves Focus as it is
       expect(topLabels(el)).toEqual(['top', 'Notes'])
@@ -8596,7 +8789,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v', 'cut', '/w/x.md', '/w/Note.md'))
     // A Paste of a Cut is a move gesture (YAZ-3255 S39): only what moved is in it.
-    expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: '/w/x.md', newPath: '/v/x.md', kind: 'file' }], cleared: [] }, 'Pasted 1 file (x.md), skipped 1: Note — already exists', true)
+    expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: '/w/x.md', newPath: '/v/x.md', kind: 'file' }] }, 'Pasted 1 file (x.md), skipped 1: Note — already exists', true)
     expect(props.onNotice).not.toHaveBeenCalled()
   })
 
@@ -8707,7 +8900,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
       expect(bridge.file.clipState.mock.calls.length).toBe(reads + 1) // read again at paste time
       expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub', expect: { op: 'cut', paths: [REPORT] } })
       // A move: on the undo list with its toast (App says it and plays the sound), never "Pasted" as a copy.
-      expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: REPORT, newPath: '/v/sub/report.pdf', kind: 'file' }], cleared: [] }, 'Pasted 1 file (report.pdf)', false)
+      expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: REPORT, newPath: '/v/sub/report.pdf', kind: 'file' }] }, 'Pasted 1 file (report.pdf)', false)
       expect(props.onNotice).not.toHaveBeenCalled()
       expect(bridge.app.sound).not.toHaveBeenCalled()
     })
@@ -9178,70 +9371,18 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(row(el, HEALTH)).not.toBeNull() // the note is where it lives
     })
 
-    it('"Remove shortcut" also removes, in that one write, the values of the folders that no longer show the note (D20)', async () => {
+    it('"Remove shortcut" takes only the `also_in` entry, at once and with no sheet: every block of `in` stays (YAZ-4713 C9)', async () => {
       const { el, disk, writeFile } = await mountLinked([PROJECTS_ID])
       disk.set(HEALTH, `---\nalso_in:\n  - ${PROJECTS_ID}\nin:\n  ${PROJECTS_ID}:\n    order: 1\n  n0f01der0000:\n    order: 2\n---\nBody\n`)
       rightClick(shortcutRow(el))
       await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
-      expect(disk.get(HEALTH)).toBe('---\nin:\n  n0f01der0000:\n    order: 2\n---\nBody\n') // a folder the app cannot find keeps its block
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(disk.get(HEALTH)).toBe(`---\nin:\n  ${PROJECTS_ID}:\n    order: 1\n  n0f01der0000:\n    order: 2\n---\nBody\n`)
       expect(writeFile).toHaveBeenCalledTimes(1)
     })
 
-    describe('the app asks before a removal that clears values (D21)', () => {
-      const HELD = `---\nalso_in:\n  - ${PROJECTS_ID}\nin:\n  ${PROJECTS_ID}:\n    order: 1\n---\nBody\n`
-      /** Health is a shortcut in Projects and, by the window's snapshot, holds values for it. */
-      const mountHolding = async () => {
-        const mounted = await mountLinked([PROJECTS_ID])
-        mounted.disk.set(HEALTH, HELD)
-        act(() => mounted.indexSource.update(() => null, records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, properties: { ...r.properties, in: { [PROJECTS_ID]: { order: 1 } } } } : r)), FOLDERS, true))
-        return mounted
-      }
-      const askToRemove = async (el: HTMLElement) => {
-        rightClick(shortcutRow(el))
-        await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
-      }
-
-      it('"Remove shortcut", and the note holds values for a folder that will no longer show it: a sheet asks first — Cancel, Remove, the focus on Cancel', async () => {
-        const { el, writeFile } = await mountHolding()
-        await askToRemove(el)
-        expect(el.querySelector('.confirm__text')?.textContent).toBe("Remove the shortcut from 'Projects'? The values of 'Health' for Projects will be cleared.")
-        expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Remove'])
-        expect(document.activeElement).toBe(sheetBtn(el, 'Cancel'))
-        expect(sheetBtn(el, 'Remove')?.classList.contains('confirm__btn--danger')).toBe(true)
-        expect(writeFile).not.toHaveBeenCalled()
-      })
-
-      it('Cancel: nothing is written, and the shortcut stays', async () => {
-        const { el, disk, writeFile } = await mountHolding()
-        await askToRemove(el)
-        await act(async () => sheetBtn(el, 'Cancel')?.click())
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(writeFile).not.toHaveBeenCalled()
-        expect(disk.get(HEALTH)).toBe(HELD)
-        expect(shortcutRow(el)).not.toBeNull()
-      })
-
-      it('Remove: the removal runs as it does today, and the values are cleared in that one write (D20)', async () => {
-        const { el, disk, writeFile } = await mountHolding()
-        await askToRemove(el)
-        expect(writeFile).not.toHaveBeenCalled()
-        await act(async () => sheetBtn(el, 'Remove')?.click())
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(disk.get(HEALTH)).toBe('---\n---\nBody\n')
-        expect(writeFile).toHaveBeenCalledTimes(1)
-      })
-
-      it('"Remove shortcut" with no such values: no sheet, as today', async () => {
-        const { el, disk, writeFile } = await mountLinked([PROJECTS_ID])
-        await askToRemove(el)
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(disk.get(HEALTH)).toBe('---\n---\nBody\n')
-        expect(writeFile).toHaveBeenCalledTimes(1)
-      })
-    })
-
-    /** A Cut is a move: pasting one that would clear a folder's values asks first (D21), on the paths main's clipboard holds. */
-    describe('Cut, then Paste (D20, D21)', () => {
+    /** A Cut is a move, and a move clears no value (YAZ-4713 C9): a paste runs at once, with no sheet, on the paths main's clipboard holds. */
+    describe('Cut, then Paste (YAZ-4713 C9)', () => {
       const ALPHA = '/v/Projects/Alpha.md'
       const ZETA = '/v/Projects/Zeta.md'
       const SUB = '/v/Projects/Sub'
@@ -9271,222 +9412,42 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         return { ...mounted, clip, paste }
       }
 
-      it('Cut, then Paste into a folder: the same sheet, before the paste — the cut may be any window’s', async () => {
-        const { el, bridge, paste } = await mountCut()
-        await paste('cut', [ALPHA])
-        expect(sheetText(el)).toBe("Move 'Alpha' to 'Areas'? Its values for Projects will be cleared.")
-        expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Move'])
-        expect(document.activeElement).toBe(sheetBtn(el, 'Cancel'))
-        expect(sheetBtn(el, 'Move')?.classList.contains('confirm__btn--danger')).toBe(true)
-        expect(bridge.file.paste).not.toHaveBeenCalled()
-        expect(bridge.file.clip).not.toHaveBeenCalled() // this window cut nothing: the paths are main's
-        await act(async () => sheetBtn(el, 'Move')?.click())
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'cut', ALPHA))
-      })
-
-      it('a note Cut and Pasted into another folder leaves the old folder’s values behind in that move (D20)', async () => {
+      it('a note that held values for Projects, Cut and Pasted into Areas: no sheet, the paste runs at once, the note keeps every value, and the undo list gets the move', async () => {
         const { el, disk, bridge, writeFile, paste, props } = await mountCut()
         disk.set('/v/Areas/Alpha.md', HELD) // where the paste lands it
         bridge.file.paste.mockResolvedValue({ pasted: [{ from: ALPHA, to: '/v/Areas/Alpha.md', kind: 'file' }], failed: [] })
         await paste('cut', [ALPHA])
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'cut', ALPHA))
+        expect(bridge.file.clip).not.toHaveBeenCalled() // this window cut nothing: the paths are main's
+        expect(disk.get('/v/Areas/Alpha.md')).toBe(HELD)
         expect(writeFile).not.toHaveBeenCalled()
-        await act(async () => sheetBtn(el, 'Move')?.click())
-        expect(disk.get('/v/Areas/Alpha.md')).toBe('---\n---\nBody\n')
-        // The undo list gets the move and the blocks it cleared (YAZ-3255 S39), so an undo can put them back.
-        expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: ALPHA, newPath: '/v/Areas/Alpha.md', kind: 'file' }], cleared: [{ path: ALPHA, values: { [PROJECTS_ID]: { order: 1 } } }] }, 'Pasted 1 file (Alpha.md)', false)
+        expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: ALPHA, newPath: '/v/Areas/Alpha.md', kind: 'file' }] }, 'Pasted 1 file (Alpha.md)', false)
       })
 
-      it('YAZ-3266: Move on the sheet pastes the clip the sheet asked about, never what the clipboard holds by then; another clip pushed while it stands closes it, the same one does not', async () => {
-        const { el, bridge, clip, paste } = await mountCut()
-        await paste('cut', [ALPHA])
-        expect(el.querySelector('.confirm')).not.toBeNull()
-        // The same clip pushed again (another window's echo): the question stands.
-        clip('cut', ALPHA)
-        expect(el.querySelector('.confirm')).not.toBeNull()
-        // Text copied in a note while the sheet stands: no event, main now answers another clip. Move still names the cut it asked about.
-        bridge.file.clipState.mockResolvedValue({ count: 1, op: 'copy', paths: ['/Users/me/Downloads/Note.md'] })
-        await act(async () => sheetBtn(el, 'Move')?.click())
-        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas', expect: { op: 'cut', paths: [ALPHA] } })
-        // Another clip pushed while a sheet stands ends the question: nothing is pasted.
-        await paste('cut', [ALPHA])
-        expect(el.querySelector('.confirm')).not.toBeNull()
-        clip('copy', '/Users/me/Downloads/Note.md')
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste).toHaveBeenCalledTimes(1)
-      })
-
-      it('several items: ONE sheet for all of them', async () => {
-        const { el, bridge, paste } = await mountCut()
-        await paste('cut', [ALPHA, ZETA, '/v/top.md'])
-        expect(el.querySelectorAll('.confirm')).toHaveLength(1)
-        expect(sheetText(el)).toBe("Move 3 items to 'Areas'? 2 notes will lose their values for Projects.")
-        expect(bridge.file.paste).not.toHaveBeenCalled()
-        await act(async () => sheetBtn(el, 'Move')?.click())
-        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'cut', ALPHA, ZETA, '/v/top.md'))
-      })
-
-      it('Cancel: nothing is pasted and the cut stays on the clipboard', async () => {
-        const { el, bridge, writeFile, paste } = await mountCut()
-        await paste('cut', [ALPHA])
-        await act(async () => sheetBtn(el, 'Cancel')?.click())
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste).not.toHaveBeenCalled()
-        expect(bridge.file.clip).not.toHaveBeenCalled()
-        expect(writeFile).not.toHaveBeenCalled()
-        rightClick(row(el, '/v/Areas'))
-        expect(itemByLabel(el, 'Paste 1 item')?.disabled).toBe(false)
-      })
-
-      /**
-       * A copy keeps no values for the folders that do not show it, and the app asks first
-       * (YAZ-2420 3E1). Main lands the copy under a name of its own; the index has not heard of it
-       * when the paste answers, so the tree is what lists it. The original is never written.
-       */
-      describe('Copy, then Paste (YAZ-2420 3E1)', () => {
-        const COPY = '/v/Areas/alpha-copy-n3w1d0000001.md'
-        /** The tree once main has copied: `added` stands in the top-level folder `dir`. */
-        const landed = (bridge: ReturnType<typeof installBridge>, dir: string, added: TreeNode, to: string, from: string) => {
-          bridge.tree.mockResolvedValue({ root: '/v', tree: WITH_SUB.map((node) => (node.path === dir && node.type === 'dir' ? { ...node, children: [...node.children, added] } : node)), generatedAt: 2 })
-          bridge.file.paste.mockResolvedValue({ pasted: [{ from, to, kind: added.type }], failed: [] })
-        }
-        const indexed = (bridge: ReturnType<typeof installBridge>, folders: IndexRecord[] = FOLDERS) => bridge.index.mockResolvedValue({ root: '/v', records: [], folders, generatedAt: 2, ids: true } as never)
-
-        it('a note with values for a folder, copied into another: the sheet asks in the copy wording; Copy pastes, and the copy holds no block for that folder while the original still does', async () => {
-          const { el, disk, bridge, writeFile, paste } = await mountCut()
-          disk.set(ALPHA, HELD)
-          disk.set(COPY, HELD) // as main lands it
-          await paste('copy', [ALPHA])
-          expect(sheetText(el)).toBe("Copy 'Alpha' to 'Areas'? Its values for Projects will not be copied.")
-          expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Copy'])
-          expect(document.activeElement).toBe(sheetBtn(el, 'Cancel'))
-          expect(bridge.file.paste).not.toHaveBeenCalled()
-          landed(bridge, '/v/Areas', file(COPY), COPY, ALPHA)
-          indexed(bridge)
-          await act(async () => sheetBtn(el, 'Copy')?.click())
-          expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'copy', ALPHA))
-          expect(disk.get(COPY)).toBe('---\n---\nBody\n')
-          expect(disk.get(ALPHA)).toBe(HELD)
-          expect(writeFile).toHaveBeenCalledTimes(1)
-        })
-
-        it('Cancel: nothing is copied, nothing is written, and the copy stays on the clipboard', async () => {
-          const { el, bridge, writeFile, paste } = await mountCut()
-          await paste('copy', [ALPHA])
-          await act(async () => sheetBtn(el, 'Cancel')?.click())
-          expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste).not.toHaveBeenCalled()
-          expect(writeFile).not.toHaveBeenCalled()
-          rightClick(row(el, '/v/Areas'))
-          expect(itemByLabel(el, 'Paste 1 item')?.disabled).toBe(false)
-        })
-
-        it('a copy into the folder the original is in asks nothing, and the copy, looked at, keeps every block', async () => {
-          const SAME = '/v/Projects/alpha-copy-n3w1d0000001.md'
-          const { el, disk, bridge, writeFile, paste } = await mountCut()
-          disk.set(SAME, HELD)
-          landed(bridge, '/v/Projects', file(SAME), SAME, ALPHA)
-          indexed(bridge)
-          await paste('copy', [ALPHA], '/v/Projects')
-          expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Projects', 'copy', ALPHA))
-          expect(bridge.readFile).toHaveBeenCalledWith(SAME)
-          expect(disk.get(SAME)).toBe(HELD)
-          expect(writeFile).not.toHaveBeenCalled()
-        })
-
-        it('a copied folder: its notes keep their values under the copy’s id, and lose the blocks of the folders outside it that no longer show them', async () => {
-          const SUB_ID = 's0bf01der000'
-          const COPY_ID = 'c0pyf01der00'
-          const SUB_COPY = '/v/Areas/sub-copy'
-          const DEEP_COPY = `${SUB_COPY}/deep-n3w1d0000002.md`
-          const sub: IndexRecord = { ...indexRecord(`${SUB}/.folder.md`), id: SUB_ID, title: 'Sub' }
-          const { el, disk, bridge, writeFile, indexSource, paste } = await mountCut()
-          // By the window's snapshot Deep holds values for Projects and for Sub, the folder it is in.
-          act(() => indexSource.update(() => null, [{ ...indexRecord(`${SUB}/Deep.md`), properties: { in: { [PROJECTS_ID]: { order: 1 }, [SUB_ID]: { order: 2 } } } }], [...FOLDERS, sub], true))
-          await paste('copy', [SUB])
-          expect(sheetText(el)).toBe("Copy 'Sub' to 'Areas'? 1 note will not keep its values for Projects.")
-          // As main lands it: the copy has an id of its own, and its note's values for Sub were carried to it.
-          disk.set(DEEP_COPY, `---\nin:\n  ${PROJECTS_ID}:\n    order: 1\n  ${COPY_ID}:\n    order: 2\n---\nBody\n`)
-          landed(bridge, '/v/Areas', { type: 'dir', name: 'sub-copy', path: SUB_COPY, children: [file(DEEP_COPY)] }, SUB_COPY, SUB)
-          indexed(bridge, [...FOLDERS, sub, { ...indexRecord(`${SUB_COPY}/.folder.md`), id: COPY_ID, title: 'Sub copy' }])
-          await act(async () => sheetBtn(el, 'Copy')?.click())
-          expect(disk.get(DEEP_COPY)).toBe(`---\nin:\n  ${COPY_ID}:\n    order: 2\n---\nBody\n`)
-          expect(writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: DEEP_COPY })) // the original is never written
-        })
-
-        it('in a vault that does not use IDs a pasted copy is left as it landed: no sheet, and nothing is read or written after the paste (YAZ-2523 V3)', async () => {
-          const PLAIN = '/v/Areas/Alpha copy.md'
-          const { el, disk, bridge, writeFile, indexSource, paste } = await mountCut()
-          // As such a vault's index hands them out: `in` is a property like any other, and no folder has an id.
-          act(() => indexSource.update(() => null, [holding(indexRecord(ALPHA))], [indexRecord('/v/Projects/.folder.md')], false))
-          disk.set(PLAIN, HELD)
-          landed(bridge, '/v/Areas', file(PLAIN), PLAIN, ALPHA)
-          bridge.index.mockClear()
-          await paste('copy', [ALPHA])
-          expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'copy', ALPHA))
-          expect(bridge.index).not.toHaveBeenCalled()
-          expect(bridge.readFile).not.toHaveBeenCalledWith(PLAIN)
-          expect(writeFile).not.toHaveBeenCalled()
-          expect(disk.get(PLAIN)).toBe(HELD)
-        })
-
-        it('nothing to leave behind — a note with no values, a copy from outside this vault — means no sheet: the paste runs at once', async () => {
-          const { el, bridge, paste } = await mountCut()
-          await paste('copy', ['/v/top.md'])
-          await paste('copy', ['/w/Projects/Alpha.md'])
-          expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste.mock.calls).toEqual([[into('/v/Areas', 'copy', '/v/top.md')], [into('/v/Areas', 'copy', '/w/Projects/Alpha.md')]])
-        })
-      })
-
-      it('a folder is moved (Cut then Paste) and notes under it would lose values', async () => {
-        const { el, bridge, paste } = await mountCut()
-        await paste('cut', [SUB])
-        expect(sheetText(el)).toBe("Move 'Sub' to 'Areas'? 1 note will lose its values for Projects.")
-        expect(bridge.file.paste).not.toHaveBeenCalled()
-      })
-
-      it('a cut that clears nothing pastes at once: a note with no values, a move under the same folders, an item already in that folder', async () => {
-        const { el, bridge, paste } = await mountCut()
-        await paste('cut', ['/v/top.md'])
-        await paste('cut', [ALPHA], SUB) // Projects still shows it
-        await paste('cut', [ALPHA], '/v/Projects') // where it already is: main skips it, so it is no move
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste.mock.calls).toEqual([[into('/v/Areas', 'cut', '/v/top.md')], [into(SUB, 'cut', ALPHA)], [into('/v/Projects', 'cut', ALPHA)]])
-      })
-
-      it('an item already in the folder is not counted among the moves', async () => {
-        const { el, paste } = await mountCut()
-        await paste('cut', [ALPHA, HEALTH]) // Health lives in Areas
-        expect(sheetText(el)).toBe("Move 'Alpha' to 'Areas'? Its values for Projects will be cleared.")
-      })
-
-      it('a cut from outside this window’s vault never asks: the index cannot speak for those notes', async () => {
-        const { el, bridge, paste } = await mountCut()
-        await paste('cut', ['/w/Projects/Alpha.md'])
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste).toHaveBeenCalledTimes(1)
-      })
-
-      it('⌘V asks through the same door', async () => {
+      it('several items, a folder among them, and ⌘V: each one paste, at once', async () => {
         const clipboardRef: SidebarProps['clipboardRef'] = { current: null }
-        const { el, bridge, clip } = await mountCut({ clipboardRef })
+        const { el, bridge, clip, paste } = await mountCut({ clipboardRef })
+        await paste('cut', [ALPHA, ZETA, SUB])
         clip('cut', ALPHA)
         act(() => row(el, '/v/Areas')?.click()) // the selected folder is ⌘V's target
         await act(async () => void clipboardRef.current?.paste())
-        expect(sheetText(el)).toBe("Move 'Alpha' to 'Areas'? Its values for Projects will be cleared.")
-        expect(bridge.file.paste).not.toHaveBeenCalled()
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.paste.mock.calls).toEqual([[into('/v/Areas', 'cut', ALPHA, ZETA, SUB)], [into('/v/Areas', 'cut', ALPHA)]])
       })
 
-      it('the clipboard changes under the sheet: the question is dropped, nothing is pasted', async () => {
-        const { el, bridge, clip, paste } = await mountCut()
-        await paste('cut', [ALPHA])
-        clip('copy', ZETA)
+      it('a Copy lands as main wrote it: no sheet, and the copy and the original keep every block — nothing is written after the paste', async () => {
+        const COPY = '/v/Areas/alpha-copy-n3w1d0000001.md'
+        const { el, disk, bridge, writeFile, paste } = await mountCut()
+        disk.set(ALPHA, HELD)
+        disk.set(COPY, HELD) // as main lands it
+        bridge.file.paste.mockResolvedValue({ pasted: [{ from: ALPHA, to: COPY, kind: 'file' }], failed: [] })
+        await paste('copy', [ALPHA])
         expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste).not.toHaveBeenCalled()
+        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'copy', ALPHA))
+        expect(disk.get(COPY)).toBe(HELD)
+        expect(disk.get(ALPHA)).toBe(HELD)
+        expect(writeFile).not.toHaveBeenCalled()
       })
     })
 
@@ -9921,10 +9882,10 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(`${b}/docs`, 'copy', `${a}/a.md`))
     expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 file (a.md)', 'paste', 'clipboard')
-    // The folder it landed in opens, and the tree and the index read are the target vault's alone.
+    // The folder it landed in opens, and the tree read is the target vault's alone. A copy writes nothing after it lands (YAZ-4713 C9), so no index is read.
     expect(isOpen(el, `${b}/docs`)).toBe('true')
     expect(bridge.tree.mock.calls.every(([root]) => root === b)).toBe(true)
-    expect(bridge.index.mock.calls).toEqual([[b]])
+    expect(bridge.index).not.toHaveBeenCalled()
   })
 
   it('a Cut made in one vault pastes into the other vault\'s row: the move is main\'s, to that vault\'s root (S46)', async () => {
@@ -9935,7 +9896,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, b))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b, 'cut', `${a}/a.md`))
-    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: `${a}/a.md`, newPath: `${b}/a.md`, kind: 'file' }], cleared: [] }, 'Pasted 1 file (a.md)', false)
+    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: `${a}/a.md`, newPath: `${b}/a.md`, kind: 'file' }] }, 'Pasted 1 file (a.md)', false)
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
@@ -10458,21 +10419,28 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect([tag(el, `${at.a}/sub`), tag(el, `${at.b}/b.md`)]).toEqual(['Notes', 'Work'])
   })
 
-  it('"New note" on a top file row of the Focus tab, with two vaults: its folder is a vault\'s root, which that tab does not hold, so the create moves to Files and stands under the vault\'s row — for the first vault as for the second (YAZ-2619 S36), and on the Favorites tab as on Focus (YAZ-2631 D1)', async () => {
+  it('YAZ-4782: "New note" on a top file row of the Focus tab, with two vaults: its folder is a vault\'s root, which that tab does not hold — the field stands under the row, on the tab, and the note made in that vault\'s root joins that vault\'s list right after the row — for the first vault as for the second, and on the Favorites tab as on Focus', async () => {
     for (const lens of ['focus', 'favorites'] as const) {
       for (const pick of ['a', 'b'] as const) {
         const at = pair()
         const top = pick === 'a' ? `${at.a}/a.md` : `${at.b}/b.md`
-        const { el, props, rerender } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { lens }, async (bridge) => {
+        const { el, props, bridge } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { lens }, async (bridge) => {
           await withFocus(top)(bridge)
           favoritesOf(bridge, { [at[pick]]: [top] })
         })
         rightClick(rowByPath(el, top))
         act(() => itemByLabel(el, 'New note')?.click())
-        expect(props.onLensChange, lens).toHaveBeenCalledExactlyOnceWith('files')
-        await rerender({ lens: 'files' })
+        expect(props.onLensChange, lens).not.toHaveBeenCalled()
         const field = el.querySelector<HTMLInputElement>('.create-inline__input')
-        expect(field?.closest('ul.tree')?.parentElement?.querySelector(':scope > .tree__row'), lens).toBe(rowByPath(el, at[pick]))
+        expect(field?.closest('li')?.querySelector(':scope > .tree__row'), lens).toBe(rowByPath(el, top))
+        await act(async () => {
+          field!.value = 'Fresh'
+          field!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+        })
+        const made = vi.mocked(props.onOpenFile).mock.calls.at(-1)?.[0] ?? ''
+        expect(made.slice(0, made.lastIndexOf('/')), lens).toBe(at[pick])
+        expect(bridge[lens].set, lens).toHaveBeenLastCalledWith(at[pick], [top, made], expect.anything())
+        expect(props.onLensChange, lens).not.toHaveBeenCalled()
         act(() => root?.unmount())
         container?.remove()
       }
@@ -11163,7 +11131,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
       const one = await mountVaults([vault(pair().a, 'Solo')], { lens: 'focus', ...ON })
       act(() => sortButton(one.el)?.click())
       expect(menuRows(one.el)).not.toContain('Separate list for workspaces✓')
-      expect(menuRows(one.el).at(-1)).toBe('Show last updated')
+      expect(menuRows(one.el).at(-1)).toBe('Kind first') // YAZ-4614 D66: the row after "Show last updated"
     })
 
     it('D2, D3: with the switch on, the tabs show each vault\'s workspace list, never its own; an empty one names the workspace; an add writes the workspace file', async () => {
@@ -11636,7 +11604,7 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     await rerender({ lens: 'files' })
     expect(el.querySelector('.tree__date')).toBeNull()
     act(() => sortButton(el)?.click())
-    expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated'])
+    expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated', 'Kind first'])
     await act(async () => itemByLabel(el, 'Show last updated')?.click())
     expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, files: true } })
     await rerender({ settings: { ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, files: true } } })
@@ -11649,5 +11617,69 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     await rerender({ lens: 'files' })
     expect(el.querySelector('.tree__date')).toBeNull()
     expect([...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)).toEqual(['docs', 'plan empty', 'plan old', 'plan a', 'plan b'])
+  })
+})
+
+describe('the folder page file row (YAZ-4587, D37)', () => {
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const NESTED: TreeNode[] = [
+    { type: 'dir', name: 'Areas', path: '/v/Areas', children: [file('/v/Areas/a.md')] },
+    { type: 'dir', name: 'Projects', path: '/v/Projects', children: [{ type: 'dir', name: 'Alpha', path: '/v/Projects/Alpha', children: [file('/v/Projects/Alpha/c.md')] }, file('/v/Projects/b.md')] },
+  ]
+  const folder = (dir: string, title: string, properties: Record<string, unknown> = {}): IndexRecord => ({ ...indexRecord(`${dir}/.folder.md`), title, folder: dir.slice('/v/'.length), properties })
+  const ON: SettingsState = { ...TEST_SETTINGS, folderPages: { ...TEST_SETTINGS.folderPages, showFolderPageFiles: true } }
+  const pageRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.tree__row--page')]
+  const mountPages = async (folders: IndexRecord[], settings: SettingsState = TEST_SETTINGS) => {
+    vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Areas', '/v/Projects', '/v/Projects/Alpha'])
+    const indexSource = createWikilinkResolveSource()
+    act(() => indexSource.update(() => null, [indexRecord('/v/Areas/a.md'), indexRecord('/v/Projects/b.md'), indexRecord('/v/Projects/Alpha/c.md')], folders, true))
+    return mount({ indexSource, settings }, (bridge) => void bridge.tree.mockResolvedValue({ root: '/v', tree: NESTED, generatedAt: 1 }))
+  }
+  const ALL = [folder('/v/Areas', 'Areas'), folder('/v/Projects', 'Projects'), folder('/v/Projects/Alpha', 'Alpha')]
+
+  it('global off: no rows; global on: a row first under each folder that has a page file, labelled "📄 <title> (folder page)"', async () => {
+    const off = await mountPages(ALL)
+    expect(pageRows(off.el)).toEqual([])
+    act(() => root?.unmount())
+    const { el } = await mountPages(ALL, ON)
+    expect(pageRows(el).map((r) => r.textContent)).toEqual(['📄 Areas (folder page)', '📄 Projects (folder page)', '📄 Alpha (folder page)'])
+    // First under its folder: the first row of the folder's own level.
+    const projects = el.querySelector('.tree__row[data-path="/v/Projects"]')?.closest('li')
+    expect(projects?.querySelector(':scope > ul.tree > li > .tree__row')?.textContent).toBe('📄 Projects (folder page)')
+  })
+
+  it("a folder's override on covers it and its subfolders; a nested override off wins inside it", async () => {
+    const { el } = await mountPages([folder('/v/Areas', 'Areas'), folder('/v/Projects', 'Projects', { show_page_file: true }), folder('/v/Projects/Alpha', 'Alpha')])
+    expect(pageRows(el).map((r) => r.textContent)).toEqual(['📄 Projects (folder page)', '📄 Alpha (folder page)'])
+    act(() => root?.unmount())
+    const nested = await mountPages([folder('/v/Areas', 'Areas'), folder('/v/Projects', 'Projects', { show_page_file: true }), folder('/v/Projects/Alpha', 'Alpha', { show_page_file: false })])
+    expect(pageRows(nested.el).map((r) => r.textContent)).toEqual(['📄 Projects (folder page)'])
+  })
+
+  it('a click opens the folder page as "Open folder page" does, asking for its Page tab; the row never drags or joins the selection', async () => {
+    const asked = vi.fn()
+    const off = onPageTabAsk(asked)
+    const { el, props } = await mountPages(ALL, ON)
+    const row = pageRows(el)[1]!
+    expect(row.draggable).toBe(false)
+    expect(row.hasAttribute('data-path')).toBe(false)
+    act(() => row.click())
+    expect(asked).toHaveBeenCalledExactlyOnceWith('/v/Projects')
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/Projects')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(el.querySelector('.tree__row--selected')).toBeNull()
+    off()
+    takePageTab('/v/Projects') // the ask no page took goes
+  })
+
+  it('its right-click offers the folder page items alone: no rename, delete, create or clipboard item', async () => {
+    const { el, props } = await mountPages(ALL, ON)
+    act(() => void pageRows(el)[1]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    const labels = menuItems(el).map((b) => b.textContent)
+    // Open, a new tab, a new window (YAZ-4778: the folder page in a new window), Copy path and "Open in ▸" (Finder, VS Code,
+    // the default app), all of the folder.
+    expect(labels).toEqual(['Open folder page', 'Open in new tab', 'Open in new window', 'Copy path', 'Open in'])
+    act(() => itemByLabel(el, 'Open folder page')?.click())
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/Projects')
   })
 })

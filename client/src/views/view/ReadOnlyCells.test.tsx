@@ -71,7 +71,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
   draw = (more = {}) =>
     act(() =>
       root?.render(
-        <ViewsPane parsed={parsed} onChange={(next: ParsedViews) => (parsed = next)} root="/vault" folderPath="/vault/pillars.md" records={lockedRecords()} readOnly={readOnlyPaths(lockedRecords())} folder={folder} onOpenFile={vi.fn()} {...props} {...more} />,
+        <ViewsPane parsed={parsed} onChange={(next: ParsedViews) => void (parsed = next)} root="/vault" folderPath="/vault/pillars.md" records={lockedRecords()} readOnly={readOnlyPaths(lockedRecords())} folder={folder} onOpenFile={vi.fn()} {...props} {...more} />,
       ),
     )
   draw()

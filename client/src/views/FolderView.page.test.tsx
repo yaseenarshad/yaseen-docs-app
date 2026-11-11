@@ -130,11 +130,10 @@ describe('a folder with no `.folder.md`', () => {
     expandPanel(el)
     click(button(el, 'Add property'))
     setValue(q(el, '[aria-label="New property name"]'), 'owner')
-    setValue(q(el, '[aria-label="New property value"]'), 'Yasin')
     click(button(el, 'Add'))
     await flush()
     expect(writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: SETTINGS_FILE, expectedMtime: 0 }))
-    expect(onDisk()).toBe('---\nowner: Yasin\n---\n')
+    expect(onDisk()).toBe('---\nowner: ""\n---\n')
     expect(rowKeys(el)).toEqual(['owner'])
     feed() // the index catches up: the row is still there
     await flush()
@@ -163,7 +162,7 @@ describe('a folder with no `.folder.md`', () => {
     expect(onDisk()).toBe('---\nowner: Yasin\n---\n')
   })
 
-  it("its own panel does not list the folder's columns as empty rows, while a note inside it still does", async () => {
+  it('it has no column (YAZ-4713 C5): neither its own panel nor a note inside it lists an empty row', async () => {
     const el = await mount()
     expandPanel(el)
     expect(rowKeys(el)).toEqual([])
@@ -172,7 +171,7 @@ describe('a folder with no `.folder.md`', () => {
     const noteRoot = createRoot(note)
     act(() => noteRoot.render(<FrontmatterPanel file={{ path: LEAD, content: '', mtime: 1 }} root="/vault" wikilinks={source} />))
     expandPanel(note)
-    expect(rowKeys(note)).toEqual(['status']) // E2's default column
+    expect(rowKeys(note)).toEqual([]) // no default column
     act(() => noteRoot.unmount())
   })
 })
@@ -197,10 +196,9 @@ describe('a folder whose `.folder.md` holds only its `id` — every folder from 
     expandPanel(el)
     click(button(el, 'Add property'))
     setValue(q(el, '[aria-label="New property name"]'), 'owner')
-    setValue(q(el, '[aria-label="New property value"]'), 'Yasin')
     click(button(el, 'Add'))
     await flush()
-    expect(onDisk()).toBe('---\nid: k3m9x2pq7abc\nowner: Yasin\n---\n')
+    expect(onDisk()).toBe('---\nid: k3m9x2pq7abc\nowner: ""\n---\n')
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: SETTINGS_FILE, content: onDisk(), expectedMtime: 50 })
   })
 })
@@ -267,6 +265,10 @@ describe('a row\u2019s title is edited from the table (YAZ-2420 D19)', () => {
     expect(field.value).toBe('Lead Gen')
     setValue(field, 'Lead Generation')
     press(field, 'Enter')
+    // "Confirm changes" (YAZ-3746 13AN, on by default) asks first; its Rename goes on to the door.
+    expect(onRetitle).not.toHaveBeenCalled()
+    click([...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.startsWith('Rename'))!)
+    await flush()
     expect(onRetitle).toHaveBeenCalledExactlyOnceWith(LEAD, 'Lead Generation', 'file')
   })
 })
@@ -299,9 +301,11 @@ describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', ()
     expect(q(el, '.backlinks__match').textContent).toBe('Stages')
   })
 
-  it('Linked mentions on a folder\'s page lists the notes AND the folders that link to it; a folder that links to itself is not listed', async () => {
+  it('Linked mentions on a folder\'s page lists the notes AND the folders whose Page links to it, snippets from the Page body; a folder that links to itself is not listed (YAZ-4584 D40)', async () => {
     const TEAM = '/vault/Team'
-    const settings = (dir: string) => rec(`${dir}/.folder.md`, { folder_settings: { views: [{ type: 'outline', name: 'Outline', outline: '- [[Stages]]\n- then on through [[Stages]]' }] } })
+    // A folder's Page is its `.folder.md` body: the index holds its links, the snippets are read from the body alone.
+    const settings = (dir: string) => ({ ...rec(`${dir}/.folder.md`, { folder_settings: { views: [{ type: 'page', name: 'Page' }] } }), links: ['Stages'] })
+    disk.set(`${TEAM}/.folder.md`, { content: '---\ntitle: "[[Stages]] in the frontmatter"\n---\n- [[Stages]]\n- then on through [[Stages]]\n', mtime: 1 })
     const el = await mount()
     const records = [{ ...rec(PLAN), links: ['Stages'] }, rec(LEAD)]
     const folders = [settings(TEAM), settings(STAGES)]
@@ -311,7 +315,7 @@ describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', ()
     click(q(el, '.backlinks__header'))
     await flush()
     expect([...el.querySelectorAll('.backlinks__note')].map((n) => n.textContent)).toEqual(['Plan', 'Team'])
-    expect([...el.querySelectorAll('.backlinks__snippet')].slice(-2).map((n) => n.textContent)).toEqual(['Stages', 'then on through Stages'])
+    expect([...el.querySelectorAll('.backlinks__snippet')].slice(-2).map((n) => n.textContent)).toEqual(['- Stages', '- then on through Stages'])
     // Clicking the folder opens the folder's page.
     click([...el.querySelectorAll('.backlinks__note')][1])
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(TEAM)

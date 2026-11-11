@@ -116,12 +116,13 @@ describe('table block: resize columns (YAZ-3696 D2)', () => {
     expect(Array.from(tableDOM(view).querySelectorAll('col'), col => col.style.width)).toEqual(['', ''])
   })
 
-  it('a column is not narrower than 60 px, and widths on each column fix the table width', async () => {
+  // 24 px, not 60 (YAZ-4791: a column of numbers drags close to them).
+  it('a column is not narrower than 24 px, and widths on each column fix the table width', async () => {
     const view = await mount()
     dragColumnEdge(view, 0, -80)
     dragColumnEdge(view, 1, 40)
-    expect(colwidths(view)[0]).toEqual([[60], [140]])
-    expect(tableDOM(view).style.width).toBe('200px')
+    expect(colwidths(view)[0]).toEqual([[24], [140]])
+    expect(tableDOM(view).style.width).toBe('164px')
   })
 
   it('a resize drag across other cells selects no cells', async () => {

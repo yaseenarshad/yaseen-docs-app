@@ -17,11 +17,13 @@ import { ViewsPane, freeName, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import type { ColumnDecl } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
+import type { IndexRecord } from '@shared/types'
+import { liveGapPoint } from '../../test-liveGap'
+import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 
-/** The document skin's editor is a real Crepe instance; the toolbar's own chrome is what is under test. */
 /** No store behind this mount: collapse state stays in the pane. */
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
-vi.mock('./OutlineEditor', () => ({ OutlineEditor: () => null }))
+vi.mock('../../lib/storage', () => ({ storage: { getSettings: () => undefined, getViewGroups: () => [], setViewGroups: () => undefined } }))
+
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -105,6 +107,12 @@ function click(el: Element): void {
   draw()
 }
 
+/** Open an order menu (YAZ-3940) by its button and choose one order by its words. */
+function chooseOrder(pop: ParentNode, trigger: Element, order: string): void {
+  click(trigger)
+  click(byText(pop, '[role="menuitemradio"] > span:first-child', order))
+}
+
 /** Native prototype setter + bubbling event, so React's value tracker sees the change. */
 function setValue(el: HTMLInputElement | HTMLSelectElement, value: string): void {
   const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
@@ -145,6 +153,13 @@ function choosePropertyType(pop: ParentNode, label: string): void {
   click(byText(pop, '[data-type-option]', label))
 }
 
+/** The column editor's Type (YAZ-3746 13L): a button naming the type ("Auto" when undeclared), then a list of every type. */
+const typeShown = (pop: ParentNode, label: string): string => byLabel(pop, `Edit property ${label}`).textContent ?? ''
+function pickType(pop: ParentNode, label: string, type: string): void {
+  click(byLabel(pop, `Edit property ${label}`))
+  click(byText(pop, '.type-picker__option .type-picker__name', type).closest('button')!)
+}
+
 /** Let an immediate declaration write resolve (3D). */
 async function settle(): Promise<void> {
   await act(async () => {})
@@ -160,7 +175,27 @@ function aheadHost(columns: Record<string, ColumnDecl>) {
   const setColumn = vi.fn(async (key: string, next: ColumnDecl) => {
     settings.columns[key] = next
   })
-  return { settings, setColumn, folder: testFolderHost({ settings, setColumn }) }
+  return { settings, setColumn, folder: linkHost({ settings, setColumn }) }
+}
+
+/**
+ * The vault's folder pages, each reached by its name (YAZ-4795 demo): what "Notes from", the folder picker that took the
+ * "Link target" text box's place, lists after "Any folder".
+ */
+const FOLDER_PAGES: IndexRecord[] = ['Global People', 'Local People', 'People', 'Teams'].map((title) => ({
+  path: `/vault/${title}/.folder.md`, name: '.folder.md', basename: '.folder', title, folder: title, ext: 'md', size: 0, ctime: 0, mtime: 0,
+  properties: {}, aliases: [], tags: [], links: [], embeds: [],
+}))
+const folderAt = (target: string): string | null => {
+  const name = target.replace(/^\[\[|\]\]$/g, '').toLowerCase()
+  return FOLDER_PAGES.find((f) => f.title.toLowerCase() === name)?.path.replace('/.folder.md', '') ?? null
+}
+/** A host whose vault has `FOLDER_PAGES`. */
+const linkHost = (over: Parameters<typeof testFolderHost>[0] = {}) => testFolderHost({ vaultFolders: FOLDER_PAGES, resolveLink: (t) => folderAt(t) ?? HOST.resolveLink(t), ...over })
+/** "Notes from" (YAZ-4795 demo): its button, then a folder by name ("Any folder" clears the target). */
+function pickNotesFrom(pop: ParentNode, label: string, folder: string): void {
+  click(byLabel(pop, `Notes from for ${label}`))
+  click([...pop.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((o) => o.querySelector('.type-picker__name')?.textContent === folder)!)
 }
 
 /** Type into a TextField and commit with Enter (one onChange). */
@@ -171,8 +206,8 @@ function type(el: HTMLInputElement, text: string): void {
 
 /** The draggable/scrolling tab is the WRAPPER, not the `[role="tab"]` button it holds. */
 const wrap = (el: ParentNode, i: number): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-tab')][i]
-/** A def whose first view is the page's ONE outline document. */
-const WITH_OUTLINE = 'views:\n  - type: outline\n    name: Outline\n  - type: table\n    name: Table\n'
+/** A def whose first view is the folder's ONE Page tab (YAZ-4584 D38). */
+const WITH_PAGE = 'views:\n  - type: page\n    name: Page\n  - type: table\n    name: Table\n'
 const tabs = (el: ParentNode): string[] => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent ?? '')
 const selected = (el: ParentNode): string | undefined => [...el.querySelectorAll('[role="tab"]')].find((t) => t.getAttribute('aria-selected') === 'true')?.textContent ?? undefined
 /** Note links in the body: the table's name cells (4B) or the placeholder list of other view types. */
@@ -182,6 +217,14 @@ const openMenu = (el: ParentNode, label: string): HTMLElement => {
   click(byLabel(el, label))
   return q(el, '.view-popover')
 }
+/** The Properties popover on its View tab (YAZ-4607 D59), where the view settings live. */
+const openView = (el: ParentNode): HTMLElement => {
+  const pop = openMenu(el, 'Columns and view')
+  click(q(pop, '.view-menu__tab[data-tab="view"]'))
+  return pop
+}
+/** "Add group level" (YAZ-4607 D60): a level's picker exists only once its row does. */
+const addLevel = (pop: ParentNode): void => click(byText(pop, 'button', 'Add group level'))
 
 // ---------- tests ----------
 
@@ -205,40 +248,60 @@ describe('view switcher', () => {
 })
 
 /**
- * Drag to reorder (YAZ-1471, re-ruling 🔒 rule 4): TabBar's insertion-slot idiom, so these are
- * TabBar.test's assertions on this strip — jsdom rects are all-zero, which reduces the
- * before/after midpoint test to the SIGN of `clientX` (negative = before the tab, else after),
- * and the handlers guard `dataTransfer` because jsdom has no `DragEvent`. A reorder is ONE
- * `update` (the same door as sort and columns); which view is ACTIVE stays session state and
- * simply follows its tab.
+ * Drag to reorder (YAZ-1471, re-ruling 🔒 rule 4): the tab bar's own drag since YAZ-4606 — the slot is read from where
+ * the LAYOUT puts each tab, so jsdom (no layout) is given one: tabs of 100 px side by side. `clientX` is relative to the
+ * target tab's midpoint (negative = its left half, else its right half); on the strip itself it is past the last tab
+ * (the tail). The handlers guard `dataTransfer` because jsdom has no `DragEvent`. A reorder is ONE `update` (the same
+ * door as sort and columns); which view is ACTIVE stays session state and simply follows its tab.
  */
 describe('view tabs — drag to reorder (YAZ-1471)', () => {
   const strip = (el: ParentNode): HTMLElement => q<HTMLElement>(el, '[role="tablist"]')
   /** The serialized view ORDER, read off the YAML the file would get. */
   const names = (text: string): string[] => [...text.matchAll(/^\s*name: (.+)$/gm)].map((m) => m[1])
   const fire = (target: Element, type: string, clientX = 0): void => {
-    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
+    const tabsOf = [...(target.closest('[role="tablist"]') ?? target).querySelectorAll<HTMLElement>('.view-tab')]
+    tabsOf.forEach((tab, i) => Object.defineProperties(tab, { offsetLeft: { value: i * 100, configurable: true }, offsetWidth: { value: 100, configurable: true } }))
+    const i = tabsOf.indexOf(target as HTMLElement)
+    const x = i === -1 ? tabsOf.length * 100 + clientX : i * 100 + 50 + clientX
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x })))
     draw()
   }
 
   it('dropping on a tab\'s LEFT half inserts before it, in ONE write', () => {
     const { el, onChange, yaml } = mount()
     fire(wrap(el, 1), 'dragstart') // grab "View"
-    expect(wrap(el, 1).classList.contains('view-tab--dragging')).toBe(true)
+    expect(strip(el).hasAttribute('data-live-parting')).toBe(true) // the gap is the marker: no marker class (YAZ-4606)
     fire(wrap(el, 0), 'dragover', -5) // left half of "Table"
-    expect(wrap(el, 0).classList.contains('view-tab--insert-before')).toBe(true)
+    expect(wrap(el, 0).style.transform).toBe('translateX(100px)') // "Table" slides right to open the gap before it
     fire(wrap(el, 0), 'drop', -5)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(names(yaml())).toEqual(['View', 'Table', 'View 2'])
     expect(tabs(el)).toEqual(['View', 'Table', 'View 2'])
-    expect(el.querySelector('.view-tab--dragging')).toBeNull() // drag state cleared
+    expect(strip(el).hasAttribute('data-live-parting')).toBe(false) // drag state cleared
   })
 
-  it('dropping on the strip\'s empty tail lands the tab LAST (the last tab marks --insert-after)', () => {
+  it('LIVE GAP (YAZ-4606): the tabs part along the strip, a drop in the middle is ONE write, and Esc cancels', () => {
+    const { el, onChange, yaml } = mount()
+    fire(wrap(el, 0), 'dragstart') // grab "Table"
+    fire(wrap(el, 1), 'dragover', 5) // the slot after "View"
+    expect(wrap(el, 1).style.transform).toBe('translateX(-100px)')
+    expect(wrap(el, 2).style.transform).toBe('')
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    draw()
+    expect(wrap(el, 1).style.transform).toBe('')
+    fire(wrap(el, 1), 'drop', 5)
+    expect(onChange).not.toHaveBeenCalled()
+    fire(wrap(el, 0), 'dragstart')
+    fire(wrap(el, 1), 'drop', 5)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(names(yaml())).toEqual(['View', 'Table', 'View 2'])
+  })
+
+  it('dropping on the strip\'s empty tail lands the tab LAST (the tabs after the grab slide left)', () => {
     const { el, onChange, yaml } = mount()
     fire(wrap(el, 0), 'dragstart') // grab "Table"
     fire(strip(el), 'dragover') // the tail is a direct hit on the strip = the end slot
-    expect(wrap(el, 2).classList.contains('view-tab--insert-after')).toBe(true)
+    expect(wrap(el, 2).style.transform).toBe('translateX(-100px)')
     fire(strip(el), 'drop')
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(names(yaml())).toEqual(['View', 'View 2', 'Table'])
@@ -307,8 +370,8 @@ describe('freeName (YAZ-943): a new view\u2019s name', () => {
  * already use. Rename is the inline `TextField`, so its `normalize` is the whole rule — an empty
  * name, or one another view already answers to, is REFUSED and the field snaps back with nothing
  * written. Duplicate is a `structuredClone` (the copy carries the original's order, sort and
- * everything else) named by `freeName` and activated; a page has ONE outline document, so an
- * outline view can not be duplicated. Delete asks first, through `ConfirmDeleteView` — and is not
+ * everything else) named by `freeName` and activated; a folder has ONE Page tab (YAZ-4584 D38), so
+ * the Page can not be duplicated. Delete asks first, through `ConfirmDeleteView` — and is not
  * offered at all when there is one view left, because `views` can never be empty.
  */
 describe('view tabs — right-click menu (YAZ-1471)', () => {
@@ -338,7 +401,8 @@ describe('view tabs — right-click menu (YAZ-1471)', () => {
   it('right-clicking a tab opens Rename · Duplicate · Delete, and opening writes nothing', () => {
     const { el, onChange } = mount()
     const menu = openOn(el, 'Table')
-    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual(['Rename', 'Duplicate', 'Delete'])
+    // YAZ-4585 (D41): the default-view item ("Make default view" since YAZ-3746 13S) and "View settings…" sit between Duplicate and Delete; YAZ-4594 S30's two exports after them.
+    expect([...menu.querySelectorAll('[role^="menuitem"]')].map((b) => b.textContent)).toEqual(['Rename', 'Duplicate', 'Make default view', 'View settings…', 'Export as CSV…', 'Copy as table', 'Delete'])
     expect(onChange).not.toHaveBeenCalled()
   })
 
@@ -391,9 +455,9 @@ describe('view tabs — right-click menu (YAZ-1471)', () => {
     expect(names(el, def)).toEqual(['Table', 'Table copy 2', 'Table copy', 'View', 'View 2'])
   })
 
-  it('Duplicate is disabled for an outline view — a page has ONE document', () => {
-    const { el } = mount(WITH_OUTLINE)
-    expect(item(openOn(el, 'Outline'), 'Duplicate').disabled).toBe(true)
+  it('Duplicate is disabled for the Page tab — a folder has ONE document (YAZ-4584 D38)', () => {
+    const { el } = mount(WITH_PAGE)
+    expect(item(openOn(el, 'Page'), 'Duplicate').disabled).toBe(true)
     expect(item(openOn(el, 'Table'), 'Duplicate').disabled).toBe(false)
   })
 
@@ -406,9 +470,7 @@ describe('view tabs — right-click menu (YAZ-1471)', () => {
     const { el, onChange } = mount()
     click(item(openOn(el, 'View'), 'Delete'))
     expect(q(el, '[role="dialog"]').getAttribute('aria-modal')).toBe('true')
-    expect(q(el, '.confirm__text').textContent).toBe(
-      "Delete the view 'View'? Its columns, sort, filters and grouping go with it — the pages themselves stay put.",
-    )
+    expect(q(el, '.confirm__text').textContent).toBe('Delete the view "View"? Its columns, sort, filters and grouping go with it. The notes stay.')
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     draw()
     expect(el.querySelector('[role="dialog"]')).toBeNull()
@@ -453,8 +515,8 @@ describe('view tabs — right-click menu (YAZ-1471)', () => {
  * sort, columns and the rest of the tab CRUD): the view is appended under the first FREE name off
  * its label ("Table", then "Table 2"), lands ACTIVE, and mounts straight into rename so the name
  * can be typed over without a second gesture — Escape there leaves the given name standing and
- * writes nothing more. Outline is offered only while the page has none, because ViewsPane reads
- * and writes the FIRST outline view's document and a second would shadow it.
+ * writes nothing more. Page is offered only while the folder has none (YAZ-4584 D38): the folder
+ * has one document, its `.folder.md` body.
  */
 describe('view tabs — "+" adds a view (YAZ-1471)', () => {
   const plus = (el: ParentNode): HTMLButtonElement => byLabel<HTMLButtonElement>(el, 'Add view')
@@ -480,13 +542,13 @@ describe('view tabs — "+" adds a view (YAZ-1471)', () => {
     expect(plus(el).closest('[role="tablist"]')).toBeNull() // the strip scrolls; "+" does not go with it
     const pop = openPicker(el)
     expect(expanded(el)).toBe('true')
-    expect(kinds(pop)).toEqual(['Table', 'Board', 'Cards', 'List', 'Outline'])
+    expect(kinds(pop)).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List', 'Page'])
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('Outline is offered only while the page has none — a page owns ONE document', () => {
-    const { el } = mount(WITH_OUTLINE)
-    expect(kinds(openPicker(el))).toEqual(['Table', 'Board', 'Cards', 'List'])
+  it('Page is offered only while the folder has none — at most one Page tab (YAZ-4584 D38)', () => {
+    const { el } = mount(WITH_PAGE)
+    expect(kinds(openPicker(el))).toEqual(['Table', 'Board', 'Calendar', 'Cards', 'List'])
   })
 
   it('picking a type appends it in ONE update and mounts it in rename; Escape keeps the given name', () => {
@@ -592,6 +654,48 @@ describe('view tabs — overflow (YAZ-1471)', () => {
     expect(scrolled.querySelector('[role="tab"]')?.textContent).toBe('View 2')
   })
 
+  it('scrolls the ACTIVE tab into view when the strip RESIZES too (YAZ-4643 S5): a narrower window can leave it off-screen', () => {
+    const observers: { fire: () => void; targets: Element[] }[] = []
+    class StripObserver {
+      targets: Element[] = []
+      constructor(cb: () => void) {
+        observers.push({ fire: cb, targets: this.targets })
+      }
+      observe(el: Element) {
+        this.targets.push(el)
+      }
+      unobserve() {}
+      disconnect() {
+        this.targets.length = 0
+      }
+      takeRecords() {
+        return []
+      }
+    }
+    const had = globalThis.ResizeObserver
+    globalThis.ResizeObserver = StripObserver as unknown as typeof ResizeObserver
+    // Chromium's `scrollIntoView` returns a Promise: an effect that handed it on as its cleanup crashed the folder page
+    // on the next tab change (seen in the built app). React throws on a cleanup that is not a function.
+    scrollIntoView.mockReturnValue(Promise.resolve())
+    try {
+      const { el } = mount()
+      click(byText(el, '[role="tab"]', 'View 2'))
+      const strip = q<HTMLElement>(el, '.view-tabs[role="tablist"]')
+      const onStrip = observers.filter((o) => o.targets.includes(strip))
+      expect(onStrip).toHaveLength(1) // ONE observer on the strip itself; no tab is watched
+      expect(onStrip[0].targets).toEqual([strip])
+      scrollIntoView.mockClear()
+      act(() => onStrip[0].fire())
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+      expect(scrollIntoView.mock.contexts[0]).toBe(wrap(el, 2)) // the ACTIVE tab, View 2
+      act(() => root?.unmount())
+      expect(onStrip[0].targets).toEqual([]) // disconnected with the strip
+    } finally {
+      globalThis.ResizeObserver = had
+    }
+  })
+
   it('the tablist IS the scroller, and the "+" sits outside it', () => {
     const { el } = mount()
     expect(q(el, '.view-tabs-wrap > .view-tabs[role="tablist"]')).toBe(q(el, '[role="tablist"]'))
@@ -630,11 +734,13 @@ describe('filter menu (YAZ-1227-1229)', () => {
     const actions = q(el, '.view-toolbar__actions')
     expect([...actions.querySelectorAll('.view-toolbar__btn')].map((b) => b.getAttribute('aria-label'))).toEqual([
       'Sort',
-      'Properties',
+      'Columns and view',
       'Filter',
       'New note',
       'Search',
     ])
+    // The sliders button is "Columns and view", its two tabs, in the tooltip too (YAZ-4608 C1).
+    expect(byLabel(el, 'Columns and view').getAttribute('title')).toBe('Columns and view')
     const pop = openMenu(el, 'Filter')
     expect(byText(pop, 'p', 'No filters')).toBeDefined()
     expect(byLabel(el, 'Filter').querySelector('.view-toolbar__badge')).toBeNull()
@@ -648,8 +754,8 @@ describe('filter menu (YAZ-1227-1229)', () => {
     expect(openMenu(el, 'Sort').classList.contains('view-popover--sort')).toBe(true)
   })
 
-  it('an outline is a DOCUMENT, not rows: no button at all', () => {
-    const { el } = mount('views:\n  - type: outline\n    name: Outline\n', { folderPath: '/vault/Topic.md' })
+  it('the Page tab is a DOCUMENT, not rows: no button at all', () => {
+    const { el } = mount('views:\n  - type: page\n    name: Page\n', { folderPath: '/vault/Topic.md' })
     expect(el.querySelector('[aria-label="Filter"]')).toBeNull()
   })
 
@@ -946,7 +1052,7 @@ describe('sort menu', () => {
     click(byText(pop, 'button', 'Add sort'))
     expect(def().views[0].sort).toEqual([{ property: 'file.name', direction: 'ASC' }])
     chooseColumn(pop, 'Sort property', 'note.priority')
-    click(byLabel(pop, 'Direction'))
+    chooseOrder(pop, byLabel(pop, 'Direction'), 'Z → A')
     expect(onChange).toHaveBeenCalledTimes(4)
     expect(def().views[0].sort).toEqual([{ property: 'note.priority', direction: 'DESC' }])
     expect(rows(el).slice(0, 3)).toEqual(['Creator Economy', 'Agentic Agency', 'The Levels of an Agency'])
@@ -965,22 +1071,35 @@ describe('sort menu', () => {
     const { el, onChange, def, yaml } = mount()
     expect(byText(el, '.view-toolbar__badge', '1')).toBeDefined() // the existing sort
     const pop = openMenu(el, 'Sort')
+    addLevel(pop) // D60: the row (one write), then its column (one more)
     chooseColumn(pop, 'Group by', 'note.status')
-    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledTimes(2)
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
     expect(yaml()).toContain('groupBy:')
     expect(byText(el, '.view-toolbar__badge', '2')).toBeDefined()
-    click(byLabel(pop, 'Group direction'))
+    chooseOrder(pop, byLabel(pop, 'Group direction'), 'Z → A')
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'DESC' })
     chooseColumn(pop, 'Group by', '')
     expect(def().views[0].groupBy).toBeUndefined()
   })
 
+  it('the Sort badge counts only the group levels that show: at most five (YAZ-3746 13AF), none without a property (S2, YAZ-4531)', () => {
+    const text = (levels: string) => `views:\n  - type: table\n    name: T\n    order:\n      - file.name\n    groupBy:\n${levels}`
+    const badge = (el: ParentNode) => el.querySelector('[aria-label="Sort"] .view-toolbar__badge')?.textContent
+    const six = text(['note.a', 'note.b', 'note.c', 'note.d', 'note.e', 'note.f'].map((p) => `      - property: ${p}\n`).join(''))
+    expect(badge(mount(six).el)).toBe('5')
+    act(() => root?.unmount())
+    container?.remove()
+    expect(badge(mount(text('      - property: note.a\n      - direction: ASC\n')).el)).toBe('1')
+  })
+
   it('a Then-by level writes the LIST form, omits the outer property, and clears back to the object form (YAZ-745)', () => {
     const { el, def, yaml } = mount()
     const pop = openMenu(el, 'Sort')
+    addLevel(pop)
     chooseColumn(pop, 'Group by', 'note.status')
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
+    addLevel(pop) // D60: the second row, then its picker
     click(byLabel(pop, 'Then group by'))
     expect([...pop.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => option.dataset.value)).not.toContain('note.status')
     chooseColumn(pop, 'Then group by', 'note.priority')
@@ -990,12 +1109,12 @@ describe('sort menu', () => {
     ])
     expect(yaml()).toContain('- property: note.status')
     expect(byText(el, '.view-toolbar__badge', '3')).toBeDefined() // 1 sort + 2 grouping levels
-    click(byLabel(pop, 'Then group direction'))
+    chooseOrder(pop, byLabel(pop, 'Then group direction'), 'Z → A')
     expect(def().views[0].groupBy).toEqual([
       { property: 'note.status', direction: 'ASC' },
       { property: 'note.priority', direction: 'DESC' },
     ])
-    click(byLabel(pop, 'Group direction')) // the outer's chip still edits the outer alone
+    chooseOrder(pop, byLabel(pop, 'Group direction'), 'Z → A') // the outer's menu still edits the outer alone
     expect(def().views[0].groupBy).toEqual([
       { property: 'note.status', direction: 'DESC' },
       { property: 'note.priority', direction: 'DESC' },
@@ -1008,10 +1127,13 @@ describe('sort menu', () => {
     const { el, def } = mount()
     const pop = openMenu(el, 'Sort')
     expect(pop.querySelector('[aria-label="Then group by"]')).toBeNull()
+    addLevel(pop)
     chooseColumn(pop, 'Group by', 'note.status')
+    addLevel(pop)
     chooseColumn(pop, 'Then group by', 'note.priority')
     chooseColumn(pop, 'Group by', 'note.priority')
     expect(def().views[0].groupBy).toEqual({ property: 'note.priority', direction: 'ASC' })
+    addLevel(pop)
     chooseColumn(pop, 'Then group by', 'note.status')
     chooseColumn(pop, 'Group by', '')
     expect(def().views[0].groupBy).toBeUndefined()
@@ -1024,25 +1146,30 @@ describe('sort menu', () => {
     return [...pop.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => option.dataset.value)
   }
 
-  it('Folder is offered — once — as a Sort property, a Group by and a Then group by, and nowhere else: the Properties menu has no "Show Folder" (YAZ-2541)', () => {
+  it('Folder is offered — once — as a Sort property, a Group by and a Then group by (YAZ-2541), and as a column in Properties (YAZ-4564 D26)', () => {
     const { el } = mount()
     const pop = openMenu(el, 'Sort')
     expect(optionValues(pop, 'Sort property').filter((v) => v === 'file.folder')).toHaveLength(1)
+    addLevel(pop)
     expect(optionValues(pop, 'Group by').filter((v) => v === 'file.folder')).toHaveLength(1)
     chooseColumn(pop, 'Group by', 'note.status')
+    addLevel(pop)
     expect(optionValues(pop, 'Then group by').filter((v) => v === 'file.folder')).toHaveLength(1)
-    expect(openMenu(el, 'Properties').querySelector('[aria-label="Show Folder"]')).toBeNull()
+    expect(openMenu(el, 'Columns and view').querySelectorAll('[aria-label="Show Folder"]')).toHaveLength(1)
   })
 
   it('a view whose hand-written `order` already names `file.folder` still lists Folder once (YAZ-2541)', () => {
     const pop = openMenu(mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - file.folder\n').el, 'Sort')
+    addLevel(pop)
     expect(optionValues(pop, 'Group by').filter((v) => v === 'file.folder')).toHaveLength(1)
   })
 
   it('Folder twice IS a grouping (YAZ-2541): Then group by still offers Folder under a Folder outer, and both levels are written; any other property is still offered and kept once', () => {
     const { el, def } = mount()
     const pop = openMenu(el, 'Sort')
+    addLevel(pop)
     chooseColumn(pop, 'Group by', 'file.folder')
+    addLevel(pop)
     expect(optionValues(pop, 'Then group by')).toContain('file.folder')
     chooseColumn(pop, 'Then group by', 'file.folder')
     expect(def().views[0].groupBy).toEqual([
@@ -1082,6 +1209,9 @@ describe('collapse all groups', () => {
   })
 })
 
+/** Columns ⚙'s bulk buttons (YAZ-3746 demo polish): "Hide all" heads Shown, "Show all" heads Hidden; a section with no rows has none. */
+const bulk = (pop: ParentNode, label: string): HTMLButtonElement | null => [...pop.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label) ?? null
+
 describe('properties menu', () => {
   it.each(['table', 'board'])('selects every offered property once in %s, preserving aliases, order, and other settings', (type) => {
     const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', priority: 2 } }]
@@ -1102,17 +1232,15 @@ views:
     order: [file.name]
 `, { records, folder: testFolderHost({ settings, vaultRecords: records }) })
     const before = structuredClone(def())
-    const pop = openMenu(el, 'Properties')
-    const select = byText<HTMLButtonElement>(pop, 'button', 'Select all')
-    expect(select.disabled).toBe(false)
-    click(select)
+    const pop = openMenu(el, 'Columns and view')
+    click(bulk(pop, 'Show all')!)
 
-    const order = ['status', 'file.name', 'note.owner', 'note.priority', 'file.basename', 'formula.Score']
+    const order = ['status', 'file.name', 'note.owner', 'note.priority', 'file.basename', 'file.folder', 'formula.Score'] // Folder is a column since YAZ-4564 D26
     expect(def()).toEqual({ ...before, views: [{ ...before.views[0], order }, before.views[1]] })
     expect(parseViews(yaml()).def).toEqual(def())
     expect([...pop.querySelectorAll<HTMLInputElement>('input[aria-label^="Show "]')].every((input) => input.checked)).toBe(true)
-    expect(select.disabled).toBe(true)
-    click(select)
+    // Nothing is hidden now: the Hidden section and its "Show all" are gone, so no second write can follow.
+    expect(bulk(pop, 'Show all')).toBeNull()
     expect(onChange).toHaveBeenCalledTimes(1)
   })
 
@@ -1129,9 +1257,8 @@ views:
     order: [file.name]
 `, { records })
     const before = structuredClone(def())
-    const pop = openMenu(el, 'Properties')
-    const clear = byText<HTMLButtonElement>(pop, 'button', 'Unselect all')
-    click(clear)
+    const pop = openMenu(el, 'Columns and view')
+    click(bulk(pop, 'Hide all')!)
 
     const { frozenColumns: _frozen, ...active } = before.views[0]
     expect(def()).toEqual({ ...before, views: [{ ...active, order: [] }, before.views[1]] })
@@ -1141,14 +1268,14 @@ views:
     expect([...pop.querySelectorAll<HTMLInputElement>('input[aria-label^="Show "]')].every((input) => !input.checked)).toBe(true)
     expect(el.querySelector('.view-table thead th:not(.view-table__gutter), .view-board__title, .view-board__prop')).toBeNull()
     if (type === 'board') expect(el.querySelectorAll('.view-board__card')).toHaveLength(1)
-    expect(clear.disabled).toBe(true)
-    click(clear)
+    // Nothing is shown now: the Shown section and its "Hide all" are gone.
+    expect(bulk(pop, 'Hide all')).toBeNull()
     expect(onChange).toHaveBeenCalledTimes(1)
 
-    click(byLabel(el, 'Properties'))
-    const reopened = openMenu(el, 'Properties')
-    click(byText(reopened, 'button', 'Select all'))
-    expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status', 'file.basename'])
+    click(byLabel(el, 'Columns and view'))
+    const reopened = openMenu(el, 'Columns and view')
+    click(bulk(reopened, 'Show all')!)
+    expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status', 'file.basename', 'file.folder'])
     expect(def().views[0].frozenColumns).toBeUndefined()
     expect(parseViews(yaml()).def).toEqual(def())
     expect(el.querySelector(type === 'table' ? '.view-table__name' : '.view-board__title')).not.toBeNull()
@@ -1157,46 +1284,51 @@ views:
 
   it.each(['table', 'board'])('handles implicit defaults and no records in %s without redundant writes', (type) => {
     const { el, onChange, def } = mount(`views:\n  - type: ${type}\n    name: Empty\n`, { records: [] })
-    const pop = openMenu(el, 'Properties')
-    const select = byText<HTMLButtonElement>(pop, 'button', 'Select all')
-    click(byText(pop, 'button', 'Unselect all'))
+    const pop = openMenu(el, 'Columns and view')
+    click(bulk(pop, 'Hide all')!)
     expect(def().views[0].order).toEqual([])
-    expect(select.disabled).toBe(false)
-    click(select)
-    expect(def().views[0].order).toEqual(['file.name', 'file.basename'])
-    expect(select.disabled).toBe(true)
-    click(select)
+    expect(bulk(pop, 'Hide all')).toBeNull()
+    click(bulk(pop, 'Show all')!)
+    expect(def().views[0].order).toEqual(['file.name', 'file.basename', 'file.folder'])
+    expect(bulk(pop, 'Show all')).toBeNull()
     expect(onChange).toHaveBeenCalledTimes(2)
   })
 
   it.each(['cards', 'list'])('does not offer bulk visibility in %s', (type) => {
     const { el } = mount(`views:\n  - type: ${type}\n    name: Other\n`)
-    const pop = openMenu(el, 'Properties')
-    expect([...pop.querySelectorAll('button')].some((button) => ['Select all', 'Unselect all'].includes(button.textContent ?? ''))).toBe(false)
+    const pop = openMenu(el, 'Columns and view')
+    expect([...pop.querySelectorAll('button')].some((button) => ['Show all', 'Hide all'].includes(button.textContent ?? ''))).toBe(false)
   })
 
-  it('offers a Table-only Frozen columns select over the visible positional prefix', () => {
+  // YAZ-3746 (F-changes on YAZ-4501): Frozen columns live only on the header right-click now, not in Columns ⚙ › View.
+  const headerMenu = (el: ParentNode, label: string): void => {
+    const th = [...el.querySelectorAll('.view-table thead th')].find((t) => t.textContent?.startsWith(label))!
+    act(() => void th.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    draw()
+  }
+  const menuItem = (el: ParentNode, label: string) => byText<HTMLButtonElement>(el, '.ctx-menu [role="menuitem"]', label)
+
+  it('offers a Table-only freeze over the visible positional prefix: the header right-click, no select in View', () => {
     const { el } = mount('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - note.status\n      - note.priority\n  - type: cards\n    name: Cards\n')
-    const table = openMenu(el, 'Properties')
-    const select = byLabel<HTMLSelectElement>(table, 'Frozen columns')
-    expect([...select.options].map((option) => option.textContent)).toEqual(['None', '1 — through Name', '2 — through Status', '3 — through Priority'])
-    expect(select.value).toBe('0')
+    expect(openView(el).querySelector('[aria-label="Frozen columns"]')).toBeNull()
+    click(byLabel(el, 'Columns and view'))
+    headerMenu(el, 'Status')
+    expect(menuItem(el, 'Freeze up to this column')).toBeDefined()
 
     click(byText(el, '[role="tab"]', 'Cards'))
-    expect(byLabel(el, 'Properties').getAttribute('aria-expanded')).toBe('true')
-    expect(q(el, '.view-popover').querySelector('[aria-label="Frozen columns"]')).toBeNull()
+    expect(el.querySelector('.view-table')).toBeNull() // cards have no column header to freeze from
   })
 
-  it('writes the selected frozen prefix once; choosing None deletes the optional key', () => {
+  it('writes the selected frozen prefix once; "Unfreeze columns" deletes the optional key', () => {
     const { el, onChange, def, yaml } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n')
-    const select = byLabel<HTMLSelectElement>(openMenu(el, 'Properties'), 'Frozen columns')
-
-    setValue(select, '2')
+    headerMenu(el, 'Status')
+    click(menuItem(el, 'Freeze up to this column'))
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].frozenColumns).toBe(2)
     expect(yaml()).toContain('frozenColumns: 2')
 
-    setValue(select, '0')
+    headerMenu(el, 'Status')
+    click(menuItem(el, 'Unfreeze columns'))
     expect(onChange).toHaveBeenCalledTimes(2)
     expect(def().views[0].frozenColumns).toBeUndefined()
     expect(yaml()).not.toContain('frozenColumns')
@@ -1204,20 +1336,20 @@ views:
 
   it('offers a Table-only Row numbers toggle (YAZ-1513): unchecking writes rowNumbers: false, checking DELETES the key', () => {
     const { el, onChange, def, yaml } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n  - type: cards\n    name: Cards\n')
-    const box = byLabel<HTMLInputElement>(openMenu(el, 'Properties'), 'Row numbers')
+    const box = byLabel<HTMLInputElement>(openView(el), 'Row numbers')
     expect(box.checked).toBe(true)
 
     click(box)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].rowNumbers).toBe(false)
     expect(yaml()).toContain('rowNumbers: false')
-    expect(el.querySelector('.view-table__gutter')).toBeNull()
+    expect(el.querySelector('.view-table__gutter--slim')).not.toBeNull() // the slim strip (YAZ-4610 D62)
 
     click(byLabel<HTMLInputElement>(el, 'Row numbers'))
     expect(onChange).toHaveBeenCalledTimes(2)
     expect(def().views[0].rowNumbers).toBeUndefined()
     expect(yaml()).not.toContain('rowNumbers')
-    expect(el.querySelector('.view-table__gutter')).not.toBeNull()
+    expect(el.querySelector('.view-table__gutter--slim')).toBeNull()
 
     click(byText(el, '[role="tab"]', 'Cards'))
     expect(q(el, '.view-popover').querySelector('[aria-label="Row numbers"]')).toBeNull()
@@ -1225,7 +1357,7 @@ views:
 
   it('clamps after hides, leaves restored columns outside the prefix, and follows reorder positionally', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    frozenColumns: 2\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
 
     click(byLabel(pop, 'Show Priority'))
     expect(def().views[0].frozenColumns).toBe(2)
@@ -1234,6 +1366,8 @@ views:
     expect(def().views[0].frozenColumns).toBe(1)
 
     click(byLabel(pop, 'Show Status'))
+    // An "Other properties" row's Show asks first (YAZ-4764, YAZ-4713 C4A).
+    click(byText(pop, '.confirm__btn', 'Show'))
     expect(def().views[0].order).toEqual(['file.name', 'note.status'])
     expect(def().views[0].frozenColumns).toBe(1)
     press(byLabel(pop, 'Reorder Status'), 'ArrowUp')
@@ -1243,12 +1377,13 @@ views:
 
   it('a table can hide and re-show file.name through view.order', () => {
     const { el, onChange, def } = mount()
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     const name = byLabel<HTMLInputElement>(pop, 'Show Name')
     expect(name.checked).toBe(true)
     expect(name.disabled).toBe(false)
 
     click(byLabel(pop, 'Show Status'))
+    click(byText(pop, '.confirm__btn', 'Show')) // an "Other properties" row's Show asks first (YAZ-4764, C4A)
     expect(def().views[0].order).toEqual(['file.name', 'note.status'])
     expect(q(el, '[data-cell="0:1"]').textContent).toBe('idea')
 
@@ -1274,7 +1409,7 @@ views:
     groupBy:
       property: note.status
 `)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     const name = byLabel<HTMLInputElement>(pop, 'Show Name')
     expect(name.disabled).toBe(false)
     expect(el.querySelectorAll('.view-board__title')).toHaveLength(8)
@@ -1293,12 +1428,12 @@ views:
 
   it.each(['cards', 'list'])('keeps file.name disabled in %s views', (type) => {
     const { el } = mount(`views:\n  - type: ${type}\n    name: V\n`)
-    expect(byLabel<HTMLInputElement>(openMenu(el, 'Properties'), 'Show Name').disabled).toBe(true)
+    expect(byLabel<HTMLInputElement>(openMenu(el, 'Columns and view'), 'Show Name').disabled).toBe(true)
   })
 
   it('allows an empty table order and keeps Properties available to restore file.name', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n')
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Show Name'))
     expect(def().views[0].order).toEqual([])
     expect(el.querySelector('.view-table thead th:not(.view-table__gutter)')).toBeNull()
@@ -1309,7 +1444,7 @@ views:
 
   it('F: the "File name" column is offered, and ticking it adds `file.basename` to the view (YAZ-2420 D18)', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n')
-    const box = byLabel<HTMLInputElement>(openMenu(el, 'Properties'), 'Show File name')
+    const box = byLabel<HTMLInputElement>(openMenu(el, 'Columns and view'), 'Show File name')
     expect(box.checked).toBe(false)
     click(box)
     expect(def().views[0].order).toEqual(['file.name', 'file.basename'])
@@ -1317,7 +1452,7 @@ views:
 
   it('the grip reorders the shown keys only (YAZ-1207: arrows are gone)', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     press(byLabel(pop, 'Reorder Priority'), 'ArrowUp') // note.priority above note.status
     expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status'])
   })
@@ -1325,7 +1460,7 @@ views:
   it('the folder’s DECLARED columns are offered too, valueless or not (YAZ-895)', () => {
     const settings = { columns: { owner: { kind: 'link' as const } }, views: [], problems: [] }
     const { el } = mount(undefined, { folder: testFolderHost({ settings }) })
-    expect(byLabel(openMenu(el, 'Properties'), 'Show Owner')).toBeDefined()
+    expect(byLabel(openMenu(el, 'Columns and view'), 'Show Owner')).toBeDefined()
   })
 
   it('keeps a long column identity separate from its controls (YAZ-1006)', () => {
@@ -1333,7 +1468,7 @@ views:
     const label = 'Campaign narrative summary' // the default label (YAZ-1513); the key rides in the <small>
     const settings = { columns: { [name]: { kind: 'text' as const } }, views: [], problems: [] }
     const { el } = mount(undefined, { folder: testFolderHost({ settings }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     const row = byLabel(pop, `Show ${label}`).closest<HTMLElement>('.view-prop')
     expect(row).not.toBeNull()
     // The LIST row (YAZ-1513) is grip · checkbox · glyph · label · ›, and nothing else
@@ -1350,7 +1485,7 @@ views:
     const setColumns = vi.fn()
     const settings = { columns: { tag: { kind: 'text' as const } }, views: [], problems: [] }
     const { el, onChange } = mount(undefined, { folder: testFolderHost({ settings, setColumns }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byText(pop, 'button', '+ Add column'))
     setValue(byLabel(pop, 'Column name'), 'budget')
     choosePropertyType(pop, 'Number')
@@ -1366,55 +1501,121 @@ views:
     expect(pop.querySelector('[aria-label="Column name"]')).toBeNull() // collapsed again
   })
 
-  it('an invalid or already-taken column name says so and writes nothing', () => {
+  it('an empty or already-shown column name says so and writes nothing', () => {
     const setColumns = vi.fn()
-    const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
-    const pop = openMenu(el, 'Properties')
+    const { el, onChange } = mount('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - note.status\n', { folder: testFolderHost({ setColumns }) })
+    const pop = openMenu(el, 'Columns and view')
     click(byText(pop, 'button', '+ Add column'))
-    setValue(byLabel(pop, 'Column name'), 'Budget!')
+    setValue(byLabel(pop, 'Column name'), '   ')
     click(byLabel(pop, 'Save column'))
-    expect(q(pop, '[role="alert"]').textContent).toContain('lower case')
+    expect(q(pop, '[role="alert"]').textContent).toBe('Type a name')
     setValue(byLabel(pop, 'Column name'), 'status')
     click(byLabel(pop, 'Save column'))
-    expect(q(pop, '[role="alert"]').textContent).toContain('already')
+    expect(q(pop, '[role="alert"]').textContent).toBe('status is already a column')
+    // A name under a built-in prefix would clash with the built-in fields (YAZ-4637 M7).
+    for (const name of ['file.name', 'formula.x', 'note.status']) {
+      setValue(byLabel(pop, 'Column name'), name)
+      click(byLabel(pop, 'Save column'))
+      expect(q(pop, '[role="alert"]').textContent).toBe(`${name} starts with ${name.slice(0, name.indexOf('.') + 1)}, which the built-in columns use — choose another name`)
+    }
     expect(setColumns).not.toHaveBeenCalled()
+    expect(setColumns).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('the target is offered for link kinds only, and lands in the declaration', () => {
+  it('any name is a column name, as typed (YAZ-4535, D19): "AI or App" is the key', () => {
     const setColumns = vi.fn()
     const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byText(pop, 'button', '+ Add column'))
-    expect(pop.querySelector('[aria-label="Link target"]')).toBeNull()
-    choosePropertyType(pop, 'Multi-link')
-    setValue(byLabel(pop, 'Column name'), 'owner')
-    type(byLabel(pop, 'Link target'), '  People  ')
+    setValue(byLabel(pop, 'Column name'), 'AI or App')
     click(byLabel(pop, 'Save column'))
-    expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'multi-link', target: 'People' } })
+    const [columns, views] = setColumns.mock.calls[0] as [Record<string, unknown>, ViewDef[]]
+    expect(columns).toEqual({ 'AI or App': { kind: 'text' } })
+    expect(views[0].order).toEqual(['file.name', 'note.AI or App'])
   })
 
-  it("a declared link column's target writes on commit — trimmed, against the captured base — and an emptied field removes it against what just landed (3D)", async () => {
+  it('the Sort button opens on a view whose groupBy has an entry with no column, and the table still shows (YAZ-4544, finding 21)', () => {
+    const { el, onChange } = mount('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n    groupBy:\n      - property: note.page\n      - {}\n')
+    const pop = openMenu(el, 'Sort')
+    expect(pop.querySelector('[aria-label="Group by"]')).not.toBeNull()
+    expect(el.querySelector('.view-table')).not.toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('refuses the app\'s own keys, in the Properties panel\'s words: in an ID vault id too (D19, YAZ-4544)', () => {
+    for (const [ids, refused, taken] of [[true, ['id', 'title', 'readonly', 'comments'], []], [false, ['readonly', 'comments'], ['id']]] as const) {
+      const setColumns = vi.fn()
+      const wikilinks = createWikilinkResolveSource()
+      wikilinks.update(null, [], [], ids)
+      const { el } = mount(undefined, { folder: testFolderHost({ setColumns, wikilinks }) })
+      const pop = openMenu(el, 'Columns and view')
+      click(byText(pop, 'button', '+ Add column'))
+      for (const name of refused) {
+        setValue(byLabel(pop, 'Column name'), name)
+        click(byLabel(pop, 'Save column'))
+        expect(q(pop, '[role="alert"]').textContent).toBe(`${name} is the app's own property — it is set where it belongs, not here`)
+      }
+      expect(setColumns).not.toHaveBeenCalled()
+      // Where the vault uses no IDs, `id` is an ordinary property.
+      for (const name of taken) {
+        setValue(byLabel(pop, 'Column name'), name)
+        click(byLabel(pop, 'Save column'))
+        expect(setColumns.mock.calls[0]?.[0]).toEqual({ [name]: { kind: 'text' } })
+      }
+      act(() => root?.unmount())
+      container?.remove()
+    }
+  })
+
+  it('S1: a note property of the same name is SHOWN, not declared again — one order write', () => {
+    const setColumns = vi.fn()
+    const { el, onChange } = mount(undefined, { folder: testFolderHost({ setColumns }) })
+    const pop = openMenu(el, 'Columns and view')
+    click(byText(pop, 'button', '+ Add column'))
+    setValue(byLabel(pop, 'Column name'), 'status') // TEST_RECORDS hold `status`; the Table shows only Name
+    click(byLabel(pop, 'Save column'))
+    expect(setColumns).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(pop.querySelector('[aria-label="Column name"]')).toBeNull()
+  })
+
+  // YAZ-4795 demo: the target is "Notes from", a folder picker (it writes the folder's link), not a text box.
+  it('the target is offered for link kinds only, and lands in the declaration', () => {
+    const setColumns = vi.fn()
+    const { el } = mount(undefined, { folder: linkHost({ setColumns }) })
+    const pop = openMenu(el, 'Columns and view')
+    click(byText(pop, 'button', '+ Add column'))
+    expect(pop.querySelector('[aria-label="Notes from for the new column"]')).toBeNull()
+    choosePropertyType(pop, 'Multi-link')
+    setValue(byLabel(pop, 'Column name'), 'owner')
+    pickNotesFrom(pop, 'the new column', 'People')
+    click(byLabel(pop, 'Save column'))
+    expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'multi-link', target: '[[People]]' } })
+  })
+
+  it("a declared link column's target writes on a pick — against the captured base — and \"Any folder\" removes it against what just landed (3D; YAZ-4795 demo picker)", async () => {
     const base = { kind: 'link' as const, target: 'People' }
     const { setColumn, folder } = aheadHost({ owner: base, tag: { kind: 'text' } })
     const { el } = mount(undefined, { root: '/vault', folder })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Owner'))
-    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('People')
-    type(byLabel(pop, 'Link target'), '  Teams  ')
-    expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link', target: 'Teams' }, base)
+    expect(byLabel(pop, 'Notes from for Owner').textContent).toBe('People')
+    pickNotesFrom(pop, 'Owner', 'Teams')
+    expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link', target: '[[Teams]]' }, base)
     await settle()
-    type(byLabel(pop, 'Link target'), '')
-    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link' }, { kind: 'link', target: 'Teams' })
+    pickNotesFrom(pop, 'Owner', 'Any folder')
+    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link' }, { kind: 'link', target: '[[Teams]]' })
     expect(pop.querySelector('.frontmatter-property-menu__actions')).toBeNull() // no Save / Cancel anywhere
   })
 
   it('a target typed under a link kind does not ride into a non-link declaration', () => {
     const setColumns = vi.fn()
-    const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
-    const pop = openMenu(el, 'Properties')
+    const { el } = mount(undefined, { folder: linkHost({ setColumns }) })
+    const pop = openMenu(el, 'Columns and view')
     click(byText(pop, 'button', '+ Add column'))
     choosePropertyType(pop, 'Link')
-    type(byLabel(pop, 'Link target'), 'People')
+    pickNotesFrom(pop, 'the new column', 'People')
     choosePropertyType(pop, 'Text')
     setValue(byLabel(pop, 'Column name'), 'notes')
     click(byLabel(pop, 'Save column'))
@@ -1425,11 +1626,10 @@ views:
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const settings = { columns: { owner: { kind: 'link' as const, target: 'People' }, tag: { kind: 'text' as const } }, views: [], problems: [] }
     const { el, onChange } = mount(undefined, { folder: testFolderHost({ settings, setColumn }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Owner'))
-    const select = byLabel<HTMLSelectElement>(pop, 'Edit property Owner')
-    expect(select.value).toBe('link')
-    setValue(select, 'multi-link')
+    expect(typeShown(pop, 'Owner')).toBe('Link')
+    pickType(pop, 'Owner', 'Multi-link')
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('owner', { kind: 'multi-link', target: 'People' }, settings.columns.owner)
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -1437,19 +1637,17 @@ views:
   it('an undeclared note key reads Auto; picking a kind declares it immediately', async () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const { el, onChange } = mount(undefined, { folder: testFolderHost({ setColumn }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
-    const select = byLabel<HTMLSelectElement>(pop, 'Edit property Status')
-    expect(select.value).toBe('')
-    expect(select.selectedOptions[0]?.textContent).toBe('Auto')
+    expect(typeShown(pop, 'Status')).toBe('Auto')
     expect(setColumn).not.toHaveBeenCalled()
-    setValue(select, 'date')
+    pickType(pop, 'Status', 'Date')
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', { kind: 'date' }, undefined)
     expect(onChange).not.toHaveBeenCalled()
   })
 
   it('file.* rows get no property editor — they are not note properties; the detail reads the type instead', () => {
-    const pop = openMenu(mount().el, 'Properties')
+    const pop = openMenu(mount().el, 'Columns and view')
     click(byLabel(pop, 'Open Name'))
     expect(pop.querySelector('[aria-label="Edit property Name"]')).toBeNull()
     expect(q(pop, '.column-detail__key').textContent).toBe('file.name')
@@ -1463,10 +1661,10 @@ views:
     const base = { kind: 'select' as const, options: ['Later', 'Ready'], optionSort: 'manual' as const }
     const { setColumn, folder } = aheadHost({ status: base })
     const { el, onChange } = mount(`views:\n  - type: ${viewType}\n    name: Review\n    order: [file.name, note.status]\n    groupBy: { property: note.status }\n`, { folder })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
-    expect(byLabel<HTMLSelectElement>(pop, 'Edit property Status').value).toBe('select')
-    setValue(byLabel(pop, 'Edit property Status'), 'multi-select')
+    expect(typeShown(pop, 'Status')).toBe('Select')
+    pickType(pop, 'Status', 'Multi-select')
     expect(setColumn).toHaveBeenNthCalledWith(1, 'status', { ...base, kind: 'multi-select' }, base)
     await settle()
     expect(byLabel<HTMLSelectElement>(pop, 'Option order').value).toBe('manual')
@@ -1482,12 +1680,12 @@ views:
     const base = { kind: 'text' as const }
     const setColumn = vi.fn().mockRejectedValue(new Error('Property “status” changed since these settings were opened. Reopen the property and try again.'))
     const { el } = mount(undefined, { folder: testFolderHost({ settings: { columns: { status: base }, views: [], problems: [] }, setColumn }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
-    setValue(byLabel(pop, 'Edit property Status'), 'date')
+    pickType(pop, 'Status', 'Date')
     await settle()
     expect(q(pop, '[role="alert"]').textContent).toContain('changed since these settings were opened')
-    expect(byLabel<HTMLSelectElement>(pop, 'Edit property Status').value).toBe('text') // the host's copy (reverted there) is what the panel shows
+    expect(typeShown(pop, 'Status')).toBe('Text') // the host's copy (reverted there) is what the panel shows
     expect(pop.querySelector('.column-detail')).not.toBeNull() // still in the panel
   })
 
@@ -1495,7 +1693,7 @@ views:
     const base = { kind: 'select' as const, options: ['A', 'B'] }
     const { setColumn, folder } = aheadHost({ status: base })
     const { el, onChange } = mount(undefined, { folder })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     expect([...pop.querySelectorAll('.property-def__chip')].map((c) => c.textContent)).toEqual(['A', 'B'])
     click(byLabel(pop, 'Add option'))
@@ -1513,7 +1711,7 @@ views:
 
   it('the heading field (3D): Esc reverts the draft and STAYS in the panel; Enter saves; blank goes back to the default label', () => {
     const { el, onChange, def } = mount()
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     const field = byLabel<HTMLInputElement>(pop, 'Display name')
     expect(field.placeholder).toBe('Status')
@@ -1533,7 +1731,7 @@ views:
   it('new Select columns retain their option sort mode and start with blank options', () => {
     const setColumns = vi.fn()
     const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byText(pop, 'button', '+ Add column'))
     setValue(byLabel(pop, 'Column name'), 'stage')
     choosePropertyType(pop, 'Select')
@@ -1545,7 +1743,7 @@ views:
 
   it("the detail's Name field sets def.properties[key].displayName; clearing it deletes the entry (YAZ-1513: the pencil moved in here)", () => {
     const { el, onChange, def, yaml } = mount()
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     expect(byLabel<HTMLInputElement>(pop, 'Display name').placeholder).toBe('Status') // the default label, as a hint
     type(byLabel(pop, 'Display name'), 'Stage')
@@ -1563,7 +1761,7 @@ views:
 
   it('the two levels (YAZ-1513): ‹ and Esc return to the list, Esc on the list closes the popover, and the list row keeps grip + checkbox as before', () => {
     const { el } = mount()
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     expect(byLabel(pop, 'Show Status')).toBeDefined()
     expect(byLabel(pop, 'Reorder Name')).toBeDefined() // shown rows keep their grip
     click(byLabel(pop, 'Open Status'))
@@ -1580,8 +1778,8 @@ views:
 
   it('the conditional sections (YAZ-1513): Options only for Select kinds, Relation only for note keys with a root, card styling only on a board', () => {
     const settings = { columns: { status: { kind: 'select' as const, options: ['A', 'B'] }, owner: { kind: 'link' as const, target: '[[People]]' } }, views: [], problems: [] }
-    const { el } = mount(undefined, { root: '/vault', folder: testFolderHost({ settings }) })
-    const pop = openMenu(el, 'Properties')
+    const { el } = mount(undefined, { root: '/vault', folder: linkHost({ settings }) })
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     expect([...q(pop, '[aria-label="Property options"]').querySelectorAll('.property-def__chip')].map((c) => c.textContent)).toEqual(['A', 'B'])
     expect(byLabel(pop, 'Relation for Status').textContent).toBe('Make relation') // not a link kind: the seed button
@@ -1589,7 +1787,7 @@ views:
     click(byLabel(pop, 'Back to columns'))
     click(byLabel(pop, 'Open Owner'))
     expect(pop.querySelector('[aria-label="Property options"]')).toBeNull()
-    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('[[People]]') // a link kind: the target inline
+    expect(byLabel(pop, 'Notes from for Owner').textContent).toBe('People') // a link kind: the target inline (YAZ-4795 demo picker)
     click(byLabel(pop, 'Back to columns'))
     click(byLabel(pop, 'Open Name'))
     expect(pop.querySelector('[aria-label^="Relation for "]')).toBeNull() // file.name is not a note property
@@ -1597,32 +1795,35 @@ views:
 
   it('the actions row (YAZ-1513): Hide in this view unchecks the column in ONE order write and returns to the list', () => {
     const { el, onChange, def } = mount('views:\n  - type: table\n    name: T\n    frozenColumns: 2\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     click(byLabel(pop, 'Hide Status in this view'))
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].order).toEqual(['file.name', 'note.priority'])
     expect(def().views[0].frozenColumns).toBe(2)
-    expect(byLabel<HTMLInputElement>(pop, 'Show Status').checked).toBe(false)
+    // Status is a note field no folder declares: hidden, it waits under "Other properties in these notes" with Show and
+    // "Add to <folder>" in place of the switch (YAZ-4713 C4).
+    expect(byLabel(pop, 'Show Status').tagName).toBe('BUTTON')
+    expect(byLabel(pop, 'Add Status to vault')).toBeDefined()
     click(byLabel(pop, 'Open Status'))
     expect(byLabel<HTMLButtonElement>(pop, 'Hide Status in this view').disabled).toBe(true) // already hidden
   })
 
-  it('the actions row (YAZ-1513): Delete column… asks first with the label, key and member count; Cancel deletes nothing; Delete calls the ONE door', () => {
+  it('the actions row (YAZ-1513): Delete column… asks first with the label and the folder; Cancel deletes nothing; "Delete column and clear N values" calls the ONE door (YAZ-4713 C7)', () => {
     const deleteColumn = vi.fn(async () => {})
     const { el, onChange } = mount(undefined, { folder: testFolderHost({ deleteColumn }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     click(byLabel(pop, 'Delete column Status'))
     const sheet = q<HTMLElement>(pop, '.confirm[role="dialog"]')
-    expect(q(sheet, '.confirm__text').textContent).toBe('Delete "Status"? This removes the column from this folder and the "status" value from 5 notes.')
+    expect(q(sheet, '.confirm__text').textContent).toBe('Delete the column "Status"? It goes from vault and every page under it.')
     click([...sheet.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Cancel')!)
     expect(pop.querySelector('.confirm')).toBeNull()
     expect(deleteColumn).not.toHaveBeenCalled()
     expect(el.querySelector('.view-popover')).not.toBeNull() // the sheet's Cancel never reaches the popover
     click(byLabel(pop, 'Delete column Status'))
-    click([...pop.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete')!)
-    expect(deleteColumn).toHaveBeenCalledExactlyOnceWith('note.status')
+    click([...pop.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete column and clear 5 values')!)
+    expect(deleteColumn).toHaveBeenCalledExactlyOnceWith('note.status', true)
     expect(onChange).not.toHaveBeenCalled()
     expect(byLabel(pop, 'Show Status')).toBeDefined() // back on the list
   })
@@ -1631,7 +1832,7 @@ views:
     const deleteColumn = vi.fn(async () => {})
     const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', comments: [] } }]
     const { el } = mount(`formulas:\n  score: '1'\nviews:\n  - type: table\n    name: T\n    order: [file.name, note.status, note.comments, formula.score]\n`, { records, folder: testFolderHost({ deleteColumn, vaultRecords: records }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     for (const [label, disabled] of [['Name', true], ['Score', true], ['Comments', true], ['Status', false]] as const) {
       click(byLabel(pop, `Open ${label}`))
       const del = byLabel<HTMLButtonElement>(pop, `Delete column ${label}`)
@@ -1644,10 +1845,10 @@ views:
   it('a label shared by two rows — file.name and a `name` property both read "Name" — shows the key beside BOTH, and nowhere else (YAZ-1549)', () => {
     const records = [{ ...TEST_RECORDS[0], properties: { name: 'alias', status: 'idea' } }]
     const { el } = mount('views:\n  - type: table\n    name: T\n    order: [file.name, note.name, note.status]\n', { records, folder: testFolderHost({ vaultRecords: records }) })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     const rows = [...pop.querySelectorAll<HTMLElement>('.view-prop')]
     const keyed = rows.map((row) => row.querySelector('.view-prop__name small')?.textContent ?? null)
-    expect(keyed).toEqual(['file.name', 'note.name', null, null])
+    expect(keyed).toEqual(['file.name', 'note.name', null, null, null])
   })
 })
 
@@ -1781,7 +1982,7 @@ describe('the default view', () => {
 
   it('the properties menu ends with Page → Default view, listing First view then every view', () => {
     const { el } = mount()
-    const menu = openMenu(el, 'Properties')
+    const menu = openView(el)
     const select = byLabel<HTMLSelectElement>(menu, 'Default view')
     expect([...select.options].map((o) => o.text)).toEqual(['First view', 'Table', 'View', 'View 2'])
     expect(select.value).toBe('')
@@ -1789,7 +1990,7 @@ describe('the default view', () => {
 
   it('picking a view writes the def’s defaultView — ONE update, never a second door', () => {
     const { el, onChange, yaml } = mount()
-    setValue(byLabel<HTMLSelectElement>(openMenu(el, 'Properties'), 'Default view'), 'View')
+    setValue(byLabel<HTMLSelectElement>(openView(el), 'Default view'), 'View')
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(onChange.mock.calls[0][0].def.defaultView).toBe('View')
     expect(yaml()).toContain('defaultView: View')
@@ -1797,7 +1998,7 @@ describe('the default view', () => {
 
   it('the dropdown reflects the def’s value, and First view DELETES the key', () => {
     const { el, onChange, yaml } = mount(started('View'))
-    const select = byLabel<HTMLSelectElement>(openMenu(el, 'Properties'), 'Default view')
+    const select = byLabel<HTMLSelectElement>(openView(el), 'Default view')
     expect(select.value).toBe('View')
     setValue(select, '')
     expect(onChange).toHaveBeenCalledTimes(1)
@@ -1808,9 +2009,9 @@ describe('the default view', () => {
 
 describe('properties drag-to-reorder (YAZ-1207)', () => {
   const THREE = 'views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n      - note.priority\n'
-  /** TabBar's jsdom reduction, vertical: all-zero rects mean the midpoint test is the SIGN of clientY. */
+  /** The slot is read from the layout (YAZ-4606): `clientY` is px from the target row's midpoint, in a layout jsdom is given. */
   const fire = (target: Element, type: string, clientY = 0) =>
-    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY: liveGapPoint(target, 'y', clientY) })))
   const grip = (pop: ParentNode, label: string) => byLabel<HTMLButtonElement>(pop, `Reorder ${label}`)
   const rowOf = (pop: ParentNode, label: string): HTMLElement => {
     const row = grip(pop, label).closest<HTMLElement>('.view-prop')
@@ -1820,7 +2021,7 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
 
   it('every SHOWN row has a grip — file.name included — hidden rows have none, and the arrows are gone', () => {
     const { el } = mount(THREE)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     expect(grip(pop, 'Name')).toBeDefined()
     expect(grip(pop, 'Status')).toBeDefined()
     expect(grip(pop, 'Priority')).toBeDefined()
@@ -1831,44 +2032,61 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
     expect(pop.querySelector('[aria-label="Move down"]')).toBeNull()
   })
 
-  it('dragging file.name past the last row writes it last, in ONE write, with drag and insertion classes', () => {
+  it('dragging file.name past the last row writes it last, in ONE write; the rows part, no marker class (YAZ-4606)', () => {
     const { el, def, onChange } = mount(THREE)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     fire(grip(pop, 'Name'), 'dragstart')
-    expect(rowOf(pop, 'Name').classList.contains('view-prop--dragging')).toBe(true)
+    expect(q(pop, '.view-menu__list').hasAttribute('data-live-parting')).toBe(true)
     fire(rowOf(pop, 'Priority'), 'dragover', 5) // below priority's midpoint → the end slot
-    expect(rowOf(pop, 'Priority').classList.contains('view-prop--insert-after')).toBe(true)
+    expect(rowOf(pop, 'Priority').style.transform).toBe('translateY(-100px)')
     fire(rowOf(pop, 'Priority'), 'drop', 5)
     expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
     expect(onChange).toHaveBeenCalledTimes(1)
-    expect(pop.querySelector('.view-prop--dragging')).toBeNull()
-    expect(pop.querySelector('.view-prop--insert-after')).toBeNull()
+    expect(q(pop, '.view-menu__list').hasAttribute('data-live-parting')).toBe(false)
+    expect(rowOf(pop, 'Priority').style.transform).toBe('')
   })
 
   it('dragging the last row above the first inserts BEFORE it', () => {
     const { el, def } = mount(THREE)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     fire(grip(pop, 'Priority'), 'dragstart')
     fire(rowOf(pop, 'Name'), 'dragover', -5)
-    expect(rowOf(pop, 'Name').classList.contains('view-prop--insert-before')).toBe(true)
+    expect(rowOf(pop, 'Name').style.transform).toBe('translateY(100px)') // Name slides down: the gap opens before it
     fire(rowOf(pop, 'Name'), 'drop', -5)
     expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
   })
 
   it('dropping on the grabbed slot is a no-op and dragend clears an abandoned drag', () => {
     const { el, onChange } = mount(THREE)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     fire(grip(pop, 'Status'), 'dragstart')
     fire(rowOf(pop, 'Status'), 'drop', -5) // before itself = its own slot
     expect(onChange).not.toHaveBeenCalled()
     fire(grip(pop, 'Status'), 'dragstart')
     fire(grip(pop, 'Status'), 'dragend')
-    expect(pop.querySelector('.view-prop--dragging')).toBeNull()
+    expect(q(pop, '.view-menu__list').hasAttribute('data-live-parting')).toBe(false)
+  })
+
+  it('LIVE GAP (YAZ-4606): the rows part down the list, a drop in the middle is ONE write, and Esc cancels', () => {
+    const { el, def, onChange } = mount(THREE)
+    const pop = openMenu(el, 'Columns and view')
+    fire(grip(pop, 'Name'), 'dragstart')
+    fire(rowOf(pop, 'Status'), 'dragover', 5) // the slot after Status
+    expect(rowOf(pop, 'Status').style.transform).toBe('translateY(-100px)')
+    expect(rowOf(pop, 'Priority').style.transform).toBe('')
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(rowOf(pop, 'Status').style.transform).toBe('')
+    fire(rowOf(pop, 'Status'), 'drop', 5)
+    expect(onChange).not.toHaveBeenCalled()
+    fire(grip(pop, 'Name'), 'dragstart')
+    fire(rowOf(pop, 'Status'), 'drop', 5)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].order).toEqual(['note.status', 'file.name', 'note.priority'])
   })
 
   it('ArrowDown/ArrowUp on the grip nudge one step; the ends are no-ops', () => {
     const { el, def, onChange } = mount(THREE)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     press(grip(pop, 'Name'), 'ArrowDown')
     expect(def().views[0].order).toEqual(['note.status', 'file.name', 'note.priority'])
     press(grip(pop, 'Name'), 'ArrowUp')
@@ -1880,7 +2098,7 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
 
   it('a drag reorder keeps frozenColumns following positionally, like the arrows did', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    frozenColumns: 2\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     fire(grip(pop, 'Priority'), 'dragstart')
     fire(rowOf(pop, 'Name'), 'dragover', -5)
     fire(rowOf(pop, 'Name'), 'drop', -5)
@@ -1902,7 +2120,7 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
 `
   it('note rows carry B / U / hide-label / join; the file.name row carries ONLY join; non-boards none', () => {
     const { el } = mount(BOARD)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     // the LIST carries none of them (YAZ-1513); the detail does
     expect(pop.querySelector('[aria-label^="Bold "], [aria-label^="Join "]')).toBeNull()
     click(byLabel(pop, 'Open Status'))
@@ -1919,7 +2137,7 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
 
   it('non-board views offer no card-style toggles', () => {
     const { el } = mount() // YASIN_BASE, table active
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     expect(pop.querySelector('[aria-label^="Bold "]')).toBeNull()
     expect(pop.querySelector('[aria-label^="Join "]')).toBeNull()
@@ -1927,7 +2145,7 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
 
   it('toggling writes one cardStyle entry per click and toggling off cleans the YAML completely', () => {
     const { el, onChange, def, yaml } = mount(BOARD)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     click(byLabel(pop, 'Bold Status on cards'))
     expect(def().views[0].cardStyle).toEqual({ 'note.status': { bold: true } })
@@ -1942,7 +2160,7 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
 
   it("file.name's join round-trips through its canonical cardStyle key", () => {
     const { el, def, yaml } = mount(BOARD)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Name'))
     click(byLabel(pop, 'Join Name to the row above'))
     expect(def().views[0].cardStyle).toEqual({ 'file.name': { join: true } })
@@ -1963,7 +2181,7 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
     cardStyle:
       note.status: { bold: true, join: true }
 `)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     expect(byLabel(pop, 'Bold Status on cards').getAttribute('aria-pressed')).toBe('true')
     expect(byLabel(pop, 'Join Status to the row above').getAttribute('aria-pressed')).toBe('true')
@@ -1993,7 +2211,7 @@ views:
   it('matches display labels and raw canonical keys without saving search or changing row search', () => {
     const { el, onChange, yaml } = mount(SEARCHABLE)
     const before = yaml()
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     const search = byLabel<HTMLInputElement>(pop, 'Search columns')
     setValue(search, '  sTaGe  ')
     expect(shownLabels(pop)).toEqual(['Show Stage'])
@@ -2002,8 +2220,8 @@ views:
     expect(count(el)).toBe('8 items')
     expect(yaml()).toBe(before)
     expect(onChange).not.toHaveBeenCalled()
-    click(byLabel(el, 'Properties'))
-    const reopened = openMenu(el, 'Properties')
+    click(byLabel(el, 'Columns and view'))
+    const reopened = openMenu(el, 'Columns and view')
     expect(byLabel<HTMLInputElement>(reopened, 'Search columns').value).toBe('')
     expect(shownLabels(reopened).length).toBeGreaterThan(1)
   })
@@ -2013,53 +2231,52 @@ views:
     if (tab === 'Board') click(byText(el, '[role="tab"]', tab))
     const index = tab === 'Table' ? 0 : 1
     const other = structuredClone(def().views[1 - index])
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     const search = byLabel<HTMLInputElement>(pop, 'Search columns')
     setValue(search, 'status')
     const before = def().views[index].order!
-    click(byText(pop, 'button', 'Unselect results'))
+    // The Board does not show Stage: no match is shown there, so its Shown section and "Hide results" are absent.
+    if (tab === 'Table') click(bulk(pop, 'Hide results')!)
+    else expect(bulk(pop, 'Hide results')).toBeNull()
     const expected = before.filter((key) => key !== 'status' && key !== 'note.status')
     expect(def().views[index].order).toEqual(expected)
     expect(def().views[1 - index]).toEqual(other)
-    click(byText(pop, 'button', 'Select results'))
+    click(bulk(pop, 'Show results')!)
     const after = def().views[index].order!
     expect(after.slice(0, -1)).toEqual(expected)
     expect(after.filter((key) => key === 'status' || key === 'note.status')).toHaveLength(1)
-    expect(byText<HTMLButtonElement>(pop, 'button', 'Select results').disabled).toBe(true)
-    click(byText(pop, 'button', 'Select results'))
+    // No match is hidden now: the Hidden section and its "Show results" are gone, so no further write can follow.
+    expect(bulk(pop, 'Show results')).toBeNull()
     expect(onChange).toHaveBeenCalledTimes(tab === 'Table' ? 2 : 1)
     expect(parseViews(yaml()).def).toEqual(def())
   })
 
   it('filtered removal clamps the frozen prefix, and clearing the last match removes it', () => {
     const { el, def, onChange } = mount(SEARCHABLE)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     setValue(byLabel(pop, 'Search columns'), 'status')
-    click(byText(pop, 'button', 'Unselect results'))
+    click(bulk(pop, 'Hide results')!)
     expect(def().views[0].order).toEqual(['file.name', 'note.priority'])
     expect(def().views[0].frozenColumns).toBe(2)
     setValue(byLabel(pop, 'Search columns'), 'priority')
-    click(byText(pop, 'button', 'Unselect results'))
+    click(bulk(pop, 'Hide results')!)
     setValue(byLabel(pop, 'Search columns'), 'file.name')
-    click(byText(pop, 'button', 'Unselect results'))
+    click(bulk(pop, 'Hide results')!)
     expect(def().views[0].order).toEqual([])
     expect(def().views[0].frozenColumns).toBeUndefined()
     expect(onChange).toHaveBeenCalledTimes(3)
   })
 
-  it('empty results disable bulk operations, and clearing search restores original grips and order', () => {
+  it('empty results offer no bulk operations, and clearing search restores original grips and order', () => {
     const { el, def, onChange } = mount(SEARCHABLE)
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     const original = [...pop.querySelectorAll('[aria-label^="Reorder "]')].map((grip) => grip.getAttribute('aria-label'))
     setValue(byLabel(pop, 'Search columns'), 'status')
     expect(pop.querySelector('[aria-label^="Reorder "]')).toBeNull()
     setValue(byLabel(pop, 'Search columns'), 'no-such-column')
     expect(shownLabels(pop)).toEqual([])
-    for (const label of ['Select results', 'Unselect results']) {
-      const button = byText<HTMLButtonElement>(pop, 'button', label)
-      expect(button.disabled).toBe(true)
-      click(button)
-    }
+    // No match: neither section shows, so neither bulk button is there to press.
+    for (const label of ['Show results', 'Hide results']) expect(bulk(pop, label)).toBeNull()
     setValue(byLabel(pop, 'Search columns'), '')
     expect([...pop.querySelectorAll('[aria-label^="Reorder "]')].map((grip) => grip.getAttribute('aria-label'))).toEqual(original)
     expect(def().views[0].order).toEqual(['status', 'file.name', 'note.priority'])
@@ -2088,11 +2305,13 @@ views:
   it('picker Escape closes only the chooser without saving; keyboard selection commits once', () => {
     const { el, onChange, def } = mount(SEARCHABLE)
     const pop = openMenu(el, 'Sort')
+    addLevel(pop) // D60: the row is one write; the picker below saves nothing until a match commits
+    expect(onChange).toHaveBeenCalledTimes(1)
     click(byLabel(pop, 'Group by'))
     let search = byLabel<HTMLInputElement>(pop, 'Search group by columns')
     setValue(search, 'no-such-column')
     press(search, 'Enter')
-    expect(onChange).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledTimes(1)
     press(search, 'Escape')
     expect(el.querySelector('.view-popover')).toBe(pop)
     expect(pop.querySelector('[role="listbox"]')).toBeNull()
@@ -2104,14 +2323,14 @@ views:
     press(search, 'ArrowDown')
     press(search, 'Enter')
     expect(def().views[0].groupBy).toEqual({ property: 'note.priority', direction: 'ASC' })
-    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledTimes(2)
   })
 
   it('declared-only columns remain available in Properties and Sort', () => {
     const { el, onChange } = mount(SEARCHABLE, {
       folder: testFolderHost({ settings: { columns: { owner: { kind: 'text' } }, views: [], problems: [] } }),
     })
-    const properties = openMenu(el, 'Properties')
+    const properties = openMenu(el, 'Columns and view')
     setValue(byLabel(properties, 'Search columns'), 'owner')
     expect(byLabel(properties, 'Show Owner')).toBeDefined()
     const pop = openMenu(el, 'Sort')
@@ -2126,7 +2345,7 @@ views:
     click(byText(el, '[role="tab"]', 'Board'))
     const actions = q(el, '.view-toolbar__actions')
     expect([...actions.querySelectorAll('.view-toolbar__btn')].map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Sort', 'Properties', 'Filter', 'Collapse all groups', 'New note', 'Search',
+      'Sort', 'Columns and view', 'Filter', 'Collapse all groups', 'New note', 'Search',
     ])
     expect(actions.lastElementChild?.className).toBe('view-toolbar__count')
     expect(onChange).not.toHaveBeenCalled()
@@ -2142,8 +2361,9 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
       - { property: file.name, direction: ASC }
       - { property: note.priority, direction: DESC }
 `
+  /** The slot is read from the layout (YAZ-4606): `clientY` is px from the target row's midpoint, in a layout jsdom is given. */
   const fire = (target: Element, type: string, clientY = 0) => {
-    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY: liveGapPoint(target, 'y', clientY) })))
     draw()
   }
   const grip = (pop: ParentNode, index: number, label: string) => byLabel<HTMLButtonElement>(pop, `Reorder sort ${index}: ${label}`)
@@ -2185,6 +2405,23 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
     expect(onChange).toHaveBeenCalledTimes(2)
   })
 
+  it('LIVE GAP (YAZ-4606): Esc cancels a rule drag, and a drop in the middle is ONE write', () => {
+    const { el, def, onChange } = mount(SORTS)
+    const pop = openMenu(el, 'Sort')
+    fire(grip(pop, 1, 'Status'), 'dragstart')
+    fire(row(pop, 2, 'Name'), 'dragover', 5)
+    expect(row(pop, 2, 'Name').style.transform).toBe('translateY(-100px)')
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    draw()
+    expect(row(pop, 2, 'Name').style.transform).toBe('')
+    fire(row(pop, 2, 'Name'), 'drop', 5)
+    expect(onChange).not.toHaveBeenCalled()
+    fire(grip(pop, 1, 'Status'), 'dragstart')
+    fire(row(pop, 2, 'Name'), 'drop', 5)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].sort!.map((r) => r.property)).toEqual(['file.name', 'note.status', 'note.priority'])
+  })
+
   it('same-slot drops and abandoned drags do not save or leak into later drags', () => {
     const { el, def, onChange } = mount(SORTS)
     const before = structuredClone(def())
@@ -2218,7 +2455,7 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
     expect(document.activeElement).toBe(grip(pop, 1, 'Name'))
     click(byLabel(pop, 'Remove sort'))
     click(byText(pop, 'button', 'Add sort'))
-    click([...pop.querySelectorAll<HTMLElement>('[aria-label="Direction"]')][1])
+    chooseOrder(pop, [...pop.querySelectorAll<HTMLElement>('[aria-label="Direction"]')][1], 'Z → A')
     expect(def().views[0].sort).toEqual([
       { property: 'file.name', direction: 'ASC' },
       { property: 'file.name', direction: 'DESC' },
@@ -2233,11 +2470,11 @@ describe('folder-local relation shortcut', () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const base = { kind: 'link' as const, target: '[[Local People]]' }
     const properties = { root: '/vault', version: 1, properties: { owner: { kind: 'multi-link' as const, target: '[[Global People]]' } } }
-    const { el, onChange } = mount(undefined, { root: '/vault', properties, folder: testFolderHost({ settings: { columns: { owner: base }, views: [], problems: [] }, setColumn }) })
-    const pop = openMenu(el, 'Properties')
+    const { el, onChange } = mount(undefined, { root: '/vault', properties, folder: linkHost({ settings: { columns: { owner: base }, views: [], problems: [] }, setColumn }) })
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Owner'))
-    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('[[Local People]]') // the local declaration, not the legacy one
-    type(byLabel(pop, 'Link target'), '[[Teams]]')
+    expect(byLabel(pop, 'Notes from for Owner').textContent).toBe('Local People') // the local declaration, not the legacy one
+    pickNotesFrom(pop, 'Owner', 'Teams')
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('owner', { kind: 'link', target: '[[Teams]]' }, base)
     expect(properties.properties.owner).toEqual({ kind: 'multi-link', target: '[[Global People]]' })
     expect(onChange).not.toHaveBeenCalled()
@@ -2247,14 +2484,82 @@ describe('folder-local relation shortcut', () => {
     const legacy = { kind: 'multi-link' as const, target: '[[Global People]]' }
     const { setColumn, folder } = aheadHost({})
     const { el } = mount(undefined, { root: '/vault', properties: { root: '/vault', version: 1, properties: { status: legacy } }, folder })
-    const pop = openMenu(el, 'Properties')
+    const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Status'))
     expect(setColumn).not.toHaveBeenCalled()
     click(byLabel(pop, 'Relation for Status'))
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', legacy, undefined)
     await settle()
-    // the panel now holds a link kind: the target is inline and the type select says so
-    expect(byLabel<HTMLSelectElement>(pop, 'Edit property Status').value).toBe('multi-link')
-    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe(legacy.target)
+    // the panel now holds a link kind: the target is inline and the type picker says so
+    expect(typeShown(pop, 'Status')).toBe('Multi-link')
+    expect(byLabel(pop, 'Notes from for Status').textContent).toBe('Global People') // legacy.target, in the YAZ-4795 picker
   })
 })
+
+describe('option order in a table (YAZ-3940)', () => {
+  const settings = { columns: { status: { kind: 'select' as const, options: ['published', 'idea', 'drafting', 'later'] } }, views: [], problems: [] }
+  const GROUPED = `views:
+  - type: table
+    name: Table
+    order:
+      - file.name
+      - note.status
+    groupBy:
+      property: note.status
+`
+  const headers = (el: HTMLElement) => [...el.querySelectorAll('.view-group__value')].map((v) => v.textContent)
+
+  // "Show empty groups" is on by default (Settings › Folder pages `showEmptyGroups: true`, YAZ-3746): the unused option "later" shows too.
+  it('a grouped table on a Select column shows the groups in option order; A → Z groups by value', () => {
+    const { el, def } = mount(GROUPED, { folder: testFolderHost({ settings }) })
+    expect(headers(el)).toEqual(['published', 'idea', 'drafting', 'later', 'No value'])
+    const pop = openMenu(el, 'Sort')
+    chooseOrder(pop, byLabel(pop, 'Group direction'), 'A → Z')
+    expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC', by: 'value' })
+    expect(headers(el)).toEqual(['drafting', 'idea', 'later', 'published', 'No value'])
+  })
+
+  it('"Edit option order…" opens the column editor in the Sort popover: a reorder writes folder_settings and the groups follow; ‹ goes back', async () => {
+    // A host that hands out a NEW settings object per write, as FolderView does, so the engine sees the new order.
+    const status = settings.columns.status
+    let live = settings
+    const setColumn = vi.fn(async (key: string, next: ColumnDecl) => {
+      live = { ...live, columns: { ...live.columns, [key]: next } }
+    })
+    const folder = testFolderHost({ setColumn })
+    Object.defineProperty(folder, 'settings', { get: () => live })
+    const { el, onChange } = mount(GROUPED, { folder })
+    expect(headers(el)).toEqual(['published', 'idea', 'drafting', 'later', 'No value'])
+    const pop = openMenu(el, 'Sort')
+    click(byLabel(pop, 'Group direction'))
+    click(byText(pop, '[role="menuitem"] > span', 'Edit option order…'))
+    expect(pop.querySelector('.sort-menu')).toBeNull()
+    expect(q(pop, '.column-detail .column-detail__key').textContent).toBe('note.status')
+    press(byLabel(pop, 'Reorder drafting'), 'ArrowUp')
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', { ...status, options: ['published', 'drafting', 'idea', 'later'] }, status)
+    await settle()
+    expect(headers(el)).toEqual(['published', 'drafting', 'idea', 'later', 'No value'])
+    expect(onChange).not.toHaveBeenCalled() // the order is the column's, not the view's
+    click(byLabel(pop, 'Back to columns'))
+    expect(pop.querySelector('.sort-menu')).not.toBeNull()
+  })
+
+  it('"Edit option order…" is offered only on a Select or Multi-select column', () => {
+    const { el } = mount(GROUPED.replace('property: note.status', 'property: note.pillar'), { folder: testFolderHost({ settings }) })
+    const pop = openMenu(el, 'Sort')
+    click(byLabel(pop, 'Group direction'))
+    expect(pop.textContent).not.toContain('Edit option order…')
+  })
+
+  it('"Show empty groups" in a table adds the unused options as empty groups (on by default); off, they go', () => {
+    const { el, def } = mount(GROUPED, { folder: testFolderHost({ settings }) })
+    expect(headers(el)).toEqual(['published', 'idea', 'drafting', 'later', 'No value'])
+    const pop = openView(el)
+    const toggle = [...pop.querySelectorAll('label')].find((l) => l.textContent?.includes('Show empty groups'))!.querySelector('input')!
+    expect(toggle.checked).toBe(true)
+    click(toggle)
+    expect(def().views[0].showEmptyColumns).toBe(false)
+    expect(headers(el)).toEqual(['published', 'idea', 'drafting', 'No value'])
+  })
+})
+

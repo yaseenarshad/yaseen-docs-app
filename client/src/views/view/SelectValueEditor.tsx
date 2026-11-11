@@ -1,5 +1,5 @@
 import './propertyDefinition.css'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 export function SelectValueEditor({ raw, options, multiple, label, onCommit, onDone }: {
   raw: unknown; options: readonly string[]; multiple: boolean; label: string;
@@ -11,7 +11,13 @@ export function SelectValueEditor({ raw, options, multiple, label, onCommit, onD
   const [active, setActive] = useState(0)
   const id = useId()
   const values = [...new Set([...options, ...initial])].filter(o => o.toLowerCase().includes(query.toLowerCase()))
-  useEffect(() => { document.getElementById(`${id}-${active}`)?.scrollIntoView?.({ block: 'nearest' }) }, [id, active, query])
+  // One highlight, and it follows the mouse (YAZ-3746 13U): a hover makes its option the active one. Only a key's move
+  // scrolls the list; a hover never scrolls it under the pointer.
+  const byMouse = useRef(false)
+  useEffect(() => {
+    if (byMouse.current) { byMouse.current = false; return }
+    document.getElementById(`${id}-${active}`)?.scrollIntoView?.({ block: 'nearest' })
+  }, [id, active, query])
   const choose = (option: string) => {
     if (multiple) {
       const next = selected.includes(option) ? selected.filter(o => o !== option) : [...selected, option]
@@ -28,7 +34,7 @@ export function SelectValueEditor({ raw, options, multiple, label, onCommit, onD
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); if (values[active] !== undefined) choose(values[active]) }
     }} />
     <span className="property-value-picker__list" role="listbox" id={id} aria-label={label} aria-multiselectable={multiple || undefined}>
-      {values.map((option, i) => <button type="button" role="option" id={`${id}-${i}`} key={option} aria-selected={selected.includes(option)} className={active === i ? 'is-active' : ''} onMouseDown={e => e.preventDefault()} onClick={() => choose(option)}><span><span className="property-choice-chip">{option}</span>{!options.includes(option) && <small>Existing value</small>}</span><span>{selected.includes(option) ? '✓' : ''}</span></button>)}
+      {values.map((option, i) => <button type="button" role="option" id={`${id}-${i}`} key={option} aria-selected={selected.includes(option)} className={active === i ? 'is-active' : ''} onMouseEnter={() => { if (active !== i) { byMouse.current = true; setActive(i) } }} onMouseDown={e => e.preventDefault()} onClick={() => choose(option)}><span><span className="property-choice-chip">{option}</span>{!options.includes(option) && <small>Existing value</small>}</span><span>{selected.includes(option) ? '✓' : ''}</span></button>)}
       {values.length === 0 && <span className="property-definition__help">No matching options.</span>}
     </span>
     <span className="property-value-picker__footer"><button type="button" onClick={() => { onCommit(multiple ? [] : null); onDone() }}>Clear</button>{multiple && <button type="button" onClick={onDone}>Done</button>}</span>

@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { FocusFolder } from '@shared/types'
-import { itemOf, mergeFolders, resolveItem } from './focusFolders'
+import { itemOf, mergeFolders, resolveItem, vaultOfFolder } from './focusFolders'
 
 const folder = (id: string, at: number, items: FocusFolder['items'], extra: Partial<FocusFolder> = {}): FocusFolder => ({ id, name: id, created: 1, at, items, ...extra })
 
@@ -55,5 +55,14 @@ describe('resolveItem and itemOf', () => {
     expect(itemOf('/x/Work/a/b.md', ['/x/Notes', '/x/Work'])).toEqual({ vault: 'Work', path: 'a/b.md' })
     expect(itemOf('/x/Work', ['/x/Work'])).toBeNull()
     expect(itemOf('/elsewhere/n.md', ['/x/Work'])).toBeNull()
+  })
+})
+
+describe('vaultOfFolder (YAZ-4782)', () => {
+  const roots = ['/a/Notes/', '/b/Work']
+  it('is the vault of the first item the window shows; a ghost is skipped; an empty folder, or none, is the first vault — no slash at the end', () => {
+    expect(vaultOfFolder(folder('f', 1, [{ vault: 'Away', path: 'x.md' }, { vault: 'Work', path: 'w.md' }, { vault: 'Notes', path: 'n.md' }]), roots)).toBe('/b/Work')
+    expect(vaultOfFolder(folder('f', 1, []), roots)).toBe('/a/Notes')
+    expect(vaultOfFolder(undefined, roots)).toBe('/a/Notes')
   })
 })

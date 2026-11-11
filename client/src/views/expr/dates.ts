@@ -8,6 +8,8 @@ export function parseIsoDate(s: string): { ms: number; hasTime: boolean } | null
   if (!m) return null
   const [, y, mo, d, h, mi, sec, frac, zone] = m
   if (+mo < 1 || +mo > 12 || +d < 1 || +d > 31) return null
+  // A day the month does not have (2026-02-30) is no date (YAZ-4644 E3): `Date` would roll it into March.
+  if (new Date(Date.UTC(+y, +mo - 1, +d)).getUTCDate() !== +d) return null
   const hasTime = h !== undefined
   const ms = zone
     ? Date.parse(s.trim().replace(' ', 'T'))

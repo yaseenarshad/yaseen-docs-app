@@ -15,9 +15,10 @@ import { basename, dirname, relTo } from '../lib/paths'
 import { latestTree } from '../lib/treeFeed'
 import type { IndexBoard } from '../views/useIndex'
 import { allDirs } from '../lib/treeState'
-import { idKey, resolverFor, targetKey, typedFolders } from '../views/engine'
+import { idKey, targetKey, typedFolders } from '@shared/linkResolver'
+import { resolverFor } from '../views/engine'
 import { FileValue, type Resolver } from '../views/expr'
-import { nameCandidate, titleCandidates, type LinkCandidate } from './completion'
+import { linkCandidates, nameCandidate, titleCandidates, type LinkCandidate } from './completion'
 import { folderLabel, folderRows, folderTitle, foldersByDir, foldersById } from './shortcuts'
 
 const dirsOf = new WeakMap<TreeResponse, readonly string[]>()
@@ -110,6 +111,14 @@ export function folderLinkCandidates(root: string, dirs: readonly string[], reso
     const name = [folderTitle(folders, dir), relTo(root, dir)].find((spelling) => (id === undefined ? resolve : folder)(spelling) === dir)
     return name === undefined ? [] : [{ ...nameCandidate(name), insert: id ?? name, label: folderLabel(name), path: dir }]
   })
+}
+
+/**
+ * The `[[` picker of a folder page's cells (YAZ-4601 D49): the note editor's rows (`WikilinkIndexBridge`) — the notes,
+ * then the folders, after them so a note wins an equal match — in place of the bare titles. One list per index snapshot.
+ */
+export function cellLinkCandidates(records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink, root: string): LinkCandidate[] {
+  return [...linkCandidates(records), ...folderLinkCandidates(root, vaultDirs(root), resolve, folders)]
 }
 
 /**

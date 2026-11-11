@@ -88,7 +88,7 @@ function click(el: Element): void {
 
 /** Data rows only (headers and spacers excluded), in document order. */
 const dataRows = (el: ParentNode): HTMLTableRowElement[] =>
-  [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer):not(.view-table__group)')]
+  [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer):not(.view-table__group):not(.view-table__new)')]
 /** `[name, #]` per data row, in display order. */
 const numbered = (el: ParentNode): [string, string][] =>
   dataRows(el).map((tr) => [q(tr, '.view-table__name').textContent ?? '', q(tr, 'td.view-table__gutter').textContent ?? ''])
@@ -101,7 +101,7 @@ function sections(el: ParentNode): Record<string, string[]> {
     if (tr.classList.contains('view-table__group')) {
       current = q(tr, '.view-group__value').textContent ?? ''
       out[current] = []
-    } else if (!tr.classList.contains('view-table__spacer')) {
+    } else if (!tr.classList.contains('view-table__spacer') && !tr.classList.contains('view-table__new')) {
       out[current]?.push(q(tr, 'td.view-table__gutter').textContent ?? '')
     }
   }
@@ -182,21 +182,23 @@ describe('the # gutter (YAZ-1513)', () => {
     expect(after['No value']).toEqual(['1', '2', '3'])
   })
 
-  it('rowNumbers: false hides the gutter — no header cell, no row cell, full-width rows span only the keys', () => {
+  // YAZ-4610 D62 changed these two: with numbers off the gutter stays as a slim strip (12px), the row's handle.
+  it('rowNumbers: false hides the numbers — a slim strip with no number stays in the header and each row', () => {
     const { el } = mount(`${GROUPED}    rowNumbers: false\n`)
-    expect(el.querySelector('.view-table__gutter')).toBeNull()
-    expect(el.querySelectorAll('.view-table thead th')).toHaveLength(2) // keys.length
-    expect(dataRows(el)[0].cells).toHaveLength(2)
-    expect(q<HTMLTableCellElement>(el, '.view-table__group td').colSpan).toBe(2)
+    expect(gutters(el).every((n) => n === '')).toBe(true)
+    expect(el.querySelectorAll('.view-table thead th')).toHaveLength(3) // keys.length + the strip
+    expect(q(el, 'thead th.view-table__gutter').textContent).toBe('')
+    expect(q(el, 'thead th.view-table__gutter').classList.contains('view-table__gutter--slim')).toBe(true)
+    expect(dataRows(el)[0].cells).toHaveLength(3)
+    expect(q<HTMLTableCellElement>(el, '.view-table__group td').colSpan).toBe(3)
   })
 
-  it('rowNumbers: false puts the frozen offsets back at 0 and the table width back to the columns alone', () => {
+  it('rowNumbers: false starts the frozen offsets after the slim strip', () => {
     const { el } = mount(`${FLAT}    frozenColumns: 2\n    rowNumbers: false\n`)
-    const header = [...el.querySelectorAll<HTMLElement>('.view-table thead th')]
-    expect(header.map((th) => th.style.left)).toEqual(['0px', '150px'])
-    expect(q<HTMLElement>(el, '.view-table').style.width).toBe('300px')
-    // the ungrouped summary row has no gutter cell either
-    expect(el.querySelectorAll('.view-table tfoot td')).toHaveLength(2)
+    const header = [...el.querySelectorAll<HTMLElement>('.view-table thead th:not(.view-table__gutter)')]
+    expect(header.map((th) => th.style.left)).toEqual(['12px', '162px'])
+    expect(q<HTMLElement>(el, '.view-table').style.width).toBe('312px')
+    expect(el.querySelectorAll('.view-table tfoot td')).toHaveLength(3)
   })
 
   it('rowNumbers: true is the same as absent — shown', () => {

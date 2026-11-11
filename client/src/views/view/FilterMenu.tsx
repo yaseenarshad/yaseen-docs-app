@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import type { ViewSet, ViewDef, FilterNode, Mutate } from '../viewSchema'
+import { type ViewSet, type ViewDef, type FilterNode, type Mutate, showsFolderRows } from '../viewSchema'
 import { type ColumnTyping, columnTyping } from '../editorType'
 import type { FolderHost } from '../ViewsPane'
 import type { EngineError } from '../engine'
-import { stripBrackets } from '../expr'
+import { stripBrackets } from '@shared/linkResolver'
+import { isMentionsColumn } from '../mentionsColumn'
 import {
-  type Conjunction, type FilterGroup, type OperatorId, type Rule, exprToRule, fromGroup, inferType, operator,
+  type Conjunction, type FilterGroup, type OperatorId, type PropertyType, type Rule, exprToRule, fromGroup, inferType, operator,
   operatorsFor, ruleToExpr, toGroup,
 } from './filterRows'
 import { ColumnPicker } from './ColumnPicker'
@@ -69,9 +70,15 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   const [pendingConj, setPendingConj] = useState<Conjunction>('and')
   const group = toGroup(view.filters)
   const conj = group.items.length ? group.conj : pendingConj
-  const keys = [...allPropertyKeys(def, view, records, folder.settings.columns), ...FILE_EXTRAS]
+  // Folder is a menu key too since YAZ-4564 D26: each extra once.
+  const listed = allPropertyKeys(def, view, records, folder.settings.columns)
+  // Kind (`file.kind`, YAZ-4579 D31) is one too where the view shows subfolder rows: notes or folders.
+  const extras = showsFolderRows(view) ? [...FILE_EXTRAS, 'file.kind'] : FILE_EXTRAS
+  const keys = [...listed, ...extras.filter((k) => !listed.includes(k))]
   /** The column's rung of the typing ladder (D4), the same one the table's cell editors read. */
   const typingOf = (property: string): ColumnTyping => columnTyping(property, records, properties, folder.settings)
+  /** The property's type for its operators: a Linked mentions column is its own (YAZ-4738), worked out, with no typing rung. */
+  const typeOf = (property: string): PropertyType => (isMentionsColumn(folder.settings.columns, property) ? 'mentions' : inferType(property, records, typingOf(property)))
 
   const write = (next: FilterGroup) =>
     onUpdate((d) => {
@@ -89,7 +96,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   /** Changes one field, re-validating the operator for the property's type and clearing a value of another kind. */
   const setRule = (i: number, rule: Rule, patch: Partial<Rule>, setAt: (i: number, item: FilterNode) => void) => {
     const next = { ...rule, ...patch }
-    const ops = operatorsFor(next.property, inferType(next.property, records, typingOf(next.property)))
+    const ops = operatorsFor(next.property, typeOf(next.property))
     if (patch.property !== undefined && !ops.some((o) => o.id === next.op)) next.op = ops[0]?.id ?? next.op
     if (operator(next.op).value !== operator(rule.op).value) next.value = operator(next.op).value === 'options' ? [] : ''
     setAt(i, ruleToExpr(next))
@@ -107,6 +114,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     if (property === 'file.tags') for (const r of records) for (const tag of r.tags) add(tag)
     else if (property === 'file.folder') for (const r of records) add(r.folder)
     else if (property === 'file.links') for (const r of records) for (const link of r.links) add(link)
+    else if (property === 'file.kind') for (const kind of ['note', 'folder']) add(kind)
     else if (!property.startsWith('file.') && !property.startsWith('formula.')) {
       for (const option of typingOf(property)?.options ?? []) add(option)
       const bare = property.startsWith('note.') ? property.slice(5) : property
@@ -126,7 +134,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   }
 
   const ruleRow = (rule: Rule, i: number, setAt: (i: number, item: FilterNode) => void, path: string) => {
-    const type = inferType(rule.property, records, typingOf(rule.property))
+    const type = typeOf(rule.property)
     const ops = operatorsFor(rule.property, type)
     const opList = ops.some((o) => o.id === rule.op) ? ops : [...ops, operator(rule.op)]
     const kind = operator(rule.op).value

@@ -1,7 +1,8 @@
-import { setFolderValue } from '@shared/folderValues'
-import { setFrontmatterProperty } from '@shared/frontmatter'
+import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { setFolderValueOneSpelling, setOneSpelling } from '@shared/propertyKeys'
 import { isFolderSettingsPath, type FileResponse } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
+import { columnReservedKeys } from '../links/reservedKeys'
 
 export type ContentTransform = (content: string) => string
 
@@ -89,17 +90,29 @@ export async function writeProperties(path: string, writes: readonly PropertyWri
   return transformFile(path, (content) => writes.reduce((next, { key, value }) => setFrontmatterProperty(next, key, value), content))
 }
 
-/** Change one frontmatter key; the one-key specialization of `writeProperties` (GRO-2141). */
-export async function writeProperty(path: string, key: string, value: unknown): Promise<{ mtime: number }> {
-  return writeProperties(path, [{ key, value }])
+/**
+ * Change one frontmatter key; the one-key specialization of `writeProperties` (GRO-2141). With `rebase`, the value
+ * written is `rebase` of the key's value in the bytes just read, at the first read and again at the retry after a
+ * CONFLICT (YAZ-4596 S38): a whole-block writer lays its own change onto what another writer has put there.
+ */
+export async function writeProperty(path: string, key: string, value: unknown, rebase?: (onDisk: unknown) => unknown): Promise<{ mtime: number }> {
+  if (rebase === undefined) return writeProperties(path, [{ key, value }])
+  return transformFile(path, (content) => setFrontmatterProperty(content, key, rebase(parseFrontmatter(splitFrontmatter(content).frontmatter).properties[key])))
 }
 
 /**
- * Change fields of ONE folder's block of a note (D19, `shared/folderValues.ts`) in one guarded
- * whole-file transformation: every value a folder's views or the panel's folder rows write. In the
- * same write the note drops the values of the folders that no longer show it (D20): `tidy`,
- * `dropStaleFolderValues` for this note.
+ * A folder page's values for one note (YAZ-4713 C1/C3), in ONE guarded whole-file transformation: each key is the
+ * note's own top-level field, or, when its column is separate on this page, a field of this page's block (`pageId`).
+ * Every cell edit, paste, fill, Undo, board drag and calendar drag of a folder page comes through here.
+ *
+ * YAZ-4769 (one key, capitals ignored): each value is written under the column's spelling, and the note's other
+ * spellings of that key go in the same write (`setOneSpelling`) — a note's `dessert column` becomes `Dessert Column`
+ * when its cell is edited. The app's keys are never removed by that fold — every vault's (`columnReservedKeys(true)`):
+ * where the vault does not use IDs, an `id`, `title` or `in` field then simply stays beside a column of its name.
  */
-export function writeFolderValues(path: string, folderId: string, writes: readonly PropertyWrite[], tidy: ContentTransform): Promise<{ mtime: number }> {
-  return transformFile(path, (content) => tidy(writes.reduce((next, { key, value }) => setFolderValue(next, folderId, key, value), content)))
+export function writeRouted(path: string, writes: readonly PropertyWrite[], separate: ReadonlySet<string>, pageId: string | undefined): Promise<{ mtime: number }> {
+  const keep = columnReservedKeys(true)
+  return transformFile(path, (content) =>
+    writes.reduce((next, { key, value }) => (pageId !== undefined && separate.has(key) ? setFolderValueOneSpelling(next, pageId, key, value) : setOneSpelling(next, key, value, keep)), content),
+  )
 }

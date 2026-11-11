@@ -32,3 +32,149 @@
  * page with it. TableView bridges the outer vertical scroll onto the existing header without
  * taking horizontal ownership away from this wrapper (YAZ-1151).
  */
+
+/*
+ * The Page tab (YAZ-4584 D38): the note editor's mount in the view body. The Crepe instance wears
+ * `.editor-instance`, so every note stylesheet applies unchanged. Only the note's page furniture is
+ * undone: `.editor-instance` is app.css's centred content COLUMN (max-width + 48px sides), and
+ * `.folder-view` above already gives the page that column.
+ */
+.folder-page-doc .editor-instance {
+  max-width: none;
+  padding: 0;
+}
+
+/* The folder page's zoom (YAZ-3746 D35) is on the views pane already (app.css: `.editor-host > :not(.editor-mount) > *`), so the
+   Page's ProseMirror does not take `--document-zoom` a second time (YAZ-4584). */
+.folder-page-doc .editor-instance .milkdown > .ProseMirror {
+  zoom: 1;
+}
+
+/* Line numbers on the Page (YAZ-3746 10D): the lane is the Page's own. The folder page's scroller does not take the
+   note's 64px (app.css `.editor-host[data-line-numbers]`), so the title, the tabs and the tray stay where they are; the
+   Page body takes the 64px instead, 64px on screen at every zoom (the views pane is zoomed). */
+.editor-host[data-line-numbers]:not([data-page='note']) {
+  padding-left: 0;
+}
+
+.editor-host[data-line-numbers] .folder-page-doc {
+  padding-left: calc(64px / var(--document-zoom, 1));
+}
+
+/*
+ * The Other files tray (YAZ-4597, D43): under the views, in the page's column. Its header is a group header's
+ * look (the toggle is `.view-group__toggle` from views.css); a row dragged
+ * over it shows the views' dashed drop outline.
+ */
+.other-files {
+  margin: 24px 0 8px;
+  border-radius: 6px;
+}
+
+.other-files--drop {
+  outline: 1px dashed var(--accent);
+  outline-offset: 2px;
+}
+
+.other-files__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.other-files__title {
+  font-weight: 600;
+}
+
+.other-files__count {
+  color: var(--fg-muted);
+}
+
+.other-files__empty {
+  margin: 0;
+  padding: 8px 2px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.other-files__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Name, type, size, date: the last three are fixed columns, so the lines align. */
+.other-files__line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 72px 160px;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+/* A line inside a moved folder (YAZ-4747 OF3) steps in 18px a level: the chevron and its gap. */
+.other-files__line {
+  padding-left: calc(2px + var(--other-files-depth, 0) * 18px);
+}
+
+.other-files__chevron {
+  flex: none;
+  align-self: center;
+  color: var(--fg-muted);
+  transition: transform 120ms ease;
+}
+
+.other-files__name[aria-expanded='true'] > .other-files__chevron {
+  transform: rotate(90deg);
+}
+
+.other-files__line:hover {
+  background: var(--bg-side);
+}
+
+.other-files__name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  text-align: left;
+}
+
+.other-files__name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.other-files__name:hover > span:last-child {
+  text-decoration: underline;
+}
+
+.other-files__type,
+.other-files__size,
+.other-files__date {
+  overflow: hidden;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.other-files__size {
+  text-align: right;
+}
+
+/* A narrow page keeps the name and the type; the size and the date go. */
+@media (max-width: 640px) {
+  .other-files__line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .other-files__size,
+  .other-files__date {
+    display: none;
+  }
+}

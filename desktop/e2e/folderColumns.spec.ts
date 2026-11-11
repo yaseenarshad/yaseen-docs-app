@@ -59,7 +59,7 @@ let win: Page
 /** Every note before launch; includes RETAINED's seeded legacy declared value. */
 let memberBytes: Record<string, string>
 
-const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
+const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer):not(.view-table__new)')
 /** The name cell shows the page TITLE: for a fixture note, which has no `title:`, its file name without `.md` (YAZ-2420 🔒 D14). */
 const rowNames = (scope: Locator) => scope.locator('.view-table__name')
 const headers = (scope: Locator) => scope.locator('.view-table thead th')

@@ -1,13 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { type LinkCandidate, matchLinkCandidates, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
-import { cellContent } from './GroupHeader'
+import { ColumnDecls, cellContent } from './GroupHeader'
 import { TextField } from './TextField'
 import { createPortal } from 'react-dom'
 import { Popover } from './Popover'
 import { SelectValueEditor } from './SelectValueEditor'
 import { READ_ONLY_TIP } from '../readOnlyRows'
+import { CHANGE_CANCELLED } from '../confirmChanges'
+import { ImageCellEditor } from './imageCell'
+
+/** A text cell's editor completes `[[` (YAZ-4601 D48): on in a folder page's views (`ViewsPane`), off in the properties panel. */
+export const TextLinkPicker = createContext(false)
 
 export interface EditableCellProps {
   /** Bare key (no `note.` prefix): the cell's accessible name. */
@@ -19,7 +24,11 @@ export interface EditableCellProps {
   /** The inferred editor (`cellEditor`); null renders the plain read-only content. */
   options?: readonly string[]
   editor: EditorKind | null
-  /** Index titles for the link editor's `[[…]]` completion, each with what picking it writes — the note's id, else the title (`titleCandidates`). */
+  /**
+   * What the link, multi-link and text editors' `[[…]]` completion offers, each with what picking it writes. A folder
+   * page's cells: the note editor's rows, notes then folders (`cellLinkCandidates`, YAZ-4601 D49), or a link column's
+   * target folder (`belongsToTitles`); the properties panel: the titles (`titleCandidates`).
+   */
   titles: readonly LinkCandidate[]
   /**
    * The ONE write: the host's own. A folder's views write its block of the note
@@ -59,6 +68,10 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
   const writes = useRef<Promise<void> | null>(null)
   const revision = useRef(0)
   const echoes = useRef<{ revision: number; value: string }[]>([])
+  /** A folder page's text cell completes `[[` (YAZ-4601 D48); the properties panel's does not, though it shows pills too (YAZ-4544 4G). */
+  const textLinks = useContext(TextLinkPicker)
+  /** The column's declaration (YAZ-4591): a Number or Date column's format shapes the display; the editor keeps the raw value. */
+  const decl = useContext(ColumnDecls)[propKey]
 
   // The index can echo an intermediate save after the final write has already resolved.
   // Keep the latest optimistic choice until its echo arrives; unrelated later edits still win.
@@ -89,15 +102,30 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
     ;(el?.closest<HTMLElement>('[data-cell]') ?? el?.querySelector<HTMLElement>('[data-edit]'))?.focus()
   }, [editing])
 
-  if (editor === null) return <>{cellContent(value, resolve)}</>
+  // A date cell's editor opens its picker as the edit starts (YAZ-3746 13P): one click or Enter, not a second click on
+  // the field's calendar button. A typed date still commits; Esc closes the picker, then the editor. Only Chromium has
+  // `showPicker`, and it throws without a user gesture — an edit always starts from one — or when a picker is open.
+  useEffect(() => {
+    if (!editing || editor !== 'date') return
+    const input = wrapRef.current?.querySelector('input')
+    try {
+      input?.showPicker?.()
+    } catch {
+      // The field stays, and typing a date works as before.
+    }
+  }, [editing, editor])
+
+  if (editor === null) return <>{cellContent(value, resolve, decl)}</>
   if (readOnly) {
+    // An Image cell (YAZ-4802) shows its picture, read only too.
+    if (editor === 'image') return <ImageCellEditor raw={raw} decl={decl} label={`Edit ${propKey}`} readOnly onCommit={() => {}} />
     return editor === 'checkbox' ? (
       <span className="view-cell-edit">
         <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={READ_ONLY_TIP} />
       </span>
     ) : (
       <span className="view-cell-edit view-cell-edit--read-only" title={READ_ONLY_TIP}>
-        {cellContent(value, resolve)}
+        {cellContent(value, resolve, decl)}
       </span>
     )
   }
@@ -117,7 +145,8 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
       echoes.current = echoes.current.filter(echo => echo.revision !== turn)
       if (turn !== revision.current) return
       setPending(null)
-      setError(err instanceof Error ? err.message : String(err))
+      // A cancelled ask (Confirm changes, YAZ-3746 13AN): the old value shows again, and nothing is wrong.
+      if (err !== CHANGE_CANCELLED) setError(err instanceof Error ? err.message : String(err))
     })
     writes.current = settled
     void settled.then(() => { if (writes.current === settled) writes.current = null })
@@ -133,6 +162,9 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
       Save failed
     </span>
   )
+
+  // An Image cell (YAZ-4802): the picture picker, its writes this cell's own commit (optimistic, ordered, Undo).
+  if (editor === 'image') return <ImageCellEditor raw={current} decl={decl} label={`Edit ${propKey}`} readOnly={false} onCommit={commit} after={failure} />
 
   // Checkboxes toggle in place: no edit mode, every click is one typed commit.
   if (editor === 'checkbox') {
@@ -169,7 +201,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
               setEditing(true)
             }}
           >
-            {isEmpty ? <span className="property-empty">Empty</span> : isChoice ? <span className="property-choice-chips">{choices.map((choice, i) => <span className="property-choice-chip" key={`${choice}:${i}`}>{choice}</span>)}</span> : pending !== null ? cellContent(fromYaml(pending.v), resolve) : cellContent(value, resolve)}
+            {isEmpty ? <span className="property-empty">Empty</span> : isChoice ? <span className="property-choice-chips">{choices.map((choice, i) => <span className="property-choice-chip" key={`${choice}:${i}`}>{choice}</span>)}</span> : pending !== null ? cellContent(fromYaml(pending.v), resolve, decl) : cellContent(value, resolve, decl)}
           </button>
           {failure}
         </>
@@ -182,7 +214,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
           onCommit={commit}
           onDone={close}
         />
-      ) : editor === 'link' ? (
+      ) : editor === 'link' || (editor === 'text' && textLinks) ? (
         <LinkEditor initial={text} titles={titles} label={label} onCommit={commit} onDone={close} />
       ) : (
         <TextField

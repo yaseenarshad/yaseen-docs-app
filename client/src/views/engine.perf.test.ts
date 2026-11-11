@@ -3,6 +3,8 @@ import type { IndexRecord } from '@shared/types'
 import type { ViewSet } from './viewSchema'
 import { budgetMs, timeMedian } from '../test-perf'
 import { runView } from './engine'
+import { optionOrderFor } from './editorType'
+import type { FolderSettings } from './folderSettings'
 describe('perf (GRO-2133)', () => {
   function record(i: number): IndexRecord {
     return {
@@ -81,6 +83,101 @@ describe('perf (GRO-2133)', () => {
     // eslint-disable-next-line no-console
     console.log(`engine perf: 1000 records, two levels, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7 (${r.rows.length} kept)`)
     // The inner level buckets each outer separately (YAZ-745), so the same budget must still hold.
+    expect(ms).toBeLessThan(budgetMs(50))
+  })
+
+  it('1000 records × 3-clause filter + sort + three-level groupBy under 50 ms (YAZ-4531)', () => {
+    const records = Array.from({ length: 1000 }, (_, i) => record(i))
+    const def: ViewSet = {
+      views: [
+        {
+          type: 'table',
+          name: 'T',
+          filters: { and: ['file.ext == "md"', 'status != "done"', 'price > 10'] },
+          order: ['file.name', 'status', 'price'],
+          sort: [{ property: 'price', direction: 'DESC' }, { property: 'file.name', direction: 'ASC' }],
+          groupBy: [{ property: 'file.folder' }, { property: 'price' }, { property: 'status' }],
+          summaries: { price: 'Sum' },
+        },
+      ],
+    }
+    const go = () => runView(def, def.views[0], records, { root: '/vault' })
+    go() // warm-up (JIT)
+    const { result: r, median: ms, worst } = timeMedian(7, go)
+    expect(r.errors).toEqual([])
+    expect(r.groups).toHaveLength(7)
+    // Every kept row is `todo`, so each price group holds one status group with all its rows.
+    const second = r.groups!.flatMap(g => g.children!)
+    expect(second.every(c => c.children!.length === 1 && c.children![0].rows.length === c.rows.length)).toBe(true)
+    // eslint-disable-next-line no-console
+    console.log(`engine perf: 1000 records, three levels, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7 (${r.rows.length} kept)`)
+    expect(ms).toBeLessThan(budgetMs(50))
+  })
+
+  it('1000 records × sort + two-level groupBy on Select columns with optionOrder under 50 ms (YAZ-3940)', () => {
+    const records = Array.from({ length: 1000 }, (_, i) => record(i))
+    // 50 options for price (one per value, in a shuffled order) and 2 for status: the option rank is a Map lookup.
+    const prices = Array.from({ length: 50 }, (_, i) => String((i * 17) % 50))
+    for (const r of records) r.properties.price = String(r.properties.price)
+    const optionOrder = (property: string) => (property === 'price' ? prices : property === 'status' ? ['todo', 'done'] : undefined)
+    const def: ViewSet = {
+      views: [
+        {
+          type: 'table',
+          name: 'T',
+          order: ['file.name', 'status', 'price'],
+          sort: [{ property: 'price', direction: 'DESC' }, { property: 'file.name', direction: 'ASC' }],
+          groupBy: [{ property: 'status' }, { property: 'price' }],
+          summaries: { price: 'Sum' },
+        },
+      ],
+    }
+    const go = () => runView(def, def.views[0], records, { root: '/vault', optionOrder })
+    go() // warm-up (JIT)
+    const { result: r, median: ms, worst } = timeMedian(7, go)
+    expect(r.errors).toEqual([])
+    expect(r.groups!.map(g => g.key)).toEqual(['todo', 'done'])
+    // The inner groups follow the option order, not the value order.
+    const inner = r.groups![0].children!.map(c => c.key)
+    expect(inner).toEqual(prices.filter(p => inner.includes(p)))
+    expect(r.rows[0].values.price).toBe(prices[prices.length - 1])
+    // eslint-disable-next-line no-console
+    console.log(`engine perf: 1000 records, option order, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7 (${r.rows.length} kept)`)
+    expect(ms).toBeLessThan(budgetMs(50))
+  })
+
+  it('1000 records × sort + two-level groupBy on Select columns with the REAL optionOrder (ViewsPane\'s) under 50 ms (YAZ-4544)', () => {
+    const records = Array.from({ length: 1000 }, (_, i) => record(i))
+    const prices = Array.from({ length: 50 }, (_, i) => String((i * 17) % 50))
+    for (const r of records) r.properties.price = String(r.properties.price)
+    // The folder declares both columns, as the column editor writes them: `columnTyping` still reads every record.
+    const settings: FolderSettings = { columns: { price: { kind: 'select', options: prices }, status: { kind: 'select', options: ['todo', 'done'] } }, views: [], problems: [] }
+    const def: ViewSet = {
+      views: [
+        {
+          type: 'table',
+          name: 'T',
+          order: ['file.name', 'status', 'price'],
+          sort: [{ property: 'price', direction: 'DESC' }, { property: 'file.name', direction: 'ASC' }],
+          groupBy: [{ property: 'status' }, { property: 'price' }],
+        },
+      ],
+    }
+    // A new snapshot each run: the cache starts empty, the worst case.
+    const go = () => runView(def, def.views[0], records, { root: '/vault', optionOrder: optionOrderFor(records, null, settings) })
+    go() // warm-up (JIT)
+    const { result: r, median: ms, worst } = timeMedian(7, go)
+    expect(r.errors).toEqual([])
+    expect(r.groups!.map(g => g.key)).toEqual(['todo', 'done'])
+    const inner = r.groups![0].children!.map(c => c.key)
+    expect(inner).toEqual(prices.filter(p => inner.includes(p)))
+    // One snapshot answers each key once: a second ask gets the same list, not a new scan.
+    // (A sorted option list is a new array each typing, so the same array means one typing.)
+    const order = optionOrderFor(records, null, { ...settings, columns: { price: { kind: 'select', options: prices, optionSort: 'ascending' } } })
+    expect(order('price')).toEqual([...prices].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })))
+    expect(order('price')).toBe(order('price'))
+    // eslint-disable-next-line no-console
+    console.log(`engine perf: 1000 records, real option order, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7`)
     expect(ms).toBeLessThan(budgetMs(50))
   })
 })

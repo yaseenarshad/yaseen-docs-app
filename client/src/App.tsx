@@ -1,8 +1,8 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, headerRowAttrs, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -20,12 +20,11 @@ import { requestBoardCommand } from './documents/boardCommand'
 import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
-import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
+import type { Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
 import { dropIndex } from './lib/dragSlot'
-import { transformFile } from './views/writeProperty'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
@@ -56,14 +55,16 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
-import { setCalendarDaySetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
+import { setCalendarDaySetting, setCellNoteButtonSetting, setHeaderRowSetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
+import { dropNoteWindowsAt, renameNoteWindows } from './views/view/NoteWindow'
+import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
+import { setEnterKeepsStyle } from './editor/enterKeepsStyle'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
 import type { CodeSettingsPatch } from './code/codeSettings'
-import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { QuickLook } from './search/QuickLook'
@@ -99,6 +100,7 @@ import { duplicateTabIds, nearSteps, stepIdOf, tabById, tabOf, useWorkspace, typ
 import { useTabSleep } from './workspace/useTabSleep'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
+import { PageActions } from './lib/pageActions'
 
 /** The "What's new" sheet (YAZ-2976 D5) is its own chunk: launch never parses it, and the first open fetches it. */
 const WhatsNewSheet = lazy(() => import('./update/WhatsNewSheet'))
@@ -160,7 +162,7 @@ export const GLOW_MAX_MS = 10_000
 const TAKE_GLOW_MS = 200
 
 /** One rename through the pipeline (`applyRename`): what it did, or why main refused it. */
-type RenameOutcome = { move: Move; cleared: ClearedValues[]; links: RenameRewriteSummary } | { error: unknown }
+type RenameOutcome = { move: Move; links: RenameRewriteSummary } | { error: unknown }
 
 /** Why one move of a list did not run (S11): a name that is taken, else main's own words. */
 const moveFailure = (name: string, err: unknown): string =>
@@ -271,6 +273,21 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
   const openFile = useCallback((to: string) => navigate(path, to), [navigate, path])
   return <RetainedEditor {...props} path={path} onOpenFile={openFile} />
 }
+
+/**
+ * App's newest editor props for a path, for the note window of a folder table (YAZ-4547 D14). A context, so
+ * `renderNoteEditor` stays one function for the window's life: no folder page renders again for it.
+ */
+const NoteWindowEditorProps = createContext<((path: string) => Omit<ComponentProps<typeof Editor>, 'path'>) | null>(null)
+
+/** The note window's editor: the editor a tab has, with all its parts (Properties, comments); memo, as a tab's is. */
+function NoteWindowEditor({ path }: { path: string }) {
+  const propsFor = useContext(NoteWindowEditorProps)
+  return propsFor === null ? null : <RetainedEditor {...propsFor(path)} path={path} />
+}
+
+/** `FolderHost.renderNoteEditor` (YAZ-4547): one function, so it never renders a folder page again. */
+const renderNoteEditor = (path: string) => <NoteWindowEditor path={path} />
 
 /**
  * A new window's boot tab starts with the page view main gave it (YAZ-2951 D5), when that tab shows
@@ -609,12 +626,18 @@ export function App() {
   // The time format (YAZ-4163 D15): "/Calendar table", "Time slots" and "Current time" read it at the click.
   useEffect(() => setTimeFormatSetting(settings.tableTimeFormat), [settings.tableTimeFormat])
   useEffect(() => setCalendarDaySetting(settings.tableDayStart, settings.tableDayEnd), [settings.tableDayStart, settings.tableDayEnd])
+  // YAZ-4774: absent from settings a main process older than the field sent: the default.
+  const headerRow = settings.tableHeaderRow ?? DEFAULT_SETTINGS.tableHeaderRow
+  useEffect(() => setHeaderRowSetting(headerRow), [headerRow])
+  useEffect(() => setCellNoteButtonSetting(settings.tableCellNoteButton), [settings.tableCellNoteButton])
   // The new cell note template (round 3 of the YAZ-3818 demo): read when a note is made. Absent from an older main process.
   useEffect(() => setCellNoteTemplate(settings.tableCellNoteTemplate ?? ''), [settings.tableCellNoteTemplate])
   // A new tab's cell note card starts pinned (round 3 of the demo); an open tab keeps its own pin.
   useEffect(() => setCellNotePinnedAtStart(settings.tableCellNotePinned ?? true), [settings.tableCellNotePinned])
   // Arrows while typing (YAZ-4273 D8): an open note reads it at its next keystroke. Absent from an older main process.
   useEffect(() => setTypingArrows(settings.typingArrows ?? true), [settings.typingArrows])
+  // Enter keeps the text style (YAZ-3746 13AB): an open note or box reads it at its next Enter. Absent from an older main process.
+  useEffect(() => setEnterKeepsStyle(settings.enterKeepsStyleNotes ?? false, settings.enterKeepsStyleBoxes ?? true), [settings.enterKeepsStyleNotes, settings.enterKeepsStyleBoxes])
   // Where a calendar table's "All notes" opens (YAZ-4276 A1). Absent from an older main process.
   useEffect(() => setAllNotesOpensAt(settings.tableAllNotesOpensAt ?? 'cell'), [settings.tableAllNotesOpensAt])
   // The past rows' shade (YAZ-4163 demo), read by table.css.
@@ -737,7 +760,7 @@ export function App() {
   // `data-sidebar-file-icons`, `data-sidebar-folder-icons`) and its arrows' turn (D6, `data-sidebar-arrow`): a change
   // restyles the rows and renders no tree level. A calendar table's marker look and its dim past rows (YAZ-4162 D6, D14,
   // `data-table-now`, `data-table-dim-past`) too, and the row band (YAZ-4167 D16, `data-table-row-band`): a change
-  // restyles the rows and builds no decoration.
+  // restyles the rows and builds no decoration. So does the header row (YAZ-4774, `data-table-header-*`).
   const settingsVars = {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
@@ -755,6 +778,11 @@ export function App() {
     '--table-band-strength': `${settings.tableBandStrength ?? DEFAULT_SETTINGS.tableBandStrength}%`,
     // Section indent (YAZ-2709): a plain number, sectionIndent.css needs it as one (`border-image-slice`).
     '--section-step-setting': settings.sectionStep,
+    // Every code block's and every table's width (YAZ-4783 layer 3), with `data-code-block-width` / `data-table-width`
+    // below: absent for "Text column" (and from a main process older than the fields), the look before. A CSS var, so
+    // a change rebuilds no editor; a note's own width on its editor's mount wins (app.css).
+    ...(settings.codeBlockWidth != null ? { '--code-block-width': `${settings.codeBlockWidth}px` } : {}),
+    ...(settings.tableWidth != null ? { '--table-width': `${settings.tableWidth}px` } : {}),
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
     // Absent → app.css falls back to `--thread-color`, then the accent (YAZ-3309 D9).
@@ -1367,6 +1395,12 @@ export function App() {
   const openKeptPage = useCallback((path: string) => {
     setOverview(OVERVIEW_CLOSED)
     openKept(path)
+  }, [openKept])
+  // The mini window's ↗ (YAZ-3746 13I): the note in a NEW tab, a copy when another tab shows it (the "New tab" rule of
+  // YAZ-3943 5B), so the folder page's tab stays as it was.
+  const openNewTabPage = useCallback((path: string) => {
+    setOverview(OVERVIEW_CLOSED)
+    openKept(path, true)
   }, [openKept])
   const toNextTab = useCallback(() => {
     setOverview(OVERVIEW_CLOSED)
@@ -2177,11 +2211,14 @@ export function App() {
         const now = live.current
         // A shared board's pending live-link upload follows it (YAZ-3040); by prefix, so a folder too.
         noteBoardRenamed(oldPath, newPath)
+        // A folder table's ⌘Z steps and Undo toasts on the note follow it (YAZ-4637 T3); by prefix, so a folder too.
+        renameHistoryPaths(oldPath, newPath)
         // E1c: an in-app rename's watcher echo (unlink+add with preserved stats) must never
         // be re-offered as an "external rename" hypothesis, by any vault's detector.
         for (const vault of now.vaults) vault.renames.suppress(oldPath, newPath, kind)
         if (kind === 'dir') {
           carryEditorsAcrossDirRename(oldPath, newPath)
+          renameNoteWindows(oldPath, newPath)
           const moved = now.roots.map((vault) => movedRoot(vault, oldPath, newPath))
           const vaultMoved = moved.some((vault, i) => vault !== now.roots[i])
           if (vaultMoved) {
@@ -2195,6 +2232,8 @@ export function App() {
           return
         }
         carryEditorAcrossRename(oldPath, newPath)
+        // A folder table's note window on the note follows it (YAZ-4544): its editor at the old path is retired now.
+        renameNoteWindows(oldPath, newPath)
         renamedUnderOverview(oldPath, newPath, false)
         renameWorkspacePath(oldPath, newPath)
       }),
@@ -2227,7 +2266,7 @@ export function App() {
       if (to.title === undefined && overEdge(live.current.roots, oldPath, to.newPath)) {
         try {
           const { newPath, kind } = await api.file.rename({ oldPath, newPath: to.newPath })
-          return { move: { oldPath, newPath, kind }, cleared: [], links: { updated: 0, skipped: 0 } }
+          return { move: { oldPath, newPath, kind }, links: { updated: 0, skipped: 0 } }
         } catch (error) {
           return { error }
         }
@@ -2249,8 +2288,7 @@ export function App() {
       } catch (error) {
         return { error }
       }
-      // A note that left a folder leaves that folder's values behind (D20).
-      const cleared = await dropFolderValuesAfterMove({ root: r, oldPath, newPath, kind, records, folders })
+      // A move removes nothing from a note (YAZ-4713 C9): its values are its own fields, and a page's own values stay too.
       const hasMovedViewFile = viewOnlyCatalog?.entries.some((entry) =>
         kind === 'dir' ? entry.path.startsWith(`${oldPath}/`) : entry.path === oldPath,
       ) ?? false
@@ -2266,7 +2304,7 @@ export function App() {
         title: to.title,
         ...(hasMovedViewFile ? { viewOnlyCatalog } : {}),
       })
-      return { move: { oldPath, newPath, kind }, cleared, links: summary }
+      return { move: { oldPath, newPath, kind }, links: summary }
     },
     [scopeOf],
   )
@@ -2315,10 +2353,9 @@ export function App() {
    * gesture in the app arrives here as (oldPath, to, kind) — the sidebar's inline rename, its
    * drag-move, the page title and a table's Name cell — so the rule is asked ONCE, here, and no
    * surface reimplements it: a changed NAME confirms first (the rename chains into the file on
-   * disk and then into every note that links to it); a MOVE asks only when it would clear a
-   * folder's values (D21, `valuesLeftBehind` over the window's own snapshot) and otherwise runs
-   * silently (a confirm on every drag would be hostile, and bare links keep resolving across a
-   * move anyway). A title edit (YAZ-2420 🔒 D16) changes the name and never the folder: it
+   * disk and then into every note that links to it); a MOVE runs silently — it clears no value
+   * (YAZ-4713 C9, so D21's sheet is gone), a confirm on every drag would be hostile, and bare links
+   * keep resolving across a move anyway). A title edit (YAZ-2420 🔒 D16) changes the name and never the folder: it
    * confirms, and is never a move. With "Ask before renaming" off (YAZ-2420 3C1) a changed name
    * runs unasked, through the same pipeline; the move's question is not that setting's.
    *
@@ -2328,8 +2365,6 @@ export function App() {
    * cancels the request.
    */
   const [pendingRename, setPendingRename] = useState<{ root: string; oldPath: string; kind: 'file' | 'dir'; viewOnlyCatalog: ViewOnlyCatalog | null; to: RenameTo; count: number } | null>(null)
-  // A move gesture waiting on its D21 sheet (YAZ-3250 D1): one sheet for the whole list, one row or many.
-  const [pendingMoves, setPendingMoves] = useState<{ root: string; moves: Move[]; lost: LeftBehind } | null>(null)
   const renameRootGeneration = useRef(0)
   /**
    * A move gesture done (YAZ-3255 D10, D11): onto the undo list, and its toast with Undo — `runMoves`'s, a Paste of a Cut's, a move in from Finder's.
@@ -2344,7 +2379,6 @@ export function App() {
   useLayoutEffect(() => {
     renameRootGeneration.current++
     setPendingRename(null)
-    setPendingMoves(null)
     setDragOutAsk(null)
     // The undo list speaks for the vaults it was made in (audit 2): a vault that left takes its moves along.
     moveHistory.current = createMoveHistory()
@@ -2384,7 +2418,7 @@ export function App() {
    * file list of each vault (`catalogForRename`) is read once for the gesture, and each move puts its
    * items at their new place in it (audit 6). A move over a vault's edge rewrites nothing and reads
    * none (S40). A move that fails leaves the rest to run, and ONE notice says the whole list (S11). A
-   * change to the window's vaults stops what is left. It answers what moved and what D20 cleared.
+   * change to the window's vaults stops what is left. It answers what moved.
    *
    * A move gesture goes on the window's undo list and says "Moved N items" with Undo (YAZ-3255 D10,
    * D11). An undo and a redo run through here too, with `record` off: they say their own toast, and
@@ -2393,7 +2427,7 @@ export function App() {
   const runMoves = useCallback(
     async (moves: readonly Move[], { record = true }: { record?: boolean } = {}): Promise<MovesRun> => {
       const generation = renameRootGeneration.current
-      const done: MovedGesture = { moves: [], cleared: [] }
+      const done: MovedGesture = { moves: [] }
       const names: NamedItem[] = []
       const failed: string[] = []
       let again = 0
@@ -2422,7 +2456,6 @@ export function App() {
         done.moves.push(out.move)
         // By kind and by name on disk (YAZ-3293 D23): a move keeps the item's file name.
         names.push(onDisk(oldPath, kind))
-        done.cleared.push(...out.cleared)
         links.updated += out.links.updated
         links.skipped += out.links.skipped
       }
@@ -2527,8 +2560,7 @@ export function App() {
 
   /**
    * ⌘Z (YAZ-3255 D10, S33): the newest gesture moves back, all its items, newest first, through
-   * `runMoves` — so links follow — and then the folder values its moves cleared come back on each
-   * note's path before the move (`restoreFolderValues`). What moved back goes on the redo list. One
+   * `runMoves` — so links follow. A move clears no value (YAZ-4713 C9), so none has to come back. What moved back goes on the redo list. One
    * that moved nothing stays on the undo list, so the next ⌘Z tries again — unless every item moved
    * again (audit 21). One undo or redo runs at a time; a key during one is taken and does nothing.
    * False with nothing to undo.
@@ -2543,10 +2575,7 @@ export function App() {
         // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'undo') : putBackStep(entry))
         const back = await runMoves(invertMoves(entry.moves), { record: false })
-        // Only a note whose move went back gets its blocks: its path is the move's own, or under a folder that went back.
-        const returned = (path: string): boolean => back.moves.some((move) => move.newPath === path || (move.kind === 'dir' && path.startsWith(`${move.newPath}/`)))
-        for (const { path, values } of entry.cleared) if (returned(path)) await transformFile(path, restoreFolderValues(values), true).catch(() => undefined) // quiet (YAZ-3235 D1)
-        if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves), cleared: [] })
+        if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves) })
         else if (back.failed.length > back.again) moveHistory.current.redone(entry)
         // The names in the order of the gesture it undoes, as its own toast said them (YAZ-3274 D22): the moves ran newest first.
         const text = replayNotice('undo', [...back.names].reverse(), back.failed, back.links)
@@ -2568,8 +2597,7 @@ export function App() {
 
   /**
    * ⌘⇧Z (YAZ-3255 D10 amended, S37): the newest undone gesture runs forward again through
-   * `runMoves`, with no D21 sheet. Its moves clear the values again (D20), and the gesture goes back
-   * on the undo list with what it cleared this time. One that moved nothing stays on the redo list,
+   * `runMoves`, and the gesture goes back on the undo list with what moved this time. One that moved nothing stays on the redo list,
    * as an undo does (audit 21). False with nothing to redo.
    */
   const redoMove = useCallback((): boolean => {
@@ -2581,7 +2609,7 @@ export function App() {
       try {
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'redo') : deleteAgain(entry))
         const run = await runMoves(entry.moves, { record: false })
-        if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves, cleared: run.cleared })
+        if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves })
         else if (run.failed.length > run.again) moveHistory.current.undone(entry)
         const text = replayNotice('redo', run.names, run.failed, run.links)
         if (run.moves.length === 0) {
@@ -2602,8 +2630,7 @@ export function App() {
 
   /**
    * The door for a list of moves (YAZ-3250 D1): a drop of two or more rows, and the pure move one
-   * drag makes (`requestRename`). D21 asks ONCE for the whole list, judged on the window's own
-   * snapshot (`valuesLeftBehind`); a list that clears nothing runs at once. A move into the folder
+   * drag makes (`requestRename`). It runs at once: a move clears no value (YAZ-4713 C9). A move into the folder
    * the item is already in is no move (S7). All moves stay in one vault (YAZ-2602 R11).
    */
   const requestMoves = useCallback(
@@ -2611,22 +2638,13 @@ export function App() {
       const moves = list.filter((move) => move.newPath !== move.oldPath)
       const first = moves[0]
       if (first === undefined) return
-      const { root, wikilinks } = scopeOf(first.oldPath)
+      const { root } = scopeOf(first.oldPath)
       if (root === null) return
       if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return notify(BETWEEN_VAULTS)
-      const lost = valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders })
-      if (lost.folders.length > 0) return setPendingMoves({ root, moves, lost })
       await runMoves(moves)
     },
     [scopeOf, runMoves, notify],
   )
-
-  /** The move sheet's Move: the list runs as it does unasked, unless its vault left the window. Its Cancel moves nothing (S10). */
-  const confirmMoves = useCallback(() => {
-    if (pendingMoves === null) return
-    setPendingMoves(null)
-    if (pendingMoves.root === scopeOf(pendingMoves.moves[0].oldPath).root) void runMoves(pendingMoves.moves)
-  }, [pendingMoves, scopeOf, runMoves])
 
   const requestRename = useCallback(
     async (oldPath: string, to: RenameTo, kind: TreeNode['type']): Promise<void> => {
@@ -2703,12 +2721,17 @@ export function App() {
   useEffect(
     () =>
       api.file.onDeleted(({ path, kind }) => {
+        // A folder table's ⌘Z steps on the note retire with it (YAZ-4637 T3): an Undo never writes or trashes another file at that path.
+        dropHistoryPaths(path)
         if (kind === 'dir') {
           retireDeletedDir(path)
+          dropNoteWindowsAt(path)
           deleteWorkspaceDir(path)
           return
         }
         retireDeletedPath(path)
+        // A note window on the note closes with it (YAZ-4544).
+        dropNoteWindowsAt(path)
         deleteWorkspacePath(path)
       }),
     [deleteWorkspacePath, deleteWorkspaceDir],
@@ -2940,6 +2963,14 @@ export function App() {
       viewOnlyLinks: scope.viewOnlyLinks,
       properties: scope.properties,
       onOpenFileRight: openRight,
+      // YAZ-4564: a folder page's Folder chips and ↗ open a subfolder's page as the sidebar's "Open folder page" does.
+      onOpenFolderPage: openKeptPage,
+      // YAZ-3746 13I: the mini window's ↗ opens its note in a new tab.
+      onOpenFileNewTab: openNewTabPage,
+      // YAZ-4547: a folder table opens a row in a window with the same editor.
+      renderNoteEditor,
+      // YAZ-4592 S26: a folder table's "Delete note…" is the sidebar's delete.
+      onDeleteEntries: trashMany,
       onRetitle: requestRetitle,
       sync: scope.sync.status,
       onSyncNow: scope.sync.syncNow,
@@ -2982,18 +3013,30 @@ export function App() {
       hoverDrawingLinks: hoverOn(settings, 'drawings'),
       hoverBacklinks: hoverOn(settings, 'backlinks'),
       hoverFolderViews: hoverOn(settings, 'folderViews'),
+      hoverFolderLinks: hoverOn(settings, 'folderLinks'),
+      // YAZ-4585: Settings › Folder pages, one object; each view reads its own key first, then these.
+      folderPages: settings.folderPages,
       previewScope: editorPreviewScope,
       // YAZ-3564: the keys the user changed; a drawing follows them at once (K4).
       hotkeys: settings.hotkeys,
       hotkeysAside: settings.hotkeysAside,
       // YAZ-3704 D5: how long the words an outside save changed glow, a SETTING; it reaches the editor through a channel, never a rebuild.
       outsideChangeGlow: settings.outsideChangeGlow,
+      // YAZ-4787: what ⌘F does with folds; a note's own `find-folds` wins.
+      findFolds: settings.findFolds,
       outsideListPinned: settings.outsideListPinned,
       onChangeOutsideListPinned: changeOutsideListPinned,
       // Upkeep off (🔒 D7): no settings, so no Reviews section.
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }
   }
+
+  /**
+   * The note window's editor props (YAZ-4547): a tab's. A link in the card opens in a background tab, as in a
+   * review's layer, so the card stays on its note. Not the right panel's one owner per file: the note's tabs stay open,
+   * and the twin rule (`lib/twinEditors.ts`) keeps the two copies in step.
+   */
+  const noteWindowEditorProps = (path: string) => ({ ...editorPropsFor(path), onOpenFile: openBackground, onOpenFileBackground: openBackground, onOpenLinkBackground: openBackgroundCopy })
 
   // While a review is open (YAZ-2322) the main pane shows ITS note, not the active tab's page.
   // The tabs, their history and the right panel are not touched: closing the review uncovers them.
@@ -3154,8 +3197,10 @@ export function App() {
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
     <VaultLinksContext.Provider value={vaultLinks}>
+    <NoteWindowEditorProps.Provider value={noteWindowEditorProps}>
+    <PageActions.Provider value={linkActions}>
     <CommentPrefsContext.Provider value={commentPrefs}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-table-width={settings.tableWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} {...headerRowAttrs(headerRow)} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands
@@ -3551,8 +3596,6 @@ export function App() {
           onCancel={() => setPendingRename(null)}
         />
       )}
-      {/* The move sheet (D21) asks once for a whole move gesture, one row or many (YAZ-3250 D1). */}
-      {pendingMoves !== null && <ConfirmMove moves={pendingMoves.moves} lost={pendingMoves.lost} titles={titles} onConfirm={confirmMoves} onCancel={() => setPendingMoves(null)} />}
       {/* Another window's tab of a vault this window does not show (YAZ-3637 D6): add the vault, then the tab moves here. */}
       {takeAsk !== null && (
         <ConfirmSheet
@@ -3627,6 +3670,8 @@ export function App() {
       )}
     </div>
     </CommentPrefsContext.Provider>
+    </PageActions.Provider>
+    </NoteWindowEditorProps.Provider>
     </VaultLinksContext.Provider>
     </IconsContext.Provider>
   )

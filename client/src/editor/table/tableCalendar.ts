@@ -35,6 +35,12 @@
  *
  * FILL THE DAY (the YAZ-4163 demo): "Fill the calendar day" (`fillCalendarDay`) adds an empty row for each slot of the
  * Calendar day setting that the table does not have, before, between and after its rows; it removes and moves nothing.
+ *
+ * MERGED CELLS (YAZ-4792): an event merged down several rows is a cell with `rowspan` in its column; column A's times
+ * are read through the table map (`cellTextAt`), so the time rows keep working, and a merged time cell is one slot
+ * as long as its rows (the rows it covers have no time of their own). "Time slots" (other than Off) and "Fill the
+ * calendar day" build the body rows again from their cells, which a merged cell would break: they do nothing while
+ * the table has one (`missingDayTimes` says none is missing, so the row is disabled).
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode, NodeType, Schema } from '@milkdown/kit/prose/model'
@@ -42,6 +48,7 @@ import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/pr
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
+import { cellTextAt, rowNoDim, tableHasMerge } from './cells'
 import { foldRuns, runOf, unfoldRun } from './tableFold'
 import { tablerIcon } from './tableIcons'
 import { changedTables, typingOnly } from './tableStyle'
@@ -88,7 +95,8 @@ function rowTimes(table: ProseNode): BodyRow[] {
   let last = -1
   table.forEach((row, _, r) => {
     if (r === 0) return
-    const time = readTime(row.firstChild?.textContent ?? '')
+    // Column A through the map (YAZ-4792): a row a merged time cell covers has no time of its own.
+    const time = readTime(cellTextAt(table, r, 0))
     if (time !== null && time < last) day += 1440
     if (time !== null) last = time
     out.push({ row, time: time === null ? null : time + day })
@@ -151,7 +159,8 @@ function calendarDecorations(table: ProseNode, pos: number, minutes: number, chi
   if (chip && table.attrs.nowButton !== false) out.push(Decoration.widget(pos + table.nodeSize, nowChip, { calendar: true, nowChip: true, key: 'table-now-chip', side: -1, stopEvent: () => true, ignoreSelection: true }))
   table.forEach((row, offset, r) => {
     const from = pos + 1 + offset
-    if (r > 0 && r < pastEnd) out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-past-row' }, { calendar: true }))
+    // YAZ-4796: a row kept out of the dimming ("Don't dim this row") never gets the past look.
+    if (r > 0 && r < pastEnd && !rowNoDim(row)) out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-past-row' }, { calendar: true }))
     if (r === nowRow) {
       const now = String(Math.round(fraction * 1000) / 1000)
       out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-now-row', style: `--table-now: ${now}` }, { calendar: true, nowRow: true }))
@@ -396,7 +405,7 @@ export function slotTimes(table: ProseNode, slot: number, schema: Schema, fallba
   const timed = body.filter((entry): entry is BodyRow & { time: number } => entry.time !== null)
   const attrs = { ...table.attrs, calendar: slot }
   if (timed.length === 0) return table.type.create(attrs, table.content)
-  const format = detectTimeFormat(body.map(({ row }) => row.firstChild?.textContent ?? '')) ?? fallback
+  const format = detectTimeFormat(body.map((_, i) => cellTextAt(table, i + 1, 0))) ?? fallback
   const first = timed[0]!.time
   const last = timed.at(-1)!.time
   const grid: number[] = []
@@ -445,7 +454,8 @@ function emptyRowAt(schema: Schema, template: ProseNode, format: string, time: n
 /** The slot times of the Calendar day setting that the calendar `table` has no row for; none for another table. */
 export function missingDayTimes(table: ProseNode): number[] {
   const slot = table.attrs.calendar as number
-  if (!(slot > 0) || table.childCount < 2) return []
+  // A merged cell (YAZ-4792): the rows cannot be built again, so nothing is missing.
+  if (!(slot > 0) || table.childCount < 2 || tableHasMerge(table)) return []
   const body = rowTimes(table)
   const have = new Set(body.flatMap(({ time }) => (time === null ? [] : [time % 1440])))
   const { start, end } = calendarDaySetting()
@@ -461,7 +471,7 @@ export function fillCalendarDay(view: EditorView, pos: number): boolean {
   const missing = missingDayTimes(table)
   if (missing.length === 0) return false
   const body = rowTimes(table)
-  const format = detectTimeFormat(body.map(({ row }) => row.firstChild?.textContent ?? '')) ?? timeFormatSetting()
+  const format = detectTimeFormat(body.map((_, i) => cellTextAt(table, i + 1, 0))) ?? timeFormatSetting()
   const rows = withNewRows(view.state.schema, body, () => true, missing, format)
   view.dispatch(closeHistory(view.state.tr).replaceWith(pos, pos + table.nodeSize, table.type.create(table.attrs, [table.firstChild!, ...rows])))
   return true
@@ -486,6 +496,8 @@ function withTimeColumn(table: ProseNode, slot: number, schema: Schema, format: 
 export function setTimeSlots(view: EditorView, pos: number, slot: number): void {
   const table = view.state.doc.nodeAt(pos)
   if (table?.type.name !== 'table' || table.attrs.calendar === slot) return
+  // A merged cell (YAZ-4792): the rows cannot be built again; Off only takes the part away.
+  if (slot !== 0 && tableHasMerge(table)) return
   const tr = closeHistory(view.state.tr)
   if (slot === 0) tr.setNodeMarkup(pos, undefined, { ...table.attrs, calendar: 0 })
   else {

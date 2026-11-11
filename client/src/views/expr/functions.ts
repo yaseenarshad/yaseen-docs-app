@@ -1,6 +1,7 @@
 import { parseDuration, parseIsoDate, startOfDay } from './dates'
 import { ArgError, toNumber } from './ops'
-import { DateValue, DurationValue, ErrorValue, FileValue, LinkValue, type Scope, type Value, render, stripBrackets, typeOf } from './values'
+import { stripBrackets } from '@shared/linkResolver'
+import { DateValue, DurationValue, ErrorValue, FileValue, LinkValue, type Scope, type Value, render, typeOf } from './values'
 
 /** Global functions (GRO-2131). `if` is lazy and lives in the evaluator; `scope` carries the resolver (GRO-2132). */
 export type GlobalFn = (args: Value[], scope: Scope) => Value
@@ -13,6 +14,8 @@ export function toDate(v: Value): Value {
   if (typeof v !== 'string') throw new ArgError(`date() expects a string, got ${typeOf(v)}`)
   const iso = parseIsoDate(v)
   if (iso) return new DateValue(iso.ms, iso.hasTime)
+  // ISO-shaped but no date (2026-02-30, YAZ-4644 E3): an error, not `Date.parse`'s rolled-over day.
+  if (/^\s*\d{4}-\d{2}-\d{2}/.test(v)) return new ErrorValue(`invalid date: ${v}`)
   const ms = Date.parse(v)
   return Number.isNaN(ms) ? new ErrorValue(`invalid date: ${v}`) : new DateValue(ms, true)
 }

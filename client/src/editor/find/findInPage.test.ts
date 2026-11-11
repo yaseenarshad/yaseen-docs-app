@@ -289,6 +289,8 @@ describe('fold reveal', () => {
     const { root, view, channel } = await mountFind(doc, {
       folding: { seedCollapsedKeys: () => new Set([getOutlineFoldKey('Parent', 0), getOutlineFoldKey('Fruit', 0)]) },
     })
+    // "Open all folds" (YAZ-4787 `all`): every fold that hides a match opens; the default `current` opens the active one's only.
+    channel.setFolds('all')
     channel.open()
     channel.setQuery('apple')
     expect(channel.getState()).toMatchObject({ total: 2, activeIndex: 0 })
@@ -301,6 +303,23 @@ describe('fold reveal', () => {
     expect(matchEls(root)).toHaveLength(0)
     expect(channel.getState().open).toBe(false)
     expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'apple one'))
+  })
+
+  it('by default (YAZ-4787 `current`) only the folds hiding the ACTIVE match open, and fold again on the next step', async () => {
+    const doc = `* Parent
+  * apple one
+* Fruit
+  * apple two
+`
+    const { root, channel } = await mountFind(doc, {
+      folding: { seedCollapsedKeys: () => new Set([getOutlineFoldKey('Parent', 0), getOutlineFoldKey('Fruit', 0)]) },
+    })
+    channel.open()
+    channel.setQuery('apple')
+    expect(channel.getState()).toMatchObject({ total: 2, activeIndex: 0, folds: 'current' })
+    expect(foldedEls(root).map((el) => el.textContent)).toEqual([expect.stringContaining('apple two')])
+    channel.next()
+    expect(foldedEls(root).map((el) => el.textContent)).toEqual([expect.stringContaining('apple one')])
   })
 })
 

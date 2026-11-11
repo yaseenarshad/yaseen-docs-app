@@ -1,18 +1,20 @@
 import './propertyDefinitionEditor.css'
+import { NotesFromPicker, useLinkFolders } from './NotesFromPicker'
 import { useRef, useState, type DragEvent, type ReactNode } from 'react'
-import { PROPERTY_KINDS, type PropertyDecl, type PropertyKind } from '@shared/types'
+import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
+import { NOTE_PROPERTY_KINDS, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { orderedPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { TextField } from './TextField'
 import { DragHandleIcon } from './icons'
 
 export const PROPERTY_LABELS: Record<PropertyKind, string> = {
   text: 'Text', number: 'Number', date: 'Date', checkbox: 'Checkbox', list: 'List',
-  link: 'Link', 'multi-link': 'Multi-link', select: 'Select', 'multi-select': 'Multi-select',
+  link: 'Link', 'multi-link': 'Multi-link', select: 'Select', 'multi-select': 'Multi-select', image: 'Image', mentions: 'Linked mentions',
 }
-const DESCRIPTIONS: Record<PropertyKind, string> = {
+export const DESCRIPTIONS: Record<PropertyKind, string> = {
   text: 'Write any text.', number: 'Store a numeric value.', date: 'Choose a calendar date.', checkbox: 'Check or uncheck.',
   list: 'Keep a list of free-form values.', link: 'Link to one page.', 'multi-link': 'Link to multiple pages.',
-  select: 'Choose one option.', 'multi-select': 'Choose multiple options.',
+  select: 'Choose one option.', 'multi-select': 'Choose multiple options.', image: 'One picture from the vault.', mentions: 'The notes that link here. Worked out by the app; read only.',
 }
 
 /** Shared monochrome type symbols for definitions and property rows. */
@@ -27,6 +29,8 @@ export function PropertyTypeIcon({ kind }: { kind: PropertyKind }) {
     'multi-link': <><path d="M4 6h10M4 10h7M4 14h5" /><path d="m12 12 2 2 3-4" /></>,
     select: <><circle cx="9" cy="9" r="6" /><path d="m6 8 3 3 3-3" /></>,
     'multi-select': <><path d="M3 4h12M3 9h7M3 14h7" /><path d="m12 12 2 2 3-4" /></>,
+    image: <><rect x="2.5" y="3.5" width="13" height="11" rx="2" /><circle cx="6.5" cy="7.5" r="1.3" /><path d="m3 13 4-4 3 3 2-2 3.5 3.5" /></>,
+    mentions: <><path d="M15 6H6M9 3 6 6l3 3" /><path d="M3 12h9M9 9l3 3-3 3" /></>,
   }
   return <svg className="property-kind-icon" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{symbols[kind]}</svg>
 }
@@ -39,14 +43,15 @@ export function PropertyTypeIcon({ kind }: { kind: PropertyKind }) {
  * host saves, the Properties menu's detail panel (YAZ-1513) writes each change immediately.
  * Carved out of `PropertyDefinitionEditor` so both can hold the one implementation.
  */
-export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
+export function PropertyOptionsEditor({ value, onChange, observed = [], onRename }: {
   value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]
+  /** A rename that also rewrites the notes holding the option (YAZ-4591 S24): the folder's column editor. Absent: a rename is `onChange`, metadata only. */
+  onRename?: (next: PropertyDecl, from: string, to: string) => void
 }) {
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
   const panel = useRef<HTMLElement>(null)
   const options = value.options ?? []
   const displayOptions = orderedPropertyOptions(value) ?? []
@@ -61,11 +66,6 @@ export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
       ;(buttons.find(button => button.getAttribute('aria-label') === label) ?? buttons.find(button => button.getAttribute('aria-label') === 'Add option'))?.focus()
     })
   }
-  // Match the column menu: the top/bottom half targets the slot before/after a row.
-  const insertionAt = (event: DragEvent<HTMLElement>, index: number) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    return event.clientY < rect.top + rect.height / 2 ? index : index + 1
-  }
   const move = (from: number, to: number) => {
     if (from === to || to < 0 || to >= options.length) return
     const next = [...options]
@@ -73,11 +73,16 @@ export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
     next.splice(to, 0, item)
     setOptions(next)
   }
+  // The tab bar's drag, down the list (YAZ-4606 D58): the options part live, and the list scrolls at its ends.
+  const live = useLiveGapReorder<HTMLDivElement>({ axis: 'y', keys: displayOptions, onMove: move })
+  /** This list's drag stops here: the editor may sit inside another drag's surface (a table header). */
+  const own = (handled: boolean, event: DragEvent) => { if (handled) event.stopPropagation() }
   const saveOption = () => {
     const next = draft.trim()
     if (!next) { setError('Enter an option name.'); return }
     if (options.some(option => option === next && option !== editing)) { setError('That option already exists.'); return }
-    setOptions(editing === null ? [...options, next] : options.map(option => option === editing ? next : option))
+    if (editing !== null && editing !== next && onRename) onRename({ ...value, options: options.map(option => option === editing ? next : option) }, editing, next)
+    else setOptions(editing === null ? [...options, next] : options.map(option => option === editing ? next : option))
     closeDetail()
   }
 
@@ -89,7 +94,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
     <div className="property-def__section-title"><span>Options</span><select className="property-def__order" aria-label="Option order" value={value.optionSort ?? 'manual'} onChange={event => {
       const optionSort = event.target.value
       if (!validPropertyOptionSort(optionSort)) return
-      setDrag(null)
+      live.end()
       onChange({ ...value, optionSort })
     }}><option value="manual">Manual order</option><option value="ascending">A–Z</option><option value="descending">Z–A</option></select></div>
     {editing !== null ? <div className="property-def__detail">
@@ -99,31 +104,14 @@ export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
         <div className="property-def__form-actions"><button type="button" onClick={closeDetail}>Cancel</button><button type="submit" className="property-def__save">Save</button></div>
       </form>
       <button type="button" className="property-def__delete" onClick={() => { setOptions(options.filter(option => option !== editing)); closeDetail() }}>Remove option</button>
-      <p className="property-def__hint">Renaming or removing this option keeps existing note values.</p>
+      <p className="property-def__hint">{onRename ? 'Renaming this option changes it in every note that holds it. Removing it keeps existing note values.' : 'Renaming or removing this option keeps existing note values.'}</p>
     </div> : <>
-      <div className="property-def__option-list">
-        {displayOptions.map((option, index) => <div key={option} className="property-def__option"
-          data-dragging={drag?.from === index || undefined}
-          data-insert={drag?.to === index ? 'before' : drag?.to === options.length && index === options.length - 1 ? 'after' : undefined}
-          onDragOver={event => {
-            if (drag === null) return
-            event.preventDefault()
-            event.stopPropagation()
-            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-            const to = insertionAt(event, index)
-            if (drag.to !== to) setDrag({ ...drag, to })
-          }}
-          onDrop={event => {
-            if (drag === null) return
-            event.preventDefault()
-            event.stopPropagation()
-            const slot = insertionAt(event, index)
-            move(drag.from, slot > drag.from ? slot - 1 : slot)
-            setDrag(null)
-          }}>
+      <div className="property-def__option-list" {...live.listProps}
+        onDragEnter={event => own(live.over(event), event)} onDragOver={event => own(live.over(event), event)} onDrop={event => own(live.drop(event), event)}>
+        {displayOptions.map((option, index) => <div key={option} className="property-def__option" {...live.itemProps(index)}>
           {manual && <button type="button" draggable className="property-def__grip" aria-label={`Reorder ${option}`} title="Drag or use arrow keys to reorder" onDragStart={event => {
             event.stopPropagation()
-            setDrag({ from: index, to: index })
+            live.start(event, index)
             if (event.dataTransfer) {
               event.dataTransfer.setData('text/plain', option)
               event.dataTransfer.effectAllowed = 'move'
@@ -131,7 +119,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
               const rect = row.getBoundingClientRect()
               event.dataTransfer.setDragImage(row, event.clientX - rect.left, event.clientY - rect.top)
             }
-          }} onDragEnd={() => setDrag(null)} onKeyDown={event => {
+          }} onDragEnd={live.end} onKeyDown={event => {
             if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); event.stopPropagation(); move(index, index + (event.key === 'ArrowUp' ? -1 : 1)) }
           }}><DragHandleIcon /></button>}
           <button type="button" className="property-def__option-button" aria-label={`Edit option ${option}`} onClick={() => { setEditing(option); setDraft(option); setError('') ; setAdding(false) }}><span className="property-def__chip">{option}</span><span className="property-def__more" aria-hidden="true">•••</span></button>
@@ -145,16 +133,20 @@ export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
   </section>
 }
 
-/** Definition-only edits: the host owns scope, persistence, and all note values. */
-export function PropertyDefinitionEditor({ value, onChange, observed = [] }: {
-  value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]
+/**
+ * Definition-only edits: the host owns scope, persistence, and all note values. `kinds`: the types it offers — a note's
+ * field the kinds a note can hold (the default); a folder's new column every kind, Linked mentions too (YAZ-4738).
+ */
+export function PropertyDefinitionEditor({ value, onChange, observed = [], kinds = NOTE_PROPERTY_KINDS }: {
+  value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]; kinds?: readonly PropertyKind[]
 }) {
+  const linkFolders = useLinkFolders()
   const [choosing, setChoosing] = useState(false)
   const [query, setQuery] = useState('')
   const typeButton = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const choice = value.kind === 'select' || value.kind === 'multi-select'
-  const types = PROPERTY_KINDS.filter(kind => `${PROPERTY_LABELS[kind]} ${DESCRIPTIONS[kind]}`.toLowerCase().includes(query.toLowerCase()))
+  const types = kinds.filter(kind => `${PROPERTY_LABELS[kind]} ${DESCRIPTIONS[kind]}`.toLowerCase().includes(query.toLowerCase()))
   const backFromTypes = () => { setChoosing(false); setQuery(''); requestAnimationFrame(() => typeButton.current?.focus()) }
 
   return <div className="property-def" ref={panel} onKeyDown={event => {
@@ -179,7 +171,13 @@ export function PropertyDefinitionEditor({ value, onChange, observed = [] }: {
         <span className="property-def__muted">Type</span><span className="property-def__current-type"><PropertyTypeIcon kind={value.kind} />{PROPERTY_LABELS[value.kind]}<span className="property-def__chevron" aria-hidden="true">›</span></span>
       </button>
       {!choice && <p className="property-def__description">{DESCRIPTIONS[value.kind]}</p>}
-      {(value.kind === 'link' || value.kind === 'multi-link') && <label className="property-def__target"><span>Link to</span><TextField className="property-def__input" aria-label="Link target" placeholder="Any page, or [[Folder]]" value={value.target ?? ''} onCommit={target => {
+      {/* YAZ-4795 demo: the same "Notes from" folder picker as Edit column, where the folders are known (a folder page). */}
+      {(value.kind === 'link' || value.kind === 'multi-link') && linkFolders !== null && <div className="property-def__target"><span>Notes from</span><NotesFromPicker target={value.target} label="the new column" source={linkFolders} onPick={target => {
+        const next = { ...value }
+        if (target !== undefined) next.target = target; else delete next.target
+        onChange(next)
+      }} /></div>}
+      {(value.kind === 'link' || value.kind === 'multi-link') && linkFolders === null && <label className="property-def__target"><span>Link to</span><TextField className="property-def__input" aria-label="Link target" placeholder="Any page, or [[Folder]]" value={value.target ?? ''} onCommit={target => {
         const next = { ...value }
         if (target.trim()) next.target = target.trim(); else delete next.target
         onChange(next)

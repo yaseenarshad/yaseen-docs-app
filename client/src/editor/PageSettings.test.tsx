@@ -36,8 +36,14 @@ afterEach(() => {
 })
 
 const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
-/** The menu: on the page, in `document.body` (YAZ-4776), not under the cog. */
-const menu = () => document.querySelector<HTMLElement>('.page-settings__menu[role="group"]')
+/**
+ * The open menu (YAZ-4776): a portal on the page, under its cog, so it is found by the cog's `aria-controls`, not inside
+ * the container.
+ */
+const menu = () => {
+  const id = cog().getAttribute('aria-controls')
+  return id === null ? null : document.getElementById(id)
+}
 /** A switch of the menu by its name: "Read only" stands first (YAZ-3076), so the rows are found by what they say. */
 const switchNamed = (name: string) => [...menu()!.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')].find((button) => button.textContent?.startsWith(name))!
 const toggle = () => switchNamed('Line numbers')
@@ -437,6 +443,21 @@ describe('PageSettings: Read only', () => {
     expect([...group.children].map((child) => child.textContent)).toEqual(['All code files', 'Read only', 'Wrap long lines', 'Minimap'])
     expect([...menu()!.children].map((child) => child.className)).toEqual(['', 'page-settings__divider', ''])
     expect(menu()!.lastElementChild!.textContent).toBe('Table of contents\u2713')
+  })
+
+  it('YAZ-3746 D35: with a heading, "Read only" stands first IN the group (a folder page\'s "This folder page"), and the note rows follow the line', () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    const onToggleReadOnly = vi.fn()
+    const choice = { label: 'Show folder page file', choices: [{ label: 'Settings', on: true, onPick: () => undefined }, { label: 'On', on: false, onPick: () => undefined }] }
+    act(() => root.render(<PageSettings readOnly={false} onToggleReadOnly={onToggleReadOnly} switches={[choice]} switchesHeading="This folder page" lineNumbers={false} onToggleLineNumbers={() => undefined} />))
+    click(cog())
+    const group = menu()!.querySelector('[role="group"][aria-label="This folder page"]')!
+    expect([...group.children].map((child) => child.textContent)).toEqual(['This folder page', 'Read only', 'Show folder page file:', 'SettingsOn'])
+    expect([...menu()!.children].map((child) => child.textContent)).toEqual([expect.stringContaining('Read only'), '', 'Line numbers'])
+    click(switchNamed('Read only'))
+    expect(onToggleReadOnly).toHaveBeenCalledTimes(1)
   })
 
   it('S41: a board\u2019s menu has only that row, and no counts', () => {

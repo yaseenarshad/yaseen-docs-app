@@ -1,11 +1,23 @@
-import { createContext, useContext, type ReactNode } from 'react'
-import { isShortcut } from '../../links/shortcuts'
-import type { ViewSet, ViewDef } from '../viewSchema'
+import { createContext, Fragment, useContext, useState, type CSSProperties, type ReactNode } from 'react'
+import { ImageOf } from './imageCell'
+import { isFolderRow, isShortcut } from '../../links/shortcuts'
+import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
+import { type ViewSet, type ViewDef, type GroupBySpec, shownGroupLevels } from '../viewSchema'
 import { type Row, propertyLabel } from '../engine'
-import { ErrorValue, FileValue, LinkValue, type Resolver, type Value, linkText, render } from '../expr'
+import { isFolderSettingsPath, type PropertyDecl } from '@shared/types'
+import { basename, dirname } from '../../lib/paths'
+import { fileKind } from '@shared/fileKind'
+import { IconsContext, fileIconAttrs } from '../../sidebar/FileIcon'
+import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value, fromYaml, linkText, render } from '../expr'
+import { formatDateValue, formatNumber } from '../columnFormat'
+import { WIKILINK_RE } from '@shared/linkRewrite'
+import '../../editor/wikilink/wikilink.css'
 import { summarize } from '../summaries'
-import { ShortcutIcon } from './icons'
+import { FolderIcon, ShortcutIcon } from './icons'
+import { HoverTip } from '../../components/HoverTip'
 import { canonicalKey } from './keys'
+import { GroupHeaderMenu } from './GroupHeaderMenu'
+import { OtherFilesFolderMove } from './otherFilesMove'
 
 /**
  * One group's header content (4C, GRO-2137), shared by Table today and Cards / List / Board
@@ -23,12 +35,13 @@ import { canonicalKey } from './keys'
 export const groupKeyOf = (key: Value | null): string => (key === null ? '∅' : `v:${render(key)}`)
 
 /**
- * The same identity for an INNER group (YAZ-745), scoped by its outer's so the same inner value
- * under two outers collapses independently. It is persisted in `baseGroups` like `groupKeyOf`,
- * so the unit-separator encoding is a contract.
+ * The same identity at ANY level (YAZ-745, YAZ-4531): the `groupKeyOf` of each ancestor, outer
+ * first, then the group's own, joined by U+001F — so the same value under two parents collapses
+ * independently, a top-level key is plain `groupKeyOf`, and an inner key stored when there were
+ * two levels (outer, U+001F, inner) still names its group. It is persisted in `baseGroups`, so the
+ * encoding is a contract.
  */
-export const nestedGroupKeyOf = (outerKey: Value | null, innerKey: Value | null): string =>
-  `${groupKeyOf(outerKey)}\u001f${groupKeyOf(innerKey)}`
+export const groupPathKeyOf = (keys: readonly (Value | null)[]): string => keys.map(groupKeyOf).join('\u001f')
 
 /** The stored summary kind for a column, whichever key form (`priority` / `note.priority`) the file uses. */
 export function summaryKindOf(view: ViewDef, key: string): string | undefined {
@@ -40,13 +53,79 @@ export function summaryKindOf(view: ViewDef, key: string): string | undefined {
 
 /** One value inside a list / link cell (shared with TableView's cells); through `resolve`, an id link reads as its note's title (`linkText`, YAZ-2293 D8). */
 export function chip(v: Value, key?: number, resolve?: Resolver) {
-  const link = v instanceof LinkValue || v instanceof FileValue
-  const text = v instanceof LinkValue ? linkText(v, resolve) : v instanceof FileValue ? v.record.title : render(v, resolve)
+  if (v instanceof LinkValue || v instanceof FileValue) return <LinkChip key={key} link={v} resolve={resolve} />
+  const text = render(v, resolve)
   return (
-    <span key={key} className={`view-table__chip${link ? ' view-table__chip--link' : ''}`} title={text}>
+    <span key={key} className="view-table__chip" title={text}>
       {text}
     </span>
   )
+}
+
+/**
+ * A folder page's cells show links as pills (YAZ-4601 D47): `ViewsPane` turns this on, and its delegated handlers
+ * open and preview a pill by its `data-link-path`. Off (the properties panel) a link keeps its plain chip.
+ */
+export const LinkPills = createContext(false)
+
+/**
+ * A link value (YAZ-4601 D47): the note editor's wikilink pill on the page it resolves to, by its title. A link that
+ * resolves to nothing has no pill and no path: it reads as the editor's unresolved link. Off a folder page: the chip.
+ */
+function LinkChip({ link, resolve }: { link: LinkValue | FileValue; resolve?: Resolver }) {
+  const pills = useContext(LinkPills)
+  const text = link instanceof LinkValue ? linkText(link, resolve) : link.record.title
+  if (!pills)
+    return (
+      <span className="view-table__chip view-table__chip--link" title={text}>
+        {text}
+      </span>
+    )
+  const path = link instanceof FileValue ? link.record.path : resolve?.(link.target)?.record.path
+  return path === undefined ? (
+    <span className="wikilink wikilink--unresolved view-link-pill" title={text}>
+      {text}
+    </span>
+  ) : (
+    <PillWithIcon path={path} text={text} />
+  )
+}
+
+/**
+ * A resolved pill with the icon its page has in the sidebar (YAZ-4544 4G), as the note editor's pill has (YAZ-3609
+ * D13): the icon's attributes on the pill, drawn on its `::before`. Settings › File icons reach it through the app's
+ * CSS (`data-sidebar-file-icons`) and `IconsContext`, as they reach the note's pills.
+ */
+function PillWithIcon({ path, text }: { path: string; text: string }) {
+  const icons = useContext(IconsContext)
+  // A folder resolves to its directory, the editor's rule (no file kind); a folder row's page is its `.folder.md`.
+  const settings = isFolderSettingsPath(path)
+  const folder = settings || fileKind(basename(path)) === null
+  const { style, ...attrs } = fileIconAttrs(icons, settings ? dirname(path) : path, folder)
+  return (
+    <span {...attrs} style={style} className={`wikilink view-link-pill file-icon file-icon--${folder ? 'dir' : 'file'}`} data-link-path={path} title={text}>
+      {text}
+    </span>
+  )
+}
+
+/**
+ * A text value with inline `[[links]]` (YAZ-4601 D48): its text, each link a pill (`LinkChip`). No editor mounts; an
+ * embed (`![[…]]`) stays text. Off a folder page, the text as it is.
+ */
+function InlineLinks({ text, resolve }: { text: string; resolve?: Resolver }) {
+  const pills = useContext(LinkPills)
+  if (!pills) return <>{text}</>
+  const parts: ReactNode[] = []
+  let last = 0
+  for (const m of text.matchAll(WIKILINK_RE)) {
+    const link = m[1] === '' ? fromYaml(m[0]) : null
+    if (!(link instanceof LinkValue)) continue
+    parts.push(text.slice(last, m.index), <LinkChip key={m.index} link={link} resolve={resolve} />)
+    last = m.index + m[0].length
+  }
+  parts.push(text.slice(last))
+  return <>{parts}</>
 }
 
 /**
@@ -61,18 +140,166 @@ export const rowTitle = (row: Row): ReactNode => <RowTitle row={row} />
 /** The folder whose rows the skins are drawing, as the index names it; null (no folder host) marks nothing. */
 export const ViewFolder = createContext<string | null>(null)
 
+/**
+ * The page's folders for the Folder column and the Folder group headers (YAZ-4564 D26/D27), from `ViewsPane`:
+ * the page's folder as the index names it, a folder's title as its Folder group is headed, and the door that
+ * opens a folder's page in a new tab (absent: nothing opens). Null outside a folder page.
+ */
+export interface FolderPagesValue {
+  folder: string
+  title: (dir: string) => string
+  open?: (dir: string) => void
+  /** How many notes a folder's page shows (YAZ-4579 D32): a folder row's "N inside". */
+  inside?: (dir: string) => number
+  /** The Folder column's look (YAZ-4801): the path from the page, or the last folder only (the look before). */
+  folderColumn?: 'path' | 'full' | 'last'
+}
+export const FolderPages = createContext<FolderPagesValue | null>(null)
+
+/**
+ * The folder's column declarations, by bare name (YAZ-4591): a Number or Date cell reads its column's
+ * `format` here. Provided around the views alone (`ViewsPane`), so a note's own properties panel —
+ * the note window's included — shows its values as stored.
+ */
+export const ColumnDecls = createContext<Readonly<Record<string, PropertyDecl>>>({})
+
+/** The `file.folder` column (YAZ-4564 D26): every view draws its cell here; a note key's through its column's format (YAZ-4591), the rest through `cellContent`. */
+export const rowCell = (row: Row, key: string, resolve?: Resolver): ReactNode => {
+  const c = canonicalKey(key)
+  if (c === 'file.folder') return <FolderCell row={row} value={row.values[key]} resolve={resolve} />
+  if (c.startsWith('note.')) return <NoteCell value={row.values[key]} name={c.slice('note.'.length)} resolve={resolve} />
+  return cellContent(row.values[key], resolve)
+}
+
+/** The pills a Linked mentions cell shows (YAZ-4738 L3); the rest are "+N", their titles in its tooltip. */
+export const MENTIONS_SHOWN = 3
+
+function NoteCell({ value, name, resolve }: { value: Value; name: string; resolve?: Resolver }) {
+  const decl = useContext(ColumnDecls)[name]
+  // An Image column's picture (YAZ-4802), at its column's size and shape: a board card's line, a read-only cell.
+  if (decl?.kind === 'image') return <ImageOf value={value} decl={decl} />
+  if (decl?.kind === 'mentions' && Array.isArray(value) && value.length > MENTIONS_SHOWN) {
+    const rest = value.slice(MENTIONS_SHOWN)
+    return (
+      <>
+        {value.slice(0, MENTIONS_SHOWN).map((item, i) => chip(item, i, resolve))}
+        <span className="view-table__chip view-mentions__more" title={rest.map((item) => (item instanceof LinkValue ? linkText(item, resolve) : render(item, resolve))).join('\n')}>
+          +{rest.length}
+        </span>
+      </>
+    )
+  }
+  return <>{cellContent(value, resolve, decl)}</>
+}
+
+/**
+ * The chip of the folder the note lives in, by the title its Folder group shows (YAZ-4801 demo: "how come no folder
+ * showing up here?" — a note directly in the page shows the page, never a blank). A click opens that folder's page;
+ * the vault root has no page, so its chip opens nothing.
+ */
+function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?: Resolver }) {
+  const pages = useContext(FolderPages)
+  if (pages === null) return <>{cellContent(value, resolve)}</>
+  const dir = row.record.folder
+  if (pages.folderColumn !== 'last') return <FolderPath dir={dir} pages={pages} />
+  const title = pages.title(dir)
+  const open = pages.open
+  if (open === undefined || dir === '') return <span className="view-table__chip" title={title}>{title}</span>
+  return (
+    <button
+      type="button"
+      className="view-table__chip view-table__chip--link view-folder-chip"
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation() // a board card's click opens the card
+        open(dir)
+      }}
+    >
+      {title}
+    </button>
+  )
+}
+
+/**
+ * The Folder column as a path (YAZ-4801: "the breadcrumb … wouldnt u want to know what category (aka page) that thing is
+ * in regardless?"): the folders from this page down to the note's, by title, each a link to its page, › between. A
+ * note that lives outside this page (a shortcut) shows where it lives from the vault's top, after ↗. A narrow column
+ * lets the middle parts shrink to "…"; the last part keeps its width.
+ */
+function FolderPath({ dir, pages }: { dir: string; pages: FolderPagesValue }) {
+  const inside = pages.folder === '' || dir === pages.folder || dir.startsWith(`${pages.folder}/`)
+  // Every folder from the vault's top down to the note's; "From this page" (YAZ-4801 demo: "does it hide recipes?")
+  // starts at the page itself, "Full path" and a note outside the page keep them all.
+  const all = dir.split('/').filter(Boolean).map((_, i, segs) => segs.slice(0, i + 1).join('/'))
+  const from = inside && pages.folderColumn !== 'full' && pages.folder !== '' ? all.indexOf(pages.folder) : 0
+  const parts = all.slice(Math.max(0, from))
+  if (parts.length === 0) return null
+  const whole = parts.map((p) => pages.title(p)).join(' › ')
+  return (
+    <span className="view-folder-path" title={inside ? whole : `Lives in ${whole}`}>
+      {!inside && <ShortcutIcon />}
+      {parts.map((p, i) => (
+        <Fragment key={p}>
+          {i > 0 && <span className="view-folder-path__sep" aria-hidden="true">›</span>}
+          {pages.open === undefined ? (
+            <span className={`view-table__chip view-folder-path__part${i === parts.length - 1 ? ' view-folder-path__part--last' : ''}`}>{pages.title(p)}</span>
+          ) : (
+            <button
+              type="button"
+              className={`view-table__chip view-table__chip--link view-folder-chip view-folder-path__part${i === parts.length - 1 ? ' view-folder-path__part--last' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation() // a board card's click opens the card
+                pages.open!(p)
+              }}
+            >
+              {pages.title(p)}
+            </button>
+          )}
+        </Fragment>
+      ))}
+    </span>
+  )
+}
+
 function RowTitle({ row }: { row: Row }) {
   const folder = useContext(ViewFolder)
+  const pages = useContext(FolderPages)
+  // A subfolder's row (YAZ-4579 D32): the folder icon, its title, and how many notes its page shows.
+  if (isFolderRow(row.record)) {
+    const inside = pages?.inside?.(folderOfRow(row.record))
+    return (
+      <>
+        <FolderIcon size={13} className="view-folder-row__icon" />
+        {row.record.title}
+        {inside !== undefined && <span className="view-folder-row__inside">{inside} inside</span>}
+      </>
+    )
+  }
   return (
     <>
       {row.record.title}
-      {folder !== null && isShortcut(row.record, folder) && <ShortcutIcon />}
+      {/* YAZ-4797 demo: the ↗ says where the note lives, on hover. */}
+      {folder !== null && isShortcut(row.record, folder) && (
+        <HoverTip className="view-shortcut-tip" text={`Shortcut. Lives in ${row.record.folder === '' ? 'the vault' : row.record.folder.split('/').join(' › ')}`}>
+          <ShortcutIcon />
+        </HoverTip>
+      )}
     </>
   )
 }
 
-/** Typed cell body (shared by table cells and board cards): error chip, read-only checkbox (editing is 5B), chips for lists/links, `render()` for the rest. */
-export function cellContent(v: Value, resolve?: Resolver) {
+/** A folder row's own folder as the index names it: its parent (the row's `folder`), then its directory's name. */
+const folderOfRow = ({ path, folder }: Row['record']): string => {
+  const dir = path.slice(0, path.lastIndexOf('/'))
+  const name = dir.slice(dir.lastIndexOf('/') + 1)
+  return folder === '' ? name : `${folder}/${name}`
+}
+
+/**
+ * Typed cell body (shared by table cells and board cards): error chip, read-only checkbox (editing is 5B), chips for lists/links,
+ * `render()` for the rest. `decl`, the cell's column: a Number or Date column's `format` shapes a number or a date (YAZ-4591).
+ */
+export function cellContent(v: Value, resolve?: Resolver, decl?: PropertyDecl) {
   if (v instanceof ErrorValue)
     return (
       <span className="view-table__chip view-table__chip--error" title={v.message}>
@@ -82,6 +309,11 @@ export function cellContent(v: Value, resolve?: Resolver) {
   if (typeof v === 'boolean') return <input type="checkbox" checked={v} disabled readOnly />
   if (Array.isArray(v)) return v.map((item, i) => chip(item, i, resolve))
   if (v instanceof LinkValue || v instanceof FileValue) return chip(v, undefined, resolve)
+  if (decl?.format !== undefined) {
+    if (decl.kind === 'number' && typeof v === 'number') return formatNumber(v, decl.format)
+    if (decl.kind === 'date' && v instanceof DateValue) return formatDateValue(v.ms, v.hasTime, decl.format) ?? render(v, resolve)
+  }
+  if (typeof v === 'string' && v.includes('[[')) return <InlineLinks text={v} resolve={resolve} />
   return render(v, resolve)
 }
 
@@ -90,6 +322,20 @@ function groupValue(v: Value, resolve?: Resolver) {
   if (Array.isArray(v)) return v.map((item, i) => chip(item, i, resolve))
   if (v instanceof LinkValue || v instanceof FileValue) return chip(v, undefined, resolve)
   return render(v, resolve)
+}
+
+type Colour = keyof typeof HIGHLIGHT_HEX
+
+/**
+ * A group level's header look (YAZ-3742 D5): its `highlight` as a wash of that highlight colour
+ * (`--view-group-hl`, painted at 40% by views.css) and `large` as 14px bold. An unknown colour name
+ * paints nothing. The Sort menu's "Aa" chip wears the same look under its own `base` class, so a
+ * query for the headers' values never finds the chip.
+ */
+export function groupValueLook(spec: GroupBySpec | undefined, base = 'view-group__value'): { className: string; style?: CSSProperties } {
+  const hex = typeof spec?.highlight === 'string' && Object.hasOwn(HIGHLIGHT_HEX, spec.highlight) ? HIGHLIGHT_HEX[spec.highlight as Colour] : undefined
+  const className = [base, hex !== undefined && `${base}--highlight`, spec?.large === true && `${base}--large`].filter(Boolean).join(' ')
+  return hex === undefined ? { className } : { className, style: { '--view-group-hl': hex } as CSSProperties }
 }
 
 export interface GroupHeaderProps {
@@ -107,24 +353,58 @@ export interface GroupHeaderProps {
   onToggle: () => void
   /** Create a note in this group (5D, GRO-2144); absent → no "+" affordance. */
   onNew?: () => void
+  /** "Show New buttons" (YAZ-3746 13BL, demo): false hides the "+"; the right-click "New note in this group" stays. */
+  newButton?: boolean
   /** The vault's resolver: a group keyed by an id link is headed by that note's title (YAZ-2293 D8). */
   resolve?: Resolver
+  /** The group's `groupBy` level, outer = 0 (the default): its spec gives the header's style (YAZ-3742). */
+  level?: number
 }
 
-export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, resolve }: GroupHeaderProps) {
+export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, newButton = true, resolve, level = 0 }: GroupHeaderProps) {
+  // `level` counts the levels that group (YAZ-4544): an entry with no property is none.
+  const look = groupValueLook(shownGroupLevels(view)[level])
+  // A Folder level's group (YAZ-4564 D27) opens that folder's page; the page's own folder and the vault root have none.
+  const pages = useContext(FolderPages)
+  const open = pages?.open
+  const openFolder =
+    open !== undefined && typeof groupKey === 'string' && groupKey !== '' && groupKey !== pages?.folder && shownGroupLevels(view)[level]?.property === 'file.folder'
+      ? () => open(groupKey)
+      : undefined
+  // The right-click menu (YAZ-4604, D55): the app's own, never the system's. The event stops here, so no row or
+  // selection menu of the view around it opens too. Only this header re-renders when it opens or closes.
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  // A Folder group of a subfolder directly under the page moves that folder to Other files (YAZ-4747 OF1). Read when
+  // the menu opens, so a header that never opens its menu does nothing here.
+  const folderTray = useContext(OtherFilesFolderMove)
+  const subfolder = menu !== null && folderTray !== null && typeof groupKey === 'string' && shownGroupLevels(view)[level]?.property === 'file.folder' ? folderTray.folderAt(groupKey) : null
+  const moveFolder = subfolder === null || folderTray === null ? undefined : { name: subfolder.name, run: () => folderTray.move(subfolder.dir) }
   return (
-    <div className="view-group">
+    <div
+      className="view-group"
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setMenu({ x: e.clientX, y: e.clientY })
+      }}
+    >
+      {menu !== null && <GroupHeaderMenu x={menu.x} y={menu.y} collapsed={collapsed} onToggle={onToggle} onNew={onNew} moveFolder={moveFolder} onClose={() => setMenu(null)} />}
       <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
         <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />
         </svg>
       </button>
       {/* A text name too long for the header is cut; the tooltip holds the rest, as a chip's does. */}
-      <span className={`view-group__value${groupKey === null ? ' view-group__value--none' : ''}`} title={typeof groupKey === 'string' ? label : undefined}>
+      <span className={`${look.className}${groupKey === null ? ' view-group__value--none' : ''}`} style={look.style} title={typeof groupKey === 'string' ? label : undefined}>
         {typeof groupKey === 'string' ? label : groupKey === null ? 'No value' : groupValue(groupKey, resolve)}
       </span>
       <span className="view-group__count">{rows.length}</span>
-      {onNew !== undefined && (
+      {openFolder !== undefined && (
+        <button type="button" className="view-group__open" aria-label={`Open folder page ${label}`} title="Open folder page" onClick={openFolder}>
+          ↗
+        </button>
+      )}
+      {onNew !== undefined && newButton && (
         <button type="button" className="view-group__new" aria-label={`New note in group ${label}`} title="New note" onClick={onNew}>
           <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M8 3v10M3 8h10" />

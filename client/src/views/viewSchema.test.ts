@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ViewParseError, parseViews, serializeViews, updateViews } from './viewSchema'
+import { MAX_GROUP_LEVELS, ViewParseError, groupLineStyleOf, groupLinesOf, headerRowOfView, parseViews, serializeViews, shownGroupLevels, updateViews } from './viewSchema'
 
 /** Yasin's real file, verbatim (trailing newline included). */
 const YASIN_BASE = `views:
@@ -167,6 +167,14 @@ describe('parseViews def', () => {
     expect(def.views[0].groupBy).toEqual([{ property: 'departments', direction: 'ASC' }, { property: 'process' }])
   })
 
+  it('the shown group levels are those with a property, the first five (YAZ-4531; five since YAZ-3746 13AF)', () => {
+    expect(MAX_GROUP_LEVELS).toBe(5)
+    const levels = [{ property: 'a' }, { direction: 'ASC' }, { property: 'b' }, { property: 'c' }, { property: 'd' }, { property: 'e' }, { property: 'f' }] as never
+    expect(shownGroupLevels({ type: 'table', name: 'T', groupBy: levels }).map((l) => l.property)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(shownGroupLevels({ type: 'table', name: 'T', groupBy: { property: 'a' } })).toEqual([{ property: 'a' }])
+    expect(shownGroupLevels({ type: 'table', name: 'T' })).toEqual([])
+  })
+
   it('keeps unknown keys at the top level and inside views', () => {
     const { def } = parseViews(KITCHEN_SINK)
     expect(def.foo).toBe(1)
@@ -221,6 +229,34 @@ describe('updateViews', () => {
     expect(out).toContain('# Top-level comment that must survive')
   })
 
+  it('`by: value` on a sort and a group level survives a round trip; a YAML without `by` reads as before (YAZ-3940)', () => {
+    const text = `views:
+  - type: table
+    name: T
+    sort:
+      - property: status
+        direction: ASC
+        by: value
+    groupBy:
+      property: status
+      direction: DESC
+      by: value
+  - type: table
+    name: Plain
+    sort:
+      - property: status
+        direction: DESC
+`
+    const parsed = parseViews(text)
+    expect(parsed.def.views[0].sort).toEqual([{ property: 'status', direction: 'ASC', by: 'value' }])
+    expect(parsed.def.views[0].groupBy).toEqual({ property: 'status', direction: 'DESC', by: 'value' })
+    expect(parsed.def.views[1].sort).toEqual([{ property: 'status', direction: 'DESC' }])
+    expect(serializeViews(updateViews(parsed, (def) => { def.views[1].name = 'Plain 2' }))).toBe(text.replace('name: Plain', 'name: Plain 2'))
+    // Back to option order: the menu writes the spec without `by`, and its line goes.
+    const back = updateViews(parseViews(text), (def) => { def.views[0].sort = [{ property: 'status', direction: 'ASC' }] })
+    expect(lineDiff(text, serializeViews(back))).toEqual({ removed: ['        by: value'], added: [] })
+  })
+
   it('an array that changed length is replaced as a whole', () => {
     const after = updateViews(parseViews(YASIN_BASE), (def) => {
       def.views[0].order = ['file.name', 'tags']
@@ -262,5 +298,37 @@ describe('parse errors', () => {
 
   it('a non-map root → ViewParseError', () => {
     expect(() => parseViews('- a\n- b\n')).toThrow(ViewParseError)
+  })
+})
+
+describe("a view's header row (YAZ-4794)", () => {
+  it('keeps a text colour and an align, and drops a value that is no choice, part by part', () => {
+    const [view] = parseViews('views:\n  - type: table\n    name: T\n    headerRow:\n      color: green\n      text: blue\n      align: center\n').def.views
+    expect(headerRowOfView(view)).toEqual({ color: 'green', text: 'blue', align: 'center' })
+    const [bad] = parseViews('views:\n  - type: table\n    name: T\n    headerRow:\n      text: gray\n      align: middle\n      weight: regular\n').def.views
+    expect(headerRowOfView(bad)).toEqual({ weight: 'regular' })
+  })
+})
+
+describe('a grouped table\'s sticky group headers and group lines (YAZ-4798)', () => {
+  it('the three keys round-trip in .folder.md, and a write that removes one leaves the rest of the file as it was', () => {
+    const text = 'views:\n  - type: table\n    name: T\n    stickyGroups: false\n    groupLines: always\n    groupLineStyle: thread\n'
+    const parsed = parseViews(text)
+    expect(serializeViews(parsed)).toBe(text)
+    expect(parsed.def.views[0]).toMatchObject({ stickyGroups: false, groupLines: 'always', groupLineStyle: 'thread' })
+    const back = updateViews(parsed, (def) => {
+      delete def.views[0].groupLines
+    })
+    expect(serializeViews(back)).toBe(text.replace('    groupLines: always\n', ''))
+  })
+
+  it('the readers: a value the app does not know reads as no lines and plain lines', () => {
+    const view = (extra: Record<string, unknown>) => ({ type: 'table', name: 'T', ...extra })
+    expect(groupLinesOf(view({ groupLines: 'hover' }))).toBe('hover')
+    expect(groupLinesOf(view({ groupLines: 'always' }))).toBe('always')
+    expect(groupLinesOf(view({ groupLines: 'sometimes' }))).toBe('off')
+    expect(groupLinesOf(view({}))).toBe('off')
+    expect(groupLineStyleOf(view({ groupLineStyle: 'thread' }))).toBe('thread')
+    expect(groupLineStyleOf(view({ groupLineStyle: 'dotted' }))).toBe('plain')
   })
 })

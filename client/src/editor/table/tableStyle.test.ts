@@ -10,6 +10,7 @@ import { DOMParser, DOMSerializer, type Node as ProseNode } from '@milkdown/kit/
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { getMarkdownForSave } from '../createCrepe'
 import { mount, unmountAll } from '../marks/markTestKit'
+import { TABLE_SIZED_ATTR } from './tableStyle'
 
 afterEach(unmountAll)
 
@@ -66,7 +67,7 @@ describe('the table in the file', () => {
     const { view } = await mount(note)
     const [table] = tables(view.state.doc)
     expect(table.attrs).toMatchObject({
-      border: { px: 2, darkness: 40 }, header: 'plain', stripes: true,
+      border: { px: 2, darkness: 40 }, header: { strength: 'off' }, stripes: true,
       height: 'compact', wrap: false, freezeRows: 2, freezeCols: 1,
     })
     expect(cellAttr(table, 'fill')).toEqual([
@@ -169,13 +170,14 @@ describe('parseDOM / toDOM: a copy inside the app keeps the settings', () => {
     const { schema } = view.state
     const dom = DOMSerializer.fromSchema(schema).serializeNode(tables(view.state.doc)[0]) as HTMLElement
     const tableEl = dom.tagName === 'TABLE' ? dom : dom.querySelector('table')!
-    expect(tableEl.getAttribute('data-table-header')).toBe('plain')
+    // `header plain` is the header row's Strength Off (YAZ-4774): one `data-table-header-*` attribute per set part.
+    expect(tableEl.getAttribute('data-table-header-strength')).toBe('off')
     expect(tableEl.querySelector('td')!.getAttribute('data-fill')).toBe('green')
     expect(tableEl.querySelectorAll('td')[1].getAttribute('data-color')).toBe('blue')
     const holder = document.createElement('div')
     holder.appendChild(dom)
     const [copy] = tables(DOMParser.fromSchema(schema).parse(holder))
-    expect(copy.attrs).toMatchObject({ border: { px: 3, darkness: 60 }, header: 'plain', stripes: true, height: 'tall', wrap: false, freezeRows: 1, freezeCols: 1 })
+    expect(copy.attrs).toMatchObject({ border: { px: 3, darkness: 60 }, header: { strength: 'off' }, stripes: true, height: 'tall', wrap: false, freezeRows: 1, freezeCols: 1 })
     expect(cellAttr(copy, 'fill')).toEqual([[null, null], ['green', null]])
     expect(cellAttr(copy, 'color')).toEqual([[null, null], [null, 'blue']])
   })
@@ -247,7 +249,7 @@ describe('the table block shows the table settings to CSS', () => {
   it('data attributes and custom properties on .milkdown-table-block, kept up to date', async () => {
     const { root, view } = await mount(`${SMALL}<!-- table: border 2px 40%, header plain, stripes, height compact, nowrap -->\n`)
     const block = root.querySelector<HTMLElement>('.milkdown-table-block')!
-    expect(block.getAttribute('data-table-header')).toBe('plain')
+    expect(block.getAttribute('data-table-header-strength')).toBe('off')
     expect(block.hasAttribute('data-table-stripes')).toBe(true)
     expect(block.getAttribute('data-table-height')).toBe('compact')
     expect(block.hasAttribute('data-table-nowrap')).toBe(true)
@@ -258,6 +260,29 @@ describe('the table block shows the table settings to CSS', () => {
     const now = root.querySelector<HTMLElement>('.milkdown-table-block')!
     expect(now.hasAttribute('data-table-stripes')).toBe(false)
     expect(now.getAttribute('data-table-height')).toBe('tall')
+  })
+
+  it('YAZ-4783: `data-table-sized` only while EVERY column has a width, kept up to date as a width comes and goes', async () => {
+    const sized = async (markdown: string) => (await mount(markdown)).root.querySelector('.milkdown-table-block')!.hasAttribute(TABLE_SIZED_ATTR)
+    expect(await sized(SMALL)).toBe(false)
+    expect(await sized(`${SMALL}\n<!-- table: widths 140 auto -->\n`)).toBe(false)
+    expect(await sized(`${SMALL}\n<!-- table: widths 140 200 -->\n`)).toBe(true)
+    expect(await sized(`${SMALL}\n<!-- table: widths 140 200, stripes -->\n`)).toBe(true)
+    const { root, view } = await mount(`${SMALL}\n<!-- table: widths 140 auto -->\n`)
+    // The second column's header and body cells get a width, as a drag's one transaction writes it.
+    const tr = view.state.tr
+    view.state.doc.descendants((node, pos) => {
+      if ((node.type.name === 'table_header' || node.type.name === 'table_cell') && node.attrs.colwidth === null) tr.setNodeMarkup(pos, undefined, { ...node.attrs, colwidth: [200] })
+    })
+    view.dispatch(tr)
+    expect(root.querySelector('.milkdown-table-block')!.hasAttribute(TABLE_SIZED_ATTR)).toBe(true)
+    // The first column back to `auto`, in every row (prosemirror-tables' `fixTables` evens out a column's cells).
+    const back = view.state.tr
+    view.state.doc.descendants((node, pos) => {
+      if ((node.type.name === 'table_header' || node.type.name === 'table_cell') && node.attrs.colwidth?.[0] === 140) back.setNodeMarkup(pos, undefined, { ...node.attrs, colwidth: null })
+    })
+    view.dispatch(back)
+    expect(root.querySelector('.milkdown-table-block')!.hasAttribute(TABLE_SIZED_ATTR)).toBe(false)
   })
 })
 

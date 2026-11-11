@@ -27,7 +27,7 @@ import { scheduleInWords } from '@shared/schedule'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -35,6 +35,7 @@ import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
+import { FOLDER_PAGES_SECTION } from './folderPagesSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented, Stepper } from './controls'
 import { ProfileControl } from './ProfileControl'
@@ -52,7 +53,7 @@ import { CalendarDayControl } from './CalendarDayControl'
 import { TimeFormatControl } from './TimeFormatControl'
 import { DEFAULT_NEW_NOTE_TITLE, renderTitleTemplate } from '../sidebar/createEntry'
 import { capital, fillSwatch } from '../editor/table/colours'
-import { TABLE_COLORS } from '../editor/table/tableComment'
+import { TABLE_COLORS, type TableColor } from '../editor/table/tableComment'
 import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { MEMORY_SECTION } from './memorySection'
@@ -62,7 +63,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, COMMENTS_RESOLVED_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -135,6 +136,36 @@ function PxSetting({ name, value, fallback, min, max, step, onSet }: { name: str
   )
 }
 
+/**
+ * "Width" of every code block or every table (YAZ-4783 layer 3): Text column (`null`, the look before) or Pixels, with the
+ * px typed beside it, kept on ⏎ or blur and clamped to `BLOCK_WIDTH_MIN`–`BLOCK_WIDTH_MAX`. Pixels starts at `start`.
+ */
+function BlockWidthSetting({ name, value, start, onSet }: { name: string; value: number | null; start: number; onSet: (next: number | null) => void }) {
+  const [draft, setDraft] = useState(value === null ? '' : String(value))
+  useEffect(() => setDraft(value === null ? '' : String(value)), [value])
+  const keep = () => {
+    const n = Number.parseInt(draft, 10)
+    const next = Number.isFinite(n) ? Math.min(BLOCK_WIDTH_MAX, Math.max(BLOCK_WIDTH_MIN, n)) : value
+    setDraft(next === null ? '' : String(next))
+    if (next !== value) onSet(next)
+  }
+  return (
+    <>
+      <Segmented options={BLOCK_WIDTH_OPTIONS} value={value === null ? 'column' : 'px'} onChange={(mode) => onSet(mode === 'column' ? null : (value ?? start))} ariaLabel={name} />
+      {value !== null && (
+        <span className="settings__percent">
+          <input className="settings__input settings__input--number" aria-label={`${name} in px`} inputMode="numeric" value={draft} spellCheck={false}
+            onChange={(event) => setDraft(event.target.value.replace(/[^0-9]/g, ''))} onBlur={keep}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') keep()
+            }} />
+          px
+        </span>
+      )}
+    </>
+  )
+}
+
 /** "Band colour" (the YAZ-3818 demo): the accent, the cell toolbar's ten Fill colours (their swatches), and Custom…. */
 function BandColourControl({ value, onChange }: { value: string; onChange: (next: string) => void }) {
   const swatch = (colour: string) => <span className="settings__band-swatch" style={{ background: colour }} aria-hidden />
@@ -152,6 +183,85 @@ function BandColourControl({ value, onChange }: { value: string; onChange: (next
         {value.startsWith('#') ? swatch(value) : 'Custom…'}
         <input type="color" aria-label="Custom band colour" value={value.startsWith('#') ? value : '#3b82f6'} onChange={(event) => onChange(event.target.value)} />
       </label>
+    </span>
+  )
+}
+
+/**
+ * "Header row" (YAZ-4774): every table's header row, in a note and on a folder page. Color is a table fill colour's
+ * swatch (Gray, the text colour, first), then Strength and Text. Text colour not set is each table's own; Reset brings it
+ * and the rest back.
+ * YAZ-4794: a live preview of a sample header row tops the controls (a note table's look: no Text colour is Full),
+ * each column lined up its own way, so Align's Follow column shows; then Fill colour, Strength, Weight, Text colour
+ * (Muted, Full and the eight colours) and Align (Follow column, Left, Center, Right).
+ */
+const HEADER_ROW_PREVIEW: readonly (readonly [string, string, 'left' | 'center' | 'right'])[] = [
+  ['Name', 'Baklava', 'left'],
+  ['Cuisine', 'Turkish', 'left'],
+  ['Sweetness', 'High', 'center'],
+  ['Cook time', '45 min', 'right'],
+]
+
+function HeaderRowControl({ value, onChange }: { value: HeaderRow; onChange: (next: HeaderRow) => void }) {
+  const seg = (part: 'strength' | 'weight' | 'align', name: string) => (
+    <Segmented<string | null> options={HEADER_ROW_CHOICES[part].map((v) => ({ label: headerRowLabel(v), value: v }))} value={value[part]} onChange={(next) => onChange({ ...value, [part]: next })} ariaLabel={name} />
+  )
+  const swatches = (part: 'color' | 'text', colors: readonly string[], name: string) => (
+    <span className="settings__band-colours" role="radiogroup" aria-label={name}>
+      {colors.map((c) => (
+        <button key={c} type="button" role="radio" aria-checked={value[part] === c} title={capital(c)} className="settings__band-colour" onClick={() => onChange({ ...value, [part]: c })}>
+          <span className="settings__band-swatch" style={{ background: fillSwatch((c === 'gray' ? 'grey' : c) as TableColor) }} aria-hidden />
+        </button>
+      ))}
+    </span>
+  )
+  return (
+    <span className="settings__header-row">
+      <table className="header-row-preview" aria-label="Header row preview" {...headerRowAttrs(value)}>
+        <thead>
+          <tr>
+            {HEADER_ROW_PREVIEW.map(([head, , align]) => (
+              <th key={head} style={{ textAlign: align }}>
+                {head}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            {HEADER_ROW_PREVIEW.map(([head, cell, align]) => (
+              <td key={head} style={{ textAlign: align }}>
+                {cell}
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+      <span>Fill colour</span>
+      {swatches('color', HEADER_ROW_CHOICES.color, 'Header row fill colour')}
+      <span>Strength</span>
+      {seg('strength', 'Header row strength')}
+      <span>Weight</span>
+      {seg('weight', 'Header row text weight')}
+      <span>Text colour</span>
+      <span className="settings__header-row-text">
+        <Segmented<string | null>
+          options={(['muted', 'full'] as const).map((v) => ({ label: capital(v), value: v }))}
+          value={value.text === 'muted' || value.text === 'full' ? value.text : null}
+          onChange={(next) => onChange({ ...value, text: next as HeaderRow['text'] })}
+          ariaLabel="Header row text colour"
+        />
+        {swatches('text', HEADER_ROW_CHOICES.text.filter((v) => v !== 'muted' && v !== 'full'), 'Header row text colour')}
+      </span>
+      <span>Align</span>
+      <span className="settings__header-row-text">
+        {seg('align', 'Header row align')}
+        {HEADER_ROW_PARTS.some((part) => value[part] !== DEFAULT_HEADER_ROW[part]) && (
+          <button type="button" className="settings__header-row-reset" onClick={() => onChange(DEFAULT_HEADER_ROW)}>
+            Reset
+          </button>
+        )}
+      </span>
     </span>
   )
 }
@@ -283,7 +393,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'code' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'tables' | 'code' | 'files' | 'folderPages' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -478,7 +588,7 @@ const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string; hint?: stri
   { place: 'tabBoard', label: 'Tab board', hint: 'Mission Control: each open tab as a card.', keywords: ['tab board', 'mission control', 'cards', 'overview'] },
   { place: 'tabs', label: 'Tabs', hint: "A tab you're not on.", keywords: ['tabs', 'tab strip', 'tab bar'] },
   { place: 'backlinks', label: 'Linked mentions', hint: 'The list under a note.', keywords: ['backlinks', 'linked mentions', 'references'] },
-  { place: 'folderViews', label: 'Folder views', hint: 'Table, board, cards and list.', keywords: ['folder', 'views', 'table', 'board', 'cards', 'list', 'kanban'] },
+  // Folder views' row lives in Settings › Folder pages since YAZ-4585 (D34), on the same key.
   { place: 'links', label: 'Links in notes', hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
   // YAZ-3943 demo round 2: a board's link pills have their own row; YAZ-4748 D7: a diagram's too.
   { place: 'drawings', label: 'Links in drawings and diagrams', hint: 'Link pills on a board or a draw.io diagram.', keywords: ['links', 'pills', 'drawing', 'board', 'excalidraw', 'diagram', 'drawio'] },
@@ -879,7 +989,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // The YAZ-3818 demo: the note's bullets, as the cells' have their own (Settings › Editor › Tables).
+            // The YAZ-3818 demo: the note's bullets, as the cells' have their own (Settings › Tables › All tables).
             id: 'noteBulletIndent',
             label: 'Bullet indent',
             hint: 'How far each child level steps in.',
@@ -1005,6 +1115,25 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={ON_OFF_OPTIONS} value={settings.typingArrows ?? true} onChange={(typingArrows) => onChange({ ...settings, typingArrows })} ariaLabel="Arrows while typing" />
             ),
           },
+          // YAZ-3746 13AB: Enter at the end of a styled line, and the new line types in that style; notes off, boxes on.
+          {
+            id: 'enterKeepsStyleNotes',
+            label: 'Enter keeps the text style in notes',
+            hint: 'Press Enter at the end of a bold, italic, underlined or coloured line, and the new line types in the same style. Off: the new line starts plain.',
+            keywords: ['enter', 'return', 'new line', 'next line', 'keep', 'style', 'format', 'formatting', 'bold', 'italic', 'underline', 'color', 'colour', 'highlight', 'notes'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.enterKeepsStyleNotes ?? false} onChange={(enterKeepsStyleNotes) => onChange({ ...settings, enterKeepsStyleNotes })} ariaLabel="Enter keeps the text style in notes" />
+            ),
+          },
+          {
+            id: 'enterKeepsStyleBoxes',
+            label: 'Enter keeps the text style in drawing text boxes',
+            hint: 'The same, in a text box on a drawing. On: a new line in a bold box stays bold, however the bold was set.',
+            keywords: ['enter', 'return', 'new line', 'next line', 'keep', 'style', 'format', 'formatting', 'bold', 'italic', 'underline', 'color', 'colour', 'highlight', 'drawing', 'text box', 'box', 'excalidraw', 'board'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.enterKeepsStyleBoxes ?? true} onChange={(enterKeepsStyleBoxes) => onChange({ ...settings, enterKeepsStyleBoxes })} ariaLabel="Enter keeps the text style in drawing text boxes" />
+            ),
+          },
         ],
       },
       {
@@ -1042,6 +1171,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        // YAZ-4787: what ⌘F does with folds. The find bar's fold button sets it for one note.
+        title: 'Find',
+        hint: 'What ⌘F does with folded bullets and headings. The find bar’s fold button changes it for one note.',
+        items: [
+          {
+            id: 'findFolds',
+            label: 'Folded bullets',
+            hint: 'Keep folded finds only the text that shows.',
+            keywords: ['find', 'search', 'cmd f', 'fold', 'collapse', 'expand', 'bullets'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={FIND_FOLDS_OPTIONS} value={settings.findFolds} onChange={(findFolds) => onChange({ ...settings, findFolds })} ariaLabel="Folded bullets" />
+            ),
+          },
+        ],
+      },
+      {
         // YAZ-3704 D5: the glow on text an outside save changed in an open note. The words say "outside": the app
         // cannot tell an AI's save from a sync pull or another app.
         title: 'Outside changes',
@@ -1068,14 +1213,61 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-4167 D16 (YAZ-4159 D16 names the group): every table. The calendar rows have their own group below (the YAZ-4163 demo).
-        title: 'Tables',
+        // YAZ-4783 layer 3: the width of every code block in a note. A note's cog (Code block width) and a block's own
+        // dragged edge win over it, so a change here moves only the blocks that follow Settings.
+        title: 'Code blocks',
         items: [
+          {
+            id: 'codeBlockWidth',
+            label: 'Width',
+            hint: "Text column: as wide as the text. Pixels: that width at 100% zoom, into the margin, never past the editor. A note's own width and a block you dragged keep theirs.",
+            keywords: ['code', 'code block', 'width', 'wide', 'wider', 'narrow', 'px', 'pixels', 'column'],
+            render: ({ settings, onChange }) => (
+              <BlockWidthSetting name="Code block width" value={settings.codeBlockWidth ?? null} start={900} onSet={(codeBlockWidth) => onChange({ ...settings, codeBlockWidth })} />
+            ),
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // YAZ-4775: the note tables' settings, a page of their own after Editor (they had grown to three groups there).
+    // Each setting keeps its key; only where it shows moved. "Editor" stays a keyword, so the search finds them by it.
+    id: 'tables',
+    title: 'Tables',
+    keywords: ['editor', 'table', 'tables', 'cell', 'cells', 'calendar'],
+    groups: [
+      {
+        // YAZ-4167 D16 (YAZ-4159 D16 names the group): every table. The calendar rows have their own group below (the YAZ-4163 demo).
+        // "All tables" since YAZ-4775: on the Tables page a second "Tables" read as "Tables › Tables".
+        title: 'All tables',
+        items: [
+          {
+            // YAZ-4774: one look for both kinds of table; a note table's "Header row ›" and a folder table's View tab can say otherwise.
+            id: 'tableHeaderRow',
+            label: 'Header row',
+            hint: "The first row of every table, in a note and on a folder page. Text colour not set: full in a note, muted on a folder page. A table's own menu can say otherwise.",
+            keywords: ['header', 'header row', 'shade', 'shaded', 'tint', 'colour', 'color', 'bold', 'muted', 'first row', 'table'],
+            wide: () => true,
+            render: ({ settings, onChange }) => <HeaderRowControl value={settings.tableHeaderRow ?? DEFAULT_SETTINGS.tableHeaderRow} onChange={(tableHeaderRow) => onChange({ ...settings, tableHeaderRow })} />,
+          },
+          {
+            // YAZ-4783 layer 3: the width of every note table whose columns have no widths of their own, shared evenly.
+            // A note's cog (Table width) wins; a table whose every column was dragged keeps its widths.
+            id: 'tableWidth',
+            label: 'Width',
+            hint: "Text column: as wide as the text. Pixels: that width at 100% zoom, its columns shared evenly, into the margin, never past the editor. A note's own width and columns you dragged keep theirs.",
+            keywords: ['table', 'width', 'wide', 'wider', 'narrow', 'px', 'pixels', 'column', 'columns'],
+            render: ({ settings, onChange }) => (
+              <BlockWidthSetting name="Table width" value={settings.tableWidth ?? null} start={1000} onSet={(tableWidth) => onChange({ ...settings, tableWidth })} />
+            ),
+          },
           {
             // YAZ-4167 D16: the band follows the caret's row and the mouse's; a look, never in the file.
             id: 'tableRowBand',
             label: 'Row band',
-            hint: 'A light band across the table row under the caret or the mouse, its first cell in bold.',
+            // The hint names the other home of the band (YAZ-4608 C5); Folder pages › Row band on hover names this one.
+            hint: 'A light band across the table row under the caret or the mouse, its first cell in bold. Folder pages › Row band on hover follows it until you set that.',
             keywords: ['row', 'band', 'highlight', 'mouse', 'caret', 'calendar', 'table'],
             render: ({ settings, onChange }) => (
               <Segmented options={TABLE_ROW_BAND_OPTIONS} value={settings.tableRowBand} onChange={(tableRowBand) => onChange({ ...settings, tableRowBand })} ariaLabel="Row band" />
@@ -1148,6 +1340,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // Round 3 of the YAZ-3818 demo: what a new cell note starts with. In the app's settings, never in the file.
         title: 'Cell notes',
         items: [
+          {
+            // YAZ-4790: every table's "+", off by default (the YAZ-4790 demo); a table's 6-dot "Cell note button" sets its own.
+            id: 'tableCellNoteButton',
+            label: 'Add button',
+            hint: 'The + on a table cell’s corner that adds a note. Off: right-click a cell › Add cell note. A table can turn its own on or off in its 6-dot menu.',
+            keywords: ['cell note', 'note', 'plus', 'add', 'button', 'table', 'cell', 'hide'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableCellNoteButton} onChange={(tableCellNoteButton) => onChange({ ...settings, tableCellNoteButton })} ariaLabel="Add button" />
+            ),
+          },
           {
             id: 'tableCellNoteTemplate',
             label: 'New cell note starts with',
@@ -1470,6 +1672,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
+  // YAZ-4585 (D34): the folder pages' own settings and the defaults their views read, after Files & Links.
+  FOLDER_PAGES_SECTION,
   {
     id: 'review',
     title: 'Review',

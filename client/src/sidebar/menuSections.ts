@@ -2,7 +2,7 @@ import { createElement, type ReactNode } from 'react'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
-import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, FolderIcon, HeartIcon } from '../views/view/icons'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -230,7 +230,7 @@ export const errorText = (error: unknown) => (error instanceof Error ? error.mes
 const open: Leaf = (t, h) => {
   const path = t.openPath
   if (path === null) return null
-  return { id: 'open', label: 'Open folder page', onSelect: () => h.onOpen(path) }
+  return { id: 'open', label: 'Open folder page', icon: createElement(FolderIcon, { size: 15 }), onSelect: () => h.onOpen(path) }
 }
 
 /**
@@ -548,7 +548,7 @@ const openAlone: Leaf = (t, h) => {
 // ---- (5) Open in ▸: the OS verbs, one parent in a group of its own (D7 amended) ----
 
 /**
- * "Open in new window" — FILE rows only (D2, GRO-2168); folders and blank space hide it. Out of the "Open in ▸" flyout
+ * "Open in new window" — a FILE row (D2, GRO-2168), and a FOLDER row since YAZ-4778 (its folder page); blank space hides it. Out of the "Open in ▸" flyout
  * since YAZ-4470: at the top, in the open group, where a file row of Files or Search shows it at once.
  */
 const openInNewWindow: Leaf = (t, h) => {

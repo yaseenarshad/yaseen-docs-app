@@ -14,16 +14,14 @@ import { gestureNotice, namedItems, onDisk, unlessFailed, type NoticeKind, type 
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
-import { fetchTree } from '../../lib/treeFeed'
-import { findDirNode, notesAt, treeHasPath } from '../../lib/treeState'
-import { dropFolderValuesAfterMove, dropStaleFolderValues, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
+import { findDirNode, treeHasPath } from '../../lib/treeState'
+import type { Move } from '../../links/shortcuts'
 import { createNote, folderPath } from '../../views/scaffold'
 import { setSidebarDrag } from '../sidebarDrag'
-import { transformFile } from '../../views/writeProperty'
 import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
 import { dragPill, pillLabel } from '../dragPill'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
-import type { PendingCreate, PendingRename, ReorderOver, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
+import type { CreatePlace, PendingCreate, PendingRename, ReorderOver, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
 /**
  * A new board (YAZ-3028 D9): name first, then birth. `fs:create-board` writes the empty scene or the
@@ -571,14 +569,6 @@ export function useFileClipboard(
    * only labels the menu and gates ⌘V: each paste reads the clip FRESH and pastes that one (YAZ-3266, `pasteInto`).
    */
   const [clip, setClip] = useState<FileClipState>(null)
-  /**
-   * The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet
-   * (D21); null when it is closed. `clip` is the clip the sheet asks about: the one a fresh read confirmed (YAZ-3266), and
-   * the one its Move or Copy pastes — never whatever is on the clipboard by then.
-   */
-  const [pendingPaste, setPendingPaste] = useState<{ dir: string; top?: string; moves: Move[]; lost: LeftBehind; copy: boolean; clip: NonNullable<FileClipState> } | null>(null)
-  // The sheet speaks for the clipboard it was asked about: another one ends the question.
-  useEffect(() => setPendingPaste((open) => (open === null || sameClip(open.clip, clip) ? open : null)), [clip])
   /** Pushes seen so far: a read lands only when none came since it began (a push is newer than the read). */
   const pushes = useRef(0)
   /** False once unmounted: a read that answers late writes no state. */
@@ -634,39 +624,26 @@ export function useFileClipboard(
    * notice counts both halves and names the first failure. The target opens (the synthetic-child
    * idiom `startCreate` uses) and the tree refreshes EXPLICITLY: a copy moves nothing, so no
    * `fileRenamed` broadcast repairs it, and the watcher's add echo is a courtesy, not a contract
-   * (`refresh` is idempotent). A CUT is a move: each note it moved leaves the values of the folders
-   * it left behind (D20), judged on the index as it stood before the paste. A COPY's notes keep no
-   * values for the folders that do not show them (YAZ-2420 3E1), judged after it; the original is
-   * never written. The copies are listed off the tree that refresh reads — the index hears of them
-   * only once the watcher has — and a folder it has not heard of yet, the copy of one, keeps its block.
-   * In a vault that does not use IDs a copy is left as it landed (YAZ-2523 🔒 V3): by the data both
-   * branches do nothing there, and the gate on the copy's only saves its two fetches.
+   * (`refresh` is idempotent). A CUT is a move, and a COPY lands as main wrote it: neither removes a
+   * value from a note (YAZ-4713 C9 — a value no page shows is listed in the note's properties, with Clear).
    * The vault is the one `dir` is in (YAZ-2602 S46): a paste from another vault of this window is
    * judged as a paste from another window is.
    */
   const runPaste = useCallback(
     // `top`: the copy of Focus or Favorites the paste came from (YAZ-3131 S21), which opens the folder there too.
-    // `confirmed`: the clip a fresh read answered (YAZ-3266). It decides D20, the undo record and the sound, and main
+    // `confirmed`: the clip a fresh read answered (YAZ-3266). It decides the undo record and the sound, and main
     // pastes only it: another clip on the clipboard by now pastes nothing and fails `CONFLICT`.
     async (dir: string, confirmed: NonNullable<FileClipState>, top?: string) => {
       const { root: vault, index } = vaultOf(dir)
       try {
-        const before = confirmed.op === 'cut' ? { records: index.records, folders: index.folders } : null
         const res = await api.file.paste({ targetDir: dir, expect: { op: confirmed.op, paths: confirmed.paths } })
         openTo(`${dir}/x`, top)
         refresh(vault)
-        // What D20 cleared, for the undo list.
-        const cleared: MovedGesture['cleared'] = []
-        if (before !== null) for (const { from, to, kind } of res.pasted) cleared.push(...(await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })))
-        else if (index.ids) {
-          const [{ tree }, { folders }] = await Promise.all([fetchTree(vault), api.index(vault)])
-          for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(vault, path, folders), true).catch(() => undefined) // quiet (YAZ-3235 D1)
-        }
         // Each item that did not land, by its page name; the titles are read only when one did not.
         const titles = res.failed.length === 0 ? undefined : pathTitles(index.records, index.folders)
         const failed = titles === undefined ? [] : res.failed.map((f) => `${pageName(vault, f.from, titles)} — ${f.message}`)
-        // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves and what they cleared go on the undo list.
-        const gesture: MovedGesture | null = before === null ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared }
+        // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves go on the undo list.
+        const gesture: MovedGesture | null = confirmed.op !== 'cut' ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })) }
         // What landed, by kind and by its name on disk (YAZ-3293 D23): a copy may have a new free name.
         const pasted = res.pasted.map(({ to, kind }) => onDisk(to, kind))
         const text = gestureNotice(res.pasted.length === 0 ? null : `Pasted ${namedItems(pasted)}`, failed, "Couldn't paste")
@@ -693,15 +670,10 @@ export function useFileClipboard(
   )
 
   /**
-   * Paste's one door, the menu's and ⌘V's: a Cut that would clear a folder's values asks first
-   * (D21), by the window's own snapshot, and so does a Copy whose copies would not keep them
-   * (YAZ-2420 3E1); anything else pastes at once. The moves are the clipboard's paths into `dir` —
-   * one already there is no move (main skips a cut, D2; a copy beside its original leaves nothing
-   * behind), and a folder is one the tree holds as a folder. A path outside this vault matches no
-   * record, so it never asks: the index cannot speak for it.
+   * Paste's one door, the menu's and ⌘V's: it pastes at once — a paste clears no value (YAZ-4713 C9), so D21's sheet is gone.
    * The clip is read FRESH first (YAZ-3266), never taken from the window's cached `clip`: the system clipboard can change
    * with no event (text copied in a note), and main pastes what it holds at paste time. That one answer decides the
-   * sheet, D20, the undo record and the sound, and the paste carries it, so main runs that clip or nothing.
+   * undo record and the sound, and the paste carries it, so main runs that clip or nothing.
    */
   const pasteInto = useCallback(
     async (dir: string, top?: string) => {
@@ -712,27 +684,10 @@ export function useFileClipboard(
         return onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
       if (now === null) return onNotice('Nothing to paste', 'info')
-      const moves = now.paths.flatMap((oldPath): Move[] => {
-        const newPath = `${dir}/${basename(oldPath)}`
-        return newPath === oldPath ? [] : [{ oldPath, newPath, kind: dirs.includes(oldPath) ? 'dir' : 'file' }]
-      })
-      const { root: vault, index } = vaultOf(dir)
-      const lost = valuesLeftBehind({ root: vault, moves, records: index.records, folders: index.folders })
-      if (lost.folders.length > 0) return setPendingPaste({ dir, top, moves, lost, copy: now.op === 'copy', clip: now })
       await runPaste(dir, now, top)
     },
-    [vaultOf, dirs, runPaste, readClip, onNotice],
+    [runPaste, readClip, onNotice],
   )
-
-  /**
-   * The sheet's Move or Copy: the paste runs as it does unasked, for the clip the sheet asked about (YAZ-3266). Its
-   * Cancel only closes it — the clipboard stays as it was.
-   */
-  const confirmPaste = useCallback(() => {
-    if (pendingPaste === null) return
-    setPendingPaste(null)
-    void runPaste(pendingPaste.dir, pendingPaste.clip, pendingPaste.top)
-  }, [pendingPaste, runPaste])
 
   /**
    * ⌘V's target (D6, YAZ-1674): beside the FIRST ordered selected row — a dir → into it, a file →
@@ -790,7 +745,7 @@ export function useFileClipboard(
    * opens, the tree reads again (the watcher's echo is a courtesy), and ONE notice counts what
    * landed and names the first item that did not (S19). An item of another open vault says the rule
    * of drags between vaults (S22). Items that come from outside every vault left no folder of it,
-   * so no values are cleared (D20). Copies are not moves: only `moved` goes on the undo list, and
+   * and no value is cleared (YAZ-4713 C9). Copies are not moves: only `moved` goes on the undo list, and
    * its toast has Undo (YAZ-3255 S18, S40).
    */
   const importFiles = useCallback(
@@ -819,7 +774,7 @@ export function useFileClipboard(
           playGestureSound('land')
           onNotice(text, 'paste', unlessFailed('clipboard', failed))
         }
-        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text, failed.length > 0)
+        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })) }, text, failed.length > 0)
       } catch (err: unknown) {
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
@@ -827,7 +782,7 @@ export function useFileClipboard(
     [vaultOf, refresh, openTo, onNotice, onMoved],
   )
 
-  return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null), importFiles }
+  return { clip, clipTo, pasteInto, importFiles }
 }
 
 export function useInlineEdits(
@@ -845,8 +800,10 @@ export function useInlineEdits(
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>,
   openTo: (file: string, top?: string) => void,
+  /** A placed create's item, made on disk (YAZ-4782): it joins the Focus or the Favorites list at `place`. */
+  onPlace?: (place: CreatePlace, path: string) => void,
 ) {
-  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null } | null>(null)
+  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null; place?: CreatePlace } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir'; top: string | null } | null>(null)
 
   /**
@@ -854,8 +811,15 @@ export function useInlineEdits(
    * (⌘N, YAZ-3556 D4), which asks for it in Files with no menu open.
    */
   const startCreateAt = useCallback(
-    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null }) => {
+    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
       const menu = at
+      // A New … on the Focus or the Favorites tab with a place in its list (YAZ-4782: a pinned file row, a focus folder,
+      // blank space): the field opens there, on the tab, and the item joins the list there (`submitCreate`). The tab
+      // stays: no hop to Files, and no folder to open — the row, the folder or the list's end is on show.
+      if (at.place != null) {
+        setCreating({ kind, seed, parentDir: at.targetDir, top: at.top, place: at.place })
+        return
+      }
       // Favorites and Focus each show a SUBSET of the vault (YAZ-1766 3B1, YAZ-2619 S36): a target dir
       // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
       // mount, so the create moves to Files, where the `openTo` below opens that dir.
@@ -864,7 +828,10 @@ export function useInlineEdits(
       // The reveal hop's rule (D10), applied to the other gesture that needs a row. With two or more
       // vaults a vault's root is held only as its row (YAZ-2602), and neither tab has that row (YAZ-2631 D1).
       const shown = menu.lens === 'favorites' ? favoriteNodes : menu.lens === 'focus' ? focusNodes : null
-      const toFiles = shown !== null && (menu.targetDir === root ? shown.length === 0 || kind === 'dir' : findDirNode(shown, menu.targetDir) === null)
+      // A dir at or under the right-clicked row's top row is on show in that copy (YAZ-4782): `shown` holds the top level
+      // alone, and a pinned folder in a focus or a favorite folder — and its subfolders — stand in that folder's tree instead.
+      const inCopy = menu.top !== null && (menu.targetDir === menu.top || menu.targetDir.startsWith(`${menu.top}/`))
+      const toFiles = shown !== null && !inCopy && (menu.targetDir === root ? shown.length === 0 || kind === 'dir' : findDirNode(shown, menu.targetDir) === null)
       // The input renders inside the target dir's children, so that dir must be open — and its
       // vault's row with it; `openTo` opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
       // In a copy of Focus or Favorites it opens there too, and in that copy alone (YAZ-3131 S20).
@@ -879,7 +846,7 @@ export function useInlineEdits(
   const startCreate = useCallback(
     (kind: EntryKind, seed = '') => {
       if (menu === null || menu.targetDir === null) return
-      startCreateAt(kind, seed, { targetDir: menu.targetDir, lens: menu.lens, top: menu.top })
+      startCreateAt(kind, seed, { targetDir: menu.targetDir, lens: menu.lens, top: menu.top, place: menu.place })
       setMenu(null)
     },
     [menu, startCreateAt],
@@ -894,6 +861,7 @@ export function useInlineEdits(
         const board = await createBoardFile(vault, creating.parentDir, name, creating.kind, creating.seed)
         setCreating(null)
         refresh(vault)
+        if (creating.place !== undefined) onPlace?.(creating.place, board)
         onOpenFile(board)
         return
       }
@@ -902,13 +870,18 @@ export function useInlineEdits(
       // What was typed is the TITLE (YAZ-2420 🔒 D6, D20): the name on disk is built from it.
       // In a vault that does not use IDs it is the name itself (YAZ-2523 🔒 V3).
       let note: string | null = null
-      if (creating.kind === 'dir') await api.createDir({ path: folderPath(creating.parentDir, name, index.ids), ...(index.ids && { title: name }) })
-      else note = await createNote(creating.parentDir, name, index.ids)
+      let made: string
+      if (creating.kind === 'dir') {
+        made = folderPath(creating.parentDir, name, index.ids)
+        await api.createDir({ path: made, ...(index.ids && { title: name }) })
+      } else made = note = await createNote(creating.parentDir, name, index.ids)
       setCreating(null)
       refresh(vault)
+      // In the list where the New … was picked (YAZ-4782), before the note opens, so its tab lights the new row.
+      if (creating.place !== undefined) onPlace?.(creating.place, made)
       if (note !== null) onOpenFile(note)
     },
-    [creating, refresh, onOpenFile, vaultOf],
+    [creating, refresh, onOpenFile, vaultOf, onPlace],
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])
@@ -943,6 +916,7 @@ export function useInlineEdits(
             seed: creating.seed,
             parentDir: creating.parentDir,
             top: creating.top,
+            ...(creating.place !== undefined && { place: creating.place }),
             onSubmit: submitCreate,
             onCancel: cancelCreate,
           },

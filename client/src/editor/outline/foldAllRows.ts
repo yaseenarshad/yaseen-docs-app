@@ -10,6 +10,7 @@ import type { RowProvider } from '../blockHandleMenu'
 import { setAllDocumentFolds } from './foldAllHotkeys'
 import { isFoldingOn } from './foldingSwitch'
 import { isFoldLocked, toggleFoldLock } from './foldLock'
+import { setOutlineFoldLevel } from './outlineFolding'
 import { DEEPEST_FOLDABLE_LEVEL, headingLevel } from './headingFolding'
 import { childListState } from './numberChildren'
 
@@ -37,9 +38,21 @@ export const foldAllRows: RowProvider = (view, target) => {
     toggleFoldLock(target.inside)(view.state, view.dispatch)
     view.focus()
   }
+  // This bullet's level across the note (YAZ-4786): only when a bullet at that level folds.
+  const level = (collapsed: boolean) => () => {
+    setOutlineFoldLevel(target.inside, collapsed)(view.state, view.dispatch)
+    view.focus()
+  }
+  const levelRows = setOutlineFoldLevel(target.inside, true)(view.state)
+    ? [
+        { label: 'Collapse this level', group: 'children', run: level(true) },
+        { label: 'Expand this level', group: 'children', run: level(false) },
+      ]
+    : []
   return [
     { label: 'Collapse all', hint: hintOf('note.foldAll'), group: 'children', run: fold(true) },
     { label: 'Expand all', hint: hintOf('note.unfoldAll'), group: 'children', run: fold(false) },
+    ...levelRows,
     { label: isFoldLocked(view.state, target.inside) ? 'Unlock' : 'Lock open', group: 'children', run: lock },
   ]
 }

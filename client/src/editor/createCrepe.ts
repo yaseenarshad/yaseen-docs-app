@@ -184,6 +184,10 @@
  *    header, stripes, height, wrap and freeze attributes, and each cell `fill` and `color`
  *    — the SECOND exception to the images rule. A plain table stays the GFM table; one with
  *    settings is the table then the next block `<!-- table: … -->`, joined on load as the line's.
+ *  - A code block's width (YAZ-4783, `code/codeWidth.ts`): the `code_block` node gains `width` and
+ *    `unknownParts` — the THIRD exception. A plain code block stays the fence; one with a width is
+ *    the fence then `<!-- code: width 1300 -->` on the line right under it, joined on load as the
+ *    table's. A node decoration sizes the box; its right edge drags the width, written on mouseup.
  *  - Cell notes (YAZ-3818 D4, D12, `table/cellNotes.ts`): a footnote labelled `cell-N` is a `cell_note` block, hidden
  *    in the note view; after a table, a cell note or a mark moves, each cell note goes back under its table. Its mark
  *    is a corner triangle; the "Add cell note" button (`table/cellNoteButton.ts`), a click on the mark, ⌘. on a plain
@@ -216,7 +220,7 @@
  *  - Fold rows (YAZ-4165, `table/tableFold.ts`): a run of folded rows is one bar, drawn by row decorations; a
  *    mousedown on the bar opens it, also just before `tableEditing`, so it starts no cell selection.
  *  - The row band (YAZ-4167, `table/tableRowBand.ts`): one decoration on the caret's body row, the mouse's by CSS;
- *    Settings › Editor › Tables › Row band is `data-table-row-band` on `.app`.
+ *    Settings › Tables › All tables › Row band is `data-table-row-band` on `.app`.
  *  - The table zoom (YAZ-4091, `table/tableZoomPill.tsx`): the page zoom pill (`DocumentZoom`) in a widget before each
  *    table sets its `zoom`; `table.css` zooms the block's content, so it multiplies with the page zoom.
  *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
@@ -248,7 +252,7 @@ import {
   wrapInHeadingCommand,
   wrapInOrderedListInputRule,
 } from '@milkdown/kit/preset/commonmark'
-import { extendListItemSchemaForTask, wrapInTaskListInputRule as gfmTaskListInputRule } from '@milkdown/kit/preset/gfm'
+import { extendListItemSchemaForTask, keepTableAlignPlugin, wrapInTaskListInputRule as gfmTaskListInputRule } from '@milkdown/kit/preset/gfm'
 import { type Command, Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
@@ -287,6 +291,7 @@ import { inlineBreaks } from './inlineBreaks'
 import { textStringify } from './textStringify'
 import { lineStyle } from './line/lineStyle'
 import { tableStyle } from './table/tableStyle'
+import { codeBlockWidth, codeCommentStringify } from './code/codeWidth'
 import { cellBlocksOnly } from './table/cellBlocks'
 import { cellNotes, withoutEmptyCellNotes } from './table/cellNotes'
 import { cellNoteButton } from './table/cellNoteButton'
@@ -328,11 +333,13 @@ import { headingLevelTag } from './outline/headingLevelTag'
 import { headingText } from './outline/headingText'
 import { foldAllHotkeys, foldsChanged } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
+import { addLineCodeKeys, addLineKeymap, addLineViews } from './outline/addLineBeside'
 import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { listMarkers } from './outline/listMarkers'
 import { listMarkerTyping, undoListMarker, wrapInTaskListInputRule } from './listMarkerTyping'
 import { typingArrows, undoTypingArrow } from './typingArrows'
+import { enterKeepsStyle, enterKeepsStyleInNotes } from './enterKeepsStyle'
 import { createFoldingSwitch } from './outline/foldingSwitch'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
@@ -352,6 +359,8 @@ import { claimPage } from '../lib/readOnlyCaret'
 import { toDisplay, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { keyRow, keysOf } from '@shared/keys'
 import { applyNoteKeys, noteHotkeysCtx } from './noteKeys'
+import { codeBlockFind } from './find/codeBlockFind'
+import { blockConfig } from '@milkdown/kit/plugin/block'
 
 export interface CreateCrepeOptions {
   root: HTMLElement
@@ -401,8 +410,8 @@ export interface CreateCrepeOptions {
   /** First-class images (YAZ-1656): root + note path for src resolution, the lightbox opener, the paste notice. Absent → stock `<img>`, and pasted image bytes are not written. */
   image?: ImageOptions
   /**
-   * Feature overrides for a NON-note instance (YAZ-901's bullets-only outline editor passes
-   * `outlineFeatures`). The note editor passes none and gets `featureConfig.ts`'s allowlist
+   * Feature overrides for a NON-note instance (a drawing's text box). The note editor passes
+   * none and gets `featureConfig.ts`'s allowlist
    * verbatim — which is what `featureConfig.test.ts` keeps honest.
    */
   features?: Partial<Record<CrepeFeature, boolean>>
@@ -435,6 +444,8 @@ export interface CreateCrepeOptions {
   hidden?: { toolbar?: readonly string[]; slash?: readonly string[] }
   /** A NON-note instance's own toolbar buttons (YAZ-4277 1E: a drawing text box's letter colors), added before the build. */
   extendToolbar?: (builder: ToolbarBuilder) => void
+  /** Whether Enter keeps the line's style (YAZ-3746 13AB). Absent → the notes' switch; a drawing text box passes its own. */
+  enterKeepsStyle?: () => boolean
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
@@ -613,7 +624,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from
       // app.css `--code-*` so they follow Appearance (codeTheme.ts replaces Crepe's One Dark).
       // `codeLines` (YAZ-2643 D8): a code block's own line numbers are lines of the file while the numbers show.
-      [CrepeFeature.CodeMirror]: { theme: codeTheme, extensions: [CodeMirrorView.lineWrapping, codeLines] },
+      // `addLineCodeKeys` (YAZ-4800 demo): ⌘↵ / ⌘⇧↵ add a line below / above the code block, before Crepe's exit-code.
+      [CrepeFeature.CodeMirror]: { theme: codeTheme, extensions: [CodeMirrorView.lineWrapping, codeLines, codeBlockFind, addLineCodeKeys] },
     },
   })
   crepe.editor.use(
@@ -634,8 +646,14 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(highlightPanel)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
-  // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.
+  // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment. Milkdown's
+  // column-alignment keeper reads the header row by a cell's index, wrong under a merged cell (YAZ-4792); ours is in `tableStyle`.
+  void crepe.editor.remove(keepTableAlignPlugin)
   crepe.editor.use(tableStyle)
+  // A code block's own width (YAZ-4783): the fence + the `<!-- code: width 1300 -->` line right under it, the right
+  // edge's grip and its drag. The join rule keeps the comment on the line under the fence.
+  crepe.editor.use(codeBlockWidth)
+  crepe.editor.config(codeCommentStringify)
   // Cell notes (YAZ-3818 D4, D12): a `cell-N` footnote is a `cell_note`, hidden, and it stays under its table. Before
   // `inlineBreaks`: its remark step reads a footnote's `<br />` line first.
   crepe.editor.use(cellNotes)
@@ -769,6 +787,22 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(clipboardCopyOut)
   crepe.editor.use(copyVisibleHotkey)
   crepe.editor.use(blockHandleGate)
+  // YAZ-4800: a table that is a bullet's first block is no handle target of its own (the table's handle stood on the
+  // bullet's dot and took its right-click). The handle goes to the bullet, left of the dot, as a code block's does; its
+  // menu holds the bullet strip and the table's settings (`tableRows`). Crepe's own rule stays: nothing inside a table,
+  // a quote or inline math.
+  // Only where the handle is on: an editor built without it (a preview) has no `blockConfig` to set.
+  // A statement, not `&&`: a config callback returns void (YAZ-4800, tsc).
+  crepe.editor.config((ctx) => {
+    if (!ctx.isInjected(blockConfig.key)) return
+    ctx.set(blockConfig.key, {
+      filterNodes: (pos, node) => {
+        if (node.type.name === 'table' && pos.parent.type.name === 'list_item' && pos.index() === 0) return false
+        for (let depth = pos.depth; depth > 0; depth--) if (['table', 'blockquote', 'math_inline'].includes(pos.node(depth).type.name)) return false
+        return true
+      },
+    })
+  })
   // YAZ-3727 D8, D9: Milkdown's list typing rules fire inside bullets and on Enter, and undo badly; ours
   // replace them (plain lines, a typed space, a clean undo). The toolbar's Numbered button (YAZ-3806 T2) is the click
   // path; Mod-Alt-7 and the slash-menu row stay absent. GFM's `[ ] ` rule reached past a table cell (YAZ-3818).
@@ -776,6 +810,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listMarkerTyping).use(undoListMarker).use(wrapInTaskListInputRule)
   // Arrows while typing (YAZ-4273): `->` → `→` and the rest, off from Settings › Editor › Typing.
   crepe.editor.use(typingArrows).use(undoTypingArrow)
+  // Enter keeps the text style (YAZ-3746 13AB): off in notes, on in drawing text boxes, from Settings › Editor › Typing.
+  crepe.editor.use(enterKeepsStyle(opts.enterKeepsStyle ?? enterKeepsStyleInNotes))
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its kind (the toolbar's list
   // buttons and T in one strip, YAZ-3727 D13, D14), its children (Number children, when it has any), its
   // own numbered list as bullets with written numbers (YAZ-3727 D12),
@@ -804,6 +840,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(foldsChanged)
   crepe.editor.use(headingHotkeys)
   crepe.editor.use(obsidianHotkeys)
+  // YAZ-4800 demo: ⌘↵ / ⌘⇧↵ in a table add a line below / above it (priority 200, above the ⌘↵ above); the code block's
+  // keys find their editor through `addLineViews`.
+  crepe.editor.use(addLineKeymap).use(addLineViews)
   crepe.editor.use(escapeToSidebar)
   crepe.editor.use(zoomKeymap)
   // YAZ-1734 D3: a list_item left without its own paragraph (its line deleted) yields its children one level up, whatever path produced it.

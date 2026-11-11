@@ -142,6 +142,8 @@ async function flush(): Promise<void> {
   draw()
 }
 
+/** A table row's `#` cell: its only drag source (YAZ-4603 D53). */
+const gripOf = (el: ParentNode, name: string): HTMLElement => rowOf(el, name).querySelector<HTMLElement>('td.view-table__gutter')!
 function rowOf(el: ParentNode, name: string): HTMLElement {
   const btn = [...el.querySelectorAll<HTMLElement>('.view-table__name')].find((b) => b.textContent === name)
   const tr = btn?.closest<HTMLElement>('tr')
@@ -162,19 +164,20 @@ const headersOf = (el: ParentNode, label: string): HTMLElement[] =>
     (x) => x.querySelector('.view-group__value')?.textContent === label,
   )
 
-/** Nested table as `{ 'Outer': [direct rows], 'Outer/Inner': [rows] }`, in document order. */
+/** Nested table as `{ 'Outer': [direct rows], 'Outer/Inner': [rows], 'Outer/Inner/Third': [rows] }`, in document order. */
 function nestedSections(el: ParentNode): Record<string, string[]> {
   const out: Record<string, string[]> = {}
-  let outer = ''
+  const path: string[] = []
   let current = ''
   for (const tr of el.querySelectorAll('tbody tr')) {
     if (tr.classList.contains('view-table__group')) {
       const label = q(tr, '.view-group__value').textContent ?? ''
-      const nested = q(tr, 'td').classList.contains('view-table__group-cell--nested')
-      if (nested) current = `${outer}/${label}`
-      else outer = current = label
+      const depth = Number(q<HTMLElement>(tr, 'td').style.getPropertyValue('--depth'))
+      path.length = depth
+      path.push(label)
+      current = path.join('/')
       out[current] = []
-    } else if (!tr.classList.contains('view-table__spacer')) {
+    } else if (!tr.classList.contains('view-table__spacer') && !tr.classList.contains('view-table__new')) {
       out[current]?.push(q(tr, '.view-table__name').textContent ?? '')
     }
   }
@@ -202,7 +205,7 @@ describe('drag at each level (YAZ-1101)', () => {
 
   it('a drop between inner groups under the same outer writes the inner property only', () => {
     const { el } = mount(NESTED_TABLE)
-    fire(rowOf(el, 'alpha1'), 'dragstart')
+    fire(gripOf(el, 'alpha1'), 'dragstart')
     fire(rowOf(el, 'alpha2'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha1.md', 'proc', 'p2')
     expect(nestedSections(el)['A/p2']).toContain('alpha1')
@@ -210,7 +213,7 @@ describe('drag at each level (YAZ-1101)', () => {
 
   it('🔒 a drop into an inner group under a DIFFERENT outer writes BOTH properties and lands there', async () => {
     const { el, setRecords } = mount(NESTED_TABLE)
-    fire(rowOf(el, 'alpha2'), 'dragstart')
+    fire(gripOf(el, 'alpha2'), 'dragstart')
     fire(rowOf(el, 'beta1'), 'drop')
     expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', [
       { key: 'proc', value: 'p1', prevRaw: 'p2' },
@@ -228,7 +231,7 @@ describe('drag at each level (YAZ-1101)', () => {
 
   it('a drop on an outer header writes the outer property only; the inner value rides along', () => {
     const { el } = mount(NESTED_TABLE)
-    fire(rowOf(el, 'beta1'), 'dragstart')
+    fire(gripOf(el, 'beta1'), 'dragstart')
     fire(headersOf(el, 'A')[0], 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/beta1.md', 'dept', 'A')
     expect(nestedSections(el)['A/p1']).toContain('beta1')
@@ -237,7 +240,7 @@ describe('drag at each level (YAZ-1101)', () => {
   it('inner fan-out keeps D3: a drop swaps the element it left for the one it entered', () => {
     const records = [rec('both', { dept: 'A', proc: ['p1', 'p2'] }), rec('one', { dept: 'A', proc: ['p1'] })]
     const { el } = mount(NESTED_TABLE, { records })
-    fire(rowOf(el, 'one'), 'dragstart')
+    fire(gripOf(el, 'one'), 'dragstart')
     fire(headersOf(el, 'p2')[0], 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/one.md', 'proc', ['p2'])
   })
@@ -293,18 +296,29 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', 'proc', 'p1')
   })
 
+  it.each(['list', 'cards'])('%s: a formula outer has no "+", and its writable inner level keeps it, as in Table and Board (YAZ-4544)', (type) => {
+    const { el } = mount(FORMULA_OUTER_TABLE.replace('type: table', `type: ${type}`))
+    const plus = (label: string) => el.querySelector(`[aria-label="New note in group ${label}"]`)
+    expect(plus('A')).toBeNull()
+    expect(plus('B')).toBeNull()
+    expect(plus('p1')).not.toBeNull()
+    act(() => (plus('p1') as HTMLElement).click())
+    expect(create).toHaveBeenCalledOnce()
+    expect(seed()).toEqual({ proc: 'p1' })
+  })
+
   it('the outer has no "+" and rejects drops; inner drag still writes, without the outer', () => {
     const { el } = mount(FORMULA_OUTER_TABLE)
     // outer headers (A, B) carry no "+"; inner headers (p1, p2) keep theirs
     expect(headersOf(el, 'A')[0].querySelector('[aria-label^="New note"]')).toBeNull()
     expect(headersOf(el, 'p1')[0].querySelector('[aria-label^="New note"]')).not.toBeNull()
 
-    fire(rowOf(el, 'beta1'), 'dragstart')
+    fire(gripOf(el, 'beta1'), 'dragstart')
     fire(headersOf(el, 'A')[0], 'drop')
     expect(write).not.toHaveBeenCalled()
 
     // cross-outer inner drop: only the writable (inner) property is written
-    fire(rowOf(el, 'alpha2'), 'dragstart')
+    fire(gripOf(el, 'alpha2'), 'dragstart')
     fire(rowOf(el, 'beta1'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', 'proc', 'p1')
   })
@@ -314,5 +328,66 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
     act(() => q<HTMLElement>(el, '[aria-label="New note in group p2"]').click())
     draw()
     expect(seed()).toEqual({ proc: 'p2' })
+  })
+})
+
+const THREE_TABLE = NESTED_TABLE.replace('      - property: note.proc\n', '      - property: note.proc\n      - property: note.step\n')
+const THREE_BOARD = THREE_TABLE.replace('type: table', 'type: board').replace('name: T', 'name: B')
+const THREE_RECORDS: IndexRecord[] = [
+  rec('a1', { dept: 'A', proc: 'p1', step: 's1' }),
+  rec('a2', { dept: 'A', proc: 'p2', step: 's2' }),
+  rec('b1', { dept: 'B', proc: 'p1', step: 's1' }),
+  rec('b3', { dept: 'B', proc: 'p3', step: 's3' }),
+]
+
+describe('three levels (YAZ-4531)', () => {
+  it('a Table drop on a level-3 group in another branch writes all three values in ONE move and lands there', () => {
+    const { el } = mount(THREE_TABLE, { records: THREE_RECORDS })
+    fire(gripOf(el, 'a1'), 'dragstart')
+    fire(rowOf(el, 'b3'), 'drop')
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/a1.md', [
+      { key: 'step', value: 's3', prevRaw: 's1' },
+      { key: 'proc', value: 'p3', prevRaw: 'p1' },
+      { key: 'dept', value: 'B', prevRaw: 'A' },
+    ])
+    expect(write).not.toHaveBeenCalled()
+    expect(nestedSections(el)['B/p3/s3']).toContain('a1')
+  })
+
+  it('a drop writes only the levels that differ from the row\'s own branch', () => {
+    const records = [...THREE_RECORDS, rec('a1b', { dept: 'A', proc: 'p1', step: 's9' })]
+    const { el } = mount(THREE_TABLE, { records })
+    fire(gripOf(el, 'a1'), 'dragstart')
+    fire(rowOf(el, 'a1b'), 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/a1.md', 'step', 's9')
+    fire(gripOf(el, 'a2'), 'dragstart')
+    fire(rowOf(el, 'a1b'), 'drop') // A/p2/s2 → A/p1/s9: level 1 matches, so it writes levels 3 and 2 only
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/a2.md', [
+      { key: 'step', value: 's9', prevRaw: 's2' },
+      { key: 'proc', value: 'p1', prevRaw: 'p2' },
+    ])
+  })
+
+  it('a Board drop on a level-3 section writes all three values once, without bubbling into its parents', () => {
+    const { el } = mount(THREE_BOARD, { records: THREE_RECORDS })
+    fire(cardOf(el, 'a1'), 'dragstart')
+    fire(cardOf(el, 'b3'), 'drop')
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/a1.md', [
+      { key: 'step', value: 's3', prevRaw: 's1' },
+      { key: 'proc', value: 'p3', prevRaw: 'p1' },
+      { key: 'dept', value: 'B', prevRaw: 'A' },
+    ])
+  })
+
+  it('a level-3 "+" seeds every ancestor, in Table and Board', () => {
+    for (const text of [THREE_TABLE, THREE_BOARD]) {
+      create.mockClear()
+      const { el } = mount(text, { records: THREE_RECORDS })
+      act(() => q<HTMLElement>(el, '[aria-label="New note in group s3"]').click())
+      draw()
+      expect(seed()).toEqual({ dept: 'B', proc: 'p3', step: 's3' })
+      act(() => root?.unmount())
+      container?.remove()
+    }
   })
 })

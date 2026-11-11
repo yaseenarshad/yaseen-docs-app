@@ -134,11 +134,19 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'typingArrows', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'typingArrows', 'enterKeepsStyleNotes', 'enterKeepsStyleBoxes', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'findFolds', 'outsideChangeGlow', 'outsideListPinned', 'codeBlockWidth']
+/**
+ * Settings › Tables (YAZ-4775), after Editor: the note tables' rows, moved off the Editor page with their keys. "All tables"
+ * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).
+ */
+const TABLES_ROWS = ['tableHeaderRow', 'tableWidth', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
-const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Typing', 'Table of contents', 'Outside changes', 'Tables', 'Cell notes', 'Calendar tables']
+// Find (YAZ-4787) after Table of contents; Code blocks (YAZ-4783) last; the table groups have their own page (YAZ-4775).
+const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Typing', 'Table of contents', 'Find', 'Outside changes', 'Code blocks']
+/** The groups of the Tables page (YAZ-4775): "All tables" (the Editor page's "Tables" before), Cell notes, Calendar tables. */
+const TABLES_GROUPS = ['All tables', 'Cell notes', 'Calendar tables']
 /**
  * Settings › Drawings and diagrams (YAZ-3037; the name since YAZ-4748 D11): one row per `CanvasPrefs` key the page shows, in
  * its groups, then the draw.io diagrams group, whose one row moved here from Appearance.
@@ -149,7 +157,10 @@ const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPa
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
 // Daily notes (YAZ-3607 D12): off by default, so its group shows the switch alone.
 // New boards keep pictures and Allowed picture folders (YAZ-3943 demo 2, round 3); Links in drawings and diagrams (demo 2).
-const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`)]
+const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`)]
+/** Settings › Folder pages (YAZ-4585): its personal rows, with the folder views' hover row moved from Files & Links, the view defaults, the page default. */
+// Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
+const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'calendarScale', 'cardTitles', 'hideWeekends', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
@@ -283,17 +294,17 @@ describe('SettingsDialog shell (D1)', () => {
 describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
   it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Sync', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Sync', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
-    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Review', 'Sync', '—', 'Memory', 'Hotkeys'])
   })
 
   it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
-    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'review', 'sync', 'memory', 'storage', 'sharing', 'hotkeys'])
+    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'tables', 'code', 'canvas', 'images', 'files', 'folderPages', 'review', 'sync', 'memory', 'storage', 'sharing', 'hotkeys'])
   })
 
   it('opens on General, the first page: the one section in the pane, anchored by id, with only its rows — no row of a later section is there (YAZ-3276 D7)', () => {
@@ -304,7 +315,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(currentNav(el)).toBe('General')
     expect(currentKind(el)).toBe('page')
     expect(pane(el).scrollTop).toBe(0)
-    for (const id of [...APPEARANCE_ROWS, ...EDITOR_ROWS, ...CANVAS_ROWS, ...IMAGES_ROWS, ...FILES_ROWS, ...REVIEW_ROWS, 'githubSync', ...HOTKEY_ROWS]) expect(row(el, id)).toBeNull()
+    for (const id of [...APPEARANCE_ROWS, ...EDITOR_ROWS, ...TABLES_ROWS, ...CANVAS_ROWS, ...IMAGES_ROWS, ...FILES_ROWS, ...REVIEW_ROWS, 'githubSync', ...HOTKEY_ROWS]) expect(row(el, id)).toBeNull()
   })
 
   it('a nav click shows only that section: its heading, its anchor id and its rows in registry order, every row addressed by data-setting, and it alone is aria-current="page"', () => {
@@ -325,10 +336,12 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Sidebar', 'settings-sidebar', SIDEBAR_ROWS),
       page('Notifications', 'settings-notifications', NOTIFICATIONS_ROWS),
       page('Editor', 'settings-editor', EDITOR_ROWS),
+      page('Tables', 'settings-tables', TABLES_ROWS),
       page('Code', 'settings-code', CODE_ROWS),
       page('Drawings and diagrams', 'settings-canvas', CANVAS_ROWS),
       page('Images', 'settings-images', IMAGES_ROWS),
       page('Files & Links', 'settings-files', FILES_ROWS),
+      page('Folder pages', 'settings-folderPages', FOLDER_PAGES_ROWS),
       page('Review', 'settings-review', REVIEW_ROWS),
       page('Sync', 'settings-sync', ['githubSync']),
       page('Memory', 'settings-memory', ['memoryWindows', 'tabSleepAfter', 'memoryReload']),
@@ -361,7 +374,12 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     clickNav(el, 'Editor')
     expect(groupTitles(el)).toEqual(EDITOR_GROUPS)
-    expect(hints()).toEqual([OUTLINE_HINT, THREADING_HINT, SECTION_INDENT_HINT, 'The buttons over a selection, as the preview shows them. Drag a square to move it, or a group by its handle; click a square to hide or show it. Hotkeys keep working.', TOC_HINT, OUTSIDE_CHANGES_HINT])
+    expect(hints()).toEqual([OUTLINE_HINT, THREADING_HINT, SECTION_INDENT_HINT, 'The buttons over a selection, as the preview shows them. Drag a square to move it, or a group by its handle; click a square to hide or show it. Hotkeys keep working.', TOC_HINT, 'What ⌘F does with folded bullets and headings. The find bar’s fold button changes it for one note.', OUTSIDE_CHANGES_HINT])
+    // The table groups have their own page (YAZ-4775), with no group hints.
+    clickNav(el, 'Tables')
+    expect(groupTitles(el)).toEqual(TABLES_GROUPS)
+    expect(hints()).toEqual([])
+    clickNav(el, 'Editor')
     // The threading rows carry the shortened labels; the group names the feature.
     expect(['bulletThreading', 'threadWidth', 'threadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Bullet threading default', 'Line width', 'Line colour'])
     for (const id of ['bulletThreading', 'threadWidth', 'threadColor']) expect(row(el, id)?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Bullet threading')
@@ -384,10 +402,12 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Sidebar', []],
       ['Notifications', []],
       ['Editor', []],
+      ['Tables', []],
       ['Code', []],
       ['Drawings and diagrams', []],
       ['Images', []],
       ['Files & Links', []],
+      ['Folder pages', []],
       ['Review', [['settings-review', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
       ['Sync', [['settings-sync', "These settings are saved in this vault's .yaseendocs folder, not app-wide."]]],
       ['Memory', [['settings-memory', 'The app frees memory by itself. A tab that you do not use goes to sleep. A window that gets too big reloads. You do not need to do anything here.']]],
@@ -409,10 +429,12 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Sidebar', []],
       ['Notifications', []],
       ['Editor', []],
+      ['Tables', []],
       ['Code', []],
       ['Drawings and diagrams', []],
       ['Images', []],
       ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
+      ['Folder pages', []],
       ['Review', [{ text: 'Vault: Work', under: 'Review', className: 'settings-section__note' }]],
       ['Sync', [{ text: 'Vault: Work', under: 'Sync', className: 'settings-section__note' }]],
       ['Memory', []],
@@ -438,7 +460,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(groupTitles(el).slice(0, 2)).toEqual(['⌘D', '⌘K'])
     // Then the clicks and drags, one card per gesture (YAZ-3936): Click first, then the modified clicks, then the rest.
     const titles = groupTitles(el)
-    expect(titles.slice(titles.indexOf('Actions with no key'))).toEqual(['Actions with no key', 'Clicks and drags', 'Click', '⌘-click', '⇧-click', '⌥-click', '⌘⇧-click', 'Drag', '/', 'Right-click', 'Double-click', 'Clicks with no gesture'])
+    expect(titles.slice(titles.indexOf('Actions with no key'))).toEqual(['Actions with no key', 'Clicks and drags', 'Click', '⌘-click', '⇧-click', '⌥-click', '⌘⇧-click', 'Drag', '/', '⇧↩', 'Right-click', 'Double-click', 'Clicks with no gesture'])
     expect(rowIds(el)).toEqual(HOTKEY_ROWS)
     // A changeable key is a button (D6); a built-in one is text (D8).
     expect(row(el, 'hotkey-settings')?.querySelector('.hotkeys__key')?.textContent).toBe('⌘,')
@@ -453,7 +475,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Sync')
     expect(currentNav(el)).toBe('Sync')
     act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', '—', 'Memory', 'Hotkeys'])
     expect(headings(el)).toEqual(['General'])
     expect(currentNav(el)).toBe('General')
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
@@ -798,8 +820,9 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     ])
   })
 
+  // The table rows have their own page since YAZ-4775: Settings › Tables, after Editor, each with its key.
   it('"Tables" (YAZ-4162 D6, D14): "Mark the current time" Line · Tint · Both, Line by default; "Dim past rows" Off · Grey text · Grey text and shade, the shade by default; each writes only its own field', () => {
-    const { el, onChange } = mountOn('Editor')
+    const { el, onChange } = mountOn('Tables')
     expect(row(el, 'tableNowMark')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Calendar tables')
     expect(row(el, 'tableNowMark')?.querySelector('.setting__label')?.textContent).toBe('Mark the current time')
     expect(rowButtons(el, 'tableNowMark').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Line', 'true'], ['Tint', 'false'], ['Both', 'false']])
@@ -813,7 +836,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('"Tables" › Calendar day (YAZ-4163 demo): "from" and "to" in 30 minute steps, 5:00 am to 10:00 pm by default; "to" lists only times after "from"', () => {
-    const { el, onChange } = mountOn('Editor')
+    const { el, onChange } = mountOn('Tables')
     expect(row(el, 'tableCalendarDay')?.querySelector('.setting__label')?.textContent).toBe('Calendar day')
     const [from, to] = Array.from(row(el, 'tableCalendarDay')!.querySelectorAll('select'))
     const label = (select: HTMLSelectElement) => select.options[select.selectedIndex].textContent
@@ -828,10 +851,12 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('"Tables" › Row band (YAZ-4167 D16): the group\'s first row, Off · Calendar tables · All tables, All tables by default; it writes only its own field', () => {
-    const { el, onChange } = mountOn('Editor')
+    const { el, onChange } = mountOn('Tables')
     const group = row(el, 'tableRowBand')?.closest('.settings-group')
-    expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Tables')
-    expect(group?.querySelector('.setting')).toBe(row(el, 'tableRowBand'))
+    // "All tables" since YAZ-4775 (on the Tables page a second "Tables" read as "Tables › Tables"); Header row (YAZ-4774)
+    // and Width (YAZ-4783) stand before Row band now.
+    expect(group?.querySelector('.settings-group__title')?.textContent).toBe('All tables')
+    expect([...group!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting).slice(0, 3)).toEqual(['tableHeaderRow', 'tableWidth', 'tableRowBand'])
     expect(row(el, 'tableRowBand')?.querySelector('.setting__label')?.textContent).toBe('Row band')
     expect(rowButtons(el, 'tableRowBand').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'false'], ['Calendar tables', 'false'], ['All tables', 'true']])
     act(() => rowButtons(el, 'tableRowBand')[1].click())
@@ -839,7 +864,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('Calendar tables › Now button (YAZ-4163 demo): On by default; Off writes only its own field', () => {
-    const { el, onChange } = mountOn('Editor')
+    const { el, onChange } = mountOn('Tables')
     expect(row(el, 'tableNowButton')?.querySelector('.setting__label')?.textContent).toBe('Now button')
     expect(rowButtons(el, 'tableNowButton').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
     act(() => rowButtons(el, 'tableNowButton')[1].click())
@@ -847,7 +872,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('Calendar tables › Shade darkness (YAZ-4163 demo): 6% by default, a stepper in steps of 2 from 2% to 30%, and Reset off the default', () => {
-    const { el, onChange } = mountOn('Editor')
+    const { el, onChange } = mountOn('Tables')
     expect(row(el, 'tableShadeDarkness')?.querySelector('.setting__label')?.textContent).toBe('Shade darkness')
     expect(row(el, 'tableShadeDarkness')?.textContent).toContain('6%')
     const plus = row(el, 'tableShadeDarkness')!.querySelector<HTMLButtonElement>('button[aria-label="Shade darkness larger"]')!
@@ -856,7 +881,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('Tables › Band strength (the YAZ-3818 demo): a % you type, kept on ⏎ and clamped to 1–60; − and + step by 1', () => {
-    const { el, onChange } = mountOn('Editor')
+    const { el, onChange } = mountOn('Tables')
     const input = row(el, 'tableBandStrength')!.querySelector<HTMLInputElement>('input[aria-label="Band strength"]')!
     expect(input.value).toBe('10')
     const set = (text: string) => {
@@ -876,18 +901,18 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
   it('Calendar tables › Shade darkness shows only with "Grey text and shade", on the page and in a search (YAZ-4176)', () => {
     for (const tableDimPast of ['off', 'text'] as const) {
-      const { el } = mountOn('Editor', { ...DEFAULT_SETTINGS, tableDimPast })
+      const { el } = mountOn('Tables', { ...DEFAULT_SETTINGS, tableDimPast })
       expect(row(el, 'tableDimPast')).not.toBeNull()
       expect(row(el, 'tableShadeDarkness')).toBeNull()
       type(searchInput(el), 'shade darkness')
       expect(rowIds(el)).not.toContain('tableShadeDarkness')
     }
-    const { el } = mountOn('Editor', { ...DEFAULT_SETTINGS, tableDimPast: 'shade' })
+    const { el } = mountOn('Tables', { ...DEFAULT_SETTINGS, tableDimPast: 'shade' })
     expect(row(el, 'tableShadeDarkness')).not.toBeNull()
   })
 
   it('Calendar tables › Time format (YAZ-4163 D15, demo): the ready styles as 9:00 am, 9:00am, 9am / 9:30am, 09:00 and Custom…; Custom… previews the draft; a style the app cannot read back keeps the stored one and says why; a good one is written', () => {
-    const { el, onChange } = mountOn('Editor')
+    const { el, onChange } = mountOn('Tables')
     const select = row(el, 'tableTimeFormat')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
     expect([...select.options].map((o) => o.textContent)).toEqual(['9:00 am', '9:00am', '9am / 9:30am', '09:00', 'Custom…'])
     expect(select.selectedIndex).toBe(0)
@@ -1249,7 +1274,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     pressEnter(input)
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, newNoteTitleTemplate: '{MM}-{DD} ' })
     unmount()
-    const editor = mountOn('Editor')
+    const editor = mountOn('Tables')
     const box = row(editor.el, 'tableCellNoteTemplate')!.querySelector<HTMLTextAreaElement>('textarea')!
     act(() => {
       Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set?.call(box, '- see a/b')
@@ -1342,7 +1367,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     const { el } = mount()
     expect(navByTitle(el, 'Review')).toBeUndefined()
     const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
-    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Memory', 'Hotkeys'])
+    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Memory', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 
@@ -1457,10 +1482,10 @@ describe('SettingsDialog search (D6)', () => {
     const { el, onChange } = mount({ ...DEFAULT_SETTINGS }, status())
     type(searchInput(el), 'dark')
     // On Hotkeys each hit is under its key's card (YAZ-3564): draw.io's ⌘⇧6, and the canvas's no-key row.
-    // And the guide lines' darkness (YAZ-4094 G3) and the calendar tables' shade darkness (YAZ-4163 demo), on the Editor page.
+    // And the guide lines' darkness (YAZ-4094 G3) on the Editor page, and the calendar tables' shade darkness (YAZ-4163 demo), on the Tables page (YAZ-4775).
     // And "Text color follows the fill" (YAZ-4404 4H) on the Drawings and diagrams page: its hint says "A dark fill".
     // The draw.io row is that page's last group since YAZ-4748 D11.
-    expect(headings(el)).toEqual(['Appearance', 'Editor › Outline', 'Editor › Calendar tables', 'Drawings and diagrams › New elements', 'Drawings and diagrams › draw.io diagrams', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
+    expect(headings(el)).toEqual(['Appearance', 'Editor › Outline', 'Tables › Calendar tables', 'Drawings and diagrams › New elements', 'Drawings and diagrams › draw.io diagrams', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
     expect(rowIds(el)).toEqual(['theme', 'guideLineDarkness', 'tableShadeDarkness', 'canvas.fillSetsTextColor', 'diagramDarkColors', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
     expect(sections(el)).toEqual([]) // the page is gone while the query stands
     act(() => rowButtons(el, 'theme')[2].click())
@@ -1472,10 +1497,11 @@ describe('SettingsDialog search (D6)', () => {
     // "threading" is in one group's title and in the hint of Section indent, which names that group: both groups' rows, each under its own breadcrumb (Table of contents, between them, has no hit).
     // The sidebar's line style names bullet threading too (YAZ-3309 D7): its one row, under its own breadcrumb, first in registry order.
     type(searchInput(el), 'threading')
-    expect(headings(el)).toEqual(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent'])
+    // And a grouped folder table's Group line style (YAZ-4798), whose hint names the sidebar's thread.
+    expect(headings(el)).toEqual(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Folder pages › View defaults'])
     expect(groupTitles(el)).toEqual([])
-    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT, SECTION_INDENT_HINT])
-    expect(rowIds(el)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
+    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT, SECTION_INDENT_HINT, 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them.'])
+    expect(rowIds(el)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'folderPages.groupLineStyle'])
     // "guide lines" finds the three guide line rows of Outline (YAZ-4094), under the one breadcrumb.
     type(searchInput(el), 'guide lines')
     expect(headings(el)).toEqual(['Editor › Outline'])
@@ -1493,17 +1519,22 @@ describe('SettingsDialog search (D6)', () => {
     // The sidebar's line style (YAZ-3309 D7) names bullet threading: it leads, on Appearance.
     // The Selection toolbar row has "bullet" among its words (YAZ-3806 T7). Outline's hint names bullets (YAZ-4094): its four rows.
     type(searchInput(el), 'bullet')
-    // The bullets in cells (YAZ-3818 demo): Tables and Cell notes too.
+    // Find (YAZ-4787): its hint names folded bullets.
+    // The bullets in cells (YAZ-3818 demo): All tables and Cell notes too, on the Tables page since YAZ-4775.
     // The fold arrows of a drawing's text boxes (YAZ-4277 D5, D7): their group's hint names a bullet.
-    const settingsHits = ['Sidebar › Level lines', 'Editor › Outline', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents', 'Editor › Tables', 'Editor › Cell notes', 'Drawings and diagrams › Fold arrows']
-    expect(headings(el).slice(0, 9)).toEqual(settingsHits)
+    // A grouped folder table's Group line style (YAZ-4798), which names bullet threading, as in the "threading" search.
+    const settingsHits = ['Sidebar › Level lines', 'Editor › Outline', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents', 'Editor › Find', 'Tables › All tables', 'Tables › Cell notes', 'Drawings and diagrams › Fold arrows', 'Folder pages › View defaults']
+    expect(headings(el).slice(0, settingsHits.length)).toEqual(settingsHits)
     // On Hotkeys a hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5), under its key's card (YAZ-3564).
     // The clicks follow the keys (YAZ-3936): the three "Bullet dots" rows, and the built-in clicks of bullet lines and fold arrows.
     expect(headings(el).slice(-3)).toEqual(['Hotkeys › Click', 'Hotkeys › ⌘-click', 'Hotkeys › ⇧-click'])
-    expect(headings(el).slice(9).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
+    expect(headings(el).slice(settingsHits.length).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
     expect(rowIds(el).slice(0, 16)).toEqual(['sidebarLineStyle', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines'])
     expect(new Set(rowIds(el).slice(16))).toEqual(
       new Set([
+        // Find's fold row (YAZ-4787) and the Group line style (YAZ-4798).
+        'findFolds',
+        'folderPages.groupLineStyle',
         // The cell notes' rows (YAZ-3818 demo): the bullets in cells and the template.
         'tableCellBulletIndent',
         'tableCellBulletGap',
@@ -1582,7 +1613,7 @@ describe('SettingsDialog search (D6)', () => {
     const { el, onClose } = mount()
     // As it opens: General (YAZ-3276 D7).
     type(searchInput(el), 'trash')
-    expect(rowIds(el)).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkey-app-trash']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20)
+    expect(rowIds(el)).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'folderPages.askBeforeDelete', 'hotkey-app-trash']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20), and so does a folder page's delete (YAZ-4592)
     pressEscape(searchInput(el))
     expect(onClose).not.toHaveBeenCalled()
     expect(searchInput(el).value).toBe('')

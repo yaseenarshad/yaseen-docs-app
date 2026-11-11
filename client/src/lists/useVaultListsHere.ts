@@ -346,6 +346,22 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
       const shown = itemsOf(paths).filter((i) => f.items.some((x) => sameItem(i, x)))
       save({ ...f, items: [...shown, ...f.items.filter((i) => !shown.some((x) => sameItem(i, x)))], at: Date.now() })
     }
+    /**
+     * A new item made from this tab (YAZ-4782): `path` into folder `id`, right after `after` — the row its New … was
+     * picked on — or last (null, or a row the folder does not hold). Quiet: the new row is what says it. The path is new
+     * on disk, so it is in no other place of the tab. A full folder (YAZ-4479) keeps it out, and says so.
+     */
+    const insert = (path: string, id: string, after: string | null): void => {
+      const f = now.current.find((x) => x.id === id)
+      const item = itemOf(path, live.current.roots)
+      if (f === undefined || item === null) return
+      if (live.current.roots.some((vault) => store.held.current[vault] === undefined)) return loading()
+      if (f.items.length >= MAX_FOLDER_ITEMS) return notice.current(`A folder holds ${MAX_FOLDER_ITEMS} items at most: it is made on disk, and not in ${f.name}.`, 'error')
+      const items = f.items.filter((i) => !sameItem(i, item))
+      const prev = after === null ? null : itemOf(after, live.current.roots)
+      const i = prev === null ? -1 : items.findIndex((x) => sameItem(x, prev))
+      save({ ...f, items: i < 0 ? [...items, item] : [...items.slice(0, i + 1), item, ...items.slice(i + 1)], at: Date.now() })
+    }
     /** A drag of the folders (YAZ-4470, 13): `ids` is the new order; each folder whose place changed is written with it. */
     const reorderFolders = (ids: readonly string[]): void => {
       ids.forEach((id, pos) => {
@@ -377,7 +393,7 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, othe
           undoAction(() => void target.save(alive({ ...f, at: Date.now() }))),
         )
     }
-    return { store, other, folders, folderOf, otherFolderOf, stripOther, strip, addTo, rename, remove, moveOut, moveIn, reorder, reorderFolders, scopesOfFolder, setFolderScope }
+    return { store, other, folders, folderOf, otherFolderOf, stripOther, strip, addTo, rename, remove, moveOut, moveIn, reorder, insert, reorderFolders, scopesOfFolder, setFolderScope }
   }, [kind, scope, max, lists, otherLists, store, other, folders, live, toggleIn])
 }
 
@@ -678,6 +694,27 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
   )
 
   /**
+   * A New note / New folder / New drawing picked on the Focus or the Favorites tab (YAZ-4782): the item, just made on
+   * disk at `path`, joins that tab's list where the gesture was — in focus or favorite folder `folder`, or (null) at the
+   * top level; right after `after`, the row the menu was opened on, or (null: blank space, a folder's own menu) last.
+   * The tab's order is written as a drag writes it (`saveOrder`): each vault's file, and the order across the vaults.
+   * Quiet, as the row that shows is the answer; a list still on its way, or a full focus list, keeps it out and says so.
+   */
+  const addAt = useCallback(
+    (kind: ListKind, path: string, folder: string | null, after: string | null): void => {
+      if (folder !== null) return (kind === 'focus' ? focusTab : favoritesTab).insert(path, folder, after)
+      const [lists, list, max] = kind === 'focus' ? [focus, focusList, MAX_FOCUS] : [favorites, favoritePaths, Infinity]
+      const held = lists.held.current[rootOf(path)]
+      if (held === undefined) return onNotice(kind === 'focus' ? 'Focus is still loading. Try again.' : 'Favorites are still loading. Try again.', 'error')
+      if (held.length >= max) return onNotice(`Focus limit reached: ${max} items. It is made on disk, and not in focus.`, 'error')
+      const without = list.filter((p) => p !== path)
+      const i = after === null ? -1 : without.indexOf(after)
+      saveOrder(lists, i < 0 ? [...without, path] : [...without.slice(0, i + 1), path, ...without.slice(i + 1)])
+    },
+    [rootOf, focus, favorites, focusList, favoritePaths, focusTab, favoritesTab, saveOrder, onNotice],
+  )
+
+  /**
    * Where `path` stands in the two lists (YAZ-3264 D2), read when a tab's menu opens (S14). Null
    * hides the menu's two items: a path in no vault of the window (S8), or one whose vault's lists
    * this window has not read yet (S7). A copy of a tab reads its page's path (S9). Since YAZ-4460 it
@@ -706,7 +743,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
   )
 
   return useMemo(
-    () => ({ favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope, focusTab, favoritesTab, scopesOf, setScope }),
-    [favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope, focusTab, favoritesTab, scopesOf, setScope],
+    () => ({ favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope, focusTab, favoritesTab, scopesOf, setScope, addAt }),
+    [favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope, focusTab, favoritesTab, scopesOf, setScope, addAt],
   )
 }

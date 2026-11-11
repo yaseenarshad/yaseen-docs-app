@@ -18,6 +18,15 @@ import { BOARD_COMMAND_EVENT, requestBoardCommand } from './boardCommand'
 import { fakeWatch, withRevealObserver } from './boardTestKit'
 import { DocumentChips, exportWithNotice, useDocumentHost } from './useDocumentHost'
 
+/**
+ * The cog's open menu (YAZ-4776): a portal on the page, under its cog, so a test finds it by the open cog's
+ * `aria-controls`, not inside the cog's pane. `null` while it is closed.
+ */
+function menuIn(scope: ParentNode): HTMLElement | null {
+  const id = scope.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
+  return id == null ? null : document.getElementById(id)
+}
+
 vi.mock('../share/liveShare', () => ({ noteBoardSaved: vi.fn() }))
 
 const ROOT = '/vault'
@@ -351,7 +360,7 @@ describe('exportWithNotice', () => {
 /** The two user doors of the switch (YAZ-3076 D3, D4): the cog's row turns it on; the chip's "Allow edits" turns it off. */
 async function turnReadOnlyOn(): Promise<void> {
   act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-  const row = [...document.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith('Read only'))!
+  const row = [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((b) => b.textContent?.startsWith('Read only'))!
   await act(async () => row.click())
   await settle()
 }
@@ -426,7 +435,7 @@ describe('the read-only switch in the file (YAZ-3076 D1)', () => {
 
 describe('the cog, the "Read only" chip and the "Allow edits?" box on a board (YAZ-3076 D3, D4)', () => {
   const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
-  const menuRows = () => [...document.querySelectorAll<HTMLButtonElement>('.page-settings__menu > *')]
+  const menuRows = () => [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > *') ?? [])]
   const chip = () => container.querySelector<HTMLButtonElement>('.read-only-chip__button')
   const ask = () => container.querySelector<HTMLElement>('.read-only-chip__ask')
   const chipOrder = () => [...container.querySelector('.chips')!.children].map((c) => c.className.split(' ')[0])
@@ -457,7 +466,7 @@ describe('the cog, the "Read only" chip and the "Allow edits?" box on a board (Y
     expect(ask()).toBeNull()
     act(() => cog().click())
     act(() => menuRows()[0].click())
-    expect(document.querySelector('.page-settings__menu')).toBeNull()
+    expect(menuIn(container)).toBeNull()
     expect(ask()).not.toBeNull()
     expect(setBoardReadOnly).not.toHaveBeenCalled()
     const allow = [...ask()!.querySelectorAll('button')].find((b) => b.textContent === 'Allow edits')!

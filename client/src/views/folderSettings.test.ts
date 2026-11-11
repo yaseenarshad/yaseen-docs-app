@@ -16,7 +16,7 @@ vi.mock('./writeProperty', () => ({
   }),
 }))
 import { writeProperty } from './writeProperty'
-import { DEFAULT_COLUMNS, DEFAULT_VIEWS, folderSettings, writeFolderSettings } from './folderSettings'
+import { DEFAULT_VIEWS, folderSettings, rebaseSettings, writeFolderSettings } from './folderSettings'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -73,16 +73,15 @@ describe('defaults (Q7, amended YAZ-935, YAZ-2290 D5a): a folder that lists NO v
 describe("a FOLDER's settings (YAZ-2290 D1/E2): its `.folder.md`, else the defaults", () => {
   const FILE = '/vault/Projects/.folder.md'
 
-  it('no settings file: the default views and the default Status column', () => {
-    expect(folderSettings(undefined, true)).toEqual({ columns: DEFAULT_COLUMNS, views: TABLE_BOARD, problems: [] })
+  it('no settings file: the default views and no column (YAZ-4713 C5: a folder starts blank)', () => {
+    expect(folderSettings(undefined, true)).toEqual({ columns: {}, views: TABLE_BOARD, problems: [] })
   })
 
   it('a file that has saved NO settings yet is the defaults too, each read its own copy', () => {
     const a = folderSettings(rec(FILE, {}), true)
-    expect(a).toEqual({ columns: DEFAULT_COLUMNS, views: TABLE_BOARD, problems: [] })
+    expect(a).toEqual({ columns: {}, views: TABLE_BOARD, problems: [] })
     expect(folderSettings(rec(FILE, { folder_settings: null }), true)).toEqual(a)
-    expect(a.columns).not.toBe(DEFAULT_COLUMNS)
-    expect(a.columns.status).not.toBe(folderSettings(rec(FILE, {}), true).columns.status)
+    expect(a.views).not.toBe(folderSettings(rec(FILE, {}), true).views)
   })
 
   it('once saved, the file states exactly which columns the folder has — Status is not added back', () => {
@@ -136,6 +135,13 @@ describe("columns: the 7 property kinds, report-don't-block", () => {
     expect(settings.problems[0]).toContain('required')
   })
 
+  it('a column keeps its text description; blank text is none, and a non-text one is a problem (YAZ-4590 S23)', () => {
+    const settings = settingsOf({ columns: { owner: { kind: 'text', description: 'Who runs it' }, due: { kind: 'date', description: '  ' }, area: { kind: 'text', description: 7 } } })
+    expect(settings.columns).toEqual({ owner: { kind: 'text', description: 'Who runs it' }, due: { kind: 'date' }, area: { kind: 'text' } })
+    expect(settings.problems).toHaveLength(1)
+    expect(settings.problems[0]).toContain('area.description')
+  })
+
   it('a non-map columns value is a problem and no columns are declared', () => {
     const settings = settingsOf({ columns: ['owner'] })
     expect(settings.columns).toEqual({})
@@ -147,12 +153,12 @@ describe('views: parseViews\'s own assertion, mirrored', () => {
   it('keeps view order, and unknown types and extra keys pass through untouched', () => {
     const settings = settingsOf({
       views: [
-        { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
+        { type: 'page', name: 'Page', order: ['[[CAC]]', '[[LTV]]'] },
         { type: 'gantt', name: 'Table', columnSize: { owner: 120 }, zoom: 3 },
       ],
     })
     expect(settings.views).toEqual([
-      { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
+      { type: 'page', name: 'Page', order: ['[[CAC]]', '[[LTV]]'] },
       { type: 'gantt', name: 'Table', columnSize: { owner: 120 }, zoom: 3 },
     ])
     expect(settings.views[1].zoom).toBe(3)
@@ -183,15 +189,15 @@ describe('views: parseViews\'s own assertion, mirrored', () => {
     expect(settings.problems).toEqual([])
   })
 
-  it('a string outline rides along verbatim (🔒 D2: the view IS its markdown bullet list)', () => {
+  it('a stored Outline reads as the Page tab, its name kept and its string riding along verbatim until the hand move (YAZ-4584 D38, D39)', () => {
     const settings = settingsOf({ views: [{ type: 'outline', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }] })
-    expect(settings.views).toEqual([{ type: 'outline', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }])
+    expect(settings.views).toEqual([{ type: 'page', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }])
     expect(settings.problems).toEqual([])
   })
 
-  it('a non-string outline is a problem and only THAT key is dropped — the view stays', () => {
+  it('a non-string outline is a problem and only THAT key is dropped — the view stays, as the Page tab', () => {
     const settings = settingsOf({ views: [{ type: 'outline', name: 'Outline', outline: ['[[CAC]]'], limit: 3 }] })
-    expect(settings.views).toEqual([{ type: 'outline', name: 'Outline', limit: 3 }])
+    expect(settings.views).toEqual([{ type: 'page', name: 'Outline', limit: 3 }])
     expect(settings.problems).toHaveLength(1)
     expect(settings.problems[0]).toContain('outline')
   })
@@ -250,6 +256,33 @@ describe('defaultView (YAZ-1104): the saved starting view', () => {
   })
 })
 
+describe('other_files (YAZ-4597 D44): the notes moved to the Other files tray', () => {
+  const write = vi.mocked(writeProperty)
+
+  it('reads a list of links; absent stays undefined with no problem', () => {
+    expect(settingsOf({ other_files: ['[[A]]', '[[B]]'] }).otherFiles).toEqual(['[[A]]', '[[B]]'])
+    expect(settingsOf({ other_files: ['[[A]]'] }).problems).toEqual([])
+    expect(settingsOf({}).otherFiles).toBeUndefined()
+  })
+
+  it('a non-list is ONE problem and absent; an entry that is not text is dropped with ONE problem', () => {
+    expect(settingsOf({ other_files: '[[A]]' }).otherFiles).toBeUndefined()
+    expect(settingsOf({ other_files: '[[A]]' }).problems).toHaveLength(1)
+    const mixed = settingsOf({ other_files: ['[[A]]', 7, null] })
+    expect(mixed.otherFiles).toEqual(['[[A]]'])
+    expect(mixed.problems).toHaveLength(1)
+  })
+
+  it('round-trips to disk as `other_files`, and an empty list writes no key', async () => {
+    write.mockReset()
+    write.mockResolvedValue({ mtime: 200 })
+    await writeFolderSettings(METRICS, settingsOf({ other_files: ['[[A]]'] }))
+    expect(write.mock.calls[0][2]).toMatchObject({ other_files: ['[[A]]'] })
+    await writeFolderSettings(METRICS, { ...settingsOf({}), otherFiles: [] })
+    expect(write.mock.calls[1][2]).not.toHaveProperty('other_files')
+  })
+})
+
 describe('writeFolderSettings: ONE key, through the shared writer', () => {
   const write = vi.mocked(writeProperty)
 
@@ -262,7 +295,7 @@ describe('writeFolderSettings: ONE key, through the shared writer', () => {
     const raw = {
       columns: { owner: { kind: 'text' }, kpis: { kind: 'multi-link', target: '[[KPIs]]' } },
       views: [
-        { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
+        { type: 'page', name: 'Page', order: ['[[CAC]]', '[[LTV]]'] },
         { type: 'table', name: 'Table', order: ['file.name', 'owner'], columnSize: { owner: 120 }, zoom: 3 },
       ],
     }
@@ -311,11 +344,11 @@ it('reads option order tolerantly and reports malformed order without changing t
   expect(raw.columns.Labels.optionSort).toBe('sideways')
 })
 
-describe('the default status column (YAZ-1513): every folder is born with it', () => {
-  const STATUS = { kind: 'select', options: ['1-Backlog', '2-Todo', '3-In-Progress', '4-Done'] }
-
-  it('DEFAULT_COLUMNS is one Select, its options in board order', () => {
-    expect(DEFAULT_COLUMNS).toEqual({ status: STATUS })
+describe('"Separate value on this page" (YAZ-4713 C3): `separate: true` on a column', () => {
+  it('reads `true` as the switch; `false` is the default; anything else is a problem and ignored', () => {
+    const settings = settingsOf({ columns: { a: { kind: 'text', separate: true }, b: { kind: 'text', separate: false }, c: { kind: 'text', separate: 'yes' } } })
+    expect(settings.columns).toEqual({ a: { kind: 'text', separate: true }, b: { kind: 'text' }, c: { kind: 'text' } })
+    expect(settings.problems).toEqual(['folder_settings.columns.c.separate must be true or false — ignoring it'])
   })
 })
 
@@ -355,4 +388,77 @@ describe('properties: column labels (YAZ-1513) — `ViewSet.properties` verbatim
     ])
   })
 
+})
+
+describe('the rebase of a settings write (YAZ-4596 S38): this page\'s change, laid onto the block on disk', () => {
+  const T = { type: 'table', name: 'T' }
+  const B = { type: 'board', name: 'B' }
+  const base = { columns: { a: { kind: 'text' } }, views: [T, B] }
+
+  it('keeps the other writer\'s change to another key, and its change to another view or another key of one view', () => {
+    const mine = { ...base, defaultView: 'B' }
+    const theirs = { ...base, columns: { a: { kind: 'text' }, b: { kind: 'number' } }, views: [{ ...T, sort: [{ property: 'file.name', direction: 'ASC' }] }, B] }
+    expect(rebaseSettings(base, mine, theirs)).toEqual({ ...theirs, defaultView: 'B' })
+    const mineView = { ...base, views: [T, { ...B, cardSize: 2 }] }
+    const theirsView = { ...base, views: [{ ...T, frozenColumns: 1 }, B] }
+    expect(rebaseSettings(base, mineView, theirsView)).toEqual({ ...base, views: [{ ...T, frozenColumns: 1 }, { ...B, cardSize: 2 }] })
+    const mineKey = { ...base, views: [{ ...T, rowHeight: 'tall' }, B] }
+    expect(rebaseSettings(base, mineKey, theirsView)).toEqual({ ...base, views: [{ ...T, frozenColumns: 1, rowHeight: 'tall' }, B] })
+  })
+
+  it('a view added, deleted or moved on one side: that side\'s list, each view merged with its namesake', () => {
+    const added = { ...base, views: [T, B, { type: 'list', name: 'L' }] }
+    const theirs = { ...base, views: [{ ...T, frozenColumns: 1 }, B] }
+    expect(rebaseSettings(base, added, theirs)).toEqual({ ...base, views: [{ ...T, frozenColumns: 1 }, B, { type: 'list', name: 'L' }] })
+    expect(rebaseSettings(base, { ...base, views: [{ ...T, frozenColumns: 1 }, B] }, { ...base, views: [B] })).toEqual({ ...base, views: [B] })
+  })
+
+  it('the same key changed on both sides takes this write, the later one; a key this page removed goes', () => {
+    expect(rebaseSettings({ ...base, defaultView: 'T' }, { ...base, defaultView: 'B' }, { ...base, defaultView: 'X' })).toEqual({ ...base, defaultView: 'B' })
+    expect(rebaseSettings({ ...base, defaultView: 'T' }, base, { ...base, defaultView: 'T', formulas: { f: '1' } })).toEqual({ ...base, formulas: { f: '1' } })
+    // Nobody else wrote: exactly this write.
+    expect(rebaseSettings(base, { ...base, defaultView: 'B' }, base)).toEqual({ ...base, defaultView: 'B' })
+  })
+
+  it('writeFolderSettings with a base reads the block on disk as the reader does: a stored `outline` is the Page, so it is no change of theirs', () => {
+    const write = vi.mocked(writeProperty)
+    write.mockClear()
+    const was = { columns: {}, views: [{ type: 'page', name: 'Page' }], problems: [] }
+    void writeFolderSettings('/vault/F/.folder.md', { ...was, defaultView: 'Page' }, was)
+    const rebase = write.mock.calls[0][3]!
+    expect(write.mock.calls[0].slice(0, 3)).toEqual(['/vault/F/.folder.md', 'folder_settings', { views: [{ type: 'page', name: 'Page' }], defaultView: 'Page' }])
+    expect(rebase({ views: [{ type: 'outline', name: 'Page' }], other_files: ['[[x]]'] })).toEqual({ views: [{ type: 'page', name: 'Page' }], defaultView: 'Page', other_files: ['[[x]]'] })
+    expect(rebase(undefined)).toEqual({ views: [{ type: 'page', name: 'Page' }], defaultView: 'Page' })
+  })
+
+  it('reads the block on disk with the vault\'s own kind (YAZ-4637 M2): without ids a block with no views is one Table, so a sort adds no Board', () => {
+    const write = vi.mocked(writeProperty)
+    write.mockClear()
+    const onDisk = { columns: { due: { kind: 'date' } } }
+    const base = folderSettings(rec('/vault/F/.folder.md', { folder_settings: onDisk }), false)
+    expect(base.views.map((v) => v.name)).toEqual(['Table'])
+    const sorted = { ...base.views[0], sort: [{ property: 'note.due', direction: 'ASC' as const }] }
+    void writeFolderSettings('/vault/F/.folder.md', { ...base, views: [sorted] }, base, false)
+    const rebase = write.mock.calls[0][3]!
+    expect(rebase(onDisk)).toEqual({ columns: { due: { kind: 'date' } }, views: [sorted] })
+  })
+
+  it('a list of plain values both sides changed (YAZ-4637 M3, the shown columns): element by element — this side\'s removes and adds on the other side\'s list', () => {
+    const was = ['file.name', 'a', 'b', 'c']
+    // This side puts `b` back (an Undo of its hide) after the other side hid `c` and moved `a` first: `b` after its neighbour `a`, `c` still gone.
+    expect(rebaseSettings(['file.name', 'a', 'c'], was, ['a', 'file.name'])).toEqual(['a', 'b', 'file.name'])
+    // Its neighbour is gone too: the nearest one before it that is still there.
+    expect(rebaseSettings(['file.name', 'c'], was, ['file.name'])).toEqual(['file.name', 'a', 'b'])
+    // This side removed `a` while the other side added `d`: both land.
+    expect(rebaseSettings(was, ['file.name', 'b', 'c'], [...was, 'd'])).toEqual(['file.name', 'b', 'c', 'd'])
+  })
+
+  it('both sides changed the views\' names (M3): the other side\'s adds and removes stay, and this side\'s land on them', () => {
+    // This side puts X back (an Undo of its delete); the other side added Y meanwhile: both are there, X in its place.
+    const X = { type: 'list', name: 'X' }
+    const Y = { type: 'cards', name: 'Y' }
+    expect(rebaseSettings({ ...base, views: [T, B] }, { ...base, views: [T, X, B] }, { ...base, views: [T, B, Y] })).toEqual({ ...base, views: [T, X, B, Y] })
+    // This side removed B; the other side added Y and changed T: B goes, Y and T's change stay.
+    expect(rebaseSettings({ ...base, views: [T, B] }, { ...base, views: [T] }, { ...base, views: [{ ...T, frozenColumns: 1 }, B, Y] })).toEqual({ ...base, views: [{ ...T, frozenColumns: 1 }, Y] })
+  })
 })

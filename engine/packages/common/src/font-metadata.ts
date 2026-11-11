@@ -102,8 +102,10 @@ export const FONT_METADATA: Record<number, FontMetadata> = {
     },
   },
   [FONT_FAMILY.Assistant]: {
+    // YAZ-3746 13BC: Assistant is 1000 units per em (the browser measures 1.02 em up, 0.29 em down); 2048 drew every
+    // Assistant text ~0.19 em high in its line, with an empty band under the letters that the caret and highlight filled.
     metrics: {
-      unitsPerEm: 2048,
+      unitsPerEm: 1000,
       ascender: 1021,
       descender: -287,
       lineHeight: 1.25,

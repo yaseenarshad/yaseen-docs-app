@@ -18,6 +18,9 @@ import {
   DEFAULT_TOOLBAR,
   HEADING_KEYS,
   HOVER_PLACES,
+  DEFAULT_FOLDER_PAGES,
+  FOLDER_PAGE_CHOICES,
+  type FolderPagesSettings,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
   MAX_FOLD_KEYS_PER_FILE,
@@ -33,6 +36,7 @@ import {
   type NewBoardPictures,
   type NewTabPlace,
   OUTSIDE_CHANGE_GLOWS,
+  FIND_FOLDS,
   ALL_NOTES_OPENS_AT,
   TABLE_NOW_MARKS,
   TABLE_DIM_PASTS,
@@ -55,6 +59,7 @@ import {
   TABLE_BAND_STRENGTH_MIN,
   TABLE_BAND_STRENGTH_STEP,
   isBandColour,
+  isBlockWidth,
   type TableBandRows,
   DAILY_NOTE_OPENS,
   type DailyNoteOpens,
@@ -129,6 +134,7 @@ import {
   type TabSleepAfter,
   type OpenStat,
   type OutsideChangeGlow,
+  type FindFolds,
   type AllNotesOpensAt,
   type RecentRoots,
   type RightPanelIdentity,
@@ -183,6 +189,10 @@ import {
   type TabCanvasState,
   type TabRef,
   normalizeFilesZoom,
+  DEFAULT_HEADER_ROW,
+  HEADER_ROW_PARTS,
+  headerRowOwn,
+  type HeaderRow,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isValidPicturesFolder } from '@shared/drawingAssets'
@@ -375,9 +385,9 @@ const sanitizeCanvasPanel = (raw: unknown): CanvasPanelState => {
 export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
   isRecord(v) && Object.entries(v).every(([key, style]) => (HEADING_KEYS as readonly string[]).includes(key) && isHeadingStyle(style))
 
-/** One tab's sort (YAZ-3227 D1): Files has no manual order. */
+/** One tab's sort (YAZ-3227 D1): Files has no manual order. `kinds` (YAZ-4614 D66) is a boolean or absent; anything else fails the sort. */
 const isTabSort = (v: unknown, manual: boolean, best = false): v is TabSort =>
-  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best'))
+  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best')) && (v.kinds === undefined || typeof v.kinds === 'boolean')
 const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, false) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
 
 /** A list of known names, each once (YAZ-3273 D8). */
@@ -452,11 +462,61 @@ const isSidebarIconColors = (v: unknown): v is SidebarIconColors => isRecord(v) 
 /** The icon colours on load: each entry that does not read (an unknown kind, a colour that is no `#rrggbb`) is dropped, so that kind has its built-in colour. */
 export const sanitizeSidebarIconColors = (raw: unknown): SidebarIconColors => (isSidebarIconColors(raw) ? raw : isRecord(raw) && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).filter(isIconColour)) : {})
 
-/** The places' hover switches on load (YAZ-3403): each valid one is kept, a missing or broken one reads on — a file from before a place existed shows it. */
+/**
+ * The places' hover switches on load (YAZ-3403): each valid one is kept, a missing or broken one reads on — a file from
+ * before a place existed shows it. One exception (YAZ-4601 demo 13D): a missing `folderLinks` reads as the stored
+ * `folderViews`, the one folder-page switch it was split from, so a user's Off covers both.
+ */
 export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean> {
   const src = isRecord(raw) ? raw : {}
-  return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : true])) as Record<HoverPlace, boolean>
+  const fallback = (place: HoverPlace): boolean => (place === 'folderLinks' && typeof src.folderViews === 'boolean' ? src.folderViews : true)
+  return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : fallback(place)])) as Record<HoverPlace, boolean>
 }
+
+/** Settings › Folder pages (YAZ-4585): each part's guard. A choice row is one of its `FOLDER_PAGE_CHOICES`; the two "as …" switches may be null. */
+const isBool = (v: unknown): v is boolean => typeof v === 'boolean'
+const oneOf = (choices: readonly unknown[]) => (v: unknown): boolean => choices.includes(v)
+const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => boolean } = {
+  weekStartsOn: oneOf(FOLDER_PAGE_CHOICES.weekStartsOn),
+  rowBand: (v) => v === null || isBool(v),
+  keepWindowPinned: (v) => v === null || isBool(v),
+  rowHeight: oneOf(FOLDER_PAGE_CHOICES.rowHeight),
+  rowNumbers: isBool,
+  columnTypeIcons: isBool,
+  textInCells: oneOf(FOLDER_PAGE_CHOICES.textInCells),
+  groupIndent: oneOf(FOLDER_PAGE_CHOICES.groupIndent),
+  // YAZ-4798: a file from before them reads On, On hover and plain lines (`sanitizeFolderPages`).
+  stickyGroups: isBool,
+  groupLines: oneOf(FOLDER_PAGE_CHOICES.groupLines),
+  groupLineStyle: oneOf(FOLDER_PAGE_CHOICES.groupLineStyle),
+  showEmptyGroups: isBool,
+  showEmptyColumns: isBool,
+  subfolders: oneOf(FOLDER_PAGE_CHOICES.subfolders),
+  foldersFirst: isBool,
+  calendarScale: oneOf(FOLDER_PAGE_CHOICES.calendarScale),
+  cardTitles: oneOf(FOLDER_PAGE_CHOICES.cardTitles),
+  hideWeekends: isBool,
+  showFolderPageFiles: isBool,
+  askBeforeDelete: isBool,
+  confirmChanges: isBool,
+  showNewButtons: isBool,
+  showOtherFiles: isBool,
+  inheritColumns: isBool,
+  columnMarks: oneOf(FOLDER_PAGE_CHOICES.columnMarks),
+}
+const FOLDER_PAGES_PARTS = Object.keys(FOLDER_PAGES_PART_OK) as (keyof FolderPagesSettings)[]
+const isFolderPages = (v: unknown): v is FolderPagesSettings => isRecord(v) && FOLDER_PAGES_PARTS.every((part) => FOLDER_PAGES_PART_OK[part](v[part]))
+/** The Folder pages settings on load: each valid part is kept, a missing or broken one is its default (a file from before a part existed). */
+export function sanitizeFolderPages(raw: unknown): FolderPagesSettings {
+  const src = isRecord(raw) ? raw : {}
+  const out = Object.fromEntries(FOLDER_PAGES_PARTS.map((part) => [part, FOLDER_PAGES_PART_OK[part](src[part]) ? src[part] : DEFAULT_FOLDER_PAGES[part]])) as unknown as FolderPagesSettings
+  // One "Show empty groups" fed the Board and the Table before the split (YAZ-4608 C2): a file without the Board's part starts it from the one it has.
+  if (!isBool(src.showEmptyColumns) && isBool(src.showEmptyGroups)) out.showEmptyColumns = src.showEmptyGroups
+  return out
+}
+
+/** Settings › Tables › Header row (YAZ-4774) on load: each valid part is kept, a missing or broken one is its default. */
+export const sanitizeHeaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_HEADER_ROW, ...headerRowOwn(raw) })
 
 /**
  * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
@@ -607,15 +667,21 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tocOnByDefault: (v): v is boolean => typeof v === 'boolean',
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
+  findFolds: (v): v is FindFolds => typeof v === 'string' && (FIND_FOLDS as readonly string[]).includes(v),
   outsideChangeGlow: (v): v is OutsideChangeGlow => typeof v === 'string' && (OUTSIDE_CHANGE_GLOWS as readonly string[]).includes(v),
   outsideListPinned: (v): v is boolean => typeof v === 'boolean',
+  // YAZ-4783: "Text column" (`null`) or whole px in range; anything else falls back to Text column, the look before.
+  codeBlockWidth: (v): v is number | null => v === null || isBlockWidth(v),
+  tableWidth: (v): v is number | null => v === null || isBlockWidth(v),
   tableRowBand: (v): v is TableRowBand => typeof v === 'string' && (TABLE_ROW_BANDS as readonly string[]).includes(v),
   tableBandColour: isBandColour,
   tableBandStrength: (v): v is number => isFiniteNumber(v) && v >= TABLE_BAND_STRENGTH_MIN && v <= TABLE_BAND_STRENGTH_MAX && v % TABLE_BAND_STRENGTH_STEP === 0,
   tableBandRows: (v): v is TableBandRows => typeof v === 'string' && (TABLE_BAND_ROWS as readonly string[]).includes(v),
   tableBandBold: (v): v is boolean => typeof v === 'boolean',
+  tableHeaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
   tableNowButton: (v): v is boolean => typeof v === 'boolean',
+  tableCellNoteButton: (v): v is boolean => typeof v === 'boolean',
   tableDimPast: (v): v is TableDimPast => typeof v === 'string' && (TABLE_DIM_PASTS as readonly string[]).includes(v),
   tableShadeDarkness: (v): v is number => isFiniteNumber(v) && v >= TABLE_SHADE_MIN && v <= TABLE_SHADE_MAX && v % TABLE_SHADE_STEP === 0,
   noteBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_INDENT_MIN && v <= NOTE_BULLET_INDENT_MAX,
@@ -625,6 +691,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableCellNoteTemplate: (v): v is string => typeof v === 'string' && v.length <= CELL_NOTE_TEMPLATE_MAX,
   tableCellNotePinned: (v): v is boolean => typeof v === 'boolean',
   typingArrows: (v): v is boolean => typeof v === 'boolean',
+  enterKeepsStyleNotes: (v): v is boolean => typeof v === 'boolean',
+  enterKeepsStyleBoxes: (v): v is boolean => typeof v === 'boolean',
   tableAllNotesOpensAt: (v): v is AllNotesOpensAt => typeof v === 'string' && (ALL_NOTES_OPENS_AT as readonly string[]).includes(v),
   newNoteTitleTemplate: (v): v is string => typeof v === 'string' && v.length <= NEW_NOTE_TITLE_MAX && !v.includes('/'),
   tableDayStart: isCalendarDayTime,
@@ -682,6 +750,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   dailyNoteOpens: (v): v is DailyNoteOpens => typeof v === 'string' && (DAILY_NOTE_OPENS as readonly string[]).includes(v),
   tabSleepAfter: (v): v is TabSleepAfter => typeof v === 'string' && (TAB_SLEEP_AFTER as readonly string[]).includes(v),
   memoryReload: (v): v is boolean => typeof v === 'boolean',
+  folderPages: isFolderPages,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -704,6 +773,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.selectionToolbar = sanitizeToolbarPrefs(src.selectionToolbar)
   out.highlightCustomColors = sanitizeHighlightCustomColors(src.highlightCustomColors)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
+  out.folderPages = sanitizeFolderPages(src.folderPages)
+  out.tableHeaderRow = sanitizeHeaderRow(src.tableHeaderRow)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)
   out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)

@@ -1,4 +1,4 @@
-import type { SortBy, SortMenuTab, TabSort, TreeNode, TreeResponse } from '@shared/types'
+import type { FileKind, SortBy, SortMenuTab, TabSort, TreeNode, TreeResponse } from '@shared/types'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import type { MenuSection } from './menuSections'
 
@@ -23,8 +23,16 @@ export function timeOf(node: TreeNode): number {
 const NO_SCORE = 4
 const NO_BEST: ReadonlyMap<string, number> = new Map()
 
+/** The groups of a level (D7): folders, then files. */
+const typeRank = (node: TreeNode): number => (node.type === 'dir' ? 0 : 1)
+/** The groups under Kind first (YAZ-4614 D66): folders, notes, drawings, diagrams, PDFs, images, text files, other files. */
+const KIND_RANK: Record<FileKind, number> = { markdown: 1, drawing: 2, diagram: 3, pdf: 4, image: 5, text: 6 }
+const OTHER_RANK = 7
+const kindRank = (node: TreeNode): number => (node.type === 'dir' ? 0 : node.kind === null ? OTHER_RANK : KIND_RANK[node.kind])
+
 /**
  * One level in the tab's order (D7): folders first, then files, each by the same rule. No sort, or Manual below the top rows: Name, A to Z.
+ * Kind first (YAZ-4614 D66) splits the files by kind too; each group keeps the sort inside it, and a reverse flips the rows of a group, not the groups.
  * Best match (YAZ-3511 D12) is the search's alone: `best` holds the score of each row, lower first, then the newer row, then the name.
  * It puts no folder first, so the best match is on top.
  */
@@ -37,7 +45,11 @@ export function sortLevel(nodes: readonly TreeNode[], sort: TabSort | undefined,
   }
   const base = sort?.by === 'updated' ? byTime : byName
   const order = sort?.reverse === true && sort.by !== 'manual' ? (a: TreeNode, b: TreeNode): number => base(b, a) : base
-  return [...nodes.filter((n) => n.type === 'dir').sort(order), ...nodes.filter((n) => n.type === 'file').sort(order)]
+  // Each row's group once, never in the comparator (YAZ-4614): the groups sort one by one, so the order inside a group is the sort's alone.
+  const rank = sort?.kinds === true ? kindRank : typeRank
+  const groups: (TreeNode[] | undefined)[] = []
+  for (const node of nodes) (groups[rank(node)] ??= []).push(node)
+  return groups.flatMap((group) => group?.sort(order) ?? [])
 }
 
 /** The label a row shows (YAZ-2420 🔒 D15), which Name sorts by (D8). */
@@ -82,14 +94,19 @@ const BYS: Record<SortMenuTab, readonly SortBy[]> = { files: ['name', 'updated']
  * `dates` is the last row of each tab's menu (YAZ-3511 D7, D10): the date at the right end of each row, on or off. `filters`
  * are the Search menu's Type and Time rows (D13, D14), after it. `workspace` is the Focus and Favorites menus' last row in a
  * window with two or more vaults (YAZ-4450 D4): "Separate list for workspaces", on or off.
+ * "Kind first" (YAZ-4614 D66) follows "Show last updated" on the sorted tabs, not Search: a click flips the tab's `kinds` in one write.
  */
 export function sortSections(tab: SortMenuTab, sort: TabSort, set: (next: TabSort) => void, dates: { on: boolean; set: (on: boolean) => void }, filters?: MenuSection, workspace?: { on: boolean; set: (on: boolean) => void }): MenuSection[] {
   const pick = (next: TabSort) => () => {
     if (next.by !== sort.by || next.reverse !== sort.reverse) set(next)
   }
-  const by = BYS[tab].map((b) => ({ id: `sort-${b}`, label: BY_LABEL[b], hint: sort.by === b ? '✓' : undefined, onSelect: pick(sort.by === b ? sort : { by: b, reverse: false }) }))
+  // A new sort starts its natural way and keeps the tab's Kind first (YAZ-4614 D66: each tab's on/off is its own).
+  const by = BYS[tab].map((b) => ({ id: `sort-${b}`, label: BY_LABEL[b], hint: sort.by === b ? '✓' : undefined, onSelect: pick(sort.by === b ? sort : { ...sort, by: b, reverse: false }) }))
   const ways = (WAYS[sort.by] ?? []).map((label, i) => ({ id: `sort-way-${i}`, label, hint: sort.reverse === (i === 1) ? '✓' : undefined, onSelect: pick({ ...sort, reverse: i === 1 }) }))
-  const shown = [{ id: 'sort-dates', label: 'Show last updated', hint: dates.on ? '✓' : undefined, onSelect: () => dates.set(!dates.on) }]
+  const shown = [
+    { id: 'sort-dates', label: 'Show last updated', hint: dates.on ? '✓' : undefined, onSelect: () => dates.set(!dates.on) },
+    ...(tab === 'search' ? [] : [{ id: 'sort-kinds', label: 'Kind first', hint: sort.kinds === true ? '✓' : undefined, onSelect: () => set({ ...sort, kinds: sort.kinds !== true }) }]),
+  ]
   const separate = workspace === undefined ? [] : [[{ id: 'sort-workspace', label: 'Separate list for workspaces', hint: workspace.on ? '✓' : undefined, onSelect: () => workspace.set(!workspace.on) }]]
   return [by, ...(ways.length > 0 ? [ways] : []), shown, ...(filters === undefined ? [] : [filters]), ...separate]
 }

@@ -4,9 +4,10 @@
 
 .view-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 4px 12px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
@@ -66,17 +67,11 @@
   color: var(--fg);
 }
 
-/* Drag-to-reorder (YAZ-1471), TabBar's indicator: an accent edge marks where the drop lands. */
-.view-tab--dragging {
-  opacity: 0.5;
-}
-
-.view-tab--insert-before {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.view-tab--insert-after {
-  box-shadow: inset -2px 0 0 var(--accent);
+/* A view tab drag is the tab bar's live gap (YAZ-4606 D58, lib/liveGap.css): the grabbed tab leaves the strip and the
+   others part; the gap is the marker. No hover look while the tabs part (the tab bar's 6F): the page hears no mouse
+   move during a drag, so its hover would stay on the tab that slid into the grab point. */
+[data-live-parting] .view-tab__btn:hover {
+  background: transparent;
 }
 
 .view-tab__add {
@@ -104,11 +99,17 @@
   padding: 4px;
 }
 
+/* A narrow page (YAZ-4544): the actions wrap to their own line, at the right, and then wrap inside it. So the view tabs
+   keep the first line and never shrink to nothing, and the toolbar never runs past the page. */
 .view-toolbar__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 2px;
   flex: none;
+  max-width: 100%;
+  margin-left: auto;
 }
 
 .view-toolbar__menu,
@@ -173,6 +174,21 @@
   white-space: nowrap;
 }
 
+/* The selection's Count / Sum / Average (YAZ-4612 S46): a small chip before the count, written by the table. */
+.view-toolbar__selection {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.view-toolbar__selection[hidden] {
+  display: none;
+}
+
 /* ---------- popovers (anchored under their trigger; ctx-menu look) ---------- */
 
 .view-popover {
@@ -184,6 +200,8 @@
   max-width: 420px;
   max-height: 60vh;
   overflow-y: auto;
+  /* Its wheel stays in it (YAZ-3746 13AP): at the end of its list the page under it does not scroll. */
+  overscroll-behavior: contain;
   padding: 10px;
   font-size: 13px;
   background: var(--bg);
@@ -413,6 +431,22 @@
   cursor: default;
 }
 
+/* "from Settings" and its Reset (YAZ-4585, D34): grey and small, after the row's control. */
+.view-from-settings {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.view-from-settings--reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .view-menu__toggle {
   display: inline-flex;
   align-items: center;
@@ -434,6 +468,48 @@
   font-size: 12px;
   color: var(--fg-muted);
 }
+
+/* The Properties popover's two tabs, Columns and View (YAZ-4607 D59): a sticky strip at the top; the Columns tab's
+   search head sticks under it. */
+.view-menu__tabs {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  gap: 2px;
+  margin: 0 -10px;
+  padding: 8px 10px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.view-menu__tab {
+  padding: 6px 10px 7px;
+  margin-bottom: -1px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  border-bottom: 2px solid transparent;
+}
+.view-menu__tab:hover { color: var(--fg); }
+.view-menu__tab[aria-pressed='true'] {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+.view-menu--tabbed .column-menu-head { top: 37px; padding-top: 8px; }
+
+/* The View tab (YAZ-4607 D59): sections of settings rows, the label left and the control with its "from Settings"
+   hint at the right; it fits the 340px popover with no horizontal scroll. */
+.view-settings { display: flex; flex-direction: column; gap: 6px; padding: 6px 0 2px; }
+.view-settings > .view-menu__label { margin: 8px 0 0; }
+.view-settings > .view-menu__label:first-child { margin-top: 2px; }
+.view-settings .view-settings-row { justify-content: flex-start; min-width: 0; font-size: 12px; }
+.view-settings .view-settings-row > span:first-child { flex: 1 1 auto; }
+.view-settings .view-settings-row > .view-select { max-width: 150px; min-width: 0; }
+.view-settings .view-settings-row > input[type='checkbox'] { margin: 0; accent-color: var(--accent); }
+.view-settings .view-settings-row__text { width: 56px; }
+.view-settings .view-seg__opt { padding: 2px 7px; }
+.view-settings .property-board-setting { padding: 0; margin: 0; border: 0; }
+.view-settings .property-board-setting small { margin-top: 2px; }
 
 .view-prop {
   display: flex;
@@ -507,16 +583,18 @@
   cursor: grab;
 }
 
-.view-prop--dragging {
-  opacity: 0.4;
+/* A Properties or Sort menu row drag is the tab bar's live gap, down the list (YAZ-4606 D58, lib/liveGap.css); the gap
+   is the marker. No hover look on a row or its buttons while the rows part (the tab bar's 6F). */
+[data-live-parting] .view-prop__open:hover,
+[data-live-parting] .view-rule__remove:hover:not(:disabled),
+[data-live-parting] .view-rule__nav:hover:not(:disabled) {
+  color: var(--fg-muted);
+  background: transparent;
 }
 
-.view-prop--insert-before {
-  box-shadow: 0 -2px 0 0 var(--accent);
-}
-
-.view-prop--insert-after {
-  box-shadow: 0 2px 0 0 var(--accent);
+[data-live-parting] .sort-menu .view-prop__handle:hover,
+.sort-menu[data-live-parting] .view-prop__handle:hover {
+  opacity: 0.65;
 }
 
 /* Card-style toggles (YAZ-1206): pressed = accent chip, like an active filter. */
@@ -552,6 +630,7 @@
 
 .view-prop__open .view-prop__name {
   flex: 1;
+  flex-wrap: nowrap; /* the label and its mark (YAZ-4713 C11) on one line, never a second */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -800,9 +879,24 @@
   position: sticky;
   top: 0;
   z-index: 3;
-  font-weight: 600;
-  color: var(--fg-muted);
+  font-weight: var(--table-header-weight, 600);
+  /* A text colour (YAZ-4794, `table.css`) wins over Muted / Full. */
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 1) * 100%), var(--fg)));
   background: var(--bg);
+}
+
+/* The header row's Align (YAZ-4794): the view's own, else Settings' (on `.app`), for every column header; Follow
+   column (no rule) keeps each header as its column (`view-table__cell--align-*`, below). The `#` gutter keeps its own. */
+.view-table[data-table-header-align]:not([data-table-header-align='follow']) thead th:not(.view-table__gutter),
+.app[data-table-header-align]:not([data-table-header-align='follow']) .view-table:not([data-table-header-align]) thead th:not(.view-table__gutter) {
+  text-align: var(--table-header-align);
+}
+
+/* Header row (YAZ-4774): the note table's tint and text (`table.css` sets the variables from Settings and from the
+   view's own `data-table-header-*`), laid on the opaque page colour so the sticky header still hides the rows under it.
+   Muted by default. `[data-table-id]` outranks the frozen cells' and the gutter's `--bg`. */
+.view-table[data-table-id] thead th {
+  background: color-mix(in srgb, var(--table-header-hue, var(--fg)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), var(--bg));
 }
 
 .view-table .view-table__frozen {
@@ -813,6 +907,181 @@
 
 .view-table thead th.view-table__frozen {
   z-index: 4;
+}
+
+/* A cell or row fill (YAZ-4536, `view/fills.ts`): `--view-cell-fill` on the cell, painted as an image over the
+   cell's own background colour, so a frozen cell keeps its opaque `--bg` under the see-through wash. */
+.view-table tbody td.view-table__cell--fill {
+  background-image: linear-gradient(var(--view-cell-fill), var(--view-cell-fill));
+}
+
+/* The row hover band (YAZ-4538, D9): the table block's band (`table.css`, YAZ-4167) on each data row, in its
+   colour and strength (`--table-band-colour`, `--table-band-strength` on `.app`). An inset shadow paints over the
+   cell's background, so the band shows over a fill and over a frozen cell's opaque `--bg`. Only while Settings ›
+   Folder pages › Row band on hover is on (YAZ-4585: `data-folder-row-band`, which follows the table block's Row band
+   until set), and none when the band marks only the caret's row, as in the table block. */
+.app[data-folder-row-band='on']:not([data-table-band-rows='caret']) .view-table tbody tr:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td {
+  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
+}
+
+/* A selected cell, row number or column header (YAZ-4593, S27 / S28, `view/tableSelection.ts`): the app's selection
+   wash, a background image over the cell's fill (YAZ-4536) and over a frozen cell's opaque `--bg`. The table marks
+   the mounted cells with `data-selected`; the hover band still paints over it. */
+.view-table tbody td[data-selected],
+.view-table thead th[data-selected] {
+  --view-selection-wash: color-mix(in srgb, var(--accent) 16%, transparent);
+  background-image: linear-gradient(var(--view-selection-wash), var(--view-selection-wash)), linear-gradient(var(--view-cell-fill, transparent), var(--view-cell-fill, transparent));
+}
+
+/* ⌘F on a folder page (YAZ-4613, D64, `view/viewFind.ts`): the note find's wash (`find.css` tokens) on the mounted
+   matching cells and cards, `data-find`, and the solid colour with dark text on the current one. Over a fill and a
+   selection, as the selection wash is. */
+.view-table tbody td[data-find] {
+  background-image: linear-gradient(var(--find-match-bg), var(--find-match-bg)), linear-gradient(var(--view-cell-fill, transparent), var(--view-cell-fill, transparent));
+}
+
+.view-table tbody td[data-find='active'] {
+  background-image: linear-gradient(var(--find-match-active-bg), var(--find-match-active-bg));
+}
+
+.views-pane li[data-hover-item][data-find] {
+  background-color: var(--find-match-bg);
+}
+
+.views-pane li[data-hover-item][data-find='active'] {
+  background-color: var(--find-match-active-bg);
+}
+
+/* The current match's text is dark in BOTH themes, down to its children (YAZ-4643 S4): a card's title (`--accent`), its
+   labels and placeholders (`--fg-muted`) and its values (`--fg`) read the tokens, so the tokens turn dark on it; a chip
+   or a pill keeps its own box, as a light wash with dark text. Each colour is at least 4.5:1 on the solid yellow. */
+.view-table tbody td[data-find='active'],
+.views-pane li[data-hover-item][data-find='active'] {
+  --fg: #1f1f1f;
+  --fg-muted: #3d3d3d;
+  --accent: #1f1f1f;
+  color: #1f1f1f;
+}
+
+.view-table tbody td[data-find='active'] .view-table__chip,
+.view-table tbody td[data-find='active'] .view-link-pill,
+.views-pane li[data-hover-item][data-find='active'] .view-table__chip,
+.views-pane li[data-hover-item][data-find='active'] .view-link-pill {
+  color: #1f1f1f;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* The fill handle (YAZ-4609 D61), the table block's look (`editor/table/table.css`): a square in the corner of the
+   selection or of the focused cell, and a dashed line on the outer edges of the cells a drag fills. A frozen cell is
+   sticky, so it holds the absolute handle already; any other cell takes `position: relative` while it has one. */
+.view-table tbody td[data-fill-corner]:not(.view-table__frozen),
+.view-table tbody td[data-fill-target]:not(.view-table__frozen) {
+  position: relative;
+}
+
+.view-table__fill-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border: 1px solid var(--bg);
+  background-color: var(--accent);
+  cursor: crosshair;
+}
+
+/* No handle while a cell is being edited (D61). */
+.view-table:has([data-editing]) .view-table__fill-handle {
+  display: none;
+}
+
+.view-table tbody td[data-fill-target]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border: 0 dashed var(--accent);
+  pointer-events: none;
+}
+
+.view-table tbody td[data-fill-target~='top']::before { border-top-width: 2px; }
+.view-table tbody td[data-fill-target~='bottom']::before { border-bottom-width: 2px; }
+.view-table tbody td[data-fill-target~='left']::before { border-left-width: 2px; }
+.view-table tbody td[data-fill-target~='right']::before { border-right-width: 2px; }
+
+/* "Set value ›" on a selection (YAZ-4593): the field a text value is typed in. */
+.view-selection-menu__input {
+  width: 180px;
+  margin: 4px 6px;
+  box-sizing: border-box;
+}
+
+/* "Custom colour…" in a Fill flyout (YAZ-4536, `FillMenu.tsx`): the colour box under the item, as wide as the
+   table block's (`table.css` `.table-colour-box`, 190px less its padding). */
+.view-fill-menu__box .colour-box {
+  width: 166px;
+  margin: 4px 6px 2px;
+}
+
+/* The freeze line (YAZ-4534): where the frozen columns end, the table block's 3px line. The cell keeps its 1px
+   border, in the line's colour, and a 2px strip inside that border adds the rest: a 3px border made the column 2px
+   wider. Every frozen cell is sticky, so the strip is placed in the cell. */
+.view-table .view-table__frozen-end {
+  border-right-color: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+}
+
+.view-table .view-table__frozen-end::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  background: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+  pointer-events: none;
+}
+
+/* Frozen rows (YAZ-4537, D9b / S4): the lines from the top through the Nth data row stay under the header. For the
+   outer scroller they take the header's own translate; inside the wrap each cell sticks at its line's measured top
+   (`--view-frozen-top`: the header's height and the real heights of the frozen lines above, YAZ-4582), and before the
+   first measure at the header's height plus its line's place (`--view-frozen-i`) times the row height. z-index 2:
+   over the frozen columns (1), under the header (3 and 4). */
+.view-table tbody tr.view-table__row--frozen {
+  position: relative;
+  z-index: 2;
+  transform: translateY(var(--view-table-header-y, 0px));
+}
+
+.view-table tbody tr.view-table__row--frozen > td {
+  position: sticky;
+  top: var(--view-frozen-top, calc(var(--view-table-head-h, 0px) + var(--view-frozen-i, 0) * var(--view-table-row-h, 28px)));
+}
+
+/* Opaque, so the rows scroll under them; a fill paints as an image over it. Low specificity on purpose: the
+   current row's and a drop's own background still win. */
+.view-table__row--frozen > td {
+  background-color: var(--bg);
+}
+
+/* The freeze line under the last frozen line: the column freeze line's 3px and colour (YAZ-4534), drawn the same
+   way: the 1px border in the line's colour and a 2px strip inside it. A 3px border made that line 2px taller, and
+   windowing needs every line at exactly one row height. Each cell of a frozen line is sticky. `::before`, because a
+   last frozen column's cell has the column line in its `::after`. */
+.view-table tbody tr.view-table__row--frozen-end > td {
+  border-bottom-color: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+}
+
+.view-table tbody tr.view-table__row--frozen-end > td::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: color-mix(in srgb, var(--border) 60%, var(--fg) 40%);
+  pointer-events: none;
 }
 
 /* The `#` gutter (YAZ-1513): the always-first, always-sticky column, pinned like a frozen cell at
@@ -834,9 +1103,47 @@
   z-index: 4;
 }
 
+/* The corner selects every cell (YAZ-4610 D62). With row numbers off the gutter is a slim strip with no numbers, still
+   the row's select and drag handle. */
+.view-table thead th.view-table__gutter {
+  cursor: pointer;
+}
+
+.view-table .view-table__gutter--slim {
+  padding: 0;
+}
+
+.view-table tbody tr:hover > td.view-table__gutter.view-table__gutter--slim[draggable='true']::before {
+  left: 1px;
+}
+
+/* A movable row's `#` is its only drag source (YAZ-4603 D53): a ⋮⋮ handle at its left on the row's hover. */
+.view-table tbody td.view-table__gutter[draggable='true'] {
+  cursor: grab;
+}
+
+.view-table tbody tr:hover > td.view-table__gutter[draggable='true']::before {
+  content: '⋮⋮';
+  position: absolute;
+  left: 4px;
+  letter-spacing: -3px;
+  color: var(--fg-muted);
+}
+
 /* The header's own context menu (YAZ-1513): room for the inline rename and the add-column form. */
 .view-header-menu {
   min-width: 200px;
+}
+
+/* "Edit column…" (YAZ-4533): the Properties popover's column editor, at that popover's size. Never wider than the
+   window less a margin (YAZ-4544); ContextMenuSurface places the grown menu inside the window again. */
+.view-header-menu .column-detail {
+  width: 260px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  font-size: 13px;
 }
 
 .view-header-menu .view-header-menu__rename,
@@ -847,6 +1154,39 @@
 
 .view-table tbody td {
   height: var(--view-table-row-h, 28px);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* Wrap or Clip per column (YAZ-4582 D29). A cell wraps its text and chips by default, and its row grows: the row
+   height is the least a row is. A Clip column, and every cell of a windowed table, is exactly one row high (windowing
+   counts lines × `--view-table-row-h`): one line with "…", the full value in `title`. A Select chip is 21.4px and a
+   Short cell holds 21px (28 less 6px padding and the 1px border), so a clipped cell's chip is 19px (YAZ-4544), and
+   its Multi-select chips stay on one line. */
+.view-table tbody td.view-table__cell--clip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-table tbody td.view-table__cell--clip .view-cell-edit__display {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.view-table tbody td.view-table__cell--clip .property-choice-chips {
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.view-table tbody td.view-table__cell--clip .property-choice-chip {
+  flex: none;
+  padding-top: 1px;
+  padding-bottom: 1px;
+  line-height: 17px;
 }
 
 .view-table tbody td:focus,
@@ -935,16 +1275,24 @@
   cursor: grab;
 }
 
-.view-table thead th.view-table__th--drag-source {
-  opacity: 0.45;
+/* A column drag is the tab bar's live gap, across the table (YAZ-4606 D58): TableView writes one rule per moved column
+   (its header, mounted body cells and summary cell), and each part slides with the tab bar's time and easing; the gap
+   is the marker. No hover look in the headers while the columns part (the tab bar's 6F). */
+.view-table[data-live-parting] th,
+.view-table[data-live-parting] td {
+  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.view-table thead th.view-table__th--insert-before {
-  box-shadow: inset 2px 0 0 var(--accent);
+.view-table[data-live-parting] .view-table__sort:hover,
+.view-table[data-live-parting] .view-table__resize:hover:not(.view-table__resize--active) {
+  background: none;
 }
 
-.view-table thead th.view-table__th--insert-after {
-  box-shadow: inset -2px 0 0 var(--accent);
+@media (prefers-reduced-motion: reduce) {
+  .view-table[data-live-parting] th,
+  .view-table[data-live-parting] td {
+    transition: none;
+  }
 }
 
 .view-table__resize {
@@ -960,6 +1308,39 @@
 .view-table__resize:hover,
 .view-table__resize--active {
   background: linear-gradient(var(--accent), var(--accent)) right / 2px 100% no-repeat;
+}
+
+/* The sort arrow (YAZ-4590 S19): ▲ or ▼ after the label, and the rule's place when the view has several sorts. The
+   glyph is CSS, so the header's text stays its label. A click flips the rule. */
+.view-table__sort {
+  margin-left: 4px;
+  padding: 0 2px;
+  font: inherit;
+  font-size: 10px;
+  color: var(--accent);
+  vertical-align: 1px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 3px;
+}
+
+.view-table__sort:hover {
+  background: var(--bg-side);
+}
+
+.view-table__sort[data-dir='ASC']::before {
+  content: '▲';
+}
+
+.view-table__sort[data-dir='DESC']::before {
+  content: '▼';
+}
+
+.view-table__sort[data-pos]::after {
+  margin-left: 1px;
+  font-size: 9px;
+  content: attr(data-pos);
 }
 
 .view-table__chip {
@@ -981,6 +1362,36 @@
 .view-table__chip--link {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* A link value in a folder page's cell (YAZ-4601 D47): the note editor's wikilink pill (`wikilink.css`). A click opens
+   it, so it has the hand. The editor joins side-by-side pieces of ONE link into one box; a Multi-link cell's pills are
+   separate links, so each keeps its own box. */
+.view-link-pill {
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wikilink.view-link-pill:not(.wikilink--unresolved) {
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.wikilink--unresolved.view-link-pill {
+  cursor: inherit;
+}
+/* The gap between pills hangs on the pill BEFORE it (YAZ-4643 S1): a pill that wraps to the next line starts flush,
+   as the chips do (`.view-table__chip`'s `margin-right`); one clipped line and the Properties panel read the same. */
+.view-link-pill:has(+ .view-link-pill) {
+  margin-right: 4px;
+}
+/* Each pill wears its page's icon (YAZ-4544 4G). The editor hides the icon of a link's second piece
+   (`.wikilink + .wikilink`, wikilink.css, `!important`); a Multi-link cell's next pill is another link, so it keeps its own. */
+.wikilink.view-link-pill + .wikilink.view-link-pill.file-icon::before {
+  content: '' !important;
+  display: inline-block !important;
+}
+/* The table cell owns the mouse (`pointer-events: none` on its editable value): a pill takes its own clicks and hovers. */
+.view-table tbody td .view-link-pill {
+  pointer-events: auto;
 }
 
 .view-table__chip--error {
@@ -1036,24 +1447,144 @@
   border: none;
 }
 
+/* The "+ New" row (YAZ-4539, S12): one row high, at the end of the table and of each innermost group. Not a data
+   row, so no band; the button stays at the left edge while the table scrolls sideways, as a group header does: the
+   cell does not clip, and the button pins at its rows' indent (`--depth`: the levels above them, YAZ-4544). */
+.view-table td.view-table__new-cell {
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: visible;
+}
+
+.view-table__new-btn {
+  position: sticky;
+  left: calc(8px + var(--view-group-indent, 28px) * var(--depth, 0));
+  padding: 0 6px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+.view-table__new-btn:hover {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
 /* ---------- grouped table (4C) ---------- */
 
 .view-table td.view-table__group-cell {
   overflow: visible;
 }
 
+/* each level (YAZ-745, YAZ-4531: `--depth` on the cell, 0 at the top) is one 28px step in from the
+   cell's 8px padding edge. The indent rides the sticky offset, not cell padding: the cluster pins
+   at `left` while the table scrolls horizontally (YAZ-1043-46), so a padded one would slide back onto the outer's 8px. */
 .view-table__group-cell > .view-group {
   position: sticky;
-  left: 8px;
+  left: calc(8px + var(--view-group-indent, 28px) * var(--depth, 0));
   width: fit-content;
   max-width: 100%;
 }
 
-/* an inner section (YAZ-745) is one 28px step in from the cell's 8px padding edge. The indent
-   rides the sticky offset, not cell padding: the cluster pins at `left` while the table scrolls
-   horizontally (YAZ-1043-46), so a padded one would slide back onto the outer's 8px. */
-.view-table__group-cell--nested > .view-group {
-  left: 36px;
+/* ---------- where you are in a grouped table (YAZ-4798, `view/groupGuides.ts`) ---------- */
+
+/* Sticky group headers: a header row that is not a frozen row rides the column header's counter-scroll offset
+   (`--view-table-header-y`, TableView) plus its own lift, as far as its room (both measured when the table changes,
+   never on a scroll). So it holds its slot under the column header and the frozen rows, one row height per level, while
+   its group scrolls under it, and its group's last row pushes it out with the levels inside it. The part pushed above
+   its slot is clipped, so a header leaves UNDER the level above it, never over it. Its fill shows only while it is
+   moved (`* 1000`: any offset is the full height), so a header in its own place stays see-through and the group lines
+   pass behind it. z-index 3: over the rows, the `#` gutter and the frozen cells (1), a cell being edited (2) and the
+   group lines (2); the column header (3, earlier) never meets it, the clip keeps it below the slots. Transform, clip
+   and fill sit on the row's one cell, which spans the table; its `.view-group` still sticks at the left. */
+.view-table[data-sticky-groups] tbody tr.view-table__group:not(.view-table__row--frozen) > td {
+  --view-group-shift: calc(var(--view-table-header-y, 0px) + var(--view-group-lift, -100000px));
+  position: relative;
+  z-index: 3;
+  transform: translateY(clamp(0px, var(--view-group-shift), var(--view-group-room, 0px)));
+  clip-path: inset(max(0px, var(--view-group-shift) - var(--view-group-room, 0px)) 0 0 0);
+  background-image: linear-gradient(var(--bg), var(--bg));
+  background-repeat: no-repeat;
+  background-size: 100% clamp(0px, var(--view-group-shift) * 1000, 100%);
+}
+
+/* A drop on a stuck header (5C) still shows, over its fill. */
+.view-table[data-sticky-groups] tbody tr.view-table__group--drop:not(.view-table__row--frozen) > td {
+  background-image: linear-gradient(var(--accent-soft), var(--accent-soft)), linear-gradient(var(--bg), var(--bg));
+  background-size: 100% 100%, 100% clamp(0px, var(--view-group-shift) * 1000, 100%);
+}
+
+/* Group lines: a caption of no height holds them, so their box (`.view-table__lines`) spans the table's width and
+   sticks at the left while the table scrolls sideways, as each header's `.view-group` does. One 1px line per open
+   group, under the middle of its chevron (`.view-group` at 8px + the indent per level, the 18px toggle's middle 9px
+   in), from just under the chevron to its last row's bottom (`--view-line-top`, `--view-line-h`, `groupGuides.ts`).
+   z-index 2, first in the table: over the rows, the `#` gutter and the frozen cells (1); under the frozen rows, a
+   stuck header and the column header, which are opaque, so a line passes behind them. All grey, no target, as the
+   sidebar's level lines (YAZ-3309); `data-group-lines` on the table says when they show. "On hover" reads
+   `data-mouse-in`, written on the lines' own box only (`groupLinesHover`): never a state on an ancestor of the rows. */
+.view-table > caption.view-table__guides {
+  height: 0;
+  padding: 0;
+  caption-side: top;
+  /* A caption centres its content: the lines' zero-width box sat mid-table (YAZ-4798 demo check). */
+  text-align: left;
+}
+
+.view-table__lines {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.view-table__lines > i {
+  position: absolute;
+  top: var(--view-line-top, 0px);
+  left: calc(16px + var(--view-group-indent, 28px) * var(--depth, 0));
+  width: 1px;
+  height: var(--view-line-h, 0px);
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.view-table[data-group-lines='always'] .view-table__lines > i,
+.view-table[data-group-lines='hover'] .view-table__lines[data-mouse-in] > i {
+  opacity: 1;
+}
+
+/* Thread (as the sidebar's Thread to the row, YAZ-3309 D7): the lines and headers of the groups that hold the row
+   under the pointer (`data-on-path`, `groupThread`) take the Bullet threading colour, else the accent, and its width. */
+.view-table[data-group-line-style='thread'] {
+  --view-thread: var(--thread-color, var(--accent));
+}
+
+.view-table[data-group-line-style='thread'] .view-table__lines > i[data-on-path] {
+  width: var(--thread-width, 2px);
+  margin-left: calc(0.5px - var(--thread-width, 2px) / 2);
+  background: var(--view-thread);
+}
+
+.view-table[data-group-line-style='thread'] tbody tr.view-table__group[data-on-path] > td {
+  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--view-thread) 10%, transparent);
+}
+
+.view-table[data-group-line-style='thread'] tbody tr.view-table__group[data-on-path] .view-group__toggle {
+  color: var(--view-thread);
+}
+
+/* A row's first cell steps in with its group levels (YAZ-4532 D10; the first column, Name or not, since YAZ-3746 13AG).
+   TableView sets `--view-name-indent`: the indent × the levels above the row, cut so the value keeps 60px of the column
+   (YAZ-4544). With none, the cell's own 8px padding. */
+.view-table tbody td.view-table__indent {
+  padding-left: calc(var(--view-table-cell-pad-x) + var(--view-name-indent, 0px));
+}
+
+/* The title field of a nested row starts where its title stood. */
+.view-table tbody td.view-table__indent > .view-cell-edit[data-editing] .view-cell-edit__input {
+  padding-left: calc(var(--view-table-cell-pad-x) + var(--view-name-indent, 0px));
 }
 
 .view-group {
@@ -1093,6 +1624,22 @@
   text-overflow: ellipsis;
 }
 
+/* A group level's header style (YAZ-3742 D5): the level's highlight colour as a 40% wash, as the
+   note's highlights are, so the text keeps its own colour in both themes. No vertical padding: the
+   header must keep the row height (S18). */
+.view-group__value--highlight {
+  padding: 0 4px;
+  background: color-mix(in srgb, var(--view-group-hl) 40%, transparent);
+  border-radius: 3px;
+}
+
+/* Large (YAZ-3742 D5): 18px of line fits inside the shortest table row's 21px of content (S18). */
+.view-group__value--large {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
 .view-group__value--none {
   font-weight: 400;
   color: var(--fg-muted);
@@ -1111,9 +1658,42 @@
   border-radius: 4px;
 }
 
-.view-group__new:hover {
+.view-group__new:hover,
+.view-group__open:hover {
   color: var(--fg);
   background: var(--bg-side);
+}
+
+/* "Open folder page ↗" on a Folder group (YAZ-4564 D27). */
+.view-group__open {
+  flex: none;
+  padding: 0 4px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+/* A subfolder's row (YAZ-4579 D32): the folder icon before its title, "N inside" after it, quiet like the shortcut mark. */
+.view-folder-row__icon {
+  flex: none;
+  margin-right: 4px;
+  vertical-align: -2px;
+  color: var(--fg-muted);
+}
+.view-folder-row__inside {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+/* The Folder column's chip is a button (YAZ-4564 D26). */
+.view-folder-chip {
+  border: 0;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
 }
 
 .view-group__summary {
@@ -1175,7 +1755,8 @@
   border-radius: 6px;
 }
 
-.view-board__subgroup > .view-group {
+.view-board__subgroup > .view-group,
+.view-board__subgroup-header > .view-group {
   padding: 0 0 6px;
 }
 
@@ -1356,6 +1937,98 @@
   margin-left: 6px;
 }
 
+/* The row of the note the note window shows (YAZ-4547): an accent edge on its first cell and a soft fill. The
+   colour only (YAZ-4544): a cell or row fill is a `background-image`, and it stays over the soft fill. */
+.view-table tr.view-table__row--current td,
+.view-table tr.view-table__row--current td.view-table__frozen {
+  background-color: var(--accent-soft);
+}
+
+.view-table tr.view-table__row--current td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Under the hover band, whose shadow replaces the one above, the edge goes first in the band's own list (YAZ-4544). */
+.app[data-folder-row-band='on']:not([data-table-band-rows='caret']) .view-table tbody tr.view-table__row--current:not(.view-table__group):not(.view-table__spacer):not(.view-table__new):hover > td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
+}
+
+/* The card or row of the note the note window shows in Board, List, Cards and Calendar (YAZ-4547 D24,
+   `CURRENT_ITEM`): the table row's soft fill and an accent ring. */
+.view-board__card.view-item--current,
+.view-list__item.view-item--current,
+.view-card.view-item--current,
+.view-cal__card.view-item--current {
+  background-color: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+/* The note window (YAZ-4547, `NoteWindow.tsx`): a card over the folder page, in its `section.editor` beside the
+   scroller, so it stays put while the page scrolls. The cell-note card's look (`editor/table/table.css`); its head
+   buttons share the cell-note card's classes. `NoteWindow` writes its place and size. */
+.note-window {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  color: var(--fg);
+}
+
+.note-window__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px 5px 12px;
+  background: var(--bg-side);
+  border-bottom: 1px solid var(--border);
+  border-radius: 11px 11px 0 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  user-select: none;
+  cursor: grab;
+}
+
+.note-window__open {
+  font-size: 13px;
+}
+
+/* The full editor of the note: its own scroller, inside the card's rounded corners. */
+.note-window__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0 0 11px 11px;
+}
+
+.note-window__grip {
+  position: absolute;
+  z-index: 1;
+}
+
+.note-window__grip[data-grip='n'] { top: -3px; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
+.note-window__grip[data-grip='s'] { bottom: -3px; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
+.note-window__grip[data-grip='e'] { right: -3px; top: 6px; bottom: 6px; width: 6px; cursor: ew-resize; }
+.note-window__grip[data-grip='w'] { left: -3px; top: 6px; bottom: 6px; width: 6px; cursor: ew-resize; }
+.note-window__grip[data-grip='nw'] { top: -6px; left: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
+.note-window__grip[data-grip='se'] { bottom: -6px; right: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
+.note-window__grip[data-grip='ne'] { top: -6px; right: -6px; width: 12px; height: 12px; cursor: nesw-resize; }
+.note-window__grip[data-grip='sw'] { bottom: -6px; left: -6px; width: 12px; height: 12px; cursor: nesw-resize; }
+
+/* A drag of the head or of a grip: its cursor on the whole folder page until the drop. */
+.note-window-tracking,
+.note-window-tracking * {
+  cursor: var(--note-window-cursor) !important;
+}
+
 /* ---------- motion (YAZ-944) ---------- */
 
 /* a card that is NEW to the board arrives instead of blinking into place */
@@ -1377,6 +2050,319 @@
     transition: none;
     animation: none;
   }
+}
+
+/* ---------- calendar (YAZ-4540) ---------- */
+
+.view-cal {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  margin-top: 8px;
+  padding-bottom: 8px;
+  overflow: auto;
+}
+
+.view-cal__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 2px;
+  align-items: center;
+}
+
+.view-cal__nav .view-toolbar__btn {
+  min-width: 26px;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.view-cal__nav .view-cal__today {
+  font-size: 12px;
+}
+
+.view-cal__scale {
+  margin-left: 6px;
+}
+
+.view-cal__month {
+  margin: 0 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* Seven equal columns that may shrink below their cards: a long title ellipses, the page never scrolls sideways. */
+.view-cal__grid {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.view-cal__week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+/* Hide weekends (YAZ-4595 S33): Monday to Friday. */
+.view-cal__grid--weekdays .view-cal__week {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.view-cal__week + .view-cal__week {
+  border-top: 1px solid var(--border);
+}
+
+.view-cal__weekday {
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  background: var(--bg-side);
+}
+
+.view-cal__day {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 104px;
+  padding: 4px;
+  background: var(--bg);
+}
+
+.view-cal__day + .view-cal__day,
+.view-cal__weekday + .view-cal__weekday {
+  border-left: 1px solid var(--border);
+}
+
+/* Week (YAZ-4558 D22): 7 tall days, each with every card. */
+.view-cal__grid--week .view-cal__day {
+  min-height: 360px;
+}
+
+/* The days of the next and previous month: there, but quiet. */
+.view-cal__day--other {
+  background: var(--bg-side);
+}
+
+.view-cal__day--other .view-cal__date {
+  color: var(--fg-muted);
+}
+
+.view-cal__day--drop,
+.view-cal__tray--drop {
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-soft);
+}
+
+.view-cal__day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+}
+
+.view-cal__date {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--fg);
+  border-radius: 999px;
+}
+
+/* Today's ring (S7). */
+.view-cal__day--today .view-cal__date {
+  font-weight: 600;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+/* The day's "+" (S10): shown on the hovered or focused day, so the grid stays quiet. */
+.view-cal__add {
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  opacity: 0;
+}
+
+.view-cal__day:hover .view-cal__add,
+.view-cal__add:focus-visible {
+  opacity: 1;
+}
+
+.view-cal__add:hover {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+.view-cal__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.view-cal__card {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 18px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.view-cal__card:hover {
+  border-color: var(--fg-muted);
+}
+
+.view-cal__card:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.view-cal__card[draggable='true'] {
+  cursor: grab;
+}
+
+.view-cal__card--drag {
+  opacity: 0.4;
+}
+
+.view-cal__card-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Wrap (YAZ-4558 D23): the full title on more lines, and the day grows with it. */
+.view-cal__card--wrap .view-cal__card-title,
+.view-cal__card--wrap .view-read-only-name__text {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.view-cal__time {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A weekend card on its Friday (YAZ-4595 S33): a small "Sat" or "Sun" before the title. */
+.view-cal__weekend {
+  flex: none;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--fg-muted);
+  background: var(--bg-side);
+  border-radius: 3px;
+}
+
+.view-cal__more {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0 6px;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 4px;
+}
+
+.view-cal__more:hover {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+/* Narrow days (YAZ-4544): at a 340px window a day is 37px. A card's time stays whole: the day and the card give up
+   their side padding (after their own rules, so these win), and a timed card puts its title on a second line, cut
+   with an ellipsis. "+3 more" reads "+3". */
+@container (width < 460px) {
+  .view-cal__more-word {
+    display: none;
+  }
+}
+
+@container (width < 400px) {
+  .view-cal__day {
+    padding-right: 1px;
+    padding-left: 1px;
+  }
+
+  .view-cal__card {
+    flex-wrap: wrap;
+    gap: 0;
+    padding-right: 1px;
+    padding-left: 1px;
+  }
+
+  .view-cal__time {
+    font-size: 10px;
+  }
+
+  .view-cal__more {
+    padding: 0 2px;
+  }
+}
+
+/* "No date" (D4): below the grid, its cards in a wrapping row. */
+.view-cal__tray {
+  padding: 8px;
+  background: var(--bg-side);
+  border-radius: 8px;
+}
+
+.view-cal__tray-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.view-cal__tray-count {
+  margin-left: 4px;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+
+.view-cal__tray-cards {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.view-cal__tray-cards .view-cal__card {
+  max-width: 240px;
+}
+
+.view-cal__hint {
+  margin: 48px auto;
+  color: var(--fg-muted);
+  text-align: center;
 }
 
 /* ---------- cards (4E) ---------- */
@@ -1403,6 +2389,11 @@
 
 .view-cards__group .view-group {
   padding: 2px 0 4px;
+}
+
+/* a nested group's section sits inside its parent's (YAZ-4531), one 28px step in */
+.view-cards__group .view-cards__group {
+  margin-left: var(--view-group-indent, 28px);
 }
 
 .view-card {
@@ -1481,6 +2472,11 @@
 
 .view-list__group .view-group {
   padding: 2px 0 4px;
+}
+
+/* A nested group level steps in by the view's group indent, as the table does (YAZ-4532 D10). */
+.view-list__group .view-list__group {
+  margin-left: var(--view-group-indent, 28px);
 }
 
 .view-list__item {
@@ -1573,16 +2569,6 @@
 
 .view-width-setting .view-input {
   width: 72px;
-}
-
-.view-list-settings {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.view-list-settings .view-input {
-  width: 56px;
 }
 
 /* ---------- inline cell editors (5B, GRO-2142) ---------- */
@@ -1695,6 +2681,13 @@
   margin-left: 4px;
 }
 
+/* A toolbar popover starts under its button and grows right; Popover's viewport clamp slides it left only as far as
+   the page's right edge needs (YAZ-3746 demo). */
+.view-toolbar__menu > .view-popover {
+  left: 0;
+  right: auto;
+}
+
 /* Searchable property controls (YAZ-1395/1396). Native selects elsewhere retain their width cap. */
 .view-popover--properties {
   width: 390px;
@@ -1794,17 +2787,30 @@
 .column-picker__check { color: var(--accent); }
 .sort-menu .view-rule__main {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 48px 20px;
+  grid-template-columns: 18px minmax(0, 1fr) 118px 20px;
   align-items: start;
   gap: 8px;
 }
-.sort-menu .view-rule__main > .column-picker { grid-column: 2; }
-.sort-menu .view-rule__main > .view-chip { width: 48px; height: 30px; padding: 0; text-align: center; color: var(--fg); }
+.sort-menu .view-rule__main > .column-picker > .column-picker__trigger { grid-column: 2; }
+/* The column list opens as the order list does (YAZ-3746 13BN): a full-width second line of the row. In the column's
+   own slot (about 100px) "Sweetness" and "File name" broke in two and the search said "Search c". */
+.sort-menu .column-picker { display: contents; }
+.sort-menu .column-picker__panel { grid-row: 2; grid-column: 1 / -1; }
+/* The order menu (YAZ-3940): its button sits in the row's order column, and the open list takes a full-width second line of the row. */
+.direction-picker { display: contents; }
+.direction-picker__trigger { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; min-width: 0; height: 30px; padding: 0 7px; color: var(--fg); }
+.direction-picker__trigger > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.direction-picker__menu { grid-row: 2; grid-column: 1 / -1; margin-top: 0; }
+.direction-picker__menu .column-picker__option { width: 100%; text-align: left; }
+.direction-picker__menu .column-picker__option:hover, .direction-picker__menu .column-picker__option:focus-visible { background: var(--bg-hover); outline: none; }
+.direction-picker__edit { border-top: 1px solid var(--border); border-radius: 0 0 4px 4px; color: var(--fg-muted); }
 .sort-menu .view-rule__nav, .sort-menu .view-rule__remove { width: 100%; height: 30px; min-width: 0; }
 .sort-menu .view-prop__handle { opacity: .65; }
 .sort-menu .view-prop__handle:hover { opacity: 1; }
 .sort-menu .view-prop__handle:disabled { opacity: .35; cursor: default; }
 .sort-menu .view-menu__foot { padding-left: 26px; margin-top: 6px; }
+/* "+ Add sort" / "+ Add group level" (YAZ-4607 D60): the plus is drawn, not text. */
+.sort-menu .view-menu__action::before { content: '+ '; }
 .sort-menu > .view-menu__label {
   border-top: 1px solid var(--border);
   padding-top: 14px;
@@ -1813,5 +2819,692 @@
   color: var(--fg);
   font-weight: 600;
 }
-.sort-menu > .view-rule__main { grid-template-columns: minmax(0, 1fr) 48px; padding: 0 28px 0 26px; margin-bottom: 6px; }
-.sort-menu > .view-rule__main > .column-picker { grid-column: 1; }
+/* "Sort" heads the popover (D60): no line over the first section. */
+.sort-menu > .view-menu__label:first-child { border-top: 0; padding-top: 0; margin-top: 2px; }
+.sort-menu > .view-rule__main { grid-template-columns: minmax(0, 1fr) 118px; padding: 0 28px 0 26px; margin-bottom: 6px; }
+.sort-menu > .view-rule__main > .column-picker > .column-picker__trigger { grid-column: 1; }
+/* A group level's row has one more column, the "Aa" style chip (YAZ-3742). A sort row leaves that column empty, so
+   its × stands under the group rows' × (YAZ-4643 S6). */
+.sort-menu .view-rule__main.sort-menu__level { grid-template-columns: 18px minmax(0, 1fr) 118px 30px 20px; }
+.sort-menu .sort-menu__level > .view-rule__remove { grid-column: 5; }
+.group-style { display: contents; }
+.group-style__trigger { display: flex; align-items: center; justify-content: center; width: 100%; height: 30px; padding: 0; color: var(--fg); }
+.group-style__sample { font-size: 12px; font-weight: 600; }
+.group-style__sample--highlight { padding: 0 4px; background: color-mix(in srgb, var(--view-group-hl) 40%, transparent); border-radius: 3px; }
+.group-style__sample--large { font-size: 14px; font-weight: 700; }
+.group-style__panel { grid-row: 2; grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 0; padding: 6px; }
+.group-style__swatch { width: 20px; height: 20px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: color-mix(in srgb, var(--swatch, transparent) 40%, transparent); }
+.group-style__swatch--none { background: linear-gradient(to top right, transparent calc(50% - 1px), var(--fg-muted) 50%, transparent calc(50% + 1px)); }
+.group-style__swatch[aria-pressed='true'] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.group-style__large { margin-left: auto; padding: 2px 8px; font-size: 12px; font-weight: 700; color: var(--fg-muted); border: 1px solid var(--border); border-radius: 4px; }
+.group-style__large[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
+/* "Folders first" under the sort rows (YAZ-4579 D33, YAZ-4607 D60), lined up with them. */
+.sort-menu__folders-first { display: flex; padding: 0 28px 0 26px; margin-top: 8px; }
+
+/* ---------- Columns and View popover, and the Sort menu: the polish pass (YAZ-3746 demo) ----------
+   Rows of one height with a soft hover, an icon before each label, switches for on/off, segmented buttons for short
+   choices, quiet fills for the other controls; the tabs are one segmented switch. */
+.view-menu__tabs { padding: 10px 12px 8px; border-bottom: 0; }
+.view-menu__tabs::before { content: ''; position: absolute; inset: 10px 12px 8px; background: var(--bg-side); border-radius: 7px; }
+.view-menu__tab {
+  position: relative;
+  flex: 1;
+  margin: 2px;
+  padding: 4px 10px;
+  font-weight: 500;
+  border-bottom: 0;
+  border-radius: 5px;
+}
+.view-menu__tab[aria-pressed='true'] { background: var(--bg); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(0, 0, 0, 0.06); }
+.view-menu--tabbed .column-menu-head { top: 46px; padding: 2px 0 4px; margin-bottom: 0; border-bottom: 0; }
+.view-menu--tabbed .column-search { padding: 5px 9px; }
+.view-menu--tabbed .column-menu-summary { display: block; margin: 6px 2px 0; }
+
+/* The switch: every on/off in the popover's rows. */
+.view-switch,
+.view-settings input[type='checkbox'],
+.sort-menu input[type='checkbox'] {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 15px;
+  margin: 0 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fg) 22%, transparent);
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.view-switch::before,
+.view-settings input[type='checkbox']::before,
+.sort-menu input[type='checkbox']::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.12s;
+}
+.view-switch:checked,
+.view-settings input[type='checkbox']:checked,
+.sort-menu input[type='checkbox']:checked { background: var(--accent); }
+.view-switch:checked::before,
+.view-settings input[type='checkbox']:checked::before,
+.sort-menu input[type='checkbox']:checked::before { transform: translateX(11px); }
+.view-switch:disabled { opacity: 0.45; cursor: default; }
+.view-switch:focus-visible,
+.view-settings input[type='checkbox']:focus-visible,
+.sort-menu input[type='checkbox']:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Columns tab: Shown and Hidden, one 30px line per column. */
+.column-section__head { display: flex; align-items: center; justify-content: space-between; min-height: 24px; padding: 6px 2px 0 8px; font-size: 11px; color: var(--fg-muted); }
+.column-section__head .view-menu__action { font-size: 11px; padding: 2px 6px; }
+.view-menu--tabbed .view-prop { padding: 0; }
+.view-menu--tabbed .view-prop__identity { align-items: center; gap: 2px; height: 30px; padding-right: 2px; border-radius: 6px; }
+.view-menu--tabbed .view-prop__identity:hover { background: var(--bg-hover); }
+.view-menu--tabbed .view-prop__open { padding: 4px; }
+.view-menu--tabbed .view-prop__open:hover { background: transparent; }
+.view-menu--tabbed .view-prop__handle,
+.view-prop__handle-slot { flex: none; width: 16px; min-width: 16px; padding: 0; }
+.view-menu--tabbed .view-prop__handle { opacity: 0; }
+.view-menu--tabbed .view-prop__identity:hover .view-prop__handle,
+.view-menu--tabbed .view-prop__handle:focus-visible { opacity: 0.6; }
+.view-prop__type { flex: none; font-size: 11px; color: var(--fg-muted); }
+.view-menu--tabbed .view-prop__chevron { width: 8px; opacity: 0; }
+.view-menu--tabbed .view-prop__identity:hover .view-prop__chevron { opacity: 1; }
+.column-section--hidden .view-prop__name { color: var(--fg-muted); }
+/* Hidden, by where each column comes from (YAZ-4713 C4): the folder's own, From <owner>, Other properties in these notes. */
+.column-section__part-title { margin: 4px 0 0 8px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* An other property's two buttons stay on the row's one line: Show keeps its size, "Add to <folder>" shrinks with "…"
+   (its title holds the whole name), after the label, which shrinks first. */
+.view-prop__identity > .view-menu__action { flex: none; font-size: 11px; padding: 2px 6px; white-space: nowrap; }
+.view-prop__identity > .view-menu__action.view-prop__add { flex: 0 1 auto; min-width: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
+.view-menu--tabbed > .view-menu__action {
+  display: block;
+  width: calc(100% + 20px);
+  margin: 6px -10px -10px;
+  padding: 9px 18px;
+  text-align: left;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.view-menu--tabbed > .view-menu__action:hover:not(:disabled) { color: var(--accent); background: var(--bg-hover); }
+
+/* View tab: sections of 32px rows. */
+.view-settings { gap: 0; padding: 0; }
+.view-settings > .view-menu__label { margin: 10px 0 2px; padding: 0 8px; font-weight: 500; }
+.view-settings > .view-menu__label:first-child { margin-top: 2px; }
+.view-settings .view-settings-row { min-height: 32px; padding: 0 2px 0 8px; border-radius: 6px; color: var(--fg); }
+.view-settings .view-settings-row:hover { background: var(--bg-hover); }
+.view-settings-row__label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.view-settings-row__icon { flex: none; color: var(--fg-muted); }
+.view-settings .view-seg__opt { padding: 2px 8px; }
+/* Header row (YAZ-4774, `TableLookSettings.tsx`): Color, Strength and Text under it, their words where the icons end. */
+.view-settings .view-settings-row--sub > span:first-child { padding-left: 22px; color: var(--fg-muted); }
+.view-header-colors { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 1px; }
+.view-header-colors > button { padding: 2px; border: 1px solid transparent; border-radius: 4px; }
+.view-header-colors > button[aria-pressed='true'] { border-color: var(--accent); }
+.view-header-colors .table-menu-swatch { width: 12px; height: 12px; }
+.view-header-text { display: flex; gap: 4px; }
+/* YAZ-4794: Text colour (Muted / Full and eight swatches) and Align (four words) drop under their name when the tab is
+   too narrow for them, right-aligned, instead of pushing the tab wider. */
+.view-settings .view-settings-row--wrap { flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; padding-top: 3px; padding-bottom: 3px; }
+.view-settings .view-settings-row--wrap .view-header-text { flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.view-settings .property-board-setting small { display: block; margin: -6px 0 4px; padding-left: 30px; font-size: 11px; color: var(--fg-muted); }
+.view-from-settings { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: -4px; }
+.view-from-settings--reset { color: var(--accent); text-decoration: none; border-radius: 4px; }
+.view-from-settings--reset:hover { background: var(--accent-soft); }
+.view-settings__foot { margin: 8px -10px -10px; padding: 8px 18px 10px; font-size: 11px; color: var(--fg-muted); border-top: 1px solid var(--border); }
+
+/* Quiet selects: a soft fill and a drawn chevron, no box. */
+.view-settings .view-select {
+  appearance: none;
+  height: 24px;
+  padding: 0 22px 0 8px;
+  border-color: transparent;
+  background: color-mix(in srgb, var(--fg) 6%, transparent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4l2-2 2 2M3 6l2 2 2-2'/%3E%3C/svg%3E") no-repeat right 7px center;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.view-settings .view-select:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
+
+/* Sort menu: the same quiet fills; the grip and × show on the row's hover. */
+.sort-menu .column-picker__trigger.view-select,
+.sort-menu .direction-picker__trigger,
+.sort-menu .group-style__trigger {
+  height: 28px;
+  min-height: 28px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.sort-menu .column-picker__trigger.view-select:hover,
+.sort-menu .direction-picker__trigger:hover,
+.sort-menu .group-style__trigger:hover { border-color: transparent; background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.sort-menu .view-rule__nav,
+.sort-menu .view-rule__remove { height: 28px; }
+.sort-menu .view-rule + .view-rule { margin-top: 4px; }
+.sort-menu .view-prop__handle,
+.sort-menu .view-rule__remove { opacity: 0; }
+.sort-menu .view-rule:hover .view-prop__handle,
+.sort-menu .view-prop__handle:focus-visible { opacity: 0.65; }
+.sort-menu .view-rule:hover .view-rule__remove,
+.sort-menu .view-rule__remove:focus-visible { opacity: 1; }
+.sort-menu > .view-menu__label { padding-top: 10px; margin: 10px 0 6px; font-size: 11px; font-weight: 500; color: var(--fg-muted); }
+.sort-menu > .view-menu__label:first-child { padding-top: 0; margin-top: 2px; }
+.sort-menu .view-menu__action { color: var(--fg-muted); }
+.sort-menu .view-menu__action:hover:not(:disabled) { color: var(--accent); background: var(--bg-hover); }
+/* A row with no Settings default ends where the others' ↺ slot ends, so every control lines up. */
+.view-settings .view-settings-row > :last-child:not(.view-from-settings) { margin-right: 22px; }
+/* The View tab's typed values (a board's column width, a list's separator): the same quiet fill as its selects. */
+.view-settings .view-input { height: 24px; border-color: transparent; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.view-settings .view-input:focus { border-color: var(--accent); background: var(--bg); }
+
+/* YAZ-3746 13K: a column's type sits one gap after the widest name (--prop-name-w, measured by PropertiesMenu), the ›
+   and the switch at the right. A narrow popover shrinks the names first. */
+.view-menu--tabbed .view-prop__open .view-prop__name { flex: 0 1 var(--prop-name-w, auto); }
+.view-menu--tabbed .view-prop__type { margin-left: 16px; }
+.view-menu--tabbed .view-prop__chevron { margin-left: auto; }
+
+/* ---------- The column editor (YAZ-3746 13L): the Columns and View tabs' look. Rows of one height with an icon and a
+   soft hover, quiet fills for its fields, a type picker with each type's icon, Hide and Delete as icon rows. ---------- */
+.column-detail__head { gap: 2px; padding: 6px 2px 8px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+.column-detail__back { width: 26px; height: 26px; color: var(--fg-muted); }
+.column-detail__back:hover { color: var(--fg); background: var(--bg-hover); }
+.column-detail__name:hover { border-color: transparent; background: var(--bg-hover); }
+.column-detail__name:focus { background: var(--bg); }
+.column-detail__row { gap: 12px; min-height: 32px; margin-bottom: 0; padding: 0 4px 0 8px; border-radius: 6px; }
+.column-detail__row:hover { background: var(--bg-hover); }
+.column-detail__row > .view-settings-row__label { flex: none; color: var(--fg); }
+/* A long label ("Separate value for 8 Layers of Software - DB") wraps instead of pushing the 300px panel sideways (YAZ-4799 demo check). */
+.column-detail__row > span.view-settings-row__label { flex-shrink: 1; min-width: 0; white-space: normal; }
+/* A picker's list opens inline under its row (Type, and YAZ-4769's Column on). */
+.column-detail__row--type,
+.column-detail__row--picker { flex-wrap: wrap; }
+.column-detail__row .view-input,
+.column-detail__row .view-select { height: 26px; border-color: transparent; background-color: color-mix(in srgb, var(--fg) 6%, transparent); }
+.column-detail__row .view-select {
+  appearance: none;
+  padding: 0 22px 0 8px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4l2-2 2 2M3 6l2 2 2-2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  cursor: pointer;
+}
+.column-detail__row .view-input:focus,
+.column-detail__row .view-select:focus { border-color: var(--accent); background-color: var(--bg); }
+.column-detail__key { padding: 2px 6px; border-radius: 4px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.column-detail__row .property-type-button { height: 26px; padding: 0 10px; font-size: 12px; color: var(--fg); border: 0; border-radius: 5px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.column-detail__row .property-type-button:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.type-picker__trigger { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; font-size: 12px; color: var(--fg); border-radius: 5px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.type-picker__trigger:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.type-picker__trigger[aria-expanded='true'] { box-shadow: 0 0 0 1px var(--accent); }
+.type-picker__trigger > svg:first-child,
+.type-picker__option > svg { flex: none; width: 14px; height: 14px; color: var(--fg-muted); }
+.type-picker__chevron { color: var(--fg-muted); }
+/* The list's search box (YAZ-4795 demo), a full-width line above the choices. */
+.type-picker__search { width: 100%; margin-bottom: 4px; }
+.type-picker__list { display: flex; flex-direction: column; flex-basis: 100%; gap: 1px; padding: 4px; margin: 2px -4px 6px -8px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1); }
+.type-picker__option { display: grid; grid-template-columns: 14px auto minmax(0, 1fr) 12px; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; font-size: 12px; text-align: left; color: var(--fg); border-radius: 5px; }
+.type-picker__option:hover,
+.type-picker__option:focus-visible { background: var(--bg-hover); outline: none; }
+.type-picker__about { overflow: hidden; font-size: 11px; color: var(--fg-muted); text-overflow: ellipsis; white-space: nowrap; }
+.type-picker__check { color: var(--accent); }
+/* A searchable list ("Notes from" lists every folder, YAZ-4795 demo) scrolls inside its own box, the search kept on top, so it never stretches the panel past the window. */
+.type-picker__list:has(> .type-picker__search) { max-height: 320px; overflow-y: auto; }
+.type-picker__list:has(> .type-picker__search) > * { flex: none; }
+.type-picker__list > .type-picker__search { position: sticky; top: -4px; z-index: 1; box-shadow: 0 -4px 0 var(--bg); }
+.column-detail__actions { gap: 0; padding: 6px 0 0; margin-top: 6px; }
+.column-detail__action { display: flex; align-items: center; min-height: 30px; padding: 0 8px; border-radius: 6px; }
+.column-detail__action:hover:not(:disabled) { background: var(--bg-hover); }
+.column-detail__action--danger .view-settings-row__icon { color: var(--danger); }
+.view-header-menu .column-detail { width: 300px; }
+
+/* YAZ-3746 13M: the calendar's bar puts the month (or week) title alone at the left and ‹ › Today and Month | Week at
+   the right. The title takes the room between and cuts with an ellipsis in a narrow window, so nothing wraps. The
+   rules above (`.view-cal__nav`, `.view-cal__month`) stay for everything else. */
+.view-cal__nav {
+  flex-wrap: nowrap;
+}
+
+.view-cal__month {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0 8px 0 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* YAZ-3746 13X: the selection's Count / Sum / Average floats at the bottom right of the visible table (sticky to the
+   window's bottom while the table runs past it), over the rows: showing or hiding it never moves the page. */
+.views-pane__selection-dock {
+  position: sticky;
+  bottom: 14px;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  height: 0;
+  pointer-events: none;
+}
+/* A small solid card (not stretched to the dock's zero height): the page's background, a hairline, a soft shadow. */
+.views-pane__selection-dock > .view-toolbar__selection {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  margin: 0 4px 0 0;
+  padding: 0 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  pointer-events: auto;
+}
+.views-pane__selection-dock > .view-toolbar__selection[hidden] { display: none; }
+
+/* YAZ-3746 13W: a column resize moves ONE edge, as Sheets does. The columns were right already (`table-layout: fixed`,
+   the table as wide as its columns), but with the table scrolled to its right end a column dragged narrower made the
+   table narrower, the browser clamped `scrollLeft`, and every column left of the edge slid right under the mouse. While
+   an edge is held TableView sets `--view-table-slack` to the scroll width at the press, and this zero-height runner keeps
+   the scrollable width there, so nothing clamps. On release the runner eases to 0 and the scroll settles once, smoothly. */
+.view-table-wrap::after {
+  content: '';
+  display: block;
+  width: var(--view-table-slack, 0px);
+  height: 0;
+  transition: width 150ms ease-out;
+}
+
+.view-table-wrap[data-resizing]::after {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-table-wrap::after {
+    transition: none;
+  }
+}
+
+/* YAZ-3746 13Y: a column's alignment. `view.columnAlign[<key>]` puts `view-table__cell--align-<left|center|right>` on
+   the column's header, every body cell and its summary cell (TableView `aligned`). Auto (no entry) is the look above:
+   `view-table__cell--num` right, everything else left — so these come last and beat it. A cell's content is inline
+   (the display button, the chip rows, the link pills), so `text-align` places it; the editing input inherits it
+   (`text-align: inherit` above), so a centered column types centered, as in Sheets. The summary button is a flex row,
+   placed with `justify-content`. */
+.view-table th.view-table__cell--align-left,
+.view-table td.view-table__cell--align-left {
+  text-align: left;
+}
+
+.view-table th.view-table__cell--align-center,
+.view-table td.view-table__cell--align-center {
+  text-align: center;
+}
+
+.view-table th.view-table__cell--align-right,
+.view-table td.view-table__cell--align-right {
+  text-align: right;
+}
+
+.view-table tfoot td.view-table__cell--align-left .view-table__summary-btn {
+  justify-content: flex-start;
+}
+
+.view-table tfoot td.view-table__cell--align-center .view-table__summary-btn {
+  justify-content: center;
+}
+
+.view-table tfoot td.view-table__cell--align-right .view-table__summary-btn {
+  justify-content: flex-end;
+}
+
+/* The column editor's Align row (13Y): the four-way segment drops under its label where the 260px menu panel is too narrow. */
+.column-detail__row--align {
+  flex-wrap: wrap;
+}
+
+.column-detail__row--align .view-seg__opt {
+  padding: 2px 6px;
+}
+
+/* Confirm changes (YAZ-3746 13AN; laid out by 13AS): the ask by the cell, in `document.body` so the page zoom never
+   moves it. A quiet header (what and which note), the change as before → after, the two buttons with their keys, and a
+   tinted foot with the pauses. */
+.change-ask {
+  position: fixed;
+  z-index: 60;
+  width: 372px;
+  max-width: calc(100vw - 16px);
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+.change-ask__body {
+  padding: 12px 14px 12px;
+}
+.change-ask__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.change-ask__kind {
+  flex: none;
+  font-weight: 600;
+  color: var(--fg);
+}
+.change-ask__note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.change-ask__note::before {
+  content: '·';
+  margin-right: 6px;
+}
+.change-ask__diff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 10px 0 14px;
+}
+.change-ask__val {
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  padding: 3px 8px;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 6px;
+}
+.change-ask__val--from {
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.change-ask__val--to {
+  font-weight: 600;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.change-ask__val--empty {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+.change-ask__arrow {
+  flex: none;
+  color: var(--fg-muted);
+}
+.change-ask__summary {
+  margin: 8px 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.change-ask__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.change-ask__actions > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 12px;
+  font: inherit;
+  font-weight: 500;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.change-ask__actions kbd {
+  padding: 1px 4px;
+  font: 500 10px/1.3 ui-monospace, 'SF Mono', Menlo, monospace;
+  border-radius: 4px;
+}
+.change-ask__cancel {
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.change-ask__cancel:hover {
+  background: color-mix(in srgb, var(--fg) 4%, var(--bg));
+}
+.change-ask__cancel kbd {
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.change-ask__go {
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+.change-ask__go:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+.change-ask__go kbd {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+}
+.change-ask__actions > button:focus {
+  outline: none;
+}
+.change-ask__actions > button:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.change-ask__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 14px;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--fg) 3%, var(--bg));
+  border-top: 1px solid var(--border);
+}
+.change-ask__foot-label {
+  white-space: nowrap;
+}
+/* The pauses as one small segment, the view settings' look (`.view-seg`). */
+.change-ask__pauses {
+  display: inline-flex;
+  padding: 2px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-radius: 6px;
+}
+.change-ask__pause {
+  height: 20px;
+  padding: 0 7px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.change-ask__pause:hover {
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.change-ask__off {
+  margin-left: auto;
+  padding: 2px 4px;
+  font: inherit;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.change-ask__off:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+/* The pause's countdown in the view toolbar (13AN), with Resume. */
+.change-pause {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 4px 0 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 999px;
+}
+.change-pause__resume {
+  height: 20px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+/* The row menu's one "Fill ›" (YAZ-3746 13AW): what it fills, Cell · Row · Column, over the colours. */
+.fill-target {
+  display: flex;
+  gap: 2px;
+  margin: 2px 4px 6px;
+  padding: 2px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-radius: 6px;
+}
+.fill-target__opt {
+  flex: 1;
+  height: 22px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.fill-target__opt[aria-pressed='true'] {
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* A board list's end (YAZ-3746 13AX): an invisible mark; near the screen, the list draws its next cards. */
+.view-board__more {
+  height: 1px;
+  margin-top: -1px;
+  list-style: none;
+  pointer-events: none;
+}
+
+/* The column header's mark (YAZ-4713 C11): inline after the name, on the name's one line, so it clips with it inside
+   the cell (`table-layout: fixed`, `overflow: hidden`) and never widens the column. In Columns ⚙ the name's row is a
+   flex row: there the mark is the item that shrinks, its folder name cut with "…". */
+.view-column-mark {
+  margin-left: 4px;
+  color: var(--fg-muted);
+  font-weight: 400;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+.view-prop__name .view-column-mark {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.view-column-mark__icon {
+  vertical-align: -1px;
+}
+
+.view-column-mark__name {
+  margin-left: 3px;
+  font-size: 0.85em;
+}
+
+/* Edit column's line on where a column comes from (YAZ-4713 C6): the words, then the move. */
+.column-detail__source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 6px;
+  color: var(--fg-muted);
+  font-size: 0.92em;
+}
+
+/* YAZ-4769 demo: the Settings row (Shared / Only here) and its line under it, as one group. */
+.column-detail__settings .column-detail__source {
+  margin: 0;
+  padding: 0 4px 6px 8px;
+}
+
+/* "Column type icons" (YAZ-4779): the column's type, quiet, before its name — the header's muted grey, 12px. */
+.view-table thead th .view-table__type-icon {
+  display: inline-flex;
+  margin-right: 5px;
+  vertical-align: -2px;
+  color: var(--fg-muted);
+}
+
+.view-table thead th .view-table__type-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* YAZ-4781: "One way" and "Both ways" each on one line in Edit column's narrow panel. */
+.column-detail__row--pair .view-seg__opt {
+  white-space: nowrap;
+}
+
+/* "Add shortcut to ›" (YAZ-4797 demo): a search box over the folders, and the list scrolls inside the flyout. */
+.ctx-menu__search { width: 100%; min-width: 200px; }
+.ctx-menu__group--scroll { max-height: 280px; overflow-y: auto; }
+.ctx-menu__empty { display: block; padding: 4px 10px; color: var(--fg-muted); font-size: 12px; }
+
+/* Option parents (YAZ-4799): each option and its parent picker, one row each, the option's name left. */
+/* The panel is narrow (300px): the option and its picker share the row, neither pushes it wider (no sideways scroll). */
+.column-detail__parents { overflow-x: hidden; }
+.column-detail__parents .column-detail__row { gap: 8px; min-width: 0; }
+.column-detail__parents .column-detail__row > span.column-detail__parent-option { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
+.column-detail__parents .view-select { flex: 0 0 56%; min-width: 0; max-width: 56%; text-overflow: ellipsis; }
+
+/* The Folder column's path (YAZ-4801): the folders from this page down, › between; a narrow column shrinks the middle
+   parts to "…" and keeps the last one whole. */
+.view-folder-path { display: inline-flex; align-items: center; gap: 3px; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; vertical-align: middle; }
+.view-folder-path .shortcut-mark { flex: none; margin-right: 2px; }
+.view-folder-path__sep { flex: none; color: var(--fg-muted); font-size: 11px; }
+.view-folder-path__part { flex: 0 1 auto; min-width: 1.6em; overflow: hidden; text-overflow: ellipsis; }
+.view-folder-path__part--last { flex: 0 0 auto; }
+
+/* "Header row ›"'s Strength (YAZ-4794 demo): a second, quieter switch under the Fill · Text · Style tabs. */
+.fill-target--sub { margin-top: 0; }
+.fill-target--sub .fill-target__opt { font-size: 11px; }
+
+/* "None" in a picker list (YAZ-4799 demo): a quiet dash where a type icon would be. */
+.type-picker__none { display: inline-flex; justify-content: center; width: 14px; color: var(--fg-muted); }

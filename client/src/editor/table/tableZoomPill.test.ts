@@ -124,7 +124,7 @@ describe('the pill on the table (the page zoom pill, `DocumentZoom`)', () => {
     expect(renders).toEqual([])
   })
 
-  it('only the note editor has pills: a preview or the outline view (no `tableZoomPill`) has none (YAZ-4176)', async () => {
+  it('only the note editor has pills: a preview or a bare editor (no `tableZoomPill`) has none (YAZ-4176)', async () => {
     const { view } = await mount(`${TABLE}\n<!-- table: zoom 50% -->\n`)
     expect(view.dom.querySelector('.milkdown-table-block')).not.toBeNull()
     expect(view.dom.querySelector('.table-zoom-anchor')).toBeNull()

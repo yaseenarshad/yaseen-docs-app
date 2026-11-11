@@ -213,8 +213,10 @@ const headerTexts = (el: ParentNode): string[] => cols(el).map((c) => q(c, '.vie
 const titles = (el: ParentNode): string[] => [...el.querySelectorAll('.view-board__title')].map((b) => b.textContent ?? '')
 const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `Toggle group ${label}`)
 const colWidth = (el: ParentNode): string => q<HTMLElement>(el, '.view-board').style.getPropertyValue('--view-board-col-w')
+/** The Properties popover on its View tab (YAZ-4607 D59), where Column width lives. */
 const openProperties = (el: ParentNode): HTMLElement => {
-  click(byLabel(el, 'Properties'))
+  click(byLabel(el, 'Columns and view'))
+  click(q(el, '.view-popover .view-menu__tab[data-tab="view"]'))
   return q(el, '.view-popover')
 }
 const widthField = (el: ParentNode): HTMLInputElement => byLabel(el, 'Column width in pixels')
@@ -223,6 +225,13 @@ const menuItems = (el: ParentNode): HTMLButtonElement[] => [
 ]
 const itemNamed = (el: ParentNode, label: string): HTMLButtonElement | undefined =>
   menuItems(el).find((item) => item.textContent === label)
+/** The main menu's rows, without the "Open in ›" flyout's. */
+const mainItems = (el: ParentNode): (string | null)[] => menuItems(el).filter((item) => item.closest('.ctx-menu__sub') === null).map((item) => item.textContent)
+/** A row of "Open in ›" (YAZ-3746 13AW, 13AZ: right panel, other apps, Reveal in Finder): opens the flyout, then finds it. */
+const openInItem = (el: ParentNode, label: string): HTMLButtonElement | undefined => {
+  click(itemNamed(el, 'Open in')!)
+  return [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub [role="menuitem"]')].find((item) => item.textContent === label)
+}
 const cardNamed = (el: ParentNode, title: string): HTMLElement => {
   const titleButton = [...el.querySelectorAll<HTMLElement>('.view-board__title')].find((candidate) => candidate.textContent === title)
   const card = titleButton?.closest<HTMLElement>('.view-board__card')
@@ -494,7 +503,10 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel'])
+    // YAZ-3746 13BO CM1, CM2: a card's menu is the table row's — Open first, then "New card below" before the page group.
+    expect(mainItems(el)).toEqual(['Open', 'Open in new tab', 'Open in', 'New card below', 'Copy path'])
+    click(itemNamed(el, 'Open in')!)
+    expect(menuItems(el).filter((item) => item.closest('.ctx-menu__sub') !== null).map((item) => item.textContent)).toEqual(['Right panel', 'Reveal in Finder'])
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
     expect(el.querySelector('.view-cell-edit__input, .view-table__selected')).toBeNull()
@@ -504,7 +516,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     const openRight = vi.fn()
     const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openRight }) })
     rightClick(cardNamed(el, 'Agentic Agency'))
-    click(itemNamed(el, 'Open in right panel')!)
+    click(openInItem(el, 'Right panel')!)
 
     expect(openRight).toHaveBeenCalledExactlyOnceWith(agenticPath)
     expect(onOpenFile).not.toHaveBeenCalled()
@@ -537,7 +549,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
 
     rightClick(card)
-    click(itemNamed(el, 'Reveal in Finder')!)
+    click(openInItem(el, 'Reveal in Finder')!)
     expect(reveal).toHaveBeenCalledExactlyOnceWith({ path: agenticPath })
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
@@ -547,7 +559,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
     const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openBackground: vi.fn(), onNotice }) })
     rightClick(cardNamed(el, 'Agentic Agency'))
-    click(itemNamed(el, 'Reveal in Finder')!)
+    click(openInItem(el, 'Reveal in Finder')!)
     await act(async () => Promise.resolve())
 
     expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency" — it is no longer there`)
@@ -601,16 +613,16 @@ describe('Board-card page context menu (YAZ-1243)', () => {
       { folder: testFolderHost({ openRight }) },
     )
     rightClick(q(hidden.el, '.view-board__card'))
-    click(itemNamed(hidden.el, 'Open in right panel')!)
+    click(openInItem(hidden.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith(levelsPath)
 
     unmount()
     const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folder: testFolderHost({ openRight }) })
     rightClick(cardNamed(nested.el, 'alphaDirect'))
-    click(itemNamed(nested.el, 'Open in right panel')!)
+    click(openInItem(nested.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith('/vault/alphaDirect.md')
     rightClick(cardNamed(nested.el, 'alpha1'))
-    click(itemNamed(nested.el, 'Open in right panel')!)
+    click(openInItem(nested.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith('/vault/alpha1.md')
 
     unmount()
@@ -622,7 +634,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     )
     expect(repeated).toHaveLength(2)
     rightClick(q(repeated[1].closest<HTMLElement>('.view-board__card')!, '.view-board__line'))
-    click(itemNamed(fanned.el, 'Open in right panel')!)
+    click(openInItem(fanned.el, 'Right panel')!)
     expect(openRight).toHaveBeenLastCalledWith(agenticPath)
   })
 
@@ -635,21 +647,23 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(shell.querySelector('.view-board__line')).toBeNull()
 
     expect(rightClick(shell).defaultPrevented).toBe(true)
-    click(itemNamed(el, 'Open in right panel')!)
+    click(openInItem(el, 'Right panel')!)
     expect(openRight).toHaveBeenCalledExactlyOnceWith(levelsPath)
   })
 
-  it('leaves headers, add controls, placeholders and the no-group hint on their native menu', () => {
+  it('leaves add controls, placeholders and the no-group hint on their native menu; a header opens its group menu (YAZ-4604)', () => {
     const openBackground = vi.fn()
     const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openBackground }) })
     const firstCard = cardNamed(el, 'Agentic Agency')
     const drafting = cols(el)[0]
     const idea = cols(el)[1]
 
-    for (const target of [q(el, '.view-group'), byLabel(el, 'New card')]) {
-      expect(rightClick(target).defaultPrevented).toBe(false)
-      expect(el.querySelector('.ctx-menu')).toBeNull()
-    }
+    expect(rightClick(byLabel(el, 'New card')).defaultPrevented).toBe(false)
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    // A group header's right-click opens the group menu (YAZ-4604, D55), never the card menu. One level: no level steps (YAZ-3746 13AT).
+    expect(rightClick(q(el, '.view-group')).defaultPrevented).toBe(true)
+    expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).toEqual(['New note in this group', 'Collapse this group'])
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     click(byLabel(el, 'New card'))
     expect(rightClick(byLabel(el, 'New card name')).defaultPrevented).toBe(false)
     expect(el.querySelector('.ctx-menu')).toBeNull()
@@ -661,8 +675,12 @@ describe('Board-card page context menu (YAZ-1243)', () => {
 
     unmount()
     const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folder: testFolderHost({ openBackground }) })
-    expect(rightClick(q(nested.el, '.view-board__subgroup > .view-group')).defaultPrevented).toBe(false)
-    expect(nested.el.querySelector('.ctx-menu')).toBeNull()
+    expect(rightClick(q(nested.el, '.view-board__subgroup > .view-group')).defaultPrevented).toBe(true)
+    // The header's own group ends with its toggle; two levels add the level steps after it (YAZ-3746 13AT).
+    expect([...document.querySelectorAll('.ctx-menu .ctx-menu__group')].map((g) => [...g.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent))).toEqual([
+      ['New note in this group', 'Collapse this group'],
+      ['Collapse one level', 'Expand one level'],
+    ])
 
     unmount()
     const hint = mount(NO_GROUP_BASE, { folder: testFolderHost({ openBackground }) })
@@ -973,15 +991,19 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
     expect(onOpenFile).not.toHaveBeenCalled()
   })
 
-  it('empty Enter creates nothing; Escape closes the input back to the row', async () => {
-    const create = vi.fn(() => Promise.resolve('/vault/x.md'))
-    const { el } = mount(BOARD_BASE, { folder: testFolderHost({ create }) })
+  it('empty Enter makes "Untitled" in that group and stays on the board (YAZ-4541 S5); Escape closes the input back to the row', async () => {
+    const create = vi.fn(() => Promise.resolve('/vault/Untitled.md'))
+    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ create }) })
     click(byLabel(colOf(el, 'idea'), 'New card'))
     const input = byLabel<HTMLInputElement>(colOf(el, 'idea'), 'New card name')
+    setValue(input, '   ')
     press(input, 'Enter')
     await flush()
-    expect(create).not.toHaveBeenCalled()
-    press(input, 'Escape')
+    draw()
+    // No typed name: the host names it `Untitled` (`Untitled 2`… on a clash), as every other "+" does.
+    expect(create).toHaveBeenCalledExactlyOnceWith({ properties: { status: 'idea' } }, '')
+    expect(onOpenFile).not.toHaveBeenCalled()
+    press(byLabel<HTMLInputElement>(colOf(el, 'idea'), 'New card name'), 'Escape')
     expect(colOf(el, 'idea').querySelector('[aria-label="New card name"]')).toBeNull()
     expect(colOf(el, 'idea').querySelector('[aria-label="New card"]')).not.toBeNull()
   })
@@ -1115,3 +1137,37 @@ ${cardStyle}
   })
 })
 
+const THREE_BOARD = NESTED_BOARD.replace('      - property: note.proc\n', '      - property: note.proc\n      - property: note.step\n')
+
+describe('three group levels (YAZ-4531)', () => {
+  const records = [
+    rec('a11', { dept: 'A', proc: 'p1', step: 's1' }),
+    rec('a1d', { dept: 'A', proc: 'p1', step: 'p1' }),
+    rec('a12', { dept: 'A', proc: 'p1', step: 's2' }),
+    rec('b21', { dept: 'B', proc: 'p2', step: 's1' }),
+  ]
+  /** Each subgroup as `label@depth`, depth = how many subgroups hold it. */
+  const tree = (el: ParentNode): string[] =>
+    [...el.querySelectorAll<HTMLElement>('.view-board__subgroup')].map((s) => {
+      let depth = 0
+      for (let p = s.parentElement?.closest('.view-board__subgroup'); p; p = p.parentElement?.closest('.view-board__subgroup')) depth++
+      return `${q(s, '.view-group__value').textContent}@${depth}`
+    })
+
+  it('level 1 is the columns; levels 2 and 3 are subgroup sections, level 3 inside level 2, direct cards first', () => {
+    const { el } = mount(THREE_BOARD, { records })
+    expect(headerTexts(el)).toEqual(['A', 'B'])
+    expect(tree(el)).toEqual(['p1@0', 's1@1', 's2@1', 'p2@0', 's1@1'])
+    expect(titles(el)).toEqual(['a1d', 'a11', 'a12', 'b21'])
+    // the inline add sits in the last level's sections only
+    expect([...el.querySelectorAll('.view-board__subgroup')].map((s) => s.querySelector(':scope > .view-board__add') !== null)).toEqual([false, true, true, false, true])
+  })
+
+  it('a level-3 chevron hides only that section and persists under its path key', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el } = mount(THREE_BOARD, { records })
+    click(byLabel(el, 'Toggle group s2'))
+    expect(titles(el)).toEqual(['a1d', 'a11', 'b21'])
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::B', ['v:A\u001fv:p1\u001fv:s2'])
+  })
+})

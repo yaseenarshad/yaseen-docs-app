@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { TEST_RECORDS } from '../testRecords'
 import {
   OPERATORS_BY_TYPE, type OperatorId, type PropertyType, type Rule, countRules, exprToRule, fromGroup, inferType,
-  operatorsFor, ruleToExpr, toGroup,
+  operatorsFor, ruleToExpr, toGroup, valueFilter, withFilter,
 } from './filterRows'
+import { DateValue, DurationValue, LinkValue } from '../expr'
 import { canonicalKey } from './keys'
 
 /** Every operator of every type, with a representative value, and the expression it must write (GRO-2135). */
@@ -81,6 +82,13 @@ const CASES: { type: PropertyType; property: string; op: OperatorId; value: stri
   { type: 'multi-select', property: 'note.labels', op: 'hasAllOf', value: ['Ready', 'Done'], expr: 'note.labels.containsAll("Ready", "Done")' },
   { type: 'multi-select', property: 'note.labels', op: 'isEmpty', value: '', expr: 'note.labels.isEmpty()' },
   { type: 'multi-select', property: 'note.labels', op: 'isNotEmpty', value: '', expr: '!note.labels.isEmpty()' },
+  // A Linked mentions column (YAZ-4738 L3): the notes that link here.
+  { type: 'mentions', property: 'note.used_by', op: 'isEmpty', value: '', expr: 'note.used_by.isEmpty()' },
+  { type: 'mentions', property: 'note.used_by', op: 'isNotEmpty', value: '', expr: '!note.used_by.isEmpty()' },
+  { type: 'mentions', property: 'note.used_by', op: 'contains', value: 'POST orders', expr: 'note.used_by.contains("POST orders")' },
+  // An Image column (YAZ-4802): has a picture or not.
+  { type: 'image', property: 'note.cover', op: 'isEmpty', value: '', expr: 'note.cover.isEmpty()' },
+  { type: 'image', property: 'note.cover', op: 'isNotEmpty', value: '', expr: '!note.cover.isEmpty()' },
 ]
 
 describe('ruleToExpr / exprToRule round trip (GRO-2135)', () => {
@@ -240,5 +248,51 @@ describe('filter groups', () => {
     expect(countRules(undefined)).toBe(0)
     expect(countRules('a')).toBe(1)
     expect(countRules({ and: ['a', { or: ['b', 'c'] }, { not: ['d'] }] })).toBe(4)
+  })
+})
+
+describe('a cell\'s "Filter by this value" and "Hide this value" (YAZ-4592 S25)', () => {
+  it('writes `is` and `is not` in the grammar, by the value\'s type, and each reads back as its builder row', () => {
+    const cases: [unknown, string, string][] = [
+      ['idea', 'note.status == "idea"', 'note.status != "idea"'],
+      [2, 'note.status == 2', 'note.status != 2'],
+      [null, 'note.status.isEmpty()', '!note.status.isEmpty()'],
+      ['', 'note.status.isEmpty()', '!note.status.isEmpty()'],
+      [[], 'note.status.isEmpty()', '!note.status.isEmpty()'],
+      [new LinkValue('Agentic Agency'), 'note.status == "Agentic Agency"', 'note.status != "Agentic Agency"'],
+      [['agentic'], 'note.status.contains("agentic")', '!note.status.contains("agentic")'],
+    ]
+    for (const [value, is, isNot] of cases) {
+      expect(valueFilter('note.status', value as never, false)).toBe(is)
+      expect(valueFilter('note.status', value as never, true)).toBe(isNot)
+      expect(exprToRule(is)).not.toBeNull()
+      expect(exprToRule(isNot)).not.toBeNull()
+    }
+  })
+
+  it('a value with no exact "not" operator is hidden through a None group: a date, a checkbox, a list of several', () => {
+    const day = new Date(2026, 7, 1).getTime()
+    expect(valueFilter('note.date', new DateValue(day, false), false)).toBe('note.date == date("2026-08-01")')
+    expect(valueFilter('note.date', new DateValue(day, false), true)).toEqual({ not: ['note.date == date("2026-08-01")'] })
+    expect(valueFilter('note.published', false, false)).toBe('note.published == false')
+    expect(valueFilter('note.published', true, true)).toEqual({ not: ['note.published == true'] })
+    expect(valueFilter('note.tags', ['a', new LinkValue('b')], false)).toBe('note.tags.containsAll("a", "b")')
+    expect(valueFilter('note.tags', ['a', 'b'], true)).toEqual({ not: ['note.tags.containsAll("a", "b")'] })
+    // A name that is no identifier, through the accessor the builder uses.
+    expect(valueFilter('note.my prop', 'x', false)).toBe('note["my prop"] == "x"')
+  })
+
+  it('a value the grammar cannot name gives no rule', () => {
+    expect(valueFilter('note.x', new DurationValue(5), false)).toBeNull()
+    expect(valueFilter('note.x', { a: 1 }, false)).toBeNull()
+    expect(valueFilter('note.x', [1, 2], false)).toBeNull()
+  })
+
+  it('withFilter adds the rule to an All group, and puts any other group under a new All beside it', () => {
+    expect(withFilter(undefined, 'a == 1')).toEqual({ and: ['a == 1'] })
+    expect(withFilter('b == 2', 'a == 1')).toEqual({ and: ['b == 2', 'a == 1'] })
+    expect(withFilter({ and: ['b == 2'] }, 'a == 1')).toEqual({ and: ['b == 2', 'a == 1'] })
+    expect(withFilter({ or: ['b == 2', 'c == 3'] }, 'a == 1')).toEqual({ and: [{ or: ['b == 2', 'c == 3'] }, 'a == 1'] })
+    expect(withFilter({ not: ['b == 2'] }, { not: ['a == 1'] })).toEqual({ and: [{ not: ['b == 2'] }, { not: ['a == 1'] }] })
   })
 })

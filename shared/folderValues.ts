@@ -1,9 +1,9 @@
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 
 /**
- * A folder's values for a note (D19): `in`, one block per FOLDER ID, each holding that folder's
- * columns for the note. The note's own fields stay at the top level; a folder's views and the
- * properties panel read and write only that folder's block. The app's own key, never a column.
+ * A folder page's own values for a note (D19, since YAZ-4713 C3 only for a column set to "Separate value on this
+ * page"): `in`, one block per FOLDER ID, each holding that page's values for the note. Every other column's value is
+ * the note's own top-level field (C1). The app's own key, never a column.
  */
 export const FOLDER_VALUES_KEY = 'in'
 
@@ -72,19 +72,4 @@ export function moveFolderValues(content: string, from: string, to: string): str
   const blocks = properties[FOLDER_VALUES_KEY]
   if (error !== undefined || !isMap(blocks) || !Object.hasOwn(blocks, from) || Object.hasOwn(blocks, to)) return content
   return setFrontmatterProperty(content, FOLDER_VALUES_KEY, Object.fromEntries(Object.entries(blocks).map(([id, block]) => [id === from ? to : id, block])))
-}
-
-/**
- * A folder's values leave the note when the note leaves the folder (D20): `properties` without the
- * blocks of the folders that are `known` — some settings record has that id — and not among the
- * ones `showing` the note. A block for an id the app does not know (a folder deleted, or not synced
- * yet) is kept. The same object when nothing goes; `in` goes with its last block.
- */
-export function withoutStaleFolderValues(properties: Record<string, unknown>, showing: ReadonlySet<string>, known: ReadonlySet<string>): Record<string, unknown> {
-  const blocks = properties[FOLDER_VALUES_KEY]
-  if (!isMap(blocks)) return properties
-  const kept = Object.entries(blocks).filter(([id]) => showing.has(id) || !known.has(id))
-  if (kept.length === Object.keys(blocks).length) return properties
-  const { [FOLDER_VALUES_KEY]: _, ...own } = properties
-  return kept.length === 0 ? own : { ...own, [FOLDER_VALUES_KEY]: Object.fromEntries(kept) }
 }

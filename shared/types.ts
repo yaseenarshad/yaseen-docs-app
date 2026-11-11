@@ -430,6 +430,23 @@ export interface AssetWriteResponse {
   size: number
 }
 
+/**
+ * "Paste a link" of an Image cell (YAZ-4802): main downloads one picture from the web, ONCE. `http:`/`https:` only, an
+ * `image/*` answer only, at most `MAX_FILE_BYTES` (what `writeAsset` takes), within a timeout. Nothing is written: the
+ * renderer saves the bytes through `writeAsset`, the one door into `assets/images/`.
+ */
+export interface ImageDownloadRequest {
+  url: string
+}
+
+export interface ImageDownloadResponse {
+  bytes: Uint8Array
+  /** The answer's `Content-Type`, without parameters (`image/png`). */
+  mimeType: string
+  /** A file name from the URL's last part, made safe, without its extension ('' when the URL names none). */
+  name: string
+}
+
 // ---------- drawing:* / diagram:* / fs:create-board (YAZ-3028 D2, ported from Draw's YAZ-1810 / YAZ-1802) ----------
 
 /**
@@ -910,6 +927,11 @@ export interface PasteResponse {
   failed: { from: string; code: BridgeErrorCode; message: string }[]
 }
 
+/** "Duplicate note" in a folder page's row menu (YAZ-4592 S26): `path` is copied beside itself. The answer is the one entry that landed. */
+export interface DuplicateRequest {
+  path: string
+}
+
 /**
  * Finder's items dropped on a folder of the sidebar (YAZ-3253 D3, D9A): absolute paths, as the
  * preload's `file.pathFor` reads them, moved INTO `targetDir`, which must be in a vault of the
@@ -1231,10 +1253,15 @@ export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
   Number.isInteger((v as HighlightCustomColor).uses) && (v as HighlightCustomColor).uses >= 1
 /** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. `best` is Search's alone (YAZ-3511 D12). */
 export type SortBy = 'manual' | 'name' | 'updated' | 'best'
-/** One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first. */
+/**
+ * One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first.
+ * `kinds` is the menu's "Kind first" (YAZ-4614 D66): the rows of a level go by kind (folders, notes, drawings, diagrams,
+ * PDFs, images, text files, other files), then by the sort inside each kind. Absent = off, so a file from before reads as before.
+ */
 export interface TabSort {
   by: SortBy
   reverse: boolean
+  kinds?: boolean
 }
 /** The tabs that sort (YAZ-3227 D5). Search has its own `searchSort` (YAZ-3511); Sessions and Recents (YAZ-3235) have none. */
 export type SortedTab = 'files' | 'focus' | 'favorites'
@@ -1851,6 +1878,112 @@ export interface SecretHasRequest {
 /** The name the Pixabay API key is stored under (🔒 YAZ-1775 D4); YAZ-1818 reads it in main, never here. */
 export const PIXABAY_SECRET = 'pixabayApiKey'
 
+/** The choices of each Settings › Folder pages row that is not a switch (YAZ-4585). The first is the default. */
+export const FOLDER_PAGE_CHOICES = {
+  weekStartsOn: ['sunday', 'monday'],
+  rowHeight: ['short', 'medium', 'tall'],
+  textInCells: ['kind', 'wrap', 'clip'],
+  groupIndent: ['medium', 'small', 'large'],
+  subfolders: ['notes', 'rows', 'both', 'hide'],
+  calendarScale: ['month', 'week'],
+  cardTitles: ['clip', 'wrap'],
+  columnMarks: ['icon', 'name', 'off'],
+  // YAZ-4798: a grouped table's group lines, the three choices of Settings › Sidebar › Level lines (`TocLines`), and their look (`SidebarLineStyle`).
+  groupLines: ['hover', 'always', 'off'],
+  groupLineStyle: ['plain', 'thread'],
+} as const
+
+/**
+ * Settings › Folder pages (YAZ-4585, D34 of YAZ-4501). Every default is the look before the page existed.
+ * - Personal, in Settings only: `weekStartsOn`, `rowBand`, `keepWindowPinned` (and "Preview rows on hover" and "Preview
+ *   links on hover", which stay `hoverPreviewIn.folderViews` and `hoverPreviewIn.folderLinks`).
+ * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`).
+ * - Page default: `showFolderPageFiles`, the sidebar's folder page file rows (D37); a folder's `show_page_file` beats it.
+ *   `showOtherFiles`, the Other files tray at the foot of a folder page (YAZ-4597, D43); a folder's `show_other_files` beats it.
+ *   `inheritColumns`, a folder page shows its parent folders' columns too (YAZ-4713 C2, C12); a folder's `inherit_columns` beats it.
+ */
+export interface FolderPagesSettings {
+  /** The calendar view's first day. */
+  weekStartsOn: (typeof FOLDER_PAGE_CHOICES.weekStartsOn)[number]
+  /** A folder table's row band on hover. null = as Settings › Editor › Tables › Row band: on unless that is Off. */
+  rowBand: boolean | null
+  /** The note window opens pinned. null = as Settings › Editor › Cell notes › Keep cell notes open. */
+  keepWindowPinned: boolean | null
+  rowHeight: (typeof FOLDER_PAGE_CHOICES.rowHeight)[number]
+  rowNumbers: boolean
+  /** "Column type icons" (YAZ-4779): a table header shows each column's type icon before its name. A view can say otherwise (`columnTypeIcons`). */
+  columnTypeIcons: boolean
+  /** A table column with no Wrap or Clip of its own (D29): `kind` wraps the chip kinds and clips the rest. */
+  textInCells: (typeof FOLDER_PAGE_CHOICES.textInCells)[number]
+  groupIndent: (typeof FOLDER_PAGE_CHOICES.groupIndent)[number]
+  /**
+   * "Sticky group headers" (YAZ-4798): in a grouped table, the headers of the groups the top rows are in stay under the
+   * column header while the rows scroll, one level under another, as the sidebar's sticky folders (YAZ-3440). A view
+   * can say otherwise (`stickyGroups`).
+   */
+  stickyGroups: boolean
+  /** "Group lines" (YAZ-4798): a thin line from each open group's header down to its last row — on hover (the pointer over the table), always, or never. A view can say otherwise (`groupLines`). */
+  groupLines: (typeof FOLDER_PAGE_CHOICES.groupLines)[number]
+  /** "Group line style" (YAZ-4798): `plain` grey lines, or `thread`: the lines and headers of the groups that hold the row under the pointer light up, as the sidebar's thread. A view can say otherwise (`groupLineStyle`). */
+  groupLineStyle: (typeof FOLDER_PAGE_CHOICES.groupLineStyle)[number]
+  /** A Table's "Show empty groups" (its `showEmptyColumns`). Separate from the Board's (YAZ-4608 C2). */
+  showEmptyGroups: boolean
+  /** A Board's "Show empty columns" (its `showEmptyColumns`, YAZ-4608 C2). A stored file without it starts from `showEmptyGroups`. */
+  showEmptyColumns: boolean
+  subfolders: (typeof FOLDER_PAGE_CHOICES.subfolders)[number]
+  foldersFirst: boolean
+  /** "Calendar opens in": Month or Week. */
+  calendarScale: (typeof FOLDER_PAGE_CHOICES.calendarScale)[number]
+  cardTitles: (typeof FOLDER_PAGE_CHOICES.cardTitles)[number]
+  /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. */
+  hideWeekends: boolean
+  showFolderPageFiles: boolean
+  /** A folder page's "Delete note…" asks first (YAZ-4592 S26). Its own switch: Files › Confirm before deleting does not touch it. */
+  askBeforeDelete: boolean
+  /** "Confirm changes" (YAZ-3746 13AN): a change to a note's values from a folder page asks first. A folder's cog can say otherwise (`confirm_changes`). */
+  confirmChanges: boolean
+  /** "Show New buttons" (YAZ-3746 13BL): the toolbar's + New, a table's + New rows, a board's + New card. A folder's `show_new_buttons` beats it. */
+  showNewButtons: boolean
+  showOtherFiles: boolean
+  inheritColumns: boolean
+  /**
+   * "Show where columns come from" (YAZ-4713 C11): the column header's mark — `icon` (↳ from a parent folder, ↑ from a
+   * subfolder, a lock for a separate value; the folder's name on hover), `name` (the icon and the folder's name in small
+   * text), `off`. A folder's `column_marks` beats it.
+   */
+  columnMarks: (typeof FOLDER_PAGE_CHOICES.columnMarks)[number]
+}
+
+export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
+  // Sunday to Saturday (the demo of 2026-11-08); a stored `monday` stays Monday.
+  weekStartsOn: 'sunday',
+  rowBand: null,
+  keepWindowPinned: null,
+  rowHeight: 'short',
+  rowNumbers: true,
+  columnTypeIcons: true,
+  textInCells: 'kind',
+  groupIndent: 'medium',
+  // YAZ-4798: on, on hover, plain lines (the approved defaults; a view with no key of its own reads them).
+  stickyGroups: true,
+  groupLines: 'hover',
+  groupLineStyle: 'plain',
+  showEmptyGroups: true,
+  showEmptyColumns: false,
+  subfolders: 'notes',
+  foldersFirst: true,
+  calendarScale: 'month',
+  cardTitles: 'clip',
+  hideWeekends: false,
+  showFolderPageFiles: false,
+  askBeforeDelete: true,
+  confirmChanges: true,
+  showNewButtons: true,
+  showOtherFiles: true,
+  inheritColumns: true,
+  columnMarks: 'icon',
+}
+
 export interface SettingsState {
   /** Line height within a block (Google-Docs-style presets). */
   lineSpacing: number
@@ -1945,10 +2078,24 @@ export interface SettingsState {
   tableOfContentsWidth: number
   /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
   tocLines: TocLines
+  /** Settings › Editor › Find › Folded bullets (YAZ-4787): what ⌘F does with folded bullets and headings that hide a match. A note's `find-folds` key wins. */
+  findFolds: FindFolds
   /** Settings › Editor › Outside changes (YAZ-3704 D5): how long the words that an AI or another app changed in an open note glow. `off`: no glow and no one-line note; the merge still runs. */
   outsideChangeGlow: OutsideChangeGlow
   /** Settings › Editor › Outside changes › Pin default (YAZ-3704 demo): the numbered list of the changes sits left of the note; off, it opens from the bar's count. The list's own Pin and Unpin write it. */
   outsideListPinned: boolean
+  /**
+   * Settings › Editor › Code blocks › Width (YAZ-4783 layer 3): every code block's width in px at 100% zoom
+   * (`isBlockWidth`), or `null`, "Text column" (the look before). `--code-block-width` on `.app`. A note's `code-width`
+   * key and a block's own width (`<!-- code: width … -->`) win over it.
+   */
+  codeBlockWidth: number | null
+  /**
+   * Settings › Tables › All tables › Width (YAZ-4783 layer 3): every note table's width in px at 100% zoom
+   * (`isBlockWidth`), its columns shared evenly, or `null`, "Text column" (the look before). `--table-width` on `.app`.
+   * A note's `table-width` key wins over it; a table whose every column has a width keeps its own.
+   */
+  tableWidth: number | null
   /** Settings › Editor › Tables › Row band (YAZ-4167, YAZ-4159 D16): a light accent band on the table row under the caret or the mouse, its first cell bold — in no table, in calendar tables, or in all tables. A look, never in the file: `data-table-row-band` on `.app`. */
   tableRowBand: TableRowBand
   /** Settings › Editor › Tables › Band colour (the YAZ-3818 demo): `accent`, a table colour (`red` … `brown`), or a `#rrggbb`. `--table-band-colour` on `.app`. */
@@ -1959,10 +2106,14 @@ export interface SettingsState {
   tableBandRows: TableBandRows
   /** Settings › Editor › Tables › Bold first cell (the YAZ-3818 demo): the band's row shows its first cell in bold. Off keeps the band. `data-table-band-bold` on `.app`. */
   tableBandBold: boolean
+  /** Settings › Tables › All tables › Header row (YAZ-4774): every table's header row, a note table's and a folder table's. A table's comment or a view can say otherwise. `data-table-header-*` on `.app`. */
+  tableHeaderRow: HeaderRow
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
   tableNowButton: boolean
+  /** Settings › Tables › Cell notes › Add button (YAZ-4790): the "+" on the corner of a table cell that adds a cell note. Off by default (YAZ-4790 demo). A table's own `notebutton` / `nonotebutton` turns its button on or off alone. `data-cell-note-button` on `.app`. */
+  tableCellNoteButton: boolean
   /** Settings › Editor › Calendar tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
   tableDimPast: TableDimPast
   /** Settings › Editor › Calendar tables › Shade darkness (YAZ-4163 demo): the past rows' shade, a percent of the text colour, `TABLE_SHADE_MIN`–`MAX` in steps of `TABLE_SHADE_STEP`. `--table-past-shade` on the root. */
@@ -1992,6 +2143,10 @@ export interface SettingsState {
   tableAllNotesOpensAt: AllNotesOpensAt
   /** Settings › Editor › Typing › Arrows (YAZ-4273 D8): `->`, `==>`, `<-`, `<->` and the rest become one arrow character as you type (`typingArrows.ts`). */
   typingArrows: boolean
+  /** Settings › Editor › Typing › Enter keeps the text style, in notes (YAZ-3746 13AB): Enter at the end of a styled line, and the new line types in that style (`enterKeepsStyle.ts`). */
+  enterKeepsStyleNotes: boolean
+  /** Settings › Editor › Typing › Enter keeps the text style, in drawing text boxes (YAZ-3746 13AB). */
+  enterKeepsStyleBoxes: boolean
   /** Settings › Editor › Calendar tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mm a`, for new tables, new times in a table with none, and "Current time". */
   tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
@@ -2160,6 +2315,8 @@ export interface SettingsState {
   tabSleepAfter: TabSleepAfter
   /** Settings › Memory (YAZ-3737 D6, D10): a window that holds too much memory reloads by itself (6). On by default; travels. */
   memoryReload: boolean
+  /** Settings › Folder pages (YAZ-4585, D34 of YAZ-4501): one object, `FolderPagesSettings`. Travels. */
+  folderPages: FolderPagesSettings
 }
 
 /** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily note (YAZ-3607 D1). */
@@ -2173,14 +2330,25 @@ export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
  */
 export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder']
 
-/** The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover. */
-export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'links' | 'drawings'
-export const HOVER_PLACES: readonly HoverPlace[] = ['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links', 'drawings']
+/**
+ * The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover.
+ * A folder page has two (YAZ-4601 demo 13D, in Settings › Folder pages): `folderViews` is "Preview rows on hover" (a
+ * row, a card, an Other files line) and `folderLinks` "Preview links on hover" (a link pill in a cell). A stored
+ * state without `folderLinks` reads it as `folderViews` (`sanitizeHoverPreviewIn`): the one switch it was keeps its Off.
+ */
+export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'folderLinks' | 'links' | 'drawings'
+export const HOVER_PLACES: readonly HoverPlace[] = ['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'folderLinks', 'links', 'drawings']
 
 /** Whether `place` shows the hover preview (YAZ-3403): the master switch and the place's own are both on. */
 export function hoverOn(settings: Pick<SettingsState, 'hoverPreview' | 'hoverPreviewIn'>, place: HoverPlace): boolean {
   return settings.hoverPreview && settings.hoverPreviewIn[place]
 }
+
+/** Settings › Folder pages › Row band on hover (YAZ-4585): its own switch, else as the table block's Row band (on unless Off). `data-folder-row-band` on `.app`. */
+export const folderRowBandOn = (settings: Pick<SettingsState, 'folderPages' | 'tableRowBand'>): boolean => settings.folderPages.rowBand ?? settings.tableRowBand !== 'off'
+
+/** Settings › Folder pages › Keep the mini window pinned (YAZ-4585; the name is YAZ-4605 D57): its own switch, else as "Keep cell notes open". */
+export const folderWindowPinned = (settings: Pick<SettingsState, 'folderPages' | 'tableCellNotePinned'>): boolean => settings.folderPages.keepWindowPinned ?? settings.tableCellNotePinned ?? true
 
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
@@ -2214,6 +2382,12 @@ export const GUIDE_LINE_DARKNESS_STEP = 5
 export type TocLines = 'hover' | 'always' | 'off'
 export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 
+/**
+ * ⌘F and folds (YAZ-4787): `current` opens only the fold that hides the match you are on and folds it again when you
+ * move on; `all` opens every fold that hides a match (before YAZ-4787); `keep` opens nothing and finds only what shows.
+ */
+export type FindFolds = 'current' | 'all' | 'keep'
+export const FIND_FOLDS: readonly FindFolds[] = ['current', 'all', 'keep']
 /** Outside changes (YAZ-3704 D5): a glow stays until you check it, ends after 10 s or 1 min, or never shows. */
 /** The glow of outside changes (YAZ-3704 D5): timed, until checked, or off. 10 seconds went in the YAZ-4272 demo: too quick to read. */
 export type OutsideChangeGlow = 'until-checked' | '60s' | '5m' | 'off'
@@ -2236,9 +2410,51 @@ export const TABLE_BAND_ROWS: readonly TableBandRows[] = ['both', 'caret', 'mous
 export const TABLE_BAND_STRENGTH_MIN = 1
 export const TABLE_BAND_STRENGTH_MAX = 60
 export const TABLE_BAND_STRENGTH_STEP = 1
+/**
+ * A width for every code block or every table (YAZ-4783 layers 2 and 3): Settings' `codeBlockWidth` / `tableWidth`, and a
+ * note's `code-width` / `table-width` key (`pageSwitches.ts`). Whole px at 100% document zoom, `BLOCK_WIDTH_MIN` to
+ * `BLOCK_WIDTH_MAX`; `null` in Settings is "Text column", the look before.
+ */
+export const BLOCK_WIDTH_MIN = 240
+export const BLOCK_WIDTH_MAX = 4000
+/** A block width, checked: a whole number of px in range. */
+export const isBlockWidth = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= BLOCK_WIDTH_MIN && v <= BLOCK_WIDTH_MAX
 /** A band colour: the accent, a table colour, or a `#rrggbb`. */
 export const isBandColour = (v: unknown): v is string =>
   typeof v === 'string' && (v === 'accent' || ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown'].includes(v) || /^#[0-9a-f]{6}$/i.test(v))
+
+/**
+ * Header row (YAZ-4774): one look for a note table's header row and a folder table's. Gray is each table's own text
+ * colour; the others are the cell fill colours. Light is the 6% tint of before; Off is no tint.
+ * YAZ-4794: `text` is the text colour, Muted, Full or one of the eight fill colours (each its cell text colour, darker in
+ * light and lighter in dark, `table.css`); `align` is the whole row's alignment, `follow` (each header cell as its
+ * column, the look before) or Left / Center / Right.
+ */
+export const HEADER_ROW_CHOICES = {
+  // Black (YAZ-4794 demo: "option for black fill") goes all the way to solid black at Strong.
+  color: ['gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'black'],
+  strength: ['off', 'light', 'medium', 'strong'],
+  weight: ['bold', 'regular'],
+  // White (YAZ-4794 demo: "option for white text"), for a dark or black header.
+  text: ['muted', 'full', 'white', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'],
+  align: ['follow', 'left', 'center', 'right'],
+} as const
+export type HeaderRowOwn = { -readonly [K in keyof typeof HEADER_ROW_CHOICES]?: (typeof HEADER_ROW_CHOICES)[K][number] }
+/** Settings' header row: every part set, but `text`: null is each table's own (full in a note table, muted in a folder table). */
+export type HeaderRow = Required<Omit<HeaderRowOwn, 'text'>> & { text: NonNullable<HeaderRowOwn['text']> | null }
+export const HEADER_ROW_PARTS = Object.keys(HEADER_ROW_CHOICES) as (keyof HeaderRowOwn)[]
+export const DEFAULT_HEADER_ROW: HeaderRow = { color: 'gray', strength: 'light', weight: 'bold', text: null, align: 'follow' }
+/** A header row choice's name in a menu or a control (YAZ-4794): Align's `follow` is "Follow column", the rest capitalised. */
+export const headerRowLabel = (value: string): string => (value === 'follow' ? 'Follow column' : value.charAt(0).toUpperCase() + value.slice(1))
+/** The parts of `raw` that are one of their choices; the rest are left out. */
+export function headerRowOwn(raw: unknown): HeaderRowOwn {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const src = raw as Record<string, unknown>
+  return Object.fromEntries(HEADER_ROW_PARTS.filter((part) => (HEADER_ROW_CHOICES[part] as readonly unknown[]).includes(src[part])).map((part) => [part, src[part]]))
+}
+/** The `data-table-header-*` attributes of the set parts: on `.app` (Settings), a note table's block and a folder table (`table.css`). */
+export const headerRowAttrs = (parts: Partial<HeaderRow>): Record<string, string> =>
+  Object.fromEntries(HEADER_ROW_PARTS.filter((part) => typeof parts[part] === 'string').map((part) => [`data-table-header-${part}`, parts[part] as string]))
 
 /** Calendar tables (YAZ-4162 D6): how the now row is marked. */
 export type TableNowMark = 'line' | 'tint' | 'both'
@@ -2464,7 +2680,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newBoardPicturesFolder: '',
   confirmRename: true,
   hoverPreview: true,
-  hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true, drawings: true },
+  hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, folderLinks: true, links: true, drawings: true },
   commentsOrder: 'oldest',
   commentsResolved: 'bottom',
   commentsHint: true,
@@ -2485,15 +2701,20 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tocOnByDefault: true,
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
+  findFolds: 'current',
   outsideChangeGlow: 'until-checked',
   outsideListPinned: false,
+  codeBlockWidth: null,
+  tableWidth: null,
   tableRowBand: 'all',
   tableBandColour: 'accent',
   tableBandStrength: 10,
   tableBandRows: 'both',
   tableBandBold: true,
+  tableHeaderRow: DEFAULT_HEADER_ROW,
   tableNowMark: 'line',
   tableNowButton: true,
+  tableCellNoteButton: false,
   tableDimPast: 'shade',
   tableShadeDarkness: 6,
   tableCellBulletIndent: 20,
@@ -2505,6 +2726,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableCellNotePinned: true,
   tableAllNotesOpensAt: 'cell',
   typingArrows: true,
+  enterKeepsStyleNotes: false,
+  enterKeepsStyleBoxes: true,
   tableDayStart: DEFAULT_CALENDAR_DAY.start,
   tableDayEnd: DEFAULT_CALENDAR_DAY.end,
   tableTimeFormat: DEFAULT_TIME_FORMAT,
@@ -2554,6 +2777,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   dailyNoteOpens: 'now',
   tabSleepAfter: '30m',
   memoryReload: true,
+  folderPages: DEFAULT_FOLDER_PAGES,
 }
 
 export interface WindowBounds {
@@ -3392,14 +3616,35 @@ export interface SharePermissionRequest extends ShareBoardRequest {
  * The editor set that exists (5B's `EditorKind`) plus the link/multi-link split. An unknown
  * `kind` string on disk is preserved there and read back as `text` (forward compat).
  */
-export const PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'link', 'multi-link', 'select', 'multi-select'] as const
+export const PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'link', 'multi-link', 'select', 'multi-select', 'image', 'mentions'] as const
 export type PropertyKind = (typeof PROPERTY_KINDS)[number]
 
 /**
- * Property-name grammar (GRO-2200 R4): snake_case. Enforced at the properties write boundary
- * (`desktop/src/main/properties/`) — one definition so no mirror can drift from it.
+ * The kinds a note's own field can have: all but `mentions`, a folder column's Linked mentions (YAZ-4738 L1), which the
+ * app works out from the index and never writes into a note. The vault-wide declarations and the note's Properties
+ * panel offer these.
  */
-export const PROPERTY_NAME = /^[a-z][a-z0-9_]*$/
+export type NotePropertyKind = Exclude<PropertyKind, 'mentions'>
+export const NOTE_PROPERTY_KINDS: readonly NotePropertyKind[] = PROPERTY_KINDS.filter((kind): kind is NotePropertyKind => kind !== 'mentions')
+
+/**
+ * The ONE property-name rule (YAZ-4551 D19): any name, as typed — "Due Date", "Yaseen". A name is
+ * a string, not empty, with no space at either end and no line break. The properties write
+ * boundary (`desktop/src/main/properties/`), the note's Properties panel and "+ Add column" hold it.
+ */
+export function isPropertyName(name: unknown): name is string {
+  return typeof name === 'string' && name !== '' && name === name.trim() && !/[\r\n]/.test(name)
+}
+
+/**
+ * Why a NEW property name is refused where a view could read it (YAZ-4637 M7), or null: a name under `file.`, `formula.`
+ * or `note.` would clash with the built-in columns of those prefixes. A stored key still reads — this guards the doors
+ * that make one: "+ Add column" and the Properties panel's add and rename.
+ */
+export function builtInPrefixRefusal(name: string): string | null {
+  const prefix = ['file.', 'formula.', 'note.'].find((p) => name.startsWith(p))
+  return prefix === undefined ? null : `${name} starts with ${prefix}, which the built-in columns use — choose another name`
+}
 
 /**
  * Folder-name grammar (GRO-2226, GRO-2204 audit fold-in): root-relative, '/'-separated
@@ -3421,6 +3666,66 @@ export interface PropertyDecl {
   target?: string
   /** Metadata for the future validation report (report-never-block: gates nothing in v1). */
   required?: boolean
+  /** What the column holds, in words (YAZ-4590 S23): Edit column sets it; the table header shows it on hover. */
+  description?: string
+  /** number/date only: how a cell shows the value (YAZ-4591 S21/S22). Display only — the stored value never changes. */
+  format?: PropertyFormat
+  /**
+   * mentions only (YAZ-4739 L2): which links count. `column`, a column key: only links held in that field of the linking
+   * note. `folder`, a link to a folder (`[[API]]`): only notes and folders under it. Absent: every link counts.
+   */
+  from?: MentionsFrom
+  /**
+   * mentions only (YAZ-4781 R1): the column is the other side of the link column `from.column` of the folder
+   * `from.folder` ("Both ways"). Its cells edit that link column's values in the linking notes (R2).
+   */
+  pair?: true
+  /**
+   * select/multi-select only (YAZ-4799 option parents): the column one level up (`column`, its key) and, for each of this
+   * column's options, its parent option there (`of`). Grouped parent › this column, a note joins only the groups whose
+   * parent is the parent group it is in. An option with no entry in `of` shows under every parent, as before.
+   */
+  parent?: OptionParent
+  /** image only (YAZ-4802): the picture's box in px, `IMAGE_SIZE_MIN`–`IMAGE_SIZE_MAX`; absent is `IMAGE_SIZE_DEFAULT`, the text height. */
+  size?: number
+  /** image only (YAZ-4802): absent is "as is" (the whole picture, never cropped); `rounded` and `circle` fill the box. */
+  shape?: ImageShape
+}
+
+/** An Image column's shapes besides "as is" (YAZ-4802). */
+export const IMAGE_SHAPES = ['rounded', 'circle'] as const
+export type ImageShape = (typeof IMAGE_SHAPES)[number]
+/** An Image column's size in px (YAZ-4802): the text height by default, so a row stays one line. */
+export const IMAGE_SIZE_DEFAULT = 18
+export const IMAGE_SIZE_MIN = 12
+export const IMAGE_SIZE_MAX = 240
+
+/** A column's option parents (YAZ-4799): `parent: { column: Layer, of: { "2) API": "4) App" } }`. */
+export interface OptionParent {
+  column: string
+  of: Record<string, string>
+  /**
+   * The options picked as "Any <column>" (YAZ-4799 demo): an empty group under every parent group. An option in
+   * neither `of` nor `any` is "Not set": it shows only under the parents its notes are in, with no empty groups.
+   */
+  any?: string[]
+}
+
+/** A Linked mentions column's narrowing (YAZ-4739 L2): `from: { column?, folder? }` on the column; either or both. */
+export interface MentionsFrom {
+  column?: string
+  folder?: string
+}
+
+/**
+ * A Number or Date column's display format (YAZ-4591). Number styles: `plain` (the default),
+ * `grouped` (1,234), `currency`, `percent`, with `decimals` 0–4 and `currency` an ISO 4217 code.
+ * Date styles: `iso` (the default), `medium` ("Nov 7, 2026") and `relative` ("in 3 days").
+ */
+export interface PropertyFormat {
+  style: 'plain' | 'grouped' | 'currency' | 'percent' | 'iso' | 'medium' | 'relative'
+  decimals?: number
+  currency?: string
 }
 
 export interface PropertiesResponse {

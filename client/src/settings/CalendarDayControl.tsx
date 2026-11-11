@@ -1,5 +1,5 @@
 /**
- * Settings › Editor › Calendar tables › Calendar day (YAZ-4163 demo): "from" and "to", each a dropdown of the half
+ * Settings › Tables › Calendar tables › Calendar day (YAZ-4163 demo): "from" and "to", each a dropdown of the half
  * hours in the time format setting. "to" lists only the times after "from", and "from" only those before "to", so the
  * day is never empty. "/Calendar table", "Time slots" and "Fill the calendar day" read it (`timeFormatSetting.ts`).
  */

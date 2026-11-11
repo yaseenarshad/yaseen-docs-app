@@ -12,52 +12,43 @@
  * renders the same order for the same snapshot.
  *
  * A FOLDER's page mentions what its settings record links by the rename engine's rule
- * (`referenceTargets`: its own link properties, a view's `order` entry, a link column's `target`),
- * and any link in an outline line, prose included. Its entry is that record, sorted by its path.
+ * (`referenceTargets`: the links of its Page, the `.folder.md` body, as a note's (YAZ-4584 D40); its
+ * own link properties, a view's `order` entry, a link column's `target`). Its entry is that record,
+ * sorted by its path.
  *
  * Context snippets are read ON DEMAND (`fs:read` per shown entry, `mentionSnippets` below) —
  * the index stores no positions, and nothing is read until the section is expanded. A folder's
- * are the lines of its outlines, which the index already holds (`folderMentionSnippets`).
+ * come from its Page, the body of its `.folder.md` (`BacklinksSection`).
  */
 import { isViewOnly } from '@shared/fileKind'
 import type { IndexRecord } from '@shared/types'
 import { WIKILINK_RE, idLinkTitle, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import { pathTitles, type PathTitles } from '../lib/pageLabel'
-import { dirname } from '../lib/paths'
-import { folderSettings } from '../views/folderSettings'
-import { parseOutline } from '../views/outlineDoc'
+import type { PathTitles } from '../lib/pageLabel'
 import { maskCode } from '@shared/linkRewrite'
-import { referenceTargets } from './renameLinks'
+import { mentionsOf } from '@shared/mentions'
 
 /**
- * Records whose links/embeds resolve to `path`, then the settings records of the folders whose
- * settings link it, path-sorted; `path` itself — a note, or a folder's own page — never counts.
+ * The reverse map per RESOLVER identity (YAZ-4738 L5) — `resolverFor`'s WeakMap idiom. ONE pass over the snapshot's
+ * links builds it (`mentionsOf`); every mounted tab's section and every Linked mentions column of the snapshot read it,
+ * so a table of 4,000 rows costs that one pass, never one per row. A refetched index swaps in a NEW resolver and
+ * rebuilds (that IS the live update), and dropped snapshots are collectable. The window's source holds ONE resolver per
+ * snapshot — and per folder list (YAZ-2290 D10), which the records alone cannot tell apart — so its identity is the
+ * whole key.
  */
-function referencing(path: string, records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink): IndexRecord[] {
-  const mentions = (target: string): boolean => resolve(target) === path
-  return [
-    ...records.filter((r) => r.path !== path && [...r.links, ...r.embeds].some(mentions)),
-    ...folders.filter((f) => dirname(f.path) !== path && ([...referenceTargets(f)].some(mentions) || folderMentionSnippets(f, path, resolve, pathTitles(records, folders), 1).length > 0)),
-  ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+const mentionsCache = new WeakMap<ResolveLink, ReadonlyMap<string, readonly IndexRecord[]>>()
+
+/** Path → the notes and folders (as their settings records) that mention it in this snapshot: path-sorted, self excluded, embeds included. */
+export function mentionsMap(records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink): ReadonlyMap<string, readonly IndexRecord[]> {
+  let map = mentionsCache.get(resolve)
+  if (map === undefined) mentionsCache.set(resolve, (map = mentionsOf(records, folders, resolve)))
+  return map
 }
 
-/**
- * Referencing sets per RESOLVER identity, then per path — `resolverFor`'s WeakMap idiom.
- * Every mounted tab's section recomputes on each ready snapshot, so one snapshot must cost one
- * pass per open path; a refetched index swaps in a NEW resolver and recomputes (that IS the live
- * update), and dropped snapshots are collectable. The window's source holds ONE resolver per
- * snapshot — and per folder list (YAZ-2290 D10), which the records alone cannot tell apart — so
- * its identity is the whole key.
- */
-const backlinkCache = new WeakMap<ResolveLink, Map<string, IndexRecord[]>>()
+const NONE: readonly IndexRecord[] = []
 
 /** The notes — and the folders, as their settings records (`folders`) — mentioning `path` in this snapshot: path-sorted, self excluded, embeds included. */
-export function backlinksFor(path: string, records: readonly IndexRecord[], resolve: ResolveLink, folders: readonly IndexRecord[]): IndexRecord[] {
-  let byPath = backlinkCache.get(resolve)
-  if (byPath === undefined) backlinkCache.set(resolve, (byPath = new Map()))
-  let hit = byPath.get(path)
-  if (hit === undefined) byPath.set(path, (hit = referencing(path, records, folders, resolve)))
-  return hit
+export function backlinksFor(path: string, records: readonly IndexRecord[], resolve: ResolveLink, folders: readonly IndexRecord[]): readonly IndexRecord[] {
+  return mentionsMap(records, folders, resolve).get(path) ?? NONE
 }
 
 // ---------- context snippets ----------
@@ -260,15 +251,4 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
     while (i + 1 < matches.length && matches[i + 1].index < lineEnd) i++ // this line is spoken for
   }
   return out
-}
-
-/**
- * A folder entry's snippets, off its settings record: the bullets of its outlines that hold a
- * link to `target`, each as the page shows it — `mentionSnippets` over the bullets' text, in view
- * order. None when it links only by a view's `order` or a column's `target`.
- */
-export function folderMentionSnippets(settings: IndexRecord, target: string, resolve: ResolveLink, titles: PathTitles, limit?: number): MentionSnippet[] {
-  // The vault's kind decides only the views of a folder that saved none, and those hold no outline.
-  const bullets = folderSettings(settings, false).views.flatMap((view) => (view.outline === undefined ? [] : parseOutline(view.outline).map((line) => line.text)))
-  return mentionSnippets(bullets.join('\n'), target, resolve, titles, limit)
 }
