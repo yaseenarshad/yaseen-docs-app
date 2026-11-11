@@ -185,6 +185,20 @@ describe('the cells of a Wrap or a Clip column (YAZ-4582)', () => {
     expect(cell.hasAttribute('title')).toBe(false)
   })
 
+  it('YAZ-4895: a tooltip set on a cut cell goes when its column switches to Wrap', () => {
+    const { el } = mount(table())
+    const cell = column(el, 2)[0]
+    Object.defineProperty(cell, 'scrollWidth', { configurable: true, value: 300 })
+    Object.defineProperty(cell, 'clientWidth', { configurable: true, value: 120 })
+    act(() => cell.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+    expect(cell.title).toBe('idea')
+    textMenu(th(el, 2))
+    act(() => item(el, 'Wrap text').click())
+    const wrapped = column(el, 2)[0]
+    act(() => wrapped.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+    expect(wrapped.hasAttribute('title')).toBe(false)
+  })
+
   it('a clipped chip column has its whole list in title', () => {
     const { el } = mount(table('    columnWrap:\n      note.tags: false\n'))
     const tags = column(el, 1)

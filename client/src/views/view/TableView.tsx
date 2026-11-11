@@ -272,8 +272,8 @@ export function cellIsCut(cell: HTMLElement): boolean {
 function tipIfCut(event: ReactMouseEvent<HTMLTableCellElement>): void {
   const cell = event.currentTarget
   const full = cell.dataset.clipTitle
-  if (full === undefined) return
-  if (cellIsCut(cell)) cell.title = full
+  // No value waiting (a Wrap column, YAZ-4895): a tooltip this hover set before goes, as React never set it.
+  if (full !== undefined && cellIsCut(cell)) cell.title = full
   else cell.removeAttribute('title')
 }
 
@@ -1895,7 +1895,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 // A clipped cell shows its full value on hover only when it is cut (YAZ-4582 D29, YAZ-4867): `tipIfCut`.
                 title={c === nameCol && locked ? READ_ONLY_TIP : undefined}
                 data-clip-title={c === nameCol && locked ? undefined : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
-                onMouseEnter={clipped[c] && !(c === nameCol && locked) ? tipIfCut : undefined}
+                onMouseEnter={c === nameCol && locked ? undefined : tipIfCut}
                 onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
                 {...(c !== nameCol && !locked && typings[c]?.assigned === 'image' ? imageDrop(line.r, c) : {})}
               >
