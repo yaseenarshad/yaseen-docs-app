@@ -320,6 +320,7 @@ import { tableHandleSelect } from './table/tableHandleSelect'
 import { tableFold } from './table/tableFold'
 import { tableRowBand } from './table/tableRowBand'
 import { tableZoomPill } from './table/tableZoomPill'
+import { createSuperTables } from './table/super/superTables'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyLinkTextCtx, copyMarkdownCtx, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
@@ -740,6 +741,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableRowBand)
   // The table zoom (YAZ-4091): the page zoom pill in a widget before each table, for the table's own `zoom`; the note editor only (YAZ-4176).
   if (opts.tableZoomPill === true) crepe.editor.use(tableZoomPill)
+  // Super tables (YAZ-4869): the active tab, the redraw of a changed table's view, the header rename and find; the note
+  // editor only, beside the zoom pill whose anchor draws the views. The note's place keys what this Mac remembers.
+  if (opts.tableZoomPill === true) crepe.editor.use(createSuperTables(opts.image === undefined ? null : { root: opts.image.root, notePath: opts.image.notePath }))
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))

@@ -27,7 +27,9 @@
  * Full keep their bare words (`muted`, `full`), and `text-muted` / `text-full` read the same. An older build keeps
  * a `header` part with a new word as its text (below), so it never loses it.
  * `nonow` (the YAZ-4163 demo) is a calendar table with no "Now" chip; `notebutton` / `nonotebutton` (YAZ-4790) a table that
- * shows / hides the cell note "+" button whatever Settings say; they are last. A column's alignment is no
+ * shows / hides the cell note "+" button whatever Settings say. Then `super` (YAZ-4869 S1) marks a Super table, and each
+ * of its views is one `view …` part, in the views' order (`super/viewGrammar.ts` holds that part's grammar): they are
+ * last. A `view` part may repeat, and one this build cannot read is kept as its text even when it writes views itself. A column's alignment is no
  * part: it is the GFM `:-` row, so GitHub and Obsidian show it too ("Align all columns" sets it,
  * YAZ-3767); `align` is a cell's own, which wins over its column's (YAZ-3819). Cells are A1 addresses:
  * columns are letters (A…Z, AA…), rows are numbers, row 1 is the header row.
@@ -41,6 +43,7 @@
  * and the editor keeps it as an HTML node with its text.
  */
 import { HEADER_ROW_CHOICES, HEADER_ROW_PARTS, type HeaderRowOwn } from '@shared/types'
+import { formatView, readView, splitParts, type TableViewDef } from './super/viewGrammar'
 
 /**
  * The cell colours, for fill and text (YAZ-3817, from YAZ-3696 D3 / D8): ten names, each with its own
@@ -102,7 +105,7 @@ export interface UnknownPart {
 }
 
 /** The words of the known parts, in the fixed order. */
-export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'merge', 'fold', 'nodim', 'zoom', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar', 'nonow', 'notebutton', 'nonotebutton'] as const
+export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'merge', 'fold', 'nodim', 'zoom', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar', 'nonow', 'notebutton', 'nonotebutton', 'super', 'view'] as const
 
 /**
  * One merged cell (YAZ-4792): 0-based rows and columns, `bottom` and `right` one past the last (prosemirror-tables'
@@ -132,7 +135,9 @@ export function unknownPart(value: unknown): UnknownPart | null {
   if (typeof text !== 'string') return null
   const clean = text.trim().replace(/\s*[\r\n]+\s*/g, ' ')
   const [word, ...rest] = clean.split(/\s+/)
-  if (clean === '' || clean.includes(',') || clean.includes('-->') || readPart(plainTable(), word!, rest)) return null
+  // A `view` part is unknown by its place (a name a view before it has), so a read of it alone says nothing (YAZ-4869).
+  if (word === 'view') return clean.includes('-->') ? null : { after: after as string | null, text: clean }
+  if (clean === '' || clean.includes(',') || clean.includes('-->') || readPart(plainTable(), word!, rest, clean)) return null
   return { after: after as string | null, text: clean }
 }
 
@@ -172,6 +177,10 @@ export interface TableStyle {
   notebutton?: true
   /** A table with no cell note "+" button (YAZ-4790); a cell's right-click still adds a note. */
   nonotebutton?: true
+  /** A Super table (YAZ-4869 S1): its views show as tabs over it. */
+  super?: true
+  /** A Super table's views, in their order (YAZ-4869 S1); each is one `view` part. */
+  views?: TableViewDef[]
   /** The parts this build does not know, in their order (YAZ-4161). */
   unknown?: UnknownPart[]
 }
@@ -278,8 +287,8 @@ function readWhole(text: string | undefined, min: number, max: number): number |
   return n >= min && n <= max ? n : null
 }
 
-/** One part into `style`; `false` when the part is unknown or its value is. */
-function readPart(style: TableStyle, word: string, rest: string[]): boolean {
+/** One part into `style`; `false` when the part is unknown or its value is. `part` is its whole text (a `view` reads quotes). */
+function readPart(style: TableStyle, word: string, rest: string[], part: string): boolean {
   const [first, second] = rest
   switch (word) {
     case 'widths': {
@@ -376,6 +385,7 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
     case 'nonow':
     case 'notebutton':
     case 'nonotebutton':
+    case 'super':
       if (rest.length !== 0) return false
       style[word] = true
       return true
@@ -397,6 +407,13 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
       style.calendar = slot
       return true
     }
+    case 'view': {
+      // Each view is its own part; a name a view before it holds makes the part one the reader cannot read.
+      const view = readView(part)
+      if (view === null || style.views?.some((v) => v.name === view.name)) return false
+      ;(style.views ??= []).push(view)
+      return true
+    }
     default:
       return false
   }
@@ -412,9 +429,9 @@ export function parseTableComment(value: string): TableStyle | null {
   const style = plainTable()
   const unknown: UnknownPart[] = []
   let after: string | null = null
-  for (const part of body.split(/\s*,\s*/)) {
+  for (const part of splitParts(body)) {
     const [word, ...rest] = part.split(/\s+/)
-    if (readPart(style, word, rest)) after = word
+    if (readPart(style, word, rest, part)) after = word
     else {
       const kept = unknownPart({ after, text: part })
       if (kept !== null) unknown.push(kept)
@@ -501,10 +518,14 @@ export function formatTableComment(style: TableStyle): string | null {
   if (style.nonow) push('nonow', 'nonow')
   if (style.notebutton) push('notebutton', 'notebutton')
   if (style.nonotebutton) push('nonotebutton', 'nonotebutton')
+  if (style.super) push('super', 'super')
+  for (const view of style.views ?? []) push('view', formatView(view))
   const written = new Set(known.map(([word]) => word))
-  // A known part kept as its text goes when this build writes that part itself (YAZ-4176).
-  const unknown = (style.unknown ?? []).filter((part) => !written.has(part.text.split(' ')[0]!))
-  const parts = known.flatMap(([word, text]) => [text, ...unknown.filter((part) => part.after === word).map((part) => part.text)])
+  // A known part kept as its text goes when this build writes that part itself (YAZ-4176). A `view` part repeats, so
+  // one this build cannot read stays beside the ones it writes (YAZ-4869 S1).
+  const unknown = (style.unknown ?? []).filter((part) => part.text.split(' ')[0] === 'view' || !written.has(part.text.split(' ')[0]!))
+  // The parts kept after a word go after its LAST part: a `view` part repeats.
+  const parts = known.flatMap(([word, text], i) => [text, ...(known.slice(i + 1).some(([w]) => w === word) ? [] : unknown.filter((part) => part.after === word).map((part) => part.text))])
   parts.push(...unknown.filter((part) => part.after === null || !written.has(part.after)).map((part) => part.text))
   return parts.length === 0 ? null : `<!-- table: ${parts.join(', ')} -->`
 }

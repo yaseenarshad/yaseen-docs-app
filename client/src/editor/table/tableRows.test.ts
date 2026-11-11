@@ -93,7 +93,7 @@ describe('the menu on a table', () => {
     expect(parts).toEqual([
       'strip:Turn into', 'row:Add line above', 'row:Add line below',
       'strip:Look', 'strip:Text', 'strip:Rows', 'parent:Header row',
-      'Border thickness:Default (1px) ▾', 'Border darkness:Default (20%) ▾', 'Time slots:Default (Off) ▾', 'Cell note button:Default (Off) ▾',
+      'Border thickness:Default (1px) ▾', 'Border darkness:Default (20%) ▾', 'row:Turn into Super table', 'Time slots:Default (Off) ▾', 'Cell note button:Default (Off) ▾',
     ])
     expect(stripsOf(view).slice(1)).toEqual([
       'strip:Look:Stripes|Fit columns to the page~',
@@ -157,7 +157,8 @@ describe('the menu on a table', () => {
     }
     const firstHeader = (view: EditorView) => view.dom.querySelector('th')!
     const labels = (view: EditorView) => [...popupOf(view)!.querySelectorAll('.ctx-menu__item, .block-menu-picker__label, .ctx-menu__strip-caption')].map((el) => el.textContent)
-    const SETTINGS = ['Look', 'Text', 'Rows', 'Header row', 'Border thickness', 'Border darkness', 'Time slots', 'Cell note button']
+    // YAZ-4869 S1: "Turn into Super table" before Time slots.
+    const SETTINGS = ['Look', 'Text', 'Rows', 'Header row', 'Border thickness', 'Border darkness', 'Turn into Super table', 'Time slots', 'Cell note button']
 
     it.each([
       ['the first header cell', firstHeader],

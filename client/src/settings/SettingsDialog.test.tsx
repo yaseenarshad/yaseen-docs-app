@@ -139,7 +139,7 @@ const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkne
  * Settings › Tables (YAZ-4775), after Editor: the note tables' rows, moved off the Editor page with their keys. "All tables"
  * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).
  */
-const TABLES_ROWS = ['tableHeaderRow', 'tableWidth', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const TABLES_ROWS = ['tableHeaderRow', 'tableWidth', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -867,9 +867,9 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     const { el, onChange } = mountOn('Tables')
     const group = row(el, 'tableRowBand')?.closest('.settings-group')
     // "All tables" since YAZ-4775 (on the Tables page a second "Tables" read as "Tables › Tables"); Header row (YAZ-4774)
-    // and Width (YAZ-4783) stand before Row band now.
+    // and Width (YAZ-4783) stand before Row band now, and New tables start as (YAZ-4869 item 22).
     expect(group?.querySelector('.settings-group__title')?.textContent).toBe('All tables')
-    expect([...group!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting).slice(0, 3)).toEqual(['tableHeaderRow', 'tableWidth', 'tableRowBand'])
+    expect([...group!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting).slice(0, 4)).toEqual(['tableHeaderRow', 'tableWidth', 'tableNewStyle', 'tableRowBand'])
     expect(row(el, 'tableRowBand')?.querySelector('.setting__label')?.textContent).toBe('Row band')
     expect(rowButtons(el, 'tableRowBand').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'false'], ['Calendar tables', 'false'], ['All tables', 'true']])
     act(() => rowButtons(el, 'tableRowBand')[1].click())
