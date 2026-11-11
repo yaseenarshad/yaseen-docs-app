@@ -141,6 +141,18 @@ describe('auto-fit width on a double-click of the resize edge (YAZ-4590 S20)', (
     expect(def().views[0].columnSize).toEqual({ 'note.priority': 230 + pads + borders })
   })
 
+  it('a value clipped INSIDE its cell counts whole: the widest element in the cell, not the clipped box around it (YAZ-4892)', () => {
+    const { el, def } = mount(table())
+    layout(el, 133) // the box the value sits in: clipped to the column
+    for (const cell of el.querySelectorAll<HTMLElement>('td[data-cell$=":2"]'))
+      for (const inner of cell.querySelectorAll<HTMLElement>(':scope > * *')) Object.defineProperty(inner, 'scrollWidth', { configurable: true, value: 224 })
+    expect(el.querySelector('td[data-cell$=":2"] > * *'), 'the value has an element inside its box').not.toBeNull()
+    doubleClick(el)
+    const style = getComputedStyle(q(el, 'td[data-cell$=":2"]'))
+    const around = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth'].reduce((w, k) => w + (parseFloat(style[k as 'paddingLeft']) || 0), 0)
+    expect(def().views[0].columnSize).toEqual({ 'note.priority': 224 + around })
+  })
+
   it('a header part\'s side margins and the cell\'s border count, and the fit rounds UP, so the name never shows "…" (YAZ-4871)', () => {
     const { el, def } = mount(table('    columnTypeIcons: true\n'))
     layout(el, 2)

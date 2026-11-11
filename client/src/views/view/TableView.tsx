@@ -243,8 +243,9 @@ const clipTitle = (v: Value, resolve: Resolver | undefined): string | undefined 
  * A cell's content width in CSS px (YAZ-4590 S20): its side borders and paddings (the cells are border-box, YAZ-4871)
  * plus each child's natural width and side margins
  * (YAZ-4871: a header's icons stand apart by margins, so without them the name shows "…"). A text node is measured by a Range;
- * an element by its scroll width, which a `max-width: 100%` box keeps past its clip. The resize edge is absolutely
- * placed, so it does not count.
+ * an element by its scroll width, which a `max-width: 100%` box keeps past its clip, or by the widest element inside it,
+ * which may clip on its own (a text cell's button, YAZ-4892). The resize edge is absolutely placed, so it does not count.
+ * Once per double-click, over the mounted rows only.
  */
 function contentWidth(cell: HTMLElement, zoom: number): number {
   const style = getComputedStyle(cell)
@@ -253,7 +254,9 @@ function contentWidth(cell: HTMLElement, zoom: number): number {
     if (node instanceof HTMLElement) {
       if (node.classList.contains('view-table__resize')) continue
       const childStyle = getComputedStyle(node)
-      width += Math.max(node.scrollWidth, node.getBoundingClientRect().width / zoom) + (parseFloat(childStyle.marginLeft) || 0) + (parseFloat(childStyle.marginRight) || 0)
+      let natural = Math.max(node.scrollWidth, node.getBoundingClientRect().width / zoom)
+      for (const inner of node.querySelectorAll<HTMLElement>('*')) if (inner instanceof HTMLElement) natural = Math.max(natural, inner.scrollWidth)
+      width += natural + (parseFloat(childStyle.marginLeft) || 0) + (parseFloat(childStyle.marginRight) || 0)
     } else if (node.nodeType === Node.TEXT_NODE) {
       const range = document.createRange()
       range.selectNodeContents(node)
