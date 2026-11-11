@@ -2617,6 +2617,20 @@ describe('App ⌘⇧F explore (YAZ-2571)', () => {
     esc()
     expect(el.querySelector('.explore')).toBeNull()
   })
+
+  it('⌘K with the stack open closes the whole stack first, then runs its sidebar search (Yaseen: "⌘K keeps its sidebar search"); the keyboard is not given back', async () => {
+    const { el, emitExplore, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitExplore())
+    await until(() => el.querySelector('.explore') !== null)
+    act(() => emitExplore())
+    expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
+    act(() => emitSearch())
+    expect(el.querySelector('.explore')).toBeNull()
+    expect(captured.sidebar?.lens).toBe('search')
+    expect(captured.sidebar?.pendingSearchFocus).toBe(true)
+    // Not back in the note: the sidebar's search bar is asked for the caret instead.
+    expect(document.activeElement?.closest('.milkdown')).toBeNull()
+  })
 })
 
 describe('App ⌘K search (D4, YAZ-804)', () => {

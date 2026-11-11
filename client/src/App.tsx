@@ -998,12 +998,23 @@ export function App() {
     if (!closeActive()) void api.window.closeSelf()
   }, [closeActive])
 
+  // The explore stack's state (YAZ-2571, the rest is below): the asks while it shows (each one a search layer on top);
+  // 0 is closed. `exploreFrom` is the element that had the keyboard when it opened.
+  const [exploreRequest, setExploreRequest] = useState(0)
+  const exploreFrom = useRef<Element | null>(null)
+
   // ⌘K (D4, YAZ-804): un-collapse this window through the one persisted toggle path, then show the
   // Search tab (YAZ-2638 D2), which asks the sidebar to focus its search bar (it mounts with the flag already true).
+  // With the explore stack open (YAZ-2571: "⌘K keeps its sidebar search"), the whole stack closes first, as the last Esc
+  // does, but gives the keyboard back to nothing: the search bar takes it. Else the focus landed behind the inert stack.
   const openSearch = useCallback(() => {
+    if (exploreRequest > 0) {
+      setExploreRequest(0)
+      exploreFrom.current = null
+    }
     if (sidebarCollapsed) toggleSidebar()
     changeLens('search')
-  }, [sidebarCollapsed, toggleSidebar, changeLens])
+  }, [exploreRequest, sidebarCollapsed, toggleSidebar, changeLens])
 
   // ⌘O (YAZ-1767 D8): the ⌘K handshake for the vault switcher — un-collapse first, then bump a
   // request counter the sidebar header's panel consumes. The request is pinned to the sidebar it was
@@ -1277,10 +1288,8 @@ export function App() {
       )
   }, [dailyVault, notify])
 
-  // The explore stack (YAZ-2571): ⌘⇧F / File › Explore Vault…. `exploreRequest` counts the asks while it shows (each one
-  // a search layer on top); 0 is closed. The keyboard goes back where it was when the stack closes.
-  const [exploreRequest, setExploreRequest] = useState(0)
-  const exploreFrom = useRef<Element | null>(null)
+  // The explore stack (YAZ-2571): ⌘⇧F / File › Explore Vault…. `exploreRequest` and `exploreFrom` are declared above
+  // `openSearch` (⌘K closes the stack). The keyboard goes back where it was when the stack closes.
   const openExplore = useCallback(() => {
     if (root === null || filesWindow) return
     setExploreRequest((n) => {
