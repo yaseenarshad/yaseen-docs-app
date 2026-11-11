@@ -32,6 +32,7 @@ import { render } from '../../../views/expr'
 import { GroupHeader } from '../../../views/view/GroupHeader'
 import { groupSpans, holdersOf } from '../../../views/view/groupGuides'
 import { FilterIcon, PropertiesIcon, SortIcon, ViewTypeIcon } from '../../../views/view/icons'
+import { ContextMenuSurface } from '../../../components/ContextMenuSurface'
 import '../../../views/views.css'
 import { computeView, groupsHolding, linesOf, markdownTable, rowOf, viewSetOf, type Line } from './superData'
 import { FilterPanel, GroupPanel, SortPanel } from './SuperMenus'
@@ -58,7 +59,7 @@ const OVERSCAN = 10
 const FALLBACK_VIEWPORT = 600
 const NO_KEYS: ReadonlySet<string> = new Set()
 
-type Panel = 'sort' | 'group' | 'filter' | 'tab' | null
+type Panel = 'sort' | 'group' | 'filter' | null
 
 /** The bar's tools, each with the folder page's icon (the sort arrows, the sliders, the funnel; YAZ-4869 demo). */
 const TOOLS = { sort: ['Sort', <SortIcon />], group: ['Group', <PropertiesIcon />], filter: ['Filter', <FilterIcon />] } as const
@@ -121,6 +122,8 @@ export function SuperTable({ editor, getPos, table, active, found, zoom }: Super
   const place = superPlace(editor.state)
   const index = tableIndexAt(editor.state.doc, pos)
   const [panel, setPanel] = useState<Panel>(null)
+  // A view tab's right-click menu (YAZ-4869 demo: "as polished as folder pages"): the app's own context menu, at the pointer.
+  const [menu, setMenu] = useState<{ x: number; y: number; name: string } | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null)
   const [tip, setTip] = useState<string | null>(null)
@@ -220,7 +223,6 @@ export function SuperTable({ editor, getPos, table, active, found, zoom }: Super
     writeViews(views.filter((v) => v.name !== name))
     remember(place, index, `view:${name}`, [])
     if (active === name) show(null)
-    setPanel(null)
   }
   const toggleGroup = (key: string) => {
     if (collapsedKey === null) return
@@ -264,8 +266,7 @@ export function SuperTable({ editor, getPos, table, active, found, zoom }: Super
                   onContextMenu={(e) => {
                     e.preventDefault()
                     if (!editable) return
-                    if (active !== v.name) show(v.name)
-                    setPanel('tab')
+                    setMenu({ x: e.clientX, y: e.clientY, name: v.name })
                   }}
                 >
                   <ViewTypeIcon type="table" />
@@ -312,20 +313,33 @@ export function SuperTable({ editor, getPos, table, active, found, zoom }: Super
           {panel === 'sort' && <SortPanel def={def} keys={computed.data.keys} onChange={writeDef} />}
           {panel === 'group' && <GroupPanel def={def} keys={computed.data.keys} onChange={writeDef} />}
           {panel === 'filter' && <FilterPanel def={def} keys={computed.data.keys} records={computed.data.records} onChange={writeDef} />}
-          {panel === 'tab' && (
-            <div className="view-menu super-menu" role="menu" aria-label={`View ${def.name}`}>
-              <button type="button" role="menuitem" className="view-menu__action" onClick={() => (setPanel(null), setRenaming(def.name))}>
-                Rename view
-              </button>
-              <button type="button" role="menuitem" className="view-menu__action" onClick={() => (writeViews([...views, { ...def, name: freshName(views, def.name) }]), setPanel(null))}>
-                Duplicate view
-              </button>
-              <button type="button" role="menuitem" className="view-menu__action super-menu__danger" onClick={() => deleteView(def.name)}>
-                Delete view
-              </button>
-            </div>
-          )}
         </div>
+      )}
+      {menu !== null && (
+        <ContextMenuSurface x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          <div className="ctx-menu__group" role="group">
+            <button type="button" role="menuitem" className="ctx-menu__item" onClick={() => (setMenu(null), setRenaming(menu.name))}>
+              Rename view
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="ctx-menu__item"
+              onClick={() => {
+                const from = views.find((v) => v.name === menu.name)
+                setMenu(null)
+                if (from !== undefined) writeViews([...views, { ...from, name: freshName(views, from.name) }])
+              }}
+            >
+              Duplicate view
+            </button>
+          </div>
+          <div className="ctx-menu__group" role="group">
+            <button type="button" role="menuitem" className="ctx-menu__item ctx-menu__item--danger" onClick={() => (setMenu(null), deleteView(menu.name))}>
+              Delete view
+            </button>
+          </div>
+        </ContextMenuSurface>
       )}
     </div>
   )

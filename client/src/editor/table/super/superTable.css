@@ -3,10 +3,38 @@
    shade, fills and text colours (`table.css` tokens), with the folder pages' group headers (`views.css`). */
 
 /* The bar is the folder page's view bar (`views.css`: `view-toolbar`, `view-tabs`, `view-tab`, `view-toolbar__btn`), so
-   the two look the same (the YAZ-4869 demo: "almost be 1:1"). Restated here only where Crepe's `.milkdown button` reset
-   (no border, no background) would win over the folder page's bare classes. */
+   the two look the same (the YAZ-4869 demo: "almost be 1:1", then "its all just a bit cramped"). Inside the note,
+   Crepe's `.milkdown * { padding: 0; margin: 0 }` and `.milkdown button` (no background) tie with or beat the folder
+   page's bare classes, and the note's line height (1.5) stretches the rows. So the folder bar's own values are
+   restated here under `.milkdown .table-super-bar`, measured on a folder page (YAZ-4869 round 2): the bar 32 px high
+   with 6 px under the tabs, a tab 23 px (4 px 8 px), "+" 2 px 8 px 4 px, a tool button 24 px (5 px 6 px). */
+.milkdown .table-super-bar {
+  padding-bottom: 6px;
+  line-height: normal;
+}
+
+.milkdown .table-super-bar .view-tab__btn {
+  padding: 4px 8px;
+}
+
+.milkdown .table-super-bar .view-tab__add {
+  padding: 2px 8px 4px;
+}
+
+.milkdown .table-super-bar .view-toolbar__actions {
+  margin-left: auto;
+}
+
+.milkdown .table-super-bar .view-toolbar__btn {
+  padding: 5px 6px;
+}
+
 .milkdown .table-super-bar .view-toolbar__btn--on {
   background: var(--bg-side);
+}
+
+.milkdown .table-super-bar .view-toolbar__badge {
+  padding: 0 3px;
 }
 
 .table-super-bar__tools {
@@ -22,7 +50,8 @@
 
 .milkdown .table-super-bar .table-super-bar__rename {
   width: 120px;
-  height: 22px;
+  height: 23px;
+  margin: 0 2px 2px;
   padding: 0 6px;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -107,10 +136,6 @@
   min-width: 0;
   height: 30px;
   box-sizing: border-box;
-}
-
-.super-menu__danger {
-  color: var(--danger, #d33);
 }
 
 /* The view: in the page's flow, no sideways scroll, so the column header and the group headers stick natively. */
