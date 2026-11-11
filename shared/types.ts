@@ -2114,6 +2114,8 @@ export interface SettingsState {
   tableNowButton: boolean
   /** Settings › Tables › Cell notes › Add button (YAZ-4790): the "+" on the corner of a table cell that adds a cell note. Off by default (YAZ-4790 demo). A table's own `notebutton` / `nonotebutton` turns its button on or off alone. `data-cell-note-button` on `.app`. */
   tableCellNoteButton: boolean
+  /** Settings › Tables › All tables › New tables start as (YAZ-4869 item 22): the slash menu's "Table" makes a plain table (default) or a Super table. Read at the click. */
+  tableNewStyle: TableNewStyle
   /** Settings › Editor › Calendar tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
   tableDimPast: TableDimPast
   /** Settings › Editor › Calendar tables › Shade darkness (YAZ-4163 demo): the past rows' shade, a percent of the text colour, `TABLE_SHADE_MIN`–`MAX` in steps of `TABLE_SHADE_STEP`. `--table-past-shade` on the root. */
@@ -2418,6 +2420,9 @@ export const DAILY_NOTE_OPENS: readonly DailyNoteOpens[] = ['note', 'now']
 
 /** Tables (YAZ-4167 D16): where the row band shows. */
 export type TableRowBand = 'off' | 'calendar' | 'all'
+/** What a new table starts as (YAZ-4869 item 22). */
+export const TABLE_NEW_STYLES = ['plain', 'super'] as const
+export type TableNewStyle = (typeof TABLE_NEW_STYLES)[number]
 export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
 
 /** Tables (the YAZ-3818 demo): the rows the band marks. */
@@ -2731,6 +2736,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableNowMark: 'line',
   tableNowButton: true,
   tableCellNoteButton: false,
+  tableNewStyle: 'plain',
   tableDimPast: 'shade',
   tableShadeDarkness: 6,
   tableCellBulletIndent: 20,

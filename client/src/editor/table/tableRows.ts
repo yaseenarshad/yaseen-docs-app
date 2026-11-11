@@ -12,7 +12,9 @@
  * `nonow`, D22), "Go to now" (a row, YAZ-4164 D11: `goToNow`), disabled while no row holds the current time, and "Fill
  * the calendar day" (the YAZ-4163 demo: `fillCalendarDay`), disabled while the table has every slot of the day. Every
  * table has "Cell note button" (Default / On / Off, the table's `noteButton`, saved as `notebutton` / `nonotebutton`,
- * YAZ-4790; Default is Settings › Tables › Cell notes › Add button).
+ * YAZ-4790; Default is Settings › Tables › Cell notes › Add button). Before Time slots, "Turn into Super table" (YAZ-4869
+ * S1, `super/superTables.ts`), off with its reason at the right edge while a body cell spans rows or Time slots are on;
+ * a Super table has "Turn back into a plain table" there, and its Time slots row is off.
  *
  * A strip's lit button is the table's current value; a value that IS the default saves no part. Each pick
  * is ONE transaction with the history closed first, so one ⌘Z (R4); the save writes it in the table
@@ -38,6 +40,7 @@ import { fillCalendarDay, goToNow, minutesOf, missingDayTimes, nowPlace, setTime
 import { calendarDaySetting, cellNoteButtonSetting, headerRowSetting, timeFormatSetting } from './timeFormatSetting'
 import { capital, headerSwatch } from './colours'
 import { CELL_ALIGNS, VALIGNS, type TableAttrs } from './tableStyle'
+import { superRule, turnBackPlain, turnIntoSuper } from './super/superTables'
 
 /** The strips' icons (the YAZ-4163 demo, `tableIcons.ts`). */
 const ALIGN_ICONS: Record<(typeof CELL_ALIGNS)[number], TablerIcon> = { left: 'alignLeft', center: 'alignCenter', right: 'alignRight' }
@@ -271,13 +274,20 @@ export const tableRows: RowProvider = (view, target) => {
     headerRowParent(view, pos, attrs.header),
     thickness,
     darkness,
-    choice(
-      'Time slots',
-      String(attrs.calendar),
-      '0',
-      [{ value: '0', label: 'Off' }, { value: '15', label: '15 min' }, { value: '30', label: '30 min' }, { value: '60', label: '1 hour' }],
-      (slot) => setTimeSlots(view, pos, Number(slot)),
-    ),
+    // YAZ-4869 S1: a Super table and a Time-slots table are never one table (item 18); a body cell that spans rows
+    // would break the groups (item 17). Off, the row says why at its right edge.
+    attrs.superTable
+      ? { label: 'Turn back into a plain table', run: () => turnBackPlain(view, pos) }
+      : { label: 'Turn into Super table', disabled: superRule(table.node) !== null, hint: superRule(table.node) ?? undefined, run: () => turnIntoSuper(view, pos) },
+    attrs.superTable
+      ? { label: 'Time slots: off in a Super table', disabled: true, run: () => {} }
+      : choice(
+          'Time slots',
+          String(attrs.calendar),
+          '0',
+          [{ value: '0', label: 'Off' }, { value: '15', label: '15 min' }, { value: '30', label: '30 min' }, { value: '60', label: '1 hour' }],
+          (slot) => setTimeSlots(view, pos, Number(slot)),
+        ),
     // YAZ-4790: this table's cell note "+"; Settings › Tables › Cell notes › Add button turns off every one. A cell's
     // right-click still has "Add cell note", and a note already there still shows its corner.
     // YAZ-4790 demo: Default follows Settings › Tables › Cell notes › Add button (off by default); a pick of Settings' value saves no part.

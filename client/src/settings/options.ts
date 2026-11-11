@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyNoteOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyNoteOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -180,6 +180,12 @@ export const TABLE_ROW_BAND_OPTIONS: readonly Option<TableRowBand>[] = [
   { label: 'Off', value: 'off' },
   { label: 'Calendar tables', value: 'calendar' },
   { label: 'All tables', value: 'all' },
+]
+
+/** Settings › Tables › All tables › New tables start as (YAZ-4869 item 22). */
+export const TABLE_NEW_STYLE_OPTIONS: readonly Option<TableNewStyle>[] = [
+  { label: 'Plain table', value: 'plain' },
+  { label: 'Super table', value: 'super' },
 ]
 
 /** Tables (the YAZ-3818 demo): the rows the band marks; table.css reads it as `data-table-band-rows` on `.app`. */

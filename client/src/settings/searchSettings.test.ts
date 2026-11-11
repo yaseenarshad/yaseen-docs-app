@@ -90,6 +90,7 @@ describe('settingCandidates', () => {
       // D14) starts with Header row (YAZ-4774) and Width (YAZ-4783).
       'tableHeaderRow',
       'tableWidth',
+      'tableNewStyle',
       'tableRowBand',
       'tableBandColour',
       'tableBandStrength',

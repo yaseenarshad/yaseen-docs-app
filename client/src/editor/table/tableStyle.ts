@@ -6,6 +6,8 @@
  * YAZ-4162); `valign` (`top` | `middle` | `bottom`, the cells' default, YAZ-4166); `zoom` (whole percent, 100 by
  * default, YAZ-4091: `--table-zoom` on the block, which `table.css` puts on its content); `nowButton` (a calendar
  * table's "Now" chip, `true` by default; `false` saves `nonow` and is `data-table-nonow`, the YAZ-4163 demo); and
+ * `superTable` and `views` (YAZ-4869 S1: a Super table and its views, `super/viewGrammar.ts`; saved as `super` and the
+ * `view …` parts, `data-table-super` on the block, the views in `data-table-views` on a copy's `<table>` only); and
  * `unknownParts`, the comment's parts this build does not know or cannot read, kept as their text (YAZ-4161, YAZ-4176). A column's alignment is the cells' own GFM
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
  * cell gets `fill`, `color`, its own `align` and its own `valign` (YAZ-4166), and `fold` (YAZ-4165: the cells of a
@@ -75,6 +77,7 @@ import {
   type UnknownPart,
   type Valign,
 } from './tableComment'
+import { checkedView, type TableViewDef } from './super/viewGrammar'
 import './table.css'
 
 export * from './tableComment'
@@ -95,6 +98,10 @@ export const TABLE_DEFAULTS = {
   nowButton: true,
   /** The table's own cell note "+" button (YAZ-4790): `true` saves `notebutton`, `false` `nonotebutton`, `null` follows Settings. */
   noteButton: null as boolean | null,
+  /** A Super table (YAZ-4869 S1): `true` saves `super`. */
+  superTable: false,
+  /** Its views (YAZ-4869 S1), each saved as a `view …` part. */
+  views: [] as TableViewDef[],
   unknownParts: [] as UnknownPart[],
 }
 export type TableAttrs = typeof TABLE_DEFAULTS
@@ -124,6 +131,9 @@ function tableLevel(attrs: Record<string, unknown>): TableLevel {
   if (attrs.nowButton === false) out.nonow = true
   if (attrs.noteButton === true) out.notebutton = true
   if (attrs.noteButton === false) out.nonotebutton = true
+  if (attrs.superTable === true) out.super = true
+  const views = Array.isArray(attrs.views) ? attrs.views.map(checkedView).filter((view) => view !== null) : []
+  if (views.length > 0) out.views = views
   const unknown = Array.isArray(attrs.unknownParts) ? attrs.unknownParts.map(unknownPart) : []
   if (unknown.length > 0 && unknown.every((part) => part !== null)) out.unknown = unknown as UnknownPart[]
   return out
@@ -222,6 +232,7 @@ function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> |
   if (level.nonow) out['data-table-nonow'] = ''
   if (level.notebutton) out['data-table-notebutton'] = ''
   if (level.nonotebutton) out['data-table-nonotebutton'] = ''
+  if (level.super) out['data-table-super'] = ''
   return Object.keys(out).length === 0 ? null : out
 }
 
@@ -232,8 +243,10 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
   const darkness = /--table-border-darkness:\s*(\d+)%/.exec(style)?.[1]
   const [rows, cols] = (dom.getAttribute('data-table-freeze') ?? '').split(' ').map(Number)
   let unknownParts: unknown = null
+  let views: unknown = null
   try {
     unknownParts = JSON.parse(dom.getAttribute('data-table-parts') ?? 'null')
+    views = JSON.parse(dom.getAttribute('data-table-views') ?? 'null')
   } catch {
     // Not ours: no parts.
   }
@@ -250,6 +263,8 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
     zoom: Number(dom.getAttribute('data-table-zoom')),
     nowButton: !dom.hasAttribute('data-table-nonow'),
     noteButton: dom.hasAttribute('data-table-nonotebutton') ? false : dom.hasAttribute('data-table-notebutton') ? true : null,
+    superTable: dom.hasAttribute('data-table-super'),
+    views,
     unknownParts,
   }
   return levelAttrs(tableLevel(raw))
@@ -269,6 +284,8 @@ const levelAttrs = (style: TableLevel): TableAttrs => ({
   zoom: style.zoom ?? 100,
   nowButton: style.nonow !== true,
   noteButton: style.nonotebutton === true ? false : style.notebutton === true ? true : null,
+  superTable: style.super === true,
+  views: style.views ?? [],
   unknownParts: style.unknown ?? [],
 })
 
@@ -480,11 +497,16 @@ const tableStyleSchema = tableSchema.extendSchema((prev) => (ctx) => {
     attrs: Object.fromEntries(Object.entries(TABLE_DEFAULTS).map(([name, value]) => [name, { default: value }])),
     parseDOM: [{ tag: 'table', getAttrs: (dom) => readTableDom(dom as HTMLElement) }],
     toDOM: (node) => {
-      // The freeze and the unknown parts (YAZ-4161) go with a copy only: `tableFreeze.ts` draws the freeze on the page from the attributes.
-      const { freeze, unknown } = tableLevel(node.attrs)
+      // The freeze, the views (YAZ-4869) and the unknown parts (YAZ-4161) go with a copy only: `tableFreeze.ts` draws the freeze on the page from the attributes.
+      const { freeze, unknown, views } = tableLevel(node.attrs)
       return [
         'table',
-        { ...tableDomAttrs(node.attrs), ...(freeze && { 'data-table-freeze': `${freeze.rows} ${freeze.cols}` }), ...(unknown && { 'data-table-parts': JSON.stringify(unknown) }) },
+        {
+          ...tableDomAttrs(node.attrs),
+          ...(freeze && { 'data-table-freeze': `${freeze.rows} ${freeze.cols}` }),
+          ...(views && { 'data-table-views': JSON.stringify(views) }),
+          ...(unknown && { 'data-table-parts': JSON.stringify(unknown) }),
+        },
         ['tbody', 0],
       ]
     },
