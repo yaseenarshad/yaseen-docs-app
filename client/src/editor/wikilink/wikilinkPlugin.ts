@@ -53,6 +53,7 @@ import { isNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
 import { boardBaseName, fileKind } from '@shared/fileKind'
 import { basename, type IndexRecord } from '@shared/types'
 import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
+import { boardEmbedName, boardEmbedTarget } from '../drawing/boardEmbedText'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
 
@@ -260,7 +261,8 @@ export function linkDisplayText(inner: string, titleOf?: (target: string) => str
 
 /**
  * `text` with each `[[link]]` as the note shows it (YAZ-3744 D6): a crumb, a tab's label, a TOC row, a plain-text
- * copy. Embeds and links with nothing to show stay as written. `withId` adds an ID link's ID after its title
+ * copy. A board embed (`![[x.drawio|640x360 …]]`, YAZ-4827 item 16) is its name, as its window's name pill shows it; other
+ * embeds and links with nothing to show stay as written. `withId` adds an ID link's ID after its title
  * (YAZ-3744 S8): "AR v2 plan (YAS-466)", for a copy that leaves the app.
  */
 export function linksAsShown(text: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, withId = false): string {
@@ -272,7 +274,7 @@ export function linksAsShown(text: string, source: WikilinkResolveSource, viewOn
     return title === undefined || id === undefined ? title : nameAndId(title, id)
   }
   return text.replace(WIKILINK_RE, (raw, bang: string, inner: string) =>
-    bang === '!' ? raw : linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly)) || raw)
+    bang === '!' ? (boardEmbedTarget(inner) === null ? raw : boardEmbedName(inner)) : linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly)) || raw)
 }
 
 /** Its decorations are read by `pillSelection.ts`: a selected link's pieces. */

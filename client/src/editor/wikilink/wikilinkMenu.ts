@@ -20,6 +20,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pathTitles } from '../../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
+import { boardEmbedTarget } from '../drawing/boardEmbedText'
 import { OPEN_ID_LINK } from './idLinkCaret'
 import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
@@ -56,7 +57,11 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
     : undefined
   // The text the link shows stays, as plain text: the same rule as the pill's (YAZ-3778 D2, D3, S12).
   const remove = view.editable ? (text: string) => view.dispatch(view.state.tr.insertText(text, from, to)) : undefined
-  return linkMenuOf(inner, source, nav, follow, viewOnly, vaultsOf, edit, remove)
+  const menu = linkMenuOf(inner, source, nav, follow, viewOnly, vaultsOf, edit, remove)
+  // A drawing's or a diagram's link (YAZ-4829 D8): `!` before it, and an alias goes, as the embed shows the board's name.
+  const target = inner.split('|')[0]!
+  if (view.editable && boardEmbedTarget(target) !== null) menu.showAsEmbed = () => view.dispatch(view.state.tr.insertText(`![[${target}]]`, from, to))
+  return menu
 }
 
 /**

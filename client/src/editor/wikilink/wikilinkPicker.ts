@@ -25,7 +25,7 @@
  *    rows are in fact rebuilt on every keystroke (GRO-2197 audit): ≤ 9 buttons of DOM, measured
  *    as not worth a structural comparison yet — recorded here so the next reader is not misled.
  *  - `wikilinkPickerKeymap` (`$shortcut`, priority 100 — CONTRACTS "Keyboard") binds
- *    ↑/↓/Enter/Esc. Every command returns false when no session is open, so the keys fall
+ *    ↑/↓/Enter/Esc (⌥Enter puts a drawing or a diagram in as its embed, YAZ-4829). Every command returns false when no session is open, so the keys fall
  *    through untouched (the outliner keeps Enter in lists, Crepe keeps its arrows). Enter ties
  *    with the outliner's priority-100 Enter — createCrepe registers this keymap FIRST, and
  *    KeymapManager runs equal priorities in addition order, so an open picker wins
@@ -56,6 +56,7 @@ import { Plugin, PluginKey, TextSelection, type Command } from '@milkdown/kit/pr
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { SlashProvider } from '@milkdown/kit/plugin/slash'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { isBoardTarget } from '@shared/embedOptions'
 import { boardBaseName, fileKind, isViewOnly } from '@shared/fileKind'
 import { basename } from '@shared/types'
 import { api } from '../../api'
@@ -291,9 +292,11 @@ function placeId(view: EditorView | undefined, key: number, page: string, id: st
  * user types next lands after the link and is never part of it. Where the vault does not use IDs
  * (`links.ids`, YAZ-2523 🔒 V3) no number is asked for, and the typed name is the link.
  */
-function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, session: PickerSession, row: PickerRow, links: WikilinkResolveSource, nav?: WikilinkNav, view?: EditorView): boolean {
+function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, session: PickerSession, row: PickerRow, links: WikilinkResolveSource, nav?: WikilinkNav, view?: EditorView, embed = false): boolean {
   if (dispatch) {
-    const text = `[[${row.insert}]]`
+    // ⌥Enter on a drawing or a diagram (YAZ-4829 item 8): its embed, a window into it. Typed `![[` is one already.
+    const bang = embed && !row.create && isBoardTarget(row.path ?? row.insert) && state.doc.textBetween(Math.max(0, session.from - 1), session.from) !== '!' ? '!' : ''
+    const text = `${bang}[[${row.insert}]]`
     const tr = state.tr.insertText(text, session.from, session.to)
     tr.setSelection(TextSelection.create(tr.doc, session.from + text.length))
     const born = row.create && nav !== undefined
@@ -306,12 +309,12 @@ function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | u
   return true
 }
 
-const insertSelected = (links: WikilinkResolveSource, nav?: WikilinkNav): Command => (state, dispatch, view) => {
+const insertSelected = (links: WikilinkResolveSource, nav?: WikilinkNav, embed = false): Command => (state, dispatch, view) => {
   const session = pickerKey.getState(state)?.session ?? null
   if (session === null) return false
   const row = session.rows[session.selected]
   if (row === undefined) return false
-  return insertRow(state, dispatch, session, row, links, nav, view)
+  return insertRow(state, dispatch, session, row, links, nav, view, embed)
 }
 
 /** Is the `[[` picker open? Its ↑ / ↓ go first: the cell note card's own arrows wait (`cellNoteCard.ts`). */
@@ -341,6 +344,8 @@ export const createWikilinkPickerKeymap = (links: WikilinkResolveSource, nav?: W
     WikilinkPickerNext: { key: 'ArrowDown', priority: PRIORITY, onRun: () => move(1) },
     WikilinkPickerPrev: { key: 'ArrowUp', priority: PRIORITY, onRun: () => move(-1) },
     WikilinkPickerInsert: { key: 'Enter', priority: PRIORITY, onRun: () => insertSelected(links, nav) },
+    // ⌥Enter: a drawing's or a diagram's row goes in as its embed (YAZ-4829 item 8); any other row as Enter does.
+    WikilinkPickerInsertEmbed: { key: 'Alt-Enter', priority: PRIORITY, onRun: () => insertSelected(links, nav, true) },
     WikilinkPickerDismiss: { key: 'Escape', priority: PRIORITY, onRun: () => dismiss },
   }))
 

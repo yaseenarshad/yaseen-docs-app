@@ -18,6 +18,7 @@
  *   Add to focus               "Remove from focus" likewise, with its eye (M2)
  *   Open in ▸                  New window (files) · VS Code · Default app ─ Reveal in Finder (S3, S4)
  *   ───────────
+ *   Show as embed              a link to a drawing or a diagram: a window into it (YAZ-4829 D8); not read-only
  *   Edit link                  not in a read-only note
  *   Remove link                keeps the text the link shows
  *
@@ -92,6 +93,8 @@ export interface LinkMenu {
   focus?: ListRow
   /** "Open in ▸": no child, no row. */
   openIn?: { newWindow?: () => void; vsCode?: () => void; defaultApp?: () => void; reveal?: () => void }
+  /** A drawing's or a diagram's link becomes its embed (YAZ-4829 D8). Left out in a read-only note. */
+  showAsEmbed?: () => void
   /** Left out in a read-only note, with `remove`. */
   edit?: () => void
   remove?: () => void
@@ -116,7 +119,7 @@ export function linkMenuRows(menu: LinkMenu): MenuRow[] {
     menu.focus === undefined ? null : { label: menu.focus.on ? 'Remove from focus' : 'Add to focus', run: menu.focus.run, icon: eyeGlyph },
     children.every((list) => list.length === 0) ? null : { label: 'Open in', run: () => {}, children },
   ])
-  group([row('Edit link', menu.edit), row('Remove link', menu.remove, true)])
+  group([row('Show as embed', menu.showAsEmbed), row('Edit link', menu.edit), row('Remove link', menu.remove, true)])
   return rows
 }
 

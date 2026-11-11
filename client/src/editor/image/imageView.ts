@@ -59,13 +59,28 @@
  * every event on a handle so ProseMirror neither starts a node drag (the node is `draggable`) nor
  * moves the selection under the gesture; the mousedown itself selects the node so the handles
  * stay visible for the drag. A read-only editor (`view.editable` false) has no gesture at all.
+ *
+ * A BOARD SRC (YAZ-4828 2B): `![CloudFront|640x360 view=…](../Other/CloudFront.drawio)`, a board in another vault of
+ * the window, mounts the board window (`embed/types.ts`, lazy) in place of the `<img>`. The path resolves as the
+ * Markdown link pill's does (`ImageBoards.place`). The options live after the first `|` of the alt, and the window's
+ * writes go through `setNodeMarkup` (the alt only), outside undo (D4). The image's handles, broken chip and gallery
+ * are not a board's: the window has its own handles and double-click (open). The fold reads the image's outline node
+ * decoration (`foldableImage`, `folded`) and its arrow toggles that bullet.
  */
 import { imageSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection } from '@milkdown/kit/prose/state'
-import type { EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
+import type { Decoration, EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
 import { $view } from '@milkdown/kit/utils'
+import { optionsSuffix, parseEmbedOptions, type EmbedOptions } from '@shared/embedOptions'
+import { fileKind } from '@shared/fileKind'
 import { holdFrames } from '../../lib/colResize'
+import type { MenuRow } from '../blockHandleMenu'
+import { boardImageName, isBoardSrc } from '../drawing/boardEmbedText'
+import { loadBoardWindow, type BoardRef, type BoardWindowHandle, type WindowMenuRow } from '../embed/types'
+import { linkMenuRows, openMenuAt } from '../linkMenu'
+import { innermostItemPos } from '../outline/listNodes'
+import { toggleOutlineFold } from '../outline/outlineFolding'
 import type { GalleryImage, ImageOptions } from './imageOptions'
 import { formatAlt, imageSrc, noteDirRel, parseAlt } from './imageSrc'
 import './imageView.css'
@@ -89,6 +104,27 @@ export type HandleDirection = (typeof HANDLE_DIRECTIONS)[number]
 
 type Status = 'loading' | 'ready' | 'broken'
 
+/** A board image node's options: the alt after its first `|` (YAZ-4828), or null. */
+const boardOptions = (alt: string): EmbedOptions | null => {
+  const pipe = alt.indexOf('|')
+  return pipe < 0 ? null : parseEmbedOptions(alt.slice(pipe + 1))
+}
+
+/** The outline's fold of this node (`outlineFolding.ts` sets the spec on the image's node decoration). */
+const foldOf = (decorations: readonly Decoration[]): { foldable: boolean; folded: boolean } => {
+  const deco = decorations.find((d) => d.spec.foldableImage === true)
+  return { foldable: deco !== undefined, folded: deco?.spec.folded === true }
+}
+
+/** A window row as a menu row; the window's `checked` is the ✓ hint. */
+const menuRowOf = (row: WindowMenuRow): MenuRow => ({
+  label: row.label,
+  run: row.run,
+  disabled: row.disabled,
+  hint: (row as WindowMenuRow & { checked?: boolean }).checked === true ? '✓' : undefined,
+  children: row.children === undefined ? undefined : [row.children.map(menuRowOf)],
+})
+
 class ImageNodeView implements NodeView {
   readonly dom: HTMLSpanElement
   private img: HTMLImageElement | null = null
@@ -96,6 +132,12 @@ class ImageNodeView implements NodeView {
   private status: Status = 'loading'
   private resolved = ''
   private text = ''
+  /** A board src's window (YAZ-4828), once its chunk is there; `boardOn` while the node shows a board. */
+  private board: BoardWindowHandle | null = null
+  private boardOn = false
+  private selected = false
+  private fold = { foldable: false, folded: false }
+  private closeMenu = () => {}
 
   constructor(
     private node: ProseNode,
@@ -103,16 +145,20 @@ class ImageNodeView implements NodeView {
     private readonly getPos: () => number | undefined,
     private readonly opts: ImageOptions,
     private readonly fromDir: string,
+    decorations: readonly Decoration[] = [],
   ) {
     this.dom = document.createElement('span')
     this.dom.className = IMAGE_VIEW_CLASS
     this.dom.setAttribute('contenteditable', 'false')
+    this.fold = foldOf(decorations)
     this.render()
   }
 
   /** (Re)builds the wrapper's children from `this.node`; the wrapper itself is stable for PM. */
   private render(): void {
     const { src, alt, title } = this.node.attrs as { src: string; alt: string; title: string }
+    this.unmountBoard()
+    if (this.opts.boards !== undefined && isBoardSrc(src)) return this.renderBoard()
     this.resolved = imageSrc(this.opts.root, this.fromDir, src)
     this.setStatus('loading')
     this.dom.replaceChildren()
@@ -158,8 +204,10 @@ class ImageNodeView implements NodeView {
     let index = 0
     this.view.state.doc.descendants((node, nodePos) => {
       if (node.type.name !== 'image') return
-      if (nodePos === pos) index = images.length
       const { src, alt } = node.attrs as { src: string; alt: string }
+      // A board is a window, never a picture of the gallery (YAZ-4828).
+      if (this.opts.boards !== undefined && isBoardSrc(src)) return
+      if (nodePos === pos) index = images.length
       images.push({ src: imageSrc(this.opts.root, this.fromDir, src), alt: parseAlt(alt).text })
     })
     onOpenImage({ images, index })
@@ -267,27 +315,171 @@ class ImageNodeView implements NodeView {
     this.view.dispatch(this.view.state.tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, alt }))
   }
 
-  update(node: ProseNode): boolean {
+  update(node: ProseNode, decorations: readonly Decoration[] = []): boolean {
     if (node.type !== this.node.type) return false
     const prev = this.node
     this.node = node
+    this.setFold(foldOf(decorations))
     if (node.attrs.src !== prev.attrs.src) this.render()
-    else if (node.attrs.alt !== prev.attrs.alt || node.attrs.title !== prev.attrs.title) this.patch(node.attrs.alt, node.attrs.title)
+    else if (this.boardOn) {
+      if (node.attrs.alt !== prev.attrs.alt) this.board?.update({ options: boardOptions(node.attrs.alt), ref: this.boardRef() })
+    } else if (node.attrs.alt !== prev.attrs.alt || node.attrs.title !== prev.attrs.title) this.patch(node.attrs.alt, node.attrs.title)
     return true
   }
 
   selectNode(): void {
     this.dom.classList.add(IMAGE_SELECTED_CLASS)
+    this.selected = true
+    this.board?.setSelected(true)
   }
 
   deselectNode(): void {
     this.dom.classList.remove(IMAGE_SELECTED_CLASS)
+    this.selected = false
+    this.board?.setSelected(false)
   }
 
-  /** A handle's events are the resize gesture's, never ProseMirror's (no node drag, no caret move). */
+  destroy(): void {
+    this.unmountBoard()
+  }
+
+  /** A handle's events are the resize gesture's, never ProseMirror's (no node drag, no caret move). A board's window owns all of its own. */
   stopEvent(event: Event): boolean {
+    if (this.boardOn) return true
     const target = event.target
     return target instanceof Node && this.handles.some((h) => h.contains(target))
+  }
+
+  // ---- a board src (YAZ-4828) ----
+
+  private boardRef(): BoardRef {
+    const { src, alt } = this.node.attrs as { src: string; alt: string }
+    const place = this.opts.boards?.place(src) ?? null
+    const icon = place === null ? undefined : this.opts.boards?.icon?.(place.path)
+    const kind = fileKind(src.replace(/[?#].*$/, '')) === 'diagram' ? 'diagram' : 'drawing'
+    return { root: place?.root ?? this.opts.root, path: place?.path ?? null, kind, name: boardImageName(src, alt) ?? src, vault: place?.vault ?? null, ...(icon === undefined ? {} : { icon }) }
+  }
+
+  private renderBoard(): void {
+    this.boardOn = true
+    this.dom.classList.add('board-embed')
+    this.setStatus('ready')
+    this.img = null
+    this.handles = []
+    this.dom.replaceChildren()
+    const stored = boardOptions(this.node.attrs.alt as string)
+    if (stored !== null) this.dom.style.setProperty('--board-embed-height', `${stored.height}px`)
+    void loadBoardWindow().then(
+      (mod) => {
+        if (!this.boardOn || this.board !== null) return
+        try {
+          this.board = mod.mountBoardWindow({
+            ref: this.boardRef(),
+            options: boardOptions(this.node.attrs.alt as string),
+            editable: this.view.editable,
+            columnWidth: () => this.view.dom.clientWidth,
+            onOptions: (next) => this.writeBoardOptions(next),
+            onOpen: (how) => {
+              const path = this.boardRef().path
+              if (path !== null) this.opts.boards?.open?.(path, how)
+            },
+            onContextMenu: (event) => this.openBoardMenu(event),
+            onSelect: () => {
+              const pos = this.getPos()
+              if (pos !== undefined) this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)))
+            },
+            onFold: () => {
+              const pos = this.getPos()
+              const item = pos === undefined ? null : innermostItemPos(this.view.state.doc.resolve(pos))
+              if (item !== null) toggleOutlineFold(item)(this.view.state, this.view.dispatch)
+            },
+          })
+        } catch {
+          this.dom.textContent = `Can't show ${this.boardRef().name}`
+          return
+        }
+        this.dom.style.removeProperty('--board-embed-height')
+        this.dom.replaceChildren(this.board.dom)
+        if (this.selected) this.board.setSelected(true)
+        if (this.fold.foldable) this.board.setFoldable(true)
+        if (this.fold.folded) this.board.setFolded(true)
+      },
+      () => {
+        if (this.boardOn) this.dom.textContent = `Can't show ${this.boardRef().name}`
+      },
+    )
+  }
+
+  private unmountBoard(): void {
+    if (!this.boardOn) return
+    this.boardOn = false
+    this.closeMenu()
+    this.board?.destroy()
+    this.board = null
+    this.dom.classList.remove('board-embed')
+    this.dom.style.removeProperty('--board-embed-height')
+  }
+
+  private setFold(next: { foldable: boolean; folded: boolean }): void {
+    if (next.foldable !== this.fold.foldable) this.board?.setFoldable(next.foldable)
+    if (next.folded !== this.fold.folded) this.board?.setFolded(next.folded)
+    this.fold = next
+  }
+
+  /** The node at this view's live position, if it is still this board. */
+  private liveNode(): { pos: number; node: ProseNode } | null {
+    const pos = this.getPos()
+    const node = pos === undefined ? null : this.view.state.doc.nodeAt(pos)
+    return pos === undefined || node === null || node.type !== this.node.type || node.attrs.src !== this.node.attrs.src ? null : { pos, node }
+  }
+
+  /** D4: the options into the alt after its name, outside undo, only in an editable note and only when the text changes. */
+  private writeBoardOptions(next: EmbedOptions): void {
+    const live = this.view.editable ? this.liveNode() : null
+    if (live === null) return
+    const alt = live.node.attrs.alt as string
+    const pipe = alt.indexOf('|')
+    const written = `${pipe < 0 ? alt : alt.slice(0, pipe)}${optionsSuffix(next)}`
+    if (written === alt) return
+    this.view.dispatch(this.view.state.tr.setNodeMarkup(live.pos, undefined, { ...live.node.attrs, alt: written }).setMeta('addToHistory', false))
+  }
+
+  /** The board link's rows, the window's, then Show as link and Remove embed (D12). */
+  private openBoardMenu(event: MouseEvent): void {
+    const parent = this.view.dom.parentElement
+    const ref = this.boardRef()
+    if (parent === null) return
+    event.preventDefault()
+    this.closeMenu()
+    const link = ref.path === null ? undefined : this.opts.boards?.linkMenu?.(ref.path)
+    const rows = linkMenuRows({ ...(link ?? { labels: [] }), edit: undefined, remove: undefined, showAsEmbed: undefined })
+    const group = (list: MenuRow[]) => {
+      if (list.length > 0) rows.push({ ...list[0]!, divider: true }, ...list.slice(1))
+    }
+    group(this.board?.menuRows().map(menuRowOf) ?? [])
+    if (this.view.editable) {
+      group([
+        {
+          label: 'Show as link',
+          run: () => {
+            const live = this.liveNode()
+            const mark = this.view.state.schema.marks.link
+            if (live === null || mark === undefined) return
+            const text = this.view.state.schema.text(ref.name, [mark.create({ href: live.node.attrs.src })])
+            this.view.dispatch(this.view.state.tr.replaceWith(live.pos, live.pos + live.node.nodeSize, text))
+          },
+        },
+        {
+          label: 'Remove embed',
+          danger: true,
+          run: () => {
+            const live = this.liveNode()
+            if (live !== null) this.view.dispatch(this.view.state.tr.delete(live.pos, live.pos + live.node.nodeSize))
+          },
+        },
+      ])
+    }
+    this.closeMenu = openMenuAt(parent, event.clientX, event.clientY, rows)
   }
 
   /** Nothing in here is document content — but a selection landing here is still a selection. */
@@ -300,7 +492,7 @@ class ImageNodeView implements NodeView {
 export function createImageView(opts: ImageOptions) {
   // Derived once per mount: the note does not move while its editor is open (a rename remounts).
   const fromDir = noteDirRel(opts.root, opts.notePath)
-  return $view(imageSchema.node, () => (node, view, getPos) => new ImageNodeView(node, view, getPos, opts, fromDir))
+  return $view(imageSchema.node, () => (node, view, getPos, decorations) => new ImageNodeView(node, view, getPos, opts, fromDir, decorations))
 }
 
 /**

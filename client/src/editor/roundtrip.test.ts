@@ -251,6 +251,24 @@ describe('locked editor rules (createCrepe)', () => {
     ]
     for (const md of cases) expect(await roundTrip(md)).toBe(md)
   })
+  it('board embeds round-trip byte-identically, both forms, with and without options (YAZ-4827, YAZ-4828)', async () => {
+    const md = [
+      '![[CloudFront.drawio]]',
+      '![[assets/Sketch.excalidraw|640x360 view=120,-40,0.8 locked page=R2lE]]',
+      'Text ![[A.drawio|320x200]] and ![[A.drawio]] in one line.',
+      '* ![[Folded.drawio|640x360 future=word]]',
+      '![CloudFront](../w/CloudFront.drawio) and ![CloudFront|640x360 view=1,2,0.5 locked](../w/Cloud%20Front.drawio)',
+    ].join('\n\n') + '\n'
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const boards = { place: (src: string) => ({ root: '/w', path: `/w/${src}`, vault: 'Work' }) }
+    const crepe = createCrepe({ root, defaultValue: md, boardEmbeds: { root: '/v' }, image: { root: '/v', notePath: '/v/n.md', boards } })
+    await crepe.create()
+    await new Promise((resolve) => setTimeout(resolve, 0)) // the window chunk's load settles
+    expect(getMarkdownForSave(crepe)).toBe(md)
+    await crepe.destroy()
+    root.remove()
+  })
 })
 
 /**

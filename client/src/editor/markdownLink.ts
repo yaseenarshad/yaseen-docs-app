@@ -17,13 +17,14 @@
 import { linkPreviewTooltip, linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Mark, MarkType, Node as ProseNode } from '@milkdown/kit/prose/model'
-import { linkSchema } from '@milkdown/kit/preset/commonmark'
+import { imageSchema, linkSchema } from '@milkdown/kit/preset/commonmark'
 import { Plugin, PluginKey, TextSelection, type EditorState, type PluginView } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
+import { isBoardSrc } from './drawing/boardEmbedText'
 import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import { linkClickAction } from './linkGesture'
 import { fileLabel } from '../lib/pageLabel'
@@ -213,6 +214,8 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
     copyName: name === null || name === '' ? undefined : () => copyText(name, 'name', nav.onNotice, nav.copy, true),
     copyAddress: path === null ? () => copyText(hit.href, 'address', nav.onNotice, nav.copy) : undefined,
     ...(found === null ? {} : placeRows(found, nav, nav.onNotice, nav.copy)),
+    // A drawing's or a diagram's link (YAZ-4829 D8): the image node of the same address, `![name](href)` — a window (2B).
+    showAsEmbed: view.editable && path !== null && isBoardSrc(hit.href) ? () => view.dispatch(view.state.tr.replaceWith(hit.from, hit.to, imageSchema.type(ctx).create({ src: hit.href, alt: name ?? '', title: '' }))) : undefined,
     edit: view.editable ? () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to) : undefined,
     remove: view.editable ? () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to) : undefined,
   }

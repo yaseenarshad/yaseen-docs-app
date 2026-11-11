@@ -21,13 +21,17 @@
  * image with `data-outline-folded-image` so imageView.css shrinks it to a one-line chip; a click on
  * that chip is the chevron's toggle. Same plugin state, same meta-only transactions, same keys —
  * the image node view knows nothing about folding (decorations first, rule 5 / rule 30).
+ * Board embed bullets (YAZ-4830 D13): a list_item holding a `![[x.drawio]]` in its own text blocks is foldable the
+ * same way (`findOwnEmbeds`). The embed's window shows the fold and reads it through `embedFolds` (the note's text is
+ * under decorations, so there is no node to stamp). A board image node is an image: its node view reads the spec of
+ * the image's node decoration (`foldableImage`, `folded`).
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
-import { findFoldedChildren, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
+import { findFoldedChildren, findOwnEmbeds, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
 import { IMAGE_FOLD_CLASS } from '../image/imageView'
 import { outlineFoldKeyFromStem, outlineFoldKeyStem, outlineFoldLabel } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
@@ -48,6 +52,8 @@ interface OutlineEntry {
    * (YAZ-1709).
    */
   imageRanges: readonly { from: number; to: number }[]
+  /** Document ranges of every board embed in the item's own text blocks (YAZ-4830). */
+  embedRanges: readonly { from: number; to: number }[]
 }
 
 /** The most recent fold action while it is still the latest action (GRO-2075 panic-undo). */
@@ -137,6 +143,33 @@ export const collapsedItemsHiding = (state: EditorState, pos: number): number[] 
         foldingState.collapsedItemPositions.has(itemPos) && foldedRanges.some((range) => pos >= range.from && pos < range.to),
     )
     .map(({ itemPos }) => itemPos)
+}
+
+/** What a board embed's window shows (YAZ-4830): its item's position and whether it is folded. */
+export interface EmbedFold {
+  itemPos: number
+  folded: boolean
+}
+
+const NO_EMBED_FOLDS: ReadonlyMap<number, EmbedFold> = new Map()
+const embedFoldCache = new WeakMap<OutlineFoldingState, ReadonlyMap<number, EmbedFold>>()
+
+/**
+ * The fold of each board embed on a foldable bullet, by the embed's start (YAZ-4830). Empty with folding off. One map
+ * per plugin state: a caret move keeps the state, so it costs nothing; an edit builds it once from the entries.
+ */
+export const embedFolds = (state: EditorState): ReadonlyMap<number, EmbedFold> => {
+  const foldingState = pluginKey.getState(state)
+  if (!foldingState || !isFoldingOn(state)) return NO_EMBED_FOLDS
+  const cached = embedFoldCache.get(foldingState)
+  if (cached !== undefined) return cached
+  const map = new Map<number, EmbedFold>()
+  for (const { itemPos, embedRanges } of foldingState.entries) {
+    const folded = foldingState.collapsedItemPositions.has(itemPos)
+    for (const { from } of embedRanges) map.set(from, { itemPos, folded })
+  }
+  embedFoldCache.set(foldingState, map)
+  return map
 }
 
 /** Add this plugin's half of a document-wide fold-all transaction without dispatching it. */
@@ -343,6 +376,7 @@ interface BlockEntry {
   itemPos: number
   foldedRanges: readonly { from: number; to: number }[]
   imageRanges: readonly { from: number; to: number }[]
+  embedRanges: readonly { from: number; to: number }[]
 }
 
 /**
@@ -363,7 +397,7 @@ const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
       const base = offset + 1
       const shift = ({ from, to }: { from: number; to: number }) => ({ from: base + from, to: base + to })
       for (const entry of entriesOfBlock(row)) {
-        entries.push({ ...entry, itemPos: base + entry.itemPos, foldedRanges: entry.foldedRanges.map(shift), imageRanges: entry.imageRanges.map(shift) })
+        entries.push({ ...entry, itemPos: base + entry.itemPos, foldedRanges: entry.foldedRanges.map(shift), imageRanges: entry.imageRanges.map(shift), embedRanges: entry.embedRanges.map(shift) })
       }
     })
     blockEntries.set(block, entries)
@@ -373,7 +407,8 @@ const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
     if (node.type.name !== 'list_item') return true
     const foldedChildren = findFoldedChildren(node)
     const images = findOwnImages(node)
-    if (foldedChildren.length === 0 && images.length === 0) return true
+    const embeds = findOwnEmbeds(node)
+    if (foldedChildren.length === 0 && images.length === 0 && embeds.length === 0) return true
 
     const label = itemLabelText(node)
     entries.push({
@@ -389,6 +424,7 @@ const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
         const from = itemPos + 1 + offset
         return { from, to: from + node.nodeSize }
       }),
+      embedRanges: embeds.map(({ from, to }) => ({ from: itemPos + 1 + from, to: itemPos + 1 + to })),
     })
     return true
   })
@@ -411,6 +447,7 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
         label: entry.label,
         foldedRanges: entry.foldedRanges.map(shift),
         imageRanges: entry.imageRanges.map(shift),
+        embedRanges: entry.embedRanges.map(shift),
       })
     }
   })
@@ -629,7 +666,8 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                 const attrs = collapsed
                   ? { [OUTLINE_FOLDABLE_IMAGE_ATTR]: 'true', [OUTLINE_FOLDED_IMAGE_ATTR]: 'true' }
                   : { [OUTLINE_FOLDABLE_IMAGE_ATTR]: 'true' }
-                decorations.push(Decoration.node(from, to, attrs))
+                // The spec says it to a board image node's window (YAZ-4830), which has no attribute to watch.
+                decorations.push(Decoration.node(from, to, attrs, { foldableImage: true, folded: collapsed }))
               })
               if (collapsed) {
                 entry.foldedRanges.forEach(({ from, to }) => {

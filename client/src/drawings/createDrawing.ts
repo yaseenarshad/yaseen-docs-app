@@ -1,54 +1,63 @@
 /**
- * Creating a drawing sidecar (YAZ-877, second build unit of the Excalidraw embed YAZ-852).
+ * A new board for a note (YAZ-877; named after the note since YAZ-4831 items 2, 3): "/drawing" and "/diagram" make
+ * `<Note title> drawing.excalidraw` or `<Note title> diagram.drawio` and embed it.
  *
- * One empty scene written through `api.writeAsset` (YAZ-876's write half: drawings only,
- * explicit path, never fuzzy) into the vault's drawings home — `assets/drawings/`, made on
- * the way by writeAsset's own `mkdir -p`, so the first drawing in a vault needs no scaffold.
+ * WHERE: Settings › `newBoardFolder` — `'note'` (the default) puts it in the note's own folder, `'assets'` in the vault's
+ * `assets/drawings/` (made on the way, level by level). The write is `fs:create-board` (YAZ-3028 D9): the empty board,
+ * born stamped, at an EXPLICIT path, never fuzzy, and never over a file. A name that is taken there comes back
+ * `ALREADY_EXISTS` and the loop tries ` 2`, ` 3`, … (bounded by `MAX_ATTEMPTS`). Any other failure goes to the caller's
+ * notice untouched.
  *
- * NEVER OVERWRITE (locked): every write goes with `create: true`, so an existing target comes
- * back `ALREADY_EXISTS` and nothing is touched. The timestamp name is second-granular, so two
- * drawings made inside one second collide honestly — the loop then retries with ` 2`, ` 3`, …
- * (bounded by `MAX_ATTEMPTS`) instead of silently replacing a scene. Any OTHER failure
- * propagates to the caller's notice path untouched.
- *
- * Returns the BASENAME, which is what the note gets: `![[<name>.excalidraw]]`. A bare basename
- * is enough because `readAsset`'s shortest-path rule finds it anywhere under the root — the
- * same Obsidian rule every other embed already rides.
+ * WHAT THE NOTE GETS: the embed's target. The bare file name when no other file of the vault has that name (it then
+ * resolves to this one alone), else the vault-relative path.
  */
-import { EMPTY_SCENE_JSON, newBoardScene } from '@shared/drawingAssets'
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
+import { ensureFolder } from '../views/scaffold'
 
-/** The drawing's home under the vault root (writeAsset creates it on first use). */
+/** The `'assets'` choice of `newBoardFolder`: the drawings' home under the vault root. */
 export const DRAWINGS_DIR = 'assets/drawings'
 
 /** The empty scene lives in `shared/` since YAZ-3028 D9: main's `fs:create-board` writes the same bytes. */
 export { EMPTY_SCENE, EMPTY_SCENE_JSON } from '@shared/drawingAssets'
 
-/** Collisions are same-second only; a bound keeps a permanently failing write from looping forever. */
-const MAX_ATTEMPTS = 20
+export type NewBoardKind = 'drawing' | 'diagram'
 
-/** `Drawing 2026-08-25 20.31.02` — `:` is illegal on some filesystems, so the clock uses `.`. */
-export function drawingName(now: Date, suffix = 0): string {
-  const p = (n: number) => String(n).padStart(2, '0')
-  const stamp = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())} ${p(now.getHours())}.${p(now.getMinutes())}.${p(now.getSeconds())}`
-  return `Drawing ${stamp}${suffix === 0 ? '' : ` ${suffix + 1}`}.excalidraw`
+/** A bound, so a folder full of taken names never loops forever. */
+const MAX_ATTEMPTS = 50
+
+/** `<title> drawing.excalidraw`, then `<title> drawing 2.excalidraw`, …: a title's `/`, `\` and `:` become `-`. */
+export function boardFileName(title: string, kind: NewBoardKind, attempt = 0): string {
+  const base = `${title.replace(/[/\\:]/g, '-').trim() || 'Untitled'} ${kind}`
+  return `${base}${attempt === 0 ? '' : ` ${attempt + 1}`}${kind === 'drawing' ? '.excalidraw' : '.drawio'}`
 }
 
-/** Writes one empty scene under `root`; resolves the new file's basename (see module doc). */
-export async function createDrawing(root: string, now: Date = new Date()): Promise<string> {
-  // YAZ-3943 demo 2: "New boards keep pictures" (`newBoardScene`); "Inside the board" writes the plain empty scene, as before.
-  const { newBoardPictures, newBoardPicturesFolder } = storage.getSettings()
-  const content = newBoardScene(EMPTY_SCENE_JSON, newBoardPictures, newBoardPicturesFolder, now.getTime())
+export interface NewBoardPlace {
+  root: string
+  /** The note's absolute path: its folder is the default home. */
+  notePath: string
+  /** The note's title, as its tab shows it. */
+  title: string
+  /** True when a file of the vault already has this name (the index's answer); absent → always the path. */
+  nameTaken?: (name: string) => boolean
+}
+
+/** Makes one empty board for the note; resolves the embed's target (see the module doc). */
+export async function createBoardForNote(place: NewBoardPlace, kind: NewBoardKind): Promise<string> {
+  const { root, notePath, title } = place
+  const noteDir = notePath.slice(0, Math.max(notePath.lastIndexOf('/'), 0))
+  const dir = storage.getSettings().newBoardFolder === 'assets' || !noteDir.startsWith(root) ? await ensureFolder(root, DRAWINGS_DIR) : noteDir
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const name = drawingName(now, attempt)
+    const name = boardFileName(title, kind, attempt)
+    // Asked before the write: after it, the index holds this file too.
+    const unique = place.nameTaken?.(name) === false
     try {
-      await api.writeAsset({ root, path: `${DRAWINGS_DIR}/${name}`, content, create: true })
-      return name
+      const made = await api.createBoard({ root, path: `${dir}/${name}` })
+      return unique ? name : made.path.slice(root.length + 1)
     } catch (err) {
       // Only a name clash is retryable — everything else is the caller's notice.
       if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
     }
   }
-  throw new Error(`Can't create a drawing: ${MAX_ATTEMPTS} names in ${DRAWINGS_DIR} are already taken`)
+  throw new Error(`Can't create a ${kind}: ${MAX_ATTEMPTS} names in ${dir.slice(root.length + 1) || 'the vault'} are already taken`)
 }
