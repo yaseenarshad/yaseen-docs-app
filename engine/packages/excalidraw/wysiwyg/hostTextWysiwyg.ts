@@ -70,9 +70,23 @@ export const CARET_SCREEN_PX = 1.5;
 export const getCaretWidth = (zoom: number) => CARET_SCREEN_PX / zoom;
 
 /**
- * Puts a 1 px node over a rectangle in board px, by a transform. The overlay
- * is scaled by the zoom, and layout snaps a box's edges to whole board px: at
+ * YAZ-4902: the base box, in px, of a caret or highlight node before its
+ * transform scales it to its rectangle. It was 1 px: at a fractional device
+ * pixel ratio (the App size: 150 % on a 1x screen is 1.5) Chromium paints a
+ * 1 px node as 2 device px, and the scale carries that error: the highlight
+ * drew 1.33 times too wide, and 0.8 at 125 %. 100 px is a whole number of
+ * device px at every App size, so the scale starts from an exact box.
+ */
+export const OVERLAY_NODE_PX = 100;
+
+/**
+ * Puts a node over a rectangle in board px, by a transform. The overlay is
+ * scaled by the zoom, and layout snaps a box's edges to whole board px: at
  * 3000% a 0.05 px caret drew 0 or 30 px wide. A transform is never snapped.
+ * The node's own box is `OVERLAY_NODE_PX` square, not 1 px (YAZ-4902): the
+ * box is painted in whole device px, and a 1 px box at a fractional pixel
+ * ratio came out 2 device px, which the scale turned into a highlight a
+ * third too wide.
  */
 const placeOverlayRect = (
   node: HTMLElement,
@@ -82,10 +96,12 @@ const placeOverlayRect = (
     position: "absolute",
     left: "0",
     top: "0",
-    width: "1px",
-    height: "1px",
+    width: `${OVERLAY_NODE_PX}px`,
+    height: `${OVERLAY_NODE_PX}px`,
     transformOrigin: "0 0",
-    transform: `translate(${rect.left}px, ${rect.top}px) scale(${rect.width}, ${rect.height})`,
+    transform: `translate(${rect.left}px, ${rect.top}px) scale(${
+      rect.width / OVERLAY_NODE_PX
+    }, ${rect.height / OVERLAY_NODE_PX})`,
   });
 
 /**
