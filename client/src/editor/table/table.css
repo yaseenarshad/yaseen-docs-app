@@ -446,7 +446,8 @@
 
 .milkdown .ProseMirror .table-zoom-anchor > .table-super-bar {
   position: absolute;
-  z-index: 3;
+  /* Above the view's sticky column header (3) and group headers (2), which come later in the page (YAZ-4896). */
+  z-index: 4;
   top: 0;
   right: calc(var(--table-pill-w, 112px) + 6px);
   display: flex;

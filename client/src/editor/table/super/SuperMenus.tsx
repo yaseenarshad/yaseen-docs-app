@@ -58,7 +58,7 @@ export function SortPanel({ def, keys, onChange }: PanelProps) {
   const write = (next: ViewSort[]) => onChange(withList(def, 'sort', next))
   const set = (i: number, patch: ViewSort) => write(sort.map((s, j) => (j === i ? patch : s)))
   return (
-    <div className="view-menu super-menu" role="dialog" aria-label="Sort">
+    <div className="view-menu super-menu super-menu--rules super-menu--sort" role="dialog" aria-label="Sort">
       <p className="view-menu__label">Sort</p>
       {sort.length === 0 && <p className="view-menu__empty">The rows are in table order.</p>}
       <ul className="view-menu__list">
@@ -92,7 +92,7 @@ export function GroupPanel({ def, keys, onChange }: PanelProps) {
   const free = keys.filter((k) => !levels.some((g) => g.column === k))
   const lines = def.lines ?? 'hover'
   return (
-    <div className="view-menu super-menu" role="dialog" aria-label="Group">
+    <div className="view-menu super-menu super-menu--rules super-menu--group" role="dialog" aria-label="Group">
       <p className="view-menu__label">Group</p>
       {levels.length === 0 && <p className="view-menu__empty">No groups.</p>}
       <ul className="view-menu__list">
@@ -193,7 +193,7 @@ export function FilterPanel({ def, keys, onChange, records }: PanelProps & { rec
   const opsOf = (column: string) => operatorsFor(`note.${column}`, inferType(`note.${column}`, records)).filter((op) => Object.hasOwn(VIEW_OPS, op.id))
   const withOp = (column: string, op: ViewOp, value?: string): ViewFilter => (VIEW_OPS[op] ? { column, op, value: value ?? '' } : { column, op })
   return (
-    <div className="view-menu super-menu" role="dialog" aria-label="Filter">
+    <div className="view-menu super-menu super-menu--rules super-menu--filter" role="dialog" aria-label="Filter">
       <p className="view-menu__label">Filter</p>
       {filters.length === 0 && <p className="view-menu__empty">Every row shows.</p>}
       <ul className="view-menu__list">

@@ -77,6 +77,51 @@
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
 }
 
+/* The Sort, Group and Filter panels (YAZ-4896): one width, and each rule row a grid, as the folder pages' Sort menu.
+   The pickers' boxes are `display: contents`, so their buttons are the grid's cells and their open lists take a
+   full-width second line. "×" has the last column, so it stays in the panel. */
+.super-menu--rules {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+}
+
+.super-menu .view-rule__main {
+  display: grid;
+  align-items: start;
+  gap: 8px;
+}
+
+.super-menu--sort .view-rule__main { grid-template-columns: 18px minmax(0, 1fr) 118px 20px; }
+.super-menu--group .view-rule__main { grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr) 44px 20px; }
+.super-menu--filter .view-rule__main { grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 20px; }
+
+.super-menu .column-picker {
+  display: contents;
+}
+
+.super-menu .view-rule__main > :is(.view-rule__nav, .view-rule__remove, .super-menu__value),
+.super-menu .view-rule__main .column-picker__trigger,
+.super-menu .view-rule__main :is(.direction-picker__trigger, .group-style__trigger) {
+  grid-row: 1;
+}
+
+.super-menu .view-rule__nav,
+.super-menu .view-rule__remove {
+  width: 100%;
+  height: 30px;
+  min-width: 0;
+}
+
+.super-menu .view-rule__remove {
+  grid-column: -2;
+}
+
+.super-menu .column-picker__panel {
+  grid-row: 2;
+  grid-column: 1 / -1;
+}
+
 .super-menu__segments {
   display: flex;
   gap: 4px;
@@ -89,7 +134,9 @@
 }
 
 .super-menu__value {
-  min-width: 90px;
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
 }
 
 .super-menu__danger {
