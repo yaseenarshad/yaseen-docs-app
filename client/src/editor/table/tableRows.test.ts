@@ -11,6 +11,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { getMarkdownForSave } from '../createCrepe'
 import { mountNote, unmountAll } from './tableTestKit'
+import { setTextInCellsSetting } from './timeFormatSetting'
 
 async function mount(markdown: string): Promise<{ crepe: Crepe; view: EditorView; item: HTMLElement }> {
   const { crepe, view } = await mountNote(markdown)
@@ -92,13 +93,13 @@ describe('the menu on a table', () => {
     // header row's look is the "Header row ›" flyout, after the strips (no "Shaded header row" button). YAZ-4790: "Cell note button".
     expect(parts).toEqual([
       'strip:Turn into', 'row:Add line above', 'row:Add line below',
-      'strip:Look', 'strip:Text', 'strip:Rows', 'parent:Header row', 'parent:Subheader row',
+      'strip:Look', 'strip:Text', 'strip:Rows', 'Text in cells:Default (Wrap) ▾', 'parent:Header row', 'parent:Subheader row',
       'Border thickness:Default (1px) ▾', 'Border darkness:Default (20%) ▾', 'row:Turn into Super table', 'Time slots:Default (Off) ▾', 'Cell note button:Default (Off) ▾', 'Sticky subheaders:Default (On) ▾',
     ])
     expect(stripsOf(view).slice(1)).toEqual([
       'strip:Look:Stripes|Fit columns to the page~',
       'strip:Text:Align left*|Align center|Align right|Align top*|Align middle|Align bottom',
-      'strip:Rows:Compact rows|Normal rows*|Tall rows|Wrap text*',
+      'strip:Rows:Compact rows|Normal rows*|Tall rows',
     ])
     // Each button is an icon (Tabler's lines) with its name as a quick tooltip (`data-tip`, drawn by CSS) and no system one.
     expect([stripButton(view, 'Stripes').dataset.tip, stripButton(view, 'Stripes').title]).toEqual(['Stripes', ''])
@@ -126,7 +127,7 @@ describe('the menu on a table', () => {
     expect(stripsOf(view).slice(1)).toEqual([
       'strip:Look:Stripes|Fit columns to the page~',
       'strip:Text:Align left*|Align center|Align right|Align top*|Align middle|Align bottom',
-      'strip:Rows:Compact rows|Normal rows|Tall rows*|Wrap text*',
+      'strip:Rows:Compact rows|Normal rows|Tall rows*',
     ])
   })
 
@@ -158,7 +159,7 @@ describe('the menu on a table', () => {
     const firstHeader = (view: EditorView) => view.dom.querySelector('th')!
     const labels = (view: EditorView) => [...popupOf(view)!.querySelectorAll('.ctx-menu__item, .block-menu-picker__label, .ctx-menu__strip-caption')].map((el) => el.textContent)
     // YAZ-4869 S1: "Turn into Super table" before Time slots.
-    const SETTINGS = ['Look', 'Text', 'Rows', 'Header row', 'Subheader row', 'Border thickness', 'Border darkness', 'Turn into Super table', 'Time slots', 'Cell note button', 'Sticky subheaders']
+    const SETTINGS = ['Look', 'Text', 'Rows', 'Text in cells', 'Header row', 'Subheader row', 'Border thickness', 'Border darkness', 'Turn into Super table', 'Time slots', 'Cell note button', 'Sticky subheaders']
 
     it.each([
       ['the first header cell', firstHeader],
@@ -219,7 +220,6 @@ describe('each setting saves in the comment, one undo step each', () => {
     ['Stripes', 'stripes'],
     ['Compact rows', 'height compact'],
     ['Tall rows', 'height tall'],
-    ['Wrap text', 'nowrap'],
     ['Align bottom', 'valign bottom'],
   ])('the strip button %s writes `%s` in one undo step; the menu stays open and lights it; a second click goes back', async (label, part) => {
     const { crepe, view } = await openOnTable()
@@ -262,7 +262,7 @@ describe('each setting saves in the comment, one undo step each', () => {
     expect(stripsOf(view).slice(1)).toEqual([
       'strip:Look:Stripes*|Fit columns to the page~',
       'strip:Text:Align left|Align center*|Align right|Align top*|Align middle|Align bottom',
-      'strip:Rows:Compact rows|Normal rows|Tall rows*|Wrap text*',
+      'strip:Rows:Compact rows|Normal rows|Tall rows*',
     ])
     expect(getMarkdownForSave(crepe)).toBe('|  a  |  b  |\n| :-: | :-: |\n|  1  |  2  |\n\n<!-- table: stripes, height tall -->\n')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
@@ -336,5 +336,39 @@ describe('each setting saves in the comment, one undo step each', () => {
     expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: stripes -->\n`)
     expect(undo(view.state, view.dispatch)).toBe(true)
     expect(getMarkdownForSave(crepe)).toBe(note)
+  })
+})
+
+describe('Text in cells (YAZ-4900): the table\'s own Wrap or Clip', () => {
+  afterEach(() => setTextInCellsSetting('wrap'))
+
+  it('Clip writes `nowrap` (the part of before) in one undo step; the menu stays open and shows it; Default (Wrap) goes back', async () => {
+    const { crepe, view } = await openOnTable()
+    expect(pickerNamed(view, 'Text in cells').querySelector('.block-menu-picker__value')!.textContent).toBe('Default (Wrap) ▾')
+    pick(view, 'Text in cells', 'Clip')
+    expect(popupOf(view)).not.toBeNull()
+    expect(pickerNamed(view, 'Text in cells').querySelector('.block-menu-picker__value')!.textContent).toBe('Clip ▾')
+    expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: nowrap -->\n`)
+    pick(view, 'Text in cells', 'Default (Wrap)')
+    expect(getMarkdownForSave(crepe)).toBe(SMALL)
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: nowrap -->\n`)
+  })
+
+  it('with Settings at Clip: Default reads Clip, Wrap writes `wrap`, and a pick of Clip (Settings\' value) writes no part; an old `nowrap` file reads as its own Clip', async () => {
+    setTextInCellsSetting('clip')
+    const { crepe, view } = await openOnTable()
+    expect(pickerNamed(view, 'Text in cells').querySelector('.block-menu-picker__value')!.textContent).toBe('Default (Clip) ▾')
+    pick(view, 'Text in cells', 'Wrap')
+    expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: wrap -->\n`)
+    pick(view, 'Text in cells', 'Default (Clip)')
+    expect(getMarkdownForSave(crepe)).toBe(SMALL)
+    // An old `nowrap` file keeps its part; as the other choices, an own value equal to Settings' reads as the Default.
+    const old = await openOnTable(`${SMALL}\n<!-- table: nowrap -->\n`)
+    expect(pickerNamed(old.view, 'Text in cells').querySelector('.block-menu-picker__value')!.textContent).toBe('Default (Clip) ▾')
+    expect(getMarkdownForSave(old.crepe)).toBe(`${SMALL}\n<!-- table: nowrap -->\n`)
+    setTextInCellsSetting('wrap')
+    const back = await openOnTable(`${SMALL}\n<!-- table: nowrap -->\n`)
+    expect(pickerNamed(back.view, 'Text in cells').querySelector('.block-menu-picker__value')!.textContent).toBe('Clip ▾')
   })
 })

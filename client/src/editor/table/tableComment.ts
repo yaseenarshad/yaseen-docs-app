@@ -6,7 +6,7 @@
  *
  * The parts, in their fixed order, each only when set:
  * `widths 140 240 auto, fill A1:C1 blue B3 #ff8800, color B2:B5 red, align B2:C3 center, valign middle A2:A40 top,
- * border 2px 40%, header plain, stripes, height compact, nowrap, freeze 2 rows 1 col, calendar 30m`. `valign` (YAZ-4166,
+ * border 2px 40%, header plain, stripes, height compact, nowrap, text 2:clip, freeze 2 rows 1 col, calendar 30m`. `valign` (YAZ-4166,
  * D10) is ONE part: an optional first bare value is the table's default (`middle` or `bottom`; `top` is the default
  * and writes nothing), then cell ranges and values as `align` writes them; a cell's own value wins over the table's.
  * `fold 20-29 31-33` (YAZ-4165, D3) names the folded rows: 1-based, row 1 is the header (never folded), each run of
@@ -29,6 +29,9 @@
  * YAZ-4899: `subhead 5 12` names the subheader rows as `fold` names the folded rows (1-based, never row 1), after
  * `nodim`; `subheader <words>` is the subheader rows' own look, the words of `header`, after `header`; then `sticky` /
  * `nosticky` say whether they stay at the top of the note, only when the table differs from Settings.
+ * YAZ-4900: `nowrap` is a table whose cells Clip (one line, cut with "…") and `wrap` one whose cells Wrap, each only
+ * when the table differs from Settings › Tables › Text in cells (Wrap by default; so a file from before, with no part,
+ * reads the same); `text 2:clip 4:wrap` is each column's own choice, 1-based, after them, and wins over the table's.
  * `nonow` (the YAZ-4163 demo) is a calendar table with no "Now" chip; `notebutton` / `nonotebutton` (YAZ-4790) a table that
  * shows / hides the cell note "+" button whatever Settings say. Then `super` (YAZ-4869 S1) marks a Super table, and each
  * of its views is one `view …` part, in the views' order (`super/viewGrammar.ts` holds that part's grammar): they are
@@ -108,7 +111,13 @@ export interface UnknownPart {
 }
 
 /** The words of the known parts, in the fixed order. */
-export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'merge', 'fold', 'nodim', 'subhead', 'zoom', 'border', 'header', 'subheader', 'sticky', 'nosticky', 'stripes', 'height', 'nowrap', 'freeze', 'calendar', 'nonow', 'notebutton', 'nonotebutton', 'super', 'view'] as const
+export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'merge', 'fold', 'nodim', 'subhead', 'zoom', 'border', 'header', 'subheader', 'sticky', 'nosticky', 'stripes', 'height', 'wrap', 'nowrap', 'text', 'freeze', 'calendar', 'nonow', 'notebutton', 'nonotebutton', 'super', 'view'] as const
+
+/** Text in cells (YAZ-4900): Wrap (onto more lines) or Clip (one line, cut with "…"). Settings' default is Wrap. */
+export const CELL_TEXTS = ['wrap', 'clip'] as const
+export type CellText = (typeof CELL_TEXTS)[number]
+/** A text choice, checked, or `null`. */
+export const cellText = (value: unknown): CellText | null => ((CELL_TEXTS as readonly unknown[]).includes(value) ? (value as CellText) : null)
 
 /**
  * One merged cell (YAZ-4792): 0-based rows and columns, `bottom` and `right` one past the last (prosemirror-tables'
@@ -176,7 +185,12 @@ export interface TableStyle {
   stripes?: true
   /** The row height; normal is the default. */
   height?: 'compact' | 'tall'
+  /** The table's own Wrap (YAZ-4900): a table that wraps while Settings › Tables › Text in cells says Clip. */
+  wrap?: true
+  /** The table's own Clip: one line per cell, cut with "…". Absent (and no `wrap`) follows Settings. */
   nowrap?: true
+  /** Each column's own Wrap or Clip (YAZ-4900), by 0-based column; a column with none follows the table. */
+  text?: Map<number, CellText>
   freeze?: { rows: number; cols: number }
   /** A calendar table's slot length (YAZ-4162). */
   calendar?: CalendarSlot
@@ -396,7 +410,22 @@ function readPart(style: TableStyle, word: string, rest: string[], part: string)
       if (first === 'normal') delete style.height
       else style.height = first as 'compact' | 'tall'
       return true
+    case 'text': {
+      // `text 2:clip 4:wrap` (YAZ-4900): 1-based columns, each once; a word that is no `N:wrap` / `N:clip` makes the part unreadable.
+      if (rest.length === 0) return false
+      const text = new Map<number, CellText>()
+      for (const word of rest) {
+        const [col, value] = word.split(':')
+        const index = readWhole(col, 1, WIDTH_MAX)
+        const checked = cellText(value)
+        if (index === null || checked === null || text.has(index - 1)) return false
+        text.set(index - 1, checked)
+      }
+      style.text = text
+      return true
+    }
     case 'stripes':
+    case 'wrap':
     case 'nowrap':
     case 'nonow':
     case 'notebutton':
@@ -532,7 +561,9 @@ export function formatTableComment(style: TableStyle): string | null {
   if (style.sticky === false) push('nosticky', 'nosticky')
   if (style.stripes) push('stripes', 'stripes')
   if (style.height) push('height', `height ${style.height}`)
+  if (style.wrap && !style.nowrap) push('wrap', 'wrap')
   if (style.nowrap) push('nowrap', 'nowrap')
+  if (style.text !== undefined && style.text.size > 0) push('text', `text ${[...style.text].sort((a, b) => a[0] - b[0]).map(([col, value]) => `${col + 1}:${value}`).join(' ')}`)
   const { rows = 0, cols = 0 } = style.freeze ?? {}
   if (rows > 0 || cols > 0) push('freeze', ['freeze', ...(rows > 0 ? [plural(rows, 'row')] : []), ...(cols > 0 ? [plural(cols, 'col')] : [])].join(' '))
   if (style.calendar) push('calendar', `calendar ${style.calendar}m`)

@@ -2112,6 +2112,8 @@ export interface SettingsState {
   tableSubheaderRow: HeaderRow
   /** Settings › Tables › All tables › Sticky subheaders (YAZ-4899): a subheader row stays at the top of the note while its section scrolls by. On by default; a table's own `sticky` / `nosticky` wins. `data-table-sticky-subheaders` on `.app`. */
   tableStickySubheaders: boolean
+  /** Settings › Tables › All tables › Text in cells (YAZ-4900): every note table's cells Wrap (default) or Clip (one line, cut with "…"). A table's own `wrap` / `nowrap` wins, and a column's own `text` over that. `data-table-text` on `.app`. */
+  tableTextInCells: TableTextInCells
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
@@ -2427,6 +2429,9 @@ export type TableRowBand = 'off' | 'calendar' | 'all'
 /** What a new table starts as (YAZ-4869 item 22). */
 export const TABLE_NEW_STYLES = ['plain', 'super'] as const
 export type TableNewStyle = (typeof TABLE_NEW_STYLES)[number]
+/** Text in a note table's cells (YAZ-4900): Wrap onto more lines, or Clip to one line cut with "…". */
+export const TABLE_TEXT_IN_CELLS = ['wrap', 'clip'] as const
+export type TableTextInCells = (typeof TABLE_TEXT_IN_CELLS)[number]
 export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
 
 /** Tables (the YAZ-3818 demo): the rows the band marks. */
@@ -2748,6 +2753,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableHeaderRow: DEFAULT_HEADER_ROW,
   tableSubheaderRow: DEFAULT_SUBHEADER_ROW,
   tableStickySubheaders: true,
+  tableTextInCells: 'wrap',
   tableNowMark: 'line',
   tableNowButton: true,
   tableCellNoteButton: false,

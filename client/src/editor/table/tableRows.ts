@@ -4,7 +4,8 @@
  * and `stay` of `MenuStrip`; a click sets one and the menu stays open, drawn again by `blockHandleMenu.ts`'s `refresh`):
  * Look (Stripes, Fit columns to the page), Text (Align left / center / right for all columns,
  * Align top / middle / bottom, the table's default; a cell's own wins, YAZ-4166 D10) and Rows (Compact / Normal / Tall
- * rows, Wrap text); then "Header row ›" (YAZ-4774: "Plain, like any row" (YAZ-4793: Strength Off, Regular, Full at
+ * rows); then "Text in cells" (Default / Wrap / Clip, YAZ-4900: the table's `wrap`, saved as `nowrap` for Clip and
+ * `wrap` for Wrap; Default is Settings › Tables › Text in cells; a column's own choice in `tableMenu.ts` wins); then "Header row ›" (YAZ-4774: "Plain, like any row" (YAZ-4793: Strength Off, Regular, Full at
  * once), then Color, Strength, Weight and Text (YAZ-4794: Fill colour, Strength, Weight, Text colour and Align), each ✓ at what the table shows; a pick
  * that equals Settings › Tables › Header row saves no part, so the table follows Settings again); then "Border
  * thickness" and "Border darkness" (number fields, as `line/lineRows.ts`) and "Time slots" (Off / 15 min / 30 min /
@@ -40,7 +41,7 @@ import { isListItem } from '../outline/listNodes'
 import { tablerIcon, type TablerIcon } from './tableIcons'
 import { setCellsAttr, tableHasSubheads } from './cells'
 import { fillCalendarDay, goToNow, minutesOf, missingDayTimes, nowPlace, setTimeSlots } from './tableCalendar'
-import { calendarDaySetting, cellNoteButtonSetting, headerRowSetting, stickySubheadersSetting, subheaderRowSetting, timeFormatSetting } from './timeFormatSetting'
+import { calendarDaySetting, cellNoteButtonSetting, headerRowSetting, stickySubheadersSetting, subheaderRowSetting, textInCellsSetting, timeFormatSetting } from './timeFormatSetting'
 import { capital, headerSwatch } from './colours'
 import { CELL_ALIGNS, VALIGNS, type TableAttrs } from './tableStyle'
 import { superRule, turnBackPlain, turnIntoSuper } from './super/superTables'
@@ -223,6 +224,7 @@ export const tableRows: RowProvider = (view, target) => {
   const attrs = table.node.attrs as TableAttrs
   const noteDefault = cellNoteButtonSetting() ? 'on' : 'off'
   const stickyDefault = stickySubheadersSetting() ? 'on' : 'off'
+  const textDefault = textInCellsSetting()
   const current = attrs.border ?? BORDER_DEFAULT
   const cells = cellsOf(table.node)
   // No alignment on every cell (GFM's `---`) is the default; so are mixed columns. A cell's own
@@ -294,13 +296,18 @@ export const tableRows: RowProvider = (view, target) => {
     stay: true,
     buttons: [
       ...(['compact', 'normal', 'tall'] as const).map((value) => ({ label: `${capital(value)} rows`, icon: tablerIcon(HEIGHT_ICONS[value]), active: attrs.height === value, run: () => setTable(view, pos, { height: value }) })),
-      { label: 'Wrap text', icon: tablerIcon('textWrap'), active: attrs.wrap, run: () => setTable(view, pos, { wrap: !attrs.wrap }) },
     ],
   }
   const items: MenuItem[] = [
     look,
     text,
     rowsStrip,
+    // YAZ-4900: this table's Wrap or Clip; Default is Settings › Tables › Text in cells (Wrap by default). Clip saves
+    // `nowrap`, the part of before; Wrap saves `wrap`; a pick of Settings' value saves no part. A column's own choice
+    // (a cell's right-click › Text in this column) wins over it.
+    choice('Text in cells', attrs.wrap === null ? textDefault : attrs.wrap ? 'wrap' : 'clip', textDefault, [{ value: 'wrap', label: 'Wrap' }, { value: 'clip', label: 'Clip' }], (text) =>
+      setTable(view, pos, { wrap: text === textDefault ? null : text === 'wrap' }),
+    ),
     headerRowParent(view, pos, 'header'),
     // YAZ-4899: the look of the table's subheader rows ("Make subheader row" in a cell's right-click).
     headerRowParent(view, pos, 'subheader'),

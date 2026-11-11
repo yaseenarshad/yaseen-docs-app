@@ -32,6 +32,9 @@ describe('each part', () => {
     ['height compact', { height: 'compact' }],
     ['height tall', { height: 'tall' }],
     ['nowrap', { nowrap: true }],
+    // YAZ-4900: a table that wraps while Settings say Clip; a column's own Wrap or Clip, 1-based.
+    ['wrap', { wrap: true }],
+    ['text 2:clip 4:wrap', { text: new Map([[1, 'clip'], [3, 'wrap']]) }],
     ['freeze 2 rows 1 col', { freeze: { rows: 2, cols: 1 } }],
     ['freeze 1 row', { freeze: { rows: 1, cols: 0 } }],
     ['freeze 3 cols', { freeze: { rows: 0, cols: 3 } }],
@@ -128,6 +131,18 @@ describe('the fixed order', () => {
 
   it('reads the parts in any order, and writes them in the fixed order', () => {
     expect(formatTableComment(parseTableComment('<!-- table: nowrap, stripes, widths 100 -->')!)).toBe('<!-- table: widths 100, stripes, nowrap -->')
+  })
+
+  // YAZ-4900: `text` goes after `nowrap` / `wrap` and before `freeze`; its columns are written in order, once each.
+  it('`text` goes after the table\'s own Wrap / Clip and before `freeze`; columns in order', () => {
+    expect(formatTableComment(parseTableComment('<!-- table: freeze 1 row, text 3:wrap 1:clip, nowrap -->')!)).toBe('<!-- table: nowrap, text 1:clip 3:wrap, freeze 1 row -->')
+    expect(formatTableComment(parseTableComment('<!-- table: text 2:clip, wrap -->')!)).toBe('<!-- table: wrap, text 2:clip -->')
+  })
+
+  it('a `text` word this build cannot read (a third value, column 0, a repeat) keeps the whole part as its text (YAZ-4176)', () => {
+    for (const bad of ['text 2:fit', 'text 0:clip', 'text 2:clip 2:wrap', 'text clip', 'text']) {
+      expect(parseTableComment(`<!-- table: stripes, ${bad} -->`)).toEqual(style({ stripes: true, unknown: [{ after: 'stripes', text: bad }] }))
+    }
   })
 })
 

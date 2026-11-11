@@ -4,7 +4,7 @@
  * `code/languageHelpers.ts` is, so no editor rebuilds for a change.
  */
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT, isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
-import { DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, type HeaderRow } from '@shared/types'
+import { DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, type HeaderRow, type TableTextInCells } from '@shared/types'
 
 let current = DEFAULT_TIME_FORMAT
 
@@ -69,6 +69,18 @@ export function onStickySubheadersSetting(listener: () => void): () => void {
 }
 
 export const stickySubheadersSetting = (): boolean => stickySubheaders
+
+let textInCells: TableTextInCells = 'wrap'
+
+/**
+ * Settings › Tables › All tables › Text in cells (YAZ-4900), App's door: a table's "Text in cells" reads it as its
+ * Default. The page itself reads it from `.app` (`data-table-text`, `table.css`).
+ */
+export function setTextInCellsSetting(value: TableTextInCells): void {
+  textInCells = value === 'clip' ? 'clip' : 'wrap'
+}
+
+export const textInCellsSetting = (): TableTextInCells => textInCells
 
 let noteButton = false
 

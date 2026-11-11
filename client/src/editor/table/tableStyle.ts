@@ -2,7 +2,8 @@
  * The table's settings in the file (YAZ-3758, YAZ-3696 🔒 D1 / D3 / D7 / S3; CONTRACTS rule 41a).
  * The `table` node gets these attributes, each at its default on a plain table: `border` (`null` or
  * `{ px, darkness }`), `header` (the header row's own parts, YAZ-4774: `{}` follows Settings; `data-table-header-*`), `stripes`, `height` (`compact` | `normal` |
- * `tall`), `wrap`, `freezeRows` and `freezeCols`; `calendar` (the slot length in minutes, `0` for none,
+ * `tall`), `wrap` (YAZ-4900: `false` Clip, saved as `nowrap`; `true` Wrap, saved as `wrap`; `null` follows Settings ›
+ * Tables › Text in cells, `data-table-text` on `.app`), `freezeRows` and `freezeCols`; `calendar` (the slot length in minutes, `0` for none,
  * YAZ-4162); `valign` (`top` | `middle` | `bottom`, the cells' default, YAZ-4166); `zoom` (whole percent, 100 by
  * default, YAZ-4091: `--table-zoom` on the block, which `table.css` puts on its content); `nowButton` (a calendar
  * table's "Now" chip, `true` by default; `false` saves `nonow` and is `data-table-nonow`, the YAZ-4163 demo); and
@@ -12,7 +13,9 @@
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
  * cell gets `fill`, `color`, its own `align` and its own `valign` (YAZ-4166), `fold` (YAZ-4165: the cells of a
  * folded row; the comment's `fold` names the rows) and `subhead` (YAZ-4899: the cells of a subheader row, the comment's
- * `subhead`; the table's `subheader` and `stickySubheaders` are its look and whether it sticks, `tableSubhead.ts`)
+ * `subhead`; the table's `subheader` and `stickySubheaders` are its look and whether it sticks, `tableSubhead.ts`) and
+ * `text` (YAZ-4900: the column's own Wrap or Clip on each of its cells, `data-cell-text`; the header cell's is the
+ * column's, which the save writes as `text 2:clip` and `keepColumnAlign` gives each body cell, as the GFM `alignment`)
  * (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
  * column's width is the cells' own `colwidth` (prosemirror-tables). Markdown has no syntax for any.
  *
@@ -50,9 +53,9 @@
 import { tableSchema } from '@milkdown/kit/preset/gfm'
 import { Fragment, type Node as ProseNode, type TagParseRule } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
-import { TableMap } from '@milkdown/kit/prose/tables'
+import { TableMap, cellAround } from '@milkdown/kit/prose/tables'
 import { AttrStep, ReplaceStep } from '@milkdown/kit/prose/transform'
-import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import type { MarkdownNode, NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
 import type { Nodes, Table } from 'mdast'
@@ -68,12 +71,14 @@ import {
   cellAddress,
   cellAlign,
   cellColor,
+  cellText,
   cellValign,
   formatTableComment,
   parseTableComment,
   plainTable,
   unknownPart,
   validMerges,
+  type CellText,
   type MergeRange,
   type TableStyle,
   type UnknownPart,
@@ -94,7 +99,8 @@ export const TABLE_DEFAULTS = {
   stickySubheaders: null as boolean | null,
   stripes: false,
   height: 'normal' as 'compact' | 'normal' | 'tall',
-  wrap: true,
+  /** Text in cells (YAZ-4900): `false` is Clip (saves `nowrap`), `true` Wrap (saves `wrap`), `null` follows Settings › Tables › Text in cells. */
+  wrap: null as boolean | null,
   freezeRows: 0,
   freezeCols: 0,
   calendar: 0 as 0 | 15 | 30 | 60,
@@ -130,6 +136,7 @@ function tableLevel(attrs: Record<string, unknown>): TableLevel {
   if (attrs.stripes === true) out.stripes = true
   if (attrs.height === 'compact' || attrs.height === 'tall') out.height = attrs.height
   if (attrs.wrap === false) out.nowrap = true
+  if (attrs.wrap === true) out.wrap = true
   const rows = isWhole(attrs.freezeRows, 1, 999) ? attrs.freezeRows : 0
   const cols = isWhole(attrs.freezeCols, 1, 999) ? attrs.freezeCols : 0
   if (rows > 0 || cols > 0) out.freeze = { rows, cols }
@@ -185,6 +192,9 @@ function tableStyleOf(table: ProseNode): TableStyle {
     const colspan = cell.attrs.colspan as number
     const rowspan = cell.attrs.rowspan as number
     if (r === 0) for (let j = 0; j < colspan && c + j < map.width; j++) style.widths[c + j] = widthOf(cell, j)
+    // The column's own Wrap or Clip (YAZ-4900) is its header cell's; a merged header cell names it for each column it spans.
+    const text = r === 0 ? cellText(cell.attrs.text) : null
+    if (text !== null) for (let j = 0; j < colspan && c + j < map.width; j++) (style.text ??= new Map()).set(c + j, text)
     if (colspan > 1 || rowspan > 1) merge.push({ top: r, left: c, bottom: r + rowspan, right: c + colspan })
     const fill = cellColor(cell.attrs.fill)
     const color = cellColor(cell.attrs.color)
@@ -240,6 +250,7 @@ function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> |
   if (level.stripes) out['data-table-stripes'] = ''
   if (level.height) out['data-table-height'] = level.height
   if (level.nowrap) out['data-table-nowrap'] = ''
+  if (level.wrap) out['data-table-wrap'] = ''
   if (level.calendar) out['data-table-calendar'] = String(level.calendar)
   if (level.valignTable) out['data-table-valign'] = level.valignTable
   if (level.nonow) out['data-table-nonow'] = ''
@@ -270,7 +281,7 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
     stickySubheaders: dom.getAttribute('data-table-sticky-subheaders') === 'on' ? true : dom.getAttribute('data-table-sticky-subheaders') === 'off' ? false : null,
     stripes: dom.hasAttribute('data-table-stripes'),
     height: dom.getAttribute('data-table-height'),
-    wrap: !dom.hasAttribute('data-table-nowrap'),
+    wrap: dom.hasAttribute('data-table-nowrap') ? false : dom.hasAttribute('data-table-wrap') ? true : null,
     freezeRows: rows,
     freezeCols: cols,
     calendar: Number(dom.getAttribute('data-table-calendar')),
@@ -293,7 +304,7 @@ const levelAttrs = (style: TableLevel): TableAttrs => ({
   stickySubheaders: style.sticky ?? null,
   stripes: style.stripes === true,
   height: style.height ?? 'normal',
-  wrap: style.nowrap !== true,
+  wrap: style.nowrap === true ? false : style.wrap === true ? true : null,
   freezeRows: style.freeze?.rows ?? 0,
   freezeCols: style.freeze?.cols ?? 0,
   calendar: style.calendar ?? 0,
@@ -340,6 +351,9 @@ const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<str
     style.push(`vertical-align: ${valign}`)
   }
   if (node.attrs.fold === true) out['data-fold'] = ''
+  // The column's own Wrap or Clip (YAZ-4900): `table.css` clips by it over the table's and Settings'.
+  const text = cellText(node.attrs.text)
+  if (text !== null) out['data-cell-text'] = text
   if (node.attrs.nodim === true) out['data-nodim'] = ''
   if (node.attrs.subhead === true) out['data-subhead'] = ''
   const width = Array.isArray(node.attrs.colwidth) ? (node.attrs.colwidth[0] as number | undefined) : undefined
@@ -362,6 +376,8 @@ interface CellData {
     nodim?: boolean
     /** YAZ-4899: the row is a subheader row. */
     subhead?: boolean
+    /** YAZ-4900: the column's own Wrap or Clip. */
+    text?: CellText
     colwidth: number[] | null
     /** A merged cell's spans (YAZ-4792). */
     colspan?: number
@@ -382,7 +398,7 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
   const toDOM = spec.toDOM!
   return {
     ...spec,
-    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null }, valign: { default: null }, fold: { default: false }, nodim: { default: false }, subhead: { default: false } },
+    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null }, valign: { default: null }, fold: { default: false }, nodim: { default: false }, subhead: { default: false }, text: { default: null } },
     parseDOM: spec.parseDOM?.map((rule) => {
       const { getAttrs } = rule as TagParseRule
       return {
@@ -402,6 +418,7 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
             fold: dom.hasAttribute('data-fold'),
             nodim: dom.hasAttribute('data-nodim'),
             subhead: dom.hasAttribute('data-subhead'),
+            text: cellText(dom.getAttribute('data-cell-text')),
           }
         },
       }
@@ -499,8 +516,10 @@ function applyStyle(table: Table, style: TableStyle): void {
       const color = style.color.get(cellAddress(r, c)) ?? null
       const align = style.align.get(cellAddress(r, c)) ?? null
       const valign = style.valign.get(cellAddress(r, c)) ?? null
-      if (colwidth === null && fill === null && color === null && align === null && valign === null && !fold && !nodim && !subhead && span === undefined && !short) return
-      const tableCell: NonNullable<CellData['tableCell']> = { fill, color, align, valign, fold, colwidth, ...(nodim && { nodim }), ...(subhead && { subhead }) }
+      // The column's own Wrap or Clip (YAZ-4900) on each of its cells; a merged cell takes its top-left column's.
+      const text = style.text?.get(c)
+      if (colwidth === null && fill === null && color === null && align === null && valign === null && !fold && !nodim && !subhead && text === undefined && span === undefined && !short) return
+      const tableCell: NonNullable<CellData['tableCell']> = { fill, color, align, valign, fold, colwidth, ...(nodim && { nodim }), ...(subhead && { subhead }), ...(text !== undefined && { text }) }
       if (span !== undefined) Object.assign(tableCell, { colspan: span.right - span.left, rowspan: span.bottom - span.top })
       if (short) tableCell.alignment = table.align?.[c] ?? null
       cell.data = { ...cell.data, tableCell } as typeof cell.data
@@ -583,9 +602,10 @@ const keepColumnAlign = $prose(
             const cell = table.nodeAt(cellPos)
             if (cell?.type.name !== 'table_cell') return
             const header = table.nodeAt(map.map[i % map.width]!)
-            if (header === null || header.attrs.alignment === cell.attrs.alignment) return
+            // The column's own Wrap or Clip (YAZ-4900) is the header cell's too: a new row's cells take it the same way.
+            if (header === null || (header.attrs.alignment === cell.attrs.alignment && header.attrs.text === cell.attrs.text)) return
             tr ??= state.tr
-            tr.setNodeMarkup(pos + 1 + cellPos, undefined, { ...cell.attrs, alignment: header.attrs.alignment })
+            tr.setNodeMarkup(pos + 1 + cellPos, undefined, { ...cell.attrs, alignment: header.attrs.alignment, text: header.attrs.text })
           })
         }
         return tr
@@ -686,9 +706,38 @@ const tableStylePlugin = $prose(
           return fresh.length > 0 ? next.add(tr.doc, fresh) : next
         },
       },
-      props: { decorations: (state) => tableStyleKey.getState(state) },
+      props: {
+        decorations: (state) => tableStyleKey.getState(state),
+        handleDOMEvents: {
+          mouseover: (view, event) => {
+            tipIfCut(view, event)
+            return false
+          },
+        },
+      },
     }),
 )
+
+/**
+ * A clipped cell's full text on hover, ONLY when its text is cut (YAZ-4900; the folder page's `tipIfCut`, YAZ-4867): one
+ * delegated `mouseover` per editor, nothing on a key. A cut cell has a line (`td > p`) wider inside than out. The
+ * `title` goes on the editor's root (`view.dom`), never on the cell: ProseMirror's DOM observer ignores an attribute
+ * change on its own root, while one on a cell would make it read the cell back as an edit. The root's title goes again
+ * on the next hover off a cut cell, so the tooltip shows only over one. The text is the cell's lines, one per line.
+ */
+function tipIfCut(view: EditorView, event: MouseEvent): void {
+  const cell = (event.target as Element | null)?.closest?.('td, th') ?? null
+  // A cell of THIS editor: a cell note card's editor can sit inside the note's DOM, and it has a listener of its own.
+  const cut = cell !== null && cell.closest('.ProseMirror') === view.dom && Array.from(cell.children).some((line) => line.tagName === 'P' && line.scrollWidth > line.clientWidth + 1)
+  if (!cut) {
+    if (view.dom.hasAttribute('title')) view.dom.removeAttribute('title')
+    return
+  }
+  const $cell = cellAround(view.state.doc.resolve(view.posAtDOM(cell, 0)))
+  const node = $cell?.nodeAfter
+  if (node === null || node === undefined) return
+  view.dom.title = node.textBetween(0, node.content.size, '\n')
+}
 
 /** Register with `editor.use(tableStyle)`, right after `lineStyle` in createCrepe, which removes Milkdown's `keepTableAlignPlugin` for `keepColumnAlign`. */
 export const tableStyle = [tableStyleRemark, tableStyleSchema, tableStylePlugin, keepColumnAlign].flat()

@@ -348,3 +348,58 @@ describe('parts this build does not know (YAZ-4161)', () => {
     expect(copy.attrs.unknownParts).toEqual([])
   })
 })
+
+describe('Text in cells (YAZ-4900): the table\'s Wrap or Clip, each column\'s own, and the tooltip when cut', () => {
+  it('`nowrap` reads as the table\'s Clip and saves the same bytes; `wrap` and `text 2:clip` load into the attributes, show to CSS, and save the same bytes', async () => {
+    const { root, view } = await mount(`${SMALL}\n<!-- table: nowrap -->\n`)
+    expect(tables(view.state.doc)[0]!.attrs.wrap).toBe(false)
+    expect(root.querySelector('.milkdown-table-block')!.hasAttribute('data-table-nowrap')).toBe(true)
+    expect(await save(`${SMALL}\n<!-- table: nowrap -->\n`)).toBe(`${SMALL}\n<!-- table: nowrap -->\n`)
+    // No part: the table follows Settings (`wrap: null`), and a plain table still saves the bytes of before.
+    const plain = await mount(SMALL)
+    expect(tables(plain.view.state.doc)[0]!.attrs.wrap).toBeNull()
+    expect(plain.root.querySelector('.milkdown-table-block')).not.toBeNull()
+    expect(plain.root.querySelector('.milkdown-table-block')!.hasAttribute('data-table-wrap')).toBe(false)
+    expect(getMarkdownForSave(plain.crepe)).toBe(SMALL)
+    const own = await mount(`${SMALL}\n<!-- table: wrap, text 2:clip -->\n`)
+    const [table] = tables(own.view.state.doc)
+    expect(table!.attrs.wrap).toBe(true)
+    expect(cellAttr(table!, 'text')).toEqual([[null, 'clip'], [null, 'clip']])
+    expect(own.root.querySelector('.milkdown-table-block')!.hasAttribute('data-table-wrap')).toBe(true)
+    expect([...own.root.querySelectorAll('th, td')].map((cell) => cell.getAttribute('data-cell-text'))).toEqual([null, 'clip', null, 'clip'])
+    expect(await save(`${SMALL}\n<!-- table: wrap, text 2:clip -->\n`)).toBe(`${SMALL}\n<!-- table: wrap, text 2:clip -->\n`)
+  })
+
+  it('the clip rule in table.css: a column\'s own choice beats the table\'s, and the table\'s beats Settings\'', async () => {
+    const css = (await import('./table.css?inline')).default as string
+    const rule = [...css.replace(/\/\*.*?\*\//gs, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.replace(/\s+/g, ' ').trim(), body })).find(({ body }) => /text-overflow:\s*ellipsis/.test(body))
+    expect(rule).toBeDefined()
+    expect(rule!.selector).toBe(
+      [
+        ".app[data-table-text='clip'] .milkdown .ProseMirror .milkdown-table-block:not([data-table-wrap]) :is(th, td):not([data-cell-text='wrap']) > p",
+        ".milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td):not([data-cell-text='wrap']) > p",
+        ".milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] > p",
+      ].join(', '),
+    )
+    expect(rule!.body).toMatch(/white-space:\s*nowrap/)
+  })
+
+  it('a hover on a cut cell puts its full text (its lines joined) as the editor root\'s title; off a cut cell the title goes; no transaction', async () => {
+    // The first cell is three lines: a line, a bullet, a line (YAZ-3818). Its first line is cut; the last cell's is not.
+    const { view } = await mount('| a | b |\n| - | - |\n| one<ul><li>two</li></ul>three | short |\n\n<!-- table: nowrap -->\n')
+    const doc = view.state.doc
+    const lines = [...view.dom.querySelectorAll('td > p')] as HTMLElement[]
+    expect(lines.map((line) => line.textContent)).toEqual(['one', 'three', 'short'])
+    // jsdom lays nothing out: the first cell's line is wider inside than out (cut), the last cell's is not.
+    Object.defineProperty(lines[0], 'scrollWidth', { value: 300, configurable: true })
+    Object.defineProperty(lines[0], 'clientWidth', { value: 100, configurable: true })
+    const hover = (target: Element) => target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    hover(lines[0]!)
+    expect(view.dom.title).toBe('one\ntwo\nthree')
+    hover(lines.at(-1)!)
+    expect(view.dom.hasAttribute('title')).toBe(false)
+    hover(view.dom.querySelector('th')!)
+    expect(view.dom.hasAttribute('title')).toBe(false)
+    expect(view.state.doc).toBe(doc)
+  })
+})

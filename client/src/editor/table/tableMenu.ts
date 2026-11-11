@@ -11,7 +11,9 @@
  * - Align ▸ (the cells' own alignment, YAZ-3819; the column's own value clears it; then Top · Middle · Bottom, the
  *   cells' own vertical alignment, YAZ-4166 D10; the table's own value clears it), Fill ▸ and
  *   Text colour ▸ (the cell toolbar's palette: the clear item, the ten names, Custom colour…,
- *   YAZ-3817, on the target cells of the moment it opens, `colours.ts`);
+ *   YAZ-3817, on the target cells of the moment it opens, `colours.ts`); "Text in this column ›" / "Text in these
+ *   columns ›" (YAZ-4900: Table's choice / Wrap / Clip for the target's whole columns, ✓ at what they show; the
+ *   column's `text` on each of its cells, saved as `text 2:clip`; it wins over the table's "Text in cells");
  * - Sort A to Z, Sort Z to A, by the target's left column; "Fold N rows" on a target of two or more body rows
  *   (YAZ-4165, `tableFold.ts`; the header row never folds); YAZ-4899: "Make subheader row" / "Make N subheader rows"
  *   on body rows (off in a calendar table, with the reason) or "Turn back into a normal row" on subheader rows; on a
@@ -68,7 +70,7 @@ import { foldRows, keepingScroll, unfoldRun } from './tableFold'
 import { rowLookPicks, type LookPick } from './tableRows'
 import { setAllSections, setSubhead } from './tableSubhead'
 import { mergeCells, mergeRect, unmergeCells } from './tableMerge'
-import { CELL_ALIGNS, TABLE_COLORS, VALIGNS, type CellAlign, type TableColor, type Valign } from './tableStyle'
+import { CELL_ALIGNS, TABLE_COLORS, VALIGNS, cellText, type CellAlign, type CellText, type TableColor, type Valign } from './tableStyle'
 
 type Command = (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean
 
@@ -218,6 +220,19 @@ const cellsAlign =
   (align: CellAlign): Command =>
   (state, dispatch) => {
     const tr = setCellsAlign(state.tr, selectedRect(state), align)
+    if (tr.docChanged) dispatch?.(tr)
+    return true
+  }
+
+/**
+ * The target's whole columns' own Wrap or Clip, or `null` for the table's (YAZ-4900): `text` on every cell of each column,
+ * header cell too (the column's value is its header cell's; `keepColumnAlign` keeps the body cells with it).
+ */
+const columnsText =
+  (text: CellText | null): Command =>
+  (state, dispatch) => {
+    const rect = selectedRect(state)
+    const tr = setCellsAttr(state.tr, wholeColumns(rect, rect.left, rect.right), 'text', text)
     if (tr.docChanged) dispatch?.(tr)
     return true
   }
@@ -475,6 +490,15 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
       [item(`${attr}-custom`, 'Custom colour…', () => customColour(view, pointer, attr))],
     ],
   })
+  // YAZ-4900: "Text in this column ›" (or "these columns"): Table's choice / Wrap / Clip, ✓ at what the target columns
+  // show (their header cells' `text`; mixed columns light none). Each pick is a radio row, so the menu stays open.
+  const shownTexts = new Set(Array.from({ length: cols }, (_, i) => cellText(cellAt(cell.table, map, 0, left + i).attrs.text)))
+  const textRow = (id: string, label: string, value: CellText | null): MenuAction => ({ id: `table-text-${id}`, label, onSelect: run(columnsText(value)), radio: { group: 'table-text', on: shownTexts.size === 1 && shownTexts.has(value) } })
+  const textParent: MenuParent = {
+    id: 'table-text',
+    label: counted(cols, 'Text in this column', 'Text in these columns'),
+    children: [[textRow('table', "Table's choice", null), textRow('wrap', 'Wrap', 'wrap'), textRow('clip', 'Clip', 'clip')]],
+  }
   const note = cellNoteOf(view.state.doc, cell.pos)
   // The YAZ-3818 demo: a cell with some text moves all of it into its cell note.
   const move = canMoveToCellNote(view, cell.pos) ? [item('move-to-note', 'Move to cell note', () => moveToCellNote(view, cell.pos))] : []
@@ -512,6 +536,7 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
       },
       palette('fill', 'Fill', 'No fill', fillSwatch),
       palette('color', 'Text colour', 'Default colour', textSwatch),
+      textParent,
     ],
     [
       // YAZ-4792: a body cell that spans rows keeps the rows where they are.
