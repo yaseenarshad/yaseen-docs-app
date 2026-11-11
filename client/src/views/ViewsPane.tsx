@@ -1183,6 +1183,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onMoveToDay={onMoveToDay}
           onStyle={onCardStyle}
           history={history}
+          onHeaderRow={(mutate) => update((d) => mutate(d.views[index]))}
           moveError={moveError}
           onNewOnDay={(day) => {
             // The new note opens in the mini window (YAZ-3746 13G); in this tab where the host has no editor for one.

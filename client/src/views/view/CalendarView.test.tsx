@@ -1142,7 +1142,7 @@ describe("a card styled by hand (YAZ-4906): \"Card style ›\", the table's Head
     draw()
     click(menuItem('Card style'))
   }
-  const tab = (name: string) => click(byText(q(document.body, '.ctx-menu__parent [aria-label="Card style"]'), 'button', name))
+  const tab = (name: string) => click(byText(q(document.body, '.ctx-menu__parent [aria-label="Style part"]'), 'button', name))
   const written = () => vi.mocked(writeProperties).mock.calls.at(-1)
   beforeEach(() => vi.mocked(writeProperties).mockReset().mockResolvedValue({ mtime: 1 } as never))
   const undoOn = (card: Element, shift = false) => {
@@ -1217,5 +1217,70 @@ describe("a card styled by hand (YAZ-4906): \"Card style ›\", the table's Head
     act(() => void cardOf(el, 'Sealed').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })))
     draw()
     expect([...document.body.querySelectorAll('.ctx-menu__item')].map((b) => b.textContent)).not.toContain('Card style')
+  })
+})
+
+describe('the day names\' header row (YAZ-4864 round 3): the Table view\'s header row look, in the View tab and on a right-click', () => {
+  const dayRow = (el: ParentNode) => q<HTMLElement>(el, '.view-cal__grid .view-cal__week')
+  const openView = (el: ParentNode) => {
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+  }
+  const panelItem = (text: string) => byText<HTMLButtonElement>(q(document.body, '.view-style__panel, .ctx-menu__parent .ctx-menu'), 'button', text)
+
+  it('the View tab\'s "Header row [Aa ▾]" opens the style panel on the body; Fill › Blue writes headerRow.color and the day names take it; the ↺ hands it back', () => {
+    const { el, yaml } = mount(CALENDAR)
+    openView(el)
+    expect(dayRow(el).style.getPropertyValue('--table-header-hue')).toBe('')
+    click(q(el, '.view-popover--properties [aria-label="Header row style"]'))
+    const panel = q<HTMLElement>(document.body, '.view-style__panel')
+    expect(panel.closest('.view-popover--properties')).toBeNull()
+    expect([...panel.querySelectorAll('.fill-target:not(.fill-target--sub) button')].map((b) => b.textContent)).toEqual(['Fill', 'Text', 'Style'])
+    click(panelItem('Blue'))
+    expect(yaml()).toMatch(/headerRow:\n\s+color: blue/)
+    expect(dayRow(el).style.getPropertyValue('--table-header-hue')).toBe('var(--table-fill-solid-blue)')
+    expect(panelItem('Blue').dataset.hint).toBe('✓')
+    click(byText(panel, 'button', 'Strong'))
+    expect(yaml()).toContain('strength: strong')
+    expect(dayRow(el).style.getPropertyValue('--table-header-strength')).toBe('20')
+    // Escape in the panel closes the panel alone (its keydown stops before the tab's window listener).
+    act(() => void panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    draw()
+    expect(document.body.querySelector('.view-style__panel')).toBeNull()
+    click(q(el, '.view-popover--properties [aria-label="Reset to Settings"]'))
+    expect(yaml()).not.toContain('headerRow')
+  })
+
+  it('a right-click on the day names shows "Header row ›" with the same panel; Text › White writes headerRow.text; Plain sets Off, Regular, Full', () => {
+    const { el, yaml } = mount(CALENDAR)
+    act(() => void dayRow(el).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })))
+    draw()
+    const items = () => [...document.body.querySelectorAll('.ctx-menu__item')].map((b) => b.textContent)
+    expect(items()).toContain('Header row')
+    click(byText(document.body, '.ctx-menu__item', 'Header row'))
+    click(byText(q(document.body, '.ctx-menu__parent [aria-label="Style part"]'), 'button', 'Text'))
+    click(panelItem('White'))
+    expect(yaml()).toMatch(/headerRow:\n\s+text: white/)
+    expect(dayRow(el).style.getPropertyValue('--table-header-ink')).toBe('#fff')
+    click(panelItem('Plain, like any row'))
+    expect(yaml()).toContain('strength: off')
+    expect(yaml()).toContain('weight: regular')
+    expect(yaml()).toContain('text: full')
+  })
+
+  it('a stored header row reads the same as the folder table\'s: Red, Strong, Regular, Center; a view without one keeps the look of before', () => {
+    const { el } = mount(`${CALENDAR}    headerRow:\n      color: red\n      strength: strong\n      weight: regular\n      align: center\n`)
+    const style = dayRow(el).style
+    expect(style.getPropertyValue('--table-header-hue')).toBe('var(--table-fill-solid-red)')
+    expect(style.getPropertyValue('--table-header-scale')).toBe('2.5')
+    expect(style.getPropertyValue('--table-header-strength')).toBe('20')
+    expect(style.getPropertyValue('--table-header-weight')).toBe('400')
+    expect(style.getPropertyValue('--table-header-align')).toBe('center')
+    act(() => root?.unmount())
+    container?.remove()
+    const plain = dayRow(mount(CALENDAR).el).style
+    expect(plain.getPropertyValue('--table-header-hue')).toBe('')
+    expect(plain.getPropertyValue('--table-header-strength')).toBe('6')
+    expect(plain.getPropertyValue('--table-header-mute')).toBe('1')
   })
 })

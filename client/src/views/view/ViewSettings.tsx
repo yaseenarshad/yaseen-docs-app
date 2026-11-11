@@ -7,7 +7,7 @@ import { calLineColor, hideWeekendsDefault, hidesWeekends } from '../calendar'
 import { CalLineControls } from './CalendarLineControls'
 import { markerStyleOf } from './ListView'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
-import { GroupGuideSettings, HeaderRowSettings, TableLookSettings } from './TableLookSettings'
+import { GroupGuideSettings, HeaderRowStyleRow, TableLookSettings } from './TableLookSettings'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
 import { ChoiceSeg, RowLabel } from './settingRow'
 import { CalendarEndBy, CalendarShowBy } from './CalendarView'
@@ -81,9 +81,10 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
       )}
       {/* Every view type (YAZ-4579 D30): the one Subfolders switch, in View › Rows since D60. */}
       <SubfoldersSwitch view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
-      {/* YAZ-4908: the Table's "Header row" section — the type icons (YAZ-4779) and the row's look (YAZ-4774, as a note table's "Header row ›"). */}
+      {/* YAZ-4908: the Table's "Header row" section — the type icons (YAZ-4779) and the row's look (YAZ-4774) as one "Style [Aa ▾]" row (YAZ-4864 round 3). */}
       {table && (
-        <HeaderRowSettings own={own} viewIndex={viewIndex} onUpdate={onUpdate}>
+        <>
+          <p className="view-menu__label">Header row</p>
           <label className="view-settings-row">
             <RowLabel icon="columnTypeIcons">Column type icons</RowLabel>
             <input
@@ -94,7 +95,8 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             />
             <FromSettings own={own} viewKey="columnTypeIcons" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
-        </HeaderRowSettings>
+          <HeaderRowStyleRow label="Style" own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
+        </>
       )}
       {(indents || emptyGroups) && <p className="view-menu__label">Groups</p>}
       {indents && (
@@ -205,6 +207,8 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             />
             <FromSettings own={own} viewKey="hideWeekends" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
+          {/* The day names' look (YAZ-4864 round 3): the Table view's header row, the same keys and Settings default. */}
+          <HeaderRowStyleRow label="Header row" own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           {/* The grid's lines (YAZ-4878): each a width (1–4 px, or a custom whole number up to 12) and a colour with a strength. */}
           <p className="view-menu__label">Lines</p>
           <CalendarLineRow label="Between weeks" widthKey="weekLine" colorKey="weekLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />

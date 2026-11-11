@@ -124,9 +124,9 @@ describe('the two tabs (D59)', () => {
 
 describe('each view type shows its settings only (D59)', () => {
   // Frozen columns and rows live only on the header and row right-clicks (the View tab's Frozen section went in the YAZ-3746 demo).
-  const TABLE = ['Row height', 'Text in cells', 'Row numbers', 'Subfolders']
+  const TABLE = ['Row height', 'Text in cells', 'Row numbers', 'Subfolders', 'Column type icons', 'Header row style']
   const BOARD = ['Column width in pixels', 'Subfolders']
-  const CALENDAR = ['Start date', 'End date', 'Opens in', 'Card titles', 'Hide weekends', 'Between weeks thickness', 'Between weeks colour', 'Between days thickness', 'Between days colour', 'Cross out when', 'Subfolders']
+  const CALENDAR = ['Start date', 'End date', 'Opens in', 'Card titles', 'Hide weekends', 'Header row style', 'Between weeks thickness', 'Between weeks colour', 'Between days thickness', 'Between days colour', 'Cross out when', 'Subfolders']
   const LIST = ['Marker style', 'Indent properties', 'Property separator', 'Subfolders']
   const ALL = [...new Set([...TABLE, ...BOARD, ...CALENDAR, ...LIST, 'Group indent', 'Frozen columns', 'Frozen rows', 'Default view'])]
 
@@ -139,10 +139,13 @@ describe('each view type shows its settings only (D59)', () => {
     toTab(pop, 'View')
     expectOnly(pop, TABLE)
     expect(labels(pop)).toEqual(['Rows', 'Header row', 'Groups'])
-    // The Header row heading carries the whole row look's ↺ slot; Column type icons sits first under it.
+    // Under the Header row heading: Column type icons, then ONE "Style [Aa ▾]" row with the whole row look's ↺ slot (YAZ-4864 round 3).
     const heading = [...pop.querySelectorAll('.view-menu__label')].find((p) => p.textContent === 'Header row')!
-    expect(heading.querySelector('.view-from-settings')).not.toBeNull()
     expect(heading.nextElementSibling?.textContent).toBe('Column type icons')
+    const style = q(pop, '[aria-label="Header row style"]').closest('.view-settings-row')!
+    expect(style.textContent).toContain('Style')
+    expect(style.querySelector('.view-from-settings')).not.toBeNull()
+    expect(pop.querySelector('[aria-label="Header row fill colour"]')).toBeNull()
     expect(pop.textContent).toContain('Show empty groups')
   })
 

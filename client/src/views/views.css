@@ -2134,9 +2134,12 @@
 .view-cal__weekday {
   padding: 6px 8px;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--fg-muted);
-  background: var(--bg-side);
+  /* The header row's look (YAZ-4864 round 3): the view's `headerRow` over Settings › Tables, as custom properties on
+     the row (`headerRowVars`), the folder table's formula (`.view-table thead th`). The day names keep their own size. */
+  font-weight: var(--table-header-weight, 600);
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 1) * 100%), var(--fg)));
+  text-align: var(--table-header-align, left);
+  background: color-mix(in srgb, var(--table-header-hue, var(--fg)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), var(--bg));
 }
 
 /* A week row of days (YAZ-4858): row 1 the day heads, then one row per lane of bars, then the one-day cards. Each day
@@ -3149,8 +3152,9 @@
 /* A calendar line's two controls (YAZ-4878, `CalendarLineControls.tsx`): "3 px ▾" and a colour dot ▾, each a quiet
    select in the View tab and in Settings › Folder pages; the dropdown's rows, Custom's box and the colour panel. */
 .cal-line { display: flex; flex: none; gap: 4px; align-items: center; }
-.cal-line__drop { position: relative; display: inline-flex; }
-.cal-line__trigger {
+.view-dropdown__wrap { position: relative; display: inline-flex; }
+/* The dropdown's trigger (`Dropdown.tsx`): a quiet select with a drawn chevron, in the View tab, Settings and the folder ⚙. */
+.view-dropdown {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -3165,15 +3169,38 @@
   background: color-mix(in srgb, var(--fg) 6%, transparent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4l2-2 2 2M3 6l2 2 2-2'/%3E%3C/svg%3E") no-repeat right 6px center;
   cursor: pointer;
 }
-.cal-line__trigger:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
+.view-dropdown:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
 .cal-line__colour { padding-left: 6px; }
 .cal-line__dot { width: 12px; height: 12px; }
-/* On the body (`Popover`'s `portal`), over the Settings dialog's scrim (`settings.css`, z-index 70) as a context menu is. */
-.cal-line__panel.view-popover { z-index: 80; min-width: 0; padding: 4px; }
+/* The panel, on the body (`Popover`'s `portal`), over the Settings dialog's scrim (`settings.css`, z-index 70) as a context menu is. */
+.view-dropdown__panel.view-popover { z-index: 80; min-width: 0; padding: 4px; }
 .cal-line__panel .view-popover__item { padding: 4px 24px 4px 10px; font-size: 12px; white-space: nowrap; }
 .cal-line__panel .view-popover__item[aria-pressed='true'] { color: var(--accent); }
 .cal-line__custom { padding: 4px 6px 2px; font-size: 12px; }
 .cal-line__custom .view-input { width: 56px; }
+
+/* The "Aa" chip (YAZ-4864 round 3, `StylePanel.tsx` `HeaderStyleControl`): the header row's look in small — the fill at
+   its strength over the page, the text colour and the weight — the folder table's header formula (`.view-table thead th`). */
+.view-style { padding-left: 6px; }
+.view-style__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: var(--table-header-weight, 600);
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 1) * 100%), var(--fg)));
+  background: color-mix(in srgb, var(--table-header-hue, var(--fg)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), var(--bg));
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 15%, transparent);
+}
+/* The style panel in a dropdown: the context menu's rows (`ctx-menu__item`, `fill-target`) at the menu's padding. */
+.view-style__panel.view-popover { width: max-content; min-width: 200px; padding: 4px; font-size: 13px; }
+.page-settings__drop-panel.view-popover { width: max-content; min-width: 160px; padding: 4px; font-size: 13px; }
+.page-settings__line .page-settings__drop { max-width: 180px; font-size: 12px; }
 
 /* The colour panel (`ColourPanel.tsx`): the strength switch over two rows of swatches, "No colour" under them. */
 .colour-panel { display: flex; flex-direction: column; gap: 6px; padding: 4px; }

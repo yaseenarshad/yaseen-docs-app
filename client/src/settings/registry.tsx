@@ -22,6 +22,7 @@
  * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
  */
 import { useEffect, useState, type ReactNode } from 'react'
+import { HeaderStyleControl } from '../views/view/StylePanel'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
@@ -202,20 +203,13 @@ const HEADER_ROW_PREVIEW: readonly (readonly [string, string, 'left' | 'center' 
   ['Cook time', '45 min', 'right'],
 ]
 
-/** `defaults` is the row's own default (YAZ-4899: the subheader row's is stronger); Reset brings it back. */
+/**
+ * `defaults` is the row's own default (YAZ-4899: the subheader row's is stronger); Reset brings it back. YAZ-4864 round 3:
+ * the preview, then ONE "Style [Aa ▾]" control (`StylePanel.tsx`, the table's "Header row ›" panel) in place of the five
+ * rows of buttons. Text colour null (each table's own) presses nothing in the Text tab.
+ */
 function HeaderRowControl({ value, onChange, defaults = DEFAULT_HEADER_ROW }: { value: HeaderRow; onChange: (next: HeaderRow) => void; defaults?: HeaderRow }) {
-  const seg = (part: 'strength' | 'weight' | 'align', name: string) => (
-    <Segmented<string | null> options={HEADER_ROW_CHOICES[part].map((v) => ({ label: headerRowLabel(v), value: v }))} value={value[part]} onChange={(next) => onChange({ ...value, [part]: next })} ariaLabel={name} />
-  )
-  const swatches = (part: 'color' | 'text', colors: readonly string[], name: string) => (
-    <span className="settings__band-colours" role="radiogroup" aria-label={name}>
-      {colors.map((c) => (
-        <button key={c} type="button" role="radio" aria-checked={value[part] === c} title={capital(c)} className="settings__band-colour" onClick={() => onChange({ ...value, [part]: c })}>
-          <span className="settings__band-swatch" style={{ background: fillSwatch((c === 'gray' ? 'grey' : c) as TableColor) }} aria-hidden />
-        </button>
-      ))}
-    </span>
-  )
+  const plain = value.strength === 'off' && value.weight === 'regular' && value.text === 'full'
   return (
     <span className="settings__header-row">
       <table className="header-row-preview" aria-label="Header row preview" {...headerRowAttrs(value)}>
@@ -238,25 +232,16 @@ function HeaderRowControl({ value, onChange, defaults = DEFAULT_HEADER_ROW }: { 
           </tr>
         </tbody>
       </table>
-      <span>Fill colour</span>
-      {swatches('color', HEADER_ROW_CHOICES.color, 'Header row fill colour')}
-      <span>Strength</span>
-      {seg('strength', 'Header row strength')}
-      <span>Weight</span>
-      {seg('weight', 'Header row text weight')}
-      <span>Text colour</span>
+      <span>Style</span>
       <span className="settings__header-row-text">
-        <Segmented<string | null>
-          options={(['muted', 'full'] as const).map((v) => ({ label: capital(v), value: v }))}
-          value={value.text === 'muted' || value.text === 'full' ? value.text : null}
-          onChange={(next) => onChange({ ...value, text: next as HeaderRow['text'] })}
-          ariaLabel="Header row text colour"
+        <HeaderStyleControl
+          label="Header row style"
+          shown={value}
+          plainLabel="Plain, like any row"
+          plainOn={plain}
+          onPlain={() => onChange(plain ? { ...value, strength: defaults.strength, weight: defaults.weight, text: defaults.text } : { ...value, strength: 'off', weight: 'regular', text: 'full' })}
+          onPick={(part, next) => onChange({ ...value, [part]: next })}
         />
-        {swatches('text', HEADER_ROW_CHOICES.text.filter((v) => v !== 'muted' && v !== 'full'), 'Header row text colour')}
-      </span>
-      <span>Align</span>
-      <span className="settings__header-row-text">
-        {seg('align', 'Header row align')}
         {HEADER_ROW_PARTS.some((part) => value[part] !== defaults[part]) && (
           <button type="button" className="settings__header-row-reset" onClick={() => onChange(defaults)}>
             Reset

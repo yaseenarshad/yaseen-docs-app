@@ -1,8 +1,8 @@
-import { type ReactNode, useRef, useState } from 'react'
+import { useState } from 'react'
 import { type ColorStrengthValue, MAX_CAL_LINE } from '@shared/types'
 import { calLineCss } from '../calendar'
 import { ColourPanel } from './ColourPanel'
-import { Popover } from './Popover'
+import { Dropdown } from './Dropdown'
 import { TextField } from './TextField'
 
 const LINE_PRESETS = [1, 2, 3, 4] as const
@@ -18,7 +18,7 @@ export function CalLineControls({ label, width, color, onWidth, onColor }: { lab
   const preset = (LINE_PRESETS as readonly number[]).includes(width)
   return (
     <span className="cal-line">
-      <Dropdown label={`${label} thickness`} className="cal-line__thickness" trigger={`${width} px`} onOpen={() => setCustom(false)}>
+      <Dropdown label={`${label} thickness`} className="cal-line__thickness" panelClassName="cal-line__panel" trigger={`${width} px`} onOpen={() => setCustom(false)}>
         {(close) => (
           <>
             {LINE_PRESETS.map((n) => (
@@ -69,38 +69,9 @@ export function CalLineControls({ label, width, color, onWidth, onColor }: { lab
           </>
         )}
       </Dropdown>
-      <Dropdown label={`${label} colour`} className="cal-line__colour" trigger={<span className="table-menu-swatch cal-line__dot" style={{ background: calLineCss(color, 2) }} />}>
+      <Dropdown label={`${label} colour`} className="cal-line__colour" panelClassName="cal-line__panel" trigger={<span className="table-menu-swatch cal-line__dot" style={{ background: calLineCss(color, 2) }} />}>
         {() => <ColourPanel label={label} value={color} onPick={onColor} />}
       </Dropdown>
-    </span>
-  )
-}
-
-/** A quiet select-looking button with a popover under it: on the body, fixed under the trigger (`portal`), so the View tab's own popover never places or cuts it. */
-function Dropdown({ label, className, trigger, onOpen, children }: { label: string; className: string; trigger: ReactNode; onOpen?: () => void; children: (close: () => void) => ReactNode }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLButtonElement>(null)
-  return (
-    <span className="cal-line__drop">
-      <button
-        ref={ref}
-        type="button"
-        className={`view-select cal-line__trigger ${className}`}
-        aria-label={label}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => {
-          if (!open) onOpen?.()
-          setOpen(!open)
-        }}
-      >
-        {trigger}
-      </button>
-      {open && (
-        <Popover label={label} anchor={ref.current} portal onClose={() => setOpen(false)} className="cal-line__panel">
-          {children(() => setOpen(false))}
-        </Popover>
-      )}
     </span>
   )
 }

@@ -13,6 +13,10 @@ import { NO_READ_ONLY } from '../readOnlyRows'
 import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
 import { CardLine, CardProp, cardLines, cardStyleAttrs } from './cardLines'
 import { CardStyleFlyout, type CardStyleWrite } from './CardStyleMenu'
+import { ContextMenuSurface } from '../../components/ContextMenuSurface'
+import { MenuFlyout, useFlyout } from '../../components/Flyout'
+import { StyleFlyout, headerRowVars } from './StylePanel'
+import { plainHeaderRow, setHeaderRowPart, shownHeaderRow, toggleHeaderRowPlain } from './TableLookSettings'
 import type { ValueHistory } from './valueHistory'
 import { canonicalKey } from './keys'
 import { type NoteWindowLink, currentItemClass, useNoteWindowItems } from './NoteWindow'
@@ -72,6 +76,8 @@ export interface CalendarViewProps {
   onStyle?: (path: string, writes: CardStyleWrite[]) => void
   /** The page's ⌘Z / ⇧⌘Z history of value changes (`valueHistory.ts`): a card colour is one step of it. Absent: the keys do nothing here. */
   history?: ValueHistory
+  /** The day names' "Header row ›" (YAZ-4864 round 3): ONE write of this view, as the View tab's row writes it. Absent: no right-click menu there. */
+  onHeaderRow?: (mutate: (view: ViewDef) => void) => void
   /** The tab's `calendarScale` (YAZ-4558 D22): a month grid, or one week of 7 tall days. */
   scale: 'month' | 'week'
   /** The Month / Week switch: ViewsPane writes `calendarScale` (Settings' scale deletes it). */
@@ -151,7 +157,7 @@ function gridLines(view: ViewDef | undefined): CSSProperties | undefined {
   } as CSSProperties
 }
 
-export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, noteDoors, onStyle, history, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, noteDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
@@ -162,6 +168,9 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   const [over, setOver] = useState<string | null>(null)
   /** The card's right-click menu (YAZ-4547 D24), as the board's. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string; day: DayKey | null; locked: boolean } | null>(null)
+  /** The day names' right-click (YAZ-4864 round 3): "Header row ›" with the style panel, in place of the page's greyed-out Cut / Copy / Paste. Before the no-date-column return: a hook. */
+  const [headMenu, setHeadMenu] = useState<{ x: number; y: number } | null>(null)
+  const headFlyout = useFlyout<string>()
   /** An edge drag (YAZ-4858): the card, the edge, its days when it began, and the day the pointer is on now. */
   const [resize, setResize] = useState<{ path: string; edge: 'start' | 'end'; start: DayKey; end: DayKey; day: DayKey } | null>(null)
   /** The message an edge drag shows with no End date column (YAZ-4858 item 4): at that card; `choosing` shows the picker. */
@@ -541,6 +550,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const properties = rows.find((r) => r.record.path === m.path)?.record.properties ?? {}
     return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(m.path, writes)} />] }
   }
+  const shownHead = shownHeaderRow(view)
   /** ⌘Z / ⇧⌘Z on a card (YAZ-4906): the page's value history, as the table reads them; a field keeps its own keys. */
   const onUndoKey = (e: ReactKeyboardEvent) => {
     if (history === undefined || e.key.toLowerCase() !== 'z' || !e.metaKey || e.altKey || e.ctrlKey) return
@@ -570,7 +580,20 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
         </div>
       </div>
       <div className={`view-cal__grid${isWeek ? ' view-cal__grid--week' : ''}${hideWeekends ? ' view-cal__grid--weekdays' : ''}`} role="grid" aria-label={title} style={gridLines(view)}>
-        <div className="view-cal__week" role="row">
+        {/* The day names wear the header row's look (YAZ-4864 round 3): the view's `headerRow` over Settings › Tables, as the folder table's; a right-click styles it. */}
+        <div
+          className="view-cal__week"
+          role="row"
+          style={headerRowVars(shownHeaderRow(view))}
+          onContextMenu={
+            onHeaderRow === undefined
+              ? undefined
+              : (e) => {
+                  e.preventDefault()
+                  setHeadMenu({ x: e.clientX, y: e.clientY })
+                }
+          }
+        >
           {/* Hide weekends drops Sat and Sun whichever day starts the week (YAZ-4595 S33, YAZ-4585). */}
           {(hideWeekends ? WORKDAYS : sundayFirst ? SUNDAY_FIRST : WEEKDAYS).map((d) => (
             <span key={d} className="view-cal__weekday" role="columnheader">
@@ -670,6 +693,22 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
           // A dated card's new note goes on its day (13BO CM2), as the day's "+"; an undated one has none.
           {...menuItems(menu)}
         />
+      )}
+      {headMenu !== null && onHeaderRow !== undefined && (
+        <ContextMenuSurface x={headMenu.x} y={headMenu.y} onClose={() => setHeadMenu(null)}>
+          <MenuFlyout.Provider value={headFlyout}>
+            <div className="ctx-menu__group" role="group">
+              <StyleFlyout
+                label="Header row"
+                shown={shownHead}
+                plainLabel="Plain, like any row"
+                plainOn={plainHeaderRow(shownHead)}
+                onPlain={() => onHeaderRow(toggleHeaderRowPlain)}
+                onPick={(part, value) => onHeaderRow((v) => setHeaderRowPart(v, part, value))}
+              />
+            </div>
+          </MenuFlyout.Provider>
+        </ContextMenuSurface>
       )}
       {endAsk !== null && (
         // No End date column (YAZ-4858 item 4): the message at the card, one way on, and nothing written until it is used.
