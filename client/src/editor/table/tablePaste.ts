@@ -30,7 +30,7 @@ import { Fragment, Slice, type Node as ProseNode, type Schema } from '@milkdown/
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { CellSelection, TableMap, __pastedCells, isInTable, selectedRect } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cellPosAt, cellStartsAt, rowFolded, unfoldedRows } from './cells'
+import { cellPosAt, cellStartsAt, rowFolded, rowSubhead, unfoldedRows } from './cells'
 
 /** One pasted cell: its block content, and its `fill` / `color` / `align` when it came from HTML (or the source cell, for fill down). */
 export interface Cell {
@@ -190,8 +190,8 @@ export function pasteIntoCells(view: EditorView, event: ClipboardEvent, slice: S
   const table = state.doc.nodeAt(tableStart - 1)!
   const one = grid === null ? oneValue(schema, slice) : grid.length === 1 && grid[0]!.length === 1 ? grid[0]![0]! : null
   if (rect !== null && one !== null) {
-    // One value in each selected row that is not folded (YAZ-4165).
-    const height = Array.from({ length: rect.height }, (_, i) => table.maybeChild(top + i)).filter((row) => !rowFolded(row)).length
+    // One value in each selected row that is not folded (YAZ-4165) and no subheader row (YAZ-4899).
+    const height = Array.from({ length: rect.height }, (_, i) => table.maybeChild(top + i)).filter((row) => !rowFolded(row) && !rowSubhead(row)).length
     grid = Array.from({ length: height }, () => Array<Cell>(rect.width).fill(one))
   }
   if (grid === null || grid.length === 0) return false

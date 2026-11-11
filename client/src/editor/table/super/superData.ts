@@ -20,7 +20,7 @@ import { ruleToExpr } from '../../../views/view/filterRows'
 import { groupKeyOf } from '../../../views/view/GroupHeader'
 import type { ViewDef, ViewSet } from '../../../views/viewSchema'
 import { isCellNoteMark } from '../cellNotes'
-import { cellStartsAt } from '../cells'
+import { cellStartsAt, rowSubhead } from '../cells'
 import { headerKeys } from './superTables'
 import { VIEW_OPS, type TableViewDef } from './viewGrammar'
 
@@ -109,7 +109,8 @@ export function tableData(table: ProseNode): TableData {
       properties[keys[c]!] = typedValue(text)
     }
     cells.push(row)
-    if (r === 0) continue
+    // A subheader row (YAZ-4899 item 21) is a section's title, no record: the views leave it out; "Table" shows it.
+    if (r === 0 || rowSubhead(table.child(r))) continue
     const name = row[0]?.text || `Row ${r}`
     records.push({ path: pathOf(r), name, basename: name, title: name, folder: '', ext: '', size: 0, ctime: 0, mtime: 0, properties, aliases: [], tags: [], links: [], embeds: [] })
   }

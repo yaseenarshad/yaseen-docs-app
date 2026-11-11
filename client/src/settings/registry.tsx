@@ -27,7 +27,7 @@ import { scheduleInWords } from '@shared/schedule'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -202,7 +202,8 @@ const HEADER_ROW_PREVIEW: readonly (readonly [string, string, 'left' | 'center' 
   ['Cook time', '45 min', 'right'],
 ]
 
-function HeaderRowControl({ value, onChange }: { value: HeaderRow; onChange: (next: HeaderRow) => void }) {
+/** `defaults` is the row's own default (YAZ-4899: the subheader row's is stronger); Reset brings it back. */
+function HeaderRowControl({ value, onChange, defaults = DEFAULT_HEADER_ROW }: { value: HeaderRow; onChange: (next: HeaderRow) => void; defaults?: HeaderRow }) {
   const seg = (part: 'strength' | 'weight' | 'align', name: string) => (
     <Segmented<string | null> options={HEADER_ROW_CHOICES[part].map((v) => ({ label: headerRowLabel(v), value: v }))} value={value[part]} onChange={(next) => onChange({ ...value, [part]: next })} ariaLabel={name} />
   )
@@ -256,8 +257,8 @@ function HeaderRowControl({ value, onChange }: { value: HeaderRow; onChange: (ne
       <span>Align</span>
       <span className="settings__header-row-text">
         {seg('align', 'Header row align')}
-        {HEADER_ROW_PARTS.some((part) => value[part] !== DEFAULT_HEADER_ROW[part]) && (
-          <button type="button" className="settings__header-row-reset" onClick={() => onChange(DEFAULT_HEADER_ROW)}>
+        {HEADER_ROW_PARTS.some((part) => value[part] !== defaults[part]) && (
+          <button type="button" className="settings__header-row-reset" onClick={() => onChange(defaults)}>
             Reset
           </button>
         )}
@@ -1250,6 +1251,27 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['header', 'header row', 'shade', 'shaded', 'tint', 'colour', 'color', 'bold', 'muted', 'first row', 'table'],
             wide: () => true,
             render: ({ settings, onChange }) => <HeaderRowControl value={settings.tableHeaderRow ?? DEFAULT_SETTINGS.tableHeaderRow} onChange={(tableHeaderRow) => onChange({ ...settings, tableHeaderRow })} />,
+          },
+          {
+            // YAZ-4899: the look of every note table's subheader rows ("Make subheader row"); a table's "Subheader row ›" can say otherwise.
+            id: 'tableSubheaderRow',
+            label: 'Subheader row',
+            hint: "A body row you make a subheader row (right-click it › Make subheader row). Stronger than the header row by default. A table's own menu can say otherwise.",
+            keywords: ['subheader', 'subheader row', 'subheading', 'section', 'shade', 'colour', 'color', 'bold', 'table'],
+            wide: () => true,
+            render: ({ settings, onChange }) => (
+              <HeaderRowControl value={settings.tableSubheaderRow ?? DEFAULT_SETTINGS.tableSubheaderRow} defaults={DEFAULT_SUBHEADER_ROW} onChange={(tableSubheaderRow) => onChange({ ...settings, tableSubheaderRow })} />
+            ),
+          },
+          {
+            // YAZ-4899: a subheader row stays at the top of the note while its section scrolls by, under any frozen rows.
+            id: 'tableStickySubheaders',
+            label: 'Sticky subheaders',
+            hint: "A subheader row stays at the top of the note while its section scrolls by, under any frozen rows. A table's 6-dot menu can turn its own on or off.",
+            keywords: ['subheader', 'sticky', 'stick', 'pinned', 'scroll', 'section', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableStickySubheaders ?? true} onChange={(tableStickySubheaders) => onChange({ ...settings, tableStickySubheaders })} ariaLabel="Sticky subheaders" />
+            ),
           },
           {
             // YAZ-4783 layer 3: the width of every note table whose columns have no widths of their own, shared evenly.

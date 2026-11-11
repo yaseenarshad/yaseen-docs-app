@@ -154,8 +154,105 @@
   text-align: var(--table-header-align) !important;
 }
 
-/* Stripes: every second body row. Row 1 of the tbody is the header row. */
-.milkdown .ProseMirror .milkdown-table-block[data-table-stripes] :where(tr:nth-child(2n + 3)) > td {
+/* Subheader rows (YAZ-4899, `tableSubhead.ts`): the header row's parts again, as `data-table-subheader-*` on `.app`
+   (Settings › Tables › Subheader row) and a note table's block (its own `subheader` part); each subheader cell carries
+   `data-subhead`. The same scale as the header's: Gray is the text colour, a colour the cell fill colour. */
+:is(.app, .milkdown-table-block)[data-table-subheader-color='gray'] { --table-subheader-hue: initial; --table-subheader-scale: 1; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='red'] { --table-subheader-hue: var(--table-fill-solid-red); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='orange'] { --table-subheader-hue: var(--table-fill-solid-orange); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='yellow'] { --table-subheader-hue: var(--table-fill-solid-yellow); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='green'] { --table-subheader-hue: var(--table-fill-solid-green); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='teal'] { --table-subheader-hue: var(--table-fill-solid-teal); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='blue'] { --table-subheader-hue: var(--table-fill-solid-blue); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='purple'] { --table-subheader-hue: var(--table-fill-solid-purple); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='pink'] { --table-subheader-hue: var(--table-fill-solid-pink); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='black'] { --table-subheader-hue: var(--table-fill-solid-black); --table-subheader-scale: 5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='off'] { --table-subheader-strength: 0; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='light'] { --table-subheader-strength: 6; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='medium'] { --table-subheader-strength: 12; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='strong'] { --table-subheader-strength: 20; }
+:is(.app, .milkdown-table-block)[data-table-subheader-weight='bold'] { --table-subheader-weight: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-weight='regular'] { --table-subheader-weight: 400; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='muted'] { --table-subheader-mute: 1; --table-subheader-ink: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='full'] { --table-subheader-mute: 0; --table-subheader-ink: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='white'] { --table-subheader-ink: #fff; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='red'] { --table-subheader-ink: var(--table-text-red); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='orange'] { --table-subheader-ink: var(--table-text-orange); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='yellow'] { --table-subheader-ink: var(--table-text-yellow); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='green'] { --table-subheader-ink: var(--table-text-green); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='teal'] { --table-subheader-ink: var(--table-text-teal); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='blue'] { --table-subheader-ink: var(--table-text-blue); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='purple'] { --table-subheader-ink: var(--table-text-purple); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='pink'] { --table-subheader-ink: var(--table-text-pink); }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='follow'] { --table-subheader-align: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='left'] { --table-subheader-align: left; }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='center'] { --table-subheader-align: center; }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='right'] { --table-subheader-align: right; }
+
+/* A subheader cell: the tint, weight and text colour of the parts above (Medium, Bold, Full by default). Before the
+   stripes and the fills (Order matters): a cell's own fill and text colour still win. */
+.milkdown .ProseMirror .milkdown-table-block td[data-subhead] {
+  --table-cell-tint: color-mix(in srgb, var(--table-subheader-hue, var(--crepe-color-on-background)) calc(var(--table-subheader-strength, 12) * var(--table-subheader-scale, 1) * 1%), transparent);
+  font-weight: var(--table-subheader-weight, bold);
+  color: var(--table-subheader-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-subheader-mute, 0) * 100%), currentColor));
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-subheader-align]:not([data-table-subheader-align='follow']) td[data-subhead],
+.app[data-table-subheader-align]:not([data-table-subheader-align='follow']) .milkdown .ProseMirror .milkdown-table-block:not([data-table-subheader-align]) td[data-subhead] {
+  text-align: var(--table-subheader-align) !important;
+}
+
+/* A sticky subheader row (Settings' default on `.app`, the table's own `data-table-sticky-subheaders` first) paints its
+   tint over the page colour, as a frozen row does, so the rows it moves over do not show through; under the frozen
+   rows (z-index 2). Its `translateY` is a Web Animation on the row (`tableSubhead.ts`). */
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-row {
+  position: relative;
+  z-index: 1;
+}
+
+.app[data-table-sticky-subheaders='on'] .milkdown .ProseMirror .milkdown-table-block:not([data-table-sticky-subheaders='off']) .table-subhead-row > td,
+.milkdown .ProseMirror .milkdown-table-block[data-table-sticky-subheaders='on'] .table-subhead-row > td {
+  background-color: var(--bg);
+  background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
+}
+
+/* THE CHEVRON'S PLACE (the demo decides it): inside the subheader row's first cell, before its text, floated so the text
+   flows after it. Change this one rule (and `chevronWidget` in `tableSubhead.ts`) to move it. Down when open, right when
+   the section is collapsed. */
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron {
+  float: left;
+  width: 16px;
+  height: 16px;
+  margin: 2px 4px 0 -4px;
+  cursor: pointer;
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron > svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  transition: transform 120ms ease;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron[data-collapsed] > svg {
+  transform: rotate(-90deg);
+}
+
+/* "· 12 rows" after the collapsed subheader row's text: quiet, never selected, never edited. */
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-count {
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Stripes: every second body row. Row 1 of the tbody is the header row. A table with subheader rows (`data-table-subheads`)
+   starts them again after each subheader row (YAZ-4899): `table-stripe-row` from `tableSubhead.ts` in place of `nth-child`. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-stripes]:not([data-table-subheads]) :where(tr:nth-child(2n + 3)) > td,
+.milkdown .ProseMirror .milkdown-table-block[data-table-stripes][data-table-subheads] .table-stripe-row > td {
   --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background) 4%, transparent);
 }
 

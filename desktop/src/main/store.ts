@@ -196,6 +196,7 @@ import {
   type TabRef,
   normalizeFilesZoom,
   DEFAULT_HEADER_ROW,
+  DEFAULT_SUBHEADER_ROW,
   HEADER_ROW_PARTS,
   headerRowOwn,
   type HeaderRow,
@@ -523,6 +524,8 @@ export function sanitizeFolderPages(raw: unknown): FolderPagesSettings {
 
 /** Settings › Tables › Header row (YAZ-4774) on load: each valid part is kept, a missing or broken one is its default. */
 export const sanitizeHeaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_HEADER_ROW, ...headerRowOwn(raw) })
+/** Settings › Tables › Subheader row (YAZ-4899): the default's parts under what reads. */
+export const sanitizeSubheaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_SUBHEADER_ROW, ...headerRowOwn(raw) })
 
 /**
  * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
@@ -685,6 +688,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableBandRows: (v): v is TableBandRows => typeof v === 'string' && (TABLE_BAND_ROWS as readonly string[]).includes(v),
   tableBandBold: (v): v is boolean => typeof v === 'boolean',
   tableHeaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
+  tableSubheaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
+  tableStickySubheaders: (v): v is boolean => typeof v === 'boolean',
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
   tableNowButton: (v): v is boolean => typeof v === 'boolean',
   tableCellNoteButton: (v): v is boolean => typeof v === 'boolean',
@@ -784,6 +789,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.folderPages = sanitizeFolderPages(src.folderPages)
   out.tableHeaderRow = sanitizeHeaderRow(src.tableHeaderRow)
+  out.tableSubheaderRow = sanitizeSubheaderRow(src.tableSubheaderRow)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)
   out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)

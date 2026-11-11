@@ -129,6 +129,35 @@ export const rowFolded = (row: ProseNode | null | undefined): boolean => {
  */
 export function unfoldedRows(table: ProseNode, from: number, count: number): number[] {
   const out: number[] = []
-  for (let row = from; out.length < count; row++) if (row >= table.childCount || !rowFolded(table.child(row))) out.push(row)
+  // A subheader row (YAZ-4899) is skipped as a folded row is: a fill down or a paste never writes a section's title.
+  for (let row = from; out.length < count; row++) if (row >= table.childCount || !(rowFolded(table.child(row)) || rowSubhead(table.child(row)))) out.push(row)
   return out
+}
+
+/** A subheader row (YAZ-4899): one of its cells has `subhead`, as a folded row's have `fold`. Row 0 (the header) never is. */
+export const rowSubhead = (row: ProseNode | null | undefined): boolean => {
+  let subhead = false
+  row?.forEach((cell) => {
+    if (cell.attrs.subhead === true) subhead = true
+  })
+  return subhead
+}
+
+/** The table has a subheader row (YAZ-4899). */
+export function tableHasSubheads(table: ProseNode): boolean {
+  let found = false
+  table.forEach((row, _, r) => (found ||= r > 0 && rowSubhead(row)))
+  return found
+}
+
+/** The subheader row of the section that holds row `row` (itself when it is one), or `null` above the first subheader row. */
+export function subheadOf(table: ProseNode, row: number): number | null {
+  for (let r = Math.min(row, table.childCount - 1); r > 0; r--) if (rowSubhead(table.child(r))) return r
+  return null
+}
+
+/** The last row of the section of subheader row `s`: the row before the next subheader row, else the table's last row. */
+export function sectionEnd(table: ProseNode, s: number): number {
+  for (let r = s + 1; r < table.childCount; r++) if (rowSubhead(table.child(r))) return r - 1
+  return table.childCount - 1
 }

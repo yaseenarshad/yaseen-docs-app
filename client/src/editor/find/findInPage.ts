@@ -46,6 +46,9 @@ import { collapsedItemsHiding, hasOutlineFoldMeta, setOutlineFoldSet } from '../
 import { getZoomedItemPos } from '../outline/zoom'
 import { closeCellNote, openCellNote, revealOpenCell, showInCard } from '../table/cellNoteCard'
 import { cellNoteAround, cellNoteCardKey, isCellNoteHidden, markPosOf } from '../table/cellNotes'
+import { closeHistory } from '@milkdown/kit/prose/history'
+import { rowFolded } from '../table/cells'
+import { unfoldRun } from '../table/tableFold'
 import { boardEmbedKey, boardEmbedsIn, embedRevealed } from '../drawing/boardEmbedScan'
 import { pillLinks, type PillLink, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
@@ -310,7 +313,22 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
     foldHeadings([...revealedHeadings], false)
     if (differs(revealed, previous.revealed) || differs(revealedHeadings, previous.revealedHeadings))
       dispatchMeta({ type: 'revealed', revealed, revealedHeadings })
+    if (folds !== 'keep' && active !== null) openTableRun(active.from)
     followNotes()
+  }
+  /**
+   * A match in a folded table row (a collapsed subheader section, YAZ-4899 item 20, or a "Fold N rows" run) opens the
+   * run, so the match shows. A fold is in the file, so this is a document change (one ⌘Z), and it stays open.
+   */
+  const openTableRun = (pos: number): void => {
+    const $pos = view.state.doc.resolve(pos)
+    for (let depth = $pos.depth; depth > 0; depth--) {
+      if ($pos.node(depth).type.spec.tableRole !== 'row') continue
+      if (!rowFolded($pos.node(depth))) return
+      const tr = unfoldRun(closeHistory(view.state.tr), $pos.before(depth - 1), $pos.index(depth - 1))
+      if (tr.docChanged) view.dispatch(tr)
+      return
+    }
   }
   /**
    * D19: the card find opened closes when the active match is not in it; the hidden cell note that holds the active

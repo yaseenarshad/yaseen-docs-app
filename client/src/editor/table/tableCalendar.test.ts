@@ -324,9 +324,9 @@ describe('the marker in table.css (D2, D6, D14)', () => {
     expect(grey?.selector).toMatch(/^:is\(\[data-table-dim-past='text'\], \[data-table-dim-past='shade'\]\)/)
     const shade = past.find(({ body }) => body.includes('--table-past:'))
     expect(shade?.selector).toMatch(/^\[data-table-dim-past='shade'\]/)
-    // Both cell rules paint the shade as a layer, under the band and over a fill.
+    // Each cell rule (a cell, a frozen cell, a sticky subheader cell, YAZ-4899) paints the shade as a layer, under the band and over a fill.
     const paint = rules.filter(({ body }) => /background-image:\s*var\(--table-note-mark, none\), var\(--table-open-ring, none\), var\(--table-band, none\)/.test(body))
-    expect(paint.length).toBe(2)
+    expect(paint.length).toBe(3)
     for (const { body } of paint) expect(body).toMatch(/var\(--table-band, none\), var\(--table-past, none\)/)
   })
 })

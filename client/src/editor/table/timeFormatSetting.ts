@@ -4,7 +4,7 @@
  * `code/languageHelpers.ts` is, so no editor rebuilds for a change.
  */
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT, isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
-import { DEFAULT_HEADER_ROW, type HeaderRow } from '@shared/types'
+import { DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, type HeaderRow } from '@shared/types'
 
 let current = DEFAULT_TIME_FORMAT
 
@@ -39,6 +39,25 @@ export function setHeaderRowSetting(value: HeaderRow): void {
 }
 
 export const headerRowSetting = (): HeaderRow => headerRow
+
+let subheaderRow: HeaderRow = DEFAULT_SUBHEADER_ROW
+let stickySubheaders = true
+
+/**
+ * Settings › Tables › All tables › Subheader row and Sticky subheaders (YAZ-4899), App's door: a table's "Subheader
+ * row ›" and "Sticky subheaders" read them when they open, and the sticky view reads the default when a table changes.
+ */
+export function setSubheaderRowSetting(value: HeaderRow): void {
+  subheaderRow = value
+}
+
+export const subheaderRowSetting = (): HeaderRow => subheaderRow
+
+export function setStickySubheadersSetting(on: boolean): void {
+  stickySubheaders = on
+}
+
+export const stickySubheadersSetting = (): boolean => stickySubheaders
 
 let noteButton = false
 

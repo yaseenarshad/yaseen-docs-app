@@ -21,6 +21,9 @@
  * would put the caret in the run's hidden cells. "Fold N rows" is in
  * the table menu (`tableMenu.ts`, `foldRows`). Fill down and a paste never write a folded row (`unfoldedRows`).
  *
+ * A COLLAPSED SECTION (YAZ-4899, `tableSubhead.ts`) is a run in the same mark, right under a subheader row to its section's
+ * end (`sectionRun`): it draws no bar, every row of it is hidden, and the subheader row shows the chevron and the count.
+ *
  * MERGED CELLS (YAZ-4792): a run may hold a merged cell whole; "Fold N rows" is refused while a merged cell crosses the
  * rows' edge (its mark would fold the row it starts in too). The bar's times and the caret's step over a run read a
  * column through the table map, not the row's child at that index.
@@ -35,7 +38,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
 import { verticalScrollParent } from '../../lib/pinnedHeader'
 import { beforeTableEditing } from './beforeTableEditing'
-import { cellTextAt, mergeCrosses, rowFolded, setCellsAttr } from './cells'
+import { cellTextAt, mergeCrosses, rowFolded, rowSubhead, sectionEnd, setCellsAttr } from './cells'
 import { atEndOfCell } from './tableShiftArrow'
 import { changedTables, typingOnly } from './tableStyle'
 import { timeFormatSetting } from './timeFormatSetting'
@@ -57,6 +60,12 @@ export function foldRuns(table: ProseNode): FoldRun[] {
   })
   return runs
 }
+
+/**
+ * A run is a collapsed section (YAZ-4899, `tableSubhead.ts`): it starts right under a subheader row and ends at the
+ * section's end. It draws no bar: the subheader row is the bar, with its chevron and "· N rows".
+ */
+export const sectionRun = (table: ProseNode, run: FoldRun): boolean => run.from > 1 && rowSubhead(table.child(run.from - 1)) && run.to === sectionEnd(table, run.from - 1)
 
 /** The run that holds row `row`, if any. */
 export const runOf = (runs: readonly FoldRun[], row: number | null): FoldRun | undefined => (row === null ? undefined : runs.find((run) => run.from <= row && row <= run.to))
@@ -87,10 +96,12 @@ function foldDecorations(table: ProseNode, pos: number): Decoration[] {
   table.forEach((_, offset) => starts.push(pos + 1 + offset))
   const out: Decoration[] = []
   for (const run of runs) {
+    const section = sectionRun(table, run)
     for (let r = run.from; r <= run.to; r++) {
       const row = table.child(r)
-      out.push(Decoration.node(starts[r]!, starts[r]! + row.nodeSize, { class: r === run.from ? 'table-fold-bar' : 'table-fold-hidden' }, { fold: true }))
+      out.push(Decoration.node(starts[r]!, starts[r]! + row.nodeSize, { class: r === run.from && !section ? 'table-fold-bar' : 'table-fold-hidden' }, { fold: true }))
     }
+    if (section) continue
     const cell = starts[run.from]! + 1
     out.push(Decoration.node(cell, cell + table.child(run.from).firstChild!.nodeSize, { 'data-table-fold-label': foldLabel(table, run) }, { fold: true }))
   }

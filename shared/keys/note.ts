@@ -40,10 +40,10 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   // The outline.
   note('indent', 'Indent bullet', ['CmdOrCtrl+]'], { hint: 'In a table: the next cell' }),
   note('outdent', 'Outdent bullet', ['CmdOrCtrl+['], { hint: 'In a table: the cell before' }),
-  note('foldHere', 'Fold the bullet or heading section at the caret', ['CmdOrCtrl+Up']),
-  note('unfoldHere', 'Unfold the bullet or heading section at the caret', ['CmdOrCtrl+Down']),
-  note('foldAll', 'Fold all bullets and headings', ['CmdOrCtrl+Shift+U']),
-  note('unfoldAll', 'Unfold all bullets and headings', ['CmdOrCtrl+Shift+I']),
+  note('foldHere', 'Fold the bullet or heading section at the caret', ['CmdOrCtrl+Up'], { hint: 'In a table with subheader rows: collapses the section at the caret' }),
+  note('unfoldHere', 'Unfold the bullet or heading section at the caret', ['CmdOrCtrl+Down'], { hint: 'In a table with subheader rows: opens the section at the caret' }),
+  note('foldAll', 'Fold all bullets and headings', ['CmdOrCtrl+Shift+U'], { hint: 'Collapses every subheader row of every table too' }),
+  note('unfoldAll', 'Unfold all bullets and headings', ['CmdOrCtrl+Shift+I'], { hint: 'Opens every subheader row of every table too' }),
   note('zoomIn', 'Zoom into the bullet at the caret', ['CmdOrCtrl+.']),
   note('zoomOut', 'Zoom out one level', ['CmdOrCtrl+Shift+.']),
   // Cell notes (YAZ-3818, round 4 of the demo): the card beside a table cell.

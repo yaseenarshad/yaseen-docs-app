@@ -26,6 +26,9 @@
  * `align-left`, `align-center`, `align-right`), so neither reads as a fill colour (`blue`) or another part; Muted and
  * Full keep their bare words (`muted`, `full`), and `text-muted` / `text-full` read the same. An older build keeps
  * a `header` part with a new word as its text (below), so it never loses it.
+ * YAZ-4899: `subhead 5 12` names the subheader rows as `fold` names the folded rows (1-based, never row 1), after
+ * `nodim`; `subheader <words>` is the subheader rows' own look, the words of `header`, after `header`; then `sticky` /
+ * `nosticky` say whether they stay at the top of the note, only when the table differs from Settings.
  * `nonow` (the YAZ-4163 demo) is a calendar table with no "Now" chip; `notebutton` / `nonotebutton` (YAZ-4790) a table that
  * shows / hides the cell note "+" button whatever Settings say. Then `super` (YAZ-4869 S1) marks a Super table, and each
  * of its views is one `view …` part, in the views' order (`super/viewGrammar.ts` holds that part's grammar): they are
@@ -105,7 +108,7 @@ export interface UnknownPart {
 }
 
 /** The words of the known parts, in the fixed order. */
-export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'merge', 'fold', 'nodim', 'zoom', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar', 'nonow', 'notebutton', 'nonotebutton', 'super', 'view'] as const
+export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'merge', 'fold', 'nodim', 'subhead', 'zoom', 'border', 'header', 'subheader', 'sticky', 'nosticky', 'stripes', 'height', 'nowrap', 'freeze', 'calendar', 'nonow', 'notebutton', 'nonotebutton', 'super', 'view'] as const
 
 /**
  * One merged cell (YAZ-4792): 0-based rows and columns, `bottom` and `right` one past the last (prosemirror-tables'
@@ -158,12 +161,18 @@ export interface TableStyle {
   fold?: number[]
   /** Rows a calendar table never dims as past (YAZ-4796: "a todo list on the second row"), 0-based like `fold`. */
   nodim?: number[]
+  /** The subheader rows (YAZ-4899), 0-based like `fold`, never 0. */
+  subhead?: number[]
   /** The table's zoom in whole percent, 50–400; 100 is the default (YAZ-4091). */
   zoom?: number
   /** Thickness in px and darkness in % of the outline colour. */
   border?: { px: number; darkness: number }
   /** The header row's own parts (YAZ-4774); an absent part is Settings'. */
   header?: HeaderRowOwn
+  /** The subheader rows' own parts (YAZ-4899), read and written as `header`; an absent part is Settings › Tables › Subheader row. */
+  subheader?: HeaderRowOwn
+  /** Sticky subheaders (YAZ-4899): `true` is `sticky`, `false` `nosticky`; absent follows Settings › Tables › Sticky subheaders. */
+  sticky?: boolean
   stripes?: true
   /** The row height; normal is the default. */
   height?: 'compact' | 'tall'
@@ -335,7 +344,8 @@ function readPart(style: TableStyle, word: string, rest: string[], part: string)
       return true
     }
     case 'fold':
-    case 'nodim': {
+    case 'nodim':
+    case 'subhead': {
       if (rest.length === 0) return false
       const folded = new Set<number>()
       for (const word of rest) {
@@ -362,7 +372,8 @@ function readPart(style: TableStyle, word: string, rest: string[], part: string)
       style.border = { px, darkness }
       return true
     }
-    case 'header': {
+    case 'header':
+    case 'subheader': {
       if (rest.length === 0) return false
       const header: HeaderRowOwn = {}
       for (const word of rest) {
@@ -371,10 +382,15 @@ function readPart(style: TableStyle, word: string, rest: string[], part: string)
         if (read === null || header[read[0]] !== undefined) return false
         Object.assign(header, { [read[0]]: read[1] })
       }
-      if (Object.keys(header).length > 0) style.header = header
-      else delete style.header
+      if (Object.keys(header).length > 0) style[word] = header
+      else delete style[word]
       return true
     }
+    case 'sticky':
+    case 'nosticky':
+      if (rest.length !== 0) return false
+      style.sticky = word === 'sticky'
+      return true
     case 'height':
       if (rest.length !== 1 || !['compact', 'normal', 'tall'].includes(first)) return false
       if (first === 'normal') delete style.height
@@ -502,13 +518,18 @@ export function formatTableComment(style: TableStyle): string | null {
   if (style.merge !== undefined && style.merge.length > 0) push('merge', `merge ${[...style.merge].sort((a, b) => a.top - b.top || a.left - b.left).map(formatRange).join(' ')}`)
   if (style.fold !== undefined && style.fold.length > 0) push('fold', `fold ${formatRuns(style.fold)}`)
   if (style.nodim !== undefined && style.nodim.length > 0) push('nodim', `nodim ${formatRuns(style.nodim)}`)
+  if (style.subhead !== undefined && style.subhead.length > 0) push('subhead', `subhead ${formatRuns(style.subhead)}`)
   if (style.zoom !== undefined && style.zoom !== 100) push('zoom', `zoom ${style.zoom}%`)
   if (style.border) push('border', `border ${style.border.px}px ${style.border.darkness}%`)
-  const header = HEADER_ROW_PARTS.flatMap((part) => {
-    const value = style.header?.[part]
-    return value === undefined ? [] : [headerWord(part, value)]
-  }).join(' ')
-  if (header !== '') push('header', `header ${header === 'off' ? 'plain' : header}`)
+  for (const word of ['header', 'subheader'] as const) {
+    const header = HEADER_ROW_PARTS.flatMap((part) => {
+      const value = style[word]?.[part]
+      return value === undefined ? [] : [headerWord(part, value)]
+    }).join(' ')
+    if (header !== '') push(word, `${word} ${header === 'off' ? 'plain' : header}`)
+  }
+  if (style.sticky === true) push('sticky', 'sticky')
+  if (style.sticky === false) push('nosticky', 'nosticky')
   if (style.stripes) push('stripes', 'stripes')
   if (style.height) push('height', `height ${style.height}`)
   if (style.nowrap) push('nowrap', 'nowrap')

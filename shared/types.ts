@@ -2108,6 +2108,10 @@ export interface SettingsState {
   tableBandBold: boolean
   /** Settings › Tables › All tables › Header row (YAZ-4774): every table's header row, a note table's and a folder table's. A table's comment or a view can say otherwise. `data-table-header-*` on `.app`. */
   tableHeaderRow: HeaderRow
+  /** Settings › Tables › All tables › Subheader row (YAZ-4899): the look of every note table's subheader rows. A table's own `subheader` part can say otherwise. `data-table-subheader-*` on `.app`. */
+  tableSubheaderRow: HeaderRow
+  /** Settings › Tables › All tables › Sticky subheaders (YAZ-4899): a subheader row stays at the top of the note while its section scrolls by. On by default; a table's own `sticky` / `nosticky` wins. `data-table-sticky-subheaders` on `.app`. */
+  tableStickySubheaders: boolean
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
@@ -2476,6 +2480,15 @@ export function headerRowOwn(raw: unknown): HeaderRowOwn {
 /** The `data-table-header-*` attributes of the set parts: on `.app` (Settings), a note table's block and a folder table (`table.css`). */
 export const headerRowAttrs = (parts: Partial<HeaderRow>): Record<string, string> =>
   Object.fromEntries(HEADER_ROW_PARTS.filter((part) => typeof parts[part] === 'string').map((part) => [`data-table-header-${part}`, parts[part] as string]))
+/**
+ * Subheader rows (YAZ-4899): a note table's body rows made subheaders share one look, the header row's parts, with
+ * their own default: stronger than the header row (Gray, Medium, Bold, Full, Follow column). Settings › Tables ›
+ * Subheader row is every table's default; a table's own `subheader` part says otherwise.
+ */
+export const DEFAULT_SUBHEADER_ROW: HeaderRow = { color: 'gray', strength: 'medium', weight: 'bold', text: 'full', align: 'follow' }
+/** The `data-table-subheader-*` attributes of the set parts: on `.app` (Settings) and a note table's block (`table.css`). */
+export const subheaderRowAttrs = (parts: Partial<HeaderRow>): Record<string, string> =>
+  Object.fromEntries(HEADER_ROW_PARTS.filter((part) => typeof parts[part] === 'string').map((part) => [`data-table-subheader-${part}`, parts[part] as string]))
 
 /** Calendar tables (YAZ-4162 D6): how the now row is marked. */
 export type TableNowMark = 'line' | 'tint' | 'both'
@@ -2733,6 +2746,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableBandRows: 'both',
   tableBandBold: true,
   tableHeaderRow: DEFAULT_HEADER_ROW,
+  tableSubheaderRow: DEFAULT_SUBHEADER_ROW,
+  tableStickySubheaders: true,
   tableNowMark: 'line',
   tableNowButton: true,
   tableCellNoteButton: false,

@@ -318,6 +318,7 @@ import { tableColumnResize } from './table/tableColumnResize'
 import { tableShiftArrow } from './table/tableShiftArrow'
 import { tableHandleSelect } from './table/tableHandleSelect'
 import { tableFold } from './table/tableFold'
+import { tableSubhead } from './table/tableSubhead'
 import { tableRowBand } from './table/tableRowBand'
 import { tableZoomPill } from './table/tableZoomPill'
 import { createSuperTables } from './table/super/superTables'
@@ -719,6 +720,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableHandleSelect)
   // Folded rows (YAZ-4165): the bar and the hidden rows; a mousedown on a bar opens it, also before `tableEditing`.
   crepe.editor.use(tableFold)
+  // Subheader rows (YAZ-4899): the look, the chevron and the collapsed sections, the sticky rows, the keys and the drag.
+  crepe.editor.use(tableSubhead)
   // Fill down (YAZ-3696 S4): the corner handle of the selected cells.
   crepe.editor.use(tableFill)
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.

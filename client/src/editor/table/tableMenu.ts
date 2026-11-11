@@ -13,7 +13,10 @@
  *   Text colour ▸ (the cell toolbar's palette: the clear item, the ten names, Custom colour…,
  *   YAZ-3817, on the target cells of the moment it opens, `colours.ts`);
  * - Sort A to Z, Sort Z to A, by the target's left column; "Fold N rows" on a target of two or more body rows
- *   (YAZ-4165, `tableFold.ts`; the header row never folds);
+ *   (YAZ-4165, `tableFold.ts`; the header row never folds); YAZ-4899: "Make subheader row" / "Make N subheader rows"
+ *   on body rows (off in a calendar table, with the reason) or "Turn back into a normal row" on subheader rows; on a
+ *   subheader row "Subheader row style ›", "Collapse all subheaders" and "Expand all subheaders"; on a header-row cell
+ *   "Header row style ›" (item 3), the six-dot menu's flyout as plain groups (`rowLookParent`);
  * - Freeze up to this row, Freeze up to this column, Unfreeze rows, Unfreeze columns.
  *
  * A row acts on the CellSelection when there is one in the clicked table, else on the clicked cell:
@@ -55,13 +58,15 @@ import {
 } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createElement } from 'react'
-import type { MenuAction, MenuParent, MenuSection } from '../../sidebar/menuSections'
+import type { MenuAction, MenuItem, MenuParent, MenuSection } from '../../sidebar/menuSections'
 import { canMoveToCellNote, moveToCellNote, openCellNote } from './cellNoteCard'
 import { deleteText, deleteWithNotes, duplicateWithNotes, type DeleteKind } from './cellNoteGuard'
 import { cellNoteLabelsIn, cellNoteOf, removeCellNote, tableAround } from './cellNotes'
-import { cellAt, isMerged, mergeCrosses, rectHasMerge, rowNoDim, setCellsAlign, setCellsAttr, setCellsValign, wholeColumns, wholeRows } from './cells'
+import { cellAt, isMerged, mergeCrosses, rectHasMerge, rowFolded, rowNoDim, rowSubhead, setCellsAlign, setCellsAttr, setCellsValign, wholeColumns, wholeRows } from './cells'
 import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
-import { foldRows, keepingScroll } from './tableFold'
+import { foldRows, keepingScroll, unfoldRun } from './tableFold'
+import { rowLookPicks, type LookPick } from './tableRows'
+import { setAllSections, setSubhead } from './tableSubhead'
 import { mergeCells, mergeRect, unmergeCells } from './tableMerge'
 import { CELL_ALIGNS, TABLE_COLORS, VALIGNS, type CellAlign, type TableColor, type Valign } from './tableStyle'
 
@@ -159,6 +164,8 @@ function insertRows(state: EditorState, dispatch: ((tr: Transaction) => void) | 
     const attr = (row: number, col: number, name: string): unknown => cellAt(table, map, row, col).attrs[name] ?? null
     const count = rect.bottom - rect.top
     const tr = state.tr
+    // YAZ-4899 item 18: a row below a collapsed subheader row opens its section first, so the new row shows.
+    if (at < map.height && rowSubhead(table.child(at - 1)) && rowFolded(table.child(at))) unfoldRun(tr, tableStart - 1, at)
     const cells: ProseNode[] = []
     for (let col = 0; col < map.width; col++) {
       // The cell at this place is the one above it too: it spans the place.
@@ -235,6 +242,35 @@ function sameCells(tr: Transaction, rect: TableRect): Transaction {
 // "9" before "10"; case and accents do not count.
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
+/** A body row's sort key: its row node, its index among the body rows, and its text in the sort column. */
+interface SortRow {
+  row: ProseNode
+  index: number
+  text: string
+}
+
+/**
+ * The body rows sorted inside each section (YAZ-4899 item 15): a subheader row stays where it is, and the rows under it
+ * (to the next subheader row) sort among themselves, as do the rows above the first subheader row. `textOf` gives a
+ * body row's text by its index; `compare` orders two rows.
+ */
+export function sortSections(rows: readonly ProseNode[], textOf: (index: number) => string, compare: (a: SortRow, b: SortRow) => number): ProseNode[] {
+  const out: ProseNode[] = []
+  let section: SortRow[] = []
+  const flush = () => {
+    out.push(...section.sort(compare).map(({ row }) => row))
+    section = []
+  }
+  rows.forEach((row, index) => {
+    if (rowSubhead(row)) {
+      flush()
+      out.push(row)
+    } else section.push({ row, index, text: textOf(index) })
+  })
+  flush()
+  return out
+}
+
 /** A body cell spans rows (YAZ-4792): the rows cannot move one by one, so Sort is off. */
 function bodySpansRows({ table }: TableRect): boolean {
   let spans = false
@@ -248,6 +284,8 @@ function bodySpansRows({ table }: TableRect): boolean {
  * Sort the body rows by the text of the target's left column (YAZ-3696 D9, moved from the vendored
  * handle menu by YAZ-3820). The header row stays first, empty cells go last, equal cells keep their
  * order. The whole rows move, so each cell keeps its attributes. The same cells stay selected.
+ * YAZ-4899 item 15: each section sorts inside itself; the subheader rows, and the rows above the first one, keep their
+ * sections (`sortSections`).
  */
 const sortRows =
   (direction: 1 | -1): Command =>
@@ -258,14 +296,12 @@ const sortRows =
     rect.table.forEach((row, _, index) => {
       if (index > 0) rows.push(row)
     })
-    const sorted = rows
-      .map((row, index) => {
-        // A cell's words, its lines and bullets joined with a space (YAZ-3818); the column's cell through the map (YAZ-4792).
-        const cell = cellAt(rect.table, rect.map, index + 1, rect.left)
-        return { row, index, text: cell.textBetween(0, cell.content.size, ' ').trim() }
-      })
-      .sort((a, b) => (!a.text !== !b.text ? (a.text ? -1 : 1) : direction * collator.compare(a.text, b.text) || a.index - b.index))
-      .map(({ row }) => row)
+    // A cell's words, its lines and bullets joined with a space (YAZ-3818); the column's cell through the map (YAZ-4792).
+    const textOf = (index: number) => {
+      const cell = cellAt(rect.table, rect.map, index + 1, rect.left)
+      return cell.textBetween(0, cell.content.size, ' ').trim()
+    }
+    const sorted = sortSections(rows, textOf, (a, b) => (!a.text !== !b.text ? (a.text ? -1 : 1) : direction * collator.compare(a.text, b.text) || a.index - b.index))
     if (sorted.every((row, index) => row === rows[index])) return true
     const from = rect.tableStart + rect.table.firstChild!.nodeSize
     dispatch?.(sameCells(state.tr.replaceWith(from, rect.tableStart + rect.table.content.size, sorted), rect))
@@ -361,6 +397,29 @@ export const TABLE_HANDLE_MENU = 'milkdown-table-handle-menu'
 /** A colour's swatch before its label, as the cell toolbar's palette draws it. */
 const swatch = (background: string) => createElement('span', { className: 'table-menu-swatch', style: { background } })
 
+/**
+ * "Header row style ›" (item 3) and "Subheader row style ›" (YAZ-4899): the six-dot menu's flyout (`tableRows.ts`,
+ * `rowLookPicks`) in the note menu, which has no tabs: plain groups with a heading each, "Plain, like any row" first.
+ * Each pick is a radio row, so the menu stays open and the ✓ moves (YAZ-4460).
+ */
+function rowLookParent(view: EditorView, pos: number, kind: 'header' | 'subheader'): MenuParent {
+  const { plain, parts } = rowLookPicks(view, pos, kind)
+  const row = (group: string, p: LookPick): MenuAction => ({
+    id: `table-${kind}-${group}-${p.value}`,
+    label: p.label,
+    onSelect: p.run,
+    radio: { group: `table-${kind}-${group}`, on: p.on },
+    ...(p.swatch !== undefined && { icon: swatch(p.swatch) }),
+  })
+  const heading = (group: string, label: string): MenuAction => ({ id: `table-${kind}-${group}-heading`, label, heading: true, onSelect: () => {} })
+  const group = (name: keyof typeof parts, label: string): MenuAction[] => [heading(name, label), ...parts[name].map((p) => row(name, p))]
+  return {
+    id: `table-${kind}-style`,
+    label: kind === 'header' ? 'Header row style' : 'Subheader row style',
+    children: [[row('plain', plain)], group('color', 'Fill colour'), group('strength', 'Strength'), group('weight', 'Weight'), group('text', 'Text colour'), group('align', 'Align')],
+  }
+}
+
 /** The Table part's six groups, or none: no cell at `pointer`, or a read-only note. */
 export function tableMenuSections(view: EditorView, pointer: number | null): MenuSection[] {
   if (!view.editable || pointer === null) return []
@@ -382,6 +441,30 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
   const bodyRows = Array.from({ length: Math.max(bottom - Math.max(top, 1), 0) }, (_, i) => cell.table.child(Math.max(top, 1) + i))
   const undimmed = bodyRows.length > 0 && bodyRows.every((row) => rowNoDim(row))
   const item = (id: string, label: string, onSelect: () => void, disabled = false): MenuAction => ({ id: `table-${id}`, label, onSelect, disabled })
+  // YAZ-4899: the target's body rows as subheader rows. Off in a calendar table (its rows are time slots), with the reason.
+  const tablePos = cell.tableStart - 1
+  const subheads = bodyRows.length > 0 && bodyRows.every((row) => rowSubhead(row))
+  const bodyCount = Math.max(bottom - Math.max(top, 1), 1)
+  const subheadItems: MenuAction[] =
+    bottom <= 1
+      ? []
+      : subheads
+        ? [item('subhead-off', counted(bodyCount, 'Turn back into a normal row', 'Turn N back into normal rows'), () => view.dispatch(closeHistory(setSubhead(view.state.tr, tablePos, top, bottom, false))))]
+        : [
+            {
+              ...item('subhead', counted(bodyCount, 'Make subheader row', 'Make N subheader rows'), () => view.dispatch(closeHistory(setSubhead(view.state.tr, tablePos, top, bottom, true))), calendar),
+              ...(calendar && { hint: 'Time slots are on' }),
+            },
+          ]
+  const onSubhead = cell.row > 0 && rowSubhead(cell.table.child(cell.row))
+  const sectionItems: MenuItem[] =
+    onSubhead
+      ? [
+          rowLookParent(view, tablePos, 'subheader'),
+          item('subhead-collapse-all', 'Collapse all subheaders', () => keepingScroll(view, () => view.dispatch(closeHistory(setAllSections(view.state.tr, tablePos, true))))),
+          item('subhead-expand-all', 'Expand all subheaders', () => view.dispatch(closeHistory(setAllSections(view.state.tr, tablePos, false)))),
+        ]
+      : []
   /** Fill ▸ or Text colour ▸: the cell toolbar's palette — the clear item, the ten names, Custom colour… (YAZ-3817). */
   const palette = (attr: 'fill' | 'color', label: string, clear: string, color: (c: TableColor) => string): MenuParent => ({
     id: `table-${attr}`,
@@ -435,6 +518,10 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
       item('sort-asc', 'Sort A to Z', run(sortRows(1)), bodySpansRows(rect)),
       item('sort-desc', 'Sort Z to A', run(sortRows(-1)), bodySpansRows(rect)),
       ...(folds >= 2 ? [item('fold', `Fold ${folds} rows`, () => keepingScroll(view, run(foldRows)))] : []),
+      ...subheadItems,
+      ...sectionItems,
+      // Item 3: the header row's look from its cells too (the six-dot menu's "Header row ›").
+      ...(cell.row === 0 ? [rowLookParent(view, tablePos, 'header')] : []),
       // YAZ-4796: a calendar table's body row can stay out of the past rows' dimming (a to-do row, say).
       ...(calendar && bottom > 1
         ? [

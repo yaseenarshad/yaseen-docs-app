@@ -2,7 +2,7 @@ import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, headerRowAttrs, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, headerRowAttrs, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, subheaderRowAttrs, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -55,7 +55,7 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
-import { setCalendarDaySetting, setCellNoteButtonSetting, setHeaderRowSetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
+import { setCalendarDaySetting, setCellNoteButtonSetting, setHeaderRowSetting, setStickySubheadersSetting, setSubheaderRowSetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
 import { dropNoteWindowsAt, renameNoteWindows } from './views/view/NoteWindow'
@@ -629,6 +629,11 @@ export function App() {
   // YAZ-4774: absent from settings a main process older than the field sent: the default.
   const headerRow = settings.tableHeaderRow ?? DEFAULT_SETTINGS.tableHeaderRow
   useEffect(() => setHeaderRowSetting(headerRow), [headerRow])
+  // YAZ-4899: the subheader rows' default look and whether they stick; absent from an older main process.
+  const subheaderRow = settings.tableSubheaderRow ?? DEFAULT_SETTINGS.tableSubheaderRow
+  const stickySubheaders = settings.tableStickySubheaders ?? DEFAULT_SETTINGS.tableStickySubheaders
+  useEffect(() => setSubheaderRowSetting(subheaderRow), [subheaderRow])
+  useEffect(() => setStickySubheadersSetting(stickySubheaders), [stickySubheaders])
   useEffect(() => setCellNoteButtonSetting(settings.tableCellNoteButton), [settings.tableCellNoteButton])
   // The new cell note template (round 3 of the YAZ-3818 demo): read when a note is made. Absent from an older main process.
   useEffect(() => setCellNoteTemplate(settings.tableCellNoteTemplate ?? ''), [settings.tableCellNoteTemplate])
@@ -3200,7 +3205,7 @@ export function App() {
     <NoteWindowEditorProps.Provider value={noteWindowEditorProps}>
     <PageActions.Provider value={linkActions}>
     <CommentPrefsContext.Provider value={commentPrefs}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-table-width={settings.tableWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} {...headerRowAttrs(headerRow)} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-table-width={settings.tableWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} {...headerRowAttrs(headerRow)} {...subheaderRowAttrs(subheaderRow)} data-table-sticky-subheaders={stickySubheaders ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands

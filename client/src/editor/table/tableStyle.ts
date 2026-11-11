@@ -10,8 +10,10 @@
  * `view …` parts, `data-table-super` on the block, the views in `data-table-views` on a copy's `<table>` only); and
  * `unknownParts`, the comment's parts this build does not know or cannot read, kept as their text (YAZ-4161, YAZ-4176). A column's alignment is the cells' own GFM
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
- * cell gets `fill`, `color`, its own `align` and its own `valign` (YAZ-4166), and `fold` (YAZ-4165: the cells of a
- * folded row; the comment's `fold` names the rows) (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
+ * cell gets `fill`, `color`, its own `align` and its own `valign` (YAZ-4166), `fold` (YAZ-4165: the cells of a
+ * folded row; the comment's `fold` names the rows) and `subhead` (YAZ-4899: the cells of a subheader row, the comment's
+ * `subhead`; the table's `subheader` and `stickySubheaders` are its look and whether it sticks, `tableSubhead.ts`)
+ * (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
  * column's width is the cells' own `colwidth` (prosemirror-tables). Markdown has no syntax for any.
  *
  * ON DISK a plain table is the GFM table, exactly the bytes of before (R5). A table with settings
@@ -54,9 +56,9 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { MarkdownNode, NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
 import type { Nodes, Table } from 'mdast'
-import { headerRowAttrs, headerRowOwn, HEADER_ROW_PARTS, type HeaderRowOwn } from '@shared/types'
+import { headerRowAttrs, headerRowOwn, HEADER_ROW_PARTS, subheaderRowAttrs, type HeaderRowOwn } from '@shared/types'
 import { joinNextComment } from '../joinComment'
-import { cellStartsAt, isMerged, rowFolded, rowNoDim, tableHasMerge } from './cells'
+import { cellStartsAt, isMerged, rowFolded, rowNoDim, rowSubhead, tableHasMerge } from './cells'
 import {
   BORDER_PX_MAX,
   WIDTH_MAX,
@@ -86,6 +88,10 @@ export * from './tableComment'
 export const TABLE_DEFAULTS = {
   border: null as { px: number; darkness: number } | null,
   header: {} as HeaderRowOwn,
+  /** The subheader rows' own look (YAZ-4899): `{}` follows Settings › Tables › Subheader row; `data-table-subheader-*`. */
+  subheader: {} as HeaderRowOwn,
+  /** Sticky subheaders (YAZ-4899): `true` saves `sticky`, `false` `nosticky`, `null` follows Settings. */
+  stickySubheaders: null as boolean | null,
   stripes: false,
   height: 'normal' as 'compact' | 'normal' | 'tall',
   wrap: true,
@@ -107,7 +113,7 @@ export const TABLE_DEFAULTS = {
 export type TableAttrs = typeof TABLE_DEFAULTS
 
 /** The parts of the comment that are the cells' own, not the table's. */
-type TableLevel = Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align' | 'valign' | 'fold' | 'nodim'>
+type TableLevel = Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align' | 'valign' | 'fold' | 'nodim' | 'subhead'>
 
 const isWhole = (n: unknown, min: number, max: number): n is number => Number.isInteger(n) && (n as number) >= min && (n as number) <= max
 
@@ -118,6 +124,9 @@ function tableLevel(attrs: Record<string, unknown>): TableLevel {
   if (border && isWhole(border.px, 0, BORDER_PX_MAX) && isWhole(border.darkness, 0, 100)) out.border = { px: border.px, darkness: border.darkness }
   const header = headerRowOwn(attrs.header)
   if (Object.keys(header).length > 0) out.header = header
+  const subheader = headerRowOwn(attrs.subheader)
+  if (Object.keys(subheader).length > 0) out.subheader = subheader
+  if (typeof attrs.stickySubheaders === 'boolean') out.sticky = attrs.stickySubheaders
   if (attrs.stripes === true) out.stripes = true
   if (attrs.height === 'compact' || attrs.height === 'tall') out.height = attrs.height
   if (attrs.wrap === false) out.nowrap = true
@@ -157,9 +166,11 @@ function tableStyleOf(table: ProseNode): TableStyle {
   style.widths = Array.from({ length: map.width }, () => null)
   const fold: number[] = []
   const nodim: number[] = []
+  const subhead: number[] = []
   table.forEach((row, _, r) => {
     if (r > 0 && rowFolded(row)) fold.push(r)
     if (r > 0 && rowNoDim(row)) nodim.push(r)
+    if (r > 0 && rowSubhead(row)) subhead.push(r)
   })
   const merge: MergeRange[] = []
   const seen = new Set<number>()
@@ -186,6 +197,7 @@ function tableStyleOf(table: ProseNode): TableStyle {
   })
   if (fold.length > 0) style.fold = fold
   if (nodim.length > 0) style.nodim = nodim
+  if (subhead.length > 0) style.subhead = subhead
   if (merge.length > 0) style.merge = merge
   return style
 }
@@ -223,7 +235,8 @@ function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> |
     style.push(`--table-zoom: ${level.zoom / 100}`)
   }
   if (style.length > 0) out.style = style.join('; ')
-  Object.assign(out, headerRowAttrs(level.header ?? {}))
+  Object.assign(out, headerRowAttrs(level.header ?? {}), subheaderRowAttrs(level.subheader ?? {}))
+  if (level.sticky !== undefined) out['data-table-sticky-subheaders'] = level.sticky ? 'on' : 'off'
   if (level.stripes) out['data-table-stripes'] = ''
   if (level.height) out['data-table-height'] = level.height
   if (level.nowrap) out['data-table-nowrap'] = ''
@@ -253,6 +266,8 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
   const raw = {
     border: px !== undefined && darkness !== undefined ? { px: Number(px), darkness: Number(darkness) } : null,
     header: Object.fromEntries(HEADER_ROW_PARTS.map((part) => [part, dom.getAttribute(`data-table-header-${part}`)])),
+    subheader: Object.fromEntries(HEADER_ROW_PARTS.map((part) => [part, dom.getAttribute(`data-table-subheader-${part}`)])),
+    stickySubheaders: dom.getAttribute('data-table-sticky-subheaders') === 'on' ? true : dom.getAttribute('data-table-sticky-subheaders') === 'off' ? false : null,
     stripes: dom.hasAttribute('data-table-stripes'),
     height: dom.getAttribute('data-table-height'),
     wrap: !dom.hasAttribute('data-table-nowrap'),
@@ -274,6 +289,8 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
 const levelAttrs = (style: TableLevel): TableAttrs => ({
   border: style.border ?? null,
   header: style.header ?? {},
+  subheader: style.subheader ?? {},
+  stickySubheaders: style.sticky ?? null,
   stripes: style.stripes === true,
   height: style.height ?? 'normal',
   wrap: style.nowrap !== true,
@@ -324,6 +341,7 @@ const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<str
   }
   if (node.attrs.fold === true) out['data-fold'] = ''
   if (node.attrs.nodim === true) out['data-nodim'] = ''
+  if (node.attrs.subhead === true) out['data-subhead'] = ''
   const width = Array.isArray(node.attrs.colwidth) ? (node.attrs.colwidth[0] as number | undefined) : undefined
   if (typeof width === 'number' && width < NARROW_COLUMN) out['data-narrow'] = ''
   if (fill?.startsWith('#')) style.push(`--table-fill-custom: ${fill}`)
@@ -342,6 +360,8 @@ interface CellData {
     fold: boolean
     /** YAZ-4796: the row is never dimmed as past. */
     nodim?: boolean
+    /** YAZ-4899: the row is a subheader row. */
+    subhead?: boolean
     colwidth: number[] | null
     /** A merged cell's spans (YAZ-4792). */
     colspan?: number
@@ -362,7 +382,7 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
   const toDOM = spec.toDOM!
   return {
     ...spec,
-    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null }, valign: { default: null }, fold: { default: false }, nodim: { default: false } },
+    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null }, valign: { default: null }, fold: { default: false }, nodim: { default: false }, subhead: { default: false } },
     parseDOM: spec.parseDOM?.map((rule) => {
       const { getAttrs } = rule as TagParseRule
       return {
@@ -381,6 +401,7 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
             valign: cellValign(dom.getAttribute('data-valign')),
             fold: dom.hasAttribute('data-fold'),
             nodim: dom.hasAttribute('data-nodim'),
+            subhead: dom.hasAttribute('data-subhead'),
           }
         },
       }
@@ -441,6 +462,7 @@ function applyStyle(table: Table, style: TableStyle): void {
   table.data = { ...table.data, tableAttrs: attrs } as Table['data']
   const folded = new Set(style.fold)
   const undimmed = new Set(style.nodim)
+  const subheads = new Set(style.subhead)
   const spans = new Map<string, MergeRange>()
   /** Each covered cell's grid key → its merged cell's. */
   const covered = new Map<string, string>()
@@ -456,6 +478,7 @@ function applyStyle(table: Table, style: TableStyle): void {
   table.children.forEach((row, r) => {
     const fold = folded.has(r)
     const nodim = undimmed.has(r)
+    const subhead = subheads.has(r)
     const short = row.children.some((_, c) => covered.has(gridKey(r, c)))
     row.children.forEach((cell, c) => {
       const into = covered.get(gridKey(r, c))
@@ -476,8 +499,8 @@ function applyStyle(table: Table, style: TableStyle): void {
       const color = style.color.get(cellAddress(r, c)) ?? null
       const align = style.align.get(cellAddress(r, c)) ?? null
       const valign = style.valign.get(cellAddress(r, c)) ?? null
-      if (colwidth === null && fill === null && color === null && align === null && valign === null && !fold && !nodim && span === undefined && !short) return
-      const tableCell: NonNullable<CellData['tableCell']> = { fill, color, align, valign, fold, colwidth, ...(nodim && { nodim }) }
+      if (colwidth === null && fill === null && color === null && align === null && valign === null && !fold && !nodim && !subhead && span === undefined && !short) return
+      const tableCell: NonNullable<CellData['tableCell']> = { fill, color, align, valign, fold, colwidth, ...(nodim && { nodim }), ...(subhead && { subhead }) }
       if (span !== undefined) Object.assign(tableCell, { colspan: span.right - span.left, rowspan: span.bottom - span.top })
       if (short) tableCell.alignment = table.align?.[c] ?? null
       cell.data = { ...cell.data, tableCell } as typeof cell.data
