@@ -43,7 +43,8 @@ const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large
  * Default view. YAZ-4864 (Yaseen: "sections of the view settings bc there are starting to become a lot of them"): one
  * tab, small headings with a little room above each, the same words in every type — a Board's and a List's own rows
  * are Layout; a calendar's are Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends), Lines
- * (YAZ-4878) and Cross out (its rules). Frozen columns and rows live only on the header and row right-clicks, and a
+ * (YAZ-4878) and Cross out (its rules); a Table's are Rows (Row height, Text in cells, Row numbers, Subfolders) and
+ * Header row (Column type icons and the row's look, YAZ-4908). Frozen columns and rows live only on the header and row right-clicks, and a
  * calendar's Start date and End date only here, first in Dates (YAZ-3746 13AD: off the toolbar, over C3 and D11). Each row: an icon and label, then a segmented choice, a switch or a quiet select; a Settings ›
  * Folder pages default shows the ↺ reset only once this view has its own value (D34). Page-level settings stay in the
  * page cog (D35).
@@ -76,7 +77,13 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             />
             <FromSettings own={own} viewKey="rowNumbers" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
-          {/* YAZ-4779: each header's type icon before its name. */}
+        </>
+      )}
+      {/* Every view type (YAZ-4579 D30): the one Subfolders switch, in View › Rows since D60. */}
+      <SubfoldersSwitch view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
+      {/* YAZ-4908: the Table's "Header row" section — the type icons (YAZ-4779) and the row's look (YAZ-4774, as a note table's "Header row ›"). */}
+      {table && (
+        <HeaderRowSettings own={own} viewIndex={viewIndex} onUpdate={onUpdate}>
           <label className="view-settings-row">
             <RowLabel icon="columnTypeIcons">Column type icons</RowLabel>
             <input
@@ -87,12 +94,8 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             />
             <FromSettings own={own} viewKey="columnTypeIcons" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
-          {/* YAZ-4774: the header row's look, as a note table's "Header row ›". */}
-          <HeaderRowSettings own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
-        </>
+        </HeaderRowSettings>
       )}
-      {/* Every view type (YAZ-4579 D30): the one Subfolders switch, in View › Rows since D60. */}
-      <SubfoldersSwitch view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
       {(indents || emptyGroups) && <p className="view-menu__label">Groups</p>}
       {indents && (
         <div className="view-settings-row">

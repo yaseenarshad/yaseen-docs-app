@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { FOLDER_PAGE_CHOICES, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowLabel, type FolderPagesSettings, type HeaderRowOwn } from '@shared/types'
 import { capital } from '../../editor/table/colours'
 import { ColourSwatches } from './ColourPanel'
@@ -120,41 +121,53 @@ export function toggleHeaderRowPlain(view: ViewDef): void {
  * Settings › Tables › Header row's. A pick that equals Settings removes the part, as `chooseOwn` does; the ↺ removes
  * them all. The first build's `shadedHeader` reads as Strength and goes at the next pick (`headerRowOfView`).
  * YAZ-4794: Fill colour, Strength, Weight, Text colour (Muted, Full, the eight colours) and Align (Follow column, Left,
- * Center, Right); a row too narrow for its choices drops them under its name.
+ * Center, Right). YAZ-4908: a "Header row" section of the View tab — its heading carries the ↺, `children` (Column
+ * type icons) comes first, and each row ends in the rows' right-hand slot, so the controls stand in one column. The
+ * text colour's swatches are a row of their own: on one line with Muted · Full they did not fit the tab's width.
  */
-export function HeaderRowSettings({ own, viewIndex, onUpdate }: { own: ViewDef; viewIndex: number; onUpdate: Mutate }) {
+export function HeaderRowSettings({ own, viewIndex, onUpdate, children }: { own: ViewDef; viewIndex: number; onUpdate: Mutate; children?: ReactNode }) {
   const shown = shownHeaderRow(own)
   const pick = (part: keyof HeaderRowOwn, value: string) => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], part, value))
   // The swatches are the colour panel's (`ColourPanel.tsx`, YAZ-4878), so a colour looks the same here, on a line and on a card.
   const swatches = (part: 'color' | 'text', colors: readonly string[], label: string) => <ColourSwatches label={label} colors={colors} value={shown[part]} onPick={(c) => pick(part, c)} />
+  /** The empty right-hand slot every row with a Settings default has (`FromSettings`): the whole header row's ↺ is on the heading. */
+  const slot = <span className="view-from-settings" aria-hidden="true" />
   return (
     <>
-      <div className="view-settings-row">
-        <RowLabel icon="headerRow">Header row</RowLabel>
+      <div className="view-menu__label view-menu__label--row">
+        <span>Header row</span>
         <FromSettings own={own} viewKey="headerRow" viewIndex={viewIndex} onUpdate={onUpdate} />
       </div>
+      {children}
       <div className="view-settings-row view-settings-row--sub">
         <span>Fill colour</span>
         {swatches('color', HEADER_ROW_CHOICES.color, 'Header row fill colour')}
+        {slot}
       </div>
       <div className="view-settings-row view-settings-row--sub">
         <span>Strength</span>
         <ChoiceSeg<string> label="Header row strength" value={shown.strength} options={HEADER_ROW_CHOICES.strength.map((v) => [v, capital(v)] as const)} onChange={(next) => pick('strength', next)} />
+        {slot}
       </div>
       <div className="view-settings-row view-settings-row--sub">
         <span>Weight</span>
         <ChoiceSeg<string> label="Header row text weight" value={shown.weight} options={HEADER_ROW_CHOICES.weight.map((v) => [v, capital(v)] as const)} onChange={(next) => pick('weight', next)} />
+        {slot}
       </div>
-      <div className="view-settings-row view-settings-row--sub view-settings-row--wrap">
+      <div className="view-settings-row view-settings-row--sub">
         <span>Text colour</span>
-        <span className="view-header-text">
-          <ChoiceSeg<string> label="Header row text colour" value={shown.text} options={(['muted', 'full'] as const).map((v) => [v, capital(v)] as const)} onChange={(next) => pick('text', next)} />
-          {swatches('text', HEADER_ROW_CHOICES.text.filter((v) => v !== 'muted' && v !== 'full'), 'Header row text colour')}
-        </span>
+        <ChoiceSeg<string> label="Header row text colour" value={shown.text} options={(['muted', 'full'] as const).map((v) => [v, capital(v)] as const)} onChange={(next) => pick('text', next)} />
+        {slot}
       </div>
-      <div className="view-settings-row view-settings-row--sub view-settings-row--wrap">
+      <div className="view-settings-row view-settings-row--sub">
+        <span aria-hidden="true" />
+        {swatches('text', HEADER_ROW_CHOICES.text.filter((v) => v !== 'muted' && v !== 'full'), 'Header row text colour')}
+        {slot}
+      </div>
+      <div className="view-settings-row view-settings-row--sub">
         <span>Align</span>
         <ChoiceSeg<string> label="Header row align" value={shown.align} options={HEADER_ROW_CHOICES.align.map((v) => [v, headerRowLabel(v)] as const)} onChange={(next) => pick('align', next)} />
+        {slot}
       </div>
     </>
   )

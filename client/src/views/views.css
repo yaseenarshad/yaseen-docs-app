@@ -3127,6 +3127,8 @@
 .view-settings { gap: 0; padding: 0; }
 .view-settings > .view-menu__label { margin: 8px 0 2px; padding: 8px 8px 0; font-weight: 500; border-top: 1px solid var(--border); }
 .view-settings > .view-menu__label:first-child { margin-top: 2px; padding-top: 0; border-top: 0; }
+/* A heading with the section's ↺ at the rows' right-hand column (YAZ-4908: the Table's Header row). */
+.view-settings > .view-menu__label--row { display: flex; align-items: center; justify-content: space-between; padding-right: 2px; }
 .view-settings .view-settings-row { min-height: 32px; padding: 0 2px 0 8px; border-radius: 6px; color: var(--fg); }
 .view-settings .view-settings-row:hover { background: var(--bg-hover); }
 .view-settings-row__label { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -3138,11 +3140,6 @@
 .view-header-colors > button { padding: 2px; border: 1px solid transparent; border-radius: 4px; }
 .view-header-colors > button[aria-pressed='true'] { border-color: var(--accent); }
 .view-header-colors .table-menu-swatch { width: 12px; height: 12px; }
-.view-header-text { display: flex; gap: 4px; }
-/* YAZ-4794: Text colour (Muted / Full and eight swatches) and Align (four words) drop under their name when the tab is
-   too narrow for them, right-aligned, instead of pushing the tab wider. */
-.view-settings .view-settings-row--wrap { flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; padding-top: 3px; padding-bottom: 3px; }
-.view-settings .view-settings-row--wrap .view-header-text { flex-wrap: wrap; justify-content: flex-end; align-items: center; }
 .view-settings .property-board-setting small { display: block; margin: -6px 0 4px; padding-left: 30px; font-size: 11px; color: var(--fg-muted); }
 .view-from-settings { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: -4px; }
 .view-from-settings--reset { color: var(--accent); text-decoration: none; border-radius: 4px; }

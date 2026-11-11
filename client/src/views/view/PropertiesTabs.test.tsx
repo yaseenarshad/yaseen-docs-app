@@ -133,11 +133,15 @@ describe('each view type shows its settings only (D59)', () => {
     for (const label of ALL) expect(has(pop, label), label).toBe(shown.includes(label))
   }
 
-  it('Table: Rows, Groups and Folder; "Show empty groups" under Groups; no Frozen section', () => {
+  it('Table: Rows, Header row (YAZ-4908), Groups and Folder; "Show empty groups" under Groups; no Frozen section', () => {
     const pop = openProperties(mount(view('table')).el)
     toTab(pop, 'View')
     expectOnly(pop, TABLE)
-    expect(labels(pop)).toEqual(['Rows', 'Groups', 'Folder'])
+    expect(labels(pop)).toEqual(['Rows', 'Header row', 'Groups', 'Folder'])
+    // The Header row heading carries the whole row look's ↺ slot; Column type icons sits first under it.
+    const heading = [...pop.querySelectorAll('.view-menu__label')].find((p) => p.textContent === 'Header row')!
+    expect(heading.querySelector('.view-from-settings')).not.toBeNull()
+    expect(heading.nextElementSibling?.textContent).toBe('Column type icons')
     expect(pop.textContent).toContain('Show empty groups')
   })
 
