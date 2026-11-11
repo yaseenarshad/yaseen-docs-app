@@ -545,7 +545,7 @@ describe('Settings › Drawings (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true } })
   })
 
-  it('YAZ-4820: the embeds group: "Embeds stop moving after" (30 s by default) and "New drawings from a note go to" (the note`s folder); a choice writes its field', () => {
+  it('YAZ-4820: the embeds group: "Embeds stop moving after" (30 s by default) and "New drawings and diagrams go to" (the note`s folder); a choice writes its field', () => {
     const { el, onChange } = mountCanvas()
     const rest = rowButtons(el, 'embedRestSeconds')
     expect(rest.map((b) => b.textContent)).toEqual(['10 s', '30 s', '1 min', '5 min', 'Never'])

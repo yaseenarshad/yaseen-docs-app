@@ -276,16 +276,16 @@ export const CANVAS_SECTION: SettingsSection = {
           hint: 'An embed that you do not move for this time rests. Then the wheel scrolls the note. A click on the embed makes it move again.',
           keywords: ['embed', 'window', 'rest', 'resting', 'idle', 'scroll', 'wheel', 'freeze', 'timeout', 'drawing', 'diagram'],
           render: ({ settings, onChange }) => (
-            <Segmented options={EMBED_REST_OPTIONS} value={settings.embedRestSeconds ?? 30} onChange={(embedRestSeconds) => onChange({ ...settings, embedRestSeconds })} ariaLabel="Embeds stop moving after" />
+            <Segmented options={EMBED_REST_OPTIONS} value={settings.embedRestSeconds} onChange={(embedRestSeconds) => onChange({ ...settings, embedRestSeconds })} ariaLabel="Embeds stop moving after" />
           ),
         },
         {
           id: 'newBoardFolder',
-          label: 'New drawings from a note go to',
+          label: 'New drawings and diagrams go to',
           hint: "Where /drawing and /diagram put the new file. The file gets the note's name.",
           keywords: ['embed', 'new drawing', 'new diagram', 'folder', 'assets', 'slash', 'location'],
           render: ({ settings, onChange }) => (
-            <Segmented options={NEW_BOARD_FOLDER_OPTIONS} value={settings.newBoardFolder ?? 'note'} onChange={(newBoardFolder) => onChange({ ...settings, newBoardFolder })} ariaLabel="New drawings from a note go to" />
+            <Segmented options={NEW_BOARD_FOLDER_OPTIONS} value={settings.newBoardFolder} onChange={(newBoardFolder) => onChange({ ...settings, newBoardFolder })} ariaLabel="New drawings and diagrams go to" />
           ),
         },
       ],

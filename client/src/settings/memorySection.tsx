@@ -324,7 +324,7 @@ export const MEMORY_SECTION: SettingsSection = {
         {
           id: 'embedPictures',
           label: 'Drawing and diagram pictures in notes',
-          hint: 'The pictures that embeds in this window show. The app keeps the 24 newest, and frees the others by itself.',
+          hint: 'The pictures that embeds in this window show. The app keeps the last 24 that were shown, and frees the others by itself.',
           keywords: ['memory', 'embed', 'picture', 'cache', 'drawing', 'diagram'],
           render: () => <EmbedPictures />,
         },

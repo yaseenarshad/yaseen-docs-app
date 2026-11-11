@@ -61,6 +61,15 @@ describe('createBoardForNote', () => {
     await expect(createBoardForNote({ ...place, nameTaken: undefined }, 'diagram')).resolves.toBe('Projects/Plan diagram.drawio')
   })
 
+  it('A10: a note in a folder that only starts like the root (`/v 2/`) is outside the vault: assets/drawings', async () => {
+    folderSetting('note')
+    await createBoardForNote({ ...place, notePath: '/v 2/Plan.md' }, 'drawing')
+    expect(createBoard).toHaveBeenCalledWith({ root: '/v', path: `/v/${DRAWINGS_DIR}/Plan drawing.excalidraw` })
+    createBoard.mockClear()
+    await createBoardForNote({ ...place, notePath: '/v/Plan.md' }, 'drawing')
+    expect(createBoard).toHaveBeenCalledWith({ root: '/v', path: '/v/Plan drawing.excalidraw' })
+  })
+
   it('NEVER overwrites: ALREADY_EXISTS retries with the next number', async () => {
     folderSetting('note')
     createBoard.mockRejectedValueOnce(alreadyExists()).mockRejectedValueOnce(alreadyExists())
@@ -71,7 +80,8 @@ describe('createBoardForNote', () => {
   it('bounds the retry loop, and passes any other failure on untouched', async () => {
     folderSetting('note')
     createBoard.mockRejectedValue(alreadyExists())
-    await expect(createBoardForNote(place, 'drawing')).rejects.toThrow(/already taken/)
+    // The reason alone (A13): the menu's notice adds "Can't create a drawing:" once.
+    await expect(createBoardForNote(place, 'drawing')).rejects.toThrow(/^50 names in Projects are already taken$/)
     expect(createBoard).toHaveBeenCalledTimes(50)
     createBoard.mockReset().mockRejectedValue(new BridgeRequestError('FORBIDDEN', 'read-only volume'))
     await expect(createBoardForNote(place, 'drawing')).rejects.toMatchObject({ code: 'FORBIDDEN' })

@@ -46,7 +46,9 @@ export interface NewBoardPlace {
 export async function createBoardForNote(place: NewBoardPlace, kind: NewBoardKind): Promise<string> {
   const { root, notePath, title } = place
   const noteDir = notePath.slice(0, Math.max(notePath.lastIndexOf('/'), 0))
-  const dir = storage.getSettings().newBoardFolder === 'assets' || !noteDir.startsWith(root) ? await ensureFolder(root, DRAWINGS_DIR) : noteDir
+  // A10: inside the vault means the root itself or under `root/`; `/a/Vault 2/` is not inside `/a/Vault`.
+  const inVault = noteDir === root || noteDir.startsWith(`${root}/`)
+  const dir = storage.getSettings().newBoardFolder === 'assets' || !inVault ? await ensureFolder(root, DRAWINGS_DIR) : noteDir
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const name = boardFileName(title, kind, attempt)
     // Asked before the write: after it, the index holds this file too.
@@ -59,5 +61,6 @@ export async function createBoardForNote(place: NewBoardPlace, kind: NewBoardKin
       if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
     }
   }
-  throw new Error(`Can't create a ${kind}: ${MAX_ATTEMPTS} names in ${dir.slice(root.length + 1) || 'the vault'} are already taken`)
+  // The reason only (A13): the slash menu's notice puts "Can't create a drawing:" before it.
+  throw new Error(`${MAX_ATTEMPTS} names in ${dir.slice(root.length + 1) || 'the vault'} are already taken`)
 }
