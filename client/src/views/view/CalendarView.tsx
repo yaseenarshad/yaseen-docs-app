@@ -214,10 +214,11 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const item = (key: string) =>
       canonicalKey(key) === 'file.name' ? (
         // Clip shows the full title on a hover (D23); a wrapped title is all there.
-        <span key={key} className="view-cal__card-title" title={wrap ? undefined : row.record.title}>
+        <span key={key} className={`view-cal__card-title${row.crossed === true ? ' view-cal__card-title--crossed' : ''}`} title={wrap ? undefined : row.record.title}>
           {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too. */}
           {isFolderRow(row.record) && <FolderIcon size={12} className="view-folder-row__icon" />}
-          {locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}
+          {/* "Cross out when" (YAZ-4864) strikes this text only: the icon stays as it is. */}
+          <span className="view-cal__card-name">{locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}</span>
         </span>
       ) : (
         <CardProp key={key} def={def} view={view} row={row} field={key} resolve={resolve} />

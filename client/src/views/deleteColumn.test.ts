@@ -128,6 +128,13 @@ describe('the pure pruners', () => {
     expect(pruneColumnFromViews([{ type: 'table', name: 'T', groupBy: [{ property: 'note.x' }, { property: 'note.y' }] }], 'x')[0].groupBy).toEqual([{ property: 'note.y' }])
   })
 
+  it('prunes a calendar\'s crossOut leaves as it prunes filters (YAZ-4864); an emptied tree deletes the key', () => {
+    const calendar: ViewDef = { type: 'calendar', name: 'C', crossOut: { and: ['note.done == true', 'note.status == "x"'] } }
+    expect(pruneColumnFromViews([calendar], 'done')[0].crossOut).toEqual({ and: ['note.status == "x"'] })
+    expect(pruneColumnFromViews([{ type: 'calendar', name: 'C', crossOut: { and: ['note.done == true'] } }], 'done')[0]).toEqual({ type: 'calendar', name: 'C' })
+    expect(pruneColumnFromViews([calendar], 'owner')[0]).toBe(calendar)
+  })
+
   it('prunes a cards `image` that names the key, and leaves one that names another', () => {
     expect(pruneColumnFromViews([{ type: 'cards', name: 'C', image: 'note.status' }], 'status')[0]).toEqual({ type: 'cards', name: 'C' })
     const other: ViewDef = { type: 'cards', name: 'C', image: 'note.cover' }

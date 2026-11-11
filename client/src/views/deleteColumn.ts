@@ -4,7 +4,7 @@
  *
  *  (a) the declaration `folder_settings.columns.<key>` of THIS folder,
  *  (b) every reference the folder's views hold to the key — `order`, `sort`, `groupBy`,
- *      `summaries`, `columnSize`, `columnWrap`, `columnAlign`, `columnFill`, `cardStyle`, a cards `image`, a calendar's `dateProperty`, the cell
+ *      `summaries`, `columnSize`, `columnWrap`, `columnAlign`, `columnFill`, `cardStyle`, a cards `image`, a calendar's `dateProperty` and `crossOut`, the cell
  *      `fills` in it, and every filter leaf that names it — and its label under `properties`, so nothing dangles (a
  *      `frozenColumns` prefix loses the column if it held it, then follows the shortened order through the one order
  *      writer, `withOrder`),
@@ -150,13 +150,15 @@ export function pruneColumnFromViews(views: readonly ViewDef[], key: string): Vi
         else next.fills = fills
       }
     }
-    if (view.filters !== undefined) {
-      const filters = pruneFilter(view.filters, key)
-      if (filters !== view.filters) {
-        changed = true
-        if (filters === undefined) delete next.filters
-        else next.filters = filters
-      }
+    // A calendar's "Cross out when" (YAZ-4864) is a filter tree too: its leaves naming the key go the same way.
+    for (const tree of ['filters', 'crossOut'] as const) {
+      const node = view[tree]
+      if (node === undefined) continue
+      const pruned = pruneFilter(node, key)
+      if (pruned === node) continue
+      changed = true
+      if (pruned === undefined) delete next[tree]
+      else next[tree] = pruned
     }
     for (const map of ['summaries', 'columnSize', 'columnWrap', 'columnAlign', 'columnFill', 'cardStyle'] as const) {
       const entries = view[map]

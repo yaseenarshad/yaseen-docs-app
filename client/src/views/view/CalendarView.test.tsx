@@ -94,6 +94,11 @@ function q<T extends Element>(el: ParentNode, sel: string): T {
 }
 const day = (el: ParentNode, key: string) => q<HTMLElement>(el, `[data-day="${key}"]`)
 const titlesIn = (el: ParentNode) => [...el.querySelectorAll('.view-cal__card-title')].map((t) => t.textContent)
+function byText<T extends HTMLElement>(el: ParentNode, sel: string, text: string): T {
+  const n = [...el.querySelectorAll<T>(sel)].find((e) => e.textContent === text)
+  if (n === undefined) throw new Error(`missing ${sel} "${text}"`)
+  return n
+}
 function cardOf(el: ParentNode, title: string): HTMLElement {
   const card = [...el.querySelectorAll<HTMLElement>('.view-cal__card')].find((c) => c.querySelector('.view-cal__card-title')?.textContent === title)
   if (card === undefined) throw new Error(`missing card ${title}`)
@@ -696,5 +701,62 @@ ${cardStyle === '' ? '' : `    cardStyle:\n${cardStyle}\n`}`
     await flush()
     const card = cardOf(el, 'Styled')
     expect(card.querySelector('[role="alert"]')?.previousElementSibling?.classList.contains('view-cal__card-head')).toBe(true)
+  })
+})
+
+describe('"Cross out when" (YAZ-4864)', () => {
+  const records = [...RECORDS, rec('Done task', { due: '2026-12-08', done: true, status: 'Done' }), rec('Open task', { due: '2026-12-08', done: false, status: 'Doing' })]
+  const CROSS = (cond: string) => `views:\n  - type: calendar\n    name: C\n    crossOut:\n      and:\n        - ${cond}\n`
+  const crossed = (el: ParentNode) => [...el.querySelectorAll('.view-cal__card-title--crossed')].map((t) => t.textContent)
+  const openView = (el: ParentNode) => {
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+    return q<HTMLElement>(el, '.view-popover--properties [aria-label="Cross out when"]')
+  }
+
+  it('a card whose note matches has its name struck through; the others do not', () => {
+    const { el } = mount(CROSS('note.done == true'), { records })
+    expect(crossed(el)).toEqual(['Done task'])
+    // The strike is on the name's text: a folder row's icon stays outside it.
+    expect(q(cardOf(el, 'Done task'), '.view-cal__card-title--crossed .view-cal__card-name').textContent).toBe('Done task')
+  })
+
+  it('"contains" and Any work as in the Filter menu', () => {
+    const { el } = mount(`views:\n  - type: calendar\n    name: C\n    crossOut:\n      or:\n        - note.status.contains("Doi")\n        - file.name == "Bare"\n`, { records })
+    expect(crossed(el).sort()).toEqual(['Bare', 'Open task'])
+  })
+
+  it('a broken condition crosses out nothing and says so in the foot line', () => {
+    const { el } = mount(CROSS('note.done =='), { records })
+    expect(crossed(el)).toEqual([])
+    expect(el.textContent).toContain('views[0].crossOut')
+  })
+
+  it('the View tab has the Filter menu\'s rows; a new condition is "is checked" on the first checkbox column', () => {
+    const { el, yaml } = mount(CALENDAR, { records })
+    const section = openView(el)
+    expect(section.textContent).toContain('No conditions. No card is crossed out.')
+    click(byText(section, 'button', 'Add rule'))
+    expect(yaml()).toContain('crossOut:\n      and:\n        - note.done == true')
+    expect(crossed(el)).toEqual(['Done task'])
+    expect(q<HTMLSelectElement>(section, '[aria-label="Operator"]').value).toBe('checked')
+    click(q(section, '[aria-label="Remove rule"]'))
+    expect(yaml()).not.toContain('crossOut')
+    expect(crossed(el)).toEqual([])
+  })
+
+  it('with no checkbox column a new condition matches no card until it has a value', () => {
+    const { el, yaml } = mount(CALENDAR)
+    const section = openView(el)
+    click(byText(section, 'button', 'Add rule'))
+    expect(yaml()).toContain('- file.name == ""')
+    expect(el.querySelectorAll('.view-cal__card-title--crossed')).toHaveLength(0)
+  })
+
+  it('the Filter menu keeps its own rows: a filter is not a cross-out', () => {
+    const { el, yaml } = mount(CROSS('note.done == true'), { records })
+    click(q(el, '.view-toolbar [aria-label="Filter"]'))
+    expect(q(el, '.view-popover--filter').textContent).toContain('No filters')
+    expect(yaml()).toContain('crossOut')
   })
 })

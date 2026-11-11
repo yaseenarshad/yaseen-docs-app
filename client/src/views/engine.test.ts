@@ -109,6 +109,17 @@ describe('runView: filters (GRO-2133)', () => {
     expect(r.errors).toEqual([])
   })
 
+  it('crossOut (YAZ-4864) marks the matching rows `crossed` and filters none; a broken one marks none and reports', () => {
+    const r = run({ crossOut: { and: ['status == "idea"'] }, sort: [] })
+    expect(r.rows).toHaveLength(8)
+    expect(r.rows.filter((row) => row.crossed === true)).toHaveLength(2)
+    expect(r.rows.filter((row) => row.crossed === true).every((row) => row.record.properties.status === 'idea')).toBe(true)
+    const broken = run({ crossOut: 'status ==', sort: [] })
+    expect(broken.rows.some((row) => row.crossed === true)).toBe(false)
+    expect(broken.errors.map((e) => e.where)).toEqual(['views[0].crossOut'])
+    expect(run({ sort: [] }).rows.some((row) => 'crossed' in row)).toBe(false)
+  })
+
   it('file.hasLink matches through the resolver: List of Topics and The Levels of an Agency', () => {
     expect(names(run({ filters: 'file.hasLink("Agentic Agency")', sort: [] }))).toEqual(['The Levels of an Agency', 'List of Topics'])
     expect(names(run({ filters: 'file.hasLink("Content Pillars/1. Agentic Agency/Agentic Agency.md")', sort: [] }))).toEqual([

@@ -20,6 +20,8 @@ export interface Row {
   file: FileValue
   /** Keyed by the property key as written in the view (`file.name`, `status`, `note.status`, `formula.x`). */
   values: Record<string, Value>
+  /** The note matches the view's `crossOut` (YAZ-4864): a calendar card strikes its name through. Absent = no. */
+  crossed?: true
 }
 
 export interface Group {
@@ -425,6 +427,8 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   const formulas = def.formulas ?? {}
   const baseFilter = compileFilter(def.filters, 'filters', errors)
   const viewFilter = compileFilter(view.filters, `${viewWhere}.filters`, errors)
+  // A calendar's "Cross out when" (YAZ-4864): the filter compiler, once per run; each shown row is tested once below.
+  const crossOut = compileFilter(view.crossOut, `${viewWhere}.crossOut`, errors)
 
   const getters = new Map<string, Getter>()
   // YAZ-4769: a sort, group or summary key that names a page column in other capitals reads that column. Worked out
@@ -458,7 +462,9 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     const scope: Scope = { note: noteOf(records[i]), file: files[i], formulas, this: null, resolve }
     if (baseFilter && !baseFilter(scope)) continue
     if (viewFilter && !viewFilter(scope)) continue
-    entries.push({ row: { record: records[i], file: files[i], values: {} }, scope, cache: new Map() })
+    const row: Row = { record: records[i], file: files[i], values: {} }
+    if (crossOut?.(scope)) row.crossed = true
+    entries.push({ row, scope, cache: new Map() })
   }
 
   // values

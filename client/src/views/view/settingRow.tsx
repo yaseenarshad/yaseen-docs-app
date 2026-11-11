@@ -26,6 +26,9 @@ const ICONS = {
   indentProperties: <path d="M2 3.5h12M6 8h8M6 12.5h8M2 7v6" />,
   separator: <><circle cx="7.5" cy="8.5" r="1" /><path d="M8.5 9v1.5c0 1-.7 2-1.7 2.5" /></>,
   showBy: <><rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3M5 9.5h2.5" /></>,
+  // YAZ-4858: the calendar with a bar across two days; YAZ-4864: a name struck through.
+  endDate: <><rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3M4.5 10h7" /></>,
+  crossOut: <path d="M3 5h10M3 11h6M2 8h12" />,
   defaultView: <path d="m8 2.5 1.7 3.5 3.8.5-2.8 2.6.7 3.8L8 11.1l-3.4 1.8.7-3.8-2.8-2.6 3.8-.5z" />,
   key: <><circle cx="5.5" cy="10.5" r="2.8" /><path d="m7.5 8.5 6-6M11.5 4.5l1.5 1.5M10 6l1.2 1.2" /></>,
   type: <><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" /><circle cx="11.25" cy="4.75" r="2.25" /><path d="M2.5 13.5 4.75 9.5 7 13.5zM9 9h4.5v4.5H9z" /></>,

@@ -510,6 +510,11 @@
 .view-settings .view-seg__opt { padding: 2px 7px; }
 .view-settings .property-board-setting { padding: 0; margin: 0; border: 0; }
 .view-settings .property-board-setting small { margin-top: 2px; }
+/* "Cross out when" (YAZ-4864): its label, then the Filter menu's rows at the width of the tab. */
+.view-settings__cross-out { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--fg-muted); }
+.view-settings__cross-out .filter-menu { color: var(--fg); }
+.view-settings__cross-out .view-menu__head { margin-bottom: 4px; }
+.view-settings__cross-out .view-menu__foot { margin-top: 4px; }
 
 .view-prop {
   display: flex;
@@ -2275,6 +2280,12 @@
   color: var(--fg);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* "Cross out when" (YAZ-4864): the name struck through and grey, as a done task in a note; the icon stays. */
+.view-cal__card-title--crossed .view-cal__card-name {
+  color: var(--fg-muted);
+  text-decoration: line-through;
 }
 
 /* Wrap (YAZ-4558 D23): the full title on more lines, and the day grows with it. */

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, shownGroupLevels } from '../viewSchema'
 import { TextField } from './TextField'
 import { cardWidth } from './cardWidth'
@@ -19,6 +20,8 @@ export interface ViewSettingsProps {
   onUpdate: Mutate
   /** A calendar's date columns for "Show by" (`dateColumns`, once in `ViewsPane`, YAZ-4544). */
   dateColumns: readonly string[]
+  /** A calendar's "Cross out when" rows (YAZ-4864): the Filter menu's editor on `crossOut`, which `PropertiesMenu` holds the doors for. */
+  crossOut?: ReactNode
 }
 
 /** Board's width editor accepts finite numbers, then rounds and clamps only its lower bound. */
@@ -40,7 +43,7 @@ const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large
  * Folder pages default shows the ↺ reset only once this view has its own value (D34). Page-level settings stay in the
  * page cog (D35).
  */
-export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns }: ViewSettingsProps) {
+export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns, crossOut }: ViewSettingsProps) {
   const defaults = useViewDefaults()
   const table = view.type === 'table'
   // A calendar's days are its groups (YAZ-4540 D4) and a Board does not indent its groups (YAZ-4544): Table, List
@@ -186,6 +189,13 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns 
             />
             <FromSettings own={own} viewKey="hideWeekends" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
+          {/* Cross out when (YAZ-4864): a card whose note matches these rows has its name struck through. */}
+          {crossOut !== undefined && (
+            <div className="view-settings__cross-out" role="group" aria-label="Cross out when">
+              <RowLabel icon="crossOut">Cross out when</RowLabel>
+              {crossOut}
+            </div>
+          )}
         </>
       )}
       {view.type === 'list' && (
