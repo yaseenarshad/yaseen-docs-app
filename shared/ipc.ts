@@ -410,6 +410,8 @@ export const CONTRACT = {
     onOpenRoot: push<string>('menu:open-root'),
     /** File › Search Vault (⌘K): focus the sidebar search bar (YAZ-804). */
     onSearch: push('menu:search'),
+    /** File › Explore Vault… (⌘⇧F, YAZ-2571): open the explore stack, or add a search layer on top of it. */
+    onExplore: push('menu:explore'),
     /** File › Switch Vault… (⌘O): open the sidebar header's vault switcher, un-collapsing the sidebar first (YAZ-1767 D8). */
     onSwitchVault: push('menu:switch-vault'),
     /** Yaseen Docs › Settings… (⌘,): open the settings dialog (YAZ-1679). */

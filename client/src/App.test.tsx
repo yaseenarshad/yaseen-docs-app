@@ -218,6 +218,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuOpenFolder = new Set<() => void>()
   const menuSearch = new Set<() => void>()
+  const menuExplore = new Set<() => void>()
   const menuSwitchVault = new Set<() => void>()
   const menuSettings = new Set<() => void>()
   const menuToggleSidebar = new Set<() => void>()
@@ -396,6 +397,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         return () => menuOpenRoot.delete(l)
       }),
       onSearch: menuSub(menuSearch),
+      onExplore: menuSub(menuExplore),
       onSwitchVault: menuSub(menuSwitchVault),
       onSettings: menuSub(menuSettings),
       onToggleSidebar: menuSub(menuToggleSidebar),
@@ -572,6 +574,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitOpenFolder: () => menuOpenFolder.forEach((l) => l()),
     emitSearch: () => menuSearch.forEach((l) => l()),
+    emitExplore: () => menuExplore.forEach((l) => l()),
     emitSwitchVault: () => menuSwitchVault.forEach((l) => l()),
     emitSettings: () => menuSettings.forEach((l) => l()),
     emitToggleSidebar: () => menuToggleSidebar.forEach((l) => l()),
@@ -2586,6 +2589,33 @@ describe('App "What\'s new" sheet (YAZ-2976 D4, D5, D8)', () => {
     act(() => emitWhatsNew())
     await settle(el)
     expect([...el.querySelectorAll('.whats-new__actions button')].map((b) => b.textContent)).toEqual(['Later', 'Download'])
+  })
+})
+
+describe('App ⌘⇧F explore (YAZ-2571)', () => {
+  /** The stack is its own chunk, and a layer leaves after its 100 ms motion: wait for the DOM to say so, 3 s at most. */
+  const until = async (done: () => boolean) => {
+    for (let i = 0; i < 300 && !done(); i++) await act(async () => await new Promise((r) => setTimeout(r, 10)))
+    expect(done()).toBe(true)
+  }
+  const esc = () => act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  it('File › Explore Vault… mounts the stack (its own chunk) with the caret in its search; ⌘⇧F again adds a search; Esc closes one layer, then the stack', async () => {
+    const { el, emitExplore } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    expect(el.querySelector('.explore')).toBeNull()
+    act(() => emitExplore())
+    await until(() => el.querySelector('.explore') !== null)
+    const stack = el.querySelector<HTMLElement>('.explore') as HTMLElement
+    expect(stack.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(stack.querySelector('.explore__input'))
+    expect(stack.querySelectorAll('.explore__layer')).toHaveLength(1)
+    act(() => emitExplore())
+    expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
+    expect(document.activeElement).toBe(el.querySelectorAll('.explore__input')[1])
+    esc()
+    await until(() => el.querySelectorAll('.explore__layer').length === 1)
+    expect(document.activeElement).toBe(el.querySelector('.explore__input'))
+    esc()
+    expect(el.querySelector('.explore')).toBeNull()
   })
 })
 

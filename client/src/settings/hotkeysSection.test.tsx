@@ -344,6 +344,21 @@ describe('one card per key (YAZ-3564)', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: {} })
   })
 
+  it('YAZ-2571: the ⌘⇧F card holds Explore the vault and draw.io\'s To front; explore wins in diagrams by default, and the pick gives the key back', async () => {
+    await mount()
+    expect([...card('⌘⇧F').querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)).toEqual(['hotkey-explore', 'hotkey-diagram-toFront'])
+    expect(card('⌘⇧F').querySelector('.hotkeys__card-head .hotkeys__hint')?.textContent).toBe('Shared: each tab picks what it does.')
+    expect(picked('⌘⇧F', 'diagrams')).toBe('Explore the vault')
+    expect(lostLine('diagram-toFront')).toBe('To front has no key here now.')
+    expect(row('hotkey-explore').querySelector('.hotkeys__box-tab')?.textContent).toBe('Every tab')
+    choose('⌘⇧F', 'diagrams', 'To front')
+    expect(asked()).toEqual(['⌘⇧F in diagrams: To front?', 'App › Explore the vault will not work in diagrams.'])
+    click(button(popup() as HTMLElement, 'Take it'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.explore@diagram': true } })
+    expect(picked('⌘⇧F', 'diagrams')).toBe('To front')
+    expect(lostLine('diagram-toFront')).toBeUndefined()
+  })
+
   it('a group chip shows one place; "Shared keys only" keeps the shared cards and the rows an App key took', async () => {
     await mount()
     click(chip('Drawing'))

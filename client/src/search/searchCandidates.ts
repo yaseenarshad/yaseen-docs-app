@@ -42,6 +42,8 @@ export interface SearchCandidate {
   id?: string
   /** The ID letters its vault had before (YAZ-2677 R9), only where there are some: `OLD-12` finds `YAZ-12` (S77). */
   was?: readonly string[]
+  /** A text row of the explore search (YAZ-2571, `explore/exploreRows.ts`): the matched tag or frontmatter value, shown under the title. */
+  snippet?: string
 }
 
 /** Result cap for title search — scrollable results, not the `[[` picker's MAX_SUGGESTIONS popup. The sidebar says so when it is reached (🔒 D6, YAZ-2620). */
