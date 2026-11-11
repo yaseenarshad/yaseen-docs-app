@@ -401,6 +401,18 @@ describe('fold on a bullet (2D)', () => {
   })
 })
 
+describe('a view write is SAVED (D4)', () => {
+  it('reaches the autosave once, after the listener`s 200 ms, though it is no undo step', async () => {
+    const saved = vi.fn()
+    const { view } = await mount('![[CloudFront.drawio|640x360]]\n', { onMarkdownUpdated: saved })
+    await windows(1)
+    fakes.list[0]!.host.onOptions!(OPTS)
+    await vi.waitFor(() => expect(saved).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    expect(saved).toHaveBeenLastCalledWith('![[CloudFront.drawio|640x360 view=120,-40,0.8]]\n')
+    expect(undoDepth(view.state)).toBe(0)
+  })
+})
+
 describe('an outside edit during a view write (item 19)', () => {
   it('the view write is merged with an edit of another line: no conflict bar', async () => {
     const base = 'Top line\n\n![[CloudFront.drawio|640x360]]\n\nEnd\n'

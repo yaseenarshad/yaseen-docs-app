@@ -76,6 +76,7 @@ import { optionsSuffix, parseEmbedOptions, type EmbedOptions } from '@shared/emb
 import { fileKind } from '@shared/fileKind'
 import { holdFrames } from '../../lib/colResize'
 import type { MenuRow } from '../blockHandleMenu'
+import { BOARD_VIEW_META } from '../drawing/boardEmbed'
 import { boardImageName, isBoardSrc } from '../drawing/boardEmbedText'
 import { loadBoardWindow, type BoardRef, type BoardWindowHandle, type WindowMenuRow } from '../embed/types'
 import { linkMenuRows, openMenuAt } from '../linkMenu'
@@ -442,7 +443,7 @@ class ImageNodeView implements NodeView {
     const pipe = alt.indexOf('|')
     const written = `${pipe < 0 ? alt : alt.slice(0, pipe)}${optionsSuffix(next)}`
     if (written === alt) return
-    this.view.dispatch(this.view.state.tr.setNodeMarkup(live.pos, undefined, { ...live.node.attrs, alt: written }).setMeta('addToHistory', false))
+    this.view.dispatch(this.view.state.tr.setNodeMarkup(live.pos, undefined, { ...live.node.attrs, alt: written }).setMeta('addToHistory', false).setMeta(BOARD_VIEW_META, true))
   }
 
   /** The board link's rows, the window's, then Show as link and Remove embed (D12). */

@@ -254,13 +254,13 @@ import {
   wrapInOrderedListInputRule,
 } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask, keepTableAlignPlugin, wrapInTaskListInputRule as gfmTaskListInputRule } from '@milkdown/kit/preset/gfm'
-import { type Command, Selection, TextSelection } from '@milkdown/kit/prose/state'
-import { $shortcut, replaceAll } from '@milkdown/kit/utils'
+import { type Command, Plugin, PluginKey, Selection, TextSelection } from '@milkdown/kit/prose/state'
+import { $prose, $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
 import { readOnlyKeys } from './readOnlyKeys'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { breakMarks } from './breakMarks'
-import { createBoardEmbed } from './drawing/boardEmbed'
+import { BOARD_VIEW_META, createBoardEmbed } from './drawing/boardEmbed'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
 import { createSlashMenu } from './slashMenu'
 import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
@@ -878,6 +878,28 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
         if (next !== postProcessMarkdown(prev)) cb(next)
       })
     })
+    // A board window's view write (YAZ-4820 D4) is outside undo (`addToHistory: false`), and Milkdown's listener skips
+    // every such transaction, so it would never be saved. This plugin saves exactly those, debounced as the listener is.
+    crepe.editor.use(
+      $prose((ctx) => {
+        const key = new PluginKey<number>('mdapp-board-view-save')
+        return new Plugin({
+          key,
+          state: { init: () => 0, apply: (tr, n) => (tr.docChanged && tr.getMeta(BOARD_VIEW_META) === true ? n + 1 : n) },
+          view: () => {
+            let timer: ReturnType<typeof setTimeout> | undefined
+            return {
+              update: (view, prev) => {
+                if (key.getState(view.state) === key.getState(prev)) return
+                clearTimeout(timer)
+                timer = setTimeout(() => cb(postProcessMarkdown(savedMarkdown(ctx) ?? ctx.get(serializerCtx)(ctx.get(editorViewCtx).state.doc))), 200)
+              },
+              destroy: () => clearTimeout(timer),
+            }
+          },
+        })
+      }),
+    )
   }
   return crepe
 }
