@@ -68,6 +68,8 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   // Built in: the typing keys.
   note('enter', 'New line, or a new bullet', ['Enter'], { hint: 'In a pop-up: pick the row', builtIn: true }),
   note('lineBreak', 'Line break inside the block', ['Shift+Enter'], { builtIn: true }),
+  // YAZ-4820 item 8: in the [[ picker, a drawing's or a diagram's row goes in as a window into it, not a pill.
+  note('embedPick', 'Pick a drawing or diagram as an embed', ['Alt+Enter'], { hint: 'In the [[ pop-up. Any other row goes in as a link', builtIn: true }),
   note('tab', 'Indent / outdent bullet', ['Tab', 'Shift+Tab'], { hint: 'In a table: the next / previous cell', builtIn: true }),
   note('delete', 'Delete backward / forward', ['Backspace', 'Delete', 'Shift+Backspace', 'Control+H', 'Control+D'], { hint: "Backspace at a line's start or Delete at its end: joins two lines (the upper format wins)", builtIn: true }),
   note('deleteMore', 'Delete backward / forward, then join the blocks', ['CmdOrCtrl+Backspace', 'Alt+Backspace', 'CmdOrCtrl+Delete', 'Alt+Delete', 'Control+Alt+Backspace', 'Alt+D'], { builtIn: true }),
