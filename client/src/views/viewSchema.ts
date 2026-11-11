@@ -27,6 +27,10 @@ export interface GroupBySpec {
   highlight?: string
   /** This level's header in the Large size, 14px bold (YAZ-3742 D5). */
   large?: boolean
+  /** A Folder level's Depth (YAZ-4918): the folders below the page it groups, nested inside this one level, or `all` for the whole tree. Absent = 1, the top folder. */
+  depth?: 2 | 3 | 'all'
+  /** A Folder level's Layout (YAZ-4918): `path` = one flat header per folder at the Depth, named by its path from the page. Absent = nested, a header under its parent's. */
+  layout?: 'path'
 }
 
 export interface ViewDef {
@@ -146,6 +150,29 @@ export const headerRowOfView = (view: ViewDef): HeaderRowOwn =>
 /** The levels the engine groups by: those with a property name, the first `MAX_GROUP_LEVELS` of them. */
 export const shownGroupLevels = (view: ViewDef): GroupBySpec[] =>
   groupByLevels(view).filter(g => g && typeof g.property === 'string').slice(0, MAX_GROUP_LEVELS)
+
+/** A Folder level's Depth (YAZ-4918): 1 (Top folder, the default) unless the level says 2, 3 or `all`. */
+export const folderDepthOf = (spec: GroupBySpec): 1 | 2 | 3 | 'all' => (spec.depth === 2 || spec.depth === 3 || spec.depth === 'all' ? spec.depth : 1)
+
+/** A Folder level's Layout (YAZ-4918): `path` only when the level says so; anything else nests. */
+export const folderLayoutOf = (spec: GroupBySpec): 'nested' | 'path' => (spec.layout === 'path' ? 'path' : 'nested')
+
+/** The most steps a group indent takes (YAZ-4918): a header or row deeper than this sits at this step, so a deep folder tree does not push the table right. */
+export const MAX_GROUP_INDENT_LEVELS = 4
+
+/**
+ * The levels deep a view's groups can go (YAZ-4918): one per level, except a nested Folder level, which counts its Depth
+ * (`all` counts as the indent cap, the most that shows). The table's first column makes room for it, and the "one
+ * level at a time" steps are offered from two.
+ */
+export const groupDepthOf = (view: ViewDef): number => {
+  let depth = 0
+  for (const level of shownGroupLevels(view)) {
+    const own = level.property === 'file.folder' && folderLayoutOf(level) === 'nested' ? folderDepthOf(level) : 1
+    depth += own === 'all' ? MAX_GROUP_INDENT_LEVELS : own
+  }
+  return Math.min(depth, MAX_GROUP_INDENT_LEVELS)
+}
 
 /** The group indent steps in px (YAZ-4532 D10); `medium` is the 28px step tables had before. */
 export const GROUP_INDENTS = { small: 14, medium: 28, large: 42 } as const

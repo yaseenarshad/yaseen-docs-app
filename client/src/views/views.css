@@ -2673,6 +2673,11 @@
 .view-list__group .view-list__group {
   margin-left: var(--view-group-indent, 28px);
 }
+/* The indent stops after four steps (YAZ-4918, `MAX_GROUP_INDENT_LEVELS`): a deep folder tree does not push the list right. */
+.view-list__group .view-list__group .view-list__group .view-list__group .view-list__group .view-list__group,
+.view-cards__group .view-cards__group .view-cards__group .view-cards__group .view-cards__group .view-cards__group {
+  margin-left: 0;
+}
 
 .view-list__item {
   display: flex;
@@ -3022,6 +3027,11 @@
    its × stands under the group rows' × (YAZ-4643 S6). */
 .sort-menu .view-rule__main.sort-menu__level { grid-template-columns: 18px minmax(0, 1fr) 118px 30px 20px; }
 .sort-menu .sort-menu__level > .view-rule__remove { grid-column: 5; }
+/* A Folder level's second line (YAZ-4918): "Depth [Top folder ▾]  Layout [Nested ▾]", under the column, in from the grip. */
+.sort-menu__folder { display: flex; align-items: center; gap: 6px; padding-left: 26px; margin-top: 4px; font-size: 12px; color: var(--fg-muted); }
+.sort-menu__folder-label + .view-dropdown__wrap { margin-right: 6px; }
+.sort-menu__folder-panel .view-popover__item { padding: 4px 24px 4px 10px; font-size: 12px; white-space: nowrap; }
+.sort-menu__folder-panel .view-popover__item[aria-pressed='true'] { color: var(--accent); }
 .group-style { display: contents; }
 .group-style__trigger { display: flex; align-items: center; justify-content: center; width: 100%; height: 30px; padding: 0; color: var(--fg); }
 .group-style__sample { font-size: 12px; font-weight: 600; }

@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { headerRowAttrs, IMAGE_SIZE_DEFAULT, type IndexRecord, type PropertiesResponse } from '@shared/types'
-import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf, groupLineStyleOf, groupLinesOf, headerRowOfView, MAX_GROUP_LEVELS } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupDepthOf, groupIndentOf, groupLineStyleOf, groupLinesOf, headerRowOfView, MAX_GROUP_INDENT_LEVELS, MAX_GROUP_LEVELS } from '../viewSchema'
 import { type GroupSpan, groupLinesHover, groupSpans, groupThread, holdersOf, measureGroupGuides, stuckDistance, windowedGuide, windowedLine } from './groupGuides'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -18,7 +18,7 @@ import { flushSync } from 'react-dom'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, ViewFolder, rowCell, rowTitle, summaryKindOf } from './GroupHeader'
-import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, chainLevels, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { cssZoom } from '../../lib/cssZoom'
@@ -320,12 +320,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const folderGroupOf = (at: GroupSpot | null, g: Group | null): string | null => {
     if (at === null || g === null) return null
     let out: string | null = null
-    ;[...at.ancestors, g].forEach((group, i) => {
+    const chain = [...at.ancestors, g]
+    // By each group's view level (YAZ-4918): a nested Folder level's groups share one level.
+    chainLevels(chain).forEach((i, n) => {
       const level = folderLevels[i]
-      if (level !== undefined && canonicalKey(level.property) === 'file.folder' && typeof group.key === 'string') out = group.key
+      if (level !== undefined && canonicalKey(level.property) === 'file.folder' && typeof chain[n].key === 'string') out = chain[n].key as string
     })
     return out
   }
+  /**
+   * A line's indent step (YAZ-4918): its depth in the group tree, never past `MAX_GROUP_INDENT_LEVELS` (4), so a deep
+   * folder tree does not push the table right. A header's depth is the groups above it; a row's one more.
+   */
+  const indentDepth = (depth: number): number => Math.min(depth, MAX_GROUP_INDENT_LEVELS)
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /**
    * The wrap's scroll width when a column resize starts, in px (YAZ-3746 13W), 0 when none is held. views.css draws a
@@ -457,8 +464,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const defaults = useViewDefaults()
   /** Each shown column's fill (YAZ-3746 13AQ), under the rows' and the cells' own. */
   const columnFills = keys.map((key) => columnFillOf(view, key))
-  /** A grouped table's first column fits its deepest indent and a readable value (13AL); 0 when the view does not group. */
-  const groupLevelCount = shownGroupLevels(view).length
+  /** A grouped table's first column fits its deepest indent and a readable value (13AL); 0 when the view does not group. A nested Folder level counts its Depth (YAZ-4918). */
+  const groupLevelCount = groupDepthOf(view)
   /**
    * The column that steps in under its groups (YAZ-3746 13AG): the FIRST shown column, Name or not, so a row sits under
    * its group's name even with Name hidden or moved (YAZ-4532 D10 indented only Name). An Image column is passed over
@@ -501,12 +508,12 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * That cell's indent in px (YAZ-4532 D10): one group indent per level above the row, but never more than the
    * column's width less the title's room (YAZ-4544), so a deep row in a narrow column still shows its value.
    */
-  const nameIndent = (depth: number): number => Math.max(0, Math.min(groupIndentOf(view) * depth, widthOf(keys[indentCol]!) - NAME_TITLE_ROOM))
+  const nameIndent = (depth: number): number => Math.max(0, Math.min(groupIndentOf(view) * indentDepth(depth), widthOf(keys[indentCol]!) - NAME_TITLE_ROOM))
   /** A body cell's inline style: the frozen offset, a fill (YAZ-4536, painted by views.css) and the Name cell's group depth and indent (YAZ-4532 D10). */
   const cellStyle = (index: number, fill: string | undefined, depth: number | undefined): CSSProperties | undefined => {
     const base = frozenStyle(index)
     if (fill === undefined && depth === undefined) return base
-    return { ...base, ...(fill !== undefined && { '--view-cell-fill': fillPaint(fill) }), ...(depth !== undefined && { '--depth': depth, '--view-name-indent': `${nameIndent(depth)}px` }) } as CSSProperties
+    return { ...base, ...(fill !== undefined && { '--view-cell-fill': fillPaint(fill) }), ...(depth !== undefined && { '--depth': indentDepth(depth), '--view-name-indent': `${nameIndent(depth)}px` }) } as CSSProperties
   }
   /** The view's cell and row fills by note path (YAZ-4536): built once per fills write, two map reads per cell. */
   const fills = useMemo(() => fillIndex(view.fills, resolveLink), [view.fills, resolveLink])
@@ -528,7 +535,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const walk = (list: readonly Group[], at: GroupSpot) => {
       for (const g of list) {
         const gk = spotKey(g, at)
-        lines.push({ header: g, gk, depth: at.level, at })
+        // A header's depth is its place in the tree (YAZ-4918), not its view level: a nested Folder group's child is one deeper on the same level.
+        lines.push({ header: g, gk, depth: at.ancestors.length, at })
         n = 0
         if (collapsedSet.has(gk)) continue
         for (const row of g.children === undefined ? g.rows : g.direct ?? []) lines.push({ row, r: flat.push(row) - 1, n: ++n, g, gk, at })
@@ -1831,7 +1839,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       // The "+ New" row (YAZ-4539): the group header "+"'s path, so the note gets the filter seed and every group value above it.
       return (
         <tr key={`new:${line.gk}`} className={['view-table__new', ...(frozenRow ?? [])].filter(Boolean).join(' ')} style={frozenRowStyle} data-line={lineMark}>
-          <td className="view-table__new-cell" colSpan={span} style={{ '--depth': line.at === undefined ? 0 : line.at.level + 1 } as CSSProperties}>
+          <td className="view-table__new-cell" colSpan={span} style={{ '--depth': line.at === undefined ? 0 : indentDepth(line.at.ancestors.length + 1) } as CSSProperties}>
             <button type="button" className="view-table__new-btn" onClick={() => onNewInGroup?.(line.add, undefined, line.at)}>
               + New
             </button>
@@ -1850,7 +1858,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           <td
             className="view-table__group-cell"
             colSpan={span}
-            style={{ '--depth': line.depth } as CSSProperties}
+            style={{ '--depth': indentDepth(line.depth) } as CSSProperties}
             onClick={stickyGroups ? backToGroupTop : undefined}
             // The empty part of a group header row opens the header's own menu (YAZ-4604, 2F), never the system one: the
             // event goes on to the header, whose state holds the menu, so only that header re-renders.
@@ -1916,7 +1924,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', c === indentCol && 'view-table__indent', frozenClass(c), fill !== undefined && 'view-table__cell--fill', clipped[c] && 'view-table__cell--clip', aligned[c]].filter(Boolean).join(' ') || undefined}
                 // A fill (YAZ-4536) is a custom property that views.css paints over the cell's base.
                 // The Name cell steps in by one group indent per level above the row (YAZ-4532 D10).
-                style={cellStyle(c, fill, c === indentCol && line.at !== null ? line.at.level + 1 : undefined)}
+                style={cellStyle(c, fill, c === indentCol && line.at !== null ? line.at.ancestors.length + 1 : undefined)}
                 tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
                 data-cell={`${line.r}:${c}`}
                 // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
@@ -2030,7 +2038,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 {guide.spans.map((s) => {
                   if (s.last <= s.at) return null
                   const counted = windowed ? windowedLine(s, rowH) : null
-                  const at = { '--depth': s.depth, ...(counted !== null && { '--view-line-top': `calc(var(--view-group-head, 0px) + ${counted.top}px)`, '--view-line-h': `${counted.height}px` }) } as CSSProperties
+                  const at = { '--depth': indentDepth(s.depth), ...(counted !== null && { '--view-line-top': `calc(var(--view-group-head, 0px) + ${counted.top}px)`, '--view-line-h': `${counted.height}px` }) } as CSSProperties
                   return <i key={s.at} data-seg={s.at} style={at} />
                 })}
               </div>

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { SortMenu } from './SortMenu'
+import { FolderPages } from './GroupHeader'
 import { type GroupBySpec, type Mutate, type SortSpec, type ViewSet, type ViewDef, groupByLevels } from '../viewSchema'
 import type { FolderSettings } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
@@ -432,5 +433,61 @@ describe('the ⇅ popover holds only sorting and grouping (YAZ-4607 D60)', () =>
     expect(toggle.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     act(() => toggle.click())
     expect(view().foldersFirst).toBe(false)
+  })
+})
+
+describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
+  const FOLDER_VIEW: ViewDef = { name: 'Table', type: 'table', groupBy: { property: 'file.folder', direction: 'ASC' } }
+  /** The Sort menu inside a folder page: `FolderPages` is what ViewsPane gives every view there. */
+  const pages = { folder: 'stages', title: (dir: string) => dir, folderIcons: true, folderCounts: false }
+  function mountOnPage(view: ViewDef = structuredClone(FOLDER_VIEW)) {
+    let def: ViewSet = { views: [view] }
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const onUpdate = vi.fn<Mutate>((mutate) => {
+      def = structuredClone(def)
+      mutate(def)
+      render()
+    })
+    const render = () => root!.render(<FolderPages.Provider value={pages}><SortMenu def={def} view={def.views[0]} viewIndex={0} records={TEST_RECORDS} onUpdate={onUpdate} settings={{ columns: {}, views: [], problems: [] }} /></FolderPages.Provider>)
+    act(render)
+    return { el: container, level: () => groupByLevels(def.views[0])[0] }
+  }
+  const pick = (el: ParentNode, label: string, text: string) => {
+    act(() => el.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click())
+    const item = [...document.querySelectorAll<HTMLButtonElement>('.sort-menu__folder-panel .view-popover__item')].find((b) => b.textContent === text)
+    if (!item) throw new Error(`no choice ${text}`)
+    act(() => item.click())
+  }
+
+  it('a Folder level on a folder page shows Depth (Top folder) and Layout (Nested); a Depth writes `depth`, Top folder takes it out again', () => {
+    const { el, level } = mountOnPage()
+    expect(el.querySelector('[aria-label="Depth of group level 1"]')!.textContent).toBe('Top folder')
+    expect(el.querySelector('[aria-label="Layout of group level 1"]')!.textContent).toBe('Nested')
+    pick(el, 'Depth of group level 1', 'All')
+    expect(level()).toEqual({ property: 'file.folder', direction: 'ASC', depth: 'all' })
+    expect(el.querySelector('[aria-label="Depth of group level 1"]')!.textContent).toBe('All')
+    pick(el, 'Depth of group level 1', '2')
+    expect(level()).toEqual({ property: 'file.folder', direction: 'ASC', depth: 2 })
+    pick(el, 'Depth of group level 1', 'Top folder')
+    expect(level()).toEqual({ property: 'file.folder', direction: 'ASC' })
+  })
+
+  it('Full path writes `layout: path` beside the Depth, and Nested takes it out; the level keeps its other fields', () => {
+    const { el, level } = mountOnPage({ name: 'Table', type: 'table', groupBy: { property: 'file.folder', direction: 'DESC', highlight: 'yellow', depth: 3 } })
+    pick(el, 'Layout of group level 1', 'Full path')
+    expect(level()).toEqual({ property: 'file.folder', direction: 'DESC', highlight: 'yellow', depth: 3, layout: 'path' })
+    pick(el, 'Layout of group level 1', 'Nested')
+    expect(level()).toEqual({ property: 'file.folder', direction: 'DESC', highlight: 'yellow', depth: 3 })
+  })
+
+  it('no Depth or Layout on another column\'s level, nor on a Folder level outside a folder page', () => {
+    const { el } = mountOnPage({ name: 'Table', type: 'table', groupBy: { property: 'note.status', direction: 'ASC' } })
+    expect(el.querySelector('.sort-menu__folder')).toBeNull()
+    act(() => root?.unmount())
+    container?.remove()
+    const { el: plain } = mount(structuredClone(FOLDER_VIEW))
+    expect(plain.querySelector('.sort-menu__folder')).toBeNull()
   })
 })
