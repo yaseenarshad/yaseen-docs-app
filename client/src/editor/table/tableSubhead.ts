@@ -15,7 +15,7 @@
  * COLLAPSE: a collapsed section stores its rows in the SAME `fold` mark "Fold N rows" uses (`tableFold.ts`,
  * `sectionRun`): ⌘Z undoes it as a fold, and an older build hides the rows with its bar. The fold plugin draws no bar
  * for such a run; this plugin draws the chevron, a widget inside the subheader row's first cell before its text (the
- * demo decides its place: ONE CSS rule, `.table-subhead-chevron`, and `chevronWidget` below), pointing down when open
+ * YAZ-4899 demo approved the place: ONE CSS rule, `.table-subhead-chevron`, and `chevronWidget` below), pointing down when open
  * and right when collapsed, and then "· N rows" at the end of the cell's text (an inline widget). A mousedown on the
  * chevron toggles the section, ⌥-click every section of the table, each one transaction with the history closed (one
  * ⌘Z); it goes before `tableEditing`, so the click starts no cell selection. A read-only note: the chevron does nothing.
@@ -30,7 +30,8 @@
  * typing, the subheader row of the section at the top of the scroller moves down by a `translateY` held by a Web
  * Animation, under the frozen rows if any; the next subheader row pushes it up, and it stops at the table's end. It
  * writes no attribute. Only a table that has subheader rows and sticky on (`stickySubheaders`, else Settings › Tables ›
- * Sticky subheaders) has the listeners; all go on destroy. The row handles are placed again (`TABLE_HANDLE_PLACE`).
+ * Sticky subheaders) has the listeners; all go on destroy. A table farther than one scroller height from the note's box
+ * does nothing on a scroll (`watchNear`, YAZ-4834 P4). The row handles are placed again (`TABLE_HANDLE_PLACE`).
  *
  * KEYS (`$shortcut`, above the outline's, item 13): with the caret in a table that has subheader rows, ⌘↑ collapses the
  * caret's section (the caret goes to its subheader row) and ⌘↓ opens it; ⌘⇧U / ⌘⇧I collapse / open every section of
@@ -50,14 +51,13 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { moveRowCommand } from '@milkdown/kit/preset/gfm'
 import { $shortcut } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
-import { verticalScrollParent } from '../../lib/pinnedHeader'
+import { verticalScrollParent, watchNear } from '../../lib/pinnedHeader'
 import { rowShortcuts } from '../noteKeys'
 import { beforeTableEditing } from './beforeTableEditing'
-import { rowFolded, rowSubhead, sectionEnd, subheadOf, tableHasSubheads } from './cells'
+import { bodySpansRows, rowFolded, rowSubhead, sectionEnd, subheadOf, tableHasSubheads } from './cells'
 import { keepingScroll } from './tableFold'
-import { TABLE_HANDLE_PLACE } from './tableFreeze'
+import { TABLE_HANDLE_PLACE, frozenRowCount } from './tableFreeze'
 import { changedTables, typingOnly } from './tableStyle'
-import { frozenRowCount } from './tableFreeze'
 import { onStickySubheadersSetting, stickySubheadersSetting } from './timeFormatSetting'
 
 /** A section: its subheader row, its last row (`end === row` for an empty section), and whether its rows are folded. */
@@ -262,6 +262,9 @@ class SubheadPinner {
   #frame = 0
   #scroller: HTMLElement | null = null
   #observer: ResizeObserver | null = null
+  /** The table is within one scroller height of the note's box (`watchNear`); until the observer reports, it is. */
+  #near = true
+  #unwatch: (() => void) | null = null
   #pinned: { row: HTMLElement; animation: Animation | null; offset: number } | null = null
 
   constructor(readonly block: HTMLElement) {}
@@ -283,14 +286,23 @@ class SubheadPinner {
     if (this.#scroller === null) {
       this.#scroller = verticalScrollParent(this.block)
       this.#scroller?.addEventListener('scroll', this.#schedule, { passive: true })
-      if (this.#scroller !== null) this.#observer.observe(this.#scroller)
+      if (this.#scroller !== null) {
+        this.#observer.observe(this.#scroller)
+        this.#unwatch = watchNear(this.#scroller, this.block, this.#onNear)
+      }
     }
     // The editor may have drawn the pinned row again: the new <tr> has no animation yet.
     if (changed) this.#schedule()
   }
 
   #schedule = (): void => {
-    if (this.#frame === 0) this.#frame = requestAnimationFrame(this.#sync)
+    if (this.#near && this.#frame === 0) this.#frame = requestAnimationFrame(this.#sync)
+  }
+
+  /** The observer's word (`watchNear`): a table that comes near catches up in the next frame. */
+  #onNear = (near: boolean): void => {
+    this.#near = near
+    if (near) this.#schedule()
   }
 
   /** `row` moves down by `y` layout px; the row pinned before goes back. `null` pins nothing. */
@@ -366,6 +378,8 @@ class SubheadPinner {
   destroy(): void {
     this.#scroller?.removeEventListener('scroll', this.#schedule)
     this.#scroller = null
+    this.#unwatch?.()
+    this.#unwatch = null
     this.#observer?.disconnect()
     this.#observer = null
     if (this.#frame !== 0) cancelAnimationFrame(this.#frame)
@@ -486,15 +500,6 @@ const subheadKeys = $shortcut((ctx) => ({
   ...rowShortcuts(ctx, 'note.unfoldAll', 'ExpandAllSubheads', { priority: PRIORITY, onRun: () => allSections(false) }),
 }))
 
-/** A body cell spans rows: the rows cannot move one by one (as `tableMenu.ts`'s Sort). */
-function spansRows(table: ProseNode): boolean {
-  let spans = false
-  table.forEach((row, _, r) => {
-    if (r > 0) row.forEach((cell) => (spans ||= (cell.attrs.rowspan as number) > 1))
-  })
-  return spans
-}
-
 /**
  * The vendored drag's `MoveRow` on a table with subheader rows: row `from` goes to row `to` (the row under the pointer),
  * a collapsed subheader row with its hidden rows, and a drop under a collapsed subheader row after its section. Other
@@ -507,7 +512,7 @@ export const moveRowWithSection =
     const { from = 0, to = 0, pos = state.selection.from } = payload
     const $pos = state.doc.resolve(pos)
     const table = $pos.parent
-    if (table.type.name !== 'table' || !tableHasSubheads(table) || from === 0 || to === 0 || spansRows(table)) return original({ from, to, pos })(state, dispatch, view)
+    if (table.type.name !== 'table' || !tableHasSubheads(table) || from === 0 || to === 0 || bodySpansRows(table)) return original({ from, to, pos })(state, dispatch, view)
     const tablePos = $pos.before()
     const blockEnd = rowSubhead(table.child(from)) && sectionCollapsed(table, from) ? sectionEnd(table, from) : from
     if (to >= from && to <= blockEnd) return false

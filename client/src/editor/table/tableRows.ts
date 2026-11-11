@@ -16,9 +16,10 @@
  * YAZ-4790; Default is Settings › Tables › Cell notes › Add button). Before Time slots, "Turn into Super table" (YAZ-4869
  * S1, `super/superTables.ts`), off with its reason at the right edge while a body cell spans rows or Time slots are on;
  * a Super table has "Turn back into a plain table" there, and its Time slots row is off. YAZ-4899: "Subheader row ›"
- * (the look of the subheader rows, as "Header row ›") after it, and "Sticky subheaders" (Default / On / Off, the
- * table's `stickySubheaders`, saved as `sticky` / `nosticky`) after "Cell note button"; Time slots is off while the
- * table has subheader rows.
+ * (the look of the subheader rows, as "Header row ›") after it; a "Sticky" switch (Default / On / Off) sits at the top of
+ * the "Header row ›" panel (the table's `stickyHeader`, saved as `stickyheader` / `nostickyheader`) and of the "Subheader
+ * row ›" panel (`stickySubheaders`, saved as `stickysubheads` / `nostickysubheads`), Default being Settings › Tables';
+ * Time slots is off while the table has subheader rows.
  *
  * A strip's lit button is the table's current value; a value that IS the default saves no part. Each pick
  * is ONE transaction with the history closed first, so one ⌘Z (R4); the save writes it in the table
@@ -119,22 +120,14 @@ const swatchIcon = (background: string) => (): SVGElement => {
   return svg
 }
 
-/** One pick of a row look (YAZ-4899): its name, its swatch colour for a colour, ✓ when the table shows it, and what it does. */
-export interface LookPick {
-  value: string
-  label: string
-  swatch?: string
-  on: boolean
-  run: () => void
-}
-
 /**
- * The picks of a row look, the header row's (`header`) or the subheader rows' (`subheader`, YAZ-4899), as the six-dot
- * menu (`headerRowParent`) and the cell's right-click (`tableMenu.ts`) offer them: "Plain, like any row", then each part's
- * choices, ✓ at what the table shows: its own part, else Settings' (no Text colour in Settings is Full, a note table's
- * look). A pick that equals Settings removes the part.
+ * "Header row ›" (YAZ-4774) and "Subheader row ›" (YAZ-4899): "Plain, like any row", the Sticky switch, then each part's
+ * choices in the Fill · Text · Style tabs, a ✓ at what the table shows: its own part, else Settings' (no Text colour in
+ * Settings is Full, a note table's look). A pick that equals Settings removes the part. YAZ-4794: Text colour (Muted,
+ * Full, the eight colours) and Align (Follow column, Left, Center, Right) are parts too. The cell's right-click menu draws
+ * the same row as its "Header row style ›" / "Subheader row style ›" panel (`tableMenu.ts`, YAZ-4899).
  */
-function rowLookPicks(view: EditorView, pos: number, kind: 'header' | 'subheader'): { plain: LookPick; parts: Record<keyof HeaderRowOwn, LookPick[]> } {
+export function headerRowParent(view: EditorView, pos: number, kind: 'header' | 'subheader'): MenuRow {
   const own = (view.state.doc.nodeAt(pos)?.attrs[kind] ?? {}) as HeaderRowOwn
   const settings = kind === 'header' ? headerRowSetting() : subheaderRowSetting()
   const fallback: Required<HeaderRowOwn> = { ...settings, text: settings.text ?? 'full' }
@@ -143,54 +136,39 @@ function rowLookPicks(view: EditorView, pos: number, kind: 'header' | 'subheader
     for (const p of HEADER_ROW_PARTS) if (next[p] === fallback[p]) delete next[p]
     setTable(view, pos, { [kind]: next })
   }
-  const pick = <K extends keyof HeaderRowOwn>(part: K, value: NonNullable<HeaderRowOwn[K]>): LookPick => ({
-    value,
+  /** One choice of a part: its name, its swatch for a colour, ✓ when the table shows it. */
+  const pick = <K extends keyof HeaderRowOwn>(part: K, value: NonNullable<HeaderRowOwn[K]>): MenuRow => ({
     label: headerRowLabel(value),
-    ...((part === 'color' || (part === 'text' && value !== 'muted' && value !== 'full')) && { swatch: headerSwatch(value) }),
-    on: shown[part] === value,
+    icon: part === 'color' || (part === 'text' && value !== 'muted' && value !== 'full') ? swatchIcon(headerSwatch(value)) : undefined,
+    hint: shown[part] === value ? '✓' : undefined,
     run: () => set({ ...headerRowOwn(own), [part]: value }),
   })
+  const parts = Object.fromEntries(HEADER_ROW_PARTS.map((part) => [part, HEADER_ROW_CHOICES[part].map((value) => pick(part, value))])) as Record<keyof HeaderRowOwn, MenuRow[]>
   // YAZ-4793: one pick makes the row look like any other row (no shade, regular, full text); a second pick hands the
   // three parts back to Settings.
   const plain = shown.strength === 'off' && shown.weight === 'regular' && shown.text === 'full'
-  return {
-    plain: {
-      value: 'plain',
-      label: 'Plain, like any row',
-      on: plain,
-      run: () => {
-        const next: HeaderRowOwn = { ...headerRowOwn(own) }
-        if (plain) {
-          delete next.strength
-          delete next.weight
-          delete next.text
-        } else Object.assign(next, { strength: 'off', weight: 'regular', text: 'full' } satisfies HeaderRowOwn)
-        set(next)
-      },
+  const plainRow: MenuRow = {
+    label: 'Plain, like any row',
+    hint: plain ? '✓' : undefined,
+    run: () => {
+      const next: HeaderRowOwn = { ...headerRowOwn(own) }
+      if (plain) {
+        delete next.strength
+        delete next.weight
+        delete next.text
+      } else Object.assign(next, { strength: 'off', weight: 'regular', text: 'full' } satisfies HeaderRowOwn)
+      set(next)
     },
-    parts: Object.fromEntries(HEADER_ROW_PARTS.map((part) => [part, HEADER_ROW_CHOICES[part].map((value) => pick(part, value))])) as Record<keyof HeaderRowOwn, LookPick[]>,
   }
-}
-
-/**
- * "Header row ›" (YAZ-4774) and "Subheader row ›" (YAZ-4899): Color, Strength and Text, a ✓ at what the table shows
- * (`rowLookPicks`). YAZ-4794: Text colour (Muted, Full, the eight colours) and Align (Follow column, Left, Center, Right)
- * are parts too. The cell's right-click menu draws the same row as its "Header row style ›" / "Subheader row style ›"
- * panel (`tableMenu.ts`, YAZ-4899).
- */
-export function headerRowParent(view: EditorView, pos: number, kind: 'header' | 'subheader'): MenuRow {
-  const { plain, parts } = rowLookPicks(view, pos, kind)
-  const child = (p: LookPick): MenuRow => ({ label: p.label, icon: p.swatch === undefined ? undefined : swatchIcon(p.swatch), hint: p.on ? '✓' : undefined, run: p.run })
-  const plainRow: MenuRow = { label: plain.label, hint: plain.on ? '✓' : undefined, run: plain.run }
   // Sticky (YAZ-4899 demo: "move the sticky header row and the subheader sticky into the option for this ... on top of
   // the plain like any row"): the header row frozen (`stickyHeader`, `tableFreeze.ts`) or the subheader rows pinned
   // (`stickySubheaders`, `tableSubhead.ts`); Default is Settings › Tables' (On by default), and a pick of it saves no part.
   const attr = kind === 'header' ? 'stickyHeader' : 'stickySubheaders'
-  const own = view.state.doc.nodeAt(pos)?.attrs[attr] as boolean | null
-  const fallback = kind === 'header' ? stickyHeaderSetting() : stickySubheadersSetting()
+  const ownSticky = view.state.doc.nodeAt(pos)?.attrs[attr] as boolean | null
+  const stickyDefault = kind === 'header' ? stickyHeaderSetting() : stickySubheadersSetting()
   const sticky: MenuRow[] = ([null, true, false] as const).map((value) => ({
-    label: value === null ? `Default (${fallback ? 'On' : 'Off'})` : value ? 'On' : 'Off',
-    hint: own === value ? '✓' : undefined,
+    label: value === null ? `Default (${stickyDefault ? 'On' : 'Off'})` : value ? 'On' : 'Off',
+    hint: ownSticky === value ? '✓' : undefined,
     run: () => setTable(view, pos, { [attr]: value }),
   }))
   return {
@@ -206,11 +184,11 @@ export function headerRowParent(view: EditorView, pos: number, kind: 'header' | 
       {
         label: 'Fill',
         // Strength as a short switch, as the folder table's (YAZ-4794 demo: "shouldnt it follow?").
-        bar: parts.strength.map(child),
-        children: [parts.color.map(child)],
+        bar: parts.strength,
+        children: [parts.color],
       },
-      { label: 'Text', children: [parts.text.map(child)] },
-      { label: 'Style', headings: ['Weight', 'Align'], children: [parts.weight.map(child), parts.align.map(child)] },
+      { label: 'Text', children: [parts.text] },
+      { label: 'Style', headings: ['Weight', 'Align'], children: [parts.weight, parts.align] },
     ],
   }
 }

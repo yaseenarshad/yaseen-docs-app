@@ -20,7 +20,7 @@ import { ruleToExpr } from '../../../views/view/filterRows'
 import { groupKeyOf } from '../../../views/view/GroupHeader'
 import type { ViewDef, ViewSet } from '../../../views/viewSchema'
 import { isCellNoteMark } from '../cellNotes'
-import { cellStartsAt, rowSubhead } from '../cells'
+import { cellStartsAt, rowSubhead, typedValue } from '../cells'
 import { headerKeys } from './superTables'
 import { VIEW_OPS, type TableViewDef } from './viewGrammar'
 
@@ -63,17 +63,6 @@ function hasNoteMark(cell: ProseNode): boolean {
     return !found
   })
   return found
-}
-
-/** Item 14: a cell's text as a typed value. */
-export function typedValue(text: string): unknown {
-  // An empty cell is no value: it sorts last and makes the "No value" group, as an empty field does on folder pages.
-  if (text === '') return null
-  if (/^\[[xX]\]$/.test(text)) return true
-  if (text === '[ ]') return false
-  const number = text.replace(/,(?=\d{3}(\D|$))/g, '')
-  if (/^-?\d+(\.\d+)?$/.test(number)) return Number(number)
-  return text
 }
 
 /** The record path of a body row; `rowOf` reads it back. */

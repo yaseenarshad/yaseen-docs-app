@@ -25,7 +25,6 @@
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent, type ReactNode } from 'react'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { closeHistory } from '@milkdown/kit/prose/history'
-import { TableMap } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { verticalScrollParent } from '../../../lib/pinnedHeader'
 import { FIND_ACTIVE_CLASS } from '../../find/findInPage'
@@ -35,9 +34,9 @@ import { groupSpans, holdersOf } from '../../../views/view/groupGuides'
 import { FilterIcon, PropertiesIcon, SortIcon, ViewTypeIcon } from '../../../views/view/icons'
 import { ContextMenuSurface } from '../../../components/ContextMenuSurface'
 import '../../../views/views.css'
-import { cellAt } from '../cells'
-import { sortSections } from '../tableMenu'
-import { computeView, groupsHolding, linesOf, markdownTable, rowOf, typedValue, viewSetOf, type Line } from './superData'
+import { bodySpansRows } from '../cells'
+import { sortBodyRows } from '../tableMenu'
+import { computeView, groupsHolding, linesOf, markdownTable, rowOf, viewSetOf, type Line } from './superData'
 import { FilterPanel, GroupPanel, SortPanel } from './SuperMenus'
 import { headerKeys, remember, remembered, setActiveTab, setViews, SUPER_NOW, superPlace, tableIndexAt } from './superTables'
 import { SUMMARY_KINDS, type SummaryKind, type TableViewDef, type ViewSort } from './viewGrammar'
@@ -87,58 +86,20 @@ export function writeCells(editor: EditorView, tablePos: number, cells: Readonly
   return true
 }
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
-
-/** A body cell spans rows (YAZ-4792): the rows cannot move one by one, so a sort of the real rows is off. */
-export function bodySpansRows(table: ProseNode): boolean {
-  let spans = false
-  table.forEach((row, _, r) => {
-    if (r > 0) row.forEach((cell) => (spans ||= (cell.attrs.rowspan as number) > 1))
-  })
-  return spans
-}
-
 /**
  * Sort on the base "Table" tab (YAZ-4869 round 2: "why doesnt the base table have the otions on the right to sort or
  * group or filter?"): the table's REAL rows sorted by `levels` (a view's Sort choices: columns, A to Z or Z to A, the
- * first level wins), as the right-click "Sort A to Z" does: inside each subheader section (`sortSections`), the header
- * row first, empty cells last, numbers as numbers, equal rows in their order. The file changes, in ONE transaction with
- * the history closed (one ⌘Z). `false` when nothing could sort (a body cell spans rows, no known column).
+ * first level wins) by the one sort the right-click "Sort A to Z" uses (`sortBodyRows`, `tableMenu.ts`). The file
+ * changes, in ONE transaction with the history closed (one ⌘Z). `false` when nothing could sort (a body cell spans rows,
+ * no known column).
  */
 export function sortTableRows(editor: EditorView, tablePos: number, levels: readonly ViewSort[]): boolean {
   const table = editor.state.doc.nodeAt(tablePos)
-  if (table?.type.name !== 'table' || bodySpansRows(table)) return false
+  if (table?.type.name !== 'table') return false
   const keys = headerKeys(table)
-  const columns = levels.map((l) => ({ col: keys.indexOf(l.column), desc: l.desc === true })).filter((l) => l.col >= 0)
-  if (columns.length === 0) return false
-  const map = TableMap.get(table)
-  const rows: ProseNode[] = []
-  table.forEach((row, _, index) => {
-    if (index > 0) rows.push(row)
-  })
-  // A cell's words, its lines and bullets joined with a space; the column's cell through the map (a merged cell).
-  const texts = rows.map((_, index) =>
-    columns.map(({ col }) => {
-      const cell = cellAt(table, map, index + 1, col)
-      return cell.textBetween(0, cell.content.size, ' ').trim()
-    }),
-  )
-  const compare = (a: number, b: number): number => {
-    for (const [level, { desc }] of columns.entries()) {
-      const ta = texts[a]![level]!
-      const tb = texts[b]![level]!
-      if (!ta !== !tb) return ta ? -1 : 1
-      const va = typedValue(ta)
-      const vb = typedValue(tb)
-      const d = typeof va === 'number' && typeof vb === 'number' ? va - vb : collator.compare(ta, tb)
-      if (d !== 0) return desc ? -d : d
-    }
-    return 0
-  }
-  const sorted = sortSections(rows, () => '', (a, b) => compare(a.index, b.index) || a.index - b.index)
-  if (sorted.every((row, index) => row === rows[index])) return true
-  const from = tablePos + 1 + table.firstChild!.nodeSize
-  editor.dispatch(closeHistory(editor.state.tr.replaceWith(from, tablePos + 1 + table.content.size, sorted)))
+  const tr = editor.state.tr
+  if (!sortBodyRows(tr, tablePos, levels.map((l) => ({ col: keys.indexOf(l.column), desc: l.desc === true })).filter((l) => l.col >= 0))) return false
+  if (tr.docChanged) editor.dispatch(closeHistory(tr))
   return true
 }
 

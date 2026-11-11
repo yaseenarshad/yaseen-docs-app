@@ -27,8 +27,9 @@
  * Full keep their bare words (`muted`, `full`), and `text-muted` / `text-full` read the same. An older build keeps
  * a `header` part with a new word as its text (below), so it never loses it.
  * YAZ-4899: `subhead 5 12` names the subheader rows as `fold` names the folded rows (1-based, never row 1), after
- * `nodim`; `subheader <words>` is the subheader rows' own look, the words of `header`, after `header`; then `sticky` /
- * `nosticky` say whether they stay at the top of the note, only when the table differs from Settings.
+ * `nodim`; `subheader <words>` is the subheader rows' own look, the words of `header`, after `header`; then `stickysubheads` /
+ * `nostickysubheads` say whether they stay at the top of the note, only when the table differs from Settings
+ * (YAZ-4834 P11: a bare `sticky` read as the header row, whose words are `stickyheader` / `nostickyheader`).
  * YAZ-4900: `nowrap` is a table whose cells Clip (one line, cut with "…") and `wrap` one whose cells Wrap, each only
  * when the table differs from Settings › Tables › Text in cells (Wrap by default; so a file from before, with no part,
  * reads the same); `text 2:clip 4:wrap` is each column's own choice, 1-based, after them, and wins over the table's.
@@ -180,7 +181,7 @@ export interface TableStyle {
   header?: HeaderRowOwn
   /** The subheader rows' own parts (YAZ-4899), read and written as `header`; an absent part is Settings › Tables › Subheader row. */
   subheader?: HeaderRowOwn
-  /** Sticky subheaders (YAZ-4899): `true` is `sticky`, `false` `nosticky`; absent follows Settings › Tables › Sticky subheaders. */
+  /** Sticky subheaders (YAZ-4899): `true` is `stickysubheads`, `false` `nostickysubheads`; absent follows Settings › Tables › Sticky subheaders. */
   sticky?: boolean
   /** Sticky header row (YAZ-4899 round 2): `true` is `stickyheader`, `false` `nostickyheader`; absent follows Settings › Tables › Sticky header row. */
   stickyHeader?: boolean
@@ -402,10 +403,10 @@ function readPart(style: TableStyle, word: string, rest: string[], part: string)
       else delete style[word]
       return true
     }
-    case 'sticky':
-    case 'nosticky':
+    case 'stickysubheads':
+    case 'nostickysubheads':
       if (rest.length !== 0) return false
-      style.sticky = word === 'sticky'
+      style.sticky = word === 'stickysubheads'
       return true
     case 'stickyheader':
     case 'nostickyheader':
@@ -564,8 +565,8 @@ export function formatTableComment(style: TableStyle): string | null {
     }).join(' ')
     if (header !== '') push(word, `${word} ${header === 'off' ? 'plain' : header}`)
   }
-  if (style.sticky === true) push('sticky', 'sticky')
-  if (style.sticky === false) push('nosticky', 'nosticky')
+  if (style.sticky === true) push('stickysubheads', 'stickysubheads')
+  if (style.sticky === false) push('nostickysubheads', 'nostickysubheads')
   if (style.stickyHeader === true) push('stickyheader', 'stickyheader')
   if (style.stickyHeader === false) push('nostickyheader', 'nostickyheader')
   if (style.stripes) push('stripes', 'stripes')

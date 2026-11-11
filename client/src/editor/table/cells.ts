@@ -41,6 +41,26 @@ export function tableHasMerge(table: ProseNode): boolean {
   return merged
 }
 
+/** A body cell spans rows (YAZ-4792): the rows cannot move one by one, so Sort, a row drag with sections and a Super table are off. */
+export function bodySpansRows(table: ProseNode): boolean {
+  let spans = false
+  table.forEach((row, _, r) => {
+    if (r > 0) row.forEach((cell) => (spans ||= (cell.attrs.rowspan as number) > 1))
+  })
+  return spans
+}
+
+/** A cell's text as a typed value (the Super table's item 14; a Sort compares numbers as numbers, YAZ-4834 P7). */
+export function typedValue(text: string): unknown {
+  // An empty cell is no value: it sorts last and makes the "No value" group, as an empty field does on folder pages.
+  if (text === '') return null
+  if (/^\[[xX]\]$/.test(text)) return true
+  if (text === '[ ]') return false
+  const number = text.replace(/,(?=\d{3}(\D|$))/g, '')
+  if (/^-?\d+(\.\d+)?$/.test(number)) return Number(number)
+  return text
+}
+
 /** Every cell with a part in `rect`, once each (prosemirror-tables' `cellsInRect` leaves out a cell that starts above or left of it). */
 function cellsTouching(rect: TableRect): number[] {
   const out: number[] = []

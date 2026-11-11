@@ -216,8 +216,8 @@
   background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
 }
 
-/* THE CHEVRON'S PLACE (the demo decides it): inside the subheader row's first cell, before its text, floated so the text
-   flows after it. Change this one rule (and `chevronWidget` in `tableSubhead.ts`) to move it. Down when open, right when
+/* THE CHEVRON'S PLACE (the YAZ-4899 demo approved it): inside the subheader row's first cell, before its text, floated so
+   the text flows after it. This one rule and `chevronWidget` in `tableSubhead.ts` place it. Down when open, right when
    the section is collapsed. */
 .milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron {
   float: left;

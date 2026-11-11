@@ -45,7 +45,7 @@ let stickySubheaders = true
 
 /**
  * Settings › Tables › All tables › Subheader row and Sticky subheaders (YAZ-4899), App's door: a table's "Subheader
- * row ›" and "Sticky subheaders" read them when they open; a change of the sticky default tells each sticky view at once.
+ * row ›" panel and its "Sticky" switch read them when they open; a change of the sticky default tells each sticky view at once.
  */
 export function setSubheaderRowSetting(value: HeaderRow): void {
   subheaderRow = value

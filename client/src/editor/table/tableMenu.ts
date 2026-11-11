@@ -65,7 +65,7 @@ import { fillFlyout } from '../blockHandleMenu'
 import { canMoveToCellNote, moveToCellNote, openCellNote } from './cellNoteCard'
 import { deleteText, deleteWithNotes, duplicateWithNotes, type DeleteKind } from './cellNoteGuard'
 import { cellNoteLabelsIn, cellNoteOf, removeCellNote, tableAround } from './cellNotes'
-import { cellAt, isMerged, mergeCrosses, rectHasMerge, rowFolded, rowNoDim, rowSubhead, setCellsAlign, setCellsAttr, setCellsValign, wholeColumns, wholeRows } from './cells'
+import { bodySpansRows, cellAt, isMerged, mergeCrosses, rectHasMerge, rowFolded, rowNoDim, rowSubhead, setCellsAlign, setCellsAttr, setCellsValign, typedValue, wholeColumns, wholeRows } from './cells'
 import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
 import { foldRows, keepingScroll, unfoldRun } from './tableFold'
 import { headerRowParent } from './tableRows'
@@ -258,69 +258,87 @@ function sameCells(tr: Transaction, rect: TableRect): Transaction {
 // "9" before "10"; case and accents do not count.
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-/** A body row's sort key: its row node, its index among the body rows, and its text in the sort column. */
-interface SortRow {
-  row: ProseNode
-  index: number
-  text: string
+/** One level of a sort: a grid column of the table and its direction. */
+export interface SortLevel {
+  col: number
+  desc: boolean
 }
 
 /**
  * The body rows sorted inside each section (YAZ-4899 item 15): a subheader row stays where it is, and the rows under it
- * (to the next subheader row) sort among themselves, as do the rows above the first subheader row. `textOf` gives a
- * body row's text by its index; `compare` orders two rows.
+ * (to the next subheader row) sort among themselves, as do the rows above the first subheader row. `compare` orders two
+ * body rows by their index among the body rows.
  */
-export function sortSections(rows: readonly ProseNode[], textOf: (index: number) => string, compare: (a: SortRow, b: SortRow) => number): ProseNode[] {
+function sortSections(rows: readonly ProseNode[], compare: (a: number, b: number) => number): ProseNode[] {
   const out: ProseNode[] = []
-  let section: SortRow[] = []
+  let section: number[] = []
   const flush = () => {
-    out.push(...section.sort(compare).map(({ row }) => row))
+    out.push(...section.sort(compare).map((index) => rows[index]!))
     section = []
   }
   rows.forEach((row, index) => {
     if (rowSubhead(row)) {
       flush()
       out.push(row)
-    } else section.push({ row, index, text: textOf(index) })
+    } else section.push(index)
   })
   flush()
   return out
 }
 
-/** A body cell spans rows (YAZ-4792): the rows cannot move one by one, so Sort is off. */
-function bodySpansRows({ table }: TableRect): boolean {
-  let spans = false
-  table.forEach((row, _, r) => {
-    if (r > 0) row.forEach((cell) => (spans ||= (cell.attrs.rowspan as number) > 1))
+/**
+ * THE ONE SORT of a table's real rows (YAZ-4834 P7): the right-click "Sort A to Z" (one level, the target's left column)
+ * and the Super table's base Sort (a view's levels) both come here. The body rows of the table at `tablePos` sorted by
+ * `levels` in `tr` (the first level that differs wins): the header row stays first, each section sorts inside itself
+ * (`sortSections`), empty cells go last, numbers as numbers (`typedValue`: `-3`, `1,000`), the rest by the collator,
+ * equal rows keep their order. The whole rows move, so each cell keeps its attributes. `false` when the rows cannot
+ * sort (a body cell spans rows, YAZ-4792; no level); `tr` is unchanged when they are in order already.
+ */
+export function sortBodyRows(tr: Transaction, tablePos: number, levels: readonly SortLevel[]): boolean {
+  const table = tr.doc.nodeAt(tablePos)
+  if (table?.type.name !== 'table' || levels.length === 0 || bodySpansRows(table)) return false
+  const map = TableMap.get(table)
+  const rows: ProseNode[] = []
+  table.forEach((row, _, index) => {
+    if (index > 0) rows.push(row)
   })
-  return spans
+  // A cell's words, its lines and bullets joined with a space (YAZ-3818); the column's cell through the map (YAZ-4792).
+  const texts = rows.map((_, index) =>
+    levels.map(({ col }) => {
+      const cell = cellAt(table, map, index + 1, col)
+      return cell.textBetween(0, cell.content.size, ' ').trim()
+    }),
+  )
+  const compare = (a: number, b: number): number => {
+    for (const [level, { desc }] of levels.entries()) {
+      const ta = texts[a]![level]!
+      const tb = texts[b]![level]!
+      if (!ta !== !tb) return ta ? -1 : 1
+      const va = typedValue(ta)
+      const vb = typedValue(tb)
+      const d = typeof va === 'number' && typeof vb === 'number' ? va - vb : collator.compare(ta, tb)
+      if (d !== 0) return desc ? -d : d
+    }
+    return a - b
+  }
+  const sorted = sortSections(rows, compare)
+  if (sorted.every((row, index) => row === rows[index])) return true
+  const from = tablePos + 1 + table.firstChild!.nodeSize
+  tr.replaceWith(from, tablePos + 1 + table.content.size, sorted)
+  return true
 }
 
 /**
- * Sort the body rows by the text of the target's left column (YAZ-3696 D9, moved from the vendored
- * handle menu by YAZ-3820). The header row stays first, empty cells go last, equal cells keep their
- * order. The whole rows move, so each cell keeps its attributes. The same cells stay selected.
- * YAZ-4899 item 15: each section sorts inside itself; the subheader rows, and the rows above the first one, keep their
- * sections (`sortSections`).
+ * Sort the body rows by the target's left column (YAZ-3696 D9, moved from the vendored handle menu by YAZ-3820):
+ * `sortBodyRows` with one level. The same cells stay selected.
  */
 const sortRows =
   (direction: 1 | -1): Command =>
   (state, dispatch) => {
     const rect = selectedRect(state)
-    if (bodySpansRows(rect)) return false
-    const rows: ProseNode[] = []
-    rect.table.forEach((row, _, index) => {
-      if (index > 0) rows.push(row)
-    })
-    // A cell's words, its lines and bullets joined with a space (YAZ-3818); the column's cell through the map (YAZ-4792).
-    const textOf = (index: number) => {
-      const cell = cellAt(rect.table, rect.map, index + 1, rect.left)
-      return cell.textBetween(0, cell.content.size, ' ').trim()
-    }
-    const sorted = sortSections(rows, textOf, (a, b) => (!a.text !== !b.text ? (a.text ? -1 : 1) : direction * collator.compare(a.text, b.text) || a.index - b.index))
-    if (sorted.every((row, index) => row === rows[index])) return true
-    const from = rect.tableStart + rect.table.firstChild!.nodeSize
-    dispatch?.(sameCells(state.tr.replaceWith(from, rect.tableStart + rect.table.content.size, sorted), rect))
+    const tr = state.tr
+    if (!sortBodyRows(tr, rect.tableStart - 1, [{ col: rect.left, desc: direction === -1 }])) return false
+    if (tr.docChanged) dispatch?.(sameCells(tr, rect))
     return true
   }
 
@@ -546,8 +564,8 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
     ],
     [
       // YAZ-4792: a body cell that spans rows keeps the rows where they are.
-      item('sort-asc', 'Sort A to Z', run(sortRows(1)), bodySpansRows(rect)),
-      item('sort-desc', 'Sort Z to A', run(sortRows(-1)), bodySpansRows(rect)),
+      item('sort-asc', 'Sort A to Z', run(sortRows(1)), bodySpansRows(rect.table)),
+      item('sort-desc', 'Sort Z to A', run(sortRows(-1)), bodySpansRows(rect.table)),
       ...(folds >= 2 ? [item('fold', `Fold ${folds} rows`, () => keepingScroll(view, run(foldRows)))] : []),
       ...subheadItems,
       ...sectionItems,

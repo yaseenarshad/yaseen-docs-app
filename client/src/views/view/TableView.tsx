@@ -268,7 +268,7 @@ function contentWidth(cell: HTMLElement, zoom: number): number {
 }
 
 /** YAZ-4867: is this clipped cell's text really cut? The cell, its display span or its chip row is wider inside than out. */
-export function cellIsCut(cell: HTMLElement): boolean {
+function cellIsCut(cell: HTMLElement): boolean {
   const boxes = [cell, ...cell.querySelectorAll<HTMLElement>('.view-cell-edit__display, .property-choice-chips')]
   return boxes.some((box) => box.scrollWidth > box.clientWidth + 1)
 }

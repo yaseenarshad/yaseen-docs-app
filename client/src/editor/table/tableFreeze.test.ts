@@ -22,6 +22,7 @@ afterEach(async () => {
     m.scroller.remove()
   }
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   delete (HTMLElement.prototype as unknown as Record<string, unknown>).animate
   moved.clear()
   setStickyHeaderSetting(true)
@@ -450,5 +451,109 @@ describe('the column handle under a pinned header (YAZ-4170)', () => {
     view.dom.addEventListener(TABLE_HANDLE_MENU, (e) => got.push((e as CustomEvent).detail))
     col.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 150, clientY: 0 }))
     expect(got.map((detail) => detail.pos)).toEqual([cellPos(view, 0, 1)])
+  })
+})
+
+describe('YAZ-4834 P4: the scroll work of a note with 30 tables, each with a sticky header row (Settings On by default)', () => {
+  /** An `IntersectionObserver` the test drives: `settle` reports each watched table block near or far by its table's box. */
+  class FakeObserver {
+    static instances: FakeObserver[] = []
+    targets = new Set<Element>()
+    constructor(
+      readonly callback: IntersectionObserverCallback,
+      readonly options: IntersectionObserverInit,
+    ) {
+      FakeObserver.instances.push(this)
+    }
+    observe = (target: Element) => void this.targets.add(target)
+    unobserve = (target: Element) => void this.targets.delete(target)
+    disconnect = () => this.targets.clear()
+    settle(near: (target: Element) => boolean) {
+      this.callback([...this.targets].map((target) => ({ target, isIntersecting: near(target) }) as IntersectionObserverEntry), this as unknown as IntersectionObserver)
+    }
+  }
+
+  it('a scroll frame measures only the tables within one scroller height of the note, and writes keyframes only when a table\'s offset changed (count guard)', async () => {
+    FakeObserver.instances = []
+    vi.stubGlobal('IntersectionObserver', FakeObserver)
+    setStickyHeaderSetting(true)
+    const counts = { reads: 0, writes: 0 }
+    const animate = function (this: HTMLElement, keyframes: Keyframe[]) {
+      counts.writes++
+      keep(this, keyframes)
+      return { effect: { setKeyframes: (next: Keyframe[]) => void (counts.writes++, keep(this, next)) }, cancel: () => moved.delete(this) }
+    }
+    Object.assign(HTMLElement.prototype, { animate })
+    const frames: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    const flush = () => {
+      for (const frame of frames.splice(0)) frame(0)
+    }
+    const scroller = document.createElement('div')
+    scroller.style.overflowY = 'auto'
+    const root = document.createElement('div')
+    scroller.appendChild(root)
+    document.body.appendChild(scroller)
+    scroller.getBoundingClientRect = () => (counts.reads++, box(0, 400))
+    // Table i starts at -80 + 200 i, less what the note scrolled: tables 0–4 are within one scroller height (400 px) of it.
+    let scrolled = 0
+    const blocks = () => [...document.querySelectorAll('.milkdown-table-block')]
+    const tableTop = (el: Element) => -80 + 200 * blocks().indexOf(el.closest('.milkdown-table-block')!) - scrolled
+    const realCreate = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const el = realCreate(tag, options)
+      if (tag === 'table') el.getBoundingClientRect = () => (counts.reads++, box(tableTop(el), 150))
+      if (tag === 'tr') el.getBoundingClientRect = () => (counts.reads++, box(tableTop(el) + 30 * (el as HTMLTableRowElement).rowIndex, 30))
+      if (tag === 'th' || tag === 'td') Object.defineProperty(el, 'offsetWidth', { value: 100 })
+      return el
+    })
+    const crepe = createCrepe({ root, defaultValue: Array.from({ length: 30 }, () => TABLE).join('\n') })
+    await crepe.create()
+    mounted.push({ crepe, scroller })
+    expect(blocks()).toHaveLength(30)
+    flush()
+    // One observer for the scroller, every table block in it.
+    expect(FakeObserver.instances).toHaveLength(1)
+    const observer = FakeObserver.instances[0]!
+    expect(observer.options.root).toBe(scroller)
+    expect(observer.targets.size).toBe(30)
+    const near = (target: Element) => {
+      const top = tableTop(target)
+      return top + 150 >= -400 && top <= 800
+    }
+    observer.settle(near)
+    flush()
+    // A scroll of 10 px: 5 tables near the note, 4 reads each (the frozen rows' box, the table's, the scroller's); only
+    // table 0, which the note's top edge cuts, gets a new offset (90 px).
+    scrolled = 10
+    counts.reads = 0
+    counts.writes = 0
+    scroller.dispatchEvent(new Event('scroll'))
+    flush()
+    console.log(`P4: 30 tables, 5 near · a scroll that moves one table's rows: ${counts.reads} rect reads, ${counts.writes} keyframe writes`)
+    expect(counts.reads).toBeLessThanOrEqual(20)
+    expect(counts.writes).toBe(1)
+    // The same scroll again (a scroll event with no new offset): the near tables measure, nothing writes.
+    counts.reads = 0
+    counts.writes = 0
+    scroller.dispatchEvent(new Event('scroll'))
+    flush()
+    console.log(`P4: a scroll that moves nothing: ${counts.reads} rect reads, ${counts.writes} keyframe writes`)
+    expect(counts.reads).toBeLessThanOrEqual(20)
+    expect(counts.writes).toBe(0)
+    // Table 5 comes near (the note scrolls 500 px): the observer says so, and its rows catch up in the next frame.
+    scrolled = 500
+    observer.settle(near)
+    counts.writes = 0
+    flush()
+    expect(counts.writes).toBeGreaterThanOrEqual(1)
+    // The editor's end drops every target.
+    await crepe.destroy()
+    mounted.pop()
+    scroller.remove()
+    expect(observer.targets.size).toBe(0)
   })
 })

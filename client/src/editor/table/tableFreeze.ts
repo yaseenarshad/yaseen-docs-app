@@ -33,7 +33,9 @@
  *   is not typing (the editor may draw a frozen row again), the offset that keeps the frozen rows at
  *   the scroller's top, stopped at the table's end, moves each frozen row: a Web Animation holds its
  *   `translateY` (YAZ-3792). It writes no attribute, so ProseMirror sees no mutation, and it restyles
- *   only that row; a custom property on the block restyled every cell of the table on each scroll.
+ *   only that row; a custom property on the block restyled every cell of the table on each scroll. A scroll frame does
+ *   nothing for a table farther than one scroller height from the note's box (`watchNear`, YAZ-4834 P4: the header row
+ *   sticks by default, so every table is frozen), and writes no keyframe when the offset did not change.
  *   Whole device pixels, rounded up the page (YAZ-3788). Layout px: divided by the document zoom, as
  *   the folder page does, and by the table's own zoom (YAZ-4091): the zoom at the `<table>`. The frozen rows' height ends at the last frozen row shown: a row of a folded run
  *   (`table-fold-hidden`, YAZ-4165) has no box.
@@ -52,7 +54,7 @@ import { TableMap } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
-import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
+import { pinnedHeaderOffset, verticalScrollParent, watchNear } from '../../lib/pinnedHeader'
 import { changedTables, typingOnly } from './tableStyle'
 import { onStickyHeaderSetting, stickyHeaderSetting } from './timeFormatSetting'
 
@@ -174,6 +176,9 @@ class Freezer {
   #measure = false
   #scroller: HTMLElement | null = null
   #observer: ResizeObserver | null = null
+  /** The table is within one scroller height of the note's box (`watchNear`); until the observer reports, it is. */
+  #near = true
+  #unwatch: (() => void) | null = null
   /** Each moved row's animation (YAZ-3792). */
   #moved = new Map<HTMLElement, Animation>()
   /** The rows' offset now, in layout px: a change moves the table block's handles too (YAZ-4170). */
@@ -203,7 +208,10 @@ class Freezer {
     else if (this.#scroller === null) {
       this.#scroller = verticalScrollParent(this.block)
       this.#scroller?.addEventListener('scroll', this.#schedule, { passive: true })
-      if (this.#scroller !== null) this.#observer.observe(this.#scroller)
+      if (this.#scroller !== null) {
+        this.#observer.observe(this.#scroller)
+        this.#unwatch = watchNear(this.#scroller, this.block, this.#onNear)
+      }
     }
     this.#rows = rows
     this.#cols = cols
@@ -219,30 +227,44 @@ class Freezer {
       this.#observer?.unobserve(this.#scroller)
     }
     this.#scroller = null
+    this.#unwatch?.()
+    this.#unwatch = null
+    this.#near = true
     this.#move([], 0)
-    this.#offset = 0
   }
 
-  /** `frozen` moves down by `y` layout px; any other row this freezer moved goes back (its animation ends). */
-  #move(frozen: HTMLElement[], y: number): void {
+  /**
+   * `frozen` moves down by `y` layout px; any other row this freezer moved goes back (its animation ends). A row moved
+   * before gets new keyframes only when `y` changed (YAZ-4834 P4). Whether the offset changed.
+   */
+  #move(frozen: HTMLElement[], y: number): boolean {
     for (const [row, animation] of this.#moved) {
       if (frozen.includes(row)) continue
       animation.cancel()
       this.#moved.delete(row)
     }
+    const changed = y !== this.#offset
+    this.#offset = y
     const keyframes = [{ transform: `translateY(${y}px)` }]
     for (const row of frozen) {
       // jsdom has no `animate`.
       if (typeof row.animate !== 'function') continue
       const animation = this.#moved.get(row)
       if (animation === undefined) this.#moved.set(row, row.animate(keyframes, { duration: 0, fill: 'forwards' }))
-      else (animation.effect as KeyframeEffect).setKeyframes(keyframes)
+      else if (changed) (animation.effect as KeyframeEffect).setKeyframes(keyframes)
     }
+    return changed
   }
 
-  /** A scroll: the rows' offset only. */
+  /** A scroll: the rows' offset only. A table far from the note's box waits until it comes near. */
   #schedule = (): void => {
-    if (this.#frame === 0) this.#frame = requestAnimationFrame(this.#sync)
+    if (this.#near && this.#frame === 0) this.#frame = requestAnimationFrame(this.#sync)
+  }
+
+  /** The observer's word (`watchNear`): a table that comes near catches up in the next frame. */
+  #onNear = (near: boolean): void => {
+    this.#near = near
+    if (near) this.#schedule()
   }
 
   /** A table change or a resize: the columns' offsets and the rows'. */
@@ -285,10 +307,7 @@ class Freezer {
     const ratio = window.devicePixelRatio || 1
     const screen = Math.floor(pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, frozenHeight) * ratio) / ratio
     const offset = screen / zoom
-    this.#move(Array.from({ length: this.#rows }, (_, r) => rows[r] as HTMLElement), offset)
-    if (offset === this.#offset) return
-    this.#offset = offset
-    this.block.dispatchEvent(new Event(TABLE_HANDLE_PLACE))
+    if (this.#move(Array.from({ length: this.#rows }, (_, r) => rows[r] as HTMLElement), offset)) this.block.dispatchEvent(new Event(TABLE_HANDLE_PLACE))
   }
 
   destroy(): void {

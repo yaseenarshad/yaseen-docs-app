@@ -95,7 +95,7 @@ export const TABLE_DEFAULTS = {
   header: {} as HeaderRowOwn,
   /** The subheader rows' own look (YAZ-4899): `{}` follows Settings › Tables › Subheader row; `data-table-subheader-*`. */
   subheader: {} as HeaderRowOwn,
-  /** Sticky subheaders (YAZ-4899): `true` saves `sticky`, `false` `nosticky`, `null` follows Settings. */
+  /** Sticky subheaders (YAZ-4899): `true` saves `stickysubheads`, `false` `nostickysubheads`, `null` follows Settings. */
   stickySubheaders: null as boolean | null,
   /** Sticky header row (YAZ-4899 round 2): `true` saves `stickyheader`, `false` `nostickyheader`, `null` follows Settings; the frozen rows read it (`tableFreeze.ts`). */
   stickyHeader: null as boolean | null,
@@ -712,9 +712,7 @@ const tableStylePlugin = $prose(
           return fresh.length > 0 ? next.add(tr.doc, fresh) : next
         },
       },
-      props: {
-        decorations: (state) => tableStyleKey.getState(state),
-      },
+      props: { decorations: (state) => tableStyleKey.getState(state) },
     }),
 )
 

@@ -25,7 +25,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { $prose } from '@milkdown/kit/utils'
 import { storage } from '../../../lib/storage'
 import { findThreadAnchor } from '../../find/findInPage'
-import { cellStartsAt } from '../cells'
+import { bodySpansRows, cellStartsAt } from '../cells'
 import { changedTables, typingOnly, type TableAttrs } from '../tableStyle'
 import { columnKeys, renameColumns, type TableViewDef } from './viewGrammar'
 
@@ -38,8 +38,9 @@ export interface SuperPlace {
   notePath: string
 }
 
-/** A table anchor's doors (`tableZoomPill.tsx`): draw again (debounced while typing), and show a found row. */
+/** A table anchor's doors (`tableZoomPill.tsx`): draw the pill again, draw the Super table again (debounced while typing), and show a found row. */
 export interface SuperAnchor extends HTMLElement {
+  renderZoom?: () => void
   renderSuper?: (typing: boolean) => void
   /** `null`: the find has no match in this table any more. */
   findRow?: (row: number | null) => void
@@ -70,11 +71,7 @@ export const SUPER_NOW = 'mdapp-super-now'
 
 /** Why `table` cannot be a Super table (items 17, 18), or `null`. */
 export function superRule(table: ProseNode): string | null {
-  let spans = false
-  table.forEach((row, _, r) => {
-    if (r > 0) row.forEach((cell) => (spans ||= (cell.attrs.rowspan as number) > 1))
-  })
-  if (spans) return 'A cell spans rows'
+  if (bodySpansRows(table)) return 'A cell spans rows'
   if ((table.attrs.calendar as number) > 0) return 'Time slots are on'
   return null
 }
@@ -195,8 +192,8 @@ export function setActiveTab(view: EditorView, pos: number, name: string | null)
 
 // ---------- the plugin ----------
 
-/** The anchor before the table at `pos` (the zoom pill's widget), or `null`. */
-function anchorAt(view: EditorView, pos: number): SuperAnchor | null {
+/** The anchor right before the table at `pos` (the zoom pill's widget, `tableZoomPill.tsx`), or `null`. */
+export function anchorAt(view: EditorView, pos: number): SuperAnchor | null {
   const anchor = view.nodeDOM(pos)?.previousSibling
   return anchor instanceof HTMLElement && anchor.classList.contains('table-zoom-anchor') ? (anchor as SuperAnchor) : null
 }

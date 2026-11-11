@@ -82,12 +82,12 @@ const caretRowOf = (view: EditorView): number => {
 }
 
 describe('the parts (item 22)', () => {
-  it('`subhead 5 12`, `subheader …` (the header words) and `sticky` / `nosticky` round-trip, in the fixed order', () => {
-    const comment = '<!-- table: fold 6-8, subhead 5 12, header blue, subheader red strong regular text-white align-center, nosticky, stripes -->'
+  it('`subhead 5 12`, `subheader …` (the header words) and `stickysubheads` / `nostickysubheads` round-trip, in the fixed order', () => {
+    const comment = '<!-- table: fold 6-8, subhead 5 12, header blue, subheader red strong regular text-white align-center, nostickysubheads, stripes -->'
     const parsed = parseTableComment(comment)!
     expect(parsed).toEqual(style({ fold: [5, 6, 7], subhead: [4, 11], header: { color: 'blue' }, subheader: { color: 'red', strength: 'strong', weight: 'regular', text: 'white', align: 'center' }, sticky: false, stripes: true }))
     expect(formatTableComment(parsed)).toBe(comment)
-    expect(formatTableComment(style({ sticky: true, subhead: [2, 3] }))).toBe('<!-- table: subhead 3-4, sticky -->')
+    expect(formatTableComment(style({ sticky: true, subhead: [2, 3] }))).toBe('<!-- table: subhead 3-4, stickysubheads -->')
     // `subheader plain` is Strength Off, as `header plain`; a wrong word keeps the part as its text.
     expect(parseTableComment('<!-- table: subheader plain -->')).toEqual(style({ subheader: { strength: 'off' } }))
     expect(parseTableComment('<!-- table: subheader shiny, stripes -->')).toEqual(style({ stripes: true, unknown: [{ after: null, text: 'subheader shiny' }] }))
@@ -168,11 +168,11 @@ describe('"Make subheader row" and "Turn back into a normal row" (item 4), one u
     const tabs = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target:not(.fill-target--sub) > .fill-target__opt')]
     const bar = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target--sub:not(.fill-target--switch) .fill-target__opt')].map((b) => `${b.textContent}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)
     expect(items()).toEqual(['Plain, like any row', 'Gray*', 'Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink', 'Black'])
-    // Sticky at the top (YAZ-4899 demo): Default (On) / On / Off; Off saves `nosticky`, Default takes it back.
+    // Sticky at the top (YAZ-4899 demo): Default (On) / On / Off; Off saves `nostickysubheads`, Default takes it back.
     const sticky = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target--switch .fill-target__opt')].map((b) => `${b.textContent}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)
     expect([host.querySelector('.ctx-menu__heading')?.textContent, sticky()]).toEqual(['Sticky', ['Default (On)*', 'On', 'Off']])
     host.querySelectorAll<HTMLButtonElement>('.fill-target--switch .fill-target__opt')[2]!.click()
-    expect(getMarkdownForSave(crepe)).toContain('subhead 3 7, nosticky')
+    expect(getMarkdownForSave(crepe)).toContain('subhead 3 7, nostickysubheads')
     expect(sticky()).toEqual(['Default (On)', 'On', 'Off*'])
     host.querySelectorAll<HTMLButtonElement>('.fill-target--switch .fill-target__opt')[0]!.click()
     expect(getMarkdownForSave(crepe)).toBe(EIGHT)
@@ -428,9 +428,9 @@ describe('the sticky subheader row (items 8–9)', () => {
     expect(offsets()[2]).toBe('70px')
   })
 
-  it('`nosticky` (and Settings Off by default) has no listener and moves nothing; a table without subheader rows neither', async () => {
+  it('`nostickysubheads` (and Settings Off by default) has no listener and moves nothing; a table without subheader rows neither', async () => {
     setStickyHeaderSetting(false)
-    const { offsets, scrollTo } = await mount(table(['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'], 'subhead 3 7, nosticky'), 0)
+    const { offsets, scrollTo } = await mount(table(['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'], 'subhead 3 7, nostickysubheads'), 0)
     scrollTo(-100)
     expect(offsets()).toEqual(Array(9).fill(''))
   })

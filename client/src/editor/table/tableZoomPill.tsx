@@ -31,7 +31,7 @@ import { createRoot } from 'react-dom/client'
 import type { ComponentType } from 'react'
 import { DocumentZoom } from '../DocumentZoom'
 import { changedTables, typingOnly } from './tableStyle'
-import { activeViewAt, type SuperAnchor } from './super/superTables'
+import { activeViewAt, anchorAt, type SuperAnchor } from './super/superTables'
 import type { SuperTableProps } from './super/SuperTable'
 
 interface ZoomState {
@@ -41,11 +41,6 @@ interface ZoomState {
 }
 
 const zoomKey = new PluginKey<ZoomState>('mdapp-table-zoom')
-
-/** An anchor that renders its pill from the table at its position. */
-interface ZoomAnchor extends SuperAnchor {
-  renderZoom?: () => void
-}
 
 /** The debounce of a Super table's view while you type in it (YAZ-4869 item 20). */
 export const SUPER_TYPING_MS = 150
@@ -69,7 +64,7 @@ function setZoom(view: EditorView, pos: number | undefined, zoom: number): void 
 }
 
 function zoomAnchor(view: EditorView, getPos: () => number | undefined): HTMLElement {
-  const anchor: ZoomAnchor = document.createElement('div')
+  const anchor: SuperAnchor = document.createElement('div')
   anchor.className = 'table-zoom-anchor'
   anchor.contentEditable = 'false'
   const root = createRoot(anchor)
@@ -172,7 +167,7 @@ export const tableZoomPill = $prose(
             // The note went read only, or back (YAZ-4897): a Super table's tabs draw again, with or without "+".
             if (view.editable !== editable) {
               editable = view.editable
-              for (const deco of zoomKey.getState(view.state)!.set.find()) if (deco.spec.superTable === true) anchorBefore(view, deco.from)?.renderZoom?.()
+              for (const deco of zoomKey.getState(view.state)!.set.find()) if (deco.spec.superTable === true) anchorAt(view, deco.from)?.renderZoom?.()
             }
             const before = zoomKey.getState(prev)!
             const after = zoomKey.getState(view.state)!
@@ -181,16 +176,10 @@ export const tableZoomPill = $prose(
             const kept = new Set(before.set.find().map((deco) => deco.spec))
             for (const deco of after.set.find()) {
               if (kept.has(deco.spec)) continue
-              anchorBefore(view, deco.from)?.renderZoom?.()
+              anchorAt(view, deco.from)?.renderZoom?.()
             }
           },
         }
       },
     }),
 )
-
-/** The pill's anchor right before the table at `pos`, or `null`. */
-function anchorBefore(view: EditorView, pos: number): ZoomAnchor | null {
-  const anchor = view.nodeDOM(pos)?.previousSibling
-  return anchor instanceof HTMLElement && anchor.classList.contains('table-zoom-anchor') ? (anchor as ZoomAnchor) : null
-}
