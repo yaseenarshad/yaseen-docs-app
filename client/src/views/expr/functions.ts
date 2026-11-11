@@ -48,8 +48,9 @@ const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '
 
 export const FUNCTIONS: Record<string, GlobalFn> = {
   date: args => toDate(arg(args, 0)),
-  today: () => new DateValue(startOfDay(Date.now()), false),
-  now: () => new DateValue(Date.now(), true),
+  // The run's clock where the scope carries one (YAZ-4919): read once per filter run, and a test injects it.
+  today: (_, { now }) => new DateValue(startOfDay(now ?? Date.now()), false),
+  now: (_, { now }) => new DateValue(now ?? Date.now(), true),
   duration: args => toDuration(arg(args, 0)),
   number: args => toNumber(arg(args, 0)),
   min: args => extreme(args, Math.min),

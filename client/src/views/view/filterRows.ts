@@ -18,7 +18,7 @@ export type PropertyType = 'text' | 'number' | 'date' | 'checkbox' | 'list' | 't
 export type OperatorId =
   | 'is' | 'isNot' | 'contains' | 'notContains' | 'startsWith' | 'endsWith' | 'isEmpty' | 'isNotEmpty'
   | 'eq' | 'ne' | 'lt' | 'gt' | 'le' | 'ge'
-  | 'dateIs' | 'dateBefore' | 'dateAfter'
+  | 'dateIs' | 'dateBefore' | 'dateAfter' | 'dateIsToday' | 'dateInThisWeek' | 'dateInThisMonth'
   | 'checked' | 'unchecked'
   | 'hasTag' | 'inFolder' | 'hasLink'
   | 'isAnyOf' | 'isNoneOf' | 'hasAnyOf' | 'hasNoneOf' | 'hasAllOf'
@@ -58,6 +58,10 @@ const OPS: Record<OperatorId, OperatorDef> = {
   dateIs: { id: 'dateIs', label: 'is', value: 'date' },
   dateBefore: { id: 'dateBefore', label: 'is before', value: 'date' },
   dateAfter: { id: 'dateAfter', label: 'is after', value: 'date' },
+  // Relative, LIVE (YAZ-4919): the engine reads the day at each run (`isToday()` and kin, `expr/methods.ts`).
+  dateIsToday: { id: 'dateIsToday', label: 'is today', value: 'none' },
+  dateInThisWeek: { id: 'dateInThisWeek', label: 'is this week', value: 'none' },
+  dateInThisMonth: { id: 'dateInThisMonth', label: 'is this month', value: 'none' },
   checked: { id: 'checked', label: 'is checked', value: 'none' },
   unchecked: { id: 'unchecked', label: 'is not checked', value: 'none' },
   hasTag: { id: 'hasTag', label: 'has tag', value: 'text' },
@@ -73,7 +77,7 @@ const OPS: Record<OperatorId, OperatorDef> = {
 export const OPERATORS_BY_TYPE: Record<PropertyType, OperatorId[]> = {
   text: ['is', 'isNot', 'isAnyOf', 'isNoneOf', 'contains', 'notContains', 'startsWith', 'endsWith', 'isEmpty', 'isNotEmpty'],
   number: ['eq', 'ne', 'lt', 'gt', 'le', 'ge', 'isEmpty', 'isNotEmpty'],
-  date: ['dateIs', 'dateBefore', 'dateAfter', 'isEmpty', 'isNotEmpty'],
+  date: ['dateIs', 'dateBefore', 'dateAfter', 'dateIsToday', 'dateInThisWeek', 'dateInThisMonth', 'isEmpty', 'isNotEmpty'],
   checkbox: ['checked', 'unchecked'],
   list: ['contains', 'notContains', 'hasAnyOf', 'hasNoneOf', 'hasAllOf', 'isEmpty', 'isNotEmpty'],
   tags: ['contains', 'notContains', 'hasAnyOf', 'hasNoneOf', 'hasAllOf', 'isEmpty', 'isNotEmpty'],
@@ -215,6 +219,10 @@ export function ruleToExpr(rule: Rule): string {
     case 'dateIs': return `${a} == date(${quote(value)})`
     case 'dateBefore': return `!${a}.isEmpty() && ${a} < date(${quote(value)})`
     case 'dateAfter': return `!${a}.isEmpty() && ${a} > date(${quote(value)})`
+    // A null date's method is null, so no emptiness guard: an empty cell is simply out.
+    case 'dateIsToday': return `${a}.isToday()`
+    case 'dateInThisWeek': return `${a}.isThisWeek()`
+    case 'dateInThisMonth': return `${a}.isThisMonth()`
     case 'checked': return `${a} == true`
     case 'unchecked': return `${a} == false`
     // Deep equality, unlike the substring `containsAny` a string would take (🔒 D5, YAZ-1467).
@@ -231,6 +239,8 @@ export function ruleToExpr(rule: Rule): string {
 const NUM_OP: Partial<Record<string, OperatorId>> = { '==': 'eq', '!=': 'ne', '<': 'lt', '>': 'gt', '<=': 'le', '>=': 'ge' }
 const DATE_OP: Partial<Record<string, OperatorId>> = { '==': 'dateIs', '<': 'dateBefore', '>': 'dateAfter' }
 const SCOPE_IDENTS = new Set(['note', 'file', 'formula', 'this'])
+/** The relative date methods (YAZ-4919) as their operators. */
+const RELATIVE_DATE: Partial<Record<string, OperatorId>> = { isToday: 'dateIsToday', isThisWeek: 'dateInThisWeek', isThisMonth: 'dateInThisMonth' }
 
 /** `note.x` / `file.x` / `formula.x` / `note["x"]` / bare `x` → canonical key; anything else null. */
 function propertyOf(e: Expr): string | null {
@@ -264,6 +274,8 @@ function methodRule(e: Expr): Rule | null {
   const property = propertyOf(e.object)
   if (property === null) return null
   if (e.name === 'isEmpty') return e.args.length === 0 ? { property, op: 'isEmpty', value: '' } : null
+  const relative = RELATIVE_DATE[e.name]
+  if (relative !== undefined) return e.args.length === 0 ? { property, op: relative, value: '' } : null
   if (e.name === 'containsAny' || e.name === 'containsAll') {
     const value = strList(e.args)
     return value === null ? null : { property, op: e.name === 'containsAny' ? 'hasAnyOf' : 'hasAllOf', value }

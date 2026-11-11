@@ -69,6 +69,14 @@ export interface ViewResult {
 export interface RunOptions {
   /** The folder's declared column names — shown by default before any note carries them (YAZ-1549). */
   declared?: readonly string[]
+  /**
+   * The run's clock (YAZ-4919): `today()`, `now()` and a date's `isToday()` / `isThisWeek()` / `isThisMonth()` read it,
+   * so a relative filter reads the day ONCE per run, never per row. Absent: `Date.now()` at the run. A view that stays
+   * open past midnight shows the new day on its next run (a change, a switch); no timer.
+   */
+  now?: number
+  /** Settings › Folder pages › Week starts on, for `isThisWeek()`; absent: Sunday. */
+  weekStartsOn?: 'sunday' | 'monday'
   /** Vault root; lets link targets written as `<root>/…` resolve. */
   root?: string
   /**
@@ -424,6 +432,9 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   const viewWhere = viewIndex >= 0 ? `views[${viewIndex}]` : 'view'
   const files = fileValuesFor(records)
   const resolve = opts.resolve ?? resolverFor(records, opts.root)
+  // One reading of the clock per run (YAZ-4919), in every row's scope.
+  const now = opts.now ?? Date.now()
+  const weekStartsOn = opts.weekStartsOn
   const formulas = def.formulas ?? {}
   const baseFilter = compileFilter(def.filters, 'filters', errors)
   const viewFilter = compileFilter(view.filters, `${viewWhere}.filters`, errors)
@@ -459,7 +470,7 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   const entries: Entry[] = []
   for (let i = 0; i < records.length; i++) {
     // `this` is null: the views are a FOLDER's, and a folder is no record (YAZ-2290).
-    const scope: Scope = { note: noteOf(records[i]), file: files[i], formulas, this: null, resolve }
+    const scope: Scope = { note: noteOf(records[i]), file: files[i], formulas, this: null, resolve, now, weekStartsOn }
     if (baseFilter && !baseFilter(scope)) continue
     if (viewFilter && !viewFilter(scope)) continue
     const row: Row = { record: records[i], file: files[i], values: {} }

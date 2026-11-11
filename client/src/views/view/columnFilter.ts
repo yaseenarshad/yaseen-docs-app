@@ -1,5 +1,4 @@
 import type { FilterNode } from '../viewSchema'
-import { formatDate, startOfDay } from '../expr/dates'
 import { type OperatorId, type PropertyType, type Rule, exprToRule, fromGroup, ruleToExpr, toGroup } from './filterRows'
 import { canonicalKey } from './keys'
 
@@ -76,34 +75,4 @@ export function withColumnRules(node: FilterNode | undefined, property: string, 
   if (group.conj === 'and') return { and: [...rest, ...exprs] }
   const base = fromGroup({ conj: group.conj, items: rest })
   return { and: base === undefined ? exprs : [base, ...exprs] }
-}
-
-export type DateSpan = 'today' | 'week' | 'month'
-export type WeekStart = 'sunday' | 'monday'
-
-/**
- * Today · This week · This month as rules the engine has: Today is `dateIs` on the day; a week and a month are `dateAfter`
- * the day before and `dateBefore` the day after, both strict, so a day-only value on each end is in. The days are
- * fixed at the pick (the grammar has no `today()`): the panel shows the dates, and tomorrow they stand as picked.
- */
-export function dateSpanRules(property: string, span: DateSpan, weekStartsOn: WeekStart, now = Date.now()): Rule[] {
-  const t = new Date(startOfDay(now))
-  const y = t.getFullYear()
-  const m = t.getMonth()
-  const day = (d: number, month = m): string => formatDate(new Date(y, month, d).getTime(), 'YYYY-MM-DD')
-  const after = (value: string): Rule => ({ property, op: 'dateAfter', value })
-  const before = (value: string): Rule => ({ property, op: 'dateBefore', value })
-  if (span === 'today') return [{ property, op: 'dateIs', value: day(t.getDate()) }]
-  if (span === 'week') {
-    const start = t.getDate() - ((t.getDay() - (weekStartsOn === 'monday' ? 1 : 0) + 7) % 7)
-    return [after(day(start - 1)), before(day(start + 7))]
-  }
-  return [after(day(0)), before(day(1, m + 1))]
-}
-
-/** The same rules, in any order (the ✓ on Today · This week · This month). */
-export const sameRules = (a: readonly Rule[], b: readonly Rule[]): boolean => {
-  if (a.length !== b.length) return false
-  const bs = b.map(ruleToExpr).sort()
-  return a.map(ruleToExpr).sort().every((e, i) => e === bs[i])
 }

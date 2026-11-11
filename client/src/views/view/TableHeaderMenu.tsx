@@ -368,7 +368,6 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
                 type={filterType}
                 values={() => propertyValues(c, records, typing)}
                 filters={view.filters}
-                weekStartsOn={defaults.weekStartsOn}
                 onRules={setColumnFilter}
                 onClear={() => setColumnFilter([], true, `Cleared the filter on ${label}`)}
                 onOpenPanel={

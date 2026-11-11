@@ -1,8 +1,8 @@
-import { type ReactNode, useState } from 'react'
+import { Fragment, type ReactNode, useState } from 'react'
 import type { FilterNode } from '../viewSchema'
 import { type FlyoutControl, FlyoutItem, FlyoutParent } from '../../components/Flyout'
 import { type OperatorId, type Rule, type PropertyType, operator } from './filterRows'
-import { type DateSpan, type WeekStart, columnFilterShape, columnRules, dateSpanRules, sameRules } from './columnFilter'
+import { columnFilterShape, columnRules } from './columnFilter'
 import { TextField } from './TextField'
 
 export interface ColumnFilterMenuProps {
@@ -16,8 +16,6 @@ export interface ColumnFilterMenuProps {
   values: () => string[]
   /** The view's filters, the ✓s' source. */
   filters: FilterNode | undefined
-  /** Settings › Folder pages › Week starts on, for "This week". */
-  weekStartsOn: WeekStart
   /** Writes this column's rules (one ⌘Z); `close` ends the menu — a checklist tick keeps it open. */
   onRules: (rules: readonly Rule[], close: boolean) => void
   /** "Clear this column's filter": shown while the column has a rule. */
@@ -28,7 +26,8 @@ export interface ColumnFilterMenuProps {
 
 const NUMBER_OPS: readonly OperatorId[] = ['eq', 'ne', 'gt', 'lt']
 const DATE_OPS: readonly OperatorId[] = ['dateBefore', 'dateAfter']
-const SPANS: readonly (readonly [DateSpan, string])[] = [['today', 'Today'], ['week', 'This week'], ['month', 'This month']]
+/** Today · This week · This month: the LIVE operators (the engine reads the day at each run, YAZ-4919). */
+const SPANS: readonly (readonly [OperatorId, string])[] = [['dateIsToday', 'Today'], ['dateInThisWeek', 'This week'], ['dateInThisMonth', 'This month']]
 
 /**
  * The column header's "Filter ›" (YAZ-4919), right under Group ›: quick rules on this column, in the Filter panel's own
@@ -38,7 +37,7 @@ const SPANS: readonly (readonly [DateSpan, string])[] = [['today', 'Today'], ['w
  * a Before / After date box, each with Is empty. A box applies on Enter; Esc closes the flyout. The parent row wears ✓
  * while the column has a rule, and the flyout then ends with "Clear this column's filter"; the last row opens the panel.
  */
-export function ColumnFilterMenu({ flyout, property, type, values, filters, weekStartsOn, onRules, onClear, onOpenPanel }: ColumnFilterMenuProps) {
+export function ColumnFilterMenu({ flyout, property, type, values, filters, onRules, onClear, onOpenPanel }: ColumnFilterMenuProps) {
   const rules = columnRules(filters, property)
   const has = rules.length > 0
   const shape = columnFilterShape(property, type)
@@ -95,7 +94,7 @@ export function ColumnFilterMenu({ flyout, property, type, values, filters, week
       ) : shape.kind === 'number' ? (
         <NumberRows box={box} opSwitch={opSwitch} under={under} />
       ) : shape.kind === 'date' ? (
-        <DateRows property={property} weekStartsOn={weekStartsOn} rules={rules} box={box} opSwitch={opSwitch} under={under} onRules={onRules} />
+        <DateRows pickRow={pickRow} box={box} opSwitch={opSwitch} under={under} />
       ) : null}
       {/* Is empty under every shape but a checkbox; Is not empty too where the plan says: text, and an image's. */}
       {shape.kind !== 'checkbox' && emptyRows(shape.kind === 'text' || shape.kind === 'empty')}
@@ -169,18 +168,13 @@ function NumberRows({ box, opSwitch, under }: { box: Box; opSwitch: OpSwitch; un
   )
 }
 
-/** Today · This week · This month, then Before / After over one date box. */
-function DateRows({ property, weekStartsOn, rules, box, opSwitch, under, onRules }: { property: string; weekStartsOn: WeekStart; rules: readonly Rule[]; box: Box; opSwitch: OpSwitch; under: Under; onRules: ColumnFilterMenuProps['onRules'] }) {
+/** Today · This week · This month (live, ✓ while the column holds that rule), then Before / After over one date box. */
+function DateRows({ pickRow, box, opSwitch, under }: { pickRow: (label: string, op: OperatorId) => ReactNode; box: Box; opSwitch: OpSwitch; under: Under }) {
   const current = under(DATE_OPS)
   const [op, setOp] = useState<OperatorId>(current?.op ?? 'dateBefore')
   return (
     <>
-      <div className="ctx-menu__group" role="group">
-        {SPANS.map(([span, label]) => {
-          const next = dateSpanRules(property, span, weekStartsOn)
-          return <FlyoutItem key={span} label={label} checked={sameRules(rules, next)} onSelect={() => onRules(next, true)} />
-        })}
-      </div>
+      <div className="ctx-menu__group" role="group">{SPANS.map(([span, label]) => <Fragment key={span}>{pickRow(label, span)}</Fragment>)}</div>
       <div className="ctx-menu__group" role="group">
         {opSwitch(DATE_OPS, op, setOp, 'Date operator', (o) => (o === 'dateBefore' ? 'Before' : 'After'))}
         {box(op, 'date', current, 'Date')}

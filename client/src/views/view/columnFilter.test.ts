@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { TEST_RECORDS } from '../testRecords'
-import { columnFilterShape, columnRules, dateSpanRules, sameRules, withColumnRules } from './columnFilter'
+import { columnFilterShape, columnRules, withColumnRules } from './columnFilter'
 import { propertyValues } from './filterRows'
 
 /** The column header's Filter › rules (YAZ-4919): pure, in the Filter panel's grammar. */
@@ -50,38 +50,13 @@ describe('a column\'s rules in the view\'s filters (YAZ-4919)', () => {
     expect(columnFilterShape('file.links', 'file')).toEqual({ kind: 'text', op: 'hasLink', label: 'Links to' })
   })
 
-  it('Today, This week and This month as the grammar\'s date rules, fixed at the pick; the week starts on Sunday or Monday', () => {
-    // Wednesday 2026-11-11.
-    const now = new Date(2026, 10, 11, 15, 30).getTime()
-    expect(dateSpanRules('note.date', 'today', 'sunday', now)).toEqual([{ property: 'note.date', op: 'dateIs', value: '2026-11-11' }])
-    expect(dateSpanRules('note.date', 'week', 'sunday', now)).toEqual([
-      { property: 'note.date', op: 'dateAfter', value: '2026-11-07' },
-      { property: 'note.date', op: 'dateBefore', value: '2026-11-15' },
-    ])
-    expect(dateSpanRules('note.date', 'week', 'monday', now)).toEqual([
-      { property: 'note.date', op: 'dateAfter', value: '2026-11-08' },
-      { property: 'note.date', op: 'dateBefore', value: '2026-11-16' },
-    ])
-    expect(dateSpanRules('note.date', 'month', 'sunday', now)).toEqual([
-      { property: 'note.date', op: 'dateAfter', value: '2026-10-31' },
-      { property: 'note.date', op: 'dateBefore', value: '2026-12-01' },
-    ])
-    // A week across a month's end, and December's month across the year's end.
-    expect(dateSpanRules('note.date', 'week', 'monday', new Date(2026, 11, 1).getTime())).toEqual([
-      { property: 'note.date', op: 'dateAfter', value: '2026-11-29' },
-      { property: 'note.date', op: 'dateBefore', value: '2026-12-07' },
-    ])
-    expect(dateSpanRules('note.date', 'month', 'sunday', new Date(2026, 11, 20).getTime())).toEqual([
-      { property: 'note.date', op: 'dateAfter', value: '2026-11-30' },
-      { property: 'note.date', op: 'dateBefore', value: '2027-01-01' },
-    ])
-  })
-
-  it('sameRules: the same rules in any order', () => {
-    const week = dateSpanRules('note.date', 'week', 'sunday')
-    expect(sameRules(week, [week[1], week[0]])).toBe(true)
-    expect(sameRules(week, [week[0]])).toBe(false)
-    expect(sameRules(week, dateSpanRules('note.date', 'month', 'sunday'))).toBe(false)
+  it('a live date rule (Today · This week · This month) is this column\'s rule like any other: read for the ✓, replaced by a pick', () => {
+    const today = { property: 'note.date', op: 'dateIsToday' as const, value: '' }
+    expect(withColumnRules(undefined, 'note.date', [today])).toEqual({ and: ['note.date.isToday()'] })
+    expect(columnRules({ and: ['note.date.isThisWeek()', STATUS] }, 'date')).toEqual([{ property: 'note.date', op: 'dateInThisWeek', value: '' }])
+    expect(withColumnRules({ and: ['note.date.isThisWeek()', STATUS] }, 'note.date', [{ property: 'note.date', op: 'dateInThisMonth', value: '' }])).toEqual({
+      and: [STATUS, 'note.date.isThisMonth()'],
+    })
   })
 
   it('propertyValues: the declared options first, then the rows\' values, distinct; file.tags from the tags', () => {

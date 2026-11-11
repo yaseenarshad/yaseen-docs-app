@@ -2542,3 +2542,24 @@ describe('option order in a table (YAZ-3940)', () => {
   })
 })
 
+
+describe('the Filter panel\'s live date operators (YAZ-4919)', () => {
+  it('is today · is this week · is this month sit in a Date column\'s operator list with no value box; a stored live rule reads back, and a pick writes the live expression', () => {
+    const { el, def, onChange } = mount(`views:\n  - type: table\n    name: T\n    order:\n      - file.name\n    filters:\n      and:\n        - 'note.date.isThisWeek()'\n`)
+    const pop = openMenu(el, 'Filter')
+    const op = byLabel<HTMLSelectElement>(pop, 'Operator')
+    expect(op.value).toBe('dateInThisWeek')
+    expect([...op.options].map((o) => o.value)).toEqual(['dateIs', 'dateBefore', 'dateAfter', 'dateIsToday', 'dateInThisWeek', 'dateInThisMonth', 'isEmpty', 'isNotEmpty'])
+    expect([...op.options].map((o) => o.textContent)).toContain('is this week')
+    expect(pop.querySelector('[aria-label="Value"]')).toBeNull()
+    setValue(op, 'dateIsToday')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].filters).toEqual({ and: ['note.date.isToday()'] })
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'dateInThisMonth')
+    expect(def().views[0].filters).toEqual({ and: ['note.date.isThisMonth()'] })
+    // Back to a fixed day: the date box comes back.
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'dateBefore')
+    expect(byLabel<HTMLInputElement>(pop, 'Value').type).toBe('date')
+    expect(byText(el, '.view-toolbar__badge', '1')).toBeDefined()
+  })
+})

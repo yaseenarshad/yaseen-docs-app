@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
 import { basenameKey, makeResolver, targetBasename, targetKey } from '@shared/linkResolver'
-import { type ViewResult, defaultLabel, folderAt, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
+import { type RunOptions, type ViewResult, defaultLabel, folderAt, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
 import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
 import { groupKeyOf } from './view/GroupHeader'
 import { DateValue, ErrorValue, FileValue } from './expr'
@@ -1264,5 +1264,46 @@ describe('one key, capitals ignored (YAZ-4769)', () => {
     const view: ViewDef = { type: 'table', name: 'T', sort: [{ property: 'note.SCORE', direction: 'DESC' }] }
     const r = runView({ views: [] }, view, recs([{ score: 1 }, { score: 3 }, { score: 2 }]), { declared: ['score'] })
     expect(names(r)).toEqual(['n1', 'n2', 'n0'])
+  })
+})
+
+describe('runView: live relative dates (YAZ-4919)', () => {
+  // TEST_RECORDS: Agentic Agency is dated 2026-08-01 (a Saturday), Creator Economy 2026-07-15 (a Wednesday); the rest have no date.
+  const titles = (filters: string, opts: RunOptions) => {
+    const def = parseViews(`views:\n  - type: table\n    name: T\n    filters: '${filters}'\n`).def
+    const r = runView(def, def.views[0], TEST_RECORDS, opts)
+    expect(r.errors).toEqual([])
+    return r.rows.map((row) => row.record.title)
+  }
+  const at = (y: number, m: number, d: number, h = 10) => new Date(y, m - 1, d, h).getTime()
+
+  it('isToday / isThisWeek / isThisMonth read the run\'s clock, injected; an undated note is out, with no error', () => {
+    expect(titles('note.date.isToday()', { now: at(2026, 8, 1, 23) })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isToday()', { now: at(2026, 8, 2) })).toEqual([])
+    expect(titles('note.date.isThisMonth()', { now: at(2026, 7, 20) })).toEqual(['Creator Economy'])
+    expect(titles('note.date.isThisMonth()', { now: at(2026, 8, 31) })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isThisMonth()', { now: at(2026, 9, 1) })).toEqual([])
+  })
+
+  it('isThisWeek starts the week on Sunday, or on Monday by the option (Settings › Folder pages › Week starts on)', () => {
+    // Thursday 2026-07-30: Sunday's week runs 07-26 … 08-01, Monday's 07-27 … 08-02; both hold Saturday 08-01.
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 7, 30) })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 7, 30), weekStartsOn: 'monday' })).toEqual(['Agentic Agency'])
+    // Sunday 2026-08-02: Sunday's week is 08-02 … 08-08 (08-01 out); Monday's is 07-27 … 08-02 (08-01 in).
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 8, 2) })).toEqual([])
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 8, 2), weekStartsOn: 'monday' })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 7, 13) })).toEqual(['Creator Economy'])
+  })
+
+  it('a fixed-date rule reads as before, whatever the clock; the clock is read ONCE per run, not per row', () => {
+    expect(titles('note.date == date("2026-08-01")', { now: at(2030, 1, 1) })).toEqual(['Agentic Agency'])
+    expect(titles('!note.date.isEmpty() && note.date < date("2026-08-01")', { now: at(2030, 1, 1) })).toEqual(['Creator Economy'])
+    const spy = vi.spyOn(Date, 'now')
+    try {
+      titles('note.date.isToday() || note.date.isThisWeek()', {})
+      expect(spy).toHaveBeenCalledTimes(1)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

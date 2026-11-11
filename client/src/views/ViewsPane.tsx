@@ -575,8 +575,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // An Image column sorts by the picture's file name (YAZ-4802).
   const byFileName = useMemo(() => (key: string) => settings.columns[key.startsWith('note.') ? key.slice(5) : key]?.kind === 'image', [settings])
   const result = useMemo(
-    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName }),
-    [def, view, shown, resolve, page, optionOrder, optionParent, mentions, byFileName],
+    // The week's start for "is this week" (YAZ-4919); the clock is the run's own.
+    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: defaults.weekStartsOn }),
+    [def, view, shown, resolve, page, optionOrder, optionParent, mentions, byFileName, defaults.weekStartsOn],
   )
 
   const configuredGroups = boardOptionGroups(result.groups, view, key => columnTyping(key, shown, properties, folder.settings), optionParent)
@@ -967,7 +968,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     const all = showsFolderRows(v) && folderRows.length > 0 ? [...noteRecords, ...folderRows] : noteRecords
     const input = hidesSubfolderNotes(v) ? all.filter((r) => directlyIn(r, pageFolder)) : all
     const declared = pageColumnKeys(settings)
-    const out = runView(def, v, input, { resolve, declared, page, optionOrder, mentions, byFileName })
+    const out = runView(def, v, input, { resolve, declared, page, optionOrder, mentions, byFileName, weekStartsOn: defaults.weekStartsOn })
     const grouped = boardOptionGroups(out.groups, v, (key) => columnTyping(key, input, properties, settings))
     const list = shownRows(out.rows, grouped)
     const ctx = { resolve, decls: settings.columns, pageFolder, folderTitle: folderPages.title }

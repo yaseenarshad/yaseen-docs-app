@@ -22,6 +22,24 @@ export function startOfDay(ms: number): number {
   return new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime()
 }
 
+export type DateSpan = 'day' | 'week' | 'month'
+
+/**
+ * The span of `now`'s day, week or month as `[start, end)` in ms (YAZ-4919): a filter's "is today" / "is this week" /
+ * "is this month". The week starts on Sunday or Monday (Settings › Folder pages › Week starts on).
+ */
+export function spanOf(span: DateSpan, now: number, weekStartsOn: 'sunday' | 'monday' = 'sunday'): { start: number; end: number } {
+  const t = new Date(startOfDay(now))
+  const y = t.getFullYear()
+  const m = t.getMonth()
+  if (span === 'day') return { start: t.getTime(), end: new Date(y, m, t.getDate() + 1).getTime() }
+  if (span === 'week') {
+    const start = t.getDate() - ((t.getDay() - (weekStartsOn === 'monday' ? 1 : 0) + 7) % 7)
+    return { start: new Date(y, m, start).getTime(), end: new Date(y, m, start + 7).getTime() }
+  }
+  return { start: new Date(y, m, 1).getTime(), end: new Date(y, m + 1, 1).getTime() }
+}
+
 const pad = (n: number, w = 2) => String(n).padStart(w, '0')
 
 /** Moment-style tokens `YYYY YY MM M DD D HH H mm m ss s SSS`; `[literal]` passes through. */
