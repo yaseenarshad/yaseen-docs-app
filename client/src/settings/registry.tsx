@@ -41,8 +41,8 @@ import { IMAGES_SECTION } from './imagesSection'
 import { Segmented, Stepper } from './controls'
 import { ProfileControl } from './ProfileControl'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
-import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
-import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
+import { IdLettersControl, KeepIdsSheet, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
+import { idsAskMessage, idsLettersAsk, keepIdsAskMessage } from './idsAskMessage'
 import { AllowedPictureFoldersControl } from './AllowedPictureFoldersControl'
 import { NewBoardPicturesControl } from './NewBoardPicturesControl'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
@@ -542,7 +542,18 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
           onCancel={() => setAsking(null)}
         />
       )}
-      {asking === 'on' && (
+      {asking === 'on' && ids.ask?.groups?.[0] !== undefined && (
+        <KeepIdsSheet
+          text={keepIdsAskMessage(ids.ask, vault)}
+          main={ids.ask.groups[0].letters}
+          onConfirm={(letters) => {
+            setAsking(null)
+            ids.set(true, letters)
+          }}
+          onCancel={() => setAsking(null)}
+        />
+      )}
+      {asking === 'on' && ids.ask?.groups?.[0] === undefined && (
         <GiveIdsSheet
           ask={ids.ask ?? NOTHING_TO_WRITE}
           vault={vault}

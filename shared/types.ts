@@ -263,7 +263,20 @@ export interface IndexResponse {
    * yes would write (🔒 V2). `notes` would be given an id, `foreign` of them over another tool's
    * `id`; `folders` would be given a `.folder.md`, or an `id` in the one they have.
    */
-  ask?: { notes: number; folders: number; foreign: number; /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */ letters?: string }
+  ask?: {
+    notes: number
+    folders: number
+    foreign: number
+    /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */
+    letters?: string
+    /**
+     * The number IDs the notes and folders already hold, by their letters, the biggest group first (YAZ-4922 🔒 D2).
+     * Only where some group is not an ID of the vault yet: the box then offers "Keep <letters>" of the first group.
+     */
+    groups?: IdGroup[]
+    /** With `groups`: how many of the `notes` hold no ID at all, the only ones a yes then gives a number (YAZ-4922 D2). */
+    bare?: number
+  }
   /** Only when `ids`: a run of "Give old IDs numbers" stopped with files left, and its plan is in the vault (YAZ-2677 🔒 D6, S90): a second run finishes it. */
   unfinished?: true
   /**
@@ -272,6 +285,12 @@ export interface IndexResponse {
    * `was`: the IDs it held before a two-Mac merge (YAZ-4071 7I, `formerIds`), with the current letters; a link to one still opens it.
    */
   boards?: { path: string; id: string; was?: string[] }[]
+}
+
+/** One group of number IDs with the same letters, and how many notes and folders hold one (YAZ-4922 D2). */
+export interface IdGroup {
+  letters: string
+  count: number
 }
 
 // ---------- coldDiff(root) (Links E1c, GRO-2242) ----------

@@ -74,6 +74,7 @@ import { DEFAULT_NEW_NOTE_TITLE, plainEntryName, renderTitleTemplate } from './s
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
 import { dailyNoteName } from '@shared/dailyNote'
+import { hasLetters } from '@shared/noteId'
 import { dailyNoteVault, todaysNote } from './sidebar/dailyNote'
 import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
@@ -495,10 +496,10 @@ export function App() {
     return home === null ? null : (now.vaults[now.roots.indexOf(home)]?.name ?? storage.vaultName(home))
   }, [])
   const vaultNames = roots.map((vault, i) => vaults[i]?.name ?? storage.vaultName(vault)).join('\n')
-  /** The window's vaults that use the ID letters `letters`, now or before, by name (YAZ-3905 S23): an unresolved `[[INL-4]]` says whose ID it is. */
+  /** The window's vaults that use the ID letters `letters`, now, before or kept (YAZ-3905 S23, YAZ-4922 D2), by name: an unresolved `[[INL-4]]` says whose ID it is. */
   const vaultsOfLetters = useCallback((letters: string) => {
     const now = live.current
-    return now.roots.flatMap((vault, i) => (now.vaults[i]?.wikilinks.letters.includes(letters) === true ? [now.vaults[i]?.name ?? storage.vaultName(vault)] : []))
+    return now.roots.flatMap((vault, i) => (hasLetters(now.vaults[i]?.wikilinks.letters ?? [], letters) ? [now.vaults[i]?.name ?? storage.vaultName(vault)] : []))
   }, [])
   const idLetters = vaults.map((scope) => scope?.wikilinks.letters.join(' ') ?? '').join('\n')
   const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, names: vaultNames, vaultOf, vaultsOfLetters, letters: idLetters }), [candidatesOf, askToAdd, roots, vaultNames, vaultOf, vaultsOfLetters, idLetters])

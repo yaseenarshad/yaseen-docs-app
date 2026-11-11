@@ -9,7 +9,7 @@ import { BridgeFailure, createDurable } from '../fs/fsUtils'
 import { myNote, settleClash, type ClashFix, type Pair } from './clash'
 import { openDiary, saveDiarySoon } from './diary'
 import { countsOf, firstMac, highestNumber, makersOf, mintIds, vaultIds, type Counts } from './mint'
-import { walk } from './scan'
+import { idsOwnedBy, ownOnly, walk } from './scan'
 
 /**
  * One sweep write at a time. One pass runs at a time for a vault, and an index event joins a pass
@@ -187,13 +187,19 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   const { answer, letters } = await vaultIds(root)
   if (answer !== true) return
   const now = Date.now()
-  const dirs = [...new Set(asked)]
+  /**
+   * ONE VAULT PER NOTE (YAZ-4922 🔒 D1): a note under a folder that answers for itself — a vault inside this one —
+   * is that vault's. This pass gives it nothing, changes nothing of it and settles nothing with it, nor with a
+   * folder there; the vault still lists it.
+   */
+  const mine = idsOwnedBy(root)
+  const dirs = await ownOnly([...new Set(asked)], (dir) => mine(path.join(dir, FOLDER_SETTINGS_FILE)))
   /** The id the index held for `path` before the event that swept it. */
   const knew: Knew = (path) => (knews.find((k) => k.paths.has(path)) ?? knews[0]).knew(path)
   /** `id` as an ID of this vault (R5): the letters it had before read as the current ones, any other letters as none. */
   const own = (id: string | undefined): string | undefined => vaultNoteId(id, letters)
   // This sweep waited for the ones before it: what the index holds for a path NOW is what is swept.
-  const among = [...new Map(events.map((r) => [r.path, records.get(r.path) ?? r])).values()]
+  const among = await ownOnly([...new Map(events.map((r) => [r.path, records.get(r.path) ?? r])).values()], (r) => mine(r.path))
   /** A note the index could not read (its YAML is invalid, or it is over the size limit) takes no id. */
   const takes = (r: IndexRecord): boolean => r.frontmatterError === undefined && r.text !== undefined
   /**
@@ -235,6 +241,8 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
       const group = id === undefined ? undefined : groups.get(id)
       if (group !== undefined && !group.some((o) => o.path === r.path)) group.push(r)
     }
+    // A note of a vault inside this one that holds the same ID is no copy of this vault's note (D1).
+    for (const [id, holders] of groups) if (holders.length > 1) groups.set(id, await ownOnly(holders, (r) => mine(r.path)))
   }
   let counts: Counts | undefined
   const countFiles = async (): Promise<Counts> => (counts ??= await countsOf(root))

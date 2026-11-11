@@ -17,7 +17,7 @@ import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
-import { idsAskMessage, idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
+import { idsAskMessage, idsLettersAsk, KEEP_OTHER_ASK, keepIdsAskMessage, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
 import { HOTKEYS_SECTION } from './hotkeysSection'
 import { groupsOf, SETTINGS_SECTIONS, type SettingsCtx } from './registry'
 import { SettingsDialog } from './SettingsDialog'
@@ -1855,6 +1855,74 @@ describe('SettingsDialog: On opens the box with the typed ID letters (YAZ-2677 D
     expect(setIds).not.toHaveBeenCalled()
     act(() => sheetBtn(el, 'Turn off').click())
     expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
+  })
+})
+
+/**
+ * A folder whose notes already hold number IDs (YAZ-4922 🔒 D2, gap 1): the box counts them by their letters and
+ * offers "Keep <letters>" of the biggest group first. Other letters can be typed instead. Nothing is written until
+ * one of the two is chosen.
+ */
+describe('SettingsDialog: the box offers to keep the IDs the notes already hold (YAZ-4922 D2)', () => {
+  const ASK = { notes: 29, folders: 0, foreign: 26, groups: [{ letters: 'YAS', count: 120 }, { letters: 'TECH', count: 26 }] }
+  const open = async (ask: IndexResponse['ask'] = ASK) => {
+    const mounted = mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: false, held: false, ask })
+    await act(async () => rowButtons(mounted.el, 'ids')[0].click())
+    return mounted
+  }
+  const buttons = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')]
+  const sheetBtn = (el: HTMLElement, label: string) => buttons(el).find((b) => b.textContent === label) as HTMLButtonElement
+  const field = (el: HTMLElement) => el.querySelector('.confirm__input') as HTMLInputElement
+
+  it('the box says how many notes hold IDs with which letters, and "Keep YAS" is its first answer, with the focus', async () => {
+    const { el, setIds } = await open()
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(keepIdsAskMessage(ASK))
+    expect(keepIdsAskMessage(ASK)).toContain('120 notes and folders have an ID with YAS, and 26 with TECH')
+    expect(el.querySelector('.confirm__letters')?.textContent).toBe(KEEP_OTHER_ASK)
+    expect(buttons(el).map((b) => b.textContent)).toEqual(['Use other letters', 'Cancel', 'Keep YAS'])
+    expect(document.activeElement).toBe(sheetBtn(el, 'Keep YAS'))
+    expect(sheetBtn(el, 'Use other letters').disabled).toBe(true)
+    expect(setIds).not.toHaveBeenCalled()
+  })
+
+  it('"Keep YAS" and Enter save yes with YAS', async () => {
+    const { el, setIds } = await open()
+    act(() => sheetBtn(el, 'Keep YAS').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'YAS')
+    expect(el.querySelector('.confirm')).toBeNull()
+    unmount()
+    const again = await open()
+    pressEnter(field(again.el))
+    expect(again.setIds).toHaveBeenCalledExactlyOnceWith(true, 'YAS')
+  })
+
+  it('typed other letters: the left button says them and saves them, and so does Enter in the field', async () => {
+    const { el, setIds } = await open()
+    type(field(el), 'abc')
+    expect(sheetBtn(el, 'Use ABC').disabled).toBe(false)
+    act(() => sheetBtn(el, 'Use ABC').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'ABC')
+    unmount()
+    const again = await open()
+    type(field(again.el), 'abc')
+    pressEnter(field(again.el))
+    expect(again.setIds).toHaveBeenCalledExactlyOnceWith(true, 'ABC')
+  })
+
+  it('bad letters in the field: the left button and Enter in the field do nothing', async () => {
+    const { el, setIds } = await open()
+    type(field(el), 'A1')
+    expect(sheetBtn(el, 'Use other letters').disabled).toBe(true)
+    pressEnter(field(el))
+    expect(setIds).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm')).not.toBeNull()
+  })
+
+  it('Cancel writes nothing', async () => {
+    const { el, setIds } = await open()
+    act(() => sheetBtn(el, 'Cancel').click())
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(setIds).not.toHaveBeenCalled()
   })
 })
 

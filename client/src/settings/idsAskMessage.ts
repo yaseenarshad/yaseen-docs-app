@@ -20,6 +20,25 @@ export function idsAskMessage({ notes, folders, foreign }: Ask, vault?: string):
   return `Give the notes in ${vault ?? 'this vault'} IDs? An ID is a short name for a note that never changes, like BUS-12. Links use it, so they keep working when you rename or move a note. If you turn this on, the app will ${will}.${replaced} To undo, turn it off. The IDs stay in the files and the app stops using them.`
 }
 
+/**
+ * The box of "Give IDs" in a folder whose notes already hold number IDs (YAZ-4922 🔒 D2): how many hold which letters,
+ * what "Keep" keeps, what a yes writes, and what other letters do. `groups` come biggest first (`ask.groups`).
+ */
+export function keepIdsAskMessage({ folders, groups = [], bare = 0 }: Ask, vault?: string): string {
+  const [main, ...others] = groups
+  if (main === undefined) return idsAskMessage({ notes: bare, folders, foreign: 0 }, vault)
+  const held = `${main.count} ${main.count === 1 ? 'note or folder has' : 'notes and folders have'} an ID with ${main.letters}`
+  const rest = others.map((group) => `${group.count} with ${group.letters}`)
+  const listed = rest.length === 0 ? held : `${[held, ...rest.slice(0, -1)].join(', ')}, and ${rest[rest.length - 1]}`
+  const kept = others.length === 0 ? '' : `, and so do the ${others.map((group) => group.letters).join(' and ')} IDs`
+  const writes = [...(bare > 0 ? [`write an ID into the ${count(bare, 'note')} with none`] : []), ...(folders > 0 ? [`add a hidden settings file to ${count(folders, 'folder')}`] : []), 'name the file of each note you make or retitle']
+  const will = writes.length < 3 ? writes.join(' and ') : `${writes.slice(0, -1).join(', ')}, and ${writes[writes.length - 1]}`
+  return `Give the notes in ${vault ?? 'this vault'} IDs? ${listed}. Keep ${main.letters}: these IDs stay as they are${kept}. The app will ${will}. Or type other letters: each ${main.letters} ID takes them, its number stays, and each link and file name follows. To undo, turn it off.`
+}
+
+/** The line above the text field of the box that keeps the IDs (YAZ-4922 D2). */
+export const KEEP_OTHER_ASK = 'Or type other letters: 2 to 5 letters, like BUS.'
+
 /** The line above the text field: a vault with no ID letters chooses them (S5), and one that has them types those (S9). */
 export const idsLettersAsk = (letters: string | undefined): string => (letters === undefined ? 'Type the ID letters for this vault: 2 to 5 letters, like BUS.' : `Type this vault's ID letters, ${letters}, to confirm.`)
 

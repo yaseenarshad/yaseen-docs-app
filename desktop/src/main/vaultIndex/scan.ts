@@ -4,10 +4,10 @@ import { COMMENTS_KEY } from '@shared/comments'
 import { isDrawing } from '@shared/fileKind'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from '@shared/noteId'
+import { IDS_FILE, NOTE_ID_KEY, canonicalNoteId, idsAnswer, isNoteId } from '@shared/noteId'
 import { titleOf } from '@shared/noteName'
 import { REVIEWS_KEY, reviewEntries, textFingerprint } from '@shared/reviews'
-import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, type IndexRecord } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
 
 /**
@@ -28,6 +28,49 @@ export async function walk(dir: string, out: string[], dirs?: string[], boards?:
       else if (boards !== undefined && e.isFile() && isDrawing(e.name)) boards.push(full)
     }),
   )
+}
+
+/**
+ * Does the folder `dir` answer for the IDs of its own notes (YAZ-4922 🔒 D1)? Only when its `.yaseendocs/ids.json`
+ * holds an answer, yes or no (`idsAnswer`): then it is the ID vault of each note under it (`idVault`). A file that
+ * is missing, unreadable or not JSON has not answered.
+ */
+export const answersIds = (dir: string): Promise<boolean> =>
+  readFile(path.join(dir, VAULT_CONFIG_DIR, IDS_FILE), 'utf8').then(
+    (raw) => {
+      try {
+        return idsAnswer(JSON.parse(raw)) !== undefined
+      } catch {
+        return false
+      }
+    },
+    () => false,
+  )
+
+/**
+ * THE BORDER OF A VAULT'S ID WORK (YAZ-4922 🔒 D1), for one pass: is the file at `p` (a note, a board or a folder's
+ * settings file) one whose ID is the vault at `root`'s? It is not when a folder between them answers for itself
+ * (`answersIds`): that folder is a vault inside the vault, and the note's ID is its. The vault still LISTS that note
+ * (its sidebar, its search, its links); only the ID work stops at the border. Each folder is read once for the pass:
+ * a pass that starts later reads again, so a vault made inside this one meanwhile counts at once. `answers` keeps the
+ * reads longer, for what the index only SHOWS (the counts of the box): the live index clears it when folders change.
+ */
+export function idsOwnedBy(root: string, answers = new Map<string, Promise<boolean>>()): (p: string) => Promise<boolean> {
+  const answered = (dir: string): Promise<boolean> => {
+    let held = answers.get(dir)
+    if (held === undefined) answers.set(dir, (held = answersIds(dir)))
+    return held
+  }
+  return async (p) => {
+    for (let dir = path.dirname(p); dir.startsWith(root + path.sep); dir = path.dirname(dir)) if (await answered(dir)) return false
+    return true
+  }
+}
+
+/** The items of `items` that `own` says yes to, in order. */
+export async function ownOnly<T>(items: readonly T[], own: (item: T) => Promise<boolean>): Promise<T[]> {
+  const yes = await Promise.all(items.map(own))
+  return items.filter((_, i) => yes[i])
 }
 
 /** De-duplicates keeping first appearance. */
