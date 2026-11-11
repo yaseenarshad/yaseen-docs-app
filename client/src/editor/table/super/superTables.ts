@@ -14,7 +14,8 @@
  *   asks nothing.
  * - THE HEADER RENAME (item 15): an `appendTransaction` that acts only when a key changes a Super table's header row,
  *   and renames the column in that table's views in the same step.
- * - FIND (item 25): when ⌘F's current match is in a Super table that shows a view, the anchor shows that row.
+ * - FIND (item 25): when ⌘F's current match is in a Super table that shows a view, the anchor shows that row; the other
+ *   views forget their old match.
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -40,7 +41,8 @@ export interface SuperPlace {
 /** A table anchor's doors (`tableZoomPill.tsx`): draw again (debounced while typing), and show a found row. */
 export interface SuperAnchor extends HTMLElement {
   renderSuper?: (typing: boolean) => void
-  findRow?: (row: number) => void
+  /** `null`: the find has no match in this table any more. */
+  findRow?: (row: number | null) => void
 }
 
 interface SuperState {
@@ -293,11 +295,14 @@ export const createSuperTables = (place: SuperPlace | null) =>
             const before = superKey.getState(prev)!
             const after = superKey.getState(view.state)!
             if (before.generation !== after.generation) for (const pos of after.dirty) anchorAt(view, pos)?.renderSuper?.(after.typing)
-            // Find (item 25): a new current match in a table that shows a view.
+            // Find (item 25): a new current match in a table that shows a view. The other views lose their old match, so
+            // no mark or "hidden row" note stays after the find moved on or closed (YAZ-4866).
             const match = findThreadAnchor(view.state)
-            if (match === null || match === findThreadAnchor(prev)) return
-            const around = tableAround(view.state.doc, match)
-            if (around !== null && activeViewAt(view.state, around.pos) !== null) anchorAt(view, around.pos)?.findRow?.(around.row)
+            if (match === findThreadAnchor(prev)) return
+            const around = match === null ? null : tableAround(view.state.doc, match)
+            const at = around !== null && activeViewAt(view.state, around.pos) !== null ? around.pos : null
+            for (const deco of after.hidden.find()) if (deco.from !== at) anchorAt(view, deco.from)?.findRow?.(null)
+            if (at !== null) anchorAt(view, at)?.findRow?.(around!.row)
           },
         }),
       }),

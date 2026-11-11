@@ -13,7 +13,9 @@
  * - EDIT (S5 item 5): a double-click on a cell edits its first line in a small box; Enter or leaving the box writes it,
  *   one undo step. A merged cell, a cell note, a list or styled text (bold, a link…) is edited in "Table" (a tip says so).
  * - COPY (item 21): ⌘C on rows of a view copies them in the view's order, a Markdown table as text and a `<table>` as HTML.
- * - FIND (item 25): ⌘F's current match in this table's row shows that row here (`found`), marked, its groups open.
+ * - FIND (item 25): ⌘F's current match in this table's row shows that row here (`found`), marked, its groups open. A
+ *   match in a row the view filters out gets a note and "Show in Table" (YAZ-4866).
+ * - A MISSING COLUMN: a group, sort or filter on a column the table does not have gets a note (YAZ-4866).
  * - ABOVE 500 LINES only the lines on screen mount, padded by spacer rows (the windowing idea of the folder table).
  */
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent, type ReactNode } from 'react'
@@ -21,6 +23,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { verticalScrollParent } from '../../../lib/pinnedHeader'
+import { FIND_ACTIVE_CLASS } from '../../find/findInPage'
 import { render } from '../../../views/expr'
 import { GroupHeader } from '../../../views/view/GroupHeader'
 import { groupSpans, holdersOf } from '../../../views/view/groupGuides'
@@ -136,6 +139,8 @@ export function SuperTable({ editor, getPos, table, active, found }: SuperTableP
   const collapsedSig = collapsedList.join('\u0000')
   const collapsed = useMemo<ReadonlySet<string>>(() => (collapsedList.length === 0 ? NO_KEYS : new Set(collapsedList)), [collapsedSig])
   const findRow = found !== null && computed !== null && computed.result.rows.some((r) => rowOf(r) === found.row) ? found.row : null
+  // The match is in a body row this view leaves out (YAZ-4866).
+  const findHidden = found !== null && found.row > 0 && computed !== null && findRow === null
   const opened = useMemo(() => (findRow === null || computed === null ? NO_KEYS : groupsHolding(computed.result, findRow)), [findRow, computed])
   const lines = useMemo(() => (computed === null ? [] : linesOf(computed.result, collapsed, opened)), [computed, collapsed, opened])
   const windowed = lines.length > WINDOW_AT
@@ -181,6 +186,11 @@ export function SuperTable({ editor, getPos, table, active, found }: SuperTableP
     setPanel(null)
     setEditing(null)
     if (at !== undefined) setActiveTab(editor, at, name)
+  }
+  /** "Show in Table": the table shows, and the find's match comes into view. */
+  const showMatch = () => {
+    show(null)
+    editor.dom.querySelector(`.${FIND_ACTIVE_CLASS}`)?.scrollIntoView?.({ block: 'center' })
   }
   const addView = () => {
     const name = freshName(views)
@@ -297,6 +307,8 @@ export function SuperTable({ editor, getPos, table, active, found }: SuperTableP
   const grouped = result.groups !== null
   const set = viewSetOf(view, data.keys)
   const summaryKeys = (def.summary ?? []).map((s) => `note.${s.column}`)
+  // A column the table does not have (renamed outside the app): say so, not only "No value" (YAZ-4866).
+  const missing = [...new Set([...(def.group ?? []), ...(def.sort ?? []), ...(def.filter ?? [])].map((rule) => rule.column))].filter((column) => !data.keys.includes(column))
 
   // The group lines (S3): each line's level and the header that holds it.
   const depths = lines.map((l) => (l.kind === 'group' ? l.depth : null))
@@ -398,6 +410,19 @@ export function SuperTable({ editor, getPos, table, active, found }: SuperTableP
         {tip !== null && (
           <p className="table-super-view__tip" role="status">
             {tip}
+          </p>
+        )}
+        {missing.map((column) => (
+          <p key={column} className="table-super-view__tip table-super-view__missing" role="note">
+            Column "{column}" is not in this table.
+          </p>
+        ))}
+        {findHidden && (
+          <p className="table-super-view__tip table-super-view__find" role="status">
+            The match is in a row this view hides.{' '}
+            <button type="button" className="table-super-view__link" onClick={showMatch}>
+              Show in Table
+            </button>
           </p>
         )}
         <table

@@ -112,7 +112,8 @@ function zoomAnchor(view: EditorView, getPos: () => number | undefined): HTMLEle
     }, SUPER_TYPING_MS)
   }
   anchor.findRow = (row) => {
-    found = { row, n: (found?.n ?? 0) + 1 }
+    if (row === null && found === null) return
+    found = row === null ? null : { row, n: (found?.n ?? 0) + 1 }
     anchor.renderZoom?.()
   }
   anchor.addEventListener('table-zoom-unmount', () => {

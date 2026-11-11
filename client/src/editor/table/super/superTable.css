@@ -155,6 +155,20 @@
   font-size: 12px;
 }
 
+/* "Show in Table" (YAZ-4866): a link-style button. */
+.table-super-view__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.table-super-view__link:hover {
+  text-decoration: underline;
+}
+
 .super-view {
   width: 100%;
   border-collapse: separate;
