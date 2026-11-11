@@ -533,3 +533,31 @@ describe('the editor menu over the table (the YAZ-4163 demo)', () => {
     expect(zOf(/\.ctx-menu__strip--captioned > \.ctx-menu__strip-button:hover\s*\{([^}]*)\}/)).toBeGreaterThan(0)
   })
 })
+
+describe('the current value in a picker (YAZ-4812)', () => {
+  const field = (stay: boolean): MenuNumberField => ({ kind: 'number', label: 'Line darkness', unit: '%', value: 50, presets: [10, 50], fallback: 50, min: 5, max: 100, error: 'e', stay, run: vi.fn() })
+  const current = (popup: HTMLElement) => {
+    popup.querySelector<HTMLButtonElement>('.block-menu-picker__value')!.click()
+    return [...popup.querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')].find((b) => b.getAttribute('aria-pressed') === 'true' && b.textContent?.startsWith('50%'))!
+  }
+  it('a `stay` picker keeps the menu open on a click of its current value (drawn again), and runs nothing', () => {
+    const close = vi.fn()
+    const refresh = vi.fn((run: () => void) => run())
+    const f = field(true)
+    const popup = renderMenu(document.body, [f], close, refresh)
+    current(popup).click()
+    expect(close).not.toHaveBeenCalled()
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(f.run).not.toHaveBeenCalled()
+    popup.remove()
+  })
+  it('a picker without `stay` still closes the menu on that click', () => {
+    const close = vi.fn()
+    const f = field(false)
+    const popup = renderMenu(document.body, [f], close, vi.fn())
+    current(popup).click()
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(f.run).not.toHaveBeenCalled()
+    popup.remove()
+  })
+})

@@ -9,6 +9,8 @@ const ICONS = {
   rowHeight: <path d="M2 3h12M2 13h12M8 5.5v5M6.5 7 8 5.5 9.5 7M6.5 9 8 10.5 9.5 9" />,
   textInCells: <path d="M2 4h12M2 8h9.5a2 2 0 0 1 0 4H8.5M10 10.5 8.5 12l1.5 1.5M2 12h3.5" />,
   rowNumbers: <path d="M6.2 2.5 5 13.5M11.2 2.5 10 13.5M3 6h10.5M2.5 10H13" />,
+  folderIcons: <path d="M2 5a1 1 0 0 1 1-1h3l1.2 1.4H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />,
+  folderCounts: <><path d="M2 5a1 1 0 0 1 1-1h3l1.2 1.4H9M2 5v7a1 1 0 0 0 1 1h5" /><path d="M11.2 8.5h3M11.2 11h3M12 7.5l-.6 4.5M13.6 7.5 13 12" /></>,
   columnTypeIcons: <><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" /><path d="M5 6.5h1.5M8.5 6.5H11M5 9.5h1.5M8.5 9.5H11" /></>,
   headerRow: <><rect x="2.5" y="3" width="11" height="10" rx="1.5" /><path d="M2.5 6.5h11M3.5 4.75h9" /></>,
   subfolders: <path d="M2.5 2.5v8.5h3M2.5 5.5h3M7 8.6a.8.8 0 0 1 .8-.8h2l1 1h2.9a.8.8 0 0 1 .8.8v3.1a.8.8 0 0 1-.8.8H7.8a.8.8 0 0 1-.8-.8zM7 3.6a.8.8 0 0 1 .8-.8h2l1 1h2.9a.8.8 0 0 1 .8.8" />,

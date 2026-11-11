@@ -176,19 +176,92 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('the # gutter is not a drop target: dragover is not accepted, a drop there writes nothing, and nothing lands before it', () => {
+  it('a drop over the # gutter lands the column FIRST (YAZ-4819: the whole table takes the drop); nothing lands before the gutter', () => {
     const { el, onChange } = mount()
     fire(ths(el)[1], 'dragstart')
     const over = fire(gutter(el), 'dragover', RIGHT)
-    expect(over.defaultPrevented).toBe(false)
+    expect(over.defaultPrevented).toBe(true)
     fire(gutter(el), 'drop', RIGHT)
-    expect(onChange).not.toHaveBeenCalled()
-    expect(gutter(el).className).not.toContain('view-table__th--')
-    // the leftmost slot is BEFORE the first property header — still after the gutter
-    fire(ths(el)[0], 'drop', LEFT)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(headers(el)).toEqual(['Status', 'Name', 'Priority'])
+    expect(gutter(el).className).not.toContain('view-table__th--')
     expect(gutter(el).textContent).toBe('#')
+  })
+
+  /** The pointer's x at the right half of header `i`, as a client x for a drag event on any element. */
+  const xAt = (el: ParentNode, i: number): number => headerPoint(ths(el)[i], RIGHT)
+
+  it('a drop IN THE GAP lands (YAZ-4819): the parted columns leave no header under the pointer, so the header row takes the drop', () => {
+    const { el, onChange, def } = mount()
+    const row = q<HTMLElement>(el, '.view-table thead tr')
+    fire(ths(el)[0], 'dragstart')
+    fire(ths(el)[2], 'dragover', RIGHT)
+    // In the browser the pointer is now over the empty place, not over a header cell: the event's target is the row.
+    const over = fire(row, 'dragover', xAt(el, 2))
+    expect(over.defaultPrevented).toBe(true)
+    fire(row, 'drop', xAt(el, 2))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
+    expect(rules(el)).toBe('')
+  })
+
+  it('nothing glides after a drop: the passed columns are drawn at their new places already, and the dropped one shows there with no slide from its old place (YAZ-4877)', () => {
+    const animated: string[] = []
+    const animate = vi.fn(function (this: HTMLElement) {
+      animated.push(this.closest('th, td')?.getAttribute('data-col') ?? this.closest('td')?.getAttribute('data-cell')?.split(':')[1] ?? '?')
+      return {} as Animation
+    })
+    Element.prototype.animate = animate as unknown as Element['animate']
+    vi.stubGlobal('matchMedia', () => ({ matches: false })) // motion on: jsdom has no matchMedia, which reads as reduced
+    try {
+      const { el, def } = mount()
+      // jsdom has no layout: each header is drawn where its style width puts it, plus its slide.
+      for (const th of ths(el)) th.getBoundingClientRect = () => {
+        const m = /translateX\((-?\d+)px\)/.exec(rules(el).split(`th[data-col="${th.dataset.col}"]`)[1]?.split('}')[0] ?? '')
+        return { left: headerPoint(th, 0) - parseFloat(th.style.width) / 2 + (m ? Number(m[1]) : 0) } as DOMRect
+      }
+      fire(ths(el)[0], 'dragstart')
+      fire(ths(el)[2], 'dragover', RIGHT)
+      fire(ths(el)[2], 'drop', RIGHT)
+      expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
+      // Before YAZ-4877 Name (now column 2) glided in from its old place, 300px off, and the others snapped back first.
+      expect(animated).toEqual([])
+    } finally {
+      delete (Element.prototype as { animate?: unknown }).animate
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('a drop OVER THE ROWS lands at the column the pointer is over (YAZ-4819)', () => {
+    const { el, onChange, def } = mount()
+    const cell = q<HTMLElement>(el, '.view-table tbody td[data-cell="0:1"]')
+    fire(ths(el)[2], 'dragstart')
+    const over = fire(cell, 'dragover', headerPoint(ths(el)[0], LEFT))
+    expect(over.defaultPrevented).toBe(true)
+    fire(cell, 'drop', headerPoint(ths(el)[0], LEFT))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
+  })
+
+  it('a column dragged over a GROUPED table\'s rows lights no row drop target and moves no row (YAZ-4819)', () => {
+    const { el, onChange, def } = mount(`${BASE}    groupBy:\n      property: note.status\n`)
+    const groups = () => el.querySelectorAll('.view-table__group--drop, .view-table__row--drop').length
+    const grouping = def().views[0].groupBy
+    fire(ths(el)[0], 'dragstart')
+    for (const target of [q<HTMLElement>(el, '.view-table tbody td[data-cell="0:1"]'), q<HTMLElement>(el, '.view-table tbody tr.view-table__group')]) {
+      fire(target, 'dragover', xAt(el, 2))
+      expect(groups()).toBe(0)
+    }
+    fire(q<HTMLElement>(el, '.view-table tbody tr.view-table__group'), 'drop', xAt(el, 2))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
+    expect(def().views[0].groupBy).toEqual(grouping)
+  })
+
+  it('with no column drag, a dragover on the table is not taken (YAZ-4819): another drag keeps its own targets', () => {
+    const { el } = mount()
+    const over = fire(q<HTMLElement>(el, '.view-table thead tr'), 'dragover', xAt(el, 1))
+    expect(over.defaultPrevented).toBe(false)
   })
 
   it('the resize grip does not start a drag: a dragstart there is refused and nothing later drops', () => {

@@ -144,11 +144,11 @@ describe('YAZ-4802 demo: an Image column goes as narrow as its picture', () => {
     expect(def().views[0].columnSize).toEqual({ 'note.Logo': 56 })
   })
 
-  it('YAZ-4802 demo: a text column keeps its 60px minimum', () => {
+  it('YAZ-4802 demo: a text column stops at the 40px minimum (YAZ-4819; was 60px)', () => {
     const { el, def } = mount(table())
     mouse(el.querySelectorAll('.view-table__resize')[2], 'mousedown', 300)
     mouse(window, 'mousemove', 0)
     mouse(window, 'mouseup', 0)
-    expect(def().views[0].columnSize).toEqual({ 'note.status': 60 })
+    expect(def().views[0].columnSize).toEqual({ 'note.status': 40 })
   })
 })

@@ -149,6 +149,9 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('showEmptyColumns', 'Show empty columns', ON_OFF_OPTIONS, { hint: 'On a board: a column for each option that no note has yet.', keywords: ['empty', 'columns', 'board'] }),
         row('subfolders', 'Subfolders', SUBFOLDERS_OPTIONS, { keywords: ['subfolders', 'rows', 'hide'] }),
         row('foldersFirst', 'Folders first', ON_OFF_OPTIONS, { hint: 'Subfolder rows before the notes.', keywords: ['folders', 'first', 'sort'] }),
+        // YAZ-4848: what a subfolder's row shows beside its title, in every view.
+        row('folderIcons', 'Folder icon', ON_OFF_OPTIONS, { hint: "A subfolder's row shows the folder icon before its title. A view's settings can say otherwise.", keywords: ['folder', 'icon', 'subfolder', 'row'] }),
+        row('folderCounts', 'Notes inside count', ON_OFF_OPTIONS, { hint: 'A subfolder\'s row shows how many notes its page holds, as "2 inside". A view\'s settings can say otherwise.', keywords: ['folder', 'count', 'inside', 'notes', 'number', 'subfolder', 'row'] }),
         row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week'] }),
         row('cardTitles', 'Calendar card titles', CARD_TITLES_OPTIONS, { keywords: ['calendar', 'card', 'titles', 'wrap', 'clip'] }),
         row('hideWeekends', 'Calendar hides weekends', ON_OFF_OPTIONS, { hint: 'Monday to Friday only. A weekend note shows on the Friday before.', keywords: ['calendar', 'weekends', 'saturday', 'sunday', 'hide'] }),

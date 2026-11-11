@@ -23,7 +23,7 @@ vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.
 
 const fp = (over: Partial<FolderPagesSettings>): FolderPagesSettings => ({ ...DEFAULT_FOLDER_PAGES, ...over })
 /** Settings › Folder pages with the YAZ-4779 / YAZ-4798 rows at the look before them: a view with no key needs nothing filled. */
-const BEFORE: Partial<FolderPagesSettings> = { columnTypeIcons: false, stickyGroups: false, groupLines: 'off' }
+const BEFORE: Partial<FolderPagesSettings> = { columnTypeIcons: false, stickyGroups: false, groupLines: 'off', folderCounts: true }
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const rel = path.slice('/vault/'.length)
@@ -131,7 +131,8 @@ describe('withDefaults and chooseOwn (YAZ-4585)', () => {
     // Show empty groups is on by default (YAZ-3746 demo round 2): a Table with no key of its own shows its empty groups.
     // Column type icons (YAZ-4779), sticky group headers and group lines on hover (YAZ-4798) are on by default too: every
     // view with no key of its own takes them (plain lines are the look before, so `groupLineStyle` is not filled).
-    const NEW_ON = { columnTypeIcons: true, stickyGroups: true, groupLines: 'hover' } as const
+    // The notes inside count is off by default (YAZ-4848): a view with no key of its own reads it off.
+    const NEW_ON = { columnTypeIcons: true, stickyGroups: true, groupLines: 'hover', folderCounts: false } as const
     expect(withDefaults(view, DEFAULT_FOLDER_PAGES)).toEqual({ ...view, ...NEW_ON, showEmptyColumns: true })
     const board: ViewDef = { type: 'board', name: 'B' }
     expect(withDefaults(board, DEFAULT_FOLDER_PAGES)).toEqual({ ...board, ...NEW_ON })

@@ -946,6 +946,8 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
       expect(nav(m)?.firstElementChild).toBe(edge(m))
       expect(edge(m)?.getAttribute('aria-hidden')).toBe('true')
       expect([edge(m)?.tagName, edge(m)?.hasAttribute('tabindex')]).toEqual(['DIV', false])
+      // The section wears `data-toc-names` while the names show (YAZ-4849): a folder page's scroller reads it.
+      expect(m.section.hasAttribute('data-toc-names')).toBe(true)
       // The wheel on it is the wheel on the column beside the list: the note moves.
       act(() => {
         edge(m)!.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 30 }))
@@ -964,6 +966,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
       expect(card(m)).not.toBeNull()
       expect(edge(m)).toBeNull()
       expect(widthOf(m)).toBe('')
+      expect(m.section.hasAttribute('data-toc-names')).toBe(false)
     }
     expect(edge(mount('off', HEADINGS, 1600))).toBeNull()
     expect(edge(mount('pinned', [HEADINGS[0]], 1600))).toBeNull()
@@ -1397,8 +1400,10 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
     expect(tocCss).not.toContain('data-follow')
     // `namesShow` counts with TOC_WIDTH: the scroller pads by it, the find bar moves by it, the column stands left of the note's scrollbar.
     expect(tocCss).toMatch(new RegExp(`--toc-width:\\s*${TOC_WIDTH}px;`))
-    expect(rule(tocCss, '.editor:has(> .toc[data-names]) > .editor-host')).toMatch(/padding-right:\s*var\(--toc-width/)
-    expect(rule(tocCss, '.editor:has(> .toc[data-names]) > .find-bar-dock--note')).toMatch(/right:\s*var\(--toc-width/)
+    // Both read the section's `data-toc-names` (YAZ-4849): no `:has()` over the note's text (YAZ-3329).
+    expect(rule(tocCss, '.editor[data-toc-names] > .editor-host')).toMatch(/padding-right:\s*var\(--toc-width/)
+    expect(rule(tocCss, '.editor[data-toc-names] > .find-bar-dock--note')).toMatch(/right:\s*var\(--toc-width/)
+    expect(tocCss).not.toContain(':has(> .toc[data-names])')
     const column = rule(tocCss, '.toc[data-names]')
     expect(column).toMatch(/right:\s*var\(--toc-gutter/)
     expect(column).toMatch(/width:\s*var\(--toc-width\);/)
