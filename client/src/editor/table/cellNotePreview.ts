@@ -47,8 +47,8 @@ export function cellNotePreviewLines(note: ProseNode, max = PREVIEW_LINES): stri
   return lines
 }
 
-/** Is this cell's text cut (YAZ-4900)? A clipped cell has a line (`td > p`) wider inside than out. */
-const isCut = (cell: HTMLElement): boolean => Array.from(cell.children).some((line) => line.tagName === 'P' && line.scrollWidth > line.clientWidth + 1)
+/** Is this cell's text cut (YAZ-4900)? A clipped cell has a line (any `p`: plain, bullet, sub-bullet, to-do) wider inside than out. */
+const isCut = (cell: HTMLElement): boolean => Array.from(cell.querySelectorAll('p')).some((line) => line.scrollWidth > line.clientWidth + 1)
 
 /** The note's part of a card: its title, the hint, and its first lines. */
 function noteParts(view: EditorView, label: string, pos: number): HTMLElement[] {

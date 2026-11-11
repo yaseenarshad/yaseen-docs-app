@@ -324,13 +324,15 @@
   vertical-align: bottom;
 }
 
-/* Clip (YAZ-4900): one line per cell paragraph, cut with an ellipsis. Settings' default is on `.app` (`data-table-text`),
+/* Clip (YAZ-4900): one line per cell paragraph, cut with an ellipsis: plain lines, and bullet, sub-bullet and to-do
+   lines too (every `p` in the cell). Settings' default is on `.app` (`data-table-text`),
    the table's own `data-table-nowrap` (Clip) / `data-table-wrap` (Wrap) wins over it, and a column's own `data-cell-text`
    on its cells wins over both. A caret in a clipped cell keeps the one line and scrolls it sideways. A cut cell shows its
    full text on hover as a card (`cellNotePreview.ts`, YAZ-4901). */
-.app[data-table-text='clip'] .milkdown .ProseMirror .milkdown-table-block:not([data-table-wrap]) :is(th, td):not([data-cell-text='wrap']) > p,
-.milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td):not([data-cell-text='wrap']) > p,
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] > p {
+.app[data-table-text='clip'] .milkdown .ProseMirror .milkdown-table-block:not([data-table-wrap]) :is(th, td):not([data-cell-text='wrap']) p,
+.milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td):not([data-cell-text='wrap']) p,
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] p {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
