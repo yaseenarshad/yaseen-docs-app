@@ -69,6 +69,13 @@
   padding-right: var(--toc-width);
 }
 
+/* A folder page's Page tab (YAZ-4584 D38) puts its outline in the tab body, deep in the folder page's scroller: the
+   same room for the whole page — title, view tabs and toolbar, the Page, Other files, Comments (YAZ-4849). The
+   section's `data-toc-names` (tocFrame.tsx) says the names show: no `:has()` over the text you type in (YAZ-3329). */
+.editor[data-toc-names] > .editor-host {
+  padding-right: var(--toc-width);
+}
+
 .editor:has(> .toc[data-names]) > .find-bar-dock--note {
   right: var(--toc-width);
 }
