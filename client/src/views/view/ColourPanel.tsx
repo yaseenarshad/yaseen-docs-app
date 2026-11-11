@@ -1,7 +1,5 @@
-import { useContext } from 'react'
 import { COLOR_STRENGTHS, HEADER_ROW_CHOICES, type ColorName, type ColorStrength, type ColorStrengthValue } from '@shared/types'
 import { capital, headerSwatch } from '../../editor/table/colours'
-import { FlyoutParent, MenuFlyout, useFlyout } from '../../components/Flyout'
 import { ChoiceSeg } from './settingRow'
 
 /**
@@ -9,7 +7,8 @@ import { ChoiceSeg } from './settingRow'
  * tab as a React panel. That tab is a DOM menu (`tableRows.ts`), so the View tab, Settings › Folder pages and a card's
  * right-click share THIS one, with the same choices (`HEADER_ROW_CHOICES.color`: Gray … Black), the same swatches
  * (`table-menu-swatch`) and the same strengths (Light, Medium, Strong). A pick keeps the panel open, so the strength and
- * the colour go in one visit, as the header row's flyout does. "No colour" shows when `onNone` is given.
+ * the colour go in one visit, as the header row's flyout does. "No colour" shows when `onNone` is given. A card's
+ * right-click has the Header row panel itself since round 2 (`CardStyleMenu.tsx`).
  */
 export function ColourPanel({ label, value, onPick, onNone }: { label: string; value: ColorStrengthValue | null; onPick: (next: ColorStrengthValue) => void; onNone?: () => void }) {
   const strength = value?.strength ?? 'medium'
@@ -36,18 +35,5 @@ export function ColourSwatches({ label, colors, value, onPick }: { label: string
         </button>
       ))}
     </div>
-  )
-}
-
-/** "Colour ›" in a card's right-click menu (YAZ-4906): the panel and "No colour" in the menu's one flyout. */
-export function ColourFlyout({ value, onPick }: { value: ColorStrengthValue | null; onPick: (next: ColorStrengthValue | null) => void }) {
-  const own = useFlyout<string>()
-  const flyout = useContext(MenuFlyout) ?? own
-  return (
-    <FlyoutParent label="Colour" open={flyout.open === 'colour'} onHover={() => flyout.hover('colour')} onOpen={() => flyout.openNow('colour')} onCloseFlyout={() => flyout.openNow(null)}>
-      <div className="ctx-menu__group colour-panel__group" role="group">
-        <ColourPanel label="Card colour" value={value} onPick={onPick} onNone={() => onPick(null)} />
-      </div>
-    </FlyoutParent>
   )
 }

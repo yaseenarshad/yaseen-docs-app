@@ -2527,6 +2527,22 @@ export function readColorStrength(raw: unknown): ColorStrengthValue | null {
 }
 /** The string a colour and strength are written as: `blue` for Medium, else `blue light`. */
 export const writeColorStrength = ({ color, strength }: ColorStrengthValue): string => (strength === 'medium' ? color : `${color} ${strength}`)
+/**
+ * A card's style in its note (YAZ-4906): three properties, snake_case as the app's own keys are (`show_page_file`).
+ * `color` is the fill (`readColorStrength`); `text_color` one of the header row's Text choices (`readCardText`, no
+ * key = full); `weight` is `bold` (`readCardWeight`, no key = regular).
+ */
+export const CARD_STYLE_KEYS = { fill: 'color', text: 'text_color', weight: 'weight' } as const
+export type CardText = (typeof HEADER_ROW_CHOICES.text)[number]
+export type CardWeight = (typeof HEADER_ROW_CHOICES.weight)[number]
+export function readCardText(raw: unknown): CardText | null {
+  const word = typeof raw === 'string' ? raw.trim().toLowerCase() : null
+  return word !== null && (HEADER_ROW_CHOICES.text as readonly string[]).includes(word) ? (word as CardText) : null
+}
+export function readCardWeight(raw: unknown): CardWeight | null {
+  const word = typeof raw === 'string' ? raw.trim().toLowerCase() : null
+  return word !== null && (HEADER_ROW_CHOICES.weight as readonly string[]).includes(word) ? (word as CardWeight) : null
+}
 /** The widest a calendar grid line may be (YAZ-4878). */
 export const MAX_CAL_LINE = 12
 /** A calendar grid line's width (YAZ-4878): a stored whole number 1–`MAX_CAL_LINE`, else 1 (the line before the setting). */

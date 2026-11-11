@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
-import { readColorStrength } from '@shared/types'
+import { CARD_STYLE_KEYS, readCardText, readCardWeight, readColorStrength } from '@shared/types'
 import { type Row, propertyLabel } from '../engine'
 import type { Resolver } from '../expr'
 import type { ViewDef, ViewSet } from '../viewSchema'
@@ -62,10 +62,16 @@ export function CardLine({ line, item, lead, className = '' }: { line: readonly 
 }
 
 /**
- * A card's own colour (YAZ-4906): the note's `color` property (`readColorStrength`: `blue`, `blue light`) as the
- * attributes views.css tints the card by, on a calendar card and a board card alike; a value the app cannot read gives none.
+ * A card's own style (YAZ-4906): the note's `color` (`readColorStrength`: `blue`, `blue light`), `text_color` and
+ * `weight` as the attributes views.css draws the card by, on a calendar card and a board card alike; a value the app
+ * cannot read gives none.
  */
-export function cardColorAttrs(raw: unknown): { 'data-color': string; 'data-color-strength': string } | undefined {
-  const read = readColorStrength(raw)
-  return read === null ? undefined : { 'data-color': read.color, 'data-color-strength': read.strength }
+export function cardStyleAttrs(properties: Readonly<Record<string, unknown>>): Record<string, string> {
+  const out: Record<string, string> = {}
+  const fill = readColorStrength(properties[CARD_STYLE_KEYS.fill])
+  if (fill !== null) Object.assign(out, { 'data-color': fill.color, 'data-color-strength': fill.strength })
+  const text = readCardText(properties[CARD_STYLE_KEYS.text])
+  if (text !== null && text !== 'full') out['data-text'] = text
+  if (readCardWeight(properties[CARD_STYLE_KEYS.weight]) === 'bold') out['data-weight'] = 'bold'
+  return out
 }

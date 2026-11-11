@@ -5,14 +5,14 @@ import {
   type BarPlace, type DayKey, type Span, type SpanPreview, bucketByDay, addDays, calLine, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
   todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
 } from '../calendar'
-import { type ColorStrengthValue, type IndexRecord, readColorStrength } from '@shared/types'
+import { type ColorStrengthValue, type IndexRecord } from '@shared/types'
 import { type Row, propertyKeys, propertyLabel } from '../engine'
 import { type Resolver, isEmpty } from '../expr'
 import { type FolderSettings, pageColumnKeys } from '../folderSettings'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
-import { CardLine, CardProp, cardColorAttrs, cardLines } from './cardLines'
-import { ColourFlyout } from './ColourPanel'
+import { CardLine, CardProp, cardLines, cardStyleAttrs } from './cardLines'
+import { CardStyleFlyout, type CardStyleWrite } from './CardStyleMenu'
 import type { ValueHistory } from './valueHistory'
 import { canonicalKey } from './keys'
 import { type NoteWindowLink, currentItemClass, useNoteWindowItems } from './NoteWindow'
@@ -68,8 +68,8 @@ export interface CalendarViewProps {
   onNewOnDay?: (day: DayKey) => void
   /** The card menu's note items (YAZ-3746 13BO): Open, the new note beside a card, Duplicate, Delete. Absent: none. */
   noteDoors?: CardNoteDoors
-  /** "Colour ›" in a card's menu (YAZ-4906): ViewsPane writes the note's `color` property (null: No colour). Absent: no item. */
-  onColor?: (path: string, next: ColorStrengthValue | null) => void
+  /** "Card style ›" in a card's menu (YAZ-4906): ViewsPane writes the note's `color`, `text_color` and `weight` (undefined removes a key). Absent: no item. */
+  onStyle?: (path: string, writes: CardStyleWrite[]) => void
   /** The page's ⌘Z / ⇧⌘Z history of value changes (`valueHistory.ts`): a card colour is one step of it. Absent: the keys do nothing here. */
   history?: ValueHistory
   /** The tab's `calendarScale` (YAZ-4558 D22): a month grid, or one week of 7 tall days. */
@@ -151,7 +151,7 @@ function gridLines(view: ViewDef | undefined): CSSProperties | undefined {
   } as CSSProperties
 }
 
-export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, noteDoors, onColor, history, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, noteDoors, onStyle, history, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
@@ -446,8 +446,8 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const props = {
       className,
       tabIndex: 0,
-      // The note's `color` property tints the card (YAZ-4906, views.css); a crossed-out card keeps it.
-      ...cardColorAttrs(row.record.properties.color),
+      // The note's `color`, `text_color` and `weight` dress the card (YAZ-4906, views.css); a crossed-out card keeps them.
+      ...cardStyleAttrs(row.record.properties),
       ...(!locked && {
         draggable: true,
         onDragStart: (e: ReactDragEvent<HTMLElement>) => {
@@ -531,15 +531,15 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   }
 
   /**
-   * The card menu's groups: the note items, then "Colour ›" (YAZ-4906) when the pane writes colours and the note is not
-   * read-only. The panel's pressed swatch is the card's colour NOW (the rows, optimistic), so a strength after a colour
+   * The card menu's groups: the note items, then "Card style ›" (YAZ-4906) when the pane writes styles and the note is
+   * not read-only. The panel's ✓ marks are the card's style NOW (the rows, optimistic), so a strength after a colour
    * keeps that colour.
    */
   const menuItems = (m: NonNullable<typeof menu>) => {
     const items = cardMenuItems(noteDoors, m.path, () => setMenu(null), m.day === null || onNewOnDay === undefined ? undefined : { label: 'New note on this day', run: () => onNewOnDay(m.day!) })
-    if (onColor === undefined || m.locked) return items
-    const value = readColorStrength(rows.find((r) => r.record.path === m.path)?.record.properties.color)
-    return { ...items, extra: [...(items.extra ?? []), <ColourFlyout key="colour" value={value} onPick={(next) => onColor(m.path, next)} />] }
+    if (onStyle === undefined || m.locked) return items
+    const properties = rows.find((r) => r.record.path === m.path)?.record.properties ?? {}
+    return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(m.path, writes)} />] }
   }
   /** ⌘Z / ⇧⌘Z on a card (YAZ-4906): the page's value history, as the table reads them; a field keeps its own keys. */
   const onUndoKey = (e: ReactKeyboardEvent) => {

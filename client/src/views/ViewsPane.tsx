@@ -4,7 +4,7 @@ import { columnTyping, optionOrderFor, optionParentFor } from './editorType'
 import { alsoIn } from '@shared/alsoIn'
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { OtherFilesFolderMove, type FolderTray } from './view/otherFilesMove'
-import { type ColorStrengthValue, DEFAULT_FOLDER_PAGES, MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type FolderPagesSettings, type IndexRecord, type PropertiesResponse, writeColorStrength } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type FolderPagesSettings, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
@@ -37,6 +37,7 @@ import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY, writableKey } from './readOnlyRows'
 import { type HistoryStep, noteRef, valueHistory } from './view/valueHistory'
+import type { CardStyleWrite } from './view/CardStyleMenu'
 import { columnReservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
@@ -708,7 +709,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   }
   const applyMove = (path: string, writes: PendingMove, to?: string) => {
     setMoveError(null)
-    setMoves((m) => ({ ...m, [path]: writes }))
+    // A second write to the note before the index echoed the first keeps the first's keys (YAZ-4906: Fill, then Bold in
+    // one visit of "Card style ›"); a write to the same key replaces it.
+    setMoves((m) => ({ ...m, [path]: [...(m[path] ?? []).filter((w) => !writes.some((n) => n.key === w.key)), ...writes] }))
     folder.writeValues(path, writes).then(
       () => {
         if (to === undefined) return
@@ -797,16 +800,16 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     moveValues(path, writes, on === null ? 'No date' : spanLabel(on, end !== null && end > on ? end : on))
   }
   /**
-   * A card's colour (YAZ-4906): the note's `color` property (`writeColorStrength`: `blue`, `blue light`; No colour
-   * removes it), the move's optimistic guarded write with no toast, and ONE step of the page's ⌘Z history (S41) whose
-   * undo writes the value the note had. A deliberate menu pick, as the table's Fill: it does not ask Confirm changes.
+   * A card's style (YAZ-4906): the note's `color`, `text_color` and `weight` (`CardStyleMenu.tsx`; an undefined value
+   * removes the key), the move's optimistic guarded write with no toast, and ONE step of the page's ⌘Z history (S41)
+   * per pick, whose undo writes the values the note had. A deliberate menu pick, as the table's Fill: it does not ask
+   * Confirm changes.
    */
-  const onCardColor = (path: string, next: ColorStrengthValue | null) => {
-    if (readOnly.has(path)) return
-    const prevRaw = records.find((r) => r.path === path)?.properties.color
-    const value = next === null ? undefined : writeColorStrength(next)
-    const writes: PendingMove = [{ key: 'color', value, prevRaw }]
-    const back: PendingMove = [{ key: 'color', value: prevRaw, prevRaw: value }]
+  const onCardStyle = (path: string, picks: readonly CardStyleWrite[]) => {
+    if (readOnly.has(path) || picks.length === 0) return
+    const props = records.find((r) => r.path === path)?.properties
+    const writes: PendingMove = picks.map(({ key, value }) => ({ key, value, prevRaw: props?.[key] }))
+    const back: PendingMove = writes.map((w) => ({ key: w.key, value: w.prevRaw, prevRaw: w.value }))
     const ref = noteRef(path)
     const put = (w: PendingMove) => void (ref.path !== null && applyMove(ref.path, w))
     history.push({ undo: () => put(back), redo: () => put(writes), notes: [ref] })
@@ -1178,7 +1181,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           windowLink={windowLink}
           onNotice={folder.onNotice}
           onMoveToDay={onMoveToDay}
-          onColor={onCardColor}
+          onStyle={onCardStyle}
           history={history}
           moveError={moveError}
           onNewOnDay={(day) => {

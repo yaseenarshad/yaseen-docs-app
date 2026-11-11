@@ -11,7 +11,7 @@ import type { Resolver } from '../expr'
 import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
 import { GroupHeader, rowTitle } from './GroupHeader'
-import { CardLine, CardProp, cardLines, cardColorAttrs } from './cardLines'
+import { CardLine, CardProp, cardLines, cardStyleAttrs } from './cardLines'
 import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
@@ -311,8 +311,8 @@ export function BoardView({
           key={row.record.path}
           data-flip-key={row.record.path}
           className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}${currentItemClass(windowLink, row.record.path)}`}
-          // The note's `color` property tints the card here too (YAZ-4906, views.css), the calendar card's attributes.
-          {...cardColorAttrs(row.record.properties.color)}
+          // The note's `color`, `text_color` and `weight` dress the card here too (YAZ-4906, views.css), the calendar card's attributes.
+          {...cardStyleAttrs(row.record.properties)}
           {...dragSource(row, group, at)}
           {...hover.itemProps(row.record.path)}
           // Every card is a focusable "cell" (YAZ-1557 D2): a plain click SELECTS it, and only the
