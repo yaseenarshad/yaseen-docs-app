@@ -18,6 +18,7 @@ import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
 import { isBoardTarget } from '@shared/embedOptions'
+import { inCellOrNote } from './table/cellBlocks'
 import { fileKind } from '@shared/fileKind'
 import { parseFileLink } from '@shared/links'
 import { fileLabel } from '../lib/pageLabel'
@@ -258,8 +259,9 @@ export function pastePathLinks(view: EditorView, ctx: Ctx, options: PathPasteOpt
   view.dispatch(closeHistory(view.state.tr).replace(to - raw.length, to, slice).scrollIntoView())
   // A drawing or a diagram can be an embed too (YAZ-4829 D8): `!` before the link as it is written. A `[[link]]` stays
   // text under the host's decorations; a Markdown link parses as the image node (another vault, 2B).
+  // Not in a table cell: embeds there are out of scope (the checker's round 1).
   const path = pastedPath(raw)
-  const embed = path !== null && isBoardTarget(path) ? Slice.maxOpen(ctx.get(parserCtx)(`!${link}`).content) : undefined
+  const embed = path !== null && isBoardTarget(path) && !inCellOrNote(view.state.doc.resolve(to - raw.length)) ? Slice.maxOpen(ctx.get(parserCtx)(`!${link}`).content) : undefined
   // No chip after a paste over words (K5): ⌘Z gives the words back.
   if (empty) offerKeepAsPath(view, to - raw.length, to - raw.length + slice.size, raw, embed)
   return true

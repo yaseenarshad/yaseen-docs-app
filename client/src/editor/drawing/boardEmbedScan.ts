@@ -1,10 +1,12 @@
 /**
  * Finding board embeds in the text (YAZ-4827): the one scan the host (`boardEmbed.ts`), the caret (`idLinkCaret.ts`),
- * ⌘F (`findInPage.ts`) and the fold (`listNodes.ts`) share, so they agree on what an embed is. No plugin, no state.
+ * ⌘F (`findInPage.ts`) and the fold (`listNodes.ts`) share, so they agree on what an embed is. No state; the host's
+ * plugin key lives here so ⌘F can ask for it without importing the host.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { PluginKey, type Selection } from '@milkdown/kit/prose/state'
 import type { DecorationSet } from '@milkdown/kit/prose/view'
+import { optionsPipe, splitEmbed } from '@shared/embedOptions'
 import { WIKILINK_RE, eachPlainRun } from '../wikilink/wikilinkPlugin'
 import { boardEmbedTarget } from './boardEmbedText'
 
@@ -14,8 +16,10 @@ export interface BoardEmbedMatch {
   to: number
   inner: string
   target: string
-  /** The text after the first `|`, or null. */
+  /** The options text (after the last `|`, when it parses as options; an alias before it is kept), or null. */
   options: string | null
+  /** The doc position of the `|` before the options, or null: a write replaces from there, else adds before `]]`. */
+  optionsAt: number | null
 }
 
 /** The board embeds of one textblock at `pos`, in order (code is never one). */
@@ -27,9 +31,9 @@ export function boardEmbedsIn(block: ProseNode, pos: number): BoardEmbedMatch[] 
       if (m[1] !== '!') continue
       const target = boardEmbedTarget(m[2])
       if (target === null) continue
-      const pipe = m[2].indexOf('|')
+      const pipe = optionsPipe(m[2])
       const from = runPos + m.index
-      found.push({ from, to: from + m[0].length, inner: m[2], target, options: pipe < 0 ? null : m[2].slice(pipe + 1) })
+      found.push({ from, to: from + m[0].length, inner: m[2], target, options: splitEmbed(m[2]).options, optionsAt: pipe < 0 ? null : from + 3 + pipe })
     }
   })
   return found
@@ -47,7 +51,6 @@ export function boardEmbedAt(doc: ProseNode, pos: number, at: 'start' | 'inside'
 export function embedRevealed(sel: Selection, from: number, to: number): boolean {
   return sel.from < to && sel.to > from && !(sel.from <= from && sel.to >= to)
 }
-
 
 /** The host's plugin key (`boardEmbed.ts`): ⌘F asks whether the host is there before it leaves an embed's text out. */
 export const boardEmbedKey = new PluginKey<DecorationSet>('mdapp-board-embed')

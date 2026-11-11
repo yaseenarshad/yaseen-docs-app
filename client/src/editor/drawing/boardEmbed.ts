@@ -19,16 +19,17 @@
  * gives each embed the id of the old embed of the same target, in order. The widget key is `board:<id>`, never the
  * options, so a view write keeps the same DOM and the same window (`handle.update`).
  *
- * WINDOW: the box is drawn at once and the window mounts as soon as its chunk is there: the window watches the screen
- * itself before it makes a picture. The widget's `destroy` destroys the window.
+ * WINDOW: the box is drawn at once, at the window's first height, and the window mounts as soon as its chunk is there
+ * (`mountInBox`, shared with the image host): the window watches the screen itself before it makes a picture. The
+ * widget's `destroy` destroys the window. A save flush writes a view still waiting first (`flushBoardWindows`, A8).
  *
  * SELECTION: the whole embed selected (a TextSelection of exactly its text) is the window selected (`setSelected`).
  * Only a selection strictly inside it, which "Edit link" alone puts there (`idLinkCaret.ts` steps the caret over an
  * embed), shows the raw text. A click on the window selects the embed. Typing replaces it (it is text); ⌘Z brings it
  * back. Escape first deselects it (item 20); Shift+1 fits the board (D10).
  *
- * WRITES (D4): the window's `onOptions` → one `insertText` over the options part only (after the first `|`, or a new
- * `|…` before `]]`), `addToHistory: false`, only in an editable note, only when the text differs. The embed is found
+ * WRITES (D4): the window's `onOptions` → one `insertText` over the options part only (after the last `|`, which keeps
+ * an alias before it, or a new `|…` before `]]`), `addToHistory: false`, only in an editable note, only when the text differs. The embed is found
  * again from the CURRENT doc at the widget's live position, and its target must still be the same: no stale position.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -38,9 +39,11 @@ import { $prose } from '@milkdown/kit/utils'
 import { optionsSuffix, parseEmbedOptions, type EmbedOptions } from '@shared/embedOptions'
 import { fileKind } from '@shared/fileKind'
 import type { MenuRow } from '../blockHandleMenu'
-import { loadBoardWindow, type BoardRef, type BoardWindowHandle, type OpenHow, type WindowMenuRow } from '../embed/types'
+import { menuRowOf, mountInBox, onFlush } from '../embed/hostWindow'
+import type { BoardRef, BoardWindowHandle, OpenHow } from '../embed/types'
 import { linkMenuRows, openMenuAt, type LinkMenu } from '../linkMenu'
 import { embedFolds, toggleOutlineFold } from '../outline/outlineFolding'
+import { inCellOrNote } from '../table/cellBlocks'
 import { OPEN_ID_LINK } from '../wikilink/idLinkCaret'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { linkPath, type LinkLook, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
@@ -72,28 +75,22 @@ export interface BoardEmbedOptions {
   onEditInPopup?: (target: string) => void
 }
 
-/** Counts, for the typing test: the textblocks scanned since the editor started. */
-export const boardEmbedStats = { blocksScanned: 0 }
+/** Counts, for the typing tests: the textblocks scanned, and the fold passes over every mount (A9), since the start. */
+export const boardEmbedStats = { blocksScanned: 0, foldPasses: 0 }
 
 /** What a widget knows of its embed. */
 interface EmbedFact {
   id: number
   target: string
-  inner: string
   options: string | null
+  /** In a table cell (or a cell note): out of scope, so the window shows as its pill line, never live. */
+  cell: boolean
 }
 
+/** A cell's embed is its pill line (the folded look) with no arrow; any other starts open, its bullet's fold to come. */
+const firstFold = (cell: boolean) => ({ foldable: false, folded: cell })
 
 const parseOptions = (text: string | null): EmbedOptions | null => (text === null ? null : parseEmbedOptions(text))
-
-/** A window row as a menu row; the window's `checked` (a page's flyout) is the ✓ hint. */
-const menuRowOf = (row: WindowMenuRow): MenuRow => ({
-  label: row.label,
-  run: row.run,
-  disabled: row.disabled,
-  hint: row.checked === true ? '✓' : undefined,
-  children: row.children === undefined ? undefined : [row.children.map(menuRowOf)],
-})
 
 /** One mounted box: its widget's DOM, its live position, and the window once the chunk is there. */
 interface Mount {
@@ -101,12 +98,12 @@ interface Mount {
   dom: HTMLElement
   getPos: () => number | undefined
   target: string
-  inner: string
   options: string | null
   handle: BoardWindowHandle | null
   refKey: string
   selected: boolean
   fold: { foldable: boolean; folded: boolean }
+  cell: boolean
 }
 
 export function createBoardEmbed(opts: BoardEmbedOptions) {
@@ -119,11 +116,13 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
     let closeMenu = () => {}
 
     /** One textblock's decorations; `idFor` gives each embed its id (inherited, or new). */
-    const decorateBlock = (out: Decoration[], block: ProseNode, pos: number, sel: Selection, idFor: (target: string) => number): void => {
+    const decorateBlock = (out: Decoration[], doc: ProseNode, block: ProseNode, pos: number, sel: Selection, idFor: (target: string) => number): void => {
       boardEmbedStats.blocksScanned++
-      for (const m of boardEmbedsIn(block, pos)) {
+      const found = boardEmbedsIn(block, pos)
+      const cell = found.length > 0 && inCellOrNote(doc.resolve(pos + 1))
+      for (const m of found) {
         if (embedRevealed(sel, m.from, m.to)) continue
-        const fact: EmbedFact = { id: idFor(m.target), target: m.target, inner: m.inner, options: m.options }
+        const fact: EmbedFact = { id: idFor(m.target), target: m.target, options: m.options, cell }
         pending.set(fact.id, fact)
         out.push(Decoration.inline(m.from, m.to, { class: BOARD_EMBED_SYNTAX_CLASS }, { boardEmbed: fact.id }))
         out.push(
@@ -146,7 +145,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       state.doc.descendants((node, pos) => {
         if (node.type.name === 'code_block') return false
         if (!node.isTextblock) return true
-        decorateBlock(out, node, pos, state.selection, fresh)
+        decorateBlock(out, state.doc, node, pos, state.selection, fresh)
         return false
       })
       return out.length === 0 ? DecorationSet.empty : DecorationSet.create(state.doc, out)
@@ -188,7 +187,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
           const i = olds.findIndex((f) => f.target === target)
           return i < 0 ? fresh() : olds.splice(i, 1)[0]!.id
         }
-        decorateBlock(out, block, pos, state.selection, idFor)
+        decorateBlock(out, doc, block, pos, state.selection, idFor)
       }
       return stale.length === 0 && out.length === 0 ? set : set.remove(stale).add(doc, out)
     }
@@ -217,8 +216,8 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       if (!view.editable) return
       const m = matchOf(view, mount)
       if (m === null) return
-      const pipe = m.inner.indexOf('|')
-      const from = pipe < 0 ? m.to - 2 : m.from + 3 + pipe
+      // After the alias, if any (`x.drawio|My name|640x360`): only the options part changes.
+      const from = m.optionsAt ?? m.to - 2
       const suffix = optionsSuffix(next)
       if (view.state.doc.textBetween(from, m.to - 2) === suffix) return
       view.dispatch(view.state.tr.insertText(suffix, from, m.to - 2).setMeta('addToHistory', false).setMeta(BOARD_VIEW_META, true))
@@ -281,46 +280,32 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       dom.contentEditable = 'false'
       const latest = pending.get(fact.id) ?? fact
       const ref = refOf(latest.target)
-      const mount: Mount = { id: fact.id, dom, getPos, target: latest.target, inner: latest.inner, options: latest.options, handle: null, refKey: keyOf(ref), selected: false, fold: { foldable: false, folded: false } }
-      // No page jump (item 12): the box holds the stored height until the window is there.
-      const stored = parseOptions(latest.options)
-      if (stored !== null) dom.style.setProperty('--board-embed-height', `${stored.height}px`)
+      const mount: Mount = { id: fact.id, dom, getPos, target: latest.target, options: latest.options, handle: null, refKey: keyOf(ref), selected: false, fold: firstFold(latest.cell), cell: latest.cell }
       mounts.set(dom, mount)
       byId.set(fact.id, mount)
-      void loadBoardWindow().then(
-        (mod) => {
-          if (mounts.get(dom) !== mount) return
-          try {
-            mount.handle = mod.mountBoardWindow({
-              ref: refOf(mount.target),
-              options: parseOptions(mount.options),
-              editable: view.editable,
-              columnWidth: () => view.dom.clientWidth,
-              onOptions: (next) => writeOptions(view, mount, next),
-              onOpen: (how) => opts.follow?.(mount.target, how),
-              onContextMenu: (event) => openMenu(view, mount, event),
-              onSelect: () => select(view, mount),
-              onFold: () => fold(view, mount),
-            })
-          } catch {
-            broken(mount)
-            return
-          }
-          dom.style.removeProperty('--board-embed-height')
-          dom.replaceChildren(mount.handle.dom)
-          if (mount.selected) mount.handle.setSelected(true)
-          if (mount.fold.foldable) mount.handle.setFoldable(true)
-          if (mount.fold.folded) mount.handle.setFolded(true)
+      const columnWidth = () => view.dom.clientWidth
+      mountInBox(dom, {
+        options: parseOptions(latest.options),
+        columnWidth,
+        host: () => ({
+          ref: refOf(mount.target),
+          options: parseOptions(mount.options),
+          editable: view.editable,
+          columnWidth,
+          onOptions: (next) => writeOptions(view, mount, next),
+          onOpen: (how) => opts.follow?.(mount.target, how),
+          onContextMenu: (event) => openMenu(view, mount, event),
+          onSelect: () => select(view, mount),
+          onFold: () => fold(view, mount),
+        }),
+        live: () => mounts.get(dom) === mount,
+        done: (handle) => {
+          mount.handle = handle
         },
-        () => broken(mount),
-      )
+        state: () => mount,
+        name: () => boardEmbedName(mount.target),
+      })
       return dom
-    }
-
-    /** The window could not load: the box says so, and keeps its place. */
-    const broken = (mount: Mount): void => {
-      mount.dom.classList.add(`${BOARD_EMBED_CLASS}--broken`)
-      mount.dom.textContent = `Can't show ${boardEmbedName(mount.target)}`
     }
 
     const unmount = (dom: HTMLElement): void => {
@@ -382,9 +367,14 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
         let folds = embedFolds(editorView.state)
         const offSource = opts.source.subscribe(resolved)
         const offViewOnly = opts.viewOnly?.subscribe(resolved)
+        const offFlush = onFlush(editorView, () => mounts.forEach((mount) => mount.handle?.flush()))
         /** Each window's fold, from the outline's state: only when that state changed. */
-        const syncFolds = () => {
+        const syncFolds = (before: ReadonlyMap<number, unknown> | null) => {
+          // A9: no embed on a bullet, before or now (the typing path of most notes): nothing to ask of any mount.
+          if (before !== null && before.size === 0 && folds.size === 0) return
+          boardEmbedStats.foldPasses++
           for (const mount of mounts.values()) {
+            if (mount.cell) continue
             const pos = mount.getPos()
             const entry = pos === undefined ? undefined : folds.get(pos)
             const next = { foldable: entry !== undefined, folded: entry?.folded === true }
@@ -394,7 +384,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
           }
         }
         // The view drew the boxes before it made this plugin view: their first fold.
-        syncFolds()
+        syncFolds(null)
         return {
           update: (view, previous) => {
             if (view.state.doc !== previous.doc) closeMenu()
@@ -402,7 +392,13 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
             for (const fact of pending.values()) {
               const mount = byId.get(fact.id)
               if (mount === undefined) continue
-              mount.inner = fact.inner
+              if (mount.cell !== fact.cell) {
+                // Moved into or out of a table cell: the pill line there, the window elsewhere (its bullet's fold follows).
+                mount.cell = fact.cell
+                mount.fold = firstFold(fact.cell)
+                mount.handle?.setFoldable(false)
+                mount.handle?.setFolded(fact.cell)
+              }
               if (mount.options !== fact.options) {
                 mount.options = fact.options
                 mount.handle?.update({ options: parseOptions(fact.options) })
@@ -429,13 +425,15 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
             }
             const nextFolds = embedFolds(view.state)
             if (nextFolds !== folds) {
+              const before = folds
               folds = nextFolds
-              syncFolds()
+              syncFolds(before)
             }
           },
           destroy: () => {
             offSource()
             offViewOnly?.()
+            offFlush()
             closeMenu()
           },
         }

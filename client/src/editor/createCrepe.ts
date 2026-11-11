@@ -261,6 +261,7 @@ import { readOnlyKeys } from './readOnlyKeys'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { breakMarks } from './breakMarks'
 import { BOARD_VIEW_META, createBoardEmbed } from './drawing/boardEmbed'
+import { flushBoardWindows } from './embed/hostWindow'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
 import { createSlashMenu } from './slashMenu'
 import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
@@ -916,10 +917,15 @@ const savedMarkdown = (ctx: Ctx): string | null => {
 
 /**
  * Markdown as it should be written to disk (frontmatter is added by the caller). An empty cell note stays out of it,
- * so it never reaches the file, by whatever route its page closes (YAZ-3818 D15, 5A-5).
+ * so it never reaches the file, by whatever route its page closes (YAZ-3818 D15, 5A-5). A board window's view that
+ * still waits for its 800 ms write is written first (YAZ-4834 A8): every save flush (close, quit, rename) reads here.
  */
 export function getMarkdownForSave(crepe: Crepe): string {
-  return postProcessMarkdown(crepe.editor.action(savedMarkdown) ?? crepe.getMarkdown())
+  const saved = crepe.editor.action((ctx) => {
+    flushBoardWindows(ctx.get(editorViewCtx))
+    return savedMarkdown(ctx)
+  })
+  return postProcessMarkdown(saved ?? crepe.getMarkdown())
 }
 
 /**

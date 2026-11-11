@@ -787,8 +787,8 @@ function CrepeHost({
     const crepe = crepeRef.current
     if (crepe !== null) focusEditor(crepe)
   }, [])
-  /** The target whose modal is open; the preview's click sets it, close clears it. */
-  const [openDrawing, setOpenDrawing] = useState<string | null>(null)
+  /** The drawing whose modal is open, at its vault root ("Edit in a popup" sets it, close clears it): a board image may be in another vault (A11). */
+  const [openDrawing, setOpenDrawing] = useState<{ root: string; target: string } | null>(null)
   /**
    * The lightbox's gallery (YAZ-1656): every image on the page and the one double-clicked; the
    * node view sets it, close clears it.
@@ -945,7 +945,7 @@ function CrepeHost({
       },
       // Board embeds (YAZ-4827): a window into each `![[x.drawio]]` / `![[x.excalidraw]]`. The window loads from this
       // root and refreshes from the watcher itself; "Edit in a popup" opens the drawing modal (D7, the old click path).
-      boardEmbeds: { root, onEditInPopup: setOpenDrawing },
+      boardEmbeds: { root, onEditInPopup: (target) => setOpenDrawing({ root, target }) },
       // First-class images (YAZ-1656): the root and THIS note's absolute path are what a relative
       // src resolves against (main's `app://vault/` protocol); double-click opens the lightbox
       // below, and a paste that could not be written rides the same passive notice.
@@ -967,6 +967,8 @@ function CrepeHost({
                   return { root: own ? root : (rootOfPath(vaultLinks.current?.roots ?? [], target) ?? root), path: target, vault: own ? null : (vaultLinks.current?.vaultOf(target) ?? null) }
                 },
                 icon: (target) => fileIconDecoration(icons.current, target, false),
+                // A11: the drawing popup at the board's own vault, as a vault-relative target.
+                onEditInPopup: (boardRoot, target) => setOpenDrawing({ root: boardRoot, target: target.startsWith(`${boardRoot}/`) ? target.slice(boardRoot.length + 1) : target }),
                 open: (target, how) => (how === 'backgroundTab' ? (onOpenLinkBackground ?? onOpenLink)(target) : onOpenLink(target, how)),
                 linkMenu: (target) => {
                   const notice = onNotice ?? (() => undefined)
@@ -1468,7 +1470,7 @@ function CrepeHost({
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}
       {openDrawing !== null && (
-        <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} newNoteFolderFor={newNoteFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+        <DrawingModal key={`${openDrawing.root}\n${openDrawing.target}`} root={openDrawing.root} target={openDrawing.target} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} newNoteFolderFor={newNoteFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
       )}
       {/* The image lightbox (YAZ-1656) — the same modal-beside-the-editor shape as the drawing
           modal, opened by the node view's double-click with the whole gallery (every image on

@@ -29,6 +29,8 @@ interface Fake {
   dom: HTMLElement
   calls: Array<[string, unknown]>
   destroyed: boolean
+  /** What the fake's flush does besides recording it: a window with a waiting view writes it (A8). */
+  onFlush?: () => void
 }
 const fakes = vi.hoisted(() => ({ list: [] as Fake[], rows: [] as WindowMenuRow[] }))
 
@@ -55,6 +57,10 @@ vi.mock('../embed/types', async (original) => ({
           setFolded: (on) => fake.calls.push(['setFolded', on]),
           setFoldable: (on) => fake.calls.push(['setFoldable', on]),
           menuRows: () => fakes.rows,
+          flush: () => {
+            fake.calls.push(['flush', null])
+            fake.onFlush?.()
+          },
           fit: () => fake.calls.push(['fit', null]),
           destroy: () => {
             fake.destroyed = true
@@ -249,6 +255,16 @@ describe('the typing path (D1)', () => {
     expect(boardEmbedStats.blocksScanned - before).toBeLessThanOrEqual(9)
     expect(fakes.list.filter((f) => f.calls.some(([c]) => c === 'update'))).toHaveLength(0)
   })
+
+  it('A9: with no embed on a bullet, a keystroke makes no fold pass over the 20 windows', async () => {
+    const lines = Array.from({ length: 60 }, (_, i) => (i % 3 === 0 ? `![[Board ${i}.drawio|640x360]]` : `Line ${i} with words`))
+    const { view } = await mount(`${lines.join('\n\n')}\n\n* a bullet with no embed\n`)
+    await windows(20)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOf(view, 'Line 31') + 4)))
+    const before = boardEmbedStats.foldPasses
+    for (const ch of 'abc') view.dispatch(view.state.tr.insertText(ch))
+    expect(boardEmbedStats.foldPasses - before).toBe(0)
+  })
 })
 
 describe('selection, caret, find, copy, hover (2A)', () => {
@@ -321,13 +337,13 @@ describe('open and the menu (2C)', () => {
 
   it('the menu: the pill rows, the window`s rows, then Edit in a popup, Show as link, Edit link, Remove embed', async () => {
     const onEditInPopup = vi.fn()
-    fakes.rows = [{ label: 'Fit drawing to frame', run: vi.fn() }, { label: 'Page', run: () => {}, children: [{ label: 'One', run: vi.fn(), checked: true } as WindowMenuRow] }]
+    fakes.rows = [{ label: 'Fit whole drawing', run: vi.fn() }, { label: 'Page', run: () => {}, children: [{ label: 'One', run: vi.fn(), checked: true } as WindowMenuRow] }]
     const { crepe, root } = await mount('![[Sketch.excalidraw|640x360]]\n', { wikilinkNav: nav(), viewOnlyLinks: viewOnlyResolving(), boardEmbeds: { root: '/v', onEditInPopup } })
     await windows(1)
     fakes.list[0]!.host.onContextMenu!(new MouseEvent('contextmenu', { clientX: 5, clientY: 5 }))
     const labels = Array.from(document.querySelectorAll('.ctx-menu > .ctx-menu__item, .ctx-menu > .ctx-menu__parent > .ctx-menu__item')).map((b) => b.textContent)
     expect(labels.slice(0, 2)).toEqual(['Open', 'Open in new tab'])
-    expect(labels.slice(-6)).toEqual(['Fit drawing to frame', 'Page', 'Edit in a popup', 'Show as link', 'Edit link', 'Remove embed'])
+    expect(labels.slice(-6)).toEqual(['Fit whole drawing', 'Page', 'Edit in a popup', 'Show as link', 'Edit link', 'Remove embed'])
     const click = (label: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')).find((b) => b.textContent === label)!.click()
     click('Edit in a popup')
     expect(onEditInPopup).toHaveBeenCalledWith('Sketch.excalidraw')
@@ -457,7 +473,8 @@ describe('the flow (2C → 2A)', () => {
   it('paste a board path → Embed → the window moves → the text has the view → a new editor gives the window the same view', async () => {
     const candidates = createWikilinkCandidateSource()
     candidates.update([{ name: 'CloudFront.drawio', insert: 'CloudFront.drawio', label: 'CloudFront', path: '/v/CloudFront.drawio' }])
-    const { crepe, view } = await mount('Next:\n', { pathPaste: { root: '/v', notePath: '/v/a/today.md', candidates } })
+    const saved = vi.fn()
+    const { crepe, view } = await mount('Next:\n', { pathPaste: { root: '/v', notePath: '/v/a/today.md', candidates }, onMarkdownUpdated: saved })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.doc.content.size - 1)))
     const event = { clipboardData: { getData: (type: string) => (type === 'text/plain' ? '/v/CloudFront.drawio' : '') }, preventDefault() {} } as unknown as ClipboardEvent
     view.pasteText('/v/CloudFront.drawio', event)
@@ -471,7 +488,12 @@ describe('the flow (2C → 2A)', () => {
     expect(md(crepe)).toBe('Next:[[CloudFront.drawio]]\n')
     view.dispatch(view.state.tr.insertText('!', posOf(view, '[[')))
     await windows(1)
+    // A1: the view reaches the SAVE callback (the autosave), not only the doc.
+    await vi.waitFor(() => expect(saved).toHaveBeenCalled(), { timeout: 2000 })
+    saved.mockClear()
     fakes.list[0]!.host.onOptions!(OPTS)
+    await vi.waitFor(() => expect(saved).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    expect(saved).toHaveBeenLastCalledWith('Next:![[CloudFront.drawio|640x360 view=120,-40,0.8]]\n')
     const written = md(crepe)
     expect(written).toBe('Next:![[CloudFront.drawio|640x360 view=120,-40,0.8]]\n')
     fakes.list.length = 0
@@ -486,6 +508,50 @@ describe('the flow (2C → 2A)', () => {
     const { view } = await mount('Next:\n', { pathPaste: { root: '/v', notePath: '/v/a/today.md', candidates } })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.doc.content.size - 1)))
     view.pasteText('/v/Plan.md', { clipboardData: { getData: () => '/v/Plan.md' }, preventDefault() {} } as unknown as ClipboardEvent)
+    expect(Array.from(document.querySelectorAll('.path-paste-chip button')).map((b) => b.textContent)).toEqual(['Keep as path'])
+  })
+})
+
+describe('the checker`s round 1 and 3B (YAZ-4834)', () => {
+  it('A8: a save read flushes each window first, so a view still waiting is in the saved text', async () => {
+    const { crepe } = await mount('![[CloudFront.drawio|640x360]]\n')
+    await windows(1)
+    const fake = fakes.list[0]!
+    // The fake's flush writes as a window with a waiting view does.
+    fake.onFlush = () => fake.host.onOptions!(OPTS)
+    expect(md(crepe)).toBe('![[CloudFront.drawio|640x360 view=120,-40,0.8]]\n')
+    expect(fake.calls.filter(([c]) => c === 'flush')).toHaveLength(1)
+  })
+
+  it('an alias stays: `![[x|My name]]` writes `![[x|My name|640x360 view=…]]`, and the next write changes only the options', async () => {
+    const { crepe } = await mount('![[CloudFront.drawio|My name]]\n')
+    await windows(1)
+    expect(fakes.list[0]!.host.options).toBeNull()
+    fakes.list[0]!.host.onOptions!(OPTS)
+    expect(md(crepe)).toBe('![[CloudFront.drawio|My name|640x360 view=120,-40,0.8]]\n')
+    fakes.list[0]!.host.onOptions!({ ...OPTS, locked: true })
+    expect(md(crepe)).toBe('![[CloudFront.drawio|My name|640x360 view=120,-40,0.8 locked]]\n')
+  })
+
+  it('a table cell: the embed is its pill line (folded, no arrow), never a live window; no Show as embed on a pill there', async () => {
+    const { root } = await mount('| a | b |\n| --- | --- |\n| ![[CloudFront.drawio]] | [[Sketch.excalidraw]] |\n', { wikilinkNav: nav() })
+    await windows(1)
+    const fake = fakes.list[0]!
+    expect(fake.calls).toContainEqual(['setFolded', true])
+    expect(fake.calls).not.toContainEqual(['setFoldable', true])
+    const pill = Array.from(root.querySelectorAll<HTMLElement>('.wikilink')).find((el) => el.textContent?.includes('Sketch'))!
+    pill.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    const labels = Array.from(document.querySelectorAll('.ctx-menu__item')).map((b) => b.textContent)
+    expect(labels).toContain('Edit link')
+    expect(labels).not.toContain('Show as embed')
+  })
+
+  it('a table cell: a pasted board path gets no Embed button', async () => {
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([{ name: 'CloudFront.drawio', insert: 'CloudFront.drawio', label: 'CloudFront', path: '/v/CloudFront.drawio' }])
+    const { view } = await mount('| a |\n| --- |\n| x |\n', { pathPaste: { root: '/v', notePath: '/v/a/today.md', candidates } })
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOf(view, 'x') + 1)))
+    view.pasteText('/v/CloudFront.drawio', { clipboardData: { getData: (t: string) => (t === 'text/plain' ? '/v/CloudFront.drawio' : '') }, preventDefault() {} } as unknown as ClipboardEvent)
     expect(Array.from(document.querySelectorAll('.path-paste-chip button')).map((b) => b.textContent)).toEqual(['Keep as path'])
   })
 })

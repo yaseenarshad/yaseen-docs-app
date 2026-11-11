@@ -47,6 +47,8 @@ export interface ImageBoards {
   open?: (path: string, how: OpenHow) => void
   /** The board link's own menu rows (Open, the place rows), with no edit or remove. Absent → only the embed's rows. */
   linkMenu?: (path: string) => LinkMenu
+  /** "Edit in a popup" for a drawing (D12, A11): the drawing modal at the board's own vault root and path. Absent → no row. */
+  onEditInPopup?: (root: string, path: string) => void
 }
 
 /** Per-editor image options for plugins that have no constructor of their own (see the module doc). */

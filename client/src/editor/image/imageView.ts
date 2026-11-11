@@ -69,19 +69,21 @@
  */
 import { imageSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { NodeSelection, Plugin } from '@milkdown/kit/prose/state'
+import { NodeSelection, Plugin, Selection } from '@milkdown/kit/prose/state'
 import type { Decoration, EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
 import { $prose, $view } from '@milkdown/kit/utils'
-import { optionsSuffix, parseEmbedOptions, type EmbedOptions } from '@shared/embedOptions'
+import { optionsPipe, optionsSuffix, parseEmbedOptions, type EmbedOptions } from '@shared/embedOptions'
 import { fileKind } from '@shared/fileKind'
 import { holdFrames } from '../../lib/colResize'
 import type { MenuRow } from '../blockHandleMenu'
 import { BOARD_VIEW_META } from '../drawing/boardEmbed'
 import { boardImageName, isBoardSrc } from '../drawing/boardEmbedText'
-import { loadBoardWindow, type BoardRef, type BoardWindowHandle, type WindowMenuRow } from '../embed/types'
+import { BOX_BROKEN_CLASS, menuRowOf, mountInBox, onFlush } from '../embed/hostWindow'
+import type { BoardRef, BoardWindowHandle } from '../embed/types'
 import { linkMenuRows, openMenuAt } from '../linkMenu'
 import { innermostItemPos } from '../outline/listNodes'
 import { toggleOutlineFold } from '../outline/outlineFolding'
+import { inCellOrNote } from '../table/cellBlocks'
 import type { GalleryImage, ImageOptions } from './imageOptions'
 import { formatAlt, imageSrc, noteDirRel, parseAlt } from './imageSrc'
 import './imageView.css'
@@ -105,9 +107,9 @@ export type HandleDirection = (typeof HANDLE_DIRECTIONS)[number]
 
 type Status = 'loading' | 'ready' | 'broken'
 
-/** A board image node's options: the alt after its first `|` (YAZ-4828), or null. */
+/** A board image node's options: the alt after its last `|` when that parses (YAZ-4828; an alias before it stays), or null. */
 const boardOptions = (alt: string): EmbedOptions | null => {
-  const pipe = alt.indexOf('|')
+  const pipe = optionsPipe(alt)
   return pipe < 0 ? null : parseEmbedOptions(alt.slice(pipe + 1))
 }
 
@@ -116,15 +118,6 @@ const foldOf = (decorations: readonly Decoration[]): { foldable: boolean; folded
   const deco = decorations.find((d) => d.spec.foldableImage === true)
   return { foldable: deco !== undefined, folded: deco?.spec.folded === true }
 }
-
-/** A window row as a menu row; the window's `checked` is the ✓ hint. */
-const menuRowOf = (row: WindowMenuRow): MenuRow => ({
-  label: row.label,
-  run: row.run,
-  disabled: row.disabled,
-  hint: row.checked === true ? '✓' : undefined,
-  children: row.children === undefined ? undefined : [row.children.map(menuRowOf)],
-})
 
 class ImageNodeView implements NodeView {
   readonly dom: HTMLSpanElement
@@ -138,7 +131,11 @@ class ImageNodeView implements NodeView {
   private boardOn = false
   private selected = false
   private fold = { foldable: false, folded: false }
+  /** A board in a table cell (out of scope): its pill line, never a live window. */
+  private cell = false
   private closeMenu = () => {}
+  /** Ends this board's flush and its place in `boardViews`. */
+  private offBoard = () => {}
 
   constructor(
     private node: ProseNode,
@@ -149,7 +146,6 @@ class ImageNodeView implements NodeView {
     decorations: readonly Decoration[] = [],
   ) {
     this.dom = document.createElement('span')
-    boardWindows.set(this.dom, () => this.board)
     this.dom.className = IMAGE_VIEW_CLASS
     this.dom.setAttribute('contenteditable', 'false')
     this.fold = foldOf(decorations)
@@ -369,60 +365,67 @@ class ImageNodeView implements NodeView {
     this.img = null
     this.handles = []
     this.dom.replaceChildren()
-    const stored = boardOptions(this.node.attrs.alt as string)
-    if (stored !== null) this.dom.style.setProperty('--board-embed-height', `${stored.height}px`)
-    void loadBoardWindow().then(
-      (mod) => {
-        if (!this.boardOn || this.board !== null) return
-        try {
-          this.board = mod.mountBoardWindow({
-            ref: this.boardRef(),
-            options: boardOptions(this.node.attrs.alt as string),
-            editable: this.view.editable,
-            columnWidth: () => this.view.dom.clientWidth,
-            onOptions: (next) => this.writeBoardOptions(next),
-            onOpen: (how) => {
-              const path = this.boardRef().path
-              if (path !== null) this.opts.boards?.open?.(path, how)
-            },
-            onContextMenu: (event) => this.openBoardMenu(event),
-            onSelect: () => {
-              const pos = this.getPos()
-              if (pos !== undefined) this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)))
-            },
-            onFold: () => {
-              const pos = this.getPos()
-              const item = pos === undefined ? null : innermostItemPos(this.view.state.doc.resolve(pos))
-              if (item !== null) toggleOutlineFold(item)(this.view.state, this.view.dispatch)
-            },
-          })
-        } catch {
-          this.dom.textContent = `Can't show ${this.boardRef().name}`
-          return
-        }
-        this.dom.style.removeProperty('--board-embed-height')
-        this.dom.replaceChildren(this.board.dom)
-        if (this.selected) this.board.setSelected(true)
-        if (this.fold.foldable) this.board.setFoldable(true)
-        if (this.fold.folded) this.board.setFolded(true)
+    const pos = this.getPos()
+    this.cell = pos !== undefined && inCellOrNote(this.view.state.doc.resolve(pos))
+    const board = () => this.board
+    boardWindows.set(this.dom, board)
+    let views = boardViews.get(this.view)
+    if (views === undefined) boardViews.set(this.view, (views = new Set()))
+    views.add(board)
+    const offFlush = onFlush(this.view, () => this.board?.flush())
+    this.offBoard = () => {
+      offFlush()
+      views.delete(board)
+    }
+    const columnWidth = () => this.view.dom.clientWidth
+    mountInBox(this.dom, {
+      options: boardOptions(this.node.attrs.alt as string),
+      columnWidth,
+      host: () => ({
+        ref: this.boardRef(),
+        options: boardOptions(this.node.attrs.alt as string),
+        editable: this.view.editable,
+        columnWidth,
+        onOptions: (next) => this.writeBoardOptions(next),
+        onOpen: (how) => {
+          const path = this.boardRef().path
+          if (path !== null) this.opts.boards?.open?.(path, how)
+        },
+        onContextMenu: (event) => this.openBoardMenu(event),
+        onSelect: () => {
+          const pos = this.getPos()
+          if (pos !== undefined) this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)))
+        },
+        onFold: () => {
+          const pos = this.getPos()
+          const item = pos === undefined ? null : innermostItemPos(this.view.state.doc.resolve(pos))
+          if (item !== null) toggleOutlineFold(item)(this.view.state, this.view.dispatch)
+        },
+      }),
+      // A src changed from one board to another mounts again: only the first chunk answer mounts.
+      live: () => this.boardOn && this.board === null,
+      done: (handle) => {
+        this.board = handle
       },
-      () => {
-        if (this.boardOn) this.dom.textContent = `Can't show ${this.boardRef().name}`
-      },
-    )
+      state: () => ({ selected: this.selected, fold: this.cell ? { foldable: false, folded: true } : this.fold }),
+      name: () => this.boardRef().name,
+    })
   }
 
   private unmountBoard(): void {
     if (!this.boardOn) return
     this.boardOn = false
     this.closeMenu()
+    this.offBoard()
+    boardWindows.delete(this.dom)
     this.board?.destroy()
     this.board = null
-    this.dom.classList.remove('board-embed')
+    this.dom.classList.remove('board-embed', BOX_BROKEN_CLASS)
     this.dom.style.removeProperty('--board-embed-height')
   }
 
   private setFold(next: { foldable: boolean; folded: boolean }): void {
+    if (this.cell) return
     if (next.foldable !== this.fold.foldable) this.board?.setFoldable(next.foldable)
     if (next.folded !== this.fold.folded) this.board?.setFolded(next.folded)
     this.fold = next
@@ -440,7 +443,7 @@ class ImageNodeView implements NodeView {
     const live = this.view.editable ? this.liveNode() : null
     if (live === null) return
     const alt = live.node.attrs.alt as string
-    const pipe = alt.indexOf('|')
+    const pipe = optionsPipe(alt)
     const written = `${pipe < 0 ? alt : alt.slice(0, pipe)}${optionsSuffix(next)}`
     if (written === alt) return
     this.view.dispatch(this.view.state.tr.setNodeMarkup(live.pos, undefined, { ...live.node.attrs, alt: written }).setMeta('addToHistory', false).setMeta(BOARD_VIEW_META, true))
@@ -460,7 +463,10 @@ class ImageNodeView implements NodeView {
     }
     group(this.board?.menuRows().map(menuRowOf) ?? [])
     if (this.view.editable) {
+      const edit = this.opts.boards?.onEditInPopup
       group([
+        // D12, A11: a drawing in another vault opens in the drawing popup at its own root and path.
+        ...(ref.kind === 'drawing' && ref.root !== null && ref.path !== null && edit !== undefined ? [{ label: 'Edit in a popup', run: () => edit(ref.root!, ref.path!) }] : []),
         {
           label: 'Show as link',
           run: () => {
@@ -490,28 +496,47 @@ class ImageNodeView implements NodeView {
   }
 }
 
-/** The node view for `image`, registered by createCrepe when the host supplies `opts.image`. */
-/** Each board image's window, by its node view's DOM: the key plugin below reaches the selected one (D10). */
+/** Each board image's window, by its node view's DOM (only while it shows a board): the key plugin below reaches the selected one (D10). */
 const boardWindows = new WeakMap<Node, () => BoardWindowHandle | null>()
+/** The board images of each editor view: a note that turns read-only tells their windows (item 24), as the text host does. */
+const boardViews = new WeakMap<EditorView, Set<() => BoardWindowHandle | null>>()
 
 /**
- * ⌘+ ⌘− ⌘0 and Shift+1 on a selected board image (an embed from another vault, D1): the editor keeps the focus, so
- * the key comes here and goes to that image's window, as `boardEmbed.ts` does for `![[…]]`.
+ * The keys of a selected board image (an embed from another vault, D1), as `boardEmbed.ts` has them for `![[…]]`: the
+ * editor keeps the focus, so ⌘+ ⌘− ⌘0 and Shift+1 come here and go to that image's window; Escape first deselects it,
+ * the caret after the node (item 20, A2), before the note's Escape leaves for the sidebar. Its plugin view tells the
+ * windows when the note turns read-only or editable (item 24).
  */
 export const imageBoardKeys = $prose(
   () =>
     new Plugin({
+      view: (editorView) => {
+        let editable = editorView.editable
+        return {
+          update: (view) => {
+            if (view.editable === editable) return
+            editable = view.editable
+            boardViews.get(view)?.forEach((board) => board()?.update({ editable }))
+          },
+        }
+      },
       props: {
         handleKeyDown: (view, event) => {
           const sel = view.state.selection
           if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'image') return false
           const dom = view.nodeDOM(sel.from)
-          return dom !== null && boardWindows.get(dom)?.()?.handleKey(event) === true
+          const board = dom === null ? undefined : boardWindows.get(dom)
+          if (board === undefined) return false
+          if (board()?.handleKey(event) === true) return true
+          if (event.key !== 'Escape' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false
+          view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(sel.to))))
+          return true
         },
       },
     }),
 )
 
+/** The node view for `image`, registered by createCrepe when the host supplies `opts.image`. */
 export function createImageView(opts: ImageOptions) {
   // Derived once per mount: the note does not move while its editor is open (a rename remounts).
   const fromDir = noteDirRel(opts.root, opts.notePath)

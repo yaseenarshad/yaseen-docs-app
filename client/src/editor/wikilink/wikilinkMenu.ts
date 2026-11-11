@@ -21,6 +21,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { pathTitles } from '../../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
 import { boardEmbedTarget } from '../drawing/boardEmbedText'
+import { inCellOrNote } from '../table/cellBlocks'
 import { OPEN_ID_LINK } from './idLinkCaret'
 import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
@@ -60,7 +61,8 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
   const menu = linkMenuOf(inner, source, nav, follow, viewOnly, vaultsOf, edit, remove)
   // A drawing's or a diagram's link (YAZ-4829 D8): `!` before it, and an alias goes, as the embed shows the board's name.
   const target = inner.split('|')[0]!
-  if (view.editable && boardEmbedTarget(target) !== null) menu.showAsEmbed = () => view.dispatch(view.state.tr.insertText(`![[${target}]]`, from, to))
+  // Not in a table cell: embeds there are out of scope (the checker's round 1).
+  if (view.editable && boardEmbedTarget(target) !== null && !inCellOrNote(view.state.doc.resolve(from))) menu.showAsEmbed = () => view.dispatch(view.state.tr.insertText(`![[${target}]]`, from, to))
   return menu
 }
 

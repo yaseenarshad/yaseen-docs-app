@@ -168,8 +168,10 @@ export const embedFolds = (state: EditorState): ReadonlyMap<number, EmbedFold> =
     const folded = foldingState.collapsedItemPositions.has(itemPos)
     for (const { from } of embedRanges) map.set(from, { itemPos, folded })
   }
-  embedFoldCache.set(foldingState, map)
-  return map
+  // No embed on a bullet (A9): the one empty map, so a key in such a note never looks new to the embed host.
+  const out = map.size === 0 ? NO_EMBED_FOLDS : map
+  embedFoldCache.set(foldingState, out)
+  return out
 }
 
 /** Add this plugin's half of a document-wide fold-all transaction without dispatching it. */
