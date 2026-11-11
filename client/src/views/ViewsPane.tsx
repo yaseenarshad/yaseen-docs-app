@@ -4,7 +4,7 @@ import { columnTyping, optionOrderFor, optionParentFor } from './editorType'
 import { alsoIn } from '@shared/alsoIn'
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { OtherFilesFolderMove, type FolderTray } from './view/otherFilesMove'
-import { DEFAULT_FOLDER_PAGES, MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type FolderPagesSettings, type IndexRecord, type PropertiesResponse } from '@shared/types'
+import { type ColorStrengthValue, DEFAULT_FOLDER_PAGES, MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type FolderPagesSettings, type IndexRecord, type PropertiesResponse, writeColorStrength } from '@shared/types'
 import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
@@ -796,6 +796,22 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     const on = start ?? end
     moveValues(path, writes, on === null ? 'No date' : spanLabel(on, end !== null && end > on ? end : on))
   }
+  /**
+   * A card's colour (YAZ-4906): the note's `color` property (`writeColorStrength`: `blue`, `blue light`; No colour
+   * removes it), the move's optimistic guarded write with no toast, and ONE step of the page's ⌘Z history (S41) whose
+   * undo writes the value the note had. A deliberate menu pick, as the table's Fill: it does not ask Confirm changes.
+   */
+  const onCardColor = (path: string, next: ColorStrengthValue | null) => {
+    if (readOnly.has(path)) return
+    const prevRaw = records.find((r) => r.path === path)?.properties.color
+    const value = next === null ? undefined : writeColorStrength(next)
+    const writes: PendingMove = [{ key: 'color', value, prevRaw }]
+    const back: PendingMove = [{ key: 'color', value: prevRaw, prevRaw: value }]
+    const ref = noteRef(path)
+    const put = (w: PendingMove) => void (ref.path !== null && applyMove(ref.path, w))
+    history.push({ undo: () => put(back), redo: () => put(writes), notes: [ref] })
+    applyMove(path, writes)
+  }
   // "Add a date column" (YAZ-4858 item 4): a Date column named "End date" ("End date 2" when taken), chosen as this
   // view's End date, in ONE settings write. Nothing is written into a note.
   const addEndColumn = () => {
@@ -1162,6 +1178,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           windowLink={windowLink}
           onNotice={folder.onNotice}
           onMoveToDay={onMoveToDay}
+          onColor={onCardColor}
+          history={history}
           moveError={moveError}
           onNewOnDay={(day) => {
             // The new note opens in the mini window (YAZ-3746 13G); in this tab where the host has no editor for one.

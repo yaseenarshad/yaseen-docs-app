@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
+import { readColorStrength } from '@shared/types'
 import { type Row, propertyLabel } from '../engine'
 import type { Resolver } from '../expr'
 import type { ViewDef, ViewSet } from '../viewSchema'
@@ -58,4 +59,13 @@ export function CardLine({ line, item, lead, className = '' }: { line: readonly 
       ))}
     </div>
   )
+}
+
+/**
+ * A card's own colour (YAZ-4906): the note's `color` property (`readColorStrength`: `blue`, `blue light`) as the
+ * attributes views.css tints the card by, on a calendar card and a board card alike; a value the app cannot read gives none.
+ */
+export function cardColorAttrs(raw: unknown): { 'data-color': string; 'data-color-strength': string } | undefined {
+  const read = readColorStrength(raw)
+  return read === null ? undefined : { 'data-color': read.color, 'data-color-strength': read.strength }
 }

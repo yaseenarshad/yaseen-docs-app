@@ -2398,6 +2398,24 @@
   text-decoration: line-through;
 }
 
+/* A card's own colour (YAZ-4906, `cardColorAttrs`): the note's `color` property on a calendar card and a board card.
+   The colours and the strengths are the header row's (`table.css`): Light 15 %, Medium 30 %, Strong 50 % of the
+   colour over the card's background, so the text stays readable in light and dark; a crossed-out card keeps it. */
+:is(.view-cal__card, .view-board__card)[data-color='gray'] { --card-hue: var(--table-fill-solid-grey); }
+:is(.view-cal__card, .view-board__card)[data-color='red'] { --card-hue: var(--table-fill-solid-red); }
+:is(.view-cal__card, .view-board__card)[data-color='orange'] { --card-hue: var(--table-fill-solid-orange); }
+:is(.view-cal__card, .view-board__card)[data-color='yellow'] { --card-hue: var(--table-fill-solid-yellow); }
+:is(.view-cal__card, .view-board__card)[data-color='green'] { --card-hue: var(--table-fill-solid-green); }
+:is(.view-cal__card, .view-board__card)[data-color='teal'] { --card-hue: var(--table-fill-solid-teal); }
+:is(.view-cal__card, .view-board__card)[data-color='blue'] { --card-hue: var(--table-fill-solid-blue); }
+:is(.view-cal__card, .view-board__card)[data-color='purple'] { --card-hue: var(--table-fill-solid-purple); }
+:is(.view-cal__card, .view-board__card)[data-color='pink'] { --card-hue: var(--table-fill-solid-pink); }
+:is(.view-cal__card, .view-board__card)[data-color='black'] { --card-hue: var(--table-fill-solid-black); }
+:is(.view-cal__card, .view-board__card)[data-color-strength='light'] { --card-wash: 15%; }
+:is(.view-cal__card, .view-board__card)[data-color-strength='medium'] { --card-wash: 30%; }
+:is(.view-cal__card, .view-board__card)[data-color-strength='strong'] { --card-wash: 50%; }
+:is(.view-cal__card, .view-board__card)[data-color] { background: color-mix(in srgb, var(--card-hue) var(--card-wash, 30%), var(--bg)); }
+
 /* Wrap (YAZ-4558 D23): the full title on more lines, and the day grows with it. */
 .view-cal__card--wrap .view-cal__card-title,
 .view-cal__card--wrap .view-read-only-name__text {

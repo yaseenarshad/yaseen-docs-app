@@ -1113,3 +1113,55 @@ describe('the grid lines (YAZ-4878)', () => {
   })
 })
 
+describe('a card coloured by hand (YAZ-4906)', () => {
+  const menuItem = (text: string) => byText<HTMLButtonElement>(document.body, '.ctx-menu__item', text)
+  const colourOf = (el: ParentNode, title: string) => cardOf(el, title).getAttribute('data-color')
+  const undoOn = (card: Element, shift = false) => {
+    act(() => void card.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, shiftKey: shift, bubbles: true, cancelable: true })))
+    draw()
+  }
+
+  it('right-click › Colour › Blue writes `color: blue` into the note, and the card wears it at once; Light adds the word; No colour removes it', async () => {
+    const { el } = mount(CALENDAR)
+    expect(colourOf(el, 'Bare')).toBeNull()
+    act(() => void cardOf(el, 'Bare').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })))
+    draw()
+    click(menuItem('Colour'))
+    click(q(document.body, '[aria-label="Card colour swatches"] [aria-label="Blue"]'))
+    expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'color', 'blue')
+    expect(colourOf(el, 'Bare')).toBe('blue')
+    expect(cardOf(el, 'Bare').getAttribute('data-color-strength')).toBe('medium')
+    // The panel stays open: the strength goes in the same visit.
+    click(byText(q(document.body, '[aria-label="Card colour strength"]'), 'button', 'Light'))
+    expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'color', 'blue light')
+    await flush()
+    click(byText(document.body, '.colour-panel__none', 'No colour'))
+    expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'color', undefined)
+  })
+
+  it('⌘Z on a card writes the value the note had back; ⇧⌘Z the colour again', async () => {
+    const { el } = mount(CALENDAR)
+    act(() => void cardOf(el, 'Bare').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })))
+    draw()
+    click(menuItem('Colour'))
+    click(q(document.body, '[aria-label="Card colour swatches"] [aria-label="Green"]'))
+    await flush()
+    expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'color', 'green')
+    undoOn(cardOf(el, 'Bare'))
+    expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'color', undefined)
+    undoOn(cardOf(el, 'Bare'), true)
+    expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'color', 'green')
+  })
+
+  it('a stored colour the app reads tints the card; a crossed-out card keeps it; one it cannot read gives none; a read-only note has no Colour item', () => {
+    const records = [rec('Tinted', { due: '2026-12-03', color: 'Purple strong' }), rec('Odd', { due: '2026-12-03', color: 'turquoise' }), rec('Sealed', { due: '2026-12-04', color: 'red' })]
+    const { el } = mount(`${CALENDAR}    crossOut:\n      and:\n        - note.color == "Purple strong"\n`, { records, readOnly: new Set(['/vault/Sealed.md']) })
+    expect(colourOf(el, 'Tinted')).toBe('purple')
+    expect(cardOf(el, 'Tinted').getAttribute('data-color-strength')).toBe('strong')
+    expect(cardOf(el, 'Tinted').classList.contains('view-cal__card--crossed')).toBe(true)
+    expect(colourOf(el, 'Odd')).toBeNull()
+    act(() => void cardOf(el, 'Sealed').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })))
+    draw()
+    expect([...document.body.querySelectorAll('.ctx-menu__item')].map((b) => b.textContent)).not.toContain('Colour')
+  })
+})
