@@ -17,6 +17,8 @@ export interface PreviewCache {
   load(key: string): Promise<string | null>
   /** The settled picture for `key` now, with no request and no LRU move (a window that mounts paints it at once). */
   peek(key: string): string | undefined
+  /** Forget one settled picture now (`onEvict` hears it); an in-flight one still settles. */
+  drop(key: string): void
   /** Forget everything — the library changed, or a test must not inherit another's memo. */
   clear(): void
   /** The tile's picture: an `<img>` once there is one, the placeholder until then (or never). */
@@ -28,15 +30,23 @@ export interface PreviewCache {
  * `limit` bounds how many settled pictures are kept, least recently seen out first (YAZ-1800: a
  * board's picture is ~1200 px and keyed per edit, so an unbounded map would only ever grow). It is
  * required (YAZ-3737): every cache is a long-lived module map. `maxBytes` also bounds their summed
- * size, by the dataURL's length (S13): a few big pictures can cost more than many small ones. `onEvict` hears each
+ * size, by the dataURL's length (S13), or by `sizeOf` when the value only names the picture (the board embeds' blob
+URL: the SVG text's length, the YAZ-4821 checker's round 1): a few big pictures can cost more than many small ones. `onEvict` hears each
  * settled picture that leaves (the LRU, a re-settle of its key, `clear`): the board embeds' cache (YAZ-4825) keeps blob
  * URLs, and revokes each one there.
  */
 export function createPreviewCache(
   fetchPreview: (key: string) => Promise<string>,
-  { limit, maxBytes = Infinity, onEvict }: { limit: number; maxBytes?: number; onEvict?: (key: string, value: string) => void },
+  { limit, maxBytes = Infinity, onEvict, sizeOf = (_key, value) => value.length }: { limit: number; maxBytes?: number; onEvict?: (key: string, value: string) => void; sizeOf?: (key: string, value: string) => number },
 ): PreviewCache {
   const settledByKey = new Map<string, string>()
+  /** Each settled picture's size as counted when it settled: what leaves is what came. */
+  const sizes = new Map<string, number>()
+  const forget = (key: string): void => {
+    bytes -= sizes.get(key) ?? 0
+    sizes.delete(key)
+    settledByKey.delete(key)
+  }
   const inFlight = new Map<string, Promise<string | null>>()
   let bytes = 0
 
@@ -54,18 +64,18 @@ export function createPreviewCache(
       .then((dataURL) => {
         const old = settledByKey.get(key)
         if (old !== undefined) {
-          settledByKey.delete(key)
-          bytes -= old.length
+          forget(key)
           if (old !== dataURL) onEvict?.(key, old)
         }
+        const size = sizeOf(key, dataURL)
         settledByKey.set(key, dataURL)
-        bytes += dataURL.length
+        sizes.set(key, size)
+        bytes += size
         // The oldest go first, but never the picture just settled: one bigger than the budget still shows.
         for (const [oldest, picture] of settledByKey) {
           if (settledByKey.size <= limit && bytes <= maxBytes) break
           if (oldest === key) break
-          settledByKey.delete(oldest)
-          bytes -= picture.length
+          forget(oldest)
           onEvict?.(oldest, picture)
         }
         return dataURL
@@ -79,9 +89,16 @@ export function createPreviewCache(
   return {
     load,
     peek: (key) => settledByKey.get(key),
+    drop: (key) => {
+      const picture = settledByKey.get(key)
+      if (picture === undefined) return
+      forget(key)
+      onEvict?.(key, picture)
+    },
     clear: () => {
       if (onEvict !== undefined) for (const [key, picture] of settledByKey) onEvict(key, picture)
       settledByKey.clear()
+      sizes.clear()
       inFlight.clear()
       bytes = 0
     },

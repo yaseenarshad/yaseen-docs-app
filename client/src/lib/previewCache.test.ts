@@ -70,6 +70,22 @@ describe('createPreviewCache', () => {
     expect(fetch.mock.calls.map(([key]) => key)).toEqual(['a', 'b', 'c', 'b', 'zzzzz', 'a', 'c'])
   })
 
+  it('YAZ-4821 checker: `sizeOf` counts a picture its value only names (a blob URL), and what leaves is what was counted', async () => {
+    const left: string[] = []
+    const size: Record<string, number> = { a: 6, b: 6, c: 3 }
+    const cache = createPreviewCache(async (key) => `blob:${key}`, { limit: 100, maxBytes: 10, sizeOf: (key) => size[key]!, onEvict: (key) => left.push(key) })
+    await cache.load('a')
+    await cache.load('b') // 12 > 10: a goes
+    expect(left).toEqual(['a'])
+    await cache.load('c') // 9 fits
+    expect(left).toEqual(['a'])
+    cache.drop('b') // the sweep's drop: b leaves, heard; its 6 go with it
+    expect(left).toEqual(['a', 'b'])
+    await cache.load('a') // 3 + 6 fits: nothing more leaves
+    expect(left).toEqual(['a', 'b'])
+    expect(cache.peek('c')).toBe('blob:c')
+  })
+
   it('YAZ-4825: onEvict hears each settled picture that leaves (the LRU, clear); peek reads one with no request', async () => {
     const left: string[] = []
     const fetch = vi.fn(async (key: string) => `url:${key}`)

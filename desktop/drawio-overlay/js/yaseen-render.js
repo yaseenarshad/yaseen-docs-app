@@ -4,7 +4,8 @@
  * and gets back `{ id, ok: true, dataUrl, pages, page, bounds }` — the diagram's page `page` (YAZ-4825: the
  * first page when the request names none, or one that is gone) drawn by draw.io's own viewer
  * (`viewer-static.min.js`), as an SVG or a PNG data URL — or `{ id, ok: false, error }`. `dataUrl`
- * is `''` for a page with nothing on it. `maxWidth` / `maxHeight` shrink the drawing to fit (a
+ * is `''` for a page with nothing on it. `format: 'svgText'` (YAZ-4834 A20, an embed's window) answers the SVG
+ * TEXT itself in `svg` instead of `dataUrl`: the app makes a blob of it, so nothing encodes it to base64 and back. `maxWidth` / `maxHeight` shrink the drawing to fit (a
  * preview); without them it is drawn at `scale` (an export).
  *
  * ONE PICTURE, TWO ENCODINGS: the PNG is the finished SVG — fonts and images already inside it —
@@ -176,7 +177,8 @@
 
 		return embed(svgRoot).then(function(svgRoot)
 		{
-			return {dataUrl: (req.format == 'png') ? toPng(svgRoot) : Editor.createSvgDataUri(mxUtils.getXml(svgRoot)), info: answer};
+			var svg = mxUtils.getXml(svgRoot);
+			return {dataUrl: (req.format == 'png') ? toPng(svgRoot) : (req.format == 'svgText') ? svg : Editor.createSvgDataUri(svg), info: answer};
 		});
 	}
 
@@ -215,7 +217,9 @@
 		{
 			return Promise.resolve(drawn.dataUrl).then(function(dataUrl)
 			{
-				return {id: req.id, ok: true, dataUrl: dataUrl, pages: drawn.info.pages, page: drawn.info.page, bounds: drawn.info.bounds};
+				var reply = {id: req.id, ok: true, pages: drawn.info.pages, page: drawn.info.page, bounds: drawn.info.bounds};
+				reply[(req.format == 'svgText') ? 'svg' : 'dataUrl'] = dataUrl;
+				return reply;
 			});
 		}).then(answer, function(e)
 		{

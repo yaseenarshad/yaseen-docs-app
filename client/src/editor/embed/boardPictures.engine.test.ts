@@ -15,7 +15,7 @@ vi.mock('../../api', () => ({
 }))
 
 import { api } from '../../api'
-import { DRAWING_PADDING, loadPicture } from './boardPictures'
+import { DRAWING_PADDING, loadPicture, type BoardPicture } from './boardPictures'
 
 const ASSETS = 'http://assets.test/'
 const FONTS = `${process.cwd()}/node_modules/@excalidraw/excalidraw/dist/prod/`
@@ -54,7 +54,7 @@ describe('a drawing`s picture, real engine', () => {
       { type: 'text', id: 't1', x: 120, y: 60, width: 80, height: 25, text: 'Hello', originalText: 'Hello', fontSize: 20, fontFamily: 5 },
       { type: 'frame', id: 'f1', x: 400, y: 300, width: 300, height: 200, name: 'Top' },
     ]) as never)
-    const picture = (await loadPicture({ root: '/v', path: 'fonts.excalidraw' }, null))!
+    const picture = (await loadPicture({ root: '/v', path: 'fonts.excalidraw' }, null)) as BoardPicture
     expect(api.drawing.load).toHaveBeenCalledWith({ root: '/v', path: '/v/fonts.excalidraw', imageMaxPx: 2400 })
     const svg = await blobs.get(picture.url)!.text()
     expect(svg).toMatch(/@font-face \{ font-family: "Excalifont"; src: url\(data:font\/woff2;base64,/)
@@ -69,7 +69,7 @@ describe('a drawing`s picture, real engine', () => {
     const many = Array.from({ length: 10_000 }, (_, i) => ({ type: i % 3 === 0 ? 'text' : 'rectangle', id: `e${i}`, x: (i % 100) * 50, y: Math.floor(i / 100) * 50, width: 40, height: 30, text: `n${i}`, originalText: `n${i}`, fontSize: 12, fontFamily: 5 }))
     vi.mocked(api.drawing.load).mockResolvedValueOnce(scene(many) as never)
     const t0 = performance.now()
-    const picture = (await loadPicture({ root: '/v', path: 'big.excalidraw' }, null))!
+    const picture = (await loadPicture({ root: '/v', path: 'big.excalidraw' }, null)) as BoardPicture
     const ms = performance.now() - t0
     console.info(`10,000 elements: ${ms.toFixed(0)} ms for the picture, ${(picture.bytes / 1e6).toFixed(1)} MB of SVG`)
     expect(picture.bounds).toEqual({ x: -10, y: -10, width: 4990 + 20, height: 4980 + 20 })

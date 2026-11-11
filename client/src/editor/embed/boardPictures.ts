@@ -2,12 +2,12 @@
  * BOARD PICTURES (YAZ-4825; D2, D5, D6, items 1, 14, 25, 26, 27, 28): the one app-wide source of the pictures board
  * windows show. Many windows of one board, in one theme, on one page, share ONE picture.
  *
- * THE CACHE: `createPreviewCache` with 24 kept, least recently seen out first. Its key is root, path, mtime, theme,
+ * THE CACHE: `createPreviewCache` with 24 kept and 64 MB of SVG text at most, least recently seen out first. Its key is root, path, mtime, theme,
  * the diagram dark-colour setting and the page, so a write, a theme flip, a setting change or a page change is simply
  * a new key. The cache's value is a BLOB URL of the SVG text (serialized once), so every `<img>` reads the same bytes;
  * the URL is revoked when its entry leaves the cache (`onEvict`). The bounds, pages and frames of each picture sit in
  * `meta` beside it, under the same key, and leave with it. A sleeping tab unmounts its editor, so its windows
- * `destroy()`; the LRU then frees their pictures (item 27).
+ * `destroy()`; then the sleep's sweep (`dropPicturesExcept`, A5) frees each picture that no mounted window shows (item 27).
  *
  *   drawing   `drawing.load` (pictures in it at most 2400 px, item 14) → restore as the sidebar's hover picture does →
  *             the engine's `exportToSvg` in an idle callback (item 26). The engine inlines the fonts it draws with as
@@ -28,12 +28,10 @@
  */
 import { isDiagram } from '@shared/fileKind'
 import type { DiagramDarkColors, WatchEvent } from '@shared/types'
-import { api } from '../../api'
+import { api, BridgeRequestError } from '../../api'
 import { renderDiagramPage, type BoardBounds, type DiagramPageRef } from '../../diagrams/renderDiagram'
-import { parseSceneText } from '../../drawings/drawingScene'
-import { loadExcalidraw } from '../../drawings/engine'
+import { readDrawingForPicture } from '../../drawings/drawingScene'
 import { createPreviewCache } from '../../lib/previewCache'
-import { visibleElements } from '../../lib/scenePreview'
 import { storage } from '../../lib/storage'
 import { appliedTheme } from '../../lib/theme'
 import { setEmbedPictureStats } from './pictureStats'
@@ -42,6 +40,8 @@ export type { BoardBounds, DiagramPageRef }
 
 /** How many pictures the cache keeps (D5). */
 export const PICTURE_LIMIT = 24
+/** And how much SVG text, by its length (the YAZ-4821 checker's round 1): a few huge boards cannot hold all the memory. */
+export const PICTURE_MAX_BYTES = 64 * 1024 * 1024
 /** Pictures inside a drawing load at most this big (item 14). */
 export const IMAGE_MAX_PX = 2400
 /** The engine's `DEFAULT_EXPORT_PADDING`, which `exportToSvg` adds around the board. */
@@ -118,23 +118,10 @@ function whenIdle(): Promise<void> {
   })
 }
 
-/** An SVG data URL (draw.io's base64 or its plain form) → the SVG text. */
-function svgOfDataUrl(dataUrl: string): string {
-  const comma = dataUrl.indexOf(',')
-  const head = dataUrl.slice(0, comma)
-  const body = dataUrl.slice(comma + 1)
-  if (head.endsWith(';base64')) {
-    const binary = atob(body)
-    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
-    return new TextDecoder().decode(bytes)
-  }
-  return decodeURIComponent(body)
-}
-
 async function drawDiagram(root: string, path: string, theme: 'light' | 'dark', darkColors: DiagramDarkColors, page: string | null): Promise<Drawn> {
   const { xml } = await api.diagram.load({ root, path })
   const drawn = await renderDiagramPage(xml, page, theme, darkColors)
-  return { svg: drawn.dataUrl === '' ? '' : svgOfDataUrl(drawn.dataUrl), bounds: drawn.dataUrl === '' ? null : drawn.bounds, pages: drawn.pages, page: drawn.page, frames: [] }
+  return { svg: drawn.picture, bounds: drawn.picture === '' ? null : drawn.bounds, pages: drawn.pages, page: drawn.page, frames: [] }
 }
 
 interface SceneElement {
@@ -156,18 +143,14 @@ export function framesOf(elements: readonly SceneElement[]): BoardFrame[] {
 }
 
 async function drawDrawing(root: string, path: string, theme: 'light' | 'dark'): Promise<Drawn> {
-  const [res, engine] = await Promise.all([api.drawing.load({ root, path, imageMaxPx: IMAGE_MAX_PX }), loadExcalidraw()])
-  const parsed = parseSceneText(res.json)
-  const elements = visibleElements(engine.restoreElements(parsed.elements as never, null)) as unknown as SceneElement[]
+  const read = await readDrawingForPicture(root, path, IMAGE_MAX_PX)
+  const { engine, appState, files } = read
+  const elements = read.elements as SceneElement[]
   if (elements.length === 0) return { svg: '', bounds: null, pages: [], page: null, frames: [] }
-  // The image map exactly as the editor builds it (`DrawingEditor`'s `toDocument`), as the hover picture does.
-  const files: Record<string, unknown> = {}
-  const created = Date.now()
-  for (const [id, entry] of Object.entries(res.files)) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
   await whenIdle()
   const svgEl = await engine.exportToSvg({
     elements: elements as never,
-    appState: { ...parsed.appState, exportBackground: true, exportWithDarkMode: theme === 'dark', exportPadding: DRAWING_PADDING } as never,
+    appState: { ...appState, exportBackground: true, exportWithDarkMode: theme === 'dark', exportPadding: DRAWING_PADDING } as never,
     files: files as never,
   })
   const svg = new XMLSerializer().serializeToString(svgEl)
@@ -209,7 +192,8 @@ function evict(key: string, url: string): void {
   report()
 }
 
-const cache = createPreviewCache(drawPicture, { limit: PICTURE_LIMIT, onEvict: evict })
+// The value is a blob URL; its size is the SVG text's, which `drawPicture` puts in `meta` before the value settles.
+const cache = createPreviewCache(drawPicture, { limit: PICTURE_LIMIT, maxBytes: PICTURE_MAX_BYTES, onEvict: evict, sizeOf: (key) => meta.get(key)?.bytes ?? 0 })
 
 /** The newest mtime known per absolute path that a window shows. */
 const mtimes = new Map<string, number>()
@@ -230,25 +214,30 @@ export function peekPicture(key: string): BoardPicture | undefined {
 }
 
 /**
- * The picture of `ref` on `page`, now: shared with every window asking for the same key. Null when the board cannot
- * be read or drawn (the window's "Missing …" state).
+ * The picture of `ref` on `page`, now: shared with every window asking for the same key. `'missing'` when the file is
+ * not there (the window's "Missing …"), `'broken'` when it would not read or draw (its "Can't show …", A4).
  */
-export async function loadPicture(ref: PictureRef, page: string | null): Promise<BoardPicture | null> {
+export async function loadPicture(ref: PictureRef, page: string | null): Promise<BoardPicture | 'missing' | 'broken'> {
   const abs = absolutePath(ref.root, ref.path)
   if (!mtimes.has(abs)) {
     try {
       const head = await api.boardHead(abs)
       // A watcher event may have brought a newer one meanwhile.
       if (!mtimes.has(abs) || (mtimes.get(abs) ?? 0) < head.mtime) mtimes.set(abs, head.mtime)
-    } catch {
-      return null
+    } catch (err) {
+      return err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? 'missing' : 'broken'
     }
   }
+  // An `unlink` while the head was read.
   const key = currentKey(ref, page)
-  if (key === null) return null
+  if (key === null) return 'missing'
   const url = await cache.load(key)
-  if (url === null) return null
-  return meta.get(key) ?? null
+  return url === null ? 'broken' : (meta.get(key) ?? 'broken')
+}
+
+/** The sleep's sweep (A5): every settled picture whose key is not in `keep` leaves the cache now. */
+export function dropPicturesExcept(keep: ReadonlySet<string>): void {
+  for (const key of [...meta.keys()]) if (!keep.has(key)) cache.drop(key)
 }
 
 /** Forget every picture (a test; never the app). */

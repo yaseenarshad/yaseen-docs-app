@@ -119,6 +119,20 @@ describe.skipIf(!existsSync(`${WEBAPP}js/viewer-static.min.js`))(`yaseen-render.
     expect(await render(mxfile(model('')))).toMatchObject({ ok: true, dataUrl: '', pages: [{ id: 'p0', name: 'Page-1' }], bounds: null })
   })
 
+  it('YAZ-4834 A20: `svgText` answers the SVG TEXT in `svg` (no data URL), the same SVG the data URL carries', async () => {
+    const { render } = await openRenderer()
+    const file = mxfile(model(cell('a', 'Text answer', 10)))
+    const asText = await render(file, { format: 'svgText', padding: 10 })
+    expect(asText.ok).toBe(true)
+    expect(asText.dataUrl).toBeUndefined()
+    expect(asText.svg.startsWith('<svg')).toBe(true)
+    // The same SVG but for draw.io's random `ge-svg-…` id, new per drawing.
+    const noId = (svg) => svg.replaceAll(/ge-svg-[\w-]+/g, 'ge-svg-ID')
+    expect(noId(asText.svg)).toBe(noId(svgOf(await render(file, { padding: 10 }))))
+    expect(asText.bounds).not.toBeNull()
+    expect(await render(mxfile(model('')), { format: 'svgText' })).toMatchObject({ ok: true, svg: '', bounds: null })
+  })
+
   it('carries the font faces the diagram uses — and only those — inside the SVG, as data', async () => {
     const { render } = await openRenderer()
     const svg = svgOf(await render(mxfile(model(cell('a', 'Title', 10, 'text;html=1;fontFamily=Assistant;')))))

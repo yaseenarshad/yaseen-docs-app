@@ -9,7 +9,8 @@ import type { WatchEvent } from '@shared/types'
 
 const bridge = vi.hoisted(() => ({ watchers: new Map<string, (ev: WatchEvent) => void>(), offs: [] as string[] }))
 
-vi.mock('../../api', () => ({
+vi.mock('../../api', async (importOriginal) => ({
+  BridgeRequestError: (await importOriginal<typeof import('../../api')>()).BridgeRequestError,
   api: {
     boardHead: vi.fn(async (path: string) => ({ path, mtime: 100, size: 1, meta: null })),
     diagram: { load: vi.fn(async ({ path }: { path: string }) => ({ path, xml: `<mxfile>${path}</mxfile>`, mtime: 100, size: 1 })) },
@@ -24,8 +25,9 @@ vi.mock('../../api', () => ({
   },
 }))
 vi.mock('../../diagrams/renderDiagram', () => ({
+  // The SVG text itself (A20): the frame's `svgText` answer, which goes into the blob as it is.
   renderDiagramPage: vi.fn(async (xml: string, page: string | null) => ({
-    dataUrl: `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg">${xml}</svg>`)}`,
+    picture: `<svg xmlns="http://www.w3.org/2000/svg">${xml}</svg>`,
     page: page === 'p1' ? 'p1' : 'p0', // the renderer's own fallback: a gone id draws the first page
     pages: [
       { id: 'p0', name: 'One' },
@@ -35,10 +37,17 @@ vi.mock('../../diagrams/renderDiagram', () => ({
   })),
 }))
 
-import { api } from '../../api'
+import { api, BridgeRequestError } from '../../api'
 import { renderDiagramPage } from '../../diagrams/renderDiagram'
-import { absolutePath, clearPictures, currentKey, framesOf, loadPicture, peekPicture, PICTURE_LIMIT, pictureKey, watchBoard, watchCounts } from './boardPictures'
+import { absolutePath, clearPictures, currentKey, dropPicturesExcept, framesOf, loadPicture, peekPicture, PICTURE_LIMIT, PICTURE_MAX_BYTES, pictureKey, watchBoard, watchCounts, type BoardPicture } from './boardPictures'
 import { embedPictureStats } from './pictureStats'
+
+/** A settled picture, or the test fails with what came instead. */
+async function picture(ref: { root: string; path: string }, page: string | null = null): Promise<BoardPicture> {
+  const got = await loadPicture(ref, page)
+  if (typeof got === 'string') throw new Error(`no picture: ${got}`)
+  return got
+}
 
 let serial = 0
 const created: string[] = []
@@ -75,7 +84,7 @@ describe('board pictures', () => {
     const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
     expect(blob.type).toBe('image/svg+xml')
     expect(await blob.text()).toContain('<mxfile>/v/A.drawio</mxfile>')
-    expect(peekPicture(all[0]!.key)).toBe(all[0])
+    expect(peekPicture((all[0] as BoardPicture).key)).toBe(all[0])
   })
 
   it(`keeps ${PICTURE_LIMIT}: the least recently seen leaves first, its blob URL revoked; the Memory page counts them`, async () => {
@@ -97,15 +106,34 @@ describe('board pictures', () => {
 
   it('a page that is gone draws the first page; another page is its own picture', async () => {
     const ref = { root: '/v', path: 'P.drawio' }
-    expect((await loadPicture(ref, 'gone'))!.page).toBe('p0')
-    expect((await loadPicture(ref, 'p1'))!.page).toBe('p1')
+    expect((await picture(ref, 'gone')).page).toBe('p0')
+    expect((await picture(ref, 'p1')).page).toBe('p1')
     expect(renderDiagramPage).toHaveBeenCalledTimes(2)
   })
 
-  it('a board that cannot be read is null (the window`s Missing state), and is asked again next time', async () => {
-    vi.mocked(api.boardHead).mockRejectedValueOnce(new Error('NOT_FOUND'))
-    expect(await loadPicture({ root: '/v', path: 'Gone.drawio' }, null)).toBeNull()
-    expect(await loadPicture({ root: '/v', path: 'Gone.drawio' }, null)).not.toBeNull()
+  it('A4: a file that is not there is `missing`; one that will not read or draw is `broken`; each is asked again next time', async () => {
+    vi.mocked(api.boardHead).mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'no such board'))
+    expect(await loadPicture({ root: '/v', path: 'Gone.drawio' }, null)).toBe('missing')
+    expect(await loadPicture({ root: '/v', path: 'Gone.drawio' }, null)).toMatchObject({ url: 'blob:1' })
+    vi.mocked(api.boardHead).mockRejectedValueOnce(new BridgeRequestError('FORBIDDEN', 'no access'))
+    expect(await loadPicture({ root: '/v', path: 'Locked.drawio' }, null)).toBe('broken')
+    vi.mocked(renderDiagramPage).mockRejectedValueOnce(new Error('diagram picture timed out'))
+    expect(await loadPicture({ root: '/v', path: 'Slow.drawio' }, null)).toBe('broken')
+    expect(await loadPicture({ root: '/v', path: 'Slow.drawio' }, null)).toMatchObject({ page: 'p0' })
+  })
+
+  it('A5: the sleep`s sweep drops each picture not in the kept set, its blob URL revoked; the kept one stays', async () => {
+    const kept = await picture({ root: '/v', path: 'Kept.drawio' })
+    const gone = await picture({ root: '/v', path: 'Gone.drawio' })
+    dropPicturesExcept(new Set([kept.key]))
+    expect(revoked).toEqual([gone.url])
+    expect(peekPicture(gone.key)).toBeUndefined()
+    expect(peekPicture(kept.key)).toBe(kept)
+    expect(embedPictureStats().count).toBe(1)
+  })
+
+  it('a byte limit too: 64 MB of SVG text, counted by the SVG text, not by the blob URL (the cache`s `sizeOf`, previewCache.test.ts)', () => {
+    expect(PICTURE_MAX_BYTES).toBe(64 * 1024 * 1024)
   })
 
   it('the watcher: one subscription per root; a change of a shown path moves its key; every other path is ignored; the last window ends it', async () => {

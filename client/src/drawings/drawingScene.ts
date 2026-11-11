@@ -19,6 +19,8 @@ import { isDrawing } from '@shared/fileKind'
 import { isRecord } from '@shared/guards'
 import { isDrawingReadOnly } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
+import { visibleElements } from '../lib/scenePreview'
+import { loadExcalidraw, type ExcalidrawModule } from './engine'
 
 /** The scene shape a preview needs; deliberately loose — the file is user data, not our type. */
 export interface DrawingScene {
@@ -163,4 +165,26 @@ export function parseSceneText(text: string): DrawingScene {
 export function openViewport(scene: DrawingScene): { viewport: { target: readonly unknown[]; fit: 'scale-down' } } | undefined {
   const target = scene.elements.filter((e) => isRecord(e) && e.isDeleted !== true)
   return target.length > 0 ? { viewport: { target, fit: 'scale-down' } } : undefined
+}
+
+/** A drawing read for a PICTURE (YAZ-4834 A19): the sidebar's hover picture and an embed's window read it this way. */
+export interface DrawingForPicture {
+  engine: ExcalidrawModule
+  /** The file's own appState (its background colour). */
+  appState: Record<string, unknown>
+  /** Restored as the canvas would, the soft-deleted left out; none means nothing to draw. */
+  elements: unknown[]
+  /** The image map exactly as the editor builds it (`DrawingEditor`'s `toDocument`). */
+  files: Record<string, unknown>
+}
+
+/** Reads `path` through `drawing:load` (pictures in it at most `imageMaxPx`) and restores it for a picture. */
+export async function readDrawingForPicture(root: string, path: string, imageMaxPx: number): Promise<DrawingForPicture> {
+  const [res, engine] = await Promise.all([api.drawing.load({ root, path, imageMaxPx }), loadExcalidraw()])
+  const parsed = parseSceneText(res.json)
+  const elements = visibleElements(engine.restoreElements(parsed.elements as never, null) as unknown[])
+  const files: Record<string, unknown> = {}
+  const created = Date.now()
+  for (const [id, entry] of Object.entries(res.files)) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+  return { engine, appState: parsed.appState, elements, files }
 }
