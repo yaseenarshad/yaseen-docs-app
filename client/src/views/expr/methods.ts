@@ -1,6 +1,6 @@
 import { FOLDER_SETTINGS_FILE, inFolder } from '@shared/types'
 import { stripBrackets } from '@shared/linkResolver'
-import { formatDate, relativeDate, startOfDay } from './dates'
+import { type DateSpan, formatDate, relativeDate, spanOf, startOfDay } from './dates'
 import { ArgError } from './ops'
 import {
   DateValue, DurationValue, ErrorValue, FileValue, type FileRecordLike, LinkValue, RegexValue, type Scope, type Value, type ValueType,
@@ -104,11 +104,20 @@ const NUMBER: Table<number> = {
   toFixed: (n, [p]) => n.toFixed(needNumber('toFixed', p)),
 }
 
+/** `isToday()` / `isThisWeek()` / `isThisMonth()` (YAZ-4919): the date falls in the run's day, week or month — LIVE, by the scope's clock. */
+const inSpan = (span: DateSpan): Method<DateValue> => (d, _, { now, weekStartsOn }) => {
+  const { start, end } = spanOf(span, now ?? Date.now(), weekStartsOn)
+  return d.ms >= start && d.ms < end
+}
+
 const DATE: Table<DateValue> = {
   date: d => new DateValue(startOfDay(d.ms), false),
   format: (d, [f]) => formatDate(d.ms, needString('format', f)),
   time: d => formatDate(d.ms, 'HH:mm:ss'),
   relative: d => relativeDate(d.ms),
+  isToday: inSpan('day'),
+  isThisWeek: inSpan('week'),
+  isThisMonth: inSpan('month'),
 }
 
 /** Sort order: null, numbers, dates/durations (by ms), strings (localeCompare), then everything else. */

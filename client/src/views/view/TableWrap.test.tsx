@@ -137,7 +137,7 @@ describe('"Wrap text" and "Clip text" in the column header menu (YAZ-4582, D29)'
     rightClick(th(el, 1))
     const parents = [...el.querySelectorAll('.ctx-menu [aria-haspopup="menu"]')].map((b) => b.textContent)
     // Then the column's fill flyout, in its own group (YAZ-3746 13AQ), and the header row's look (YAZ-4794).
-    expect(parents).toEqual(['Sort', 'Group', 'Text', 'Fill column', 'Header row'])
+    expect(parents).toEqual(['Sort', 'Group', 'Filter', 'Text', 'Fill column', 'Header row'])
   })
 })
 

@@ -80,6 +80,13 @@ export interface Scope {
    * `asFile()` are ErrorValues and link matching stays textual.
    */
   resolve?: Resolver
+  /**
+   * The clock of this run (YAZ-4919): `today()`, `now()` and a date's `isToday()` / `isThisWeek()` / `isThisMonth()`
+   * read it, so one filter run reads the day ONCE, not per row, and a test injects it. Absent: `Date.now()`.
+   */
+  now?: number
+  /** Settings › Folder pages › Week starts on, for `isThisWeek()`. Absent: Sunday. */
+  weekStartsOn?: 'sunday' | 'monday'
   /** Extra identifiers consulted before note properties, e.g. `values` in custom summaries (GRO-2134). */
   extra?: Record<string, Value>
 }

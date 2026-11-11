@@ -67,6 +67,8 @@ export interface ToolbarProps {
   folder: FolderHost
   /** The app tab that shows this folder page: the key of the Properties popover's remembered tab (YAZ-4607 D59). Absent in the right panel. */
   tabId?: string
+  /** The column menu's "Open the filter panel…" asks (YAZ-4919): each count up opens the Filter popover. */
+  filterAsks?: number
 }
 
 /** `8 items`, or `1 / 8 items` when search or limit reduce what the body shows. */
@@ -80,8 +82,14 @@ export const rowsLabel = (shown: number, total: number, folders?: { shown: numbe
     : `${countLabel(shown - folders.shown, total - folders.total)} · ${countLabel(folders.shown, folders.total, 'folder')}`
 
 /** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
-export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS, tabId, notice }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS, tabId, notice, filterAsks = 0 }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
+  // A new ask from the column menu (YAZ-4919) opens the Filter popover: state set from a prop in render, no effect.
+  const [seenFilterAsks, setSeenFilterAsks] = useState(filterAsks)
+  if (filterAsks !== seenFilterAsks) {
+    setSeenFilterAsks(filterAsks)
+    setOpen('filter')
+  }
   /** The Page tab's text switches, which it hands the folder page while it shows (YAZ-4584 D38); null on every other view. */
   const chips = useContext(FolderPageChips)
   const pageCog = useSyncExternalStore(chips?.subscribe ?? NO_SUBSCRIBE, () => (documentView ? chips?.getState().page?.cog ?? null : null))

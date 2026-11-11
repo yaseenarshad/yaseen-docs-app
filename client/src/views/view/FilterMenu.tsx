@@ -4,11 +4,10 @@ import { type ViewSet, type ViewDef, type FilterNode, type Mutate, showsFolderRo
 import { type ColumnTyping, columnTyping } from '../editorType'
 import type { FolderHost } from '../ViewsPane'
 import type { EngineError } from '../engine'
-import { stripBrackets } from '@shared/linkResolver'
 import { isMentionsColumn } from '../mentionsColumn'
 import {
   type Conjunction, type FilterGroup, type OperatorId, type PropertyType, type Rule, exprToRule, fromGroup, inferType, operator,
-  operatorsFor, ruleToExpr, toGroup,
+  operatorsFor, propertyValues, ruleToExpr, toGroup,
 } from './filterRows'
 import { ColumnPicker } from './ColumnPicker'
 import { canonicalKey } from './keys'
@@ -116,29 +115,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   }
 
   /** The values `records` already hold for one property, distinct and in first-seen order (YAZ-1232). */
-  const suggestionsFor = (property: string, limit = SUGGESTION_LIMIT): string[] => {
-    const out: string[] = []
-    const seen = new Set<string>()
-    const add = (s: string) => {
-      if (s === '' || seen.has(s) || out.length >= limit) return
-      seen.add(s)
-      out.push(s)
-    }
-    if (property === 'file.tags') for (const r of records) for (const tag of r.tags) add(tag)
-    else if (property === 'file.folder') for (const r of records) add(r.folder)
-    else if (property === 'file.links') for (const r of records) for (const link of r.links) add(link)
-    else if (property === 'file.kind') for (const kind of ['note', 'folder']) add(kind)
-    else if (!property.startsWith('file.') && !property.startsWith('formula.')) {
-      for (const option of typingOf(property)?.options ?? []) add(option)
-      const bare = property.startsWith('note.') ? property.slice(5) : property
-      for (const r of records) {
-        const raw = r.properties[bare]
-        if (typeof raw === 'string') add(stripBrackets(raw))
-        else if (Array.isArray(raw)) for (const v of raw) if (typeof v === 'string') add(stripBrackets(v))
-      }
-    }
-    return out
-  }
+  const suggestionsFor = (property: string, limit = SUGGESTION_LIMIT): string[] => propertyValues(property, records, typingOf(property), limit)
 
   /** The property's known values, plus any tick it lacks so a hand-edited one still shows (YAZ-1467). */
   const valueOptions = (property: string, picks: readonly string[]) => {

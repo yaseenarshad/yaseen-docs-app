@@ -2384,8 +2384,8 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(el.querySelector('[aria-label="Delete column Owner"]')).toBeNull()
       click(byLabel(el, 'Columns and view'))
       rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][5])
-      // "Header row ›" (YAZ-4794) after Fill column.
-      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Add column to the right…', 'Sort', 'Group', 'Text', 'Fill column', 'Header row', 'Hide column', 'Freeze up to this column', 'Unfreeze columns'])
+      // "Header row ›" (YAZ-4794) after Fill column; "Filter ›" (YAZ-4919) under Group.
+      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Add column to the right…', 'Sort', 'Group', 'Filter', 'Text', 'Fill column', 'Header row', 'Hide column', 'Freeze up to this column', 'Unfreeze columns'])
       click(menuItem(el, 'Hide column'))
       await flush()
       expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Title'])

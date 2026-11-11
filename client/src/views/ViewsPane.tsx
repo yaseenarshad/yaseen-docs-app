@@ -356,6 +356,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // The note window (YAZ-4547): `opens` mounts a new card per open and renders each open and close; the link to the
   // table; the place, size and pin of the last card closed here, for the next open while this folder page is mounted.
   const [opens, setOpens] = useState(0)
+  /** The header menu's "Open the filter panel…" (YAZ-4919): each ask opens the toolbar's Filter popover. */
+  const [filterAsks, setFilterAsks] = useState(0)
+  const openFilter = useCallback(() => setFilterAsks((n) => n + 1), [])
   const windowLink = useMemo(noteWindowLink, [])
   const lastWindow = useRef<NoteWindowMemory | null>(null)
   const itemProps = useCallback((path: string) => (rowPage(path) !== path || !hoverPreview ? { 'data-hover-item': path, onMouseEnter: noHover, onMouseLeave: noHover } : { 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard, hoverPreview])
@@ -572,8 +575,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // An Image column sorts by the picture's file name (YAZ-4802).
   const byFileName = useMemo(() => (key: string) => settings.columns[key.startsWith('note.') ? key.slice(5) : key]?.kind === 'image', [settings])
   const result = useMemo(
-    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName }),
-    [def, view, shown, resolve, page, optionOrder, optionParent, mentions, byFileName],
+    // The week's start for "is this week" (YAZ-4919); the clock is the run's own.
+    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: defaults.weekStartsOn }),
+    [def, view, shown, resolve, page, optionOrder, optionParent, mentions, byFileName, defaults.weekStartsOn],
   )
 
   const configuredGroups = boardOptionGroups(result.groups, view, key => columnTyping(key, shown, properties, folder.settings), optionParent)
@@ -967,7 +971,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     const all = showsFolderRows(v) && folderRows.length > 0 ? [...noteRecords, ...folderRows] : noteRecords
     const input = hidesSubfolderNotes(v) ? all.filter((r) => directlyIn(r, pageFolder)) : all
     const declared = pageColumnKeys(settings)
-    const out = runView(def, v, input, { resolve, declared, page, optionOrder, mentions, byFileName })
+    const out = runView(def, v, input, { resolve, declared, page, optionOrder, mentions, byFileName, weekStartsOn: defaults.weekStartsOn })
     const grouped = boardOptionGroups(out.groups, v, (key) => columnTyping(key, input, properties, settings))
     const list = shownRows(out.rows, grouped)
     const ctx = { resolve, decls: settings.columns, pageFolder, folderTitle: folderPages.title }
@@ -1062,6 +1066,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         dateColumns={calendarColumns}
         tabId={tabId}
         notice={pauseChip}
+        filterAsks={filterAsks}
       />
       {/* ⌘F (YAZ-4613): on the Page tab the note's own find answers. */}
       {!isPage && <FindBar channel={find.channel} scope="views" hostRef={paneRef} />}
@@ -1085,6 +1090,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         <div className="view-page">{folder.renderPage?.()}</div>
       ) : view.type === 'table' ? (
         <TableView
+          onOpenFilter={openFilter}
           hover={viewHover}
           readOnly={readOnly}
           def={def}

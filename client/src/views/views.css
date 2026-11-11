@@ -1159,6 +1159,32 @@
   box-sizing: border-box;
 }
 
+/* Filter › (YAZ-4919): a box in the flyout, as wide as its rows; the checklist's ✓ box, as the tab row panel's. */
+.column-filter__input {
+  display: block;
+  width: calc(100% - 20px);
+  min-width: 160px;
+  margin: 2px 10px 6px;
+  box-sizing: border-box;
+}
+
+.column-filter__box {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+[role='menuitemcheckbox'][aria-checked='true'] .column-filter__box {
+  border-color: var(--accent);
+}
+
 .view-table tbody td {
   height: var(--view-table-row-h, 28px);
   overflow-wrap: anywhere;

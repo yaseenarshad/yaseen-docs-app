@@ -30,6 +30,10 @@ const CASES: { type: PropertyType; property: string; op: OperatorId; value: stri
   { type: 'date', property: 'note.date', op: 'dateIs', value: '2026-08-01', expr: 'note.date == date("2026-08-01")' },
   { type: 'date', property: 'note.date', op: 'dateBefore', value: '2026-08-01', expr: '!note.date.isEmpty() && note.date < date("2026-08-01")' },
   { type: 'date', property: 'note.date', op: 'dateAfter', value: '2026-08-01', expr: '!note.date.isEmpty() && note.date > date("2026-08-01")' },
+  // Live, relative (YAZ-4919): the engine reads the day at each run.
+  { type: 'date', property: 'note.date', op: 'dateIsToday', value: '', expr: 'note.date.isToday()' },
+  { type: 'date', property: 'note.date', op: 'dateInThisWeek', value: '', expr: 'note.date.isThisWeek()' },
+  { type: 'date', property: 'note.date', op: 'dateInThisMonth', value: '', expr: 'note.date.isThisMonth()' },
   { type: 'date', property: 'note.date', op: 'isEmpty', value: '', expr: 'note.date.isEmpty()' },
   { type: 'date', property: 'note.date', op: 'isNotEmpty', value: '', expr: '!note.date.isEmpty()' },
   { type: 'checkbox', property: 'note.published', op: 'checked', value: '', expr: 'note.published == true' },
