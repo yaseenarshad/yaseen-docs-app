@@ -719,6 +719,8 @@ describe('"Cross out when" (YAZ-4864)', () => {
     expect(crossed(el)).toEqual(['Done task'])
     // The strike is on the name's text: a folder row's icon stays outside it.
     expect(q(cardOf(el, 'Done task'), '.view-cal__card-title--crossed .view-cal__card-name').textContent).toBe('Done task')
+    // The whole card is crossed out, its column lines too (YAZ-4864, demo request).
+    expect(cardOf(el, 'Done task').closest('.view-cal__card')?.classList.contains('view-cal__card--crossed')).toBe(true)
   })
 
   it('"contains" and Any work as in the Filter menu', () => {

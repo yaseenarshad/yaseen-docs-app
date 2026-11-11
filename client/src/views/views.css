@@ -2384,8 +2384,10 @@
   white-space: nowrap;
 }
 
-/* "Cross out when" (YAZ-4864): the name struck through and grey, as a done task in a note; the icon stays. */
-.view-cal__card-title--crossed .view-cal__card-name {
+/* "Cross out when" (YAZ-4864): the whole card struck through and grey, its name and every column line, as a done task
+   in a note (Yaseen: "can we make the entire thing get crossed out including its columns?"). An icon is no text: it stays. */
+.view-cal__card--crossed,
+.view-cal__card--crossed .view-cal__card-name {
   color: var(--fg-muted);
   text-decoration: line-through;
 }

@@ -424,7 +424,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
         <span key={key} className={`view-cal__card-title${row.crossed === true ? ' view-cal__card-title--crossed' : ''}`} title={wrap ? undefined : row.record.title}>
           {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too. */}
           {isFolderRow(row.record) && <FolderIcon size={12} className="view-folder-row__icon" />}
-          {/* "Cross out when" (YAZ-4864) strikes this text only: the icon stays as it is. */}
+          {/* "Cross out when" (YAZ-4864) strikes the whole card's text (`view-cal__card--crossed`): the icon stays as it is. */}
           <span className="view-cal__card-name">{locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}</span>
         </span>
       ) : (
@@ -433,7 +433,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const bar = place?.bar
     // The edges (YAZ-4858): a dated card's two ends; a bar's ends where its row does not cut it. None on a read-only note.
     const edges = !locked && (from !== null || bar !== undefined)
-    const className = `view-cal__card${wrap && bar === undefined ? ' view-cal__card--wrap' : ''}${bar === undefined ? '' : ` view-cal__bar${bar.cutStart ? ' view-cal__bar--cut-start' : ''}${bar.cutEnd ? ' view-cal__bar--cut-end' : ''}`}${drag?.path === path ? ' view-cal__card--drag' : ''}${resize?.path === path ? ' view-cal__card--resize' : ''}${currentItemClass(windowLink, path)}`
+    const className = `view-cal__card${wrap && bar === undefined ? ' view-cal__card--wrap' : ''}${bar === undefined ? '' : ` view-cal__bar${bar.cutStart ? ' view-cal__bar--cut-start' : ''}${bar.cutEnd ? ' view-cal__bar--cut-end' : ''}`}${drag?.path === path ? ' view-cal__card--drag' : ''}${resize?.path === path ? ' view-cal__card--resize' : ''}${row.crossed === true ? ' view-cal__card--crossed' : ''}${currentItemClass(windowLink, path)}`
     const props = {
       className,
       tabIndex: 0,
