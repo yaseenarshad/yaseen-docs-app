@@ -578,6 +578,68 @@ describe("the caret, the selection and the board at any zoom (YAZ-4396)", () => 
     expect(rect.height).toBeCloseTo(25, 6);
   });
 
+  it("YAZ-4902: a colour-run line selected whole is one rect as wide as its drawn letters, at a zoom", async () => {
+    API.setAppState({ zoom: { value: 1.25 as any } });
+    // the real shape: a 24-letter first line under one colour run, a longer second line
+    const text = "(Harbor Lts Proj - #125)\n(Quiet Field Again - #131)";
+    const plain = API.createElement({
+      type: "text",
+      text,
+      x: 30,
+      y: 40,
+      fontSize: 12,
+      textAlign: "left",
+    });
+    const element = {
+      ...plain,
+      textRuns: [{ start: 0, end: 24, color: "#1971c2" }],
+    } as NonDeleted<ExcalidrawTextElement>;
+    API.setElements([element]);
+    API.setSelectedElements([element]);
+    Keyboard.keyPress(KEYS.ENTER);
+    await waitFor(() => expect(mounted.length).toBe(1));
+    const { x, y } = sceneCoordsToViewportCoords(
+      { sceneX: element.x, sceneY: element.y },
+      h.state,
+    );
+    // a drag from the first letter to past the line's end, and a triple
+    // click, both select the whole line from the canvas layout
+    fireEvent.pointerDown(last().root, {
+      button: 0,
+      clientX: x + 1,
+      clientY: y + 5,
+    });
+    fireEvent.pointerMove(window, { clientX: x + 500, clientY: y + 5 });
+    fireEvent.pointerUp(window, { clientX: x + 500, clientY: y + 5 });
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 0,
+      head: 24,
+    });
+    for (let press = 0; press < 3; press++) {
+      fireEvent.pointerDown(last().root, {
+        button: 0,
+        clientX: x + 40,
+        clientY: y + 5,
+        timeStamp: 1000 + press,
+      });
+      fireEvent.pointerUp(window, { clientX: x + 40, clientY: y + 5 });
+    }
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 0,
+      head: 24,
+    });
+    // the highlight: one rect over the first line, 24 letters of 10 px
+    act(() => last().onSelectionChange({ anchor: 0, head: 24 }));
+    const spans = last().root.parentElement!.querySelectorAll<HTMLElement>(
+      ".excalidraw-wysiwyg-selection",
+    );
+    expect(spans.length).toBe(1);
+    const rect = overlayRect(spans[0]);
+    expect(rect.left).toBeCloseTo(0, 6);
+    expect(rect.width).toBeCloseTo(240, 6);
+    expect(rect.top).toBeCloseTo(0, 1);
+  });
+
   it("puts a board layer that scrolls during the edit back, and lets it go after", async () => {
     const layer = document.querySelector<HTMLElement>(".excalidraw-container")!;
     // the app's stylesheet gives it `overflow: hidden`

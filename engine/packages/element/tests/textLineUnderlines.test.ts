@@ -404,6 +404,38 @@ describe("YAZ-3718 D1: text runs in the layout", () => {
     ]);
   });
 
+  it("YAZ-4902: a line with a colour run has the width of the same line with no run", () => {
+    // the real shape: a 24-letter first line under one colour run, a longer second line
+    const originalText = "(Harbor Lts Proj - #125)\n(Quiet Field Again - #131)";
+    const withRun = getStyledVisualLines({
+      ...mixedArgs,
+      originalText,
+      maxWidth: Infinity,
+      textRuns: [{ start: 0, end: 24, color: "#1971c2" }],
+    });
+    const withoutRun = getStyledVisualLines({
+      ...mixedArgs,
+      originalText,
+      maxWidth: Infinity,
+    });
+    expect(withRun.map((line) => [line.width, line.start, line.end])).toEqual(
+      withoutRun.map((line) => [line.width, line.start, line.end]),
+    );
+    expect(withRun[0].segments).toEqual([
+      expect.objectContaining({ start: 0, end: 24, x: 0, width: 240 }),
+    ]);
+    // the selection of the whole first line reaches its last letter
+    const [rect] = getStyledVisualSelectionGeometry({
+      lines: withRun,
+      containerWidth: 260,
+      textAlign: "left",
+      lineHeightPx: 10,
+      selectionStart: 0,
+      selectionEnd: 24,
+    }).rectangles;
+    expect(rect).toEqual({ lineIndex: 0, left: 0, top: 0, width: 240, height: 10 });
+  });
+
   it("maps a selection and a caret through segment widths", () => {
     const lines = getStyledVisualLines({
       ...mixedArgs,
