@@ -416,13 +416,14 @@
 }
 
 /* None in a read-only note, and none for a table that a folded bullet, a folded heading or the outline zoom hides. A
-   Super table that shows a view keeps its anchor in a read-only note: the view is all you see of it (YAZ-4869). */
-.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor:not([data-super-view]),
+   Super table keeps its anchor in a read-only note, without the pill: its tabs switch the views, which change no
+   file, and a view is all you see of the table (YAZ-4869, YAZ-4897). */
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor:not([data-super]),
 .milkdown .ProseMirror .table-zoom-anchor:has(+ :is([data-outline-folded='true'], [data-heading-folded='true'], .outline-zoom-hidden)) {
   display: none;
 }
 
-.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor[data-super-view] > .document-zoom {
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor[data-super] > .document-zoom {
   display: none;
 }
 

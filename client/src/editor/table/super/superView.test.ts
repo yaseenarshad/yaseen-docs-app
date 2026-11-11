@@ -15,6 +15,7 @@ import { mountNote, unmountAll } from '../tableTestKit'
 import { loadSuperTable, SUPER_TYPING_MS } from '../tableZoomPill'
 import { superRuns } from './superData'
 import { activeViewAt, setActiveTab, SUPER_HIDDEN_CLASS } from './superTables'
+import tableCss from '../table.css?inline'
 
 afterEach(unmountAll)
 
@@ -207,5 +208,66 @@ describe('YAZ-4876 S5: edit in a view, header rename, find', () => {
     expect(viewRoot(view).querySelector('.table-super-view__tip')!.textContent).toBe('Edit styled text, merged cells, cell notes and cell lists in Table.')
     expect(getMarkdownForSave(crepe)).toBe(saved)
     expect(saved).toContain('**Big** wall')
+  })
+})
+
+describe('YAZ-4897: a read-only note shows a Super table’s tabs, and its views read only', () => {
+  // table.css's `display: none` rules, read as text, against the real anchor (jsdom paints nothing).
+  const hideRules = [...tableCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, , body]) => /display:\s*none/.test(body!))
+    .flatMap(([, sel]) => sel!.split(/,(?![^(]*\))/).map((s) => s.trim()))
+  const hidden = (el: Element) =>
+    hideRules.some((selector) => {
+      try {
+        return el.matches(selector)
+      } catch {
+        return false // a `:has()` jsdom cannot read: the folded-table rules, not these
+      }
+    })
+  const tabNames = (view: EditorView) => [...view.dom.querySelectorAll('.table-super-bar__tab')].map((t) => t.textContent)
+  const tab = (view: EditorView, name: string) => [...view.dom.querySelectorAll<HTMLButtonElement>('.table-super-bar__tab')].find((t) => t.textContent === name)!
+
+  it('the tabs show and switch; the pill, "+", Sort / Group / Filter, the summaries, edits and drags are off; the note is unchanged', async () => {
+    const { view, crepe } = await mountNote(NOTE)
+    const saved = getMarkdownForSave(crepe)
+    await loadSuperTable()
+    await wait(0)
+    crepe.setReadonly(true)
+    await wait(0)
+    const anchor = view.dom.querySelector<HTMLElement>('.table-zoom-anchor')!
+    expect(view.editable).toBe(false)
+    expect(hidden(anchor)).toBe(false)
+    expect(hidden(anchor.querySelector('.document-zoom')!)).toBe(true)
+    expect(tabNames(view)).toEqual(['Table', 'By layer', 'Sizes'])
+
+    tab(view, 'By layer').click()
+    await wait(0)
+    expect(activeViewAt(view.state, tablePos(view))).toBe('By layer')
+    expect(linesOf(view)[0]).toBe('# Top 2')
+    expect(hidden(anchor)).toBe(false)
+    expect(view.dom.querySelector('.table-super-bar__tools')).toBeNull()
+    expect(viewRoot(view).querySelector('.super-view__summary-kind')).toBeNull()
+    expect(viewRoot(view).querySelector('tr[draggable="true"]')).toBeNull()
+    const roof = [...viewRoot(view).querySelectorAll('td')].find((td) => td.textContent === 'Roof')!
+    roof.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await wait(0)
+    expect(viewRoot(view).querySelector('.super-view__edit')).toBeNull()
+
+    // "Table", then back to the view: the tabs never go.
+    tab(view, 'Table').click()
+    await wait(0)
+    expect(view.dom.querySelector('.table-super-view')).toBeNull()
+    expect(hidden(anchor)).toBe(false)
+    tab(view, 'Sizes').click()
+    await wait(0)
+    expect(activeViewAt(view.state, tablePos(view))).toBe('Sizes')
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+  })
+
+  it('a plain table keeps no anchor in a read-only note', async () => {
+    const { view, crepe } = await mountNote(TABLE)
+    crepe.setReadonly(true)
+    await wait(0)
+    expect(hidden(view.dom.querySelector('.table-zoom-anchor')!)).toBe(true)
   })
 })

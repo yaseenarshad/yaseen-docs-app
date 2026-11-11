@@ -6,7 +6,7 @@
  * - THE PILL lives in a widget right before each table: a zero-height anchor (`table-zoom-anchor`) that `table.css`
  *   draws at the table block's top-right corner, outside the cells, with ONE rule (the demo decides the place). It
  *   shows while the pointer is over the table or the pill, while the pill has the focus, and always while the zoom is
- *   not 100% (`data-zoomed`); a read-only note shows none. The widget stops its events and ignores selection, so a key
+ *   not 100% (`data-zoomed`); a read-only note shows none (a Super table keeps its tabs, YAZ-4897). The widget stops its events and ignores selection, so a key
  *   in the pill's field never reaches the note. One key for every pill: a rebuild keeps its DOM and its React root.
  * - A CHANGE is one transaction with the history closed: one ⌘Z.
  * - THE VALUE: the widget renders the table's `zoom` at its position. A transaction that changes a table's `zoom` (or
@@ -72,7 +72,7 @@ function zoomAnchor(view: EditorView, getPos: () => number | undefined): HTMLEle
   anchor.className = 'table-zoom-anchor'
   anchor.contentEditable = 'false'
   const root = createRoot(anchor)
-  let drawn: { table: ProseNode; active: string | null; found: SuperTableProps['found']; ready: boolean } | null = null
+  let drawn: { table: ProseNode; active: string | null; found: SuperTableProps['found']; ready: boolean; editable: boolean } | null = null
   let found: SuperTableProps['found'] = null
   let timer: ReturnType<typeof setTimeout> | null = null
   anchor.renderZoom = () => {
@@ -81,9 +81,10 @@ function zoomAnchor(view: EditorView, getPos: () => number | undefined): HTMLEle
     if (table?.type.name !== 'table') return
     const isSuper = table.attrs.superTable === true
     const active = isSuper ? activeViewAt(view.state, pos!) : null
-    // The same table node, view and find: nothing to draw (YAZ-4869 item 20).
-    if (drawn !== null && drawn.table === table && drawn.active === active && drawn.found === found && drawn.ready === (SuperTable !== null)) return
-    drawn = { table, active, found, ready: SuperTable !== null }
+    // The same table node, view, find and read-only state: nothing to draw (YAZ-4869 item 20, YAZ-4897).
+    const editable = view.editable
+    if (drawn !== null && drawn.table === table && drawn.active === active && drawn.found === found && drawn.ready === (SuperTable !== null) && drawn.editable === editable) return
+    drawn = { table, active, found, ready: SuperTable !== null, editable }
     const zoom = table.attrs.zoom as number
     anchor.toggleAttribute('data-zoomed', zoom !== 100)
     anchor.toggleAttribute('data-super', isSuper)
@@ -169,19 +170,32 @@ export const tableZoomPill = $prose(
         },
       },
       props: { decorations: (state) => zoomKey.getState(state)!.set },
-      view: () => ({
-        update: (view, prev) => {
-          const before = zoomKey.getState(prev)!
-          const after = zoomKey.getState(view.state)!
-          if (before.generation === after.generation) return
-          // A new pill has a new spec; a mapped one keeps its own. Its widget's DOM goes right before its table's block.
-          const kept = new Set(before.set.find().map((deco) => deco.spec))
-          for (const deco of after.set.find()) {
-            if (kept.has(deco.spec)) continue
-            const anchor = view.nodeDOM(deco.from)?.previousSibling as ZoomAnchor | null | undefined
-            if (anchor instanceof HTMLElement && anchor.classList.contains('table-zoom-anchor')) anchor.renderZoom?.()
-          }
-        },
-      }),
+      view: (start) => {
+        let editable = start.editable
+        return {
+          update: (view, prev) => {
+            // The note went read only, or back (YAZ-4897): a Super table's tabs draw again, with or without "+".
+            if (view.editable !== editable) {
+              editable = view.editable
+              for (const deco of zoomKey.getState(view.state)!.set.find()) if (deco.spec.superTable === true) anchorBefore(view, deco.from)?.renderZoom?.()
+            }
+            const before = zoomKey.getState(prev)!
+            const after = zoomKey.getState(view.state)!
+            if (before.generation === after.generation) return
+            // A new pill has a new spec; a mapped one keeps its own. Its widget's DOM goes right before its table's block.
+            const kept = new Set(before.set.find().map((deco) => deco.spec))
+            for (const deco of after.set.find()) {
+              if (kept.has(deco.spec)) continue
+              anchorBefore(view, deco.from)?.renderZoom?.()
+            }
+          },
+        }
+      },
     }),
 )
+
+/** The pill's anchor right before the table at `pos`, or `null`. */
+function anchorBefore(view: EditorView, pos: number): ZoomAnchor | null {
+  const anchor = view.nodeDOM(pos)?.previousSibling
+  return anchor instanceof HTMLElement && anchor.classList.contains('table-zoom-anchor') ? (anchor as ZoomAnchor) : null
+}
