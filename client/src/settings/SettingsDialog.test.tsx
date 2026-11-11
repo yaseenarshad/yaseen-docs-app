@@ -151,7 +151,7 @@ const TABLES_GROUPS = ['All tables', 'Cell notes', 'Calendar tables']
  * Settings › Drawings and diagrams (YAZ-3037; the name since YAZ-4748 D11): one row per `CanvasPrefs` key the page shows, in
  * its groups, then the draw.io diagrams group, whose one row moved here from Appearance.
  */
-const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'diagramDarkColors']
+const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'embedRestSeconds', 'newBoardFolder', 'diagramDarkColors']
 /** Settings › Images (YAZ-3038): the Pixabay key, the library folder and the favorites (YAZ-4363), then the icon packs (YAZ-4359). */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPacks', 'mediaHoverZoom', 'mediaHoverZoomSize']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
@@ -344,7 +344,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Folder pages', 'settings-folderPages', FOLDER_PAGES_ROWS),
       page('Review', 'settings-review', REVIEW_ROWS),
       page('Sync', 'settings-sync', ['githubSync']),
-      page('Memory', 'settings-memory', ['memoryWindows', 'tabSleepAfter', 'memoryReload']),
+      page('Memory', 'settings-memory', ['memoryWindows', 'tabSleepAfter', 'embedPictures', 'memoryReload']),
       page('Hotkeys', 'settings-hotkeys', HOTKEY_ROWS),
     ])
   })
@@ -543,6 +543,19 @@ describe('Settings › Drawings (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)
     const { el, onChange } = mountCanvas()
     act(() => rowButtons(el, 'canvas.gridModeEnabled')[0].click()) // On
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true } })
+  })
+
+  it('YAZ-4820: the embeds group: "Embeds stop moving after" (30 s by default) and "New drawings from a note go to" (the note`s folder); a choice writes its field', () => {
+    const { el, onChange } = mountCanvas()
+    const rest = rowButtons(el, 'embedRestSeconds')
+    expect(rest.map((b) => b.textContent)).toEqual(['10 s', '30 s', '1 min', '5 min', 'Never'])
+    expect(rest[1].getAttribute('aria-pressed')).toBe('true')
+    act(() => rest[4].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, embedRestSeconds: 0 })
+    const folder = rowButtons(el, 'newBoardFolder')
+    expect(folder.map((b) => b.textContent)).toEqual(["The note's folder", 'assets/drawings'])
+    act(() => folder[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, newBoardFolder: 'assets' })
   })
 
   it('Select on, sloppiness and text alignment speak their own words; Default font is a select, Assistant first and current', () => {

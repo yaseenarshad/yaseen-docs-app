@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyNoteOpens, type DiagramDarkColors, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyNoteOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -29,6 +29,21 @@ export const CONTENT_WIDTH_OPTIONS: readonly Option<ContentWidth>[] = [
 export const DIAGRAM_DARK_COLORS_OPTIONS: readonly Option<DiagramDarkColors>[] = [
   { label: 'Adapt colours', value: 'adapt' },
   { label: 'Keep original colours', value: 'keep' },
+]
+
+/** YAZ-4820 D9: how long a board embed waits with no use before it rests (Settings › Drawings and diagrams). */
+export const EMBED_REST_OPTIONS: readonly Option<EmbedRestSeconds>[] = [
+  { label: '10 s', value: 10 },
+  { label: '30 s', value: 30 },
+  { label: '1 min', value: 60 },
+  { label: '5 min', value: 300 },
+  { label: 'Never', value: 0 },
+]
+
+/** YAZ-4820 item 3: where "/drawing" and "/diagram" put a new board made from a note. */
+export const NEW_BOARD_FOLDER_OPTIONS: readonly Option<NewBoardFolder>[] = [
+  { label: "The note's folder", value: 'note' },
+  { label: 'assets/drawings', value: 'assets' },
 ]
 
 /** Comment stream order (YAZ-1515): a reading preference, global — the block's own toggle drives the same field. */

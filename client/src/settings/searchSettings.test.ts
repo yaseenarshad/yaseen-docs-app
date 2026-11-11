@@ -115,6 +115,9 @@ describe('settingCandidates', () => {
       'codeLanguageHelpers',
       // Settings › Drawings (YAZ-3037; "Excalidraw canvas" before the YAZ-3818 demo).
       ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
+      // Its embeds group (YAZ-4820 D9, item 3), before the draw.io group.
+      'embedRestSeconds',
+      'newBoardFolder',
       // Its last group, draw.io diagrams (YAZ-4748 D11: "Drawings and diagrams"; before, Appearance's last row).
       'diagramDarkColors',
       // Settings › Images (YAZ-3038).
@@ -155,6 +158,7 @@ describe('settingCandidates', () => {
       // Settings › Memory (YAZ-3737 D9, D10): the report, then the two settings that save memory.
       'memoryWindows',
       'tabSleepAfter',
+      'embedPictures',
       'memoryReload',
       // Settings › Hotkeys (YAZ-3397 D5): one candidate per KEY, so a search finds the row, not the table.
       ...hotkeyRows(),

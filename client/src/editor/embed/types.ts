@@ -52,6 +52,8 @@ export interface WindowMenuRow {
   run: () => void
   children?: WindowMenuRow[]
   disabled?: boolean
+  /** The current choice of a flyout (the page shown, in Page ▸): the host draws the menu's ✓ (`hint: '✓'`). */
+  checked?: boolean
 }
 
 /** The window as a host drives it. */

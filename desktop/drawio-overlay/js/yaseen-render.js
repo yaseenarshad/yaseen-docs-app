@@ -1,7 +1,8 @@
 /**
  * The diagram PICTURE service (🔒 YAZ-1802 D9): one hidden iframe in the renderer loads
- * `yaseen-render.html`, posts `{ id, xml, theme, adaptive, format, scale, padding, maxWidth?, maxHeight? }`
- * and gets back `{ id, ok: true, dataUrl }` — the diagram's FIRST page drawn by draw.io's own viewer
+ * `yaseen-render.html`, posts `{ id, xml, theme, adaptive, format, scale, padding, maxWidth?, maxHeight?, page? }`
+ * and gets back `{ id, ok: true, dataUrl, pages, page, bounds }` — the diagram's page `page` (YAZ-4825: the
+ * first page when the request names none, or one that is gone) drawn by draw.io's own viewer
  * (`viewer-static.min.js`), as an SVG or a PNG data URL — or `{ id, ok: false, error }`. `dataUrl`
  * is `''` for a page with nothing on it. `maxWidth` / `maxHeight` shrink the drawing to fit (a
  * preview); without them it is drawn at `scale` (an export).
@@ -24,14 +25,35 @@
 	var graph = new Graph(container);
 	var editor = new Editor(true, null, null, graph);
 
-	function firstPage(xml)
+	/**
+	 * YAZ-4825 (D6): the page `pageId` of `xml` — the FIRST page when the id is absent or gone — as
+	 * `{ node, page, pages }`: its `mxGraphModel`, the id drawn (null for a bare model) and every page
+	 * as `{ id, name }` in file order, for the embed's "Page ▸".
+	 */
+	function pageOf(xml, pageId)
 	{
 		var node = mxUtils.parseXml(xml).documentElement;
+		var pages = [];
+		var page = null;
 
 		if (node != null && node.nodeName == 'mxfile')
 		{
 			var diagrams = node.getElementsByTagName('diagram');
-			node = (diagrams.length > 0) ? Editor.parseDiagramNode(diagrams[0]) : null;
+			var chosen = (diagrams.length > 0) ? diagrams[0] : null;
+
+			for (var i = 0; i < diagrams.length; i++)
+			{
+				var id = diagrams[i].getAttribute('id');
+				pages.push({id: id, name: diagrams[i].getAttribute('name') || ('Page-' + (i + 1))});
+
+				if (pageId != null && id == pageId)
+				{
+					chosen = diagrams[i];
+				}
+			}
+
+			page = (chosen != null) ? chosen.getAttribute('id') : null;
+			node = (chosen != null) ? Editor.parseDiagramNode(chosen) : null;
 		}
 
 		if (node == null || node.nodeName != 'mxGraphModel')
@@ -39,7 +61,7 @@
 			throw new Error('not a draw.io diagram');
 		}
 
-		return node;
+		return {node: node, page: page, pages: pages};
 	}
 
 	/**
@@ -113,12 +135,16 @@
 			window.yaseenLinks.setLooks(req.looks, true);
 		}
 
-		editor.setGraphXml(firstPage(req.xml));
+		var chosen = pageOf(req.xml, req.page);
+		editor.setGraphXml(chosen.node);
 		var bounds = graph.getGraphBounds();
+		// YAZ-4825: what an embed's window needs beside the picture — the pages, the page drawn, and the
+		// board rectangle the picture covers, in diagram units (at scale 1, a unit is a picture pixel).
+		var answer = {pages: chosen.pages, page: chosen.page, bounds: null};
 
 		if (bounds.width <= 0 || bounds.height <= 0)
 		{
-			return Promise.resolve('');
+			return Promise.resolve({dataUrl: '', info: answer});
 		}
 
 		var padding = req.padding;
@@ -142,9 +168,15 @@
 			graph.addSvgShadow(svgRoot, null, null, padding == 0);
 		}
 
+		// The view's bounds back into diagram units; the picture starts `padding` picture pixels before them.
+		var vs = graph.view.scale;
+		var vt = graph.view.translate;
+		answer.bounds = {x: bounds.x / vs - vt.x - padding / scale, y: bounds.y / vs - vt.y - padding / scale,
+			width: parseFloat(svgRoot.getAttribute('width')) / scale, height: parseFloat(svgRoot.getAttribute('height')) / scale};
+
 		return embed(svgRoot).then(function(svgRoot)
 		{
-			return (req.format == 'png') ? toPng(svgRoot) : Editor.createSvgDataUri(mxUtils.getXml(svgRoot));
+			return {dataUrl: (req.format == 'png') ? toPng(svgRoot) : Editor.createSvgDataUri(mxUtils.getXml(svgRoot)), info: answer};
 		});
 	}
 
@@ -179,10 +211,13 @@
 		new Promise(function(resolve)
 		{
 			resolve(render(req));
-		}).then(function(dataUrl)
+		}).then(function(drawn)
 		{
-			answer({id: req.id, ok: true, dataUrl: dataUrl});
-		}, function(e)
+			return Promise.resolve(drawn.dataUrl).then(function(dataUrl)
+			{
+				return {id: req.id, ok: true, dataUrl: dataUrl, pages: drawn.info.pages, page: drawn.info.page, bounds: drawn.info.bounds};
+			});
+		}).then(answer, function(e)
 		{
 			answer({id: req.id, ok: false, error: String(e && e.message || e)});
 		});

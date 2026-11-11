@@ -42,10 +42,34 @@ interface RenderRequest {
   maxHeight?: number
   /** What the diagram's link pills show (YAZ-4748 D9); absent, they keep the raw text. */
   looks?: Record<string, WireLook | null>
+  /** The page id to draw (YAZ-4825, D6); absent or gone, the first page. */
+  page?: string | null
+}
+
+/** A diagram page as "Page ▸" lists it (YAZ-4825). */
+export interface DiagramPageRef {
+  id: string
+  name: string
+}
+
+/** The board rectangle a picture covers, in diagram units (YAZ-4825): left, top, width, height. */
+export interface BoardBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** The renderer's whole answer: the picture, and for an embed the page it drew, every page and the picture's bounds. */
+interface RenderAnswer {
+  dataUrl: string
+  pages: DiagramPageRef[]
+  page: string | null
+  bounds: BoardBounds | null
 }
 
 interface Pending {
-  resolve: (dataUrl: string) => void
+  resolve: (answer: RenderAnswer) => void
   reject: (err: Error) => void
   timer: ReturnType<typeof setTimeout>
 }
@@ -105,7 +129,7 @@ function renderFrame(): Promise<HTMLIFrameElement> {
 /** Every answer from the frame, matched to its request by id. */
 function onAnswer(ev: MessageEvent): void {
   if (frame === null || ev.source !== frame.contentWindow || ev.origin !== DRAWIO_ORIGIN || typeof ev.data !== 'string') return
-  let msg: { id?: unknown; ok?: unknown; dataUrl?: unknown; error?: unknown }
+  let msg: { id?: unknown; ok?: unknown; dataUrl?: unknown; error?: unknown; pages?: unknown; page?: unknown; bounds?: unknown }
   try {
     msg = JSON.parse(ev.data) as typeof msg
   } catch {
@@ -116,16 +140,27 @@ function onAnswer(ev: MessageEvent): void {
   if (job === undefined) return
   pending.delete(msg.id)
   clearTimeout(job.timer)
-  if (msg.ok === true && typeof msg.dataUrl === 'string') job.resolve(msg.dataUrl)
+  if (msg.ok === true && typeof msg.dataUrl === 'string')
+    job.resolve({
+      dataUrl: msg.dataUrl,
+      pages: Array.isArray(msg.pages) ? (msg.pages as DiagramPageRef[]).filter((p) => typeof p?.id === 'string').map((p) => ({ id: p.id, name: String(p.name ?? p.id) })) : [],
+      page: typeof msg.page === 'string' ? msg.page : null,
+      bounds: isBounds(msg.bounds) ? msg.bounds : null,
+    })
   else job.reject(new Error(typeof msg.error === 'string' ? msg.error : 'diagram picture failed'))
 }
 
-async function render(req: RenderRequest): Promise<string> {
+function isBounds(v: unknown): v is BoardBounds {
+  const b = v as BoardBounds | null
+  return typeof b === 'object' && b !== null && [b.x, b.y, b.width, b.height].every(Number.isFinite)
+}
+
+async function renderAnswer(req: RenderRequest): Promise<RenderAnswer> {
   clearTimeout(idle)
   try {
     const f = await renderFrame()
     const id = `r${++serial}`
-    return await new Promise<string>((resolve, reject) => {
+    return await new Promise<RenderAnswer>((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id)
         reject(new Error('diagram picture timed out'))
@@ -141,6 +176,9 @@ async function render(req: RenderRequest): Promise<string> {
     }
   }
 }
+
+/** The picture alone: what every caller before YAZ-4825 asks for. */
+const render = (req: RenderRequest): Promise<string> => renderAnswer(req).then((answer) => answer.dataUrl)
 
 /**
  * The first page of `xml` as an SVG data URL fit inside `bounds`, in the app's `theme` and its
@@ -162,4 +200,21 @@ export function renderDiagramPreview(xml: string, theme: 'light' | 'dark', darkC
  */
 export function renderDiagramImage(xml: string, format: 'svg' | 'png'): Promise<string> {
   return render({ xml, theme: 'light', adaptive: 'none', format, scale: format === 'png' ? 2 : 1, padding: EXPORT_PADDING, looks: diagramLinkLooks(xml) })
+}
+
+/** A diagram embed's picture (YAZ-4825): the SVG data URL (`''` for an empty page), the page drawn, every page, and the bounds. */
+export interface DiagramPagePicture {
+  dataUrl: string
+  page: string | null
+  pages: DiagramPageRef[]
+  bounds: BoardBounds | null
+}
+
+/**
+ * A board embed's window (YAZ-4825, D6): the page `page` of `xml` (the first page when it is null or gone) at scale 1,
+ * with no size limit, in the app's theme and dark-mode colour setting, as the preview draws it; plus the page list
+ * for "Page ▸" and the board rectangle the picture covers, so the window can pan and zoom it in board units.
+ */
+export function renderDiagramPage(xml: string, page: string | null, theme: 'light' | 'dark', darkColors: DiagramDarkColors): Promise<DiagramPagePicture> {
+  return renderAnswer({ xml, theme, adaptive: drawioAdaptiveColors(darkColors), format: 'svg', scale: 1, padding: EXPORT_PADDING, looks: diagramLinkLooks(xml), page })
 }

@@ -69,4 +69,19 @@ describe('createPreviewCache', () => {
     await cache.load('c')
     expect(fetch.mock.calls.map(([key]) => key)).toEqual(['a', 'b', 'c', 'b', 'zzzzz', 'a', 'c'])
   })
+
+  it('YAZ-4825: onEvict hears each settled picture that leaves (the LRU, clear); peek reads one with no request', async () => {
+    const left: string[] = []
+    const fetch = vi.fn(async (key: string) => `url:${key}`)
+    const cache = createPreviewCache(fetch, { limit: 2, onEvict: (key, value) => left.push(`${key}=${value}`) })
+    await cache.load('a')
+    await cache.load('b')
+    expect(cache.peek('a')).toBe('url:a')
+    expect(cache.peek('z')).toBeUndefined()
+    await cache.load('c')
+    expect(left).toEqual(['a=url:a'])
+    cache.clear()
+    expect(left).toEqual(['a=url:a', 'b=url:b', 'c=url:c'])
+    expect(fetch).toHaveBeenCalledTimes(3)
+  })
 })

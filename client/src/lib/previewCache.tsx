@@ -15,6 +15,8 @@ import { useEffect, useState, type ReactNode } from 'react'
 export interface PreviewCache {
   /** The dataURL for `key`, or null when it could not be had. One request per key, shared. */
   load(key: string): Promise<string | null>
+  /** The settled picture for `key` now, with no request and no LRU move (a window that mounts paints it at once). */
+  peek(key: string): string | undefined
   /** Forget everything — the library changed, or a test must not inherit another's memo. */
   clear(): void
   /** The tile's picture: an `<img>` once there is one, the placeholder until then (or never). */
@@ -26,9 +28,14 @@ export interface PreviewCache {
  * `limit` bounds how many settled pictures are kept, least recently seen out first (YAZ-1800: a
  * board's picture is ~1200 px and keyed per edit, so an unbounded map would only ever grow). It is
  * required (YAZ-3737): every cache is a long-lived module map. `maxBytes` also bounds their summed
- * size, by the dataURL's length (S13): a few big pictures can cost more than many small ones.
+ * size, by the dataURL's length (S13): a few big pictures can cost more than many small ones. `onEvict` hears each
+ * settled picture that leaves (the LRU, a re-settle of its key, `clear`): the board embeds' cache (YAZ-4825) keeps blob
+ * URLs, and revokes each one there.
  */
-export function createPreviewCache(fetchPreview: (key: string) => Promise<string>, { limit, maxBytes = Infinity }: { limit: number; maxBytes?: number }): PreviewCache {
+export function createPreviewCache(
+  fetchPreview: (key: string) => Promise<string>,
+  { limit, maxBytes = Infinity, onEvict }: { limit: number; maxBytes?: number; onEvict?: (key: string, value: string) => void },
+): PreviewCache {
   const settledByKey = new Map<string, string>()
   const inFlight = new Map<string, Promise<string | null>>()
   let bytes = 0
@@ -49,6 +56,7 @@ export function createPreviewCache(fetchPreview: (key: string) => Promise<string
         if (old !== undefined) {
           settledByKey.delete(key)
           bytes -= old.length
+          if (old !== dataURL) onEvict?.(key, old)
         }
         settledByKey.set(key, dataURL)
         bytes += dataURL.length
@@ -58,6 +66,7 @@ export function createPreviewCache(fetchPreview: (key: string) => Promise<string
           if (oldest === key) break
           settledByKey.delete(oldest)
           bytes -= picture.length
+          onEvict?.(oldest, picture)
         }
         return dataURL
       })
@@ -69,7 +78,9 @@ export function createPreviewCache(fetchPreview: (key: string) => Promise<string
 
   return {
     load,
+    peek: (key) => settledByKey.get(key),
     clear: () => {
+      if (onEvict !== undefined) for (const [key, picture] of settledByKey) onEvict(key, picture)
       settledByKey.clear()
       inFlight.clear()
       bytes = 0
