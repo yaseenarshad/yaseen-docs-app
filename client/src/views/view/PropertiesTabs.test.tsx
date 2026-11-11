@@ -154,22 +154,23 @@ describe('each view type shows its settings only (D59)', () => {
     const pop = openProperties(mount(view('board')).el)
     toTab(pop, 'View')
     expectOnly(pop, BOARD)
-    expect(labels(pop)).toEqual(['Rows', 'Groups', 'Board', 'Folder'])
+    // YAZ-4864: a Board's own rows are "Layout", the same word as a calendar's and a list's.
+    expect(labels(pop)).toEqual(['Rows', 'Groups', 'Layout', 'Folder'])
     expect(pop.textContent).toContain('Show empty columns')
   })
 
-  it('Calendar: Start date and End date (YAZ-4858), Opens in, Card titles, Hide weekends and Cross out when (YAZ-4864) under Calendar', () => {
+  it('Calendar (YAZ-4864 sections): Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends), Lines (YAZ-4878), Cross out, then Folder', () => {
     const pop = openProperties(mount(view('calendar')).el)
     toTab(pop, 'View')
     expectOnly(pop, CALENDAR)
-    expect(labels(pop)).toEqual(['Rows', 'Calendar', 'Folder'])
+    expect(labels(pop)).toEqual(['Rows', 'Dates', 'Layout', 'Lines', 'Cross out', 'Folder'])
   })
 
-  it('List: its three keys under List', () => {
+  it('List: its three keys under Layout', () => {
     const pop = openProperties(mount(view('list')).el)
     toTab(pop, 'View')
     expectOnly(pop, LIST)
-    expect(labels(pop)).toEqual(['Rows', 'List', 'Folder'])
+    expect(labels(pop)).toEqual(['Rows', 'Layout', 'Folder'])
   })
 
   it('Cards: Subfolders and Default view only', () => {
