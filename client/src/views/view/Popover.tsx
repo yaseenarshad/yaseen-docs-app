@@ -30,6 +30,9 @@ interface PopoverProps {
  * to the viewport like `ContextMenu`, so a clipping ancestor cannot cut it off — and
  * outside scrolling or window resizing closes it. Content resizing refits it in place.
  */
+/** The least room an anchored popover keeps from the window's edges. */
+const EDGE = 8
+
 export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false, focusOn = 'control', portal = false }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<CSSProperties>()
@@ -52,8 +55,9 @@ export function Popover({ label, onClose, className, anchor, children, constrain
       // Measured on screen; written in the popover's own px (YAZ-3746 13AM): inside a zoomed folder page a fixed box's
       // `top` and `left` are scaled by the zoom, so the menu drifted right and down as the page zoomed in.
       const z = cssZoom(el)
-      const top = Math.max(0, Math.min(a.bottom + 6, window.innerHeight - r.height)) / z
-      const left = Math.max(0, Math.min(a.left, window.innerWidth - r.width)) / z
+      // Never against the window's edge: an 8 px margin on every side (the checker of YAZ-4820: the Style panel touched it).
+      const top = Math.max(EDGE, Math.min(a.bottom + 6, window.innerHeight - r.height - EDGE)) / z
+      const left = Math.max(EDGE, Math.min(a.left, window.innerWidth - r.width - EDGE)) / z
       setPos(previous => previous?.top === top && previous.left === left ? previous : { position: 'fixed', top, left })
     }
     fit()

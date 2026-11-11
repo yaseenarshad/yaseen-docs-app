@@ -220,12 +220,15 @@
 
 /* THE CHEVRON'S PLACE (the YAZ-4899 demo approved it): inside the subheader row's first cell, before its text, floated so
    the text flows after it. This one rule and `chevronWidget` in `tableSubhead.ts` place it. Down when open, right when
-   the section is collapsed. */
+   the section is collapsed. As tall as one line of the cell's text (`1lh`) with the glyph centred in it, so it sits on
+   the middle of the text at any font size or zoom (the YAZ-4820 checker: it sat 6 px high). */
 .milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron {
   float: left;
+  display: flex;
+  align-items: center;
   width: 16px;
-  height: 16px;
-  margin: 2px 4px 0 -4px;
+  height: 1lh;
+  margin: 0 4px 0 -4px;
   cursor: pointer;
   color: var(--fg-muted);
   user-select: none;

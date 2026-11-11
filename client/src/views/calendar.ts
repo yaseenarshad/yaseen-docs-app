@@ -305,7 +305,8 @@ export const calLineColor = (value: unknown): ColorStrengthValue => readColorStr
 /**
  * The CSS colour a calendar line draws in (YAZ-4878). Gray is the app's line colour (`--border`): Medium is that line;
  * a Medium line wider than 1 px is a little darker, as the first build drew it; Light is half of it, Strong the darker
- * mix. A colour is its solid swatch at 35 %, 65 % or 100 %: a 1 px line needs more than a fill's wash to show.
+ * mix. A colour is its solid swatch at 35 %, 65 % or 100 %: a 1 px line needs more than a fill's wash to show. Black is
+ * the same black in dark mode, as the header row's Black is (`table.css` has one `--table-fill-solid-black`).
  */
 export function calLineCss({ color, strength }: ColorStrengthValue, width: number): string {
   if (color === 'gray') {
