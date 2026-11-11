@@ -22,7 +22,7 @@ import type { ViewDef, ViewSet } from '../../../views/viewSchema'
 import { isCellNoteMark } from '../cellNotes'
 import { cellStartsAt } from '../cells'
 import { headerKeys } from './superTables'
-import type { TableViewDef } from './viewGrammar'
+import { VIEW_OPS, type TableViewDef } from './viewGrammar'
 
 /** One grid place of a row, as a view draws it. */
 export interface ViewCell {
@@ -123,6 +123,7 @@ const property = (column: string): string => `note.${column}`
 /** The engine's view for a table view. */
 export function engineView(def: TableViewDef): ViewDef {
   const summaries = def.summary ?? []
+  const filters = (def.filter ?? []).filter((f) => !VIEW_OPS[f.op] || (f.value ?? '') !== '')
   return {
     type: 'table',
     name: def.name,
@@ -132,7 +133,8 @@ export function engineView(def: TableViewDef): ViewDef {
     ...(def.group?.length && {
       groupBy: def.group.map((g) => ({ property: property(g.column), direction: g.order === 'desc' ? ('DESC' as const) : ('ASC' as const), ...(g.highlight !== undefined && { highlight: g.highlight }), ...(g.large === true && { large: true }) })),
     }),
-    ...(def.filter?.length && { filters: { and: def.filter.map((f) => ruleToExpr({ property: property(f.column), op: f.op, value: f.value ?? '' })) } }),
+    // A filter still waiting for its value filters nothing: a new filter hides no row before you type.
+    ...(filters.length > 0 && { filters: { and: filters.map((f) => ruleToExpr({ property: property(f.column), op: f.op, value: f.value ?? '' })) } }),
     ...(summaries.length > 0 && { summaries: Object.fromEntries(summaries.map((s) => [property(s.column), s.kind.charAt(0).toUpperCase() + s.kind.slice(1)])) }),
     groupLines: def.lines ?? 'hover',
     groupLineStyle: def.thread === true ? 'thread' : 'plain',
