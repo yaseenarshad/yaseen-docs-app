@@ -62,7 +62,7 @@ import { addShortcut, folderId, folderRecord, folderRows, isShortcut, removeShor
 import { ShortcutActions, type ShortcutDoors } from './view/shortcutDoors'
 import { columnReservedKeys, reservedKeyText } from '../links/reservedKeys'
 import { vaultDirs } from '../links/folderLinks'
-import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
+import { type ParsedViews, type ViewDef, type ViewSet, parseViews, serializeViews, updateViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { folderSettings, moveFolderColumn, rewriteFolderViews, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
@@ -1452,6 +1452,21 @@ export function FolderView({
         onChangeInheritColumns={(next) => setOwnInherit(next, writeOwnKey(INHERIT_COLUMNS_KEY, next))}
         columnMarks={ownMarks}
         onChangeColumnMarks={(next) => setOwnMarks(next, writeOwnKey(COLUMN_MARKS_KEY, next))}
+        // Default view (YAZ-4909): the same `defaultView` of the def, ONE settings write through the views' door (`onChange`), as the View tab wrote it.
+        views={parsed.def.views.map((v) => v.name)}
+        defaultView={parsed.def.defaultView}
+        onChangeDefaultView={(next) =>
+          onChange(
+            parseViews(
+              serializeViews(
+                updateViews(parsed, (d) => {
+                  if (next === undefined) delete d.defaultView
+                  else d.defaultView = next
+                }),
+              ),
+            ),
+          )
+        }
         sync={sync}
         onSyncNow={onSyncNow}
       />

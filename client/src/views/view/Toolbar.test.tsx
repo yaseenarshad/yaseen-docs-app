@@ -1980,31 +1980,7 @@ describe('the default view', () => {
     expect(selected(mount(started('Ghost')).el)).toBe('Table')
   })
 
-  it('the properties menu ends with Page → Default view, listing First view then every view', () => {
-    const { el } = mount()
-    const menu = openView(el)
-    const select = byLabel<HTMLSelectElement>(menu, 'Default view')
-    expect([...select.options].map((o) => o.text)).toEqual(['First view', 'Table', 'View', 'View 2'])
-    expect(select.value).toBe('')
-  })
-
-  it('picking a view writes the def’s defaultView — ONE update, never a second door', () => {
-    const { el, onChange, yaml } = mount()
-    setValue(byLabel<HTMLSelectElement>(openView(el), 'Default view'), 'View')
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(onChange.mock.calls[0][0].def.defaultView).toBe('View')
-    expect(yaml()).toContain('defaultView: View')
-  })
-
-  it('the dropdown reflects the def’s value, and First view DELETES the key', () => {
-    const { el, onChange, yaml } = mount(started('View'))
-    const select = byLabel<HTMLSelectElement>(openView(el), 'Default view')
-    expect(select.value).toBe('View')
-    setValue(select, '')
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(onChange.mock.calls[0][0].def).not.toHaveProperty('defaultView')
-    expect(yaml()).not.toContain('defaultView')
-  })
+  // The View tab's "Default view" select moved to the folder page's ⚙ (YAZ-4909): `FolderView.toolbar.test.tsx`.
 })
 
 describe('properties drag-to-reorder (YAZ-1207)', () => {

@@ -57,7 +57,7 @@ export const FOLDER_READ_ONLY_TIP = 'This folder page is read only'
 const SAVE_RANK: Record<SaveStatus, number> = { saved: 0, unsaved: 1, saving: 2, error: 3 }
 const worse = (a: SaveStatus, b: SaveStatus): SaveStatus => (SAVE_RANK[a] >= SAVE_RANK[b] ? a : b)
 
-export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, showNewButtons, onChangeShowNewButtons, name, sync, onSyncNow }: {
+export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, showNewButtons, onChangeShowNewButtons, views, defaultView, onChangeDefaultView, name, sync, onSyncNow }: {
   store: Store<FolderChipsState>
   zoom: number
   onZoom: (zoom: number) => void
@@ -94,6 +94,10 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
   /** The folder's own "Show where columns come from" (YAZ-4713 C11): `undefined` follows Settings. Absent: no row. */
   columnMarks?: FolderPagesSettings['columnMarks'] | undefined
   onChangeColumnMarks?: (next: FolderPagesSettings['columnMarks'] | undefined) => void
+  /** "Default view" (YAZ-4909, from the View tab since YAZ-1104): the page's view names, the saved START (`defaultView`, a name, else the first view) and its ONE writer. Absent: no Views section. */
+  views?: readonly string[]
+  defaultView?: string
+  onChangeDefaultView?: (next: string | undefined) => void
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
 }) {
@@ -146,6 +150,21 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
       ],
       true,
     ),
+    // YAZ-4909 (Yaseen: "doesn't this option belong on the folder page level and not in an individual view?"): the folder's
+    // saved START, First view or a view by name. One line while the names are few; more go on their own line and wrap.
+    ...(views === undefined || onChangeDefaultView === undefined
+      ? []
+      : section('Views', [
+          {
+            label: 'Default view',
+            hint: 'The view this page opens on. A view renamed or deleted keeps or clears it.',
+            inline: views.length <= 2,
+            choices: [
+              { label: 'First view', on: defaultView === undefined || !views.includes(defaultView), onPick: () => onChangeDefaultView(undefined) },
+              ...views.map((name) => ({ label: name, on: defaultView === name, onPick: () => onChangeDefaultView(name) })),
+            ],
+          },
+        ])),
     ...section('Preview on hover', [
       choiceRow('Rows', 'Rest the mouse on a row, a card or a line of Other files to see the file.', hoverRows, onChangeHoverRows),
       choiceRow('Links', 'Rest the mouse on a link pill in a cell to see the linked note.', hoverLinks, onChangeHoverLinks),

@@ -287,7 +287,7 @@ describe('calendar "+" on a day (YAZ-4540 S10) and "Show by"', () => {
     click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // the View tab (YAZ-4607 D59)
     const pop = q(el, '.view-popover--properties')
-    expect([...pop.querySelectorAll('.view-menu__label')].map((l) => l.textContent)).toEqual(['Rows', 'Dates', 'Layout', 'Lines', 'Cross out', 'Folder'])
+    expect([...pop.querySelectorAll('.view-menu__label')].map((l) => l.textContent)).toEqual(['Rows', 'Dates', 'Layout', 'Lines', 'Cross out'])
     expect(q<HTMLSelectElement>(pop, '[aria-label="Start date"]').value).toBe('note.due')
   })
 })

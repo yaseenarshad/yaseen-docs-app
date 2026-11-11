@@ -205,6 +205,14 @@ const menuItem = (el: ParentNode, text: string): HTMLElement => {
   return b
 }
 const written = (): Record<string, unknown> => write.mock.calls[0][2] as Record<string, unknown>
+/** The folder ⚙'s "Default view" row (YAZ-4909): its menu is a portal under the cog; the row's pills are First view and each view by name. */
+const defaultViewRow = (el: ParentNode): HTMLElement => {
+  if (el.querySelector('.page-settings > button[aria-expanded="true"]') === null) click(q(el, '.page-settings__trigger'))
+  const id = el.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
+  return q(document.getElementById(id ?? '') ?? document.body, '[role="group"][aria-label="Default view"]')
+}
+const pickDefaultView = (el: ParentNode, text: string): void => click([...defaultViewRow(el).querySelectorAll('button')].find((b) => b.textContent === text)!)
+const defaultViewPressed = (el: ParentNode): string => [...defaultViewRow(el).querySelectorAll('button')].find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent ?? ''
 
 // ---------- the folder itself (D1/D4/E2) ----------
 
@@ -749,23 +757,17 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
     expect(write).not.toHaveBeenCalled()
   })
 
-  it('Page → Default view is ONE whole-key settings write carrying the name', async () => {
+  it("the folder ⚙'s Default view (YAZ-4909) is ONE whole-key settings write carrying the name", async () => {
     const el = await mount()
-    click(tab(el, 'Table')) // the Page offers no Properties menu; switching writes nothing
-    click(byLabel(el, 'Columns and view'))
-    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
-    setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
+    pickDefaultView(el, 'Table')
     await flush()
     expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, defaultView: 'Table' }, expect.any(Function))
   })
 
-  it('the dropdown shows the saved value, and First view clears the key', async () => {
+  it('the ⚙ row shows the saved value, and First view clears the key', async () => {
     const el = await mount({ ...SETTINGS, defaultView: 'Table' })
-    click(byLabel(el, 'Columns and view'))
-    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
-    const select = byLabel<HTMLSelectElement>(el, 'Default view')
-    expect(select.value).toBe('Table')
-    setSelect(select, '')
+    expect(defaultViewPressed(el)).toBe('Table')
+    pickDefaultView(el, 'First view')
     await flush()
     expect(write).toHaveBeenCalledTimes(1)
     expect(written()).toEqual(SETTINGS)
@@ -796,10 +798,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
   it('an EXTERNAL edit that changes ONLY defaultView rebuilds the def (D4: it rides in the stamp)', async () => {
     const el = await mount()
     feed({ ...SETTINGS, defaultView: 'Table' })
-    click(tab(el, 'Table')) // the Page has no Properties button of its own
-    click(byLabel(el, 'Columns and view'))
-    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
-    expect(byLabel<HTMLSelectElement>(el, 'Default view').value).toBe('Table')
+    expect(defaultViewPressed(el)).toBe('Table')
     expect(write).not.toHaveBeenCalled()
   })
 })
@@ -1152,10 +1151,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
    */
   it('carries an in-flight defaultView choice the index has not echoed back yet', async () => {
     const el = await mount()
-    click(tab(el, 'Table')) // the Page offers no Properties menu
-    click(byLabel(el, 'Columns and view'))
-    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
-    setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
+    pickDefaultView(el, 'Table')
     await flush()
     expect(write).toHaveBeenCalledTimes(1)
 

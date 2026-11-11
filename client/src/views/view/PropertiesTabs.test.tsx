@@ -104,7 +104,8 @@ describe('the two tabs (D59)', () => {
     expect(pop.querySelectorAll('.view-prop')).toHaveLength(0)
     expect(pop.textContent).not.toContain('Add column')
     expect(has(pop, 'Row height')).toBe(true)
-    expect(has(pop, 'Default view')).toBe(true)
+    // "Default view" is the folder ⚙'s since YAZ-4909.
+    expect(has(pop, 'Default view')).toBe(false)
     toTab(pop, 'Columns')
     expect(has(pop, 'Search columns')).toBe(true)
     // The old Properties select for the frozen prefix is gone (YAZ-4608 C3): Frozen columns lives in the header menu (the View tab's Frozen section went in the YAZ-3746 demo).
@@ -123,11 +124,11 @@ describe('the two tabs (D59)', () => {
 
 describe('each view type shows its settings only (D59)', () => {
   // Frozen columns and rows live only on the header and row right-clicks (the View tab's Frozen section went in the YAZ-3746 demo).
-  const TABLE = ['Row height', 'Text in cells', 'Row numbers', 'Subfolders', 'Default view']
-  const BOARD = ['Column width in pixels', 'Subfolders', 'Default view']
-  const CALENDAR = ['Start date', 'End date', 'Opens in', 'Card titles', 'Hide weekends', 'Between weeks thickness', 'Between weeks colour', 'Between days thickness', 'Between days colour', 'Cross out when', 'Subfolders', 'Default view']
-  const LIST = ['Marker style', 'Indent properties', 'Property separator', 'Subfolders', 'Default view']
-  const ALL = [...new Set([...TABLE, ...BOARD, ...CALENDAR, ...LIST, 'Group indent', 'Frozen columns', 'Frozen rows'])]
+  const TABLE = ['Row height', 'Text in cells', 'Row numbers', 'Subfolders']
+  const BOARD = ['Column width in pixels', 'Subfolders']
+  const CALENDAR = ['Start date', 'End date', 'Opens in', 'Card titles', 'Hide weekends', 'Between weeks thickness', 'Between weeks colour', 'Between days thickness', 'Between days colour', 'Cross out when', 'Subfolders']
+  const LIST = ['Marker style', 'Indent properties', 'Property separator', 'Subfolders']
+  const ALL = [...new Set([...TABLE, ...BOARD, ...CALENDAR, ...LIST, 'Group indent', 'Frozen columns', 'Frozen rows', 'Default view'])]
 
   const expectOnly = (pop: ParentNode, shown: readonly string[]) => {
     for (const label of ALL) expect(has(pop, label), label).toBe(shown.includes(label))
@@ -137,7 +138,7 @@ describe('each view type shows its settings only (D59)', () => {
     const pop = openProperties(mount(view('table')).el)
     toTab(pop, 'View')
     expectOnly(pop, TABLE)
-    expect(labels(pop)).toEqual(['Rows', 'Header row', 'Groups', 'Folder'])
+    expect(labels(pop)).toEqual(['Rows', 'Header row', 'Groups'])
     // The Header row heading carries the whole row look's ↺ slot; Column type icons sits first under it.
     const heading = [...pop.querySelectorAll('.view-menu__label')].find((p) => p.textContent === 'Header row')!
     expect(heading.querySelector('.view-from-settings')).not.toBeNull()
@@ -159,7 +160,7 @@ describe('each view type shows its settings only (D59)', () => {
     toTab(pop, 'View')
     expectOnly(pop, BOARD)
     // YAZ-4864: a Board's own rows are "Layout", the same word as a calendar's and a list's.
-    expect(labels(pop)).toEqual(['Rows', 'Groups', 'Layout', 'Folder'])
+    expect(labels(pop)).toEqual(['Rows', 'Groups', 'Layout'])
     expect(pop.textContent).toContain('Show empty columns')
   })
 
@@ -167,21 +168,21 @@ describe('each view type shows its settings only (D59)', () => {
     const pop = openProperties(mount(view('calendar')).el)
     toTab(pop, 'View')
     expectOnly(pop, CALENDAR)
-    expect(labels(pop)).toEqual(['Rows', 'Dates', 'Layout', 'Lines', 'Cross out', 'Folder'])
+    expect(labels(pop)).toEqual(['Rows', 'Dates', 'Layout', 'Lines', 'Cross out'])
   })
 
   it('List: its three keys under Layout', () => {
     const pop = openProperties(mount(view('list')).el)
     toTab(pop, 'View')
     expectOnly(pop, LIST)
-    expect(labels(pop)).toEqual(['Rows', 'Layout', 'Folder'])
+    expect(labels(pop)).toEqual(['Rows', 'Layout'])
   })
 
-  it('Cards: Subfolders and Default view only', () => {
+  it("Cards: Subfolders only; no Folder section anywhere (YAZ-4909: Default view is the folder ⚙'s)", () => {
     const pop = openProperties(mount(view('cards')).el)
     toTab(pop, 'View')
-    expectOnly(pop, ['Subfolders', 'Default view'])
-    expect(labels(pop)).toEqual(['Rows', 'Folder'])
+    expectOnly(pop, ['Subfolders'])
+    expect(labels(pop)).toEqual(['Rows'])
   })
 })
 

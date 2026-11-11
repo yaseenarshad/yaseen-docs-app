@@ -121,7 +121,7 @@ describe('the folder page toolbar (D35)', () => {
   // YAZ-3746 13BP: the group is named "<folder> (folder page)" (CL6), and its rows stand under three headings — Show,
   // Preview on hover, Safety — one line each with an (i), the heading saying the rest of the old label. "Read only"
   // moved under Safety as an On / Off line (CL7); "New buttons" (13BL) joined Show.
-  it('the cog holds the "<folder> (folder page)" group: Show (page file, Other files, New buttons, parent columns, column marks), Preview on hover (Rows, Links), Safety (Read only, Confirm changes), Settings chosen', async () => {
+  it('the cog holds the "<folder> (folder page)" group: Show (page file, Other files, New buttons, parent columns, column marks), Views (Default view, YAZ-4909), Preview on hover (Rows, Links), Safety (Read only, Confirm changes), Settings chosen', async () => {
     const el = await mount()
     openCog(el)
     const group = q(cogMenu(el), '[role="group"][aria-label="stages (folder page)"]')
@@ -135,6 +135,9 @@ describe('the folder page toolbar (D35)', () => {
       'Where columns come from',
       'SettingsIconIcon and folder nameOff',
       '',
+      'Views',
+      'Default viewFirst viewPipeline',
+      '',
       'Preview on hover',
       'RowsSettingsOnOff',
       'LinksSettingsOnOff',
@@ -144,10 +147,35 @@ describe('the folder page toolbar (D35)', () => {
       'Confirm changesSettingsOnOff',
     ])
     // Each row's (i) is named for its row (13BP CL4).
-    expect([...group.querySelectorAll('.page-settings__info')].map((b) => b.getAttribute('aria-label'))).toEqual(['About Page file in the sidebar', 'About Other files', 'About New buttons', "About Parent folders' columns", 'About Where columns come from', 'About Rows', 'About Links', 'About Read only', 'About Confirm changes'])
+    expect([...group.querySelectorAll('.page-settings__info')].map((b) => b.getAttribute('aria-label'))).toEqual(['About Page file in the sidebar', 'About Other files', 'About New buttons', "About Parent folders' columns", 'About Where columns come from', 'About Default view', 'About Rows', 'About Links', 'About Read only', 'About Confirm changes'])
     expect(pill(el, 'Settings').getAttribute('aria-pressed')).toBe('true')
     // No word counts and no trailing rows: the folder ⚙ has only the folder page's own group (13BM PS2).
     expect(cogMenu(el).textContent).not.toContain('words')
+  })
+
+  // YAZ-4909 (Yaseen: "doesn't this option belong on the folder page level and not in an individual view?"): the View
+  // tab's "Default view" select is this row now, the same `defaultView` of the folder settings.
+  it('Views › Default view: First view pressed with no key; a view by name writes defaultView, First view removes it; a saved name reads back', async () => {
+    const el = await mount()
+    openCog(el)
+    const row = () => q(cogMenu(el), '[role="group"][aria-label="Default view"]')
+    const pressed = () => [...row().querySelectorAll('button')].find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent
+    expect([...row().querySelectorAll('button')].map((b) => b.textContent)).toEqual(['First view', 'Pipeline'])
+    expect(pressed()).toBe('First view')
+    click(button(row(), 'Pipeline'))
+    await flush()
+    expect(disk.get(SETTINGS_FILE)?.content).toContain('defaultView: Pipeline')
+    feed()
+    await flush()
+    expect(pressed()).toBe('Pipeline')
+    click(button(row(), 'First view'))
+    await flush()
+    expect(disk.get(SETTINGS_FILE)?.content).not.toContain('defaultView')
+    // The View tab holds the view's own settings only.
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+    expect(el.querySelector('.view-popover--properties [aria-label="Default view"]')).toBeNull()
+    expect([...el.querySelectorAll('.view-popover--properties .view-menu__label')].map((p) => p.textContent)).not.toContain('Folder')
   })
 
   // YAZ-4810 5G on the folder ⚙ (merge of PR #257): its menu is on `document.body` too, so Tab crosses between the cog and it.

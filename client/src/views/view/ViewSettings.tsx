@@ -39,8 +39,8 @@ const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large
 /**
  * The View tab of the Properties popover (YAZ-4607, D59): how THIS view looks, by section, and only the sections its
  * type reads. Rows (a table's look and Row numbers, then Subfolders — moved here from the ⇅ popover by D60), Groups
- * (Group indent, D60, where the view indents its groups; Show empty groups), the type's own sections, then Folder ›
- * Default view. YAZ-4864 (Yaseen: "sections of the view settings bc there are starting to become a lot of them"): one
+ * (Group indent, D60, where the view indents its groups; Show empty groups), then the type's own sections ("Default
+ * view" is the folder's, in its ⚙ since YAZ-4909). YAZ-4864 (Yaseen: "sections of the view settings bc there are starting to become a lot of them"): one
  * tab, small headings with a little room above each, the same words in every type — a Board's and a List's own rows
  * are Layout; a calendar's are Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends), Lines
  * (YAZ-4878) and Cross out (its rules); a Table's are Rows (Row height, Text in cells, Row numbers, Subfolders) and
@@ -269,29 +269,7 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
           </label>
         </>
       )}
-      {/* The folder-level setting (YAZ-1104) — the saved START, in the def since YAZ-1471: ONE door. */}
-      <p className="view-menu__label">Folder</p>
-      <label className="view-settings-row">
-        <RowLabel icon="defaultView">Default view</RowLabel>
-        <select
-          className="view-select"
-          aria-label="Default view"
-          value={def.defaultView ?? ''}
-          onChange={(e) =>
-            onUpdate((d) => {
-              if (e.target.value === '') delete d.defaultView
-              else d.defaultView = e.target.value
-            })
-          }
-        >
-          <option value="">First view</option>
-          {def.views.map((v) => (
-            <option key={v.name} value={v.name}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {/* The folder-level "Default view" (YAZ-1104) is in the folder page's ⚙ since YAZ-4909: this tab holds the view's own settings only. */}
       <p className="view-settings__foot">Defaults come from Settings › Folder pages. A ↺ marks a value changed for this view.</p>
     </div>
   )
