@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_GROUP_LEVELS, ViewParseError, groupLineStyleOf, groupLinesOf, headerRowOfView, parseViews, serializeViews, shownGroupLevels, updateViews } from './viewSchema'
+import { MAX_GROUP_INDENT_LEVELS, MAX_GROUP_LEVELS, ViewParseError, folderDepthOf, folderLayoutOf, groupDepthOf, groupLineStyleOf, groupLinesOf, headerRowOfView, parseViews, serializeViews, shownGroupLevels, updateViews } from './viewSchema'
 
 /** Yasin's real file, verbatim (trailing newline included). */
 const YASIN_BASE = `views:
@@ -330,5 +330,45 @@ describe('a grouped table\'s sticky group headers and group lines (YAZ-4798)', (
     expect(groupLinesOf(view({}))).toBe('off')
     expect(groupLineStyleOf(view({ groupLineStyle: 'thread' }))).toBe('thread')
     expect(groupLineStyleOf(view({ groupLineStyle: 'dotted' }))).toBe('plain')
+  })
+})
+
+describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
+  it('the two keys round-trip in .folder.md beside the level, and a write that removes them leaves the rest as it was', () => {
+    const text = 'views:\n  - type: table\n    name: T\n    groupBy:\n      property: file.folder\n      depth: all\n      layout: path\n'
+    const parsed = parseViews(text)
+    expect(serializeViews(parsed)).toBe(text)
+    expect(shownGroupLevels(parsed.def.views[0])).toEqual([{ property: 'file.folder', depth: 'all', layout: 'path' }])
+    const back = updateViews(parsed, (def) => {
+      const level = def.views[0].groupBy as { depth?: unknown; layout?: unknown }
+      delete level.depth
+      delete level.layout
+    })
+    expect(serializeViews(back)).toBe('views:\n  - type: table\n    name: T\n    groupBy:\n      property: file.folder\n')
+  })
+
+  it('the readers: Top folder (1) and Nested unless the level says 2, 3, all or path; a value the app does not know reads as the default', () => {
+    const level = (extra: Record<string, unknown>) => ({ property: 'file.folder', ...extra })
+    expect(folderDepthOf(level({}))).toBe(1)
+    expect(folderDepthOf(level({ depth: 2 }))).toBe(2)
+    expect(folderDepthOf(level({ depth: 3 }))).toBe(3)
+    expect(folderDepthOf(level({ depth: 'all' }))).toBe('all')
+    expect(folderDepthOf(level({ depth: 7 }))).toBe(1)
+    expect(folderDepthOf(level({ depth: '2' }))).toBe(1)
+    expect(folderLayoutOf(level({}))).toBe('nested')
+    expect(folderLayoutOf(level({ layout: 'path' }))).toBe('path')
+    expect(folderLayoutOf(level({ layout: 'tree' }))).toBe('nested')
+  })
+
+  it('groupDepthOf: the levels a view can nest, a nested Folder level counting its depth, All as the indent cap; Full path is one level', () => {
+    const view = (groupBy: unknown) => ({ type: 'table', name: 'T', groupBy } as Parameters<typeof groupDepthOf>[0])
+    expect(groupDepthOf(view(undefined))).toBe(0)
+    expect(groupDepthOf(view({ property: 'file.folder' }))).toBe(1)
+    expect(groupDepthOf(view({ property: 'file.folder', depth: 3 }))).toBe(3)
+    expect(groupDepthOf(view([{ property: 'file.folder', depth: 2 }, { property: 'status' }]))).toBe(3)
+    expect(groupDepthOf(view({ property: 'file.folder', depth: 'all' }))).toBe(MAX_GROUP_INDENT_LEVELS)
+    expect(groupDepthOf(view({ property: 'file.folder', depth: 'all', layout: 'path' }))).toBe(1)
+    expect(groupDepthOf(view([{ property: 'status' }, { property: 'file.folder', depth: 3, layout: 'path' }]))).toBe(2)
+    expect(MAX_GROUP_INDENT_LEVELS).toBe(4)
   })
 })

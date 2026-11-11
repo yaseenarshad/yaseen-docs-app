@@ -1,17 +1,19 @@
-import { useRef, type ReactNode } from 'react'
+import { useContext, useRef, type ReactNode } from 'react'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import { DragHandleIcon } from './icons'
 import { ColumnPicker } from './ColumnPicker'
 import { DirectionPicker, withOrder } from './DirectionPicker'
 import { GroupStylePicker } from './GroupStylePicker'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import { type ViewSet, type ViewDef, type Mutate, type SortSpec, type GroupBySpec, groupByLevels, MAX_GROUP_LEVELS } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, type SortSpec, type GroupBySpec, folderDepthOf, folderLayoutOf, groupByLevels, MAX_GROUP_LEVELS } from '../viewSchema'
+import { Dropdown } from './Dropdown'
 import { propertyLabel } from '../engine'
 import { columnTyping } from '../editorType'
 import type { FolderSettings } from '../folderSettings'
 import { canonicalKey } from './keys'
 import { allPropertyKeys, propertyOptions } from './properties'
 import { FoldersFirstToggle } from './SubfoldersSwitch'
+import { FolderPages } from './GroupHeader'
 
 export interface SortMenuProps {
   def: ViewSet
@@ -32,6 +34,54 @@ const isLevel = (level: GroupBySpec | undefined): level is GroupBySpec => typeof
 
 /** Folder (YAZ-2541): a place to sort and group by — a column too since YAZ-4564 D26 — and the one property that may group twice, the second level being the next folder down. */
 const FOLDER = 'file.folder'
+
+/** A Folder level's Depth choices (YAZ-4918): Top folder is today's look and the default, so it writes no key. */
+const DEPTHS = [[1, 'Top folder'], [2, '2'], [3, '3'], ['all', 'All']] as const
+/** A Folder level's Layout choices (YAZ-4918): Nested is the default and writes no key. */
+const LAYOUTS = [['nested', 'Nested'], ['path', 'Full path']] as const
+
+/** `spec` with a Depth or Layout (YAZ-4918): the default takes the key out, so the YAML line goes. */
+function withFolder(spec: GroupBySpec, patch: { depth?: 1 | 2 | 3 | 'all'; layout?: 'nested' | 'path' }): GroupBySpec {
+  const { depth: _depth, layout: _layout, ...rest } = spec
+  const nextDepth = patch.depth ?? folderDepthOf(spec)
+  const nextLayout = patch.layout ?? folderLayoutOf(spec)
+  return { ...rest, ...(nextDepth === 1 ? {} : { depth: nextDepth }), ...(nextLayout === 'nested' ? {} : { layout: nextLayout }) }
+}
+
+/** One quiet dropdown of a Folder level's row (YAZ-4918): the Depth or the Layout, its choices as a short list. */
+function FolderChoice<T extends string | number>({ label, choices, value, onChange }: { label: string; choices: readonly (readonly [T, string])[]; value: T; onChange: (next: T) => void }) {
+  const current = choices.find(([v]) => v === value)?.[1] ?? choices[0][1]
+  return (
+    <Dropdown label={label} className="sort-menu__folder-pick" panelClassName="sort-menu__folder-panel" trigger={current}>
+      {(close) => (
+        <>
+          {choices.map(([v, text]) => (
+            <button key={String(v)} type="button" role="menuitemradio" className="view-popover__item" aria-checked={v === value} aria-pressed={v === value}
+              onClick={() => { close(); if (v !== value) onChange(v) }}>
+              {text}
+            </button>
+          ))}
+        </>
+      )}
+    </Dropdown>
+  )
+}
+
+/**
+ * A Folder level's second line (YAZ-4918, folder pages only): "Depth" Top folder · 2 · 3 · All, and "Layout" Nested ·
+ * Full path. Depth nests the subfolders' groups that many steps inside this one level (All: the whole tree); Full path
+ * shows one flat header per folder at that depth, named by its path from the page.
+ */
+function FolderLevelOptions({ index, spec, onChange }: { index: number; spec: GroupBySpec; onChange: (next: GroupBySpec) => void }) {
+  return (
+    <div className="sort-menu__folder">
+      <span className="sort-menu__folder-label">Depth</span>
+      <FolderChoice label={`Depth of group level ${index + 1}`} choices={DEPTHS} value={folderDepthOf(spec)} onChange={(depth) => onChange(withFolder(spec, { depth }))} />
+      <span className="sort-menu__folder-label">Layout</span>
+      <FolderChoice label={`Layout of group level ${index + 1}`} choices={LAYOUTS} value={folderLayoutOf(spec)} onChange={(layout) => onChange(withFolder(spec, { layout }))} />
+    </div>
+  )
+}
 
 /** Each group level's picker and order-menu names, outer first (YAZ-4532). */
 const GROUP_LABELS = ['Group by', 'Then group by', 'Then group by (level 3)', 'Then group by (level 4)', 'Then group by (level 5)'] as const
@@ -79,8 +129,8 @@ function moved<T>(list: readonly T[], ids: readonly number[], from: number, inse
   return [next, nextIds]
 }
 
-/** One reorderable rule row: an item of its list's live gap, its ⋮⋮ handle (drag, or ↑/↓ when focused) and `body`. */
-function ruleRow(ids: readonly number[], live: RuleDrag, i: number, count: number, move: (from: number, insertion: number) => void, gripLabel: string, body: ReactNode, mainClass?: string) {
+/** One reorderable rule row: an item of its list's live gap, its ⋮⋮ handle (drag, or ↑/↓ when focused) and `body`; `extra` is a second line under it (a Folder level's Depth and Layout, YAZ-4918). */
+function ruleRow(ids: readonly number[], live: RuleDrag, i: number, count: number, move: (from: number, insertion: number) => void, gripLabel: string, body: ReactNode, mainClass?: string, extra?: ReactNode) {
   return (
     <li key={ids[i]} {...live.itemProps(i)} className="view-rule">
       <div className={mainClass ? `view-rule__main ${mainClass}` : 'view-rule__main'}>
@@ -104,6 +154,7 @@ function ruleRow(ids: readonly number[], live: RuleDrag, i: number, count: numbe
         ><DragHandleIcon /></button>
         {body}
       </div>
+      {extra}
     </li>
   )
 }
@@ -185,6 +236,8 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
     options(current, without).filter((o) => o.value === current || columnTyping(o.value, records, properties, settings)?.assigned !== 'image')
   /** A calendar's days are its groups (YAZ-4540 D4): it ignores `groupBy`, so the menu offers only Sort. */
   const grouping = view.type !== 'calendar'
+  /** A folder page (YAZ-4918): a Folder level there groups by the folders below the page, so it has a Depth and a Layout. */
+  const folderPage = useContext(FolderPages) !== null
 
   /** The column a new group level starts on: the first one the levels above do not use (Folder aside). */
   const nextLevel = grouping && levels.length < MAX_GROUP_LEVELS ? groupOptions(undefined, above(levels.length))[0] : undefined
@@ -226,7 +279,9 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
               onClick={() => writeGroup(levels.filter((_, j) => j !== i), groupRows.ids.filter((_, j) => j !== i), `Removed group level ${propertyLabel(def, level.property)}`)}>
               ×
             </button>
-          </>, 'sort-menu__level'))}
+          </>, 'sort-menu__level',
+          // A Folder level on a folder page (YAZ-4918): its Depth and Layout on a second line.
+          folderPage && canonicalKey(level.property) === FOLDER ? <FolderLevelOptions index={i} spec={level} onChange={(next) => setLevel(i, next)} /> : undefined))}
         </ul>
       )}
       {/* "Add group level" (D60) replaces the empty "None" picker: a row on the first free column, gone at `MAX_GROUP_LEVELS` (five, YAZ-3746 13AF). */}

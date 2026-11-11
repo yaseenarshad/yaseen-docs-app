@@ -2,7 +2,7 @@ import { READ_ONLY_KEY } from '@shared/readOnly'
 import { keyFold, spellings } from '@shared/propertyKeys'
 import { alsoIn } from '@shared/alsoIn'
 import { FOLDER_SETTINGS_FILE, type IndexRecord, inFolder } from '@shared/types'
-import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, type SortSpec, shownGroupLevels } from './viewSchema'
+import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, type SortSpec, folderDepthOf, folderLayoutOf, shownGroupLevels } from './viewSchema'
 import {
   DateValue, DurationValue, ErrorValue, type Expr, FileValue, LinkValue, type Resolver, type Scope, type Value,
   compile, equals, evaluate, fromYaml, isTruthy, linkText, render,
@@ -46,6 +46,11 @@ export interface Group {
   children?: Group[]
   /** The rows the merge rule keeps directly under this group; same presence rule as `children`. */
   direct?: Row[]
+  /**
+   * A Folder group whose `children` are its subfolders' groups, on the SAME view level (YAZ-4918, a Depth of 2, 3 or
+   * All): a consumer that maps groups to the view's levels steps down a level only past a group without it.
+   */
+  nested?: true
 }
 
 export interface EngineError {
@@ -609,20 +614,53 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   }
   let titles: Map<string, string> | undefined
   /** A Folder group (YAZ-2541) is headed as the sidebar names its folder: by title, a folder with no settings file by its directory, the root by the vault's name. */
-  const labelOf = (key: Value, depth: number): string => {
-    if (depth === 0 || typeof key !== 'string') return render(key, resolve)
+  const titleOf = (dir: string): string => {
     titles ??= new Map([...opts.page!.folders.map(f => [f.folder, f.title] as const), ['', opts.page!.vault]])
-    return titles.get(key) ?? key.slice(key.lastIndexOf('/') + 1)
+    return titles.get(dir) ?? dir.slice(dir.lastIndexOf('/') + 1)
   }
-  const groupOf = (key: Value | null, entries: Entry[], depth: number): Group =>
-    ({ key, label: key === null ? NO_VALUE : labelOf(key, depth), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut: false })
+  /** Full path (YAZ-4918): a Folder group's folders from the page down to it, each by its title, " › " between; a folder not under the page by its title alone. */
+  const pathLabelOf = (key: string): string => {
+    const page = opts.page!.folder
+    if (!inFolder(key, page) || key === page) return titleOf(key)
+    const parts = key.split('/')
+    const from = page === '' ? 0 : page.split('/').length
+    const out: string[] = []
+    for (let i = from + 1; i <= parts.length; i++) out.push(titleOf(parts.slice(0, i).join('/')))
+    return out.join(' › ')
+  }
+  const labelOf = (key: Value, at: number, step: number): string => {
+    if (step === 0 || typeof key !== 'string') return render(key, resolve)
+    return folderLayoutOf(levels[at]) === 'path' ? pathLabelOf(key) : titleOf(key)
+  }
+  const groupOf = (key: Value | null, entries: Entry[], at: number, step: number): Group =>
+    ({ key, label: key === null ? NO_VALUE : labelOf(key, at, step), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut: false })
 
   let groups: Group[] | null = null
-  // Levels past the third are ignored (YAZ-4531); a level without a property name is not one.
+  // Levels past the fifth are ignored (YAZ-4531, YAZ-3746 13AF); a level without a property name is not one.
   const levels = shownGroupLevels(view)
-  // How far below the page each Folder level groups (YAZ-2541): the first one step, a second two, a third three; 0 = not a Folder level.
+  /**
+   * How far below the page each Folder level STARTS (YAZ-2541): the first one step, a second one past the first's Depth
+   * (YAZ-4918; a plain level is one deep, All every step), a third past both; 0 = not a Folder level. A Full path level
+   * keys on its Depth's step at once (`stepOf`), the whole folder for All.
+   */
   const byFolder = (l: GroupBySpec): boolean => opts.page !== undefined && l.property === 'file.folder'
-  const depths = levels.map((l, i) => (byFolder(l) ? levels.slice(0, i + 1).filter(byFolder).length : 0))
+  const depths: number[] = []
+  let below = 0
+  for (const l of levels) {
+    depths.push(byFolder(l) ? below + 1 : 0)
+    const depth = byFolder(l) ? folderDepthOf(l) : 0
+    below += depth === 'all' ? Infinity : depth
+  }
+  const stepOf = (at: number): number => {
+    if (depths[at] === 0 || folderLayoutOf(levels[at]) !== 'path') return depths[at]
+    const depth = folderDepthOf(levels[at])
+    return depth === 'all' ? Infinity : depths[at] + depth - 1
+  }
+  /** Whether a nested Folder level `at` goes a step deeper than `step` (YAZ-4918): under its Depth, or All. */
+  const nestsPast = (at: number, step: number): boolean => {
+    const depth = folderDepthOf(levels[at])
+    return depth === 'all' || step - depths[at] + 1 < depth
+  }
   // Fan-out is a flag per LEVEL, not per branch (YAZ-745): one list anywhere in a level marks every group of it.
   const fanned = levels.map(() => false)
   const built: Group[][] = levels.map(() => [])
@@ -633,29 +671,47 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
    * therefore never carries a "No value" child. Folder then Folder (YAZ-2541) rides on it: a
    * subfolder's own notes resolve to the subfolder at every deeper level, so they sit directly under it.
    * Direct entries are not split further.
+   * `step` is the folder step below the page a Folder level keys on: its own (`depths[at]`), or, nested (YAZ-4918),
+   * the next one under its own group; `within` keeps a shortcut's places inside the folder group above (YAZ-4799).
    */
-  const split = (list: Entry[], at: number, parent?: Value | null): { children: Group[]; direct: Entry[] } => {
-    // A Folder level under a Folder group keeps a shortcut's places inside that group (YAZ-4799).
-    const within = depths[at] > 1 && at > 0 && depths[at - 1] > 0 && typeof parent === 'string' ? parent : undefined
+  const split = (list: Entry[], at: number, parent?: Value | null, step = stepOf(at), within?: string): { children: Group[]; direct: Entry[] } => {
     // Option parents (YAZ-4799): under a group of this column's parent column, only the options whose parent it is.
     const ties = at > 0 && typeof parent === 'string' ? opts.optionParent?.(levels[at].property) : undefined
     const above = at > 0 ? levels[at - 1].property : undefined
     const tied = ties !== undefined && above !== undefined && bare(above) === bare(ties.column)
     const allow = tied ? (key: Value) => typeof key !== 'string' || ties.of[key] === undefined || ties.of[key] === parent : undefined
-    const level = bucket(list, levels[at], depths[at], within, allow)
+    const level = bucket(list, levels[at], step, within, allow)
     if (level.fannedOut) fanned[at] = true
     const merges = (key: Value): boolean => parent !== undefined && parent !== null && equals(key, parent)
-    const children = level.valued.filter(x => !merges(x.key)).map(x => toGroup(x.key, x.entries, at))
-    if (parent !== null && level.noValue.length) children.push(toGroup(null, level.noValue, at))
+    const children = level.valued.filter(x => !merges(x.key)).map(x => toGroup(x.key, x.entries, at, step))
+    if (parent !== null && level.noValue.length) children.push(toGroup(null, level.noValue, at, step))
     const direct = [...(parent === null ? level.noValue : level.valued.filter(x => merges(x.key)).flatMap(x => x.entries)), ...level.orphans]
     return { children, direct }
   }
-  /** One group of level `at`; above the last level it carries `children` and `direct`, possibly empty. */
-  const toGroup = (key: Value | null, list: Entry[], at: number): Group => {
-    const group = groupOf(key, list, depths[at])
+  /** The next view level's split under a Folder group (YAZ-4799): a Folder level right under it keeps a shortcut's places inside the group. */
+  const nextLevel = (list: Entry[], at: number, key: Value | null) =>
+    split(list, at + 1, key, stepOf(at + 1), depths[at + 1] > 1 && depths[at] > 0 && typeof key === 'string' ? key : undefined)
+  /**
+   * One group of level `at`, keyed at folder `step` (0 off a Folder level); above the last level it carries `children`
+   * and `direct`, possibly empty. A nested Folder level (YAZ-4918) first tries the step below its own group: the
+   * subfolders' groups become its `children`, its own notes `direct`, and the group is `nested`. A folder with no
+   * subfolder goes on to the next view level, so "Folder (All), then Status" puts the Status groups inside each
+   * deepest folder, and on the last level it is a leaf.
+   */
+  const toGroup = (key: Value | null, list: Entry[], at: number, step: number): Group => {
+    const group = groupOf(key, list, at, step)
     built[at].push(group)
+    if (step > 0 && typeof key === 'string' && folderLayoutOf(levels[at]) === 'nested' && nestsPast(at, step)) {
+      const inner = split(list, at, key, step + 1, key)
+      if (inner.children.length > 0) {
+        group.nested = true
+        group.children = inner.children
+        group.direct = inner.direct.map(e => e.row)
+        return group
+      }
+    }
     if (at + 1 < levels.length) {
-      const inner = split(list, at + 1, key)
+      const inner = nextLevel(list, at, key)
       group.children = inner.children
       group.direct = inner.direct.map(e => e.row)
     }

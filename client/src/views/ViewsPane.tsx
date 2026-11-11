@@ -11,7 +11,7 @@ import { pageResolver } from '../links/folderLinks'
 import { isMentionsColumn, mentionsColumns } from './mentionsColumn'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, hidesSubfolderNotes, parseViews, rewriteViews, serializeViews, shownGroupLevels, showsFolderRows, updateViews } from './viewSchema'
+import { type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, groupDepthOf, hidesSubfolderNotes, parseViews, rewriteViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
 import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, levelSteps } from './groupLevelSteps'
 import { type Group, type Row, propertyKeys, propertyLabel, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
@@ -28,7 +28,7 @@ import { canonicalKey } from './view/keys'
 import { allPropertyKeys } from './view/properties'
 import { declarationForKind } from './view/declarationForKind'
 import type { CardNoteDoors } from './view/rowMenuItems'
-import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, chainLevels, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
 import { ListView } from './view/ListView'
 import { TableView } from './view/TableView'
 import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, noteWindowKey, noteWindowLink, noteWindowMemory, openNoteWindow, renameNoteWindowView, saveNoteWindowBox, savedNoteWindowBox } from './view/NoteWindow'
@@ -639,7 +639,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // One level at a time (YAZ-3746 13AT, S8): offered while the view has two levels or more, and the store can hold its keys.
   const nodesOf = (list: readonly Group[], at: GroupSpot): LevelNode[] =>
     list.map((g) => ({ key: spotKey(g, at), ...(g.children === undefined ? {} : { children: nodesOf(g.children, childSpot(g, at)) }) }))
-  const steps = configuredGroups !== null && allGroupKeys.length > 0 && shownGroupLevels(view).length >= 2 ? levelSteps(nodesOf(configuredGroups, TOP_SPOT), collapsed) : null
+  // A nested Folder level is levels too (YAZ-4918, `groupDepthOf`).
+  const steps = configuredGroups !== null && allGroupKeys.length > 0 && groupDepthOf(view) >= 2 ? levelSteps(nodesOf(configuredGroups, TOP_SPOT), collapsed) : null
   const levelActions: GroupLevelStepActions | null =
     steps === null
       ? null
@@ -845,7 +846,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       // 🔒 YAZ-745: an INNER "+" seeds every ancestor too (YAZ-4531), so the note lands in the very
       // section clicked. The ancestors go FIRST, outer first (YAZ-2541): under Folder then Folder each
       // level sets `seed.folder`, and the folder clicked is where the note must be born — so it writes last.
-      at?.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level, folder.settings.columns))
+      // Each ancestor by its view level (YAZ-4918): a nested Folder level's groups share one.
+      if (at !== undefined) chainLevels(at.ancestors).forEach((level, i) => seedGroup(seed, at.ancestors[i], view, level, folder.settings.columns))
       seedGroup(seed, group, view, at?.level ?? 0, folder.settings.columns)
     }
     setCreateError(null)
@@ -870,7 +872,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       if (key !== null && value !== undefined) seed.properties[key] = value
     }
     if (group !== null && at !== null) {
-      at.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level, folder.settings.columns))
+      chainLevels(at.ancestors).forEach((level, i) => seedGroup(seed, at.ancestors[i], view, level, folder.settings.columns))
       seedGroup(seed, group, view, at.level, folder.settings.columns)
     }
     setCreateError(null)

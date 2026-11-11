@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
 import { basenameKey, makeResolver, targetBasename, targetKey } from '@shared/linkResolver'
-import { type ViewResult, defaultLabel, folderAt, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
+import { type Group, type ViewResult, defaultLabel, folderAt, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
 import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
 import { groupKeyOf } from './view/GroupHeader'
 import { DateValue, ErrorValue, FileValue } from './expr'
@@ -636,6 +636,113 @@ describe('runView: group by Folder under a page (YAZ-2541)', () => {
     const r = T({ property: 'file.folder' }, {})
     expect(labels(r)).toEqual(['stages', 'stages/active', 'stages/archive', 'stages/archive/2019', 'Sub'])
     expect(r.groups!.map(rowsOf)).toEqual([['Lead Gen', 'Sales'], ['Now'], ['Old'], ['Older'], ['Outsider']])
+  })
+})
+
+describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
+  const at = (path: string, properties: Record<string, unknown> = {}) => {
+    const basename = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    return { ...TEST_RECORDS[0], path: `/vault/${path}`, basename, title: basename, folder, properties } as IndexRecord
+  }
+  /** The page `stages`: notes one, two, three and four folders down, and a shortcut living in `Sub`. */
+  const recs = [
+    at('stages/Lead Gen.md', { status: 'open' }),
+    at('stages/Sales.md', { status: 'done' }),
+    at('stages/archive/Old.md', { status: 'done' }),
+    at('stages/archive/2019/Older.md', { status: 'open' }),
+    at('stages/archive/2019/q1/Deep.md', { status: 'done' }),
+    at('stages/archive/2019/q1/Deeper.md', { status: 'open' }),
+    at('stages/active/Now.md', { status: 'open' }),
+    at('Sub/Outsider.md', { status: 'open' }),
+  ]
+  const folders = [
+    { ...at('stages/.folder.md'), title: 'Stages' },
+    { ...at('stages/archive/.folder.md'), title: 'Archive' },
+    { ...at('stages/archive/2019/q1/.folder.md'), title: 'Q1' },
+  ]
+  const page = { folder: 'stages', folders, vault: 'My Vault' }
+  const T = (groupBy: ViewDef['groupBy']) => runView({ views: [] }, { type: 'table', name: 'T', groupBy }, recs, { page })
+  const names = (rows: readonly { record: IndexRecord }[] | undefined) => (rows ?? []).map((x) => x.record.basename)
+  /** A group as `label [nested?] direct | rows`, its children indented under it. */
+  const tree = (groups: readonly Group[], indent = ''): string[] =>
+    groups.flatMap((g) => [
+      `${indent}${g.label}${g.nested ? ' *' : ''}${g.children === undefined ? ` = ${names(g.rows).join(',')}` : ` (${names(g.direct).join(',')})`}`,
+      ...tree(g.children ?? [], `${indent}  `),
+    ])
+
+  it('Top folder (no Depth) reads and groups as before, and saves nothing new', () => {
+    const r = T({ property: 'file.folder' })
+    expect(tree(r.groups!)).toEqual(['Stages = Lead Gen,Sales', 'active = Now', 'Archive = Old,Older,Deep,Deeper', 'Sub = Outsider'])
+    expect(r.groups!.some((g) => g.nested)).toBe(false)
+  })
+
+  it('Depth 2: the subfolders nest inside their folder\'s group on the SAME level; a folder\'s own notes sit first, above them; a folder with no subfolder is a leaf', () => {
+    const r = T({ property: 'file.folder', depth: 2 })
+    expect(tree(r.groups!)).toEqual(['Stages = Lead Gen,Sales', 'active = Now', 'Archive * (Old)', '  2019 = Older,Deep,Deeper', 'Sub = Outsider'])
+    // The outer group's rows stay the whole branch, so its count and summaries are unchanged.
+    expect(r.groups![2].rows).toHaveLength(4)
+  })
+
+  it('Depth 3 goes one step further; All goes to the bottom of the tree', () => {
+    expect(tree(T({ property: 'file.folder', depth: 3 }).groups!)).toEqual(['Stages = Lead Gen,Sales', 'active = Now', 'Archive * (Old)', '  2019 * (Older)', '    Q1 = Deep,Deeper', 'Sub = Outsider'])
+    expect(tree(T({ property: 'file.folder', depth: 'all' }).groups!)).toEqual(tree(T({ property: 'file.folder', depth: 3 }).groups!))
+  })
+
+  it('"Folder (All), then Status": the Status groups sit inside each deepest folder, and a folder\'s own notes above its subfolders are not split', () => {
+    const r = T([{ property: 'file.folder', depth: 'all' }, { property: 'status' }])
+    expect(tree(r.groups!)).toEqual([
+      'Stages ()', '  done = Sales', '  open = Lead Gen',
+      'active ()', '  open = Now',
+      'Archive * (Old)', '  2019 * (Older)', '    Q1 ()', '      done = Deep', '      open = Deeper',
+      'Sub ()', '  open = Outsider',
+    ])
+  })
+
+  it('"Status, then Folder (2)": the nested folder groups sit inside each Status group', () => {
+    const r = T([{ property: 'status' }, { property: 'file.folder', depth: 2 }])
+    expect(tree(r.groups!)).toEqual([
+      'done ()', '  Stages = Sales', '  Archive * (Old)', '    2019 = Deep',
+      'open ()', '  Stages = Lead Gen', '  active = Now', '  Archive * ()', '    2019 = Older,Deeper', '  Sub = Outsider',
+    ])
+  })
+
+  it('Full path: one flat header per folder at the Depth, named by its path from the page with " › " (titles as the sidebar names them)', () => {
+    const r = T({ property: 'file.folder', depth: 'all', layout: 'path' })
+    expect(r.groups!.map((g) => [g.key, g.label, names(g.rows).join(',')])).toEqual([
+      ['stages', 'Stages', 'Lead Gen,Sales'],
+      ['stages/active', 'active', 'Now'],
+      ['stages/archive', 'Archive', 'Old'],
+      ['stages/archive/2019', 'Archive › 2019', 'Older'],
+      ['stages/archive/2019/q1', 'Archive › 2019 › Q1', 'Deep,Deeper'],
+      ['Sub', 'Sub', 'Outsider'],
+    ])
+    expect(r.groups!.every((g) => g.children === undefined && g.nested === undefined)).toBe(true)
+    expect(T({ property: 'file.folder', depth: 2, layout: 'path' }).groups!.map((g) => [g.label, names(g.rows).join(',')])).toEqual([
+      ['Stages', 'Lead Gen,Sales'], ['active', 'Now'], ['Archive', 'Old'], ['Archive › 2019', 'Older,Deep,Deeper'], ['Sub', 'Outsider'],
+    ])
+  })
+
+  it('"Folder (All, Full path), then Status" keeps the flat headers and groups Status inside each', () => {
+    const r = T([{ property: 'file.folder', depth: 'all', layout: 'path' }, { property: 'status' }])
+    expect(tree(r.groups!)).toEqual([
+      'Stages ()', '  done = Sales', '  open = Lead Gen',
+      'active ()', '  open = Now',
+      'Archive ()', '  done = Old',
+      'Archive › 2019 ()', '  open = Older',
+      'Archive › 2019 › Q1 ()', '  done = Deep', '  open = Deeper',
+      'Sub ()', '  open = Outsider',
+    ])
+  })
+
+  it('a Depth the app does not know, and a Depth off a Folder level, read as Top folder', () => {
+    expect(tree(T({ property: 'file.folder', depth: 9 as unknown as 2 }).groups!)).toEqual(tree(T({ property: 'file.folder' }).groups!))
+    expect(tree(T({ property: 'status', depth: 'all' }).groups!)).toEqual(['done = Sales,Old,Deep', 'open = Lead Gen,Older,Deeper,Now,Outsider'])
+  })
+
+  it('"Folder (2), then Folder" as two view levels: the second level is the next folder down past the Depth', () => {
+    const r = T([{ property: 'file.folder', depth: 2 }, { property: 'file.folder' }])
+    expect(tree(r.groups!)).toEqual(['Stages (Lead Gen,Sales)', 'active (Now)', 'Archive * (Old)', '  2019 (Older)', '    Q1 = Deep,Deeper', 'Sub (Outsider)'])
   })
 })
 

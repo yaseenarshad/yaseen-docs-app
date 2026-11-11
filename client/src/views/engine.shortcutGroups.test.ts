@@ -48,6 +48,16 @@ describe('runView: a shortcut in each of its folders when grouped by Folder (YAZ
     ])
   })
 
+  it('Folder (Depth 2) nests the same pairs inside ONE level (YAZ-4918): a shortcut stays inside the folder group it is a shortcut in', () => {
+    const r = T({ property: 'file.folder', depth: 2 })
+    const pairs = r.groups!.flatMap((g) => (g.children ?? []).map((c) => [`${g.label} › ${c.label}`, names(c.rows)]))
+    expect(pairs).toEqual([
+      ['1) Clients › 1) Web browser', ['Next.js', 'React']],
+      ['4) App › 2) API', ['Express', 'Next.js']],
+    ])
+    expect(r.groups!.every((g) => g.nested === true)).toBe(true)
+  })
+
   it('a note with no shortcut groups as before', () => {
     const r = T({ property: 'file.folder' })
     expect(r.groups!.filter((g) => names(g.rows).includes('Express')).map((g) => g.label)).toEqual(['4) App'])
