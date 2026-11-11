@@ -11,7 +11,9 @@
  *
  * Every row writes one part of `settings.folderPages`. Every default is the look before the page existed.
  */
-import { folderRowBandOn, folderWindowPinned, type FolderPagesSettings } from '@shared/types'
+import { calLine, folderRowBandOn, folderWindowPinned, type FolderPagesSettings, writeColorStrength } from '@shared/types'
+import { calLineColor } from '../views/calendar'
+import { CalLineControls } from '../views/view/CalendarLineControls'
 import { Segmented } from './controls'
 import { ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsCtx, SettingsSection } from './registry'
@@ -91,6 +93,25 @@ function row<K extends keyof FolderPagesSettings>(
   }
 }
 
+/** A calendar line's default (YAZ-4878): the View tab's two controls, writing the width and the colour parts. */
+function lineRow(widthPart: 'weekLine' | 'dayLine', colorPart: 'weekLineColor' | 'dayLineColor', label: string, hint: string): SettingDef {
+  return {
+    id: `folderPages.${widthPart}`,
+    label,
+    hint,
+    keywords: [...WORDS, 'calendar', 'lines', 'thickness', 'width', 'colour', 'color', 'px'],
+    render: ({ settings, onChange }) => (
+      <CalLineControls
+        label={label}
+        width={calLine(settings.folderPages[widthPart])}
+        color={calLineColor(settings.folderPages[colorPart])}
+        onWidth={(px) => onChange({ ...settings, folderPages: { ...settings.folderPages, [widthPart]: px } })}
+        onColor={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [colorPart]: writeColorStrength(next) } })}
+      />
+    ),
+  }
+}
+
 export const FOLDER_PAGES_SECTION: SettingsSection = {
   id: 'folderPages',
   title: 'Folder pages',
@@ -152,6 +173,9 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week'] }),
         row('cardTitles', 'Calendar card titles', CARD_TITLES_OPTIONS, { keywords: ['calendar', 'card', 'titles', 'wrap', 'clip'] }),
         row('hideWeekends', 'Calendar hides weekends', ON_OFF_OPTIONS, { hint: 'Monday to Friday only. A weekend note shows on the Friday before.', keywords: ['calendar', 'weekends', 'saturday', 'sunday', 'hide'] }),
+        // YAZ-4878: the grid's lines, a thickness and a colour each; a calendar's View tab can say otherwise.
+        lineRow('weekLine', 'weekLineColor', 'Calendar line between weeks', 'Its thickness and colour. A calendar’s View tab can say otherwise.'),
+        lineRow('dayLine', 'dayLineColor', 'Calendar line between days', 'Its thickness and colour. A calendar’s View tab can say otherwise.'),
       ],
     },
     {

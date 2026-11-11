@@ -3110,6 +3110,43 @@
 .view-from-settings--reset:hover { background: var(--accent-soft); }
 .view-settings__foot { margin: 8px -10px -10px; padding: 8px 18px 10px; font-size: 11px; color: var(--fg-muted); border-top: 1px solid var(--border); }
 
+/* A calendar line's two controls (YAZ-4878, `CalendarLineControls.tsx`): "3 px ▾" and a colour dot ▾, each a quiet
+   select in the View tab and in Settings › Folder pages; the dropdown's rows, Custom's box and the colour panel. */
+.cal-line { display: flex; flex: none; gap: 4px; align-items: center; }
+.cal-line__drop { position: relative; display: inline-flex; }
+.cal-line__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 20px 0 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4l2-2 2 2M3 6l2 2 2-2'/%3E%3C/svg%3E") no-repeat right 6px center;
+  cursor: pointer;
+}
+.cal-line__trigger:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
+.cal-line__colour { padding-left: 6px; }
+.cal-line__dot { width: 12px; height: 12px; }
+.cal-line__panel.view-popover { min-width: 0; padding: 4px; }
+.cal-line__panel .view-popover__item { padding: 4px 24px 4px 10px; font-size: 12px; white-space: nowrap; }
+.cal-line__panel .view-popover__item[aria-pressed='true'] { color: var(--accent); }
+.cal-line__custom { padding: 4px 6px 2px; font-size: 12px; }
+.cal-line__custom .view-input { width: 56px; }
+
+/* The colour panel (`ColourPanel.tsx`): the strength switch over two rows of swatches, "No colour" under them. */
+.colour-panel { display: flex; flex-direction: column; gap: 6px; padding: 4px; }
+.colour-panel .view-seg { align-self: flex-start; }
+.colour-panel .view-header-colors { justify-content: flex-start; max-width: 112px; }
+.colour-panel__none { align-self: flex-start; padding: 2px 8px; font-size: 12px; color: var(--fg-muted); border-radius: 4px; }
+.colour-panel__none:hover { color: var(--fg); background: var(--bg-hover); }
+.colour-panel__none[aria-pressed='true'] { color: var(--accent); }
+.colour-panel__group .colour-panel { padding: 2px 6px 4px; }
+
 /* Quiet selects: a soft fill and a drawn chevron, no box. */
 .view-settings .view-select {
   appearance: none;

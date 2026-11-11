@@ -1937,6 +1937,11 @@ export interface FolderPagesSettings {
   cardTitles: (typeof FOLDER_PAGE_CHOICES.cardTitles)[number]
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. */
   hideWeekends: boolean
+  /** A calendar's lines (YAZ-4878): the width between weeks and between days, whole px 1–`MAX_CAL_LINE`, and each line's colour and strength (`readColorStrength`: `gray`, `blue light`). */
+  weekLine: number
+  dayLine: number
+  weekLineColor: string
+  dayLineColor: string
   showFolderPageFiles: boolean
   /** A folder page's "Delete note…" asks first (YAZ-4592 S26). Its own switch: Files › Confirm before deleting does not touch it. */
   askBeforeDelete: boolean
@@ -1975,6 +1980,11 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   calendarScale: 'month',
   cardTitles: 'clip',
   hideWeekends: false,
+  // YAZ-4878: 1 px lines in the app's line colour (Gray, Medium), the look before the setting existed.
+  weekLine: 1,
+  dayLine: 1,
+  weekLineColor: 'gray',
+  dayLineColor: 'gray',
   showFolderPageFiles: false,
   askBeforeDelete: true,
   confirmChanges: true,
@@ -2494,6 +2504,33 @@ export const DEFAULT_SUBHEADER_ROW: HeaderRow = { color: 'gray', strength: 'medi
 /** The `data-table-subheader-*` attributes of the set parts: on `.app` (Settings) and a note table's block (`table.css`). */
 export const subheaderRowAttrs = (parts: Partial<HeaderRow>): Record<string, string> =>
   Object.fromEntries(HEADER_ROW_PARTS.filter((part) => typeof parts[part] === 'string').map((part) => [`data-table-subheader-${part}`, parts[part] as string]))
+
+/**
+ * A colour with a strength (YAZ-4878, YAZ-4906): a calendar line's colour (`weekLineColor`) and a note's `color`
+ * property, one string a person can read: the colour name, then the strength when it is not Medium — `gray`,
+ * `blue light`, `black strong`. The colours are the header row's (`HEADER_ROW_CHOICES.color`); Light, Medium and Strong
+ * are 15 %, 30 % and 50 % of the colour (`views.css`), the header row's Light, Medium and Strong.
+ */
+export const COLOR_STRENGTHS = ['light', 'medium', 'strong'] as const
+export type ColorStrength = (typeof COLOR_STRENGTHS)[number]
+export type ColorName = (typeof HEADER_ROW_CHOICES.color)[number]
+export interface ColorStrengthValue {
+  color: ColorName
+  strength: ColorStrength
+}
+/** The colour and strength `raw` names, or null: a word that is no colour, or a strength that is none. Case and spaces do not matter. */
+export function readColorStrength(raw: unknown): ColorStrengthValue | null {
+  if (typeof raw !== 'string') return null
+  const [color, strength = 'medium', more] = raw.trim().toLowerCase().split(/\s+/)
+  if (more !== undefined || !(HEADER_ROW_CHOICES.color as readonly string[]).includes(color) || !(COLOR_STRENGTHS as readonly string[]).includes(strength)) return null
+  return { color: color as ColorName, strength: strength as ColorStrength }
+}
+/** The string a colour and strength are written as: `blue` for Medium, else `blue light`. */
+export const writeColorStrength = ({ color, strength }: ColorStrengthValue): string => (strength === 'medium' ? color : `${color} ${strength}`)
+/** The widest a calendar grid line may be (YAZ-4878). */
+export const MAX_CAL_LINE = 12
+/** A calendar grid line's width (YAZ-4878): a stored whole number 1–`MAX_CAL_LINE`, else 1 (the line before the setting). */
+export const calLine = (value: unknown): number => (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_CAL_LINE ? value : 1)
 
 /** Calendar tables (YAZ-4162 D6): how the now row is marked. */
 export type TableNowMark = 'line' | 'tint' | 'both'

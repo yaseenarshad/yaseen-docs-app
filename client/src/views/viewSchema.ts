@@ -96,6 +96,9 @@ export interface ViewDef {
   weekLine?: number
   /** A calendar's line between days (YAZ-4878): whole px, 1–12. Absent = 1. */
   dayLine?: number
+  /** The lines' colours (YAZ-4878): `gray` / `blue light` (`readColorStrength`). Absent = the Settings › Folder pages default (Gray, Medium). */
+  weekLineColor?: string
+  dayLineColor?: string
   /** A calendar's "Cross out when" (YAZ-4864): the Filter menu's conditions; a card whose note matches has its name struck through. Absent = none. */
   crossOut?: FilterNode
   /**

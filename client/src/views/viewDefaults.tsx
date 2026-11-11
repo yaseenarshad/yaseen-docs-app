@@ -31,6 +31,10 @@ const DEFAULTED = {
   calendarScale: 'calendarScale',
   cardTitles: 'cardTitles',
   hideWeekends: 'hideWeekends',
+  weekLine: 'weekLine',
+  dayLine: 'dayLine',
+  weekLineColor: 'weekLineColor',
+  dayLineColor: 'dayLineColor',
 } as const satisfies Partial<Record<keyof ViewDef, keyof FolderPagesSettings>>
 export type DefaultedKey = keyof typeof DEFAULTED
 const DEFAULTED_KEYS = Object.keys(DEFAULTED) as DefaultedKey[]
@@ -63,6 +67,11 @@ const ABSENT: { readonly [K in DefaultedKey]: unknown } = {
   calendarScale: 'month',
   cardTitles: 'clip',
   hideWeekends: false,
+  // YAZ-4878: 1 px lines in the app's line colour before the Settings rows existed; a view's `weekLine: 3` reads as before.
+  weekLine: 1,
+  dayLine: 1,
+  weekLineColor: 'gray',
+  dayLineColor: 'gray',
 }
 
 /**
@@ -93,8 +102,8 @@ export function chooseOwn<K extends DefaultedKey>(view: ViewDef, key: K, value: 
  * `own` is the view as written, never `withDefaults`'. `headerRow` (YAZ-4774) reads Settings › Tables, and its reset
  * takes the first build's `shadedHeader` too.
  */
-export function FromSettings({ own, viewKey, viewIndex, onUpdate }: { own: ViewDef; viewKey: DefaultedKey | 'headerRow'; viewIndex: number; onUpdate: Mutate }) {
-  if (own[viewKey] === undefined && (viewKey !== 'headerRow' || own.shadedHeader === undefined)) return <span className="view-from-settings" aria-hidden="true" />
+export function FromSettings({ own, viewKey, also, viewIndex, onUpdate }: { own: ViewDef; viewKey: DefaultedKey | 'headerRow'; /** A second key under the same ↺ (YAZ-4878: a line's width and its colour). */ also?: DefaultedKey; viewIndex: number; onUpdate: Mutate }) {
+  if (own[viewKey] === undefined && (also === undefined || own[also] === undefined) && (viewKey !== 'headerRow' || own.shadedHeader === undefined)) return <span className="view-from-settings" aria-hidden="true" />
   return (
     <button
       type="button"
@@ -105,6 +114,7 @@ export function FromSettings({ own, viewKey, viewIndex, onUpdate }: { own: ViewD
         e.preventDefault()
         onUpdate((d) => {
           delete d.views[viewIndex][viewKey]
+          if (also !== undefined) delete d.views[viewIndex][also]
           if (viewKey === 'headerRow') delete d.views[viewIndex].shadedHeader
         })
       }}

@@ -1,6 +1,6 @@
 import { FOLDER_PAGE_CHOICES, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowLabel, type FolderPagesSettings, type HeaderRowOwn } from '@shared/types'
-import { capital, fillSwatch } from '../../editor/table/colours'
-import type { TableColor } from '../../editor/table/tableComment'
+import { capital } from '../../editor/table/colours'
+import { ColourSwatches } from './ColourPanel'
 import { headerRowSetting } from '../../editor/table/timeFormatSetting'
 import { groupLineStyleOf, groupLinesOf, headerRowOfView, type Mutate, type ViewDef } from '../viewSchema'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
@@ -125,15 +125,8 @@ export function toggleHeaderRowPlain(view: ViewDef): void {
 export function HeaderRowSettings({ own, viewIndex, onUpdate }: { own: ViewDef; viewIndex: number; onUpdate: Mutate }) {
   const shown = shownHeaderRow(own)
   const pick = (part: keyof HeaderRowOwn, value: string) => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], part, value))
-  const swatches = (part: 'color' | 'text', colors: readonly string[], label: string) => (
-    <div className="view-header-colors" role="group" aria-label={label}>
-      {colors.map((c) => (
-        <button key={c} type="button" title={capital(c)} aria-label={capital(c)} aria-pressed={shown[part] === c} onClick={() => shown[part] !== c && pick(part, c)}>
-          <span className="table-menu-swatch" style={{ background: fillSwatch((c === 'gray' ? 'grey' : c) as TableColor) }} />
-        </button>
-      ))}
-    </div>
-  )
+  // The swatches are the colour panel's (`ColourPanel.tsx`, YAZ-4878), so a colour looks the same here, on a line and on a card.
+  const swatches = (part: 'color' | 'text', colors: readonly string[], label: string) => <ColourSwatches label={label} colors={colors} value={shown[part]} onPick={(c) => pick(part, c)} />
   return (
     <>
       <div className="view-settings-row">

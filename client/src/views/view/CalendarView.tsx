@@ -2,10 +2,10 @@ import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type Ke
 import { holdColResize } from '../../lib/colResize'
 import { openByKey, openTarget } from '../../lib/openGesture'
 import {
-  type BarPlace, type DayKey, type Span, type SpanPreview, bucketByDay, addDays, calLine, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
+  type BarPlace, type DayKey, type Span, type SpanPreview, bucketByDay, addDays, calLine, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
   todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
 } from '../calendar'
-import type { IndexRecord } from '@shared/types'
+import { type ColorStrengthValue, type IndexRecord, readColorStrength } from '@shared/types'
 import { type Row, propertyKeys, propertyLabel } from '../engine'
 import { type Resolver, isEmpty } from '../expr'
 import { type FolderSettings, pageColumnKeys } from '../folderSettings'
@@ -126,23 +126,26 @@ const stretched = (span: { start: DayKey; end: DayKey }, edge: 'start' | 'end', 
  * as tall as its tallest bar. A card's edges stretch it, a day per step, with one write on release.
  */
 /**
- * The grid's lines (YAZ-4878): the view's own widths as custom properties that views.css reads. A line wider than 1 px
- * is also a little darker (`--cal-*-line-color`), so the step shows in light and dark mode.
+ * The grid's lines (YAZ-4878): the view's widths and colours (Settings filled in) as custom properties that views.css
+ * reads. The look of before (1 px, Gray, Medium) sets nothing; a Gray, Medium line wider than 1 px is a little darker
+ * (`calLineCss`), so the step shows in light and dark mode.
  */
 function gridLines(view: ViewDef | undefined): CSSProperties | undefined {
   const week = calLine(view?.weekLine)
   const day = calLine(view?.dayLine)
-  if (week === 1 && day === 1) return undefined
-  const strong = 'color-mix(in srgb, var(--border) 55%, var(--fg-muted))'
+  const weekColor = calLineColor(view?.weekLineColor)
+  const dayColor = calLineColor(view?.dayLineColor)
+  const plain = (c: ColorStrengthValue) => c.color === 'gray' && c.strength === 'medium'
+  if (week === 1 && day === 1 && plain(weekColor) && plain(dayColor)) return undefined
   return {
     '--cal-week-line': `${week}px`,
     '--cal-day-line': `${day}px`,
-    ...(week > 1 ? { '--cal-week-line-color': strong } : {}),
-    ...(day > 1 ? { '--cal-day-line-color': strong } : {}),
+    ...(week > 1 || !plain(weekColor) ? { '--cal-week-line-color': calLineCss(weekColor, week) } : {}),
+    ...(day > 1 || !plain(dayColor) ? { '--cal-day-line-color': calLineCss(dayColor, day) } : {}),
   } as CSSProperties
 }
 
-export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, noteDoors, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, noteDoors, onColor, history, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }

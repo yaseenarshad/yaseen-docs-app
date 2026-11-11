@@ -3,7 +3,7 @@
  * goes on, the value a move writes, and the month grid. No date library: `expr/dates.ts` and the
  * native `Date` (D4).
  */
-import type { FolderPagesSettings, IndexRecord, PropertiesResponse } from '@shared/types'
+import { type ColorStrengthValue, type FolderPagesSettings, type IndexRecord, type PropertiesResponse, readColorStrength } from '@shared/types'
 import type { Row } from './engine'
 import { columnTyping } from './editorType'
 import { formatDate, parseIsoDate, renderDate } from './expr/dates'
@@ -299,7 +299,21 @@ export function calendarEndKey(view: ViewDef, dateKey: string | null, decls: Fol
   return key === dateKey ? null : key
 }
 
-/** The widest a calendar grid line may be (YAZ-4878). */
-export const MAX_CAL_LINE = 12
-/** A calendar grid line's width (YAZ-4878): a stored whole number 1–12, else 1 (today's line). */
-export const calLine = (value: unknown): number => (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_CAL_LINE ? value : 1)
+export { MAX_CAL_LINE, calLine } from '@shared/types'
+
+/** A calendar line's colour (YAZ-4878): the stored `gray` / `blue light` (`readColorStrength`), else Gray, Medium: the app's line colour. */
+export const calLineColor = (value: unknown): ColorStrengthValue => readColorStrength(value) ?? { color: 'gray', strength: 'medium' }
+
+/**
+ * The CSS colour a calendar line draws in (YAZ-4878). Gray is the app's line colour (`--border`): Medium is that line;
+ * a Medium line wider than 1 px is a little darker, as the first build drew it; Light is half of it, Strong the darker
+ * mix. A colour is its solid swatch at 35 %, 65 % or 100 %: a 1 px line needs more than a fill's wash to show.
+ */
+export function calLineCss({ color, strength }: ColorStrengthValue, width: number): string {
+  if (color === 'gray') {
+    if (strength === 'light') return 'color-mix(in srgb, var(--border) 50%, transparent)'
+    return strength === 'strong' || width > 1 ? 'color-mix(in srgb, var(--border) 55%, var(--fg-muted))' : 'var(--border)'
+  }
+  const wash = strength === 'light' ? 35 : strength === 'medium' ? 65 : 100
+  return `color-mix(in srgb, var(--table-fill-solid-${color}) ${wash}%, transparent)`
+}

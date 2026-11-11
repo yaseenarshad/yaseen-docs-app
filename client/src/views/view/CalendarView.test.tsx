@@ -1024,11 +1024,7 @@ describe('cards over several days (YAZ-4858)', () => {
 
 describe('the grid lines (YAZ-4878)', () => {
   const grid = (el: ParentNode) => q<HTMLElement>(el, '.view-cal__grid')
-  const seg = (el: ParentNode, label: string) => q<HTMLElement>(el, `.view-popover--properties [role="group"][aria-label="${label}"]`)
-  const pick = (el: ParentNode, label: string, text: string) => {
-    act(() => [...seg(el, label).querySelectorAll('button')].find((b) => b.textContent === text)!.click())
-    draw()
-  }
+  const seg = (el: ParentNode, label: string) => el.querySelector<HTMLElement>(`.view-popover--properties [role="group"][aria-label="${label}"]`)
   const openView = (el: ParentNode) => {
     click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
@@ -1048,18 +1044,48 @@ describe('the grid lines (YAZ-4878)', () => {
     expect(grid(mount(`${CALENDAR}    weekLine: 40\n    dayLine: 0\n`).el).style.getPropertyValue('--cal-week-line')).toBe('')
   })
 
-  it('the View tab: two rows; 3 px writes weekLine: 3; 1 px removes it; Custom opens a field up to 12 px', () => {
+  /** A line row's dropdown (the "Thickness ▾" or the colour dot) opened, then `text`'s item in it pressed. */
+  const trigger = (el: ParentNode, label: string) => q<HTMLButtonElement>(el, `.view-popover--properties [aria-label="${label}"]`)
+  const panel = (el: ParentNode, label: string) => q<HTMLElement>(el, `.cal-line__panel[aria-label="${label}"]`)
+  const pickIn = (el: ParentNode, label: string, text: string) => {
+    if (trigger(el, label).getAttribute('aria-expanded') !== 'true') click(trigger(el, label))
+    // A swatch has no text: its colour is its `aria-label`.
+    click(panel(el, label).querySelector(`button[aria-label="${text}"]`) ?? byText(panel(el, label), 'button', text))
+  }
+
+  it('the View tab: "Between weeks" and "Between days" rows with a Thickness ▾; 3 px writes weekLine: 3; 1 px (Settings) removes it; Custom keeps its box inside the dropdown', () => {
     const { el, yaml } = mount(CALENDAR)
     openView(el)
-    expect(seg(el, 'Lines between weeks')).toBeTruthy()
-    expect(seg(el, 'Lines between days')).toBeTruthy()
-    pick(el, 'Lines between weeks', '3 px')
+    expect(seg(el, 'Lines between weeks')).toBeNull()
+    expect(trigger(el, 'Between weeks thickness').textContent).toBe('1 px')
+    expect(trigger(el, 'Between days thickness').textContent).toBe('1 px')
+    pickIn(el, 'Between weeks thickness', '3 px')
     expect(yaml()).toContain('weekLine: 3')
-    pick(el, 'Lines between weeks', '1 px')
+    expect(trigger(el, 'Between weeks thickness').textContent).toBe('3 px')
+    // The pick closed the dropdown; the ↺ marks the view's own value.
+    expect(el.querySelector('.cal-line__panel')).toBeNull()
+    expect(el.querySelector('.view-popover--properties [aria-label="Reset to Settings"]')).not.toBeNull()
+    pickIn(el, 'Between weeks thickness', '1 px')
     expect(yaml()).not.toContain('weekLine')
-    pick(el, 'Lines between days', 'Custom')
+    pickIn(el, 'Between days thickness', 'Custom…')
     expect(yaml()).toContain('dayLine: 5')
-    expect(el.querySelector('.view-popover--properties [aria-label="Lines between days in pixels"]')).not.toBeNull()
+    expect(panel(el, 'Between days thickness').querySelector('[aria-label="Between days in pixels"]')).not.toBeNull()
+    expect(trigger(el, 'Between days thickness').textContent).toBe('5 px')
+  })
+
+  it('the colour dot: Blue writes weekLineColor: blue and the grid draws it; Strong adds the word; Gray, Medium (Settings) removes the key', () => {
+    const { el, yaml } = mount(CALENDAR)
+    openView(el)
+    pickIn(el, 'Between weeks colour', 'Blue')
+    expect(yaml()).toContain('weekLineColor: blue\n')
+    expect(grid(el).style.getPropertyValue('--cal-week-line-color')).toContain('--table-fill-solid-blue')
+    expect(grid(el).style.getPropertyValue('--cal-day-line-color')).toBe('')
+    pickIn(el, 'Between weeks colour', 'Strong')
+    expect(yaml()).toContain('weekLineColor: blue strong')
+    expect(grid(el).style.getPropertyValue('--cal-week-line-color')).toContain('100%')
+    pickIn(el, 'Between weeks colour', 'Gray')
+    pickIn(el, 'Between weeks colour', 'Medium')
+    expect(yaml()).not.toContain('weekLineColor')
   })
 
   // YAZ-4898: views.css's rules, read as text, against the real rows. The day-name row is a `.view-cal__week` too.

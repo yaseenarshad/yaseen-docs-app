@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_FOLDER_PAGES, type IndexRecord } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, type IndexRecord, readColorStrength, writeColorStrength } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
-import { addDays, bucketByDay, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
+import { addDays, bucketByDay, calLineColor, calLineCss, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -346,5 +346,24 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(calendarEndKey(view(), 'due', {})).toBeNull()
     expect(calendarEndKey(view('note.end'), 'due', {})).toBe('end')
     expect(calendarEndKey(view('note.due'), 'due', {})).toBeNull()
+  })
+})
+
+describe('a colour with a strength (YAZ-4878, YAZ-4906)', () => {
+  it('reads `blue`, `blue light` and `Black STRONG`; writes Medium as the bare colour; refuses a word that is no colour, a strength that is none, or three words', () => {
+    expect(readColorStrength('blue')).toEqual({ color: 'blue', strength: 'medium' })
+    expect(readColorStrength(' blue  light ')).toEqual({ color: 'blue', strength: 'light' })
+    expect(readColorStrength('Black STRONG')).toEqual({ color: 'black', strength: 'strong' })
+    for (const bad of ['turquoise', 'blue bold', 'blue light strong', '', 3, null, undefined]) expect(readColorStrength(bad)).toBeNull()
+    for (const text of ['blue', 'blue light', 'gray strong']) expect(writeColorStrength(readColorStrength(text)!)).toBe(text)
+  })
+
+  it('a line with no colour, or one the app cannot read, is Gray, Medium: the line of before, darker when wider than 1 px', () => {
+    expect(calLineColor(undefined)).toEqual({ color: 'gray', strength: 'medium' })
+    expect(calLineColor('mauve')).toEqual({ color: 'gray', strength: 'medium' })
+    expect(calLineCss(calLineColor(undefined), 1)).toBe('var(--border)')
+    expect(calLineCss(calLineColor(undefined), 3)).toContain('--fg-muted')
+    expect(calLineCss({ color: 'gray', strength: 'light' }, 1)).toContain('50%')
+    expect(calLineCss({ color: 'blue', strength: 'strong' }, 1)).toBe('color-mix(in srgb, var(--table-fill-solid-blue) 100%, transparent)')
   })
 })
