@@ -15,9 +15,20 @@ describe('embed options (YAZ-4820 1A)', () => {
 
   it('is no options for a plain alias, a bad size or a zero size', () => {
     expect(parseEmbedOptions('the plan')).toBeNull()
-    expect(parseEmbedOptions('640')).toBeNull()
+    expect(parseEmbedOptions('640x')).toBeNull()
     expect(parseEmbedOptions('0x360')).toBeNull()
+    expect(parseEmbedOptions('640x0')).toBeNull()
+    expect(parseEmbedOptions('0')).toBeNull()
     expect(parseEmbedOptions('')).toBeNull()
+  })
+
+  it('reads Obsidian`s width alone (`|300`, A7): the height is the board`s, and it writes back as it was', () => {
+    const parsed = parseEmbedOptions('300')
+    expect(parsed).toEqual({ width: 300, height: null, view: null, locked: false, page: null, rest: [] })
+    expect(formatEmbedOptions(parsed!)).toBe('300')
+    expect(formatEmbedOptions(parseEmbedOptions('300 locked')!)).toBe('300 locked')
+    // The first write with a height keeps the user's width.
+    expect(formatEmbedOptions({ ...parsed!, height: 169, view: { x: 1, y: 2, zoom: 1 } })).toBe('300x169 view=1,2,1')
   })
 
   it('keeps a word it does not know, in its place after ours', () => {

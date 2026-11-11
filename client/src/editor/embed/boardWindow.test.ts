@@ -18,6 +18,7 @@ vi.mock('./boardPictures', () => ({
   loadPicture: vi.fn(async () => pictures.picture),
   currentKey: vi.fn(() => pictures.picture.key),
   peekPicture: vi.fn(() => pictures.picture),
+  dropPicturesExcept: vi.fn(),
   watchBoard: vi.fn((_root: string, path: string | null, _name: string, fn: (ev: WatchEvent) => void) => {
     const entry = { path, fn }
     pictures.listeners.push(entry)
@@ -25,14 +26,18 @@ vi.mock('./boardPictures', () => ({
   }),
 }))
 
-import { currentKey, loadPicture } from './boardPictures'
-import { clampZoom, fitView, mountBoardWindow, panBy, resizeBy, sharedCounts, zoomAt } from './boardWindow'
+import { currentKey, dropPicturesExcept, loadPicture, peekPicture } from './boardPictures'
+import { clampZoom, fitView, mountBoardWindow, panBy, resizeBy, sharedCounts, sweepPictures, zoomAt } from './boardWindow'
 
 /** One fake IntersectionObserver per mount round: the test says which window is near. */
 const observers: FakeObserver[] = []
 class FakeObserver {
   targets = new Set<Element>()
-  constructor(readonly callback: IntersectionObserverCallback) {
+  disconnected = false
+  constructor(
+    readonly callback: IntersectionObserverCallback,
+    readonly options: IntersectionObserverInit = {},
+  ) {
     observers.push(this)
   }
   observe(target: Element) {
@@ -43,10 +48,11 @@ class FakeObserver {
   }
   disconnect() {
     this.targets.clear()
+    this.disconnected = true
   }
 }
 function setNear(dom: Element, on: boolean): void {
-  const io = observers[observers.length - 1]
+  const io = observers.find((o) => o.targets.has(dom))!
   io.callback([{ target: dom, isIntersecting: on } as IntersectionObserverEntry], io as unknown as IntersectionObserver)
 }
 
@@ -386,10 +392,16 @@ describe('the window', () => {
     await settle()
     expect(win.dom.classList.contains('board-window--ready')).toBe(true)
 
-    vi.mocked(loadPicture).mockResolvedValueOnce(null)
+    vi.mocked(loadPicture).mockResolvedValueOnce('missing')
     const gone = mount().win
     await settle()
     expect(gone.dom.textContent).toContain('Missing drawing: Board')
+    // A4: a file that is there but would not read or draw says so, not "Missing".
+    vi.mocked(loadPicture).mockResolvedValueOnce('broken')
+    const broken = mount().win
+    await settle()
+    expect(broken.dom.classList.contains('board-window--broken')).toBe(true)
+    expect(broken.dom.querySelector('.board-window__message')!.textContent).toBe("Can't show drawing: Board")
   })
 
   it('D5: a change of the file refreshes only a window near the screen, 300 ms after the last change; the other when it comes near', async () => {
@@ -439,7 +451,8 @@ describe('the window', () => {
     const { win, onOptions } = mount({ ref: { root: '/v', path: 'C.drawio', kind: 'diagram', name: 'C', vault: 'Other' }, options: opts({ page: 'gone', view: { x: 1, y: 2, zoom: 1 } }) })
     await settle()
     const rows = win.menuRows()
-    expect(rows.map((r) => r.label)).toEqual(['Fit diagram to frame', 'Lock view', 'Page', 'View full size'])
+    // A16: "Fit whole …", so "frame" means only the drawing's frames of "Frame ▸".
+    expect(rows.map((r) => r.label)).toEqual(['Fit whole diagram', 'Lock view', 'Page', 'View full size'])
     expect(rows[2].children!.map((c) => [c.label, c.checked])).toEqual([
       ['Overview', true],
       ['Detail', false],
@@ -488,6 +501,115 @@ describe('the window', () => {
     win.setFolded(false)
     await settle()
     expect(win.dom.querySelector('img')!.getAttribute('src')).toBe('blob:board')
+  })
+
+  it('A6: no stored size and no picture known yet: 16:9 of the column (no jump from 0), then ONE settle to the board`s shape', async () => {
+    vi.mocked(peekPicture).mockReturnValueOnce(undefined)
+    const { win, onOptions } = mount({ options: null })
+    expect(win.dom.style.height).toBe('394px') // 700 × 9/16
+    await settle()
+    expect(win.dom.style.height).toBe('350px') // 700 × 500/1000
+    // Another window of the same board drew it already: its shape at once.
+    const known = mount({ options: null }).win
+    expect(known.dom.style.height).toBe('350px')
+    expect(onOptions).not.toHaveBeenCalled()
+  })
+
+  it('A7: Obsidian`s width alone (`|300`): that width, the height from the board`s shape; the first write keeps the width', async () => {
+    const { win, onOptions } = mount({ options: opts({ width: 300, height: null }) })
+    expect(win.dom.style.width).toBe('300px')
+    expect(win.dom.style.height).toBe('160px') // 300 × 0.5 = 150, at least 160
+    await settle()
+    win.handleKey(new KeyboardEvent('keydown', { key: '=', metaKey: true }))
+    vi.advanceTimersByTime(800)
+    expect(onOptions.mock.calls[0][0]).toMatchObject({ width: 300, height: 160 })
+  })
+
+  it('A8: flush() writes a view still waiting for its 800 ms at once; with nothing waiting it writes nothing', async () => {
+    const { win, onOptions } = mount({ options: opts({ view: { x: 0, y: 0, zoom: 1 } }) })
+    await settle()
+    win.flush()
+    expect(onOptions).not.toHaveBeenCalled()
+    wheel(win, { deltaY: 30 })
+    win.flush()
+    expect(onOptions).toHaveBeenCalledTimes(1)
+    expect(onOptions.mock.calls[0][0]).toMatchObject({ view: { x: 0, y: 30, zoom: 1 } })
+    vi.advanceTimersByTime(1000)
+    expect(onOptions).toHaveBeenCalledTimes(1)
+  })
+
+  it('A3: a press in a note never takes the focus (the editor keeps the caret); the full-size window does', async () => {
+    const editor = document.createElement('div')
+    editor.tabIndex = 0
+    document.body.appendChild(editor)
+    editor.focus()
+    const { win } = mount({ options: opts({ view: { x: 0, y: 0, zoom: 1 } }) })
+    await settle()
+    const stage = win.dom.querySelector('.board-window__stage')!
+    mouse(stage, 'mousedown', 10, 10)
+    mouse(document, 'mousemove', 60, 60)
+    mouse(document, 'mouseup', 60, 60)
+    expect(document.activeElement).toBe(editor)
+    win.menuRows().find((r) => r.label === 'View full size')!.run()
+    const inner = document.querySelector<HTMLElement>('.board-window--full')!
+    expect(document.activeElement).toBe(inner)
+    mouse(inner.querySelector('.board-window__stage')!, 'mousedown', 5, 5)
+    mouse(document, 'mouseup', 5, 5)
+    expect(document.activeElement).toBe(inner)
+    editor.remove()
+  })
+
+  it('A28: a right-click selects the window first (the host`s onSelect), then its menu opens', async () => {
+    const onContextMenu = vi.fn()
+    const { win, onSelect } = mount({ onContextMenu })
+    await settle()
+    win.dom.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(win.dom.classList.contains('is-selected')).toBe(true)
+    expect(onSelect.mock.invocationCallOrder[0]).toBeLessThan(onContextMenu.mock.invocationCallOrder[0])
+    // Already selected: no second select.
+    win.dom.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onContextMenu).toHaveBeenCalledTimes(2)
+  })
+
+  it('A23: a pan writes the zoom label only when its percent changes', async () => {
+    const { win } = mount({ options: opts({ view: { x: 0, y: 0, zoom: 1 } }) })
+    await settle()
+    const zoom = win.dom.querySelector<HTMLButtonElement>('.board-window__zoom')!
+    const writes = vi.spyOn(zoom, 'textContent', 'set')
+    for (let i = 0; i < 5; i++) {
+      wheel(win, { deltaY: 10 })
+      await settle()
+    }
+    expect(writes).not.toHaveBeenCalled()
+    wheel(win, { deltaY: 10, metaKey: true })
+    await settle()
+    expect(writes).toHaveBeenCalledTimes(1)
+  })
+
+  it('A5: the sleep`s sweep keeps the pictures that mounted windows show, and only those', async () => {
+    mount()
+    mount({ ref: { root: '/v', path: null, kind: 'drawing', name: 'Lost', vault: null } })
+    await settle()
+    sweepPictures()
+    expect(dropPicturesExcept).toHaveBeenLastCalledWith(new Set(['k1']))
+  })
+
+  it('YAZ-4862: the observer`s root is the note`s scroll container: one observer per root, ended with its last window', async () => {
+    const scroller = document.createElement('div')
+    const a = mount({ scrollRoot: scroller }, false).win
+    const b = mount({ scrollRoot: scroller }, false).win
+    const viewport = mount({}, false).win
+    const roots = observers.filter((o) => !o.disconnected)
+    expect(roots.map((o) => o.options.root ?? null)).toEqual([scroller, null])
+    expect(roots[0].options.rootMargin).toBe('100% 0px')
+    expect([...roots[0].targets]).toEqual([a.dom, b.dom])
+    a.destroy()
+    expect(roots[0].disconnected).toBe(false)
+    b.destroy()
+    expect(roots[0].disconnected).toBe(true)
+    expect(roots[1].targets.has(viewport.dom)).toBe(true)
   })
 
   it('destroy ends every timer and listener; the shared observer goes with the last window', async () => {

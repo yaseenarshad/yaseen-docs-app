@@ -36,7 +36,12 @@
   cursor: default;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__img {
+/*
+ * YAZ-4860: Crepe's `.milkdown .ProseMirror img { max-width: 100% }` (0,2,1) squashed the picture to the column and
+ * left it at the left. `.milkdown .ProseMirror` inside the `:is()` lifts this rule to (0,3,0), so it wins, with no
+ * `!important` (`boardWindow.css.test.ts`).
+ */
+:is(.milkdown .ProseMirror, .milkdown, .board-window-overlay) .board-window__img {
   position: absolute;
   left: 0;
   top: 0;
@@ -45,8 +50,8 @@
   pointer-events: none;
 }
 
-/* Loading is an empty box at the size (item 12); missing and empty show their words instead of the picture. */
-:is(.milkdown, .board-window-overlay) :is(.board-window--loading, .board-window--missing, .board-window--empty) .board-window__img {
+/* Loading is an empty box at the size (item 12); missing, broken (A4) and empty show their words instead of the picture. */
+:is(.milkdown, .board-window-overlay) :is(.board-window--loading, .board-window--missing, .board-window--broken, .board-window--empty) .board-window__img {
   visibility: hidden;
 }
 
@@ -67,7 +72,7 @@
   text-align: center;
 }
 
-:is(.milkdown, .board-window-overlay) :is(.board-window--missing, .board-window--empty) .board-window__message {
+:is(.milkdown, .board-window-overlay) :is(.board-window--missing, .board-window--broken, .board-window--empty) .board-window__message {
   display: flex;
 }
 
@@ -185,6 +190,11 @@
   display: block;
 }
 
+/* YAZ-4863: a window with no picture (loading, missing, can't show, empty) has nothing to move or zoom. */
+:is(.milkdown .ProseMirror, .milkdown, .board-window-overlay) .board-window:is(.board-window--loading, .board-window--missing, .board-window--broken, .board-window--empty) > :is(.board-window__rest, .board-window__zoom) {
+  display: none;
+}
+
 /* ── Resize handles (D11): the image's look; shown when selected and editable. ── */
 
 :is(.milkdown, .board-window-overlay) .board-window__handle {
@@ -238,6 +248,11 @@
   background: var(--bg);
   color: var(--fg-muted);
   cursor: pointer;
+}
+
+:is(.milkdown, .board-window-overlay) .board-window--folded:not(.board-window--foldable) .board-window__unfold {
+  /* A pill line with no bullet to unfold: an embed in a table cell (the checker's round 1). */
+  display: none;
 }
 
 :is(.milkdown, .board-window-overlay) .board-window__unfold:hover {

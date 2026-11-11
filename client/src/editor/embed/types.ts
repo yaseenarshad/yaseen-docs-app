@@ -1,8 +1,8 @@
 /**
  * THE BOARD WINDOW'S CONTRACT (YAZ-4820): what a host (the note's `![[…]]` decorations, 2A; the image node view, 2B)
  * gives a window, and what the window gives back. The window (`boardWindow.ts`, 1B) knows nothing about ProseMirror;
- * a host knows nothing about pan, zoom or pictures. This file is types only, so a host can import it eagerly while the
- * window itself stays in a lazy chunk (`loadBoardWindow`).
+ * a host knows nothing about pan, zoom or pictures. This file is the types and the one `loadBoardWindow`, so a host can
+ * import it eagerly while the window itself stays in a lazy chunk.
  */
 import type { EmbedOptions } from '@shared/embedOptions'
 
@@ -34,6 +34,11 @@ export interface BoardWindowHost {
   editable: boolean
   /** The editor column's width in CSS px: the widest a window may be, and a new window's width (D11). */
   columnWidth: () => number
+  /**
+   * The element the note scrolls in (YAZ-4862), the window's "one screen" for its picture (D5); absent or null = the
+   * viewport. `mountInBox` finds it once, at the mount.
+   */
+  scrollRoot?: Element | null
   /** The window moved, resized, locked or changed page. The host writes it (D4); the window already shows it. */
   onOptions?: (next: EmbedOptions) => void
   /** Double-click, or a click on the hover name pill (D12, item 6). */
@@ -70,10 +75,12 @@ export interface BoardWindowHandle {
   setFolded(on: boolean): void
   /** Show the fold arrow (the item is foldable). */
   setFoldable(on: boolean): void
-  /** The embed rows for the host's menu: Fit drawing to frame, Lock view, Page ▸ / Frame ▸, View full size. */
+  /** The embed rows for the host's menu: Fit whole drawing, Lock view, Page ▸ / Frame ▸, View full size. */
   menuRows(): WindowMenuRow[]
   /** Fit the board in the window (Shift+1, the zoom % click, the menu). */
   fit(): void
+  /** A view still waiting for its 800 ms write goes to `onOptions` now (A8): the note saves, or goes. */
+  flush(): void
   destroy(): void
 }
 
@@ -82,9 +89,12 @@ export interface BoardWindowModule {
   mountBoardWindow(host: BoardWindowHost): BoardWindowHandle
 }
 
-/** The one dynamic import of the window chunk; every host shares the promise. */
+/** The one dynamic import of the window chunk; every host shares the promise. A failed load is forgotten (A12): the next embed asks again. */
 let loading: Promise<BoardWindowModule> | null = null
 export function loadBoardWindow(): Promise<BoardWindowModule> {
-  loading ??= import('./boardWindow')
+  loading ??= import('./boardWindow').catch((err: unknown) => {
+    loading = null
+    throw err
+  })
   return loading
 }

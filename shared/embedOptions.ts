@@ -5,7 +5,8 @@
  *   this vault     `![[CloudFront.drawio|640x360 view=120,-40,0.8 locked page=R2lE]]`   (text under decorations)
  *   another vault  `![CloudFront|640x360 view=120,-40,0.8](../Other/CloudFront.drawio)`  (the stock image node's alt)
  *
- * `640x360` is Obsidian's own embed size; the words after it are ours. A word this build does not know is KEPT and
+ * `640x360` is Obsidian's own embed size, and so is `300`, a width alone (its height comes from the board's shape, A7);
+ * the words after it are ours. A word this build does not know is KEPT and
  * written back as it was, so a newer build's option survives an older build's write. `view` is the board point at the
  * window's top-left and the zoom; `formatEmbedOptions` rounds it (whole board units, zoom to 2 decimals) so a write
  * is short and a tiny move never changes the text (item 18 also gates the write itself: `movedEnough`).
@@ -23,7 +24,8 @@ export interface EmbedView {
 export interface EmbedOptions {
   /** The window's size in CSS pixels. */
   width: number
-  height: number
+  /** Null: a width alone (`|300`, Obsidian's form); the window takes its height from the board's shape. */
+  height: number | null
   /** Null: no view stored yet, so the window fits the board. */
   view: EmbedView | null
   /** The user's lock (D9): saved, survives a reopen. Resting is never saved. */
@@ -34,7 +36,7 @@ export interface EmbedOptions {
   rest: string[]
 }
 
-const SIZE_RE = /^(\d{1,5})x(\d{1,5})$/
+const SIZE_RE = /^(\d{1,5})(?:x(\d{1,5}))?$/
 const KNOWN = new Set(['view', 'locked', 'page'])
 
 /** `.excalidraw` or `.drawio`, case-insensitive: the only targets that get a window. */
@@ -42,10 +44,21 @@ export function isBoardTarget(target: string): boolean {
   return isBoard(target.trim())
 }
 
-/** `![[inner]]`'s parts: the target (with any `#…`, which renames keep) and the options text after the first `|` (null when none). */
+/**
+ * Where the options start (the YAZ-4821 checker's round 1): the index of the LAST `|` of `text` when the words after
+ * it parse as options, else -1. Any text before it, after the first `|`, is an alias, kept byte for byte:
+ * `x.drawio|My name|640x360 view=…`. The image node's alt has the same form (`CloudFront|My name|640x360`).
+ */
+export function optionsPipe(text: string): number {
+  const pipe = text.lastIndexOf('|')
+  return pipe >= 0 && parseEmbedOptions(text.slice(pipe + 1)) !== null ? pipe : -1
+}
+
+/** `![[inner]]`'s parts: the target (with any `#…`, which renames keep) and the options text (`optionsPipe`; null when none). */
 export function splitEmbed(inner: string): { target: string; options: string | null } {
   const pipe = inner.indexOf('|')
-  return pipe < 0 ? { target: inner.trim(), options: null } : { target: inner.slice(0, pipe).trim(), options: inner.slice(pipe + 1) }
+  const at = optionsPipe(inner)
+  return { target: (pipe < 0 ? inner : inner.slice(0, pipe)).trim(), options: at < 0 ? null : inner.slice(at + 1) }
 }
 
 /** The options text → options, or null when it is not an embed's options (a plain alias, say). */
@@ -54,8 +67,8 @@ export function parseEmbedOptions(text: string): EmbedOptions | null {
   const size = SIZE_RE.exec(words[0] ?? '')
   if (size === null) return null
   const width = Number(size[1])
-  const height = Number(size[2])
-  if (width <= 0 || height <= 0) return null
+  const height = size[2] === undefined ? null : Number(size[2])
+  if (width <= 0 || height === 0) return null
   const out: EmbedOptions = { width, height, view: null, locked: false, page: null, rest: [] }
   for (const word of words.slice(1)) {
     const eq = word.indexOf('=')
@@ -84,7 +97,7 @@ export function roundView(view: EmbedView): EmbedView {
 
 /** Options → their text; the inverse of `parseEmbedOptions` for every value it returns. */
 export function formatEmbedOptions(options: EmbedOptions): string {
-  const words = [`${Math.round(options.width)}x${Math.round(options.height)}`]
+  const words = [options.height === null ? `${Math.round(options.width)}` : `${Math.round(options.width)}x${Math.round(options.height)}`]
   if (options.view !== null) {
     const v = roundView(options.view)
     words.push(`view=${v.x},${v.y},${v.zoom}`)

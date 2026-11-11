@@ -24,7 +24,7 @@
  * runs or a write waits, `update({ options })` is kept, not applied (item 17); it applies once nothing was written,
  * and a write supersedes it (the host's echo of that write follows).
  *
- * SHARED, BOUNDED: one IntersectionObserver for every window (a picture only within about a screen of view, D5), one
+ * SHARED, BOUNDED: one IntersectionObserver per scroll root (a picture only within about a screen of view, D5), one
  * capture `scroll` listener (the guard), one theme observer and one settings subscription; all go with the last
  * window. Each window holds one rest timer, one refresh timer and one write timer at most, and `destroy()` ends them.
  */
@@ -32,7 +32,9 @@ import { formatEmbedOptions, movedEnough, roundView, type EmbedOptions, type Emb
 import type { WatchEvent } from '@shared/types'
 import { holdFrames } from '../../lib/colResize'
 import { storage } from '../../lib/storage'
-import { currentKey, loadPicture, peekPicture, watchBoard, type BoardBounds, type BoardPicture } from './boardPictures'
+import { setEmbedPictureSweep } from './pictureStats'
+import { currentKey, dropPicturesExcept, loadPicture, peekPicture, watchBoard, type BoardBounds, type BoardPicture } from './boardPictures'
+import { firstWindowSize, MIN_WIDTH } from './hostWindow'
 import type { BoardWindowHandle, BoardWindowHost, WindowMenuRow } from './types'
 import './boardWindow.css'
 
@@ -52,11 +54,7 @@ export const REFRESH_DELAY_MS = 300
 const MOVING_MS = 200
 /** A mousedown that moves less than this is a click. */
 const CLICK_SLOP_PX = 3
-export const MIN_WIDTH = 120
 export const MIN_HEIGHT = 80
-/** A new window's height from the board's shape (D11). */
-export const NEW_MIN_HEIGHT = 160
-export const NEW_MAX_HEIGHT = 480
 /** One screen above and below: a window this near gets its picture (D5). */
 const NEAR_MARGIN = '100% 0px'
 
@@ -85,13 +83,6 @@ export function panBy(view: EmbedView, dx: number, dy: number): EmbedView {
   return { x: view.x + dx / view.zoom, y: view.y + dy / view.zoom, zoom: view.zoom }
 }
 
-/** A new window's size (D11): the column's width; the height from the board's shape, 160 to 480. */
-export function newWindowSize(bounds: BoardBounds | null, columnWidth: number): { width: number; height: number } {
-  const width = Math.max(MIN_WIDTH, Math.round(columnWidth))
-  const shape = bounds === null || bounds.width <= 0 ? 9 / 16 : bounds.height / bounds.width
-  return { width, height: Math.round(Math.min(NEW_MAX_HEIGHT, Math.max(NEW_MIN_HEIGHT, width * shape))) }
-}
-
 /** A resize step (D11, item 10): free width and height; Shift on a corner keeps the start shape. */
 export function resizeBy(start: { width: number; height: number }, dir: HandleDirection, dx: number, dy: number, keepShape: boolean, maxWidth: number): { width: number; height: number } {
   const sx = dir.includes('e') ? 1 : dir.includes('w') ? -1 : 0
@@ -117,7 +108,37 @@ export type HandleDirection = (typeof HANDLE_DIRECTIONS)[number]
 // ── What every window shares ────────────────────────────────────────────────────────────────────────────────────
 
 const mounted = new Set<BoardWindow>()
-let near: IntersectionObserver | null = null
+/** Each mounted window by its root element: the observers' lookup (A22). */
+const byDom = new WeakMap<Element, BoardWindow>()
+/**
+ * One IntersectionObserver per scroll root (YAZ-4862; null = the viewport), with how many windows it watches: made
+ * with its first window, ended with its last.
+ */
+const nearByRoot = new Map<Element | null, { io: IntersectionObserver; count: number }>()
+
+/** `win` is watched by its root's observer (made now if it is the first). */
+function observeNear(win: BoardWindow, root: Element | null): void {
+  if (typeof IntersectionObserver === 'undefined') return
+  let held = nearByRoot.get(root)
+  if (held === undefined) {
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) byDom.get(entry.target)?.setNear(entry.isIntersecting)
+    }, { root, rootMargin: NEAR_MARGIN })
+    held = { io, count: 0 }
+    nearByRoot.set(root, held)
+  }
+  held.count++
+  held.io.observe(win.dom)
+}
+
+function unobserveNear(win: BoardWindow, root: Element | null): void {
+  const held = nearByRoot.get(root)
+  if (held === undefined) return
+  held.io.unobserve(win.dom)
+  if (--held.count > 0) return
+  held.io.disconnect()
+  nearByRoot.delete(root)
+}
 let lastScroll: { at: number; target: EventTarget | null } | null = null
 let themeObserver: MutationObserver | null = null
 let offSettings: (() => void) | null = null
@@ -128,16 +149,9 @@ const onScroll = (ev: Event): void => {
 
 function share(win: BoardWindow): void {
   mounted.add(win)
+  byDom.set(win.dom, win)
   if (mounted.size > 1) return
   document.addEventListener('scroll', onScroll, { capture: true, passive: true })
-  if (typeof IntersectionObserver !== 'undefined') {
-    near = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) for (const w of mounted) if (w.dom === entry.target) w.setNear(entry.isIntersecting)
-      },
-      { rootMargin: NEAR_MARGIN },
-    )
-  }
   if (typeof MutationObserver !== 'undefined') {
     themeObserver = new MutationObserver(() => mounted.forEach((w) => w.lookChanged()))
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
@@ -146,10 +160,9 @@ function share(win: BoardWindow): void {
 }
 
 function unshare(win: BoardWindow): void {
+  byDom.delete(win.dom)
   if (!mounted.delete(win) || mounted.size > 0) return
   document.removeEventListener('scroll', onScroll, { capture: true })
-  near?.disconnect()
-  near = null
   themeObserver?.disconnect()
   themeObserver = null
   offSettings?.()
@@ -157,9 +170,23 @@ function unshare(win: BoardWindow): void {
   lastScroll = null
 }
 
+/**
+ * A tab went to sleep (item 27, A5): its windows are destroyed, so each picture that no mounted window shows leaves
+ * the cache now, not when 24 newer ones push it out. `useWorkspace`'s sleep asks for it (`sweepEmbedPicturesSoon`).
+ */
+export function sweepPictures(): void {
+  const shown = new Set<string>()
+  for (const w of mounted) {
+    const key = w.pictureKey()
+    if (key !== null) shown.add(key)
+  }
+  dropPicturesExcept(shown)
+}
+setEmbedPictureSweep(sweepPictures)
+
 /** How many windows and shared listeners live now (a test of the bounds). */
 export function sharedCounts(): { windows: number; observer: boolean } {
-  return { windows: mounted.size, observer: near !== null }
+  return { windows: mounted.size, observer: nearByRoot.size > 0 }
 }
 
 // ── The icons ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -190,7 +217,7 @@ function button(cls: string, label: string, html: string): HTMLButtonElement {
 
 const sameOptions = (a: EmbedOptions | null, b: EmbedOptions | null): boolean => (a === null || b === null ? a === b : formatEmbedOptions(a) === formatEmbedOptions(b))
 
-type Status = 'loading' | 'ready' | 'empty' | 'missing'
+type Status = 'loading' | 'ready' | 'empty' | 'missing' | 'broken'
 
 // ── The window ──────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -242,11 +269,21 @@ class BoardWindow implements BoardWindowHandle {
   private unwatch: (() => void) | null = null
   private endDrag: (() => void) | null = null
   private overlay: { close: () => void } | null = null
+  /** The scroll root whose observer watches this window (YAZ-4862), fixed at the mount. */
+  private readonly nearRoot: Element | null
+  /** The zoom label's percent as written (A23): a pan frame writes it only when it changes. */
+  private zoomLabel = -1
 
-  constructor(host: BoardWindowHost) {
+  /** `full`: the window of View full size, which has the focus itself (A3); a note's window never takes it. */
+  constructor(
+    host: BoardWindowHost,
+    private readonly full = false,
+  ) {
     this.host = host
+    this.nearRoot = host.scrollRoot ?? null
     const o = host.options
-    const size = o === null ? newWindowSize(null, host.columnWidth()) : { width: o.width, height: o.height }
+    // No page jump (item 12, A6): a board another window already drew gives its shape at once.
+    const size = firstWindowSize(o, o !== null && o.height !== null ? null : (this.cachedPicture(o?.page ?? null)?.bounds ?? null), host.columnWidth())
     this.width = size.width
     this.height = size.height
     this.locked = o?.locked ?? false
@@ -257,7 +294,7 @@ class BoardWindow implements BoardWindowHandle {
       this.fitted = false
     }
 
-    this.dom = el('div', 'board-window board-window--loading')
+    this.dom = el('div', full ? 'board-window board-window--loading board-window--full' : 'board-window board-window--loading')
     this.dom.setAttribute('contenteditable', 'false')
     this.dom.tabIndex = -1
     this.dom.dataset.kind = host.ref.kind
@@ -313,10 +350,22 @@ class BoardWindow implements BoardWindowHandle {
     this.renderLock()
     this.renderEditable()
     share(this)
-    near?.observe(this.dom)
+    observeNear(this, this.nearRoot)
     this.watch()
     this.armRest()
     this.ensurePicture()
+  }
+
+  /** The settled picture of this board in the cache now, with no request; undefined before its first ask. */
+  private cachedPicture(page: string | null): BoardPicture | undefined {
+    const { root, path } = this.host.ref
+    const key = root === null || path === null ? null : currentKey({ root, path }, page)
+    return key === null ? undefined : peekPicture(key)
+  }
+
+  /** The key of the picture this window shows, or null (the sweep keeps it, A5). */
+  pictureKey(): string | null {
+    return this.picture !== null && this.picture.url !== '' ? this.picture.key : null
   }
 
   /** The open window's children, in order. */
@@ -404,9 +453,10 @@ class BoardWindow implements BoardWindowHandle {
         this.ensurePicture()
         return
       }
-      if (picture === null) {
+      // A4: a file that is not there is "Missing"; one that would not read or draw is "Can't show".
+      if (picture === 'missing' || picture === 'broken') {
         this.picture = null
-        this.setStatus('missing')
+        this.setStatus(picture)
         return
       }
       this.show(picture)
@@ -424,9 +474,9 @@ class BoardWindow implements BoardWindowHandle {
     if (this.img.getAttribute('src') !== picture.url) this.img.src = picture.url
     this.img.style.width = `${picture.bounds.width}px`
     this.img.style.height = `${picture.bounds.height}px`
-    // A window with no size of its own takes the board's shape (D11), once, before anything moved.
-    if (first && this.host.options === null && this.fitted) {
-      const size = newWindowSize(picture.bounds, this.host.columnWidth())
+    // A window with no height of its own takes the board's shape (D11, A6, A7), once, before anything moved.
+    if (first && (this.host.options?.height ?? null) === null && this.fitted) {
+      const size = firstWindowSize(this.host.options, picture.bounds, this.host.columnWidth())
       this.width = size.width
       this.height = size.height
       this.renderSize()
@@ -446,7 +496,8 @@ class BoardWindow implements BoardWindowHandle {
     this.status = status
     this.dom.classList.add(`board-window--${status}`)
     const word = this.host.ref.kind === 'diagram' ? 'diagram' : 'drawing'
-    this.message.textContent = status === 'missing' ? `Missing ${word}: ${this.host.ref.name}` : status === 'empty' ? `Empty ${word}` : ''
+    const name = this.host.ref.name
+    this.message.textContent = status === 'missing' ? `Missing ${word}: ${name}` : status === 'broken' ? `Can't show ${word}: ${name}` : status === 'empty' ? `Empty ${word}` : ''
   }
 
   // ── View ──
@@ -471,7 +522,11 @@ class BoardWindow implements BoardWindowHandle {
       if (view === null || this.picture?.bounds == null) return
       const b = this.picture.bounds
       this.img.style.transform = `translate(${(b.x - view.x) * view.zoom}px, ${(b.y - view.y) * view.zoom}px) scale(${view.zoom})`
-      this.zoomButton.textContent = `${Math.round(view.zoom * 100)}%`
+      const percent = Math.round(view.zoom * 100)
+      if (percent !== this.zoomLabel) {
+        this.zoomLabel = percent
+        this.zoomButton.textContent = `${percent}%`
+      }
     }
     if (typeof requestAnimationFrame === 'function') this.frame = requestAnimationFrame(run)
     else run()
@@ -525,7 +580,7 @@ class BoardWindow implements BoardWindowHandle {
   private armRest(): void {
     clearTimeout(this.restTimer)
     this.restTimer = undefined
-    const seconds = storage.getSettings().embedRestSeconds ?? 30
+    const seconds = storage.getSettings().embedRestSeconds
     if (!seconds || this.destroyed) return
     this.restTimer = setTimeout(() => {
       this.restTimer = undefined
@@ -598,7 +653,7 @@ class BoardWindow implements BoardWindowHandle {
   private applyOptions(options: EmbedOptions | null): void {
     if (sameOptions(options, this.lastWritten)) return
     this.lastWritten = options
-    const size = options === null ? newWindowSize(this.picture?.bounds ?? null, this.host.columnWidth()) : options
+    const size = firstWindowSize(options, this.picture?.bounds ?? null, this.host.columnWidth())
     this.width = size.width
     this.height = size.height
     this.renderSize()
@@ -647,7 +702,8 @@ class BoardWindow implements BoardWindowHandle {
     if (e.button !== 0 || this.folded) return
     if (e.target instanceof Element && e.target.closest('.board-window__handle') !== null) return
     e.preventDefault()
-    this.dom.focus({ preventScroll: true })
+    // In a note the EDITOR keeps the focus (A3): a pan must leave the caret and the keys where they were.
+    if (this.full) this.dom.focus({ preventScroll: true })
     const startX = e.clientX
     const startY = e.clientY
     const from = this.view
@@ -697,9 +753,14 @@ class BoardWindow implements BoardWindowHandle {
     this.host.onOpen?.(e.metaKey || e.ctrlKey ? 'backgroundTab' : 'thisTab')
   }
 
+  /** A28: a right-click selects this window first (the host puts the selection on its embed), so the menu is its. */
   private readonly onContextMenu = (e: MouseEvent): void => {
     if (this.host.onContextMenu === undefined) return
     e.preventDefault()
+    if (!this.selected) {
+      this.setSelected(true)
+      this.host.onSelect?.()
+    }
     this.host.onContextMenu(e)
   }
 
@@ -892,7 +953,7 @@ class BoardWindow implements BoardWindowHandle {
   menuRows(): WindowMenuRow[] {
     const word = this.host.ref.kind === 'diagram' ? 'diagram' : 'drawing'
     const rows: WindowMenuRow[] = [
-      { label: `Fit ${word} to frame`, run: () => this.fit(), disabled: this.status !== 'ready' },
+      { label: `Fit whole ${word}`, run: () => this.fit(), disabled: this.status !== 'ready' },
       { label: this.locked ? 'Unlock view' : 'Lock view', run: () => this.setLocked(!this.locked) },
     ]
     const pages = this.picture?.pages ?? []
@@ -930,14 +991,16 @@ class BoardWindow implements BoardWindowHandle {
     const width = Math.max(MIN_WIDTH, Math.round(window.innerWidth * 0.92))
     const height = Math.max(MIN_HEIGHT, Math.round(window.innerHeight * 0.88))
     const rect = this.shownRect()
-    const inner = new BoardWindow({
-      ref: this.host.ref,
-      options: { width, height, view: rect === null ? null : fitView(rect, width, height), locked: false, page: this.page, rest: [] },
-      editable: false,
-      columnWidth: () => width,
-      onOpen: this.host.onOpen,
-    })
-    inner.dom.classList.add('board-window--full')
+    const inner = new BoardWindow(
+      {
+        ref: this.host.ref,
+        options: { width, height, view: rect === null ? null : fitView(rect, width, height), locked: false, page: this.page, rest: [] },
+        editable: false,
+        columnWidth: () => width,
+        onOpen: this.host.onOpen,
+      },
+      true,
+    )
     backdrop.append(inner.dom, close)
     const done = (): void => {
       if (this.overlay === null) return
@@ -969,6 +1032,11 @@ class BoardWindow implements BoardWindowHandle {
     inner.dom.focus({ preventScroll: true })
   }
 
+  /** A8: a view still waiting for its 800 ms write is written now (the note is about to save, or to go). */
+  flush(): void {
+    if (this.writeTimer !== undefined) this.writeNow()
+  }
+
   destroy(): void {
     if (this.destroyed) return
     this.overlay?.close()
@@ -980,7 +1048,7 @@ class BoardWindow implements BoardWindowHandle {
     clearTimeout(this.movingTimer)
     if (this.frame !== 0 && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this.frame)
     this.frame = 0
-    near?.unobserve(this.dom)
+    unobserveNear(this, this.nearRoot)
     this.unwatch?.()
     this.unwatch = null
     this.releasePicture()
