@@ -2118,8 +2118,14 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+/* The line under the day names: always 1 px. */
 .view-cal__week + .view-cal__week {
-  /* YAZ-4878: the view's own "Lines between weeks" (`--cal-week-line`, set on the grid). */
+  border-top: 1px solid var(--border);
+}
+
+/* YAZ-4878: the view's own "Lines between weeks" (`--cal-week-line`, set on the grid), only between two day rows
+   (YAZ-4898). Week view has one day row, so it has no week line. */
+.view-cal__week--days + .view-cal__week--days {
   border-top: var(--cal-week-line, 1px) solid var(--cal-week-line-color, var(--border));
 }
 

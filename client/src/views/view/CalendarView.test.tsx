@@ -20,6 +20,7 @@ vi.mock('../calendar', async (load) => {
   return { ...real, dateColumns: vi.fn(real.dateColumns), bucketByDay: vi.fn(real.bucketByDay) }
 })
 import { bucketByDay, dateColumns } from '../calendar'
+import viewsCss from '../views.css?inline'
 import { writeProperties, writeProperty } from '../writeProperty'
 
 const write = vi.mocked(writeProperty)
@@ -1059,6 +1060,30 @@ describe('the grid lines (YAZ-4878)', () => {
     pick(el, 'Lines between days', 'Custom')
     expect(yaml()).toContain('dayLine: 5')
     expect(el.querySelector('.view-popover--properties [aria-label="Lines between days in pixels"]')).not.toBeNull()
+  })
+
+  // YAZ-4898: views.css's rules, read as text, against the real rows. The day-name row is a `.view-cal__week` too.
+  const cssRules = [...viewsCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ selector: sel.trim(), body }))
+  const weekLineRows = (el: ParentNode) => {
+    const rules = cssRules.filter(({ body }) => body.includes('--cal-week-line,'))
+    expect(rules.length).toBeGreaterThan(0)
+    return [...el.querySelectorAll('.view-cal__week')].filter((row) => rules.some(({ selector }) => row.matches(selector)))
+  }
+  const dayRows = (el: ParentNode) => [...el.querySelectorAll('.view-cal__week--days')]
+
+  it('YAZ-4898: Month: the week line is only between two day rows, never under the day names (that line stays 1 px)', () => {
+    const { el } = mount(`${CALENDAR}    weekLine: 4\n`)
+    const rows = dayRows(el)
+    expect(rows.length).toBeGreaterThan(3)
+    expect(weekLineRows(el)).toEqual(rows.slice(1))
+    const under = cssRules.filter(({ selector, body }) => /border-top:/.test(body) && rows[0]!.matches(selector))
+    expect(under.map(({ body }) => body.match(/border-top:([^;]+);/)![1]!.trim())).toEqual(['1px solid var(--border)'])
+  })
+
+  it('YAZ-4898: Week: "Lines between weeks" acts on no row (one day row, locked item 4 of YAZ-4878)', () => {
+    const { el } = mount(`${CALENDAR}    calendarScale: week\n    weekLine: 4\n`)
+    expect(dayRows(el)).toHaveLength(1)
+    expect(weekLineRows(el)).toEqual([])
   })
 })
 
