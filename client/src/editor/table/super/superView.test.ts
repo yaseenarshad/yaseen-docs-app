@@ -8,7 +8,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { getMarkdownForSave } from '../../createCrepe'
+import { editorViewCtx } from '@milkdown/kit/core'
+import { createCrepe, getMarkdownForSave } from '../../createCrepe'
+import { createFindChannel } from '../../find/findChannel'
 import { mountNote, unmountAll } from '../tableTestKit'
 import { loadSuperTable, SUPER_TYPING_MS } from '../tableZoomPill'
 import { superRuns } from './superData'
@@ -150,12 +152,48 @@ describe('YAZ-4876 S5: edit in a view, header rename, find', () => {
     expect(getMarkdownForSave(crepe)).toBe(saved)
   })
 
-  it('item 25: ⌘F’s match in a table that shows a view marks its row there', async () => {
-    const { view } = await showView(NOTE, 'Sizes')
-    expect(activeViewAt(view.state, tablePos(view))).toBe('Sizes')
-    const anchor = view.dom.querySelector<HTMLElement & { findRow?: (row: number) => void }>('.table-zoom-anchor')!
-    anchor.findRow!(4)
+  it('item 25: ⌘F’s current match in a table that shows a view marks its row there, and opens its collapsed group', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const channel = createFindChannel()
+    const crepe = createCrepe({ root, defaultValue: NOTE, tableZoomPill: true, find: channel })
+    await crepe.create()
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    await loadSuperTable()
+    setActiveTab(view, tablePos(view), 'By layer')
     await wait(0)
-    expect(viewRoot(view).querySelector('tr[data-found]')?.textContent).toContain('Base')
+    expect(activeViewAt(view.state, tablePos(view))).toBe('By layer')
+    // Collapse "Ground"; the match is in its row.
+    ;[...view.dom.querySelectorAll<HTMLButtonElement>('.view-group__toggle')].find((b) => b.getAttribute('aria-label') === 'Toggle group Ground')!.click()
+    await wait(0)
+    expect(linesOf(view)).not.toContain('Base|Ground|1,200')
+    channel.open()
+    channel.setQuery('Base')
+    await wait(0)
+    expect(viewRoot(view).querySelector('tr[data-found]')?.textContent).toBe('BaseGround1,200')
+    await crepe.destroy()
+    root.remove()
+  })
+
+  it('item 15: a key in a body row runs no rename: the views stay the same object', async () => {
+    const { view } = await mountNote(NOTE)
+    const views = view.state.doc.nodeAt(tablePos(view))!.attrs.views
+    let at = -1
+    view.state.doc.descendants((node, pos) => {
+      if (at === -1 && node.isText && node.text === 'Roof') at = pos + 4
+      return at === -1
+    })
+    view.dispatch(view.state.tr.insertText('s', at))
+    expect(view.state.doc.nodeAt(tablePos(view))!.attrs.views).toBe(views)
+  })
+
+  it('item 5: a merged cell or a cell note is edited in "Table": a tip says so, and nothing changes', async () => {
+    const { view, crepe, saved } = await showView(`${TABLE}\n\n<!-- table: merge A3:B3, super, view All -->\n`, 'All')
+    const merged = [...viewRoot(view).querySelectorAll('td')].find((td) => td.getAttribute('colspan') === '2')!
+    merged.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await wait(0)
+    expect(viewRoot(view).querySelector('.super-view__edit')).toBeNull()
+    expect(viewRoot(view).querySelector('.table-super-view__tip')!.textContent).toBe('Edit merged cells, cell notes and cell lists in Table.')
+    expect(getMarkdownForSave(crepe)).toBe(saved)
   })
 })
