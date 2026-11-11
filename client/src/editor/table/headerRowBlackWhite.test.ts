@@ -120,7 +120,7 @@ describe('YAZ-4794 demo: the note table Header row flyout, as the folder page', 
   const menuOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTMLElement>('.ctx-menu--editor')!
   const flyout = (view: EditorView) => view.dom.parentElement!.querySelector<HTMLElement>('.ctx-menu__sub')!
   const tabs = (view: EditorView) => [...flyout(view).querySelectorAll<HTMLButtonElement>('.fill-target:not(.fill-target--sub) > .fill-target__opt')]
-  const bar = (view: EditorView) => [...flyout(view).querySelectorAll<HTMLButtonElement>('.fill-target--sub .fill-target__opt')]
+  const bar = (view: EditorView) => [...flyout(view).querySelectorAll<HTMLButtonElement>('.fill-target--sub:not(.fill-target--switch) .fill-target__opt')]
   const items = (view: EditorView) => [...flyout(view).querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)
 
   it('YAZ-4794 demo: Plain on top, then the Fill · Text · Style tabs; Fill is shown first', async () => {

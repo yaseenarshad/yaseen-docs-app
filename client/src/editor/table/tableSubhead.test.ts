@@ -166,21 +166,29 @@ describe('"Make subheader row" and "Turn back into a normal row" (item 4), one u
     flyout.panel!(host, () => {})
     const items = () => [...host.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => `${b.textContent}${b.dataset.hint === '✓' ? '*' : ''}`)
     const tabs = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target:not(.fill-target--sub) > .fill-target__opt')]
-    const bar = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target--sub .fill-target__opt')].map((b) => `${b.textContent}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)
+    const bar = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target--sub:not(.fill-target--switch) .fill-target__opt')].map((b) => `${b.textContent}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)
     expect(items()).toEqual(['Plain, like any row', 'Gray*', 'Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink', 'Black'])
+    // Sticky at the top (YAZ-4899 demo): Default (On) / On / Off; Off saves `nosticky`, Default takes it back.
+    const sticky = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target--switch .fill-target__opt')].map((b) => `${b.textContent}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)
+    expect([host.querySelector('.ctx-menu__heading')?.textContent, sticky()]).toEqual(['Sticky', ['Default (On)*', 'On', 'Off']])
+    host.querySelectorAll<HTMLButtonElement>('.fill-target--switch .fill-target__opt')[2]!.click()
+    expect(getMarkdownForSave(crepe)).toContain('subhead 3 7, nosticky')
+    expect(sticky()).toEqual(['Default (On)', 'On', 'Off*'])
+    host.querySelectorAll<HTMLButtonElement>('.fill-target--switch .fill-target__opt')[0]!.click()
+    expect(getMarkdownForSave(crepe)).toBe(EIGHT)
     expect(tabs().map((t) => `${t.textContent}${t.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)).toEqual(['Fill*', 'Text', 'Style'])
     // ✓ at what the table shows (Settings' default: Medium); a pick that equals Settings saves no part. The panel
     // stays, drawn again: the pressed segment moves.
     expect(bar()).toEqual(['Off', 'Light', 'Medium*', 'Strong'])
-    host.querySelectorAll<HTMLButtonElement>('.fill-target--sub .fill-target__opt')[3]!.click()
+    host.querySelectorAll<HTMLButtonElement>('.fill-target--sub:not(.fill-target--switch) .fill-target__opt')[3]!.click()
     expect(getMarkdownForSave(crepe)).toContain('subhead 3 7, subheader strong')
     expect(bar()).toEqual(['Off', 'Light', 'Medium', 'Strong*'])
-    host.querySelectorAll<HTMLButtonElement>('.fill-target--sub .fill-target__opt')[2]!.click()
+    host.querySelectorAll<HTMLButtonElement>('.fill-target--sub:not(.fill-target--switch) .fill-target__opt')[2]!.click()
     expect(getMarkdownForSave(crepe)).toBe(EIGHT)
     // The Style tab: Weight and Align, as the six-dot menu's.
     tabs()[2]!.click()
     expect(items()).toEqual(['Plain, like any row', 'Bold*', 'Regular', 'Follow column*', 'Left', 'Center', 'Right'])
-    expect([...host.querySelectorAll('.ctx-menu__heading')].map((h) => h.textContent)).toEqual(['Weight', 'Align'])
+    expect([...host.querySelectorAll('.ctx-menu__heading')].map((h) => h.textContent)).toEqual(['Sticky', 'Weight', 'Align'])
     tabs()[0]!.click()
     host.remove()
     expect(menuItem(view, 2, 0, 'table-subhead-collapse-all')?.label).toBe('Collapse all subheaders')

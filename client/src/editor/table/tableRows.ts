@@ -182,11 +182,23 @@ export function headerRowParent(view: EditorView, pos: number, kind: 'header' | 
   const { plain, parts } = rowLookPicks(view, pos, kind)
   const child = (p: LookPick): MenuRow => ({ label: p.label, icon: p.swatch === undefined ? undefined : swatchIcon(p.swatch), hint: p.on ? '✓' : undefined, run: p.run })
   const plainRow: MenuRow = { label: plain.label, hint: plain.on ? '✓' : undefined, run: plain.run }
+  // Sticky (YAZ-4899 demo: "move the sticky header row and the subheader sticky into the option for this ... on top of
+  // the plain like any row"): the header row frozen (`stickyHeader`, `tableFreeze.ts`) or the subheader rows pinned
+  // (`stickySubheaders`, `tableSubhead.ts`); Default is Settings › Tables' (On by default), and a pick of it saves no part.
+  const attr = kind === 'header' ? 'stickyHeader' : 'stickySubheaders'
+  const own = view.state.doc.nodeAt(pos)?.attrs[attr] as boolean | null
+  const fallback = kind === 'header' ? stickyHeaderSetting() : stickySubheadersSetting()
+  const sticky: MenuRow[] = ([null, true, false] as const).map((value) => ({
+    label: value === null ? `Default (${fallback ? 'On' : 'Off'})` : value ? 'On' : 'Off',
+    hint: own === value ? '✓' : undefined,
+    run: () => setTable(view, pos, { [attr]: value }),
+  }))
   return {
     label: kind === 'header' ? 'Header row' : 'Subheader row',
     run: () => {},
     // A pick keeps the flyout open, so colour, strength and text go in one visit (YAZ-4774 demo).
     stay: true,
+    switches: [{ label: 'Sticky', options: sticky }],
     // YAZ-4794 demo ("holy shite thats a long flyout"): Plain on top, then Fill · Text · Style tabs, as Fill's Cell · Row · Column. YAZ-4794: Text is "Text colour"
     // (Muted, Full, then the eight colours' swatches) and Align follows it; Color is "Fill colour" beside it.
     children: [[plainRow]],
@@ -224,8 +236,6 @@ export const tableRows: RowProvider = (view, target) => {
   const { pos } = table
   const attrs = table.node.attrs as TableAttrs
   const noteDefault = cellNoteButtonSetting() ? 'on' : 'off'
-  const stickyDefault = stickySubheadersSetting() ? 'on' : 'off'
-  const stickyHeaderDefault = stickyHeaderSetting() ? 'on' : 'off'
   const textDefault = textInCellsSetting()
   const current = attrs.border ?? BORDER_DEFAULT
   const cells = cellsOf(table.node)
@@ -336,15 +346,6 @@ export const tableRows: RowProvider = (view, target) => {
     // YAZ-4790 demo: Default follows Settings › Tables › Cell notes › Add button (off by default); a pick of Settings' value saves no part.
     choice('Cell note button', attrs.noteButton === null ? noteDefault : attrs.noteButton ? 'on' : 'off', noteDefault, [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) =>
       setTable(view, pos, { noteButton: on === noteDefault ? null : on === 'on' }),
-    ),
-    // YAZ-4899 round 2: this table's header row frozen (as "Freeze up to this row"); its own freeze wins (`tableFreeze.ts`).
-    // Default is Settings › Tables › Sticky header row (On by default); a pick of Settings' value saves no part.
-    choice('Sticky header row', attrs.stickyHeader === null ? stickyHeaderDefault : attrs.stickyHeader ? 'on' : 'off', stickyHeaderDefault, [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) =>
-      setTable(view, pos, { stickyHeader: on === stickyHeaderDefault ? null : on === 'on' }),
-    ),
-    // YAZ-4899: this table's sticky subheader rows; Default is Settings › Tables › Sticky subheaders (On by default).
-    choice('Sticky subheaders', attrs.stickySubheaders === null ? stickyDefault : attrs.stickySubheaders ? 'on' : 'off', stickyDefault, [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) =>
-      setTable(view, pos, { stickySubheaders: on === stickyDefault ? null : on === 'on' }),
     ),
   ]
   if (attrs.calendar > 0) {

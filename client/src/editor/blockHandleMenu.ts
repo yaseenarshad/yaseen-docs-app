@@ -72,6 +72,11 @@ export interface MenuRow {
     /** A short switch under the tabs (YAZ-4794 demo: Strength as the folder table's Off · Light · Medium · Strong): its rows as segments, ✓ pressed. */
     bar?: MenuRow[]
   }[]
+  /**
+   * Named switches at the top of the flyout, over `children` (YAZ-4899 demo: Sticky · Default (On) / On / Off at the top
+   * of "Header row ›"): a small heading each, then its options as segments, ✓ pressed; a pick goes as a `bar`'s.
+   */
+  switches?: { label: string; options: MenuRow[] }[]
 }
 
 /** A typed number with presets (YAZ-3164 D3): a picker row whose panel is the zoom menu's box and presets. */
@@ -379,6 +384,32 @@ const lastTab = new Map<string, number>()
  * parent's `panel` with it too (YAZ-4899: "Subheader row style ›" is the six-dot menu's "Subheader row ›", one panel).
  */
 export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, refresh?: (run: () => void) => void): void {
+  /** A segment switch: its options as `fill-target__opt` buttons, the ✓ one pressed. */
+  const segments = (options: MenuRow[], className: string): HTMLElement => {
+    const seg = document.createElement('div')
+    seg.className = className
+    seg.setAttribute('role', 'group')
+    for (const option of options) {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = 'fill-target__opt'
+      b.textContent = option.label
+      b.setAttribute('aria-pressed', String(option.hint === '✓'))
+      b.addEventListener('mousedown', (e) => e.preventDefault())
+      b.addEventListener('click', () => (row.stay === true && refresh !== undefined ? refresh(option.run) : (option.run(), close())))
+      seg.appendChild(b)
+    }
+    return seg
+  }
+  for (const { label, options } of row.switches ?? []) {
+    const heading = document.createElement('div')
+    heading.className = 'ctx-menu__heading'
+    heading.setAttribute('role', 'presentation')
+    heading.textContent = label
+    const seg = segments(options, 'fill-target fill-target--sub fill-target--switch')
+    seg.setAttribute('aria-label', label)
+    sub.append(heading, seg)
+  }
   const groups = (into: HTMLElement, list: MenuRow[][], headings: (string | undefined)[] | undefined) =>
     list.forEach((group, i) => {
       if (group.length === 0) return
@@ -406,23 +437,8 @@ export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, re
     lastTab.set(row.label, at)
     for (const [i, b] of [...bar.children].entries()) b.setAttribute('aria-pressed', String(i === at))
     body.replaceChildren()
-    const segments = tabs[at]!.bar
-    if (segments !== undefined && segments.length > 0) {
-      const seg = document.createElement('div')
-      seg.className = 'fill-target fill-target--sub'
-      seg.setAttribute('role', 'group')
-      for (const option of segments) {
-        const b = document.createElement('button')
-        b.type = 'button'
-        b.className = 'fill-target__opt'
-        b.textContent = option.label
-        b.setAttribute('aria-pressed', String(option.hint === '✓'))
-        b.addEventListener('mousedown', (e) => e.preventDefault())
-        b.addEventListener('click', () => (row.stay === true && refresh !== undefined ? refresh(option.run) : (option.run(), close())))
-        seg.appendChild(b)
-      }
-      body.appendChild(seg)
-    }
+    const options = tabs[at]!.bar
+    if (options !== undefined && options.length > 0) body.appendChild(segments(options, 'fill-target fill-target--sub'))
     groups(body, tabs[at]!.children, tabs[at]!.headings)
   }
   tabs.forEach((tab, i) => {
