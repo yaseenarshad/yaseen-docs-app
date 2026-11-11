@@ -33,7 +33,7 @@ vi.mock('../api', async (importOriginal) => {
 import { alsoIn } from '@shared/alsoIn'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
-import { addShortcut, directlyIn, folderRows, foldersById, foldersShowing, isFolderRow, isShortcut, removeShortcut, rowPage, rowsByFolder, subfolderRows } from './shortcuts'
+import { addShortcut, directlyIn, folderRows, foldersById, foldersShowing, isFolderRow, isShortcut, removeShortcut, rowPage, rowsByFolder, setShortcutEntries, subfolderRows } from './shortcuts'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -445,5 +445,40 @@ describe('a move never deletes values (YAZ-4713 C9)', () => {
     vi.mocked(api.writeFile).mockRejectedValueOnce(new Error('disk full'))
     await expect(removeShortcut('/vault/Projects', NOTE, FOLDERS)).rejects.toThrow('disk full')
     expect(disk.get(NOTE)).toBe(note)
+  })
+})
+
+describe('checker round 2 (8E): each Undo of a folder page shortcut puts back exactly what was there', () => {
+  const NOTE = '/vault/Areas/Health.md'
+
+  it('add to Projects, then its Undo (drop the added id), keeps the shortcut in Projects/Deep', async () => {
+    disk.clear()
+    disk.set('/vault/Projects/.folder.md', `---\nid: ${PROJECTS_ID}\n---\n`)
+    // A shortcut in Projects/Deep already. Projects is not a holder, so the menu offers it.
+    disk.set(NOTE, `---\nalso_in:\n  - ${DEEP_ID}\n---\nBody\n`)
+    const before = disk.get(NOTE)
+    const added = await addShortcut('/vault/Projects', NOTE)
+    expect(added).toBe(PROJECTS_ID)
+    await setShortcutEntries(NOTE, { drop: [added] })
+    expect(disk.get(NOTE)).toBe(before)
+  })
+
+  it('an add the note holds already writes nothing and answers null: there is nothing to undo', async () => {
+    disk.clear()
+    disk.set('/vault/Projects/.folder.md', `---\nid: ${PROJECTS_ID}\n---\n`)
+    disk.set(NOTE, `---\nalso_in:\n  - ${PROJECTS_ID}\n---\nBody\n`)
+    const before = disk.get(NOTE)
+    expect(await addShortcut('/vault/Projects', NOTE)).toBeNull()
+    expect(disk.get(NOTE)).toBe(before)
+  })
+
+  it('remove from Projects takes Projects and Projects/Deep out; its Undo (restore those) puts both back', async () => {
+    disk.clear()
+    disk.set(NOTE, `---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - ${DEEP_ID}\n---\nBody\n`)
+    const removed = await removeShortcut('/vault/Projects', NOTE, NESTED)
+    expect(removed).toEqual([PROJECTS_ID, DEEP_ID])
+    expect(alsoIn(parseFrontmatter(splitFrontmatter(disk.get(NOTE)!).frontmatter).properties)).toEqual([AREAS_ID])
+    await setShortcutEntries(NOTE, { restore: removed })
+    expect(alsoIn(parseFrontmatter(splitFrontmatter(disk.get(NOTE)!).frontmatter).properties)).toEqual([AREAS_ID, PROJECTS_ID, DEEP_ID])
   })
 })

@@ -58,7 +58,7 @@ import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from '../links/BacklinksSection'
 import { alsoIn } from '@shared/alsoIn'
-import { addShortcut, folderId, folderRecord, folderRows, isShortcut, removeShortcut, rowPage, subfolderRows } from '../links/shortcuts'
+import { addShortcut, folderId, folderRecord, folderRows, isShortcut, removeShortcut, rowPage, setShortcutEntries, subfolderRows } from '../links/shortcuts'
 import { ShortcutActions, type ShortcutDoors } from './view/shortcutDoors'
 import { columnReservedKeys, reservedKeyText } from '../links/reservedKeys'
 import { vaultDirs } from '../links/folderLinks'
@@ -411,14 +411,19 @@ export function FolderView({
     const titleOf = (note: string) => rows.find((r) => r.path === note)?.title ?? note.slice(note.lastIndexOf('/') + 1)
     const fail = (err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error')
     const pageName = nameAt(folder)
-    const remove = (note: string, undoable = true): void =>
+    // Each Undo takes back exactly what its action changed (checker 8E): never a folder under it, never one that was there before.
+    const undo = (note: string, change: { drop?: readonly unknown[]; restore?: readonly unknown[] }) => () => void setShortcutEntries(note, change).catch(fail)
+    const remove = (note: string): void =>
       void removeShortcut(path, note, feed.folders).then(
-        () => undoable && onNotice?.(`Removed the shortcut to "${titleOf(note)}" from ${pageName}`, 'info', 'undo', { label: 'Undo', run: () => add(note, path, false), fades: true }),
+        (removed) => removed.length > 0 && onNotice?.(`Removed the shortcut to "${titleOf(note)}" from ${pageName}`, 'info', 'undo', { label: 'Undo', run: undo(note, { restore: removed }), fades: true }),
         fail,
       )
-    const add = (note: string, dir: string, undoable = true): void =>
+    const add = (note: string, dir: string): void =>
       void addShortcut(dir, note).then(
-        () => undoable && onNotice?.(`Added a shortcut to "${titleOf(note)}" in ${nameAt(relTo(root, dir))}`, 'info', 'undo', { label: 'Undo', run: () => void removeShortcut(dir, note, feed.folders).catch(fail), fades: true }),
+        (added) =>
+          added === null
+            ? onNotice?.(`"${titleOf(note)}" is already in ${nameAt(relTo(root, dir))}`, 'info')
+            : onNotice?.(`Added a shortcut to "${titleOf(note)}" in ${nameAt(relTo(root, dir))}`, 'info', 'undo', { label: 'Undo', run: undo(note, { drop: [added] }), fades: true }),
         fail,
       )
     return {

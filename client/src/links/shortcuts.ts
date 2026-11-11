@@ -179,13 +179,34 @@ export async function folderId(dir: string): Promise<string> {
 
 /**
  * Make the note at `path` also appear in the folder at `dir` (D2): the folder's id joins the
- * note's `also_in` — once, and beside every entry already there, understood or not.
+ * note's `also_in` — once, and beside every entry already there, understood or not. Answers the id
+ * it added, or null when the note held it already (checker 8E: an Undo then has nothing to take back).
  */
-export async function addShortcut(dir: string, path: string): Promise<void> {
+export async function addShortcut(dir: string, path: string): Promise<string | null> {
   const id = await folderId(dir)
+  let added: string | null = null
   await transformFile(path, (content) => {
     const list = alsoInEntries(propertiesOf(content))
-    return list.some((entry) => asId(entry) === id) ? content : setFrontmatterProperty(content, ALSO_IN_KEY, [...list, id])
+    if (list.some((entry) => asId(entry) === id)) return content
+    added = id
+    return setFrontmatterProperty(content, ALSO_IN_KEY, [...list, id])
+  })
+  return added
+}
+
+/**
+ * The exact Undo of one add or one remove (checker 8E): `drop` leaves the note's `also_in`, `restore` joins it again
+ * (each once, beside what is there), and nothing else changes — never the folders under one, as `removeShortcut` does.
+ */
+export function setShortcutEntries(path: string, change: { drop?: readonly unknown[]; restore?: readonly unknown[] }): Promise<unknown> {
+  const drop = new Set((change.drop ?? []).map(asId))
+  return transformFile(path, (content) => {
+    const list = alsoInEntries(propertiesOf(content))
+    const kept = list.filter((entry) => !drop.has(asId(entry)))
+    const back = (change.restore ?? []).filter((entry) => !kept.some((k) => asId(k) === asId(entry)))
+    const next = [...kept, ...back]
+    if (next.length === list.length && next.every((entry, i) => entry === list[i])) return content
+    return setFrontmatterProperty(content, ALSO_IN_KEY, next.length === 0 ? undefined : next)
   })
 }
 
@@ -201,13 +222,17 @@ const idsUnder = (folders: readonly IndexRecord[], dir: string): Set<unknown> =>
  * no list, the comments store's rule (`shared/comments.ts`). The note itself stays where it lives,
  * and keeps every value (YAZ-4713 C9): a value that folder kept for it is listed in its properties, with Clear.
  */
-export function removeShortcut(dir: string, path: string, folders: readonly IndexRecord[]): Promise<unknown> {
+export async function removeShortcut(dir: string, path: string, folders: readonly IndexRecord[]): Promise<unknown[]> {
   const ids = idsUnder(folders, dir)
-  return transformFile(path, (content) => {
+  // The entries it took out, as written (checker 8E): its Undo puts back exactly these.
+  let removed: unknown[] = []
+  await transformFile(path, (content) => {
     const list = alsoInEntries(propertiesOf(content))
     const kept = list.filter((entry) => !ids.has(asId(entry)))
+    removed = list.filter((entry) => ids.has(asId(entry)))
     return kept.length === list.length ? content : setFrontmatterProperty(content, ALSO_IN_KEY, kept.length === 0 ? undefined : kept)
   })
+  return removed
 }
 
 /** One in-app move or rename of a note or a folder, as the rename door and a pasted Cut name it. */
