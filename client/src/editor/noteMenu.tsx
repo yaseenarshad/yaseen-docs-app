@@ -138,7 +138,11 @@ function selectedWords(view: EditorView): { from: number; to: number } {
  * copies with no selection, Cut and the pastes in a read-only note. Without folded lines stays on in
  * a bullet (`pointer`, the document position right-clicked): it copies that bullet.
  */
-export function noteMenuSections(view: EditorView, misspelling: Misspelling | null, run: (action: NoteMenuAction, word?: string) => void, pointer: number | null = null): MenuSection[] {
+/**
+ * `reading` (the explore stack's reading layer, YAZ-2571 round 1): the note cannot change, so the rows that would
+ * change it are left out instead of greyed: Cut, Paste and Paste as. Copy and Copy as stay.
+ */
+export function noteMenuSections(view: EditorView, misspelling: Misspelling | null, run: (action: NoteMenuAction, word?: string) => void, pointer: number | null = null, reading = false): MenuSection[] {
   const editable = view.editable
   const empty = nothingSelected(view)
   const inBullet = pointer !== null && bulletToCopy(view.state, pointer) !== null
@@ -163,7 +167,7 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
   return [
     spelling,
     [
-      { id: 'cut', label: 'Cut', hint: '⌘X', disabled: empty || !editable, onSelect: () => run('cut') },
+      ...(reading ? [] : [{ id: 'cut', label: 'Cut', hint: '⌘X', disabled: empty || !editable, onSelect: () => run('cut') }]),
       { id: 'copy', label: 'Copy', hint: '⌘C', disabled: empty, onSelect: () => run('copy') },
       {
         id: 'copy-as',
@@ -177,7 +181,7 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
         ],
       },
     ],
-    [
+    reading ? [] : [
       { id: 'paste', label: 'Paste', hint: '⌘V', disabled: !editable, onSelect: () => run('paste') },
       {
         id: 'paste-as',
@@ -245,7 +249,11 @@ function pointerPos(view: EditorView, target: Element, x: number, y: number): nu
  * The menu for `view`'s note: a right-click in the note, or a table handle, opens it; nothing renders while it is shut.
  * It also answers the editor's asks about cell notes (YAZ-4206 D16, D17; `cellNoteGuard.ts`) with the app's sheet.
  */
-export function NoteMenu({ view }: { view: EditorView | null }) {
+/**
+ * `extra` (the explore stack, YAZ-2571 round 1): sections after the text menu's, under a line — the note menu of the
+ * layer's note; built at each open. `reading`: the layer reads, so Cut and Paste are left out (`noteMenuSections`).
+ */
+export function NoteMenu({ view, extra, reading = false }: { view: EditorView | null; extra?: () => MenuSection[]; reading?: boolean }) {
   const [menu, setMenu] = useState<OpenMenu | null>(null)
   const [ask, setAsk] = useState<CellNoteAsk | null>(null)
   useEffect(() => {
@@ -362,12 +370,13 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
       console.error('Menu action failed', error)
     })
   }
-  const [spelling, ...rest] = noteMenuSections(view, menu.misspelling, run, pointer)
+  const [spelling, ...rest] = noteMenuSections(view, menu.misspelling, run, pointer, reading)
+  const more = extra?.() ?? []
   return (
     <ContextMenu
       x={menu.x}
       y={menu.y}
-      sections={menu.image !== null ? imageMenuSections({ src: menu.image, x: menu.x, y: menu.y }, run) : [spelling, ...lineSections(view, pointer, menu.selection), ...rest]}
+      sections={menu.image !== null ? imageMenuSections({ src: menu.image, x: menu.x, y: menu.y }, run) : [spelling, ...lineSections(view, pointer, menu.selection), ...rest, ...more]}
       onClose={() => {
         setMenu(null)
         refocus()

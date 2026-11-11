@@ -12,12 +12,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
-import { rootOfPath } from '@shared/types'
+import { rootOfPath, type CommentsOrder } from '@shared/types'
 import type { LinkActions } from '../editor/linkMenu'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchCandidates, type SearchVault } from '../search/useSearchResults'
+import { ContextMenu } from '../sidebar/ContextMenu'
 import { ExploreNote, type ExploreVault } from './ExploreNote'
+import { exploreNoteSections } from './exploreMenu'
 import { exploreRecents, rememberExploreRecent } from './exploreRecents'
 import { ExploreSearch } from './ExploreSearch'
 import { textCandidates } from './exploreRows'
@@ -38,6 +40,11 @@ export interface ExploreStackProps {
   /** A note in a normal tab (⌘↵, ↗), a folder's page or another file (a drawing, a PDF): the stack closes. */
   openInTab: (path: string) => void
   onNotice: (message: string) => void
+  /** The tab menu's "Rename file" (App's `renameInSidebar`): the note menu's row (round 1, items 6 and 7). */
+  onRenameFile?: (path: string) => void
+  /** The comment stream's order and its toggle (YAZ-1515): a note layer shows the stream as its tab does (round 1, item 3). */
+  commentsOrder: CommentsOrder
+  onChangeCommentsOrder: (order: CommentsOrder) => void
   /** The last Esc, ⌘↵ and the click outside: App unmounts the stack and the keyboard goes back where it was. */
   onClose: () => void
 }
@@ -61,7 +68,7 @@ const reducedMotion = (): boolean => window.matchMedia?.('(prefers-reduced-motio
 /** A key typed into a field, an editor or a menu belongs to it, never to the stack's letters. */
 const inField = (target: EventTarget | null): boolean => target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="listbox"]') !== null
 
-export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, onNotice, onClose }: ExploreStackProps) {
+export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   /** The layers on their way out (the exit motion), by id: still drawn, no keys, gone after the motion. */
   const [leaving, setLeaving] = useState<ReadonlySet<number>>(() => new Set())
@@ -73,8 +80,21 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
   const candidates = useSearchCandidates(vaults, true, textCandidates)
   const roots = useMemo(() => vaults.map((v) => v.root), [vaults])
 
-  const doors = useRef({ onNotice, onClose, openInTab })
-  doors.current = { onNotice, onClose, openInTab }
+  const doors = useRef({ onNotice, onClose, openInTab, onRenameFile, linkActions })
+  doors.current = { onNotice, onClose, openInTab, onRenameFile, linkActions }
+  /** The note menu on show (round 1, items 6 and 7): where, and for which note. */
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  const noteSections = useCallback(
+    (path: string) =>
+      exploreNoteSections(path, {
+        openInTab: (p) => doors.current.openInTab(p),
+        linkActions: doors.current.linkActions,
+        onRenameFile: doors.current.onRenameFile,
+        onNotice: (m) => doors.current.onNotice(m),
+        closeStack: () => doors.current.onClose(),
+      }),
+    [],
+  )
 
   const push = useCallback((layer: ExploreLayer): boolean => {
     let pushed = false
@@ -140,7 +160,8 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
   const live = useMemo(() => layers.filter((l) => !leaving.has(l.id)), [layers, leaving])
   const top = live[live.length - 1]
 
-  const edit = useCallback((id: number) => setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'note' ? { ...l, mode: 'edit' } : l))), [])
+  /** A note layer's mode flips (item 5): Edit / E / ⌘E to edit; Done / Esc / ⌘E back to reading, the note saved as typed. */
+  const toggleEdit = useCallback((id: number) => setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'note' ? { ...l, mode: l.mode === 'read' ? 'edit' : 'read' } : l))), [])
 
   const toTab = useCallback(() => {
     const note = topNote(live)
@@ -171,12 +192,16 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
     if (top === undefined) return
     const el = rootRef.current?.querySelector<HTMLElement>(`[data-layer="${top.id}"]`) ?? null
     if (event.key === 'Escape') {
+      // The note menu's own Esc (the `ContextMenu` closes itself) and a menu's: nothing else closes.
+      if (event.target instanceof Element && event.target.closest('.ctx-menu') !== null) return
       // A pop-up of the editor (the `[[` picker, a menu) took this Esc while the caret stays in the layer: it closed
       // the pop-up, nothing more. The editor's own Esc (to the sidebar) moves the focus out: the layer closes then.
       if (event.defaultPrevented && el !== null && el.contains(document.activeElement)) return
       event.preventDefault()
       event.stopPropagation()
-      pop()
+      // Esc goes back ONE step (item 5): out of edit first (the note saved as you typed, the scroll place stays), then the layer.
+      if (top.kind === 'note' && top.mode === 'edit') toggleEdit(top.id)
+      else pop()
       return
     }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey) {
@@ -186,9 +211,13 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
       toTab()
       return
     }
-    if ((event.key === 'e' || event.key === 'E') && !event.metaKey && !event.ctrlKey && !event.altKey && top.kind === 'note' && top.mode === 'read' && !inField(event.target)) {
+    if ((event.key === 'e' || event.key === 'E') && !event.altKey && top.kind === 'note') {
+      const command = event.metaKey || event.ctrlKey
+      // E on the reading surface edits; ⌘E flips both ways (item 5). In the editor ⌘E is Inline code (`note.inlineCode`), which
+      // takes it first: there Esc and Done go back to reading.
+      if (event.defaultPrevented || (!command && (top.mode !== 'read' || inField(event.target)))) return
       event.preventDefault()
-      edit(top.id)
+      toggleEdit(top.id)
     }
   }
 
@@ -218,7 +247,7 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
             aria-hidden={covered}
           >
             {layer.kind === 'search' ? (
-              <ExploreSearch candidates={candidates} recent={exploreRecents()} roots={roots} nameOf={nameOf} onOpen={openRow} active={!covered} />
+              <ExploreSearch candidates={candidates} recent={exploreRecents()} roots={roots} nameOf={nameOf} onOpen={openRow} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} active={!covered} />
             ) : (
               <ExploreNote
                 path={layer.path}
@@ -231,8 +260,12 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
                 createFolder={createFolder}
                 linkActions={linkActions}
                 onNotice={onNotice}
-                onEdit={() => edit(layer.id)}
+                onToggleEdit={() => toggleEdit(layer.id)}
+                commentsOrder={commentsOrder}
+                onChangeCommentsOrder={onChangeCommentsOrder}
                 onOpenInTab={toTab}
+                onHeadMenu={(x, y) => setMenu({ x, y, path: layer.path })}
+                noteMenu={() => noteSections(layer.path)}
                 onClose={pop}
                 active={!covered}
               />
@@ -240,6 +273,7 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
           </div>
         )
       })}
+      {menu !== null && <ContextMenu x={menu.x} y={menu.y} sections={noteSections(menu.path)} onClose={() => setMenu(null)} />}
     </div>
   )
 }

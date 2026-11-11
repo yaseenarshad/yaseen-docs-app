@@ -147,6 +147,25 @@
   font-size: 11px;
   color: var(--fg-muted);
 }
+/* The note's or folder's id after its title (round 1, item 1), in an ID vault. */
+.explore__id {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+/* The fold-all button in the head (item 4): the note tab's own, at the head's size. */
+.explore__head .fold-all__trigger {
+  flex: none;
+}
+/* The comment stream and Linked mentions under the note (item 3), as the tab stacks them. */
+.explore__under {
+  margin-top: 24px;
+}
+.explore__under .comments,
+.explore__under .backlinks {
+  padding: 0;
+}
 .explore__button {
   flex: none;
   padding: 3px 9px;

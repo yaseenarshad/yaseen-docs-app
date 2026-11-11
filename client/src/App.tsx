@@ -3311,7 +3311,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} linkActions={linkActions} openInTab={openNewTabPage} onNotice={notify} onClose={closeExplore} />
+          <ExploreStack request={exploreRequest} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} linkActions={linkActions} openInTab={openNewTabPage} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} />
         </Suspense>
       )}
       {whatsNewOpen && (

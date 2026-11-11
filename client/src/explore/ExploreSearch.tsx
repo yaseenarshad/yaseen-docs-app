@@ -24,11 +24,13 @@ interface ExploreSearchProps {
   nameOf: (path: string) => string
   /** Enter or a click on a row: a note opens over this layer; a folder or another file opens in a tab. */
   onOpen: (row: SearchCandidate) => void
+  /** A right-click on a row (round 1, item 6): the note menu for it, at the pointer. */
+  onRowMenu: (row: SearchCandidate, x: number, y: number) => void
   /** This layer is the top one: the input takes the caret. */
   active: boolean
 }
 
-export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, active }: ExploreSearchProps) {
+export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, onRowMenu, active }: ExploreSearchProps) {
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const typed = query.trim() !== ''
@@ -96,12 +98,19 @@ export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, activ
                   setSelected(i)
                   onOpen(r)
                 }}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setSelected(i)
+                  onRowMenu(r, e.clientX, e.clientY)
+                }}
               >
                 <span className="search-results__label">
                   <FileIcon path={r.path} folder={r.kind === 'dir'} />
                   {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
                   {marked(r.label, needle)}
                   {r.kind === 'file' && <NameEnding path={r.path} />}
+                  {/* The note's or folder's id, in an ID vault (YAZ-2571 round 1): small and muted after the title; a vault without IDs has none. */}
+                  {r.id !== undefined && <span className="explore__id">{r.id}</span>}
                 </span>
                 {r.snippet !== undefined && <span className="explore__snippet">{marked(r.snippet, needle)}</span>}
                 {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}

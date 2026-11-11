@@ -32,6 +32,7 @@ import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_S
 import { ListView } from './view/ListView'
 import { TableView } from './view/TableView'
 import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, noteWindowKey, noteWindowLink, noteWindowMemory, openNoteWindow, renameNoteWindowView, saveNoteWindowBox, savedNoteWindowBox } from './view/NoteWindow'
+import { onNoteWindowRequest } from './noteWindowRequest'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
@@ -426,6 +427,19 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     dropNoteWindow(windowKey)
     setOpens((n) => n + 1)
   }, [windowKey])
+  // "Open in mini window" from the explore stack (YAZ-2571 round 1): the page on screen takes the note into its card.
+  const openWindowRef = useRef(openWindow)
+  openWindowRef.current = openWindow
+  useEffect(
+    () =>
+      onNoteWindowRequest((path) => {
+        const open = openWindowRef.current
+        if (open === undefined || selectionChip.current?.closest('.tabstack__layer--hidden') !== null) return false
+        open(path)
+        return true
+      }),
+    [],
+  )
   // Re-parse after every edit: `doc.setIn` stores plain JS values, so a second edit inside a
   // collection a previous edit created would throw ("Expected YAML collection"). The round trip
   // through text keeps comments and rebuilds proper nodes.

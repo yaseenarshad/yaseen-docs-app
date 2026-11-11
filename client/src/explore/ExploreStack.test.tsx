@@ -13,7 +13,9 @@ import { CrepeFeature } from '../editor/crepe'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import type { SearchVault } from '../search/useSearchResults'
+import { NO_FOLDER_PAGE_NOTICE } from './exploreMenu'
 import { resetExploreRecents } from './exploreRecents'
+import { onNoteWindowRequest } from '../views/noteWindowRequest'
 import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStack'
 import { MAX_LAYERS } from './layers'
 
@@ -39,13 +41,44 @@ vi.mock('../editor/createCrepe', () => ({
     crepes.push(inst)
     return inst
   }),
+  // The fold-all button reads the view: the stand-in's document, a state the fold stand-ins below ignore.
+  editorViewOf: (crepe: Crepe) => ({ dom: crepe.opts.root.firstChild, state: {}, dispatch: folds.dispatch }),
+}))
+const folds = vi.hoisted(() => ({ dispatch: vi.fn(), next: 'collapse' as 'collapse' | 'expand' | 'none', runs: [] as boolean[] }))
+vi.mock('../editor/outline/foldAllHotkeys', () => ({
+  FOLDS_CHANGED_EVENT: 'yaseendocs:folds-changed',
+  nextDocumentFold: () => folds.next,
+  setAllDocumentFolds: (collapse: boolean) => () => {
+    folds.runs.push(collapse)
+    return true
+  },
+}))
+/** The comment stream and Linked mentions (round 1, item 3), stood in: each says what it was handed, and a mention click opens its note. */
+const under = vi.hoisted(() => ({ comments: [] as Array<{ path: string; content: string; order: string }>, backlinks: [] as string[] }))
+vi.mock('../comments/CommentsSection', () => ({
+  CommentsSection: (p: { file: { path: string; content: string }; order: string }) => {
+    under.comments.push({ path: p.file.path, content: p.file.content, order: p.order })
+    return <section className="comments" data-path={p.file.path} />
+  },
+}))
+vi.mock('../links/BacklinksSection', () => ({
+  BacklinksSection: (p: { path: string; openCurrent: (path: string) => void }) => {
+    under.backlinks.push(p.path)
+    return (
+      <section className="backlinks">
+        <button type="button" className="mention" onClick={() => p.openCurrent('/v/beta.md')}>
+          beta mentions it
+        </button>
+      </section>
+    )
+  },
 }))
 
 const rec = (path: string, title: string, extra: Partial<IndexRecord> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
   return { path, name, basename: name.replace(/\.md$/, ''), title, folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...extra }
 }
-const RECORDS = [rec('/v/alpha.md', 'Alpha'), rec('/v/beta.md', 'Beta', { tags: ['greek'] }), rec('/v/conjecture.md', 'conjecture (vocab)')]
+const RECORDS = [rec('/v/alpha.md', 'Alpha', { id: 'EMB-1' }), rec('/v/beta.md', 'Beta', { tags: ['greek'] }), rec('/v/conjecture.md', 'conjecture (vocab)')]
 const watch: WatchSource = { subscribe: () => () => undefined }
 const wikilinks = createWikilinkResolveSource()
 const vaults: SearchVault[] = [{ root: '/v', watch, dirs: ['/v/sub'], files: [] }]
@@ -85,7 +118,8 @@ async function typeQuery(text: string) {
   })
   await flush()
 }
-const rows = () => [...top().querySelectorAll<HTMLElement>('.search-results__row')].map((r) => r.querySelector('.search-results__label')?.textContent)
+/** Each row's title, without its id (round 1, item 1: the id is its own span after the title). */
+const rows = () => [...top().querySelectorAll<HTMLElement>('.search-results__row')].map((r) => [...(r.querySelector('.search-results__label')?.childNodes ?? [])].filter((n) => !(n instanceof HTMLElement && n.classList.contains('explore__id'))).map((n) => n.textContent).join(''))
 async function openResult() {
   key(input(), { key: 'Enter' })
   await flush()
@@ -114,8 +148,16 @@ beforeEach(() => {
     createFolder: () => '',
     openInTab: vi.fn(),
     onNotice: vi.fn(),
+    onRenameFile: vi.fn(),
+    linkActions: { showInSidebar: vi.fn(), openNewWindow: vi.fn(), reveal: vi.fn(), openVsCode: vi.fn(), listState: () => ({ focus: false, favorite: true }), toggleFocus: vi.fn(), toggleFavorite: vi.fn() },
+    commentsOrder: 'oldest',
+    onChangeCommentsOrder: vi.fn(),
     onClose: vi.fn(),
   }
+  under.comments.length = 0
+  under.backlinks.length = 0
+  folds.runs.length = 0
+  folds.next = 'collapse'
 })
 afterEach(() => {
   act(() => root?.unmount())
@@ -305,6 +347,114 @@ describe('the explore stack', () => {
     expect(top().querySelector('.explore__group')?.textContent).toBe('Recent')
     await openResult()
     expect(top().querySelector('.explore__title')?.textContent).toBe('beta')
+  })
+
+  it('round 1: the id of a note in an ID vault shows after its title, small and muted; a note without one shows none', async () => {
+    await mount()
+    await typeQuery('alp')
+    expect(top().querySelector('.search-results__row .explore__id')?.textContent).toBe('EMB-1')
+    await typeQuery('bet')
+    expect(top().querySelector('.search-results__row .explore__id')).toBeNull()
+  })
+
+  it('round 1: a reading note draws board embeds as windows and pills with icons, and under it the comment stream and Linked mentions; a mention opens on top; the head has the fold-all button', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const opts = crepes[0].opts
+    expect(opts.boardEmbeds).toEqual({ root: '/v' })
+    expect(typeof (opts.linkLook as { icon: unknown }).icon).toBe('function')
+    expect(opts.image).toEqual({ root: '/v', notePath: '/v/alpha.md' })
+    expect(under.comments.at(-1)).toMatchObject({ path: '/v/alpha.md', order: 'oldest' })
+    expect(under.comments.at(-1)?.content).toContain('# /v/alpha.md')
+    expect(under.backlinks).toContain('/v/alpha.md')
+    expect(top().querySelector('.explore__under .comments')).not.toBeNull()
+    // The fold-all button, the note tab's own, left of "Reading": its command runs on this layer's view.
+    const fold = top().querySelector<HTMLButtonElement>('.explore__head .fold-all__trigger')
+    expect(fold).not.toBeNull()
+    expect(fold?.nextElementSibling?.className).toBe('explore__mode')
+    act(() => fold?.click())
+    await flush()
+    expect(folds.runs).toEqual([true])
+    // A mention click: that note on top, the first layer still there.
+    act(() => top().querySelector<HTMLButtonElement>('.mention')?.click())
+    await flush()
+    await flush()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note', 'note'])
+    expect(top().querySelector('.explore__title')?.textContent).toBe('beta')
+  })
+
+  it('round 1, item 5: Esc in edit goes back to reading (the same layer, the note read again); Done does the same; ⌘E edits from reading; a second Esc closes the layer', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const layer = top()
+    expect(readFile).toHaveBeenCalledTimes(1)
+    key(document.activeElement as Element, { key: 'e', metaKey: true })
+    await flush()
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Editing')
+    expect(top().querySelector('.explore__head .fold-all__trigger')).toBeNull()
+    escape()
+    await flush()
+    await flush()
+    expect(top()).toBe(layer)
+    expect(layers()).toHaveLength(2)
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(readFile).toHaveBeenCalledTimes(2)
+    expect(document.activeElement).toBe(top().querySelector('.explore__body'))
+    // Done, from a click.
+    act(() => [...top().querySelectorAll<HTMLButtonElement>('.explore__button')].find((b) => b.textContent?.startsWith('Edit'))?.click())
+    await flush()
+    const done = [...top().querySelectorAll<HTMLButtonElement>('.explore__button')].find((b) => b.textContent?.startsWith('Done'))
+    expect(done).toBeDefined()
+    act(() => done?.click())
+    await flush()
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    escape()
+    expect(layers()).toHaveLength(1)
+  })
+
+  it('round 1, items 6 and 7: a right-click on a result and on a note head opens the note menu, Yaseen\'s rows in his order; an open, Show in sidebar and Rename file close the stack, Copy path keeps it; the mini window asks the folder page on screen', async () => {
+    await mount()
+    await typeQuery('alp')
+    const row = top().querySelector<HTMLElement>('.search-results__row') as HTMLElement
+    act(() => void row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    expect(items().map((b) => b.textContent)).toEqual(['Open in new tab', 'Open in new window', 'Open in mini window', 'Show in sidebar', 'Add to focus', 'Copy path', 'Rename file', 'Remove from favorites', 'Reveal in Finder', 'Open in VS Code'])
+    // Not there: Set display name, Change icon, Delete, Cut, Paste.
+    act(() => items().find((b) => b.textContent === 'Copy path')?.click())
+    expect(props.onClose).not.toHaveBeenCalled()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    act(() => void row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    act(() => items().find((b) => b.textContent === 'Open in new window')?.click())
+    expect(props.linkActions?.openNewWindow).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+    // The head of a note layer: the same menu; Rename file takes the tab menu's path and closes the stack.
+    await openResult()
+    act(() => void top().querySelector('.explore__head')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    expect(items()).toHaveLength(10)
+    act(() => items().find((b) => b.textContent === 'Rename file')?.click())
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
+    expect(props.onClose).toHaveBeenCalledTimes(2)
+    // Open in mini window: no folder page on screen says so; one that takes it opens its card.
+    act(() => void top().querySelector('.explore__head')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    act(() => items().find((b) => b.textContent === 'Open in mini window')?.click())
+    expect(props.onNotice).toHaveBeenLastCalledWith(NO_FOLDER_PAGE_NOTICE)
+    const took: string[] = []
+    const off = onNoteWindowRequest((path) => {
+      took.push(path)
+      return true
+    })
+    act(() => void top().querySelector('.explore__head')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    act(() => items().find((b) => b.textContent === 'Open in mini window')?.click())
+    off()
+    expect(took).toEqual(['/v/alpha.md'])
+    expect(props.onClose).toHaveBeenCalledTimes(4)
+    // Esc inside the open menu closes the menu alone.
+    act(() => void top().querySelector('.explore__head')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    const before = layers().length
+    key(el.querySelector('.ctx-menu [role="menuitem"]') as Element, { key: 'Escape' })
+    expect(layers()).toHaveLength(before)
   })
 
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {
