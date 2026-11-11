@@ -1046,7 +1046,8 @@ describe('the grid lines (YAZ-4878)', () => {
 
   /** A line row's dropdown (the "Thickness ▾" or the colour dot) opened, then `text`'s item in it pressed. */
   const trigger = (el: ParentNode, label: string) => q<HTMLButtonElement>(el, `.view-popover--properties [aria-label="${label}"]`)
-  const panel = (el: ParentNode, label: string) => q<HTMLElement>(el, `.cal-line__panel[aria-label="${label}"]`)
+  // The dropdown is on the body (`portal`), not in the tab.
+  const panel = (_el: ParentNode, label: string) => q<HTMLElement>(document.body, `.cal-line__panel[aria-label="${label}"]`)
   const pickIn = (el: ParentNode, label: string, text: string) => {
     if (trigger(el, label).getAttribute('aria-expanded') !== 'true') click(trigger(el, label))
     // A swatch has no text: its colour is its `aria-label`.
@@ -1063,7 +1064,7 @@ describe('the grid lines (YAZ-4878)', () => {
     expect(yaml()).toContain('weekLine: 3')
     expect(trigger(el, 'Between weeks thickness').textContent).toBe('3 px')
     // The pick closed the dropdown; the ↺ marks the view's own value.
-    expect(el.querySelector('.cal-line__panel')).toBeNull()
+    expect(document.body.querySelector('.cal-line__panel')).toBeNull()
     expect(el.querySelector('.view-popover--properties [aria-label="Reset to Settings"]')).not.toBeNull()
     pickIn(el, 'Between weeks thickness', '1 px')
     expect(yaml()).not.toContain('weekLine')
@@ -1071,6 +1072,25 @@ describe('the grid lines (YAZ-4878)', () => {
     expect(yaml()).toContain('dayLine: 5')
     expect(panel(el, 'Between days thickness').querySelector('[aria-label="Between days in pixels"]')).not.toBeNull()
     expect(trigger(el, 'Between days thickness').textContent).toBe('5 px')
+  })
+
+  // Yaseen: "is there a bug or just need to restar thte demo because i cant click this". The View tab's popover fits
+  // itself with a `translate` (`constrainToViewport`), so a `position: fixed` child is placed in it and cut by its
+  // scroll: the dropdown opened out of sight. It is a child of the body now, and its mousedowns never close the tab.
+  it('the dropdown opens on the body, not inside the View tab (whose translate would place and cut it); a press in it keeps the tab open and picks', () => {
+    const { el, yaml } = mount(CALENDAR)
+    openView(el)
+    click(trigger(el, 'Between weeks thickness'))
+    const open = document.body.querySelector<HTMLElement>('.cal-line__panel[aria-label="Between weeks thickness"]')
+    expect(open).not.toBeNull()
+    expect(open!.closest('.view-popover--properties')).toBeNull()
+    const item = byText<HTMLButtonElement>(open!, 'button', '2 px')
+    act(() => void item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })))
+    draw()
+    expect(el.querySelector('.view-popover--properties')).not.toBeNull()
+    click(item)
+    expect(yaml()).toContain('weekLine: 2')
+    expect(el.querySelector('.view-popover--properties')).not.toBeNull()
   })
 
   it('the colour dot: Blue writes weekLineColor: blue and the grid draws it; Strong adds the word; Gray, Medium (Settings) removes the key', () => {

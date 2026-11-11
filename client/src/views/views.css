@@ -3150,7 +3150,8 @@
 .cal-line__trigger:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
 .cal-line__colour { padding-left: 6px; }
 .cal-line__dot { width: 12px; height: 12px; }
-.cal-line__panel.view-popover { min-width: 0; padding: 4px; }
+/* On the body (`Popover`'s `portal`), over the Settings dialog's scrim (`settings.css`, z-index 70) as a context menu is. */
+.cal-line__panel.view-popover { z-index: 80; min-width: 0; padding: 4px; }
 .cal-line__panel .view-popover__item { padding: 4px 24px 4px 10px; font-size: 12px; white-space: nowrap; }
 .cal-line__panel .view-popover__item[aria-pressed='true'] { color: var(--accent); }
 .cal-line__custom { padding: 4px 6px 2px; font-size: 12px; }

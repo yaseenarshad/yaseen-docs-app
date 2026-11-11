@@ -1,4 +1,5 @@
-import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cssZoom } from '../../lib/cssZoom'
 
 interface PopoverProps {
@@ -11,6 +12,13 @@ interface PopoverProps {
   anchor?: HTMLElement | null
   /** What takes the keyboard on open: the first control (default), or only a text field, else the popover itself. */
   focusOn?: 'control' | 'field'
+  /**
+   * On the body, not in the trigger's tree (YAZ-4878 demo, a dropdown inside the View tab): a popover that fits itself
+   * with a `translate` (`constrainToViewport`) is a containing block for a `position: fixed` child, which was placed
+   * off the window and cut by the tab's scroll. Needs `anchor`. A mousedown in it never reaches the outer popover's
+   * click-away, and its Escape closes it alone.
+   */
+  portal?: boolean
   children: ReactNode
 }
 
@@ -22,7 +30,7 @@ interface PopoverProps {
  * to the viewport like `ContextMenu`, so a clipping ancestor cannot cut it off — and
  * outside scrolling or window resizing closes it. Content resizing refits it in place.
  */
-export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false, focusOn = 'control' }: PopoverProps) {
+export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false, focusOn = 'control', portal = false }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<CSSProperties>()
 
@@ -129,7 +137,19 @@ export function Popover({ label, onClose, className, anchor, children, constrain
     }
   }, [anchor, onClose])
 
-  return (
+  // The outer popover's click-away and Escape listen on the window: a portal's events stop before them (React stops the
+  // native event at its root), so the outer stays while this one closes.
+  const keep = portal
+    ? {
+        onMouseDown: (e: ReactMouseEvent) => e.stopPropagation(),
+        onKeyDown: (e: ReactKeyboardEvent) => {
+          if (e.key !== 'Escape') return
+          e.stopPropagation()
+          onClose()
+        },
+      }
+    : {}
+  const node = (
     <div
       ref={ref}
       className={`view-popover${className ? ` ${className}` : ''}${anchor ? ' view-popover--fixed' : ''}`}
@@ -137,8 +157,10 @@ export function Popover({ label, onClose, className, anchor, children, constrain
       role="dialog"
       aria-label={label}
       tabIndex={-1}
+      {...keep}
     >
       {children}
     </div>
   )
+  return portal ? createPortal(node, document.body) : node
 }

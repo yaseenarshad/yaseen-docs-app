@@ -76,7 +76,7 @@ export function CalLineControls({ label, width, color, onWidth, onColor }: { lab
   )
 }
 
-/** A quiet select-looking button with a popover under it; the popover is fixed under the trigger, so a scrolling tab never cuts it. */
+/** A quiet select-looking button with a popover under it: on the body, fixed under the trigger (`portal`), so the View tab's own popover never places or cuts it. */
 function Dropdown({ label, className, trigger, onOpen, children }: { label: string; className: string; trigger: ReactNode; onOpen?: () => void; children: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLButtonElement>(null)
@@ -97,7 +97,7 @@ function Dropdown({ label, className, trigger, onOpen, children }: { label: stri
         {trigger}
       </button>
       {open && (
-        <Popover label={label} anchor={ref.current} onClose={() => setOpen(false)} className="cal-line__panel">
+        <Popover label={label} anchor={ref.current} portal onClose={() => setOpen(false)} className="cal-line__panel">
           {children(() => setOpen(false))}
         </Popover>
       )}
