@@ -2419,6 +2419,12 @@
 :is(.view-cal__card, .view-board__card)[data-color-strength='light'] { --card-wash: 15%; }
 :is(.view-cal__card, .view-board__card)[data-color-strength='medium'] { --card-wash: 30%; }
 :is(.view-cal__card, .view-board__card)[data-color-strength='strong'] { --card-wash: 50%; }
+/* Black at 5 times the strength, as the header row's black (`table.css`, YAZ-4794): Light 30 %, Medium 60 %, Strong
+   solid black (Yaseen: "how come i have black selected but its not black?"). */
+:is(.view-cal__card, .view-board__card)[data-color='black']:not([data-color-strength]),
+:is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='medium'] { --card-wash: 60%; }
+:is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='light'] { --card-wash: 30%; }
+:is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='strong'] { --card-wash: 100%; }
 :is(.view-cal__card, .view-board__card)[data-color] { background: color-mix(in srgb, var(--card-hue) var(--card-wash, 30%), var(--bg)); }
 
 /* A card's text colour and weight (YAZ-4906 round 2, `cardStyleAttrs`): the note's `text_color` (the header row's Text
@@ -3172,8 +3178,10 @@
 .view-dropdown:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
 .cal-line__colour { padding-left: 6px; }
 .cal-line__dot { width: 12px; height: 12px; }
-/* The panel, on the body (`Popover`'s `portal`), over the Settings dialog's scrim (`settings.css`, z-index 70) as a context menu is. */
-.view-dropdown__panel.view-popover { z-index: 80; min-width: 0; padding: 4px; }
+/* The panel, on the body (`Popover`'s `portal`), over whatever opened it: the View tab, the Settings dialog (scrim 70,
+   `settings.css`) and the folder ⚙ placed on the page (z 1000,
+   `app.css` `.page-settings__menu--placed`); at 80 the ⚙'s Default view list opened behind the ⚙ (YAZ-4909 demo). */
+.view-dropdown__panel.view-popover { z-index: 1001; min-width: 0; padding: 4px; }
 .cal-line__panel .view-popover__item { padding: 4px 24px 4px 10px; font-size: 12px; white-space: nowrap; }
 .cal-line__panel .view-popover__item[aria-pressed='true'] { color: var(--accent); }
 .cal-line__custom { padding: 4px 6px 2px; font-size: 12px; }
