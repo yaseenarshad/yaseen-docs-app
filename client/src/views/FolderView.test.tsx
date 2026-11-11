@@ -663,14 +663,10 @@ describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
   it('the outline\'s names keep the whole page clear: the folder page\'s scroller makes the room a note\'s does (YAZ-4849)', async () => {
     // The Page's note editor puts its outline beside its body, in the Page tab (Editor.tsx, `inFolderPage`): deep in
     // the folder page's scroller, never a child of `section.editor` as on a note.
-    const withOutline = vi.fn(() => (
-      <>
-        <div className="folder-page-doc" />
-        <nav className="toc" data-names="" />
-      </>
-    ))
-    const el = renderNoAsk({ path: STAGES, source, onOpenFile, renderPage: withOutline })
+    const el = renderNoAsk({ path: STAGES, source, onOpenFile, renderPage })
     el.classList.add('editor') // Editor.tsx: the folder page's `section.editor`
+    // While the names show, the outline marks the section it measures (tocFrame.tsx `useTocWidthVar`).
+    el.setAttribute('data-toc-names', '')
     feed(SETTINGS)
     await flush()
     const sheet = document.head.appendChild(document.createElement('style'))
@@ -679,13 +675,8 @@ describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
       const host = q<HTMLElement>(el, ':scope > .editor-host')
       // The title, the view tabs and toolbar, the Page, Other files and Comments are all in this scroller.
       expect(getComputedStyle(host).paddingRight).toBe('var(--toc-width)')
-      // The lines look (no names) takes no room, as on a note.
-      q(el, '.view-page > .toc').removeAttribute('data-names')
-      expect(getComputedStyle(host).paddingRight).not.toBe('var(--toc-width)')
-      // The Table tab has no outline: no room.
-      selectView(el, 'Table')
-      await flush()
-      expect(el.querySelector('.toc')).toBeNull()
+      // The lines look (no names), or no outline at all (the Table tab), takes no room, as on a note.
+      el.removeAttribute('data-toc-names')
       expect(getComputedStyle(host).paddingRight).not.toBe('var(--toc-width)')
     } finally {
       sheet.remove()

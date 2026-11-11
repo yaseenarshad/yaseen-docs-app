@@ -946,6 +946,8 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
       expect(nav(m)?.firstElementChild).toBe(edge(m))
       expect(edge(m)?.getAttribute('aria-hidden')).toBe('true')
       expect([edge(m)?.tagName, edge(m)?.hasAttribute('tabindex')]).toEqual(['DIV', false])
+      // The section wears `data-toc-names` while the names show (YAZ-4849): a folder page's scroller reads it.
+      expect(m.section.hasAttribute('data-toc-names')).toBe(true)
       // The wheel on it is the wheel on the column beside the list: the note moves.
       act(() => {
         edge(m)!.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 30 }))
@@ -964,6 +966,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
       expect(card(m)).not.toBeNull()
       expect(edge(m)).toBeNull()
       expect(widthOf(m)).toBe('')
+      expect(m.section.hasAttribute('data-toc-names')).toBe(false)
     }
     expect(edge(mount('off', HEADINGS, 1600))).toBeNull()
     expect(edge(mount('pinned', [HEADINGS[0]], 1600))).toBeNull()
