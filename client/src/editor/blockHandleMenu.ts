@@ -19,9 +19,12 @@
  * divider, then its presets. A choice's panel lists its choices, each with an optional sample. Each
  * list starts with "Default (<the current default>)", which picks null, and a picker that follows
  * the default reads that on its value button (YAZ-3208 D11). Enter in the box, a preset or a choice
- * applies and closes the whole menu (S83); a bad number shows the field's error, marks the box
- * `aria-invalid` and keeps the menu open, and typing clears it. The current one is pressed and
- * shows ✓, and picking it applies nothing — no run, so no document change and no undo step. Tab
+ * applies and closes the whole menu (S83). A field that says `stay` (the table's, YAZ-4774; the
+ * line's, YAZ-4812) keeps it open instead: the menu is drawn again from the new state, the same panel
+ * open, also when the pick is the current value. Enter in a box nobody typed in still closes it: it
+ * means "done". A bad number shows the field's error, marks the box `aria-invalid` and keeps the menu
+ * open, and typing clears it. The current one is pressed and shows ✓, and picking it applies
+ * nothing — no run, so no document change and no undo step. Tab
  * from the editor, while the menu shows, goes to the first value button (the outliner would take it
  * otherwise); Enter or Space opens a picker (S84). Escape, a click away, a scroll and a window blur
  * close with no change, as for rows; when the focus was in the menu it goes back to the editor.
@@ -207,10 +210,11 @@ const optionList = (label: string, buttons: HTMLButtonElement[]): HTMLElement =>
 
 /** A number field's panel: the box, a divider and the presets — DocumentZoom's markup, built by hand. Returns the box too. */
 function numberPanel(field: MenuNumberField, id: string, close: () => void, refresh?: (run: () => void) => void): { parts: HTMLElement[]; box: HTMLInputElement } {
+  // The current value runs nothing; a `stay` menu is drawn again (the box shows the value as the button does), any other closes.
   const apply = (value: number | null) => {
-    if (value === field.value) return close()
-    if (field.stay === true && refresh !== undefined) return refresh(() => field.run(value))
-    field.run(value)
+    const run = () => (value === field.value ? undefined : field.run(value))
+    if (field.stay === true && refresh !== undefined) return refresh(run)
+    run()
     close()
   }
   const custom = document.createElement('div')
@@ -270,9 +274,9 @@ function numberPanel(field: MenuNumberField, id: string, close: () => void, refr
 /** A choice field's panel: one button per choice, with its sample. */
 function choicePanel(field: MenuChoiceField, close: () => void, refresh?: (run: () => void) => void): HTMLElement[] {
   const pick = (value: string | null) => () => {
-    if (value === field.value) return close()
-    if (field.stay === true && refresh !== undefined) return refresh(() => field.run(value))
-    field.run(value)
+    const run = () => (value === field.value ? undefined : field.run(value))
+    if (field.stay === true && refresh !== undefined) return refresh(run)
+    run()
     close()
   }
   const fallback = field.choices.find((c) => c.value === field.fallback)

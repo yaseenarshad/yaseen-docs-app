@@ -105,14 +105,83 @@ describe('useLiveGapReorder (YAZ-4606 D58)', () => {
     expect(transforms()).toEqual(['', 'translateY(100px)', 'translateY(100px)', ''])
   })
 
-  it('a drop in the middle is ONE move to the final index; the gap closes', () => {
-    const onMove = mount()
+  it('a drop in the middle is ONE move to the final index; the gap closes once the new order renders', () => {
+    const onMove = mount(vi.fn(), true)
     fire(li(0), 'dragstart')
     fire(li(2), 'dragover', 260)
     fire(li(2), 'drop', 260)
     expect(onMove).toHaveBeenCalledExactlyOnceWith(0, 2)
     expect(transforms()).toEqual(['', '', '', ''])
     expect(host!.querySelector('[data-live-lifted], [data-live-parting]')).toBeNull()
+  })
+
+  it('NO SNAP-BACK (YAZ-4877): after a drop the gap holds until the new order arrives, the drag\'s end included; a drop whose order never comes ends after 1s', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const onMove = mount() // a list that never takes the move: a slow or refused write
+      fire(li(0), 'dragstart')
+      fire(li(2), 'dragover', 260)
+      fire(li(2), 'drop', 260)
+      expect(onMove).toHaveBeenCalledExactlyOnceWith(0, 2)
+      // The old order is NOT drawn while the move is written: the items keep their parted places.
+      expect(transforms()).toEqual(['', 'translateY(-100px)', 'translateY(-100px)', ''])
+      fire(li(0), 'dragend') // the browser's end comes after the drop
+      expect(transforms()).toEqual(['', 'translateY(-100px)', 'translateY(-100px)', ''])
+      act(() => void vi.advanceTimersByTime(999))
+      expect(host!.querySelector('ul')!.hasAttribute('data-live-parting')).toBe(true)
+      act(() => void vi.advanceTimersByTime(1))
+      expect(transforms()).toEqual(['', '', '', ''])
+      expect(host!.querySelector('[data-live-parting]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('NO SNAP-BACK (YAZ-4877): the move is sent, so Esc during the hold leaves it; another drag over the list is not taken and moves nothing', () => {
+    const onMove = mount()
+    fire(li(0), 'dragstart')
+    fire(li(2), 'dragover', 260)
+    fire(li(2), 'drop', 260)
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(transforms()).toEqual(['', 'translateY(-100px)', 'translateY(-100px)', ''])
+    // A row or a file dragged over the list while the move is written: not taken, and no second move.
+    expect(fire(li(1), 'dragover', 50).defaultPrevented).toBe(false)
+    fire(li(1), 'drop', 50)
+    expect(onMove).toHaveBeenCalledTimes(1)
+  })
+
+  it('NO SNAP-BACK (YAZ-4877): the hold ends the moment the new order renders, not at its fallback; an unmount during the hold sets no state', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      let render: (items: string[]) => void = () => {}
+      const onMove = vi.fn()
+      host = document.createElement('div')
+      document.body.appendChild(host)
+      root = createRoot(host)
+      render = (items) => act(() => root!.render(<List items={items} onMove={onMove} />))
+      render(['A', 'B', 'C', 'D'])
+      layOut()
+      fire(li(0), 'dragstart')
+      fire(li(2), 'dragover', 260)
+      fire(li(2), 'drop', 260)
+      expect(host.querySelector('ul')!.hasAttribute('data-live-parting')).toBe(true)
+      render(['B', 'C', 'A', 'D']) // the write comes back, later than the drop
+      expect(host.querySelector('[data-live-parting]')).toBeNull()
+      expect(vi.getTimerCount()).toBe(0)
+      // A second drop, then an unmount before its order comes: the fallback is cleared, no state on an unmounted list.
+      layOut()
+      fire(li(0), 'dragstart')
+      fire(li(2), 'dragover', 260)
+      fire(li(2), 'drop', 260)
+      act(() => root!.unmount())
+      root = null
+      act(() => void vi.advanceTimersByTime(2000))
+      expect(errors).not.toHaveBeenCalled()
+    } finally {
+      errors.mockRestore()
+      vi.useRealTimers()
+    }
   })
 
   it('a drop on its own place writes nothing', () => {

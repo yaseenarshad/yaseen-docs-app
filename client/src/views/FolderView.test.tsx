@@ -23,6 +23,7 @@ import { linkResolver, vaultDirs } from '../links/folderLinks'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { click, flush, press, q, rec, renderFolderView, setValue, unmountFolderView } from './testFolderView'
 import { DEFAULT_FOLDER_PAGES } from '@shared/types'
+import tocCss from '../editor/toc/toc.css?inline'
 
 /** The page with Settings › Folder pages › Confirm changes off (YAZ-3746 13AN): these tests pin where a write goes, not the ask before it. */
 const renderNoAsk: typeof renderFolderView = (props) => renderFolderView({ folderPages: { ...DEFAULT_FOLDER_PAGES, confirmChanges: false }, ...props })
@@ -668,6 +669,29 @@ describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
     click(byLabel(el, 'Add view'))
     rightClick(tab(el, 'Page'))
     expect((menuItem(el, 'Duplicate') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('the outline\'s names keep the whole page clear: the folder page\'s scroller makes the room a note\'s does (YAZ-4849)', async () => {
+    // The Page's note editor puts its outline beside its body, in the Page tab (Editor.tsx, `inFolderPage`): deep in
+    // the folder page's scroller, never a child of `section.editor` as on a note.
+    const el = renderNoAsk({ path: STAGES, source, onOpenFile, renderPage })
+    el.classList.add('editor') // Editor.tsx: the folder page's `section.editor`
+    // While the names show, the outline marks the section it measures (tocFrame.tsx `useTocWidthVar`).
+    el.setAttribute('data-toc-names', '')
+    feed(SETTINGS)
+    await flush()
+    const sheet = document.head.appendChild(document.createElement('style'))
+    sheet.textContent = tocCss
+    try {
+      const host = q<HTMLElement>(el, ':scope > .editor-host')
+      // The title, the view tabs and toolbar, the Page, Other files and Comments are all in this scroller.
+      expect(getComputedStyle(host).paddingRight).toBe('var(--toc-width)')
+      // The lines look (no names), or no outline at all (the Table tab), takes no room, as on a note.
+      el.removeAttribute('data-toc-names')
+      expect(getComputedStyle(host).paddingRight).not.toBe('var(--toc-width)')
+    } finally {
+      sheet.remove()
+    }
   })
 
   it('a folder with no `.folder.md` yet mounts no editor: there is no file to read until the first write makes one', async () => {

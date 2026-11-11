@@ -494,6 +494,8 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   rowHeight: oneOf(FOLDER_PAGE_CHOICES.rowHeight),
   rowNumbers: isBool,
   columnTypeIcons: isBool,
+  folderIcons: isBool,
+  folderCounts: isBool,
   textInCells: oneOf(FOLDER_PAGE_CHOICES.textInCells),
   groupIndent: oneOf(FOLDER_PAGE_CHOICES.groupIndent),
   // YAZ-4798: a file from before them reads On, On hover and plain lines (`sanitizeFolderPages`).

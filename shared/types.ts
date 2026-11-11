@@ -1913,6 +1913,10 @@ export interface FolderPagesSettings {
   rowNumbers: boolean
   /** "Column type icons" (YAZ-4779): a table header shows each column's type icon before its name. A view can say otherwise (`columnTypeIcons`). */
   columnTypeIcons: boolean
+  /** "Folder icon" (YAZ-4848): a subfolder's row shows the folder icon before its title, in every view. A view can say otherwise (`folderIcons`). */
+  folderIcons: boolean
+  /** "Notes inside count" (YAZ-4848): a subfolder's row shows how many notes its page holds ("2 inside"). Off by default. A view can say otherwise (`folderCounts`). */
+  folderCounts: boolean
   /** A table column with no Wrap or Clip of its own (D29): `kind` wraps the chip kinds and clips the rest. */
   textInCells: (typeof FOLDER_PAGE_CHOICES.textInCells)[number]
   groupIndent: (typeof FOLDER_PAGE_CHOICES.groupIndent)[number]
@@ -1967,6 +1971,9 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   rowHeight: 'short',
   rowNumbers: true,
   columnTypeIcons: true,
+  // YAZ-4848: the folder icon on, the "N inside" count off ("hide the num of notes by default").
+  folderIcons: true,
+  folderCounts: false,
   textInCells: 'kind',
   groupIndent: 'medium',
   // YAZ-4798: on, on hover, plain lines (the approved defaults; a view with no key of its own reads them).

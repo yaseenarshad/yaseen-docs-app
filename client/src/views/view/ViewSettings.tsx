@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, shownGroupLevels } from '../viewSchema'
+import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, showsFolderRows, shownGroupLevels } from '../viewSchema'
 import { TextField } from './TextField'
 import { cardWidth } from './cardWidth'
 import { type ColorStrengthValue, calLine, writeColorStrength } from '@shared/types'
@@ -81,6 +81,23 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
       )}
       {/* Every view type (YAZ-4579 D30): the one Subfolders switch, in View › Rows since D60. */}
       <SubfoldersSwitch view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
+      {/* YAZ-4848: what a subfolder's row shows beside its title, in every view that shows folder rows. A calendar shows no count. */}
+      {showsFolderRows(view) && (
+        <>
+          <label className="view-settings-row">
+            <RowLabel icon="folderIcons">Folder icon</RowLabel>
+            <input type="checkbox" role="switch" aria-label="Folder icon" checked={view.folderIcons !== false} onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'folderIcons', e.target.checked, defaults))} />
+            <FromSettings own={own} viewKey="folderIcons" viewIndex={viewIndex} onUpdate={onUpdate} />
+          </label>
+          {view.type !== 'calendar' && (
+            <label className="view-settings-row">
+              <RowLabel icon="folderCounts">Notes inside count</RowLabel>
+              <input type="checkbox" role="switch" aria-label="Notes inside count" checked={view.folderCounts !== false} onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'folderCounts', e.target.checked, defaults))} />
+              <FromSettings own={own} viewKey="folderCounts" viewIndex={viewIndex} onUpdate={onUpdate} />
+            </label>
+          )}
+        </>
+      )}
       {/* YAZ-4908: the Table's "Header row" section — the type icons (YAZ-4779) and the row's look (YAZ-4774) as one "Style [Aa ▾]" row (YAZ-4864 round 3). */}
       {table && (
         <>

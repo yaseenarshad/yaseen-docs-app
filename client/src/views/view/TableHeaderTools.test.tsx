@@ -136,14 +136,47 @@ describe('auto-fit width on a double-click of the resize edge (YAZ-4590 S20)', (
     // (8px on screen), which jsdom does not resolve.
     const style = getComputedStyle(q(el, 'td[data-cell$=":2"]'))
     const pads = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
-    expect(def().views[0].columnSize).toEqual({ 'note.priority': 230 + pads })
+    // …and its side borders, inside its border-box width (YAZ-4871): 1px on screen.
+    const borders = (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.borderRightWidth) || 0)
+    expect(def().views[0].columnSize).toEqual({ 'note.priority': 230 + pads + borders })
   })
 
-  it('the header label counts too, and the width is clamped to 60–600', () => {
-    let { el, def } = mount(table())
-    layout(el, 2)
+  it('a value clipped INSIDE its cell counts whole: the widest element in the cell, not the clipped box around it (YAZ-4892)', () => {
+    const { el, def } = mount(table())
+    layout(el, 133) // the box the value sits in: clipped to the column
+    for (const cell of el.querySelectorAll<HTMLElement>('td[data-cell$=":2"]'))
+      for (const inner of cell.querySelectorAll<HTMLElement>(':scope > * *')) Object.defineProperty(inner, 'scrollWidth', { configurable: true, value: 224 })
+    expect(el.querySelector('td[data-cell$=":2"] > * *'), 'the value has an element inside its box').not.toBeNull()
     doubleClick(el)
-    expect(def().views[0].columnSize).toEqual({ 'note.priority': 60 }) // "Priority" is 56px: under the floor
+    const style = getComputedStyle(q(el, 'td[data-cell$=":2"]'))
+    const around = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth'].reduce((w, k) => w + (parseFloat(style[k as 'paddingLeft']) || 0), 0)
+    expect(def().views[0].columnSize).toEqual({ 'note.priority': 224 + around })
+  })
+
+  it('a header part\'s side margins and the cell\'s border count, and the fit rounds UP, so the name never shows "…" (YAZ-4871)', () => {
+    const { el, def } = mount(table('    columnTypeIcons: true\n'))
+    layout(el, 2)
+    const icon = q<HTMLElement>(th(el, 2), '.view-table__type-icon')
+    icon.style.marginRight = '5px' // views.css: the icon stands 5px before the name
+    Object.defineProperty(icon, 'scrollWidth', { configurable: true, value: 12 })
+    icon.getBoundingClientRect = () => ({ width: 12.4 }) as DOMRect
+    th(el, 2).style.borderLeftWidth = '0px'
+    th(el, 2).style.borderRight = '1px solid' // views.css: the header's right border, inside its border-box width
+    const style = getComputedStyle(th(el, 2))
+    const pads = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
+    expect([style.borderLeftWidth, style.borderRightWidth].map((w) => parseFloat(w) || 0)).toEqual([0, 1])
+    doubleClick(el)
+    // "Priority" is 56px, the icon 12.4px, its 5px margin and the 1px border: 74.4px, up to 75.
+    expect(def().views[0].columnSize).toEqual({ 'note.priority': Math.ceil(56 + 12.4 + 5 + 1 + pads) })
+  })
+
+  it('the header label counts too, and the width is clamped to 40–600 (YAZ-4819: 40px, was 60px)', () => {
+    let { el, def } = mount(table('    columnTypeIcons: false\n')) // the label alone: no type icon beside it
+    layout(el, 2)
+    // jsdom reads views.css's `1px solid var(--border)` as a 16px border; the label alone is measured here.
+    Object.assign(th(el, 2).style, { borderLeftWidth: '0px', borderRightWidth: '0px' })
+    doubleClick(el)
+    expect(def().views[0].columnSize).toEqual({ 'note.priority': 56 }) // "Priority" is 56px: over the 40px floor, so it fits the label
     act(() => root?.unmount())
     container?.remove()
     ;({ el, def } = mount(table()))

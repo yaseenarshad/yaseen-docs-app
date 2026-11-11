@@ -2018,6 +2018,9 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
     fire(rowOf(pop, 'Priority'), 'drop', 5)
     expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
     expect(onChange).toHaveBeenCalledTimes(1)
+    // The rows hold their parted places until the new order renders (YAZ-4877: no snap-back while it is written).
+    expect(q(pop, '.view-menu__list').hasAttribute('data-live-parting')).toBe(true)
+    draw()
     expect(q(pop, '.view-menu__list').hasAttribute('data-live-parting')).toBe(false)
     expect(rowOf(pop, 'Priority').style.transform).toBe('')
   })

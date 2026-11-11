@@ -447,13 +447,41 @@ describe('group indent (YAZ-4532 D10)', () => {
     // a wide Name column keeps the full indent
     expect(indents(mount(nested('    groupIndent: large\n    columnSize:\n      file.name: 300\n')).el)).toEqual(['42px', '84px'])
     unmount()
-    // a stored width narrower than that floor reads as the floor: the indent is never cut to nothing, never negative
-    expect(indents(mount(nested('    groupIndent: large\n    columnSize:\n      file.name: 60\n')).el)).toEqual(['42px', '84px'])
+    // a stored width narrower than that floor WINS (YAZ-4819): the indent shrinks to fit the title's room, never negative
+    expect(indents(mount(nested('    groupIndent: large\n    columnSize:\n      file.name: 60\n')).el)).toEqual(['0px'])
   })
   it('the CSS contract: a header steps in by the indent × --depth; a row\'s first cell by its --view-name-indent; both stay at 8px at depth 0', () => {
     expect(viewsCss).toMatch(/\.view-table__group-cell > \.view-group \{[^}]*left: calc\(8px \+ var\(--view-group-indent, 28px\) \* var\(--depth, 0\)\)/s)
     // The first column, Name or not, carries the indent (YAZ-3746 13AG).
     expect(viewsCss).toMatch(/\.view-table tbody td\.view-table__indent \{[^}]*padding-left: calc\(var\(--view-table-cell-pad-x\) \+ var\(--view-name-indent, 0px\)\)/s)
     expect(viewsCss).toMatch(/\.view-table \{[^}]*--view-table-cell-pad-x: 8px/s)
+  })
+})
+
+describe('YAZ-4819: your width wins on the first column of a grouped table', () => {
+  const firstWidth = (el: HTMLElement) => q<HTMLElement>(el, '.view-table thead th[data-col="0"]').style.width
+  const drag = (grip: Element, from: number, to: number) => {
+    act(() => void grip.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: from })))
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: to })))
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: to })))
+    draw()
+  }
+  it('with no saved width, a grouped first column still STARTS at its indent floor (28 + 136 = 164px); an ungrouped one at 150px', () => {
+    expect(firstWidth(mount(GROUP_BASE).el)).toBe('164px')
+    unmount()
+    expect(firstWidth(mount(GROUP_BASE.replace('    groupBy:\n      property: note.status\n', '')).el)).toBe('150px')
+  })
+  it('a saved width under the floor shows as saved (80px)', () => {
+    expect(firstWidth(mount(GROUP_BASE + '    columnSize:\n      file.name: 80\n').el)).toBe('80px')
+  })
+  it('dragging the first column\'s edge narrower follows the pointer down to 40px, and saves what it shows', () => {
+    const { el, yaml } = mount(GROUP_BASE)
+    const grip = q<HTMLElement>(el, '.view-table thead th[data-col="0"] .view-table__resize')
+    drag(grip, 300, 200)
+    expect(firstWidth(el)).toBe('64px')
+    expect(yaml()).toContain('file.name: 64')
+    drag(grip, 300, 0)
+    expect(firstWidth(el)).toBe('40px')
+    expect(yaml()).toContain('file.name: 40')
   })
 })

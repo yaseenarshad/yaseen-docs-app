@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, type FolderPagesSettings, type IndexRecord } from '@shared/types'
 import { parseViews, serializeViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
@@ -44,7 +44,7 @@ const FOLDERS = [rec(USERS_FILE)]
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(text: string, readOnly?: ReadonlySet<string>) {
+function mount(text: string, readOnly?: ReadonlySet<string>, folderPages?: FolderPagesSettings) {
   let parsed = parseViews(text)
   const host = {
     openFolderPage: vi.fn(),
@@ -74,6 +74,7 @@ function mount(text: string, readOnly?: ReadonlySet<string>) {
           readOnly={readOnly}
           folder={testFolderHost({ vaultRecords: NOTES, vaultFolders: FOLDERS, ...host })}
           onOpenFile={onOpenFile}
+          folderPages={folderPages}
         />,
       ),
     )
@@ -179,8 +180,8 @@ describe('the "Subfolders" switch (D30)', () => {
 })
 
 describe('a folder row (D31/D32)', () => {
-  it('wears the folder icon and "N inside", the notes its own page shows; its values are its cells', () => {
-    const { el } = mount(table('    subfolders: rows\n'))
+  it('wears the folder icon, and "N inside" (the notes its own page shows) once the view turns the count on; its values are its cells', () => {
+    const { el } = mount(table('    subfolders: rows\n    folderCounts: true\n'))
     const users = nameCell(el, 'Users')
     expect(users.querySelector('.view-folder-row__icon')).not.toBeNull()
     expect(q(users, '.view-folder-row__inside').textContent).toBe('1 inside')
@@ -381,5 +382,86 @@ describe('the count and the search with folder rows (YAZ-4595 S36)', () => {
     search(el, 'users')
     expect([...el.querySelectorAll('.view-board__card')]).toHaveLength(1)
     expect(count(el)).toBe('0 / 1 items · 1 / 2 folders')
+  })
+})
+
+describe('the folder icon and the notes inside count (YAZ-4848)', () => {
+  const icon = (cell: Element) => cell.querySelector('.view-folder-row__icon') !== null
+  const count = (cell: Element) => cell.querySelector('.view-folder-row__inside')?.textContent ?? null
+  const openView = (el: ParentNode) => {
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+  }
+  it('by default a folder row shows the folder icon and no count', () => {
+    const users = nameCell(mount(table('    subfolders: rows\n')).el, 'Users')
+    expect(icon(users)).toBe(true)
+    expect(count(users)).toBeNull()
+  })
+  it('Settings › Folder pages sets both for a view with no key of its own; the view\'s own key wins', () => {
+    const settings = { ...DEFAULT_FOLDER_PAGES, folderIcons: false, folderCounts: true }
+    let users = nameCell(mount(table('    subfolders: rows\n'), undefined, settings).el, 'Users')
+    expect(icon(users)).toBe(false)
+    expect(count(users)).toBe('1 inside')
+    act(() => root?.unmount())
+    container?.remove()
+    users = nameCell(mount(table('    subfolders: rows\n    folderIcons: true\n    folderCounts: false\n'), undefined, settings).el, 'Users')
+    expect(icon(users)).toBe(true)
+    expect(count(users)).toBeNull()
+  })
+  it('View › Rows has both switches while folder rows show; each writes its key, and ↺ goes back to Settings', () => {
+    const { el, yaml } = mount(table('    subfolders: rows\n'))
+    openView(el)
+    const sw = (label: string) => q<HTMLInputElement>(el, `.view-popover--properties [aria-label="${label}"]`)
+    expect(sw('Folder icon').checked).toBe(true)
+    expect(sw('Notes inside count').checked).toBe(false)
+    click(sw('Notes inside count'))
+    expect(yaml()).toContain('folderCounts: true')
+    expect(count(nameCell(el, 'Users'))).toBe('1 inside')
+    click(sw('Folder icon'))
+    expect(yaml()).toContain('folderIcons: false')
+    expect(icon(nameCell(el, 'Users'))).toBe(false)
+    for (const label of ['Notes inside count', 'Folder icon']) click(q(sw(label).closest('label')!, '.view-from-settings--reset'))
+    expect(yaml()).not.toContain('folderCounts')
+    expect(yaml()).not.toContain('folderIcons')
+    expect(icon(nameCell(el, 'Users'))).toBe(true)
+    expect(count(nameCell(el, 'Users'))).toBeNull()
+  })
+  it('a calendar follows "Folder icon", and its View › Rows offers only that switch (it shows no count)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-12-01T12:00:00'))
+    try {
+      const cal = (extra: string) => `views:\n  - type: calendar\n    name: C\n    subfolders: rows\n    showBy: note.due\n${extra}`
+      let { el } = mount(cal(''))
+      const card = () => [...el.querySelectorAll('.view-cal__card')].find((c) => c.textContent?.includes('Users'))
+      expect(card(), 'the Users folder row is on 6 December').toBeDefined()
+      expect(card()!.querySelector('.view-folder-row__icon')).not.toBeNull()
+      openView(el)
+      expect(el.querySelector('.view-popover--properties [aria-label="Folder icon"]')).not.toBeNull()
+      expect(el.querySelector('.view-popover--properties [aria-label="Notes inside count"]')).toBeNull()
+      act(() => root?.unmount())
+      container?.remove()
+      ;({ el } = mount(cal('    folderIcons: false\n')))
+      expect(card()!.querySelector('.view-folder-row__icon')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a list view and a board follow the same switches', () => {
+    for (const type of ['list', 'board']) {
+      const group = type === 'board' ? '    groupBy:\n      property: note.status\n' : ''
+      const { el } = mount(`views:\n  - type: ${type}\n    name: L\n    subfolders: rows\n    folderIcons: false\n    folderCounts: true\n${group}`)
+      const inside = [...el.querySelectorAll('.view-folder-row__inside')].map((n) => n.textContent)
+      expect(inside, type).toContain('1 inside')
+      expect(el.querySelector('.view-folder-row__icon'), type).toBeNull()
+      act(() => root?.unmount())
+      container?.remove()
+    }
+  })
+  it('the switches show only while the view shows folder rows', () => {
+    const { el } = mount(table())
+    openView(el)
+    expect(el.querySelector('.view-popover--properties [aria-label="Folder icon"]')).toBeNull()
+    expect(el.querySelector('.view-popover--properties [aria-label="Notes inside count"]')).toBeNull()
   })
 })

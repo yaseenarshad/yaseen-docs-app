@@ -21,6 +21,8 @@ const DEFAULTED = {
   textInCells: 'textInCells',
   rowNumbers: 'rowNumbers',
   columnTypeIcons: 'columnTypeIcons',
+  folderIcons: 'folderIcons',
+  folderCounts: 'folderCounts',
   groupIndent: 'groupIndent',
   stickyGroups: 'stickyGroups',
   groupLines: 'groupLines',
@@ -56,6 +58,9 @@ const ABSENT: { readonly [K in DefaultedKey]: unknown } = {
   rowNumbers: true,
   // Before YAZ-4779 a header had no type icon: a view with no key takes Settings (on by default).
   columnTypeIcons: false,
+  // Before YAZ-4848 every folder row showed its icon and its "N inside": a view with no key takes Settings (icon on, count off).
+  folderIcons: true,
+  folderCounts: true,
   groupIndent: 'medium',
   // Before YAZ-4798 a grouped table had no sticky group headers and no group lines: a view with no key takes Settings (on, on hover).
   stickyGroups: false,

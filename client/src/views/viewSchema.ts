@@ -55,6 +55,10 @@ export interface ViewDef {
   rowNumbers?: boolean
   /** "Column type icons" (YAZ-4779): each header's type icon before its name. Absent = Settings › Folder pages (on). */
   columnTypeIcons?: boolean
+  /** "Folder icon" (YAZ-4848): a subfolder's row shows the folder icon. Absent = Settings › Folder pages (on). */
+  folderIcons?: boolean
+  /** "Notes inside count" (YAZ-4848): a subfolder's row shows "N inside". Absent = Settings › Folder pages (off). */
+  folderCounts?: boolean
   /** The header row's own parts (YAZ-4774): color, strength, weight, text. An absent part = Settings › Tables › Header row. */
   headerRow?: HeaderRowOwn
   rowHeight?: string

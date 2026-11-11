@@ -1,4 +1,4 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { holdColResize } from '../../lib/colResize'
 import { openByKey, openTarget } from '../../lib/openGesture'
 import {
@@ -25,6 +25,7 @@ import { Popover } from './Popover'
 import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
 import { ReadOnlyName } from './ReadOnlyMark'
 import { FolderIcon } from './icons'
+import { FolderPages } from './GroupHeader'
 import { isFolderRow } from '../../links/shortcuts'
 import type { ViewHover } from './viewHover'
 
@@ -158,6 +159,8 @@ function gridLines(view: ViewDef | undefined): CSSProperties | undefined {
 }
 
 export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, noteDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+  // The view's "Folder icon" (YAZ-4848), through the page's folder context; on outside a folder page.
+  const folderIcons = useContext(FolderPages)?.folderIcons ?? true
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
@@ -440,8 +443,8 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
       canonicalKey(key) === 'file.name' ? (
         // Clip shows the full title on a hover (D23); a wrapped title is all there.
         <span key={key} className={`view-cal__card-title${row.crossed === true ? ' view-cal__card-title--crossed' : ''}`} title={wrap ? undefined : row.record.title}>
-          {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too. */}
-          {isFolderRow(row.record) && <FolderIcon size={12} className="view-folder-row__icon" />}
+          {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too, unless the view's "Folder icon" is off (YAZ-4848). */}
+          {isFolderRow(row.record) && folderIcons && <FolderIcon size={12} className="view-folder-row__icon" />}
           {/* "Cross out when" (YAZ-4864) strikes the whole card's text (`view-cal__card--crossed`): the icon stays as it is. */}
           <span className="view-cal__card-name">{locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}</span>
         </span>

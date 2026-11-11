@@ -528,6 +528,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       // A folder row's "N inside" (YAZ-4579 D32): what its own page shows, its notes below and its shortcuts (D4), off the snapshot's one map.
       inside: (dir) => rowsByFolder(vaultRecords, vaultFolders).get(dir)?.length ?? 0,
       folderColumn: folderColumnOf(view),
+      folderIcons: view.folderIcons !== false,
+      folderCounts: view.folderCounts !== false,
     }
   }, [vaultRecords, vaultFolders, folder.vaultName, pageFolder, openFolderPage, root, view])
   /**
