@@ -9,6 +9,7 @@ import { pageColumnKeys, type ColumnDecl, type FolderSettings } from '../folderS
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { fillSeries } from '../../editor/table/fillSeries'
+import { CUT_CARD_DWELL_MS, cardShell, cellHoverCards, textPart } from '../../editor/table/cellHoverCard'
 import { type HistoryStep, type ValueHistory, inBatches, noteRef } from './valueHistory'
 import { isPairWritten, type PairWritten } from '../relationPair'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
@@ -267,14 +268,16 @@ export function cellIsCut(cell: HTMLElement): boolean {
 
 /**
  * A clipped cell's full value shows on hover ONLY when its text is really cut (YAZ-4867, amends YAZ-4582 D29): the value
- * waits in `data-clip-title`, and one check on the hover sets or clears `title`. Nothing is measured at render.
+ * waits in `data-clip-title`, and one check on the hover says whether the cell gets a card. Nothing is measured at
+ * render. The card is the note table's full-text card (YAZ-4901, `cellHoverCard.ts`: its look, place, 250 ms wait, warm
+ * run and closes), not the macOS tooltip; a Wrap column's cell has no value waiting (YAZ-4895), so no card.
  */
-function tipIfCut(event: ReactMouseEvent<HTMLTableCellElement>): void {
-  const cell = event.currentTarget
+function cutCellCard(cell: HTMLElement): { box: HTMLElement; dwell: number; under: boolean } | null {
   const full = cell.dataset.clipTitle
-  // No value waiting (a Wrap column, YAZ-4895): a tooltip this hover set before goes, as React never set it.
-  if (full !== undefined && cellIsCut(cell)) cell.title = full
-  else cell.removeAttribute('title')
+  if (full === undefined || !cellIsCut(cell)) return null
+  const box = cardShell()
+  box.appendChild(textPart([full]))
+  return { box, dwell: CUT_CARD_DWELL_MS, under: true }
 }
 
 function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
@@ -674,6 +677,22 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const table = wrapRef.current?.querySelector<HTMLElement>('.view-table')
     return threaded && table != null ? groupThread(table, () => holderRef.current) : undefined
   }, [threaded])
+  // The cut cells' cards (YAZ-4867, YAZ-4901): one controller, fed by one delegated `mouseover` (a `closest` per cell
+  // change) and the wrap's `mouseleave`; nothing per cell, nothing on a key.
+  useEffect(() => {
+    const wrap = wrapRef.current
+    if (wrap === null) return
+    const cards = cellHoverCards(cutCellCard)
+    const over = (e: MouseEvent) => cards.enter(e.target instanceof Element ? e.target.closest<HTMLElement>('td') : null)
+    const leave = () => cards.enter(null)
+    wrap.addEventListener('mouseover', over)
+    wrap.addEventListener('mouseleave', leave)
+    return () => {
+      wrap.removeEventListener('mouseover', over)
+      wrap.removeEventListener('mouseleave', leave)
+      cards.destroy()
+    }
+  }, [])
   /** A click on a stuck group header (not on its toggle, its value or its "+"): back to the top of that group (YAZ-4798). */
   const backToGroupTop = (e: ReactMouseEvent<HTMLTableCellElement>): void => {
     const wrap = wrapRef.current
@@ -1892,10 +1911,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 // ⇧⌘ opens it in a new window (YAZ-4444 D32), asked first.
                 onClick={c === nameCol ? (e) => (newWindowClick(e, rowPage(path)) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
                 // A read-only note's Name cell opens no title field: a title edit renames the note (YAZ-3076 D6).
-                // A clipped cell shows its full value on hover only when it is cut (YAZ-4582 D29, YAZ-4867): `tipIfCut`.
+                // A clipped cell shows its full value on hover only when it is cut (YAZ-4582 D29, YAZ-4867): `cutCellCard`.
                 title={c === nameCol && locked ? READ_ONLY_TIP : undefined}
                 data-clip-title={c === nameCol && locked ? undefined : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
-                onMouseEnter={c === nameCol && locked ? undefined : tipIfCut}
                 onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
                 {...(c !== nameCol && !locked && typings[c]?.assigned === 'image' ? imageDrop(line.r, c) : {})}
               >

@@ -383,23 +383,4 @@ describe('Text in cells (YAZ-4900): the table\'s Wrap or Clip, each column\'s ow
     )
     expect(rule!.body).toMatch(/white-space:\s*nowrap/)
   })
-
-  it('a hover on a cut cell puts its full text (its lines joined) as the editor root\'s title; off a cut cell the title goes; no transaction', async () => {
-    // The first cell is three lines: a line, a bullet, a line (YAZ-3818). Its first line is cut; the last cell's is not.
-    const { view } = await mount('| a | b |\n| - | - |\n| one<ul><li>two</li></ul>three | short |\n\n<!-- table: nowrap -->\n')
-    const doc = view.state.doc
-    const lines = [...view.dom.querySelectorAll('td > p')] as HTMLElement[]
-    expect(lines.map((line) => line.textContent)).toEqual(['one', 'three', 'short'])
-    // jsdom lays nothing out: the first cell's line is wider inside than out (cut), the last cell's is not.
-    Object.defineProperty(lines[0], 'scrollWidth', { value: 300, configurable: true })
-    Object.defineProperty(lines[0], 'clientWidth', { value: 100, configurable: true })
-    const hover = (target: Element) => target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-    hover(lines[0]!)
-    expect(view.dom.title).toBe('one\ntwo\nthree')
-    hover(lines.at(-1)!)
-    expect(view.dom.hasAttribute('title')).toBe(false)
-    hover(view.dom.querySelector('th')!)
-    expect(view.dom.hasAttribute('title')).toBe(false)
-    expect(view.state.doc).toBe(doc)
-  })
 })

@@ -1,0 +1,65 @@
+/* A table cell's hover card (`cellHoverCard.ts`): the cell note's preview (YAZ-3818 D14, `cellNotePreview.ts`) and
+   the cut cell's full text (YAZ-4901), in a note table and in a folder page table. The link hover card's look
+   (`boardPreview.css` `.board-preview`), on the page's body. Read-only: the pointer goes through it. The note preview
+   is 260px wide beside the cell's corner; the full-text card sets its own width (the cell's) inline. */
+.cell-note-preview {
+  position: fixed;
+  z-index: 40;
+  width: 260px;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  color: var(--fg);
+  font-size: 12.5px;
+}
+
+/* The cut cell's full text (YAZ-4901 item 4): wrapped, at most 12 lines (the text's own cap, and this clamp for lines
+   that wrap), then "…". */
+.cell-note-preview__text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 12;
+  overflow: hidden;
+  padding: 8px 12px;
+  line-height: 1.4;
+}
+
+.cell-note-preview__text-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A cut cell with a note (item 10): one card, the full text on top, a 1px line, then the note's part as always. */
+.cell-note-preview__text + .cell-note-preview__header {
+  border-top: 1px solid var(--border);
+}
+
+.cell-note-preview__header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-note-preview__hint {
+  padding: 4px 12px 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.cell-note-preview__body {
+  padding: 6px 12px 8px;
+}
+
+.cell-note-preview__line {
+  min-height: 1.4em;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}

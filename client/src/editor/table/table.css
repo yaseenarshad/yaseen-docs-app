@@ -327,13 +327,22 @@
 /* Clip (YAZ-4900): one line per cell paragraph, cut with an ellipsis. Settings' default is on `.app` (`data-table-text`),
    the table's own `data-table-nowrap` (Clip) / `data-table-wrap` (Wrap) wins over it, and a column's own `data-cell-text`
    on its cells wins over both. A caret in a clipped cell keeps the one line and scrolls it sideways. A cut cell shows its
-   full text on hover (`tipIfCut`, `tableStyle.ts`). */
+   full text on hover as a card (`cellNotePreview.ts`, YAZ-4901). */
 .app[data-table-text='clip'] .milkdown .ProseMirror .milkdown-table-block:not([data-table-wrap]) :is(th, td):not([data-cell-text='wrap']) > p,
 .milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td):not([data-cell-text='wrap']) > p,
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] > p {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding-right: var(--table-clip-pad, 0);
+}
+
+/* A clipped cell with a note keeps 10 px free at its right (YAZ-4901 item 11), so the "…" ends before the corner
+   triangle and never runs under it; the same for the cell under the pointer while the cell note button shows over its
+   corner (`cellNoteButton.ts`, the editor's `.milkdown` box). A wrapped cell's line has no padding to lose (`0`). */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td).has-cell-note,
+.milkdown:has(> .cell-note-button[data-show='true']) .ProseMirror .milkdown-table-block :is(th, td):hover {
+  --table-clip-pad: 10px;
 }
 
 /* Fill down (YAZ-3765, S4): the handle sits inside the corner of the bottom-right selected cell
@@ -854,7 +863,7 @@
 
 /* The open cell note: a card just under its cell, right-aligned to it (the YAZ-3818 demo, `cellNoteCard.ts`). The note
    block itself, taken out of the flow, so nothing on the page moves; `cellNoteCard.ts` sets its place on the editor's
-   `.milkdown` box. The link hover card's look (`.cell-note-preview` below). */
+   `.milkdown` box. The link hover card's look (`.cell-note-preview`, `cellHoverCard.css`). */
 .milkdown .ProseMirror .cell-note.cell-note--open {
   display: block;
   position: absolute;
@@ -1352,49 +1361,6 @@
   position: relative;
   width: 12px;
   height: 12px;
-}
-
-/* A cell note's preview (D14, `cellNotePreview.ts`): the link hover card's look (`boardPreview.css` `.board-preview`),
-   on the page's body. Read-only: the pointer goes through it. */
-.cell-note-preview {
-  position: fixed;
-  z-index: 40;
-  width: 260px;
-  overflow: hidden;
-  pointer-events: none;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
-  color: var(--fg);
-  font-size: 12.5px;
-}
-
-.cell-note-preview__header {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cell-note-preview__hint {
-  padding: 4px 12px 0;
-  color: var(--fg-muted);
-  font-size: 11px;
-}
-
-.cell-note-preview__body {
-  padding: 6px 12px 8px;
-}
-
-.cell-note-preview__line {
-  min-height: 1.4em;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: pre;
 }
 
 /* The row and column handles take a press 6px around them too (the YAZ-4163 demo): a drag along them selects rows or

@@ -53,7 +53,7 @@
 import { tableSchema } from '@milkdown/kit/preset/gfm'
 import { Fragment, type Node as ProseNode, type TagParseRule } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
-import { TableMap, cellAround } from '@milkdown/kit/prose/tables'
+import { TableMap } from '@milkdown/kit/prose/tables'
 import { AttrStep, ReplaceStep } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import type { MarkdownNode, NodeSchema } from '@milkdown/kit/transformer'
@@ -708,36 +708,9 @@ const tableStylePlugin = $prose(
       },
       props: {
         decorations: (state) => tableStyleKey.getState(state),
-        handleDOMEvents: {
-          mouseover: (view, event) => {
-            tipIfCut(view, event)
-            return false
-          },
-        },
       },
     }),
 )
-
-/**
- * A clipped cell's full text on hover, ONLY when its text is cut (YAZ-4900; the folder page's `tipIfCut`, YAZ-4867): one
- * delegated `mouseover` per editor, nothing on a key. A cut cell has a line (`td > p`) wider inside than out. The
- * `title` goes on the editor's root (`view.dom`), never on the cell: ProseMirror's DOM observer ignores an attribute
- * change on its own root, while one on a cell would make it read the cell back as an edit. The root's title goes again
- * on the next hover off a cut cell, so the tooltip shows only over one. The text is the cell's lines, one per line.
- */
-function tipIfCut(view: EditorView, event: MouseEvent): void {
-  const cell = (event.target as Element | null)?.closest?.('td, th') ?? null
-  // A cell of THIS editor: a cell note card's editor can sit inside the note's DOM, and it has a listener of its own.
-  const cut = cell !== null && cell.closest('.ProseMirror') === view.dom && Array.from(cell.children).some((line) => line.tagName === 'P' && line.scrollWidth > line.clientWidth + 1)
-  if (!cut) {
-    if (view.dom.hasAttribute('title')) view.dom.removeAttribute('title')
-    return
-  }
-  const $cell = cellAround(view.state.doc.resolve(view.posAtDOM(cell, 0)))
-  const node = $cell?.nodeAfter
-  if (node === null || node === undefined) return
-  view.dom.title = node.textBetween(0, node.content.size, '\n')
-}
 
 /** Register with `editor.use(tableStyle)`, right after `lineStyle` in createCrepe, which removes Milkdown's `keepTableAlignPlugin` for `keepColumnAlign`. */
 export const tableStyle = [tableStyleRemark, tableStyleSchema, tableStylePlugin, keepColumnAlign].flat()

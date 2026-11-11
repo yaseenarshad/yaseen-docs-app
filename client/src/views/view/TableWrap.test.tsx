@@ -69,6 +69,7 @@ afterEach(() => {
   container = null
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 const q = <T extends Element>(el: ParentNode, sel: string): T => {
@@ -166,36 +167,61 @@ describe('the cells of a Wrap or a Clip column (YAZ-4582)', () => {
     expect(status[0].dataset.clipTitle).toBe('idea')
   })
 
-  it('YAZ-4867: the tooltip shows on hover only when the text is really cut', () => {
+  it('YAZ-4867, YAZ-4901: the full value shows on hover only when the text is really cut, as the app\'s card after 250 ms, never as a tooltip', () => {
+    vi.useFakeTimers()
     const { el } = mount(table())
     const cell = column(el, 2)[0]
     const widths = (scroll: number, client: number) => {
       Object.defineProperty(cell, 'scrollWidth', { configurable: true, value: scroll })
       Object.defineProperty(cell, 'clientWidth', { configurable: true, value: client })
     }
-    const hover = () => act(() => cell.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
-    widths(40, 120) // "idea" fits: no tooltip
+    const card = () => document.querySelector<HTMLElement>('.cell-note-preview')
+    const hover = (target: Element = cell) => act(() => target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+    const leave = () => act(() => el.querySelector('.view-table')!.closest('div')!.dispatchEvent(new MouseEvent('mouseleave')))
+    widths(40, 120) // "idea" fits: no card
     hover()
+    act(() => vi.advanceTimersByTime(250))
+    expect(card()).toBeNull()
     expect(cell.hasAttribute('title')).toBe(false)
+    leave()
     widths(300, 120) // the column got narrow: cut, so the full value shows
     hover()
-    expect(cell.title).toBe('idea')
-    widths(40, 120) // wide again: the tooltip goes
-    hover()
+    act(() => vi.advanceTimersByTime(249))
+    expect(card()).toBeNull()
+    act(() => vi.advanceTimersByTime(1))
+    expect([...card()!.querySelectorAll('.cell-note-preview__text-line')].map((line) => line.textContent)).toEqual(['idea'])
     expect(cell.hasAttribute('title')).toBe(false)
+    // Off the table for 500 ms, wide again: the card goes and none comes.
+    leave()
+    expect(card()).toBeNull()
+    act(() => vi.advanceTimersByTime(500))
+    widths(40, 120)
+    hover()
+    act(() => vi.advanceTimersByTime(250))
+    expect(card()).toBeNull()
   })
 
-  it('YAZ-4895: a tooltip set on a cut cell goes when its column switches to Wrap', () => {
+  it('YAZ-4895: a cut cell gets no card once its column switches to Wrap', () => {
+    vi.useFakeTimers()
     const { el } = mount(table())
     const cell = column(el, 2)[0]
     Object.defineProperty(cell, 'scrollWidth', { configurable: true, value: 300 })
     Object.defineProperty(cell, 'clientWidth', { configurable: true, value: 120 })
     act(() => cell.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
-    expect(cell.title).toBe('idea')
+    act(() => vi.advanceTimersByTime(250))
+    expect(document.querySelector('.cell-note-preview')).not.toBeNull()
+    // A real click starts with a mousedown, which closes the card.
+    act(() => window.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(document.querySelector('.cell-note-preview')).toBeNull()
     textMenu(th(el, 2))
     act(() => item(el, 'Wrap text').click())
+    // The cell, wrapped now, has no value waiting: no card, however narrow.
     const wrapped = column(el, 2)[0]
+    Object.defineProperty(wrapped, 'scrollWidth', { configurable: true, value: 300 })
+    Object.defineProperty(wrapped, 'clientWidth', { configurable: true, value: 120 })
     act(() => wrapped.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+    act(() => vi.advanceTimersByTime(250))
+    expect(document.querySelector('.cell-note-preview')).toBeNull()
     expect(wrapped.hasAttribute('title')).toBe(false)
   })
 
