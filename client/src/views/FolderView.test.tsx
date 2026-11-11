@@ -23,6 +23,7 @@ import { linkResolver, vaultDirs } from '../links/folderLinks'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { click, flush, press, q, rec, renderFolderView, setValue, unmountFolderView } from './testFolderView'
 import { DEFAULT_FOLDER_PAGES } from '@shared/types'
+import tocCss from '../editor/toc/toc.css?inline'
 
 /** The page with Settings › Folder pages › Confirm changes off (YAZ-3746 13AN): these tests pin where a write goes, not the ask before it. */
 const renderNoAsk: typeof renderFolderView = (props) => renderFolderView({ folderPages: { ...DEFAULT_FOLDER_PAGES, confirmChanges: false }, ...props })
@@ -657,6 +658,38 @@ describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
     click(byLabel(el, 'Add view'))
     rightClick(tab(el, 'Page'))
     expect((menuItem(el, 'Duplicate') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('the outline\'s names keep the whole page clear: the folder page\'s scroller makes the room a note\'s does (YAZ-4849)', async () => {
+    // The Page's note editor puts its outline beside its body, in the Page tab (Editor.tsx, `inFolderPage`): deep in
+    // the folder page's scroller, never a child of `section.editor` as on a note.
+    const withOutline = vi.fn(() => (
+      <>
+        <div className="folder-page-doc" />
+        <nav className="toc" data-names="" />
+      </>
+    ))
+    const el = renderNoAsk({ path: STAGES, source, onOpenFile, renderPage: withOutline })
+    el.classList.add('editor') // Editor.tsx: the folder page's `section.editor`
+    feed(SETTINGS)
+    await flush()
+    const sheet = document.head.appendChild(document.createElement('style'))
+    sheet.textContent = tocCss
+    try {
+      const host = q<HTMLElement>(el, ':scope > .editor-host')
+      // The title, the view tabs and toolbar, the Page, Other files and Comments are all in this scroller.
+      expect(getComputedStyle(host).paddingRight).toBe('var(--toc-width)')
+      // The lines look (no names) takes no room, as on a note.
+      q(el, '.view-page > .toc').removeAttribute('data-names')
+      expect(getComputedStyle(host).paddingRight).not.toBe('var(--toc-width)')
+      // The Table tab has no outline: no room.
+      selectView(el, 'Table')
+      await flush()
+      expect(el.querySelector('.toc')).toBeNull()
+      expect(getComputedStyle(host).paddingRight).not.toBe('var(--toc-width)')
+    } finally {
+      sheet.remove()
+    }
   })
 
   it('a folder with no `.folder.md` yet mounts no editor: there is no file to read until the first write makes one', async () => {
