@@ -4,6 +4,7 @@
  * of the table never move.
  */
 import { afterEach, describe, expect, it } from 'vitest'
+import { undo } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { getMarkdownForSave } from '../../createCrepe'
 import { mountNote, unmountAll } from '../tableTestKit'
@@ -61,6 +62,29 @@ describe('YAZ-4875 S4: sort, filter and the summary row', () => {
     expect(saved).toContain('<!-- table: super, view All sort Layer sort Piece desc -->')
     expect(firstColumn(view)).toEqual(['Base', 'Wall', 'Door', 'Roof'])
     expect(fileRows(saved)).toEqual(['Roof', 'Wall', 'Door', 'Base'])
+  })
+
+  it('YAZ-4869 round 2: on the base "Table" tab, Sort sorts the real rows (one ⌘Z); Group makes a new view with the rule and shows it', async () => {
+    const { view, crepe } = await showView('view All', 'All')
+    setActiveTab(view, tablePos(view), null)
+    await wait()
+    expect([...view.dom.querySelectorAll('.table-super-bar__tool')].map((b) => b.getAttribute('aria-label'))).toEqual(['Sort', 'Group', 'Filter'])
+    tool(view, 'Sort').click()
+    await wait()
+    button(view, 'Add sort').click()
+    await wait()
+    await pick(view, 'Sort 1 column', 'Size')
+    expect(fileRows(getMarkdownForSave(crepe))).toEqual(['Door', 'Roof', 'Wall', 'Base'])
+    await pick(view, 'Sort 1 direction', 'Z → A')
+    expect(fileRows(getMarkdownForSave(crepe))).toEqual(['Base', 'Wall', 'Roof', 'Door'])
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: super, view All -->')
+    undo(view.state, view.dispatch)
+    expect(fileRows(getMarkdownForSave(crepe))).toEqual(['Door', 'Roof', 'Wall', 'Base'])
+    tool(view, 'Group').click()
+    await wait()
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: super, view All, view "View 1" group Piece -->')
+    expect(view.dom.querySelector('.table-super-bar .view-tab--active')?.textContent).toBe('View 1')
+    expect(view.dom.querySelector('.table-super-bar__panel .super-menu--group')).not.toBeNull()
   })
 
   it('item 12: a filter on a number column offers the number operators; its value is written on Enter', async () => {
