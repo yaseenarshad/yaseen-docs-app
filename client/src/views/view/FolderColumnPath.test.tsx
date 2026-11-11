@@ -30,7 +30,7 @@ afterEach(() => {
 })
 
 function cell(folder: string, page: string, folderColumn: FolderPagesValue['folderColumn'], open?: (dir: string) => void): HTMLElement {
-  const pages: FolderPagesValue = { folder: page, title: (dir) => TITLES[dir] ?? dir, open, folderColumn }
+  const pages: FolderPagesValue = { folder: page, title: (dir) => TITLES[dir] ?? dir, open, folderColumn, folderIcons: true, folderCounts: false }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)

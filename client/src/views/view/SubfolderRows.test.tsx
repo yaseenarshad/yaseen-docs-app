@@ -426,6 +426,27 @@ describe('the folder icon and the notes inside count (YAZ-4848)', () => {
     expect(icon(nameCell(el, 'Users'))).toBe(true)
     expect(count(nameCell(el, 'Users'))).toBeNull()
   })
+  it('a calendar follows "Folder icon", and its View › Rows offers only that switch (it shows no count)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-12-01T12:00:00'))
+    try {
+      const cal = (extra: string) => `views:\n  - type: calendar\n    name: C\n    subfolders: rows\n    showBy: note.due\n${extra}`
+      let { el } = mount(cal(''))
+      const card = () => [...el.querySelectorAll('.view-cal__card')].find((c) => c.textContent?.includes('Users'))
+      expect(card(), 'the Users folder row is on 6 December').toBeDefined()
+      expect(card()!.querySelector('.view-folder-row__icon')).not.toBeNull()
+      openView(el)
+      expect(el.querySelector('.view-popover--properties [aria-label="Folder icon"]')).not.toBeNull()
+      expect(el.querySelector('.view-popover--properties [aria-label="Notes inside count"]')).toBeNull()
+      act(() => root?.unmount())
+      container?.remove()
+      ;({ el } = mount(cal('    folderIcons: false\n')))
+      expect(card()!.querySelector('.view-folder-row__icon')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('a list view and a board follow the same switches', () => {
     for (const type of ['list', 'board']) {
       const group = type === 'board' ? '    groupBy:\n      property: note.status\n' : ''

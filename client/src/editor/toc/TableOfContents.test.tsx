@@ -1400,8 +1400,10 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
     expect(tocCss).not.toContain('data-follow')
     // `namesShow` counts with TOC_WIDTH: the scroller pads by it, the find bar moves by it, the column stands left of the note's scrollbar.
     expect(tocCss).toMatch(new RegExp(`--toc-width:\\s*${TOC_WIDTH}px;`))
-    expect(rule(tocCss, '.editor:has(> .toc[data-names]) > .editor-host')).toMatch(/padding-right:\s*var\(--toc-width/)
-    expect(rule(tocCss, '.editor:has(> .toc[data-names]) > .find-bar-dock--note')).toMatch(/right:\s*var\(--toc-width/)
+    // Both read the section's `data-toc-names` (YAZ-4849): no `:has()` over the note's text (YAZ-3329).
+    expect(rule(tocCss, '.editor[data-toc-names] > .editor-host')).toMatch(/padding-right:\s*var\(--toc-width/)
+    expect(rule(tocCss, '.editor[data-toc-names] > .find-bar-dock--note')).toMatch(/right:\s*var\(--toc-width/)
+    expect(tocCss).not.toContain(':has(> .toc[data-names])')
     const column = rule(tocCss, '.toc[data-names]')
     expect(column).toMatch(/right:\s*var\(--toc-gutter/)
     expect(column).toMatch(/width:\s*var\(--toc-width\);/)

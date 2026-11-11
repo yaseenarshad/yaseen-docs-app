@@ -137,13 +137,51 @@ describe('useLiveGapReorder (YAZ-4606 D58)', () => {
     }
   })
 
-  it('NO SNAP-BACK (YAZ-4877): Esc after a drop still ends it at once', () => {
-    mount()
+  it('NO SNAP-BACK (YAZ-4877): the move is sent, so Esc during the hold leaves it; another drag over the list is not taken and moves nothing', () => {
+    const onMove = mount()
     fire(li(0), 'dragstart')
     fire(li(2), 'dragover', 260)
     fire(li(2), 'drop', 260)
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
-    expect(transforms()).toEqual(['', '', '', ''])
+    expect(transforms()).toEqual(['', 'translateY(-100px)', 'translateY(-100px)', ''])
+    // A row or a file dragged over the list while the move is written: not taken, and no second move.
+    expect(fire(li(1), 'dragover', 50).defaultPrevented).toBe(false)
+    fire(li(1), 'drop', 50)
+    expect(onMove).toHaveBeenCalledTimes(1)
+  })
+
+  it('NO SNAP-BACK (YAZ-4877): the hold ends the moment the new order renders, not at its fallback; an unmount during the hold sets no state', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      let render: (items: string[]) => void = () => {}
+      const onMove = vi.fn()
+      host = document.createElement('div')
+      document.body.appendChild(host)
+      root = createRoot(host)
+      render = (items) => act(() => root!.render(<List items={items} onMove={onMove} />))
+      render(['A', 'B', 'C', 'D'])
+      layOut()
+      fire(li(0), 'dragstart')
+      fire(li(2), 'dragover', 260)
+      fire(li(2), 'drop', 260)
+      expect(host.querySelector('ul')!.hasAttribute('data-live-parting')).toBe(true)
+      render(['B', 'C', 'A', 'D']) // the write comes back, later than the drop
+      expect(host.querySelector('[data-live-parting]')).toBeNull()
+      expect(vi.getTimerCount()).toBe(0)
+      // A second drop, then an unmount before its order comes: the fallback is cleared, no state on an unmounted list.
+      layOut()
+      fire(li(0), 'dragstart')
+      fire(li(2), 'dragover', 260)
+      fire(li(2), 'drop', 260)
+      act(() => root!.unmount())
+      root = null
+      act(() => void vi.advanceTimersByTime(2000))
+      expect(errors).not.toHaveBeenCalled()
+    } finally {
+      errors.mockRestore()
+      vi.useRealTimers()
+    }
   })
 
   it('a drop on its own place writes nothing', () => {

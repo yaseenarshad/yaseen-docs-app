@@ -296,6 +296,7 @@ describe('picking', () => {
     type(box(view, 1), '6')
     press(box(view, 1), 'Enter')
     expect(popupOf(view)).not.toBeNull()
+    expect(box(view, 1).value).toBe('6px') // drawn again: the box reads as the button does
     expect(view.state.doc).toBe(doc)
     expect(undo(view.state)).toBe(false)
   })

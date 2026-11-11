@@ -205,6 +205,33 @@ describe('header drag-to-reorder (YAZ-1548)', () => {
     expect(rules(el)).toBe('')
   })
 
+  it('nothing glides after a drop: the passed columns are drawn at their new places already, and the dropped one shows there with no slide from its old place (YAZ-4877)', () => {
+    const animated: string[] = []
+    const animate = vi.fn(function (this: HTMLElement) {
+      animated.push(this.closest('th, td')?.getAttribute('data-col') ?? this.closest('td')?.getAttribute('data-cell')?.split(':')[1] ?? '?')
+      return {} as Animation
+    })
+    Element.prototype.animate = animate as unknown as Element['animate']
+    vi.stubGlobal('matchMedia', () => ({ matches: false })) // motion on: jsdom has no matchMedia, which reads as reduced
+    try {
+      const { el, def } = mount()
+      // jsdom has no layout: each header is drawn where its style width puts it, plus its slide.
+      for (const th of ths(el)) th.getBoundingClientRect = () => {
+        const m = /translateX\((-?\d+)px\)/.exec(rules(el).split(`th[data-col="${th.dataset.col}"]`)[1]?.split('}')[0] ?? '')
+        return { left: headerPoint(th, 0) - parseFloat(th.style.width) / 2 + (m ? Number(m[1]) : 0) } as DOMRect
+      }
+      fire(ths(el)[0], 'dragstart')
+      fire(ths(el)[2], 'dragover', RIGHT)
+      fire(ths(el)[2], 'drop', RIGHT)
+      expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
+      // Before YAZ-4877 Name (now column 2) glided in from its old place, 300px off, and the others snapped back first.
+      expect(animated).toEqual([])
+    } finally {
+      delete (Element.prototype as { animate?: unknown }).animate
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('a drop OVER THE ROWS lands at the column the pointer is over (YAZ-4819)', () => {
     const { el, onChange, def } = mount()
     const cell = q<HTMLElement>(el, '.view-table tbody td[data-cell="0:1"]')

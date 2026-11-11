@@ -80,7 +80,7 @@ const SCALES = [
  */
 export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, noteDoors, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
   // The view's "Folder icon" (YAZ-4848), through the page's folder context; on outside a folder page.
-  const folderIcons = useContext(FolderPages)?.folderIcons !== false
+  const folderIcons = useContext(FolderPages)?.folderIcons ?? true
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }

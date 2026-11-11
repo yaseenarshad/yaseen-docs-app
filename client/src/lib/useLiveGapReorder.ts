@@ -63,6 +63,9 @@ const keyOfItem = (el: HTMLElement): string => el.getAttribute(LIVE_ITEM) ?? ''
  * an empty place where the drop would land. There is no drop line: the gap is the marker. The slot comes from layout
  * places, which the transforms do not move, so the gap cannot flicker. The list scrolls at its ends; Esc and a drag's
  * end cancel; a reorder glides each item from where it was drawn to its new place. Only transforms run during a drag.
+ * A drop holds the parted places until the new order arrives (YAZ-4877), so nothing snaps back while the move is
+ * written: the drag's end and Esc leave the hold, the new order ends it, and a drop whose order never comes ends after
+ * `LANDING_MS`. A held drop takes no other drag.
  *
  * The container takes `ref` and `onDragOver`/`onDrop` (`over`, `drop`); each item takes `itemProps(i)`; the drag source
  * (the item or its grip) calls `start` and `end`, and writes its own payload type.
@@ -76,6 +79,13 @@ export function useLiveGapReorder<T extends HTMLElement = HTMLElement>({ axis, k
   const scrolls = useRef<HTMLElement | null>(null)
   const [edge] = useState(() => edgeScroller(() => scrolls.current, undefined, axis))
   useEffect(() => () => edge.stop(), [edge])
+  // The held drop's fallback (YAZ-4877): one timer at a time, gone with the list.
+  const landing = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const stopLanding = (): void => {
+    if (landing.current !== null) clearTimeout(landing.current)
+    landing.current = null
+  }
+  useEffect(() => stopLanding, [])
 
   const end = (): void => {
     edge.stop()
@@ -83,8 +93,8 @@ export function useLiveGapReorder<T extends HTMLElement = HTMLElement>({ axis, k
     setState((now) => (now?.landed === true ? now : null))
   }
   // Esc cancels: a real drag fires `dragend`; jsdom, and any missed `dragend`, go through this (`useGroupDrag`'s idiom).
-  // Subscribed once per drag, not once per slot the pointer crosses.
-  const dragging = drag !== null
+  // Subscribed once per drag, not once per slot the pointer crosses. A held drop is sent already: Esc leaves it (YAZ-4877).
+  const dragging = drag !== null && drag.landed !== true
   useEffect(() => {
     if (!dragging) return
     const onKey = (e: KeyboardEvent) => {
@@ -109,12 +119,13 @@ export function useLiveGapReorder<T extends HTMLElement = HTMLElement>({ axis, k
     const item = e.currentTarget.closest<HTMLElement>(ITEM)
     scrolls.current = scroller?.() ?? scrollParent(ref.current, axis)
     const room = knownRoom?.(i) ?? (item === null ? 0 : roomOf(item, ref.current, axis))
+    stopLanding()
     setState({ from: i, over: null, room, lifted: false, list })
     requestAnimationFrame(() => setState((now) => (now === null || now.from !== i ? now : { ...now, lifted: true })))
   }
   /** A `dragover` (and `dragenter`) on the list: true when this list's drag took it. */
   const over = (e: DragEvent<HTMLElement>): boolean => {
-    if (drag === null) return false
+    if (drag === null || drag.landed === true) return false
     e.preventDefault()
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
     edge.at(pointOf(e))
@@ -123,7 +134,7 @@ export function useLiveGapReorder<T extends HTMLElement = HTMLElement>({ axis, k
     return true
   }
   const drop = (e: DragEvent<HTMLElement>): boolean => {
-    if (drag === null) return false
+    if (drag === null || drag.landed === true) return false
     e.preventDefault()
     const to = dropIndex(drag.from, slotOf(e))
     edge.stop()
@@ -134,7 +145,11 @@ export function useLiveGapReorder<T extends HTMLElement = HTMLElement>({ axis, k
     // Hold the parting until the new order arrives (YAZ-4877): ending it here drew the old order for the frames the
     // write takes, and the items snapped back before they glided to their new places.
     setState({ ...drag, landed: true })
-    setTimeout(() => setState((now) => (now?.landed === true && now.list === list ? null : now)), LANDING_MS)
+    stopLanding()
+    landing.current = setTimeout(() => {
+      landing.current = null
+      setState((now) => (now?.landed === true ? null : now))
+    }, LANDING_MS)
     onMove(drag.from, to)
     return true
   }
@@ -161,6 +176,9 @@ export function useLiveGapReorder<T extends HTMLElement = HTMLElement>({ axis, k
   if (reordered && glideFrom.current === null && !motionOff()) glideFrom.current = drawnPlaces(ref.current, items().filter((el) => !el.hasAttribute(LIFTED) && keyOfItem(el) !== dropped), keyOfItem, axis)
   useLayoutEffect(() => {
     order.current = keys
+    // The held drop's new order is here: the hold ends now, not at its fallback (YAZ-4877).
+    stopLanding()
+    setState((now) => (now?.landed === true ? null : now))
     const from = glideFrom.current
     glideFrom.current = null
     if (from === null) return

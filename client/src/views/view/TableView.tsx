@@ -239,10 +239,9 @@ function activateEditorFromCell(event: ReactMouseEvent<HTMLTableCellElement>): v
 /** A clipped cell's tooltip (YAZ-4582 D29): its whole value as text; none for a checkbox or an empty cell. */
 const clipTitle = (v: Value, resolve: Resolver | undefined): string | undefined => (typeof v === 'boolean' ? undefined : render(v, resolve) || undefined)
 
-/** A single click selects the cell without entering edit mode. */
 /**
  * A cell's content width in CSS px (YAZ-4590 S20): its side paddings plus each child's natural width and side margins
- * (YAZ-4871: the type icon's 5px and the column mark's 4px, or the name shows "…"). A text node is measured by a Range;
+ * (YAZ-4871: a header's icons stand apart by margins, so without them the name shows "…"). A text node is measured by a Range;
  * an element by its scroll width, which a `max-width: 100%` box keeps past its clip. The resize edge is absolutely
  * placed, so it does not count.
  */
@@ -252,8 +251,8 @@ function contentWidth(cell: HTMLElement, zoom: number): number {
   for (const node of cell.childNodes) {
     if (node instanceof HTMLElement) {
       if (node.classList.contains('view-table__resize')) continue
-      const margins = getComputedStyle(node)
-      width += Math.max(node.scrollWidth, node.getBoundingClientRect().width / zoom) + (parseFloat(margins.marginLeft) || 0) + (parseFloat(margins.marginRight) || 0)
+      const childStyle = getComputedStyle(node)
+      width += Math.max(node.scrollWidth, node.getBoundingClientRect().width / zoom) + (parseFloat(childStyle.marginLeft) || 0) + (parseFloat(childStyle.marginRight) || 0)
     } else if (node.nodeType === Node.TEXT_NODE) {
       const range = document.createRange()
       range.selectNodeContents(node)
@@ -263,6 +262,7 @@ function contentWidth(cell: HTMLElement, zoom: number): number {
   return width
 }
 
+/** A single click selects the cell without entering edit mode. */
 function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
   if (event.target !== event.currentTarget) return
   event.currentTarget.focus()
