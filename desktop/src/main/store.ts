@@ -172,6 +172,10 @@ import {
   type WindowBounds,
   type WindowEntry,
   DIAGRAM_DARK_COLORS,
+  EMBED_REST_SECONDS,
+  NEW_BOARD_FOLDERS,
+  type EmbedRestSeconds,
+  type NewBoardFolder,
   NOTICE_LENGTHS,
   MEDIA_HOVER_ZOOM_SIZES,
   TAB_SLEEP_AFTER,
@@ -712,6 +716,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.
   canvas: isCanvasPrefs,
   diagramDarkColors: (v): v is DiagramDarkColors => typeof v === 'string' && (DIAGRAM_DARK_COLORS as readonly string[]).includes(v),
+  embedRestSeconds: (v): v is EmbedRestSeconds => typeof v === 'number' && (EMBED_REST_SECONDS as readonly number[]).includes(v),
+  newBoardFolder: (v): v is NewBoardFolder => typeof v === 'string' && (NEW_BOARD_FOLDERS as readonly string[]).includes(v),
   // YAZ-3038 (Draw's 🔒 YAZ-1775 D5): an absolute path the user picked, or null for `<userData>/library`. Never
   // `''` — an empty string would resolve to the process cwd, which is not a place for a user's library.
   libraryFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),

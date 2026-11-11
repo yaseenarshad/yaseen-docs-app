@@ -2190,6 +2190,16 @@ export interface SettingsState {
    */
   diagramDarkColors: DiagramDarkColors
   /**
+   * Board embeds in notes (YAZ-4820 D9): after this many seconds with no use, a Live window RESTS — the wheel scrolls
+   * the page and one click wakes it. 0 = never. One of `EMBED_REST_SECONDS`. Its row is Settings › Drawings and diagrams.
+   */
+  embedRestSeconds: EmbedRestSeconds
+  /**
+   * Where "/drawing" and "/diagram" put a new board made from a note (YAZ-4820 item 3): `note` = the note's own folder,
+   * `assets` = the vault's `assets/drawings/`. The file is named after the note either way.
+   */
+  newBoardFolder: NewBoardFolder
+  /**
    * The canvas panel's library folder (YAZ-3038; Draw's 🔒 YAZ-1775 D5): ONE folder every vault shares, for
    * saved components and media favorites. null = the default, `<userData>/library`, which only main
    * can resolve (`drawing.libraryFolder()`); never `''`, which would resolve to the process cwd.
@@ -2352,6 +2362,12 @@ export const folderWindowPinned = (settings: Pick<SettingsState, 'folderPages' |
 
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
+/** YAZ-4820 D9: the resting times a board embed offers; 0 = never. */
+export type EmbedRestSeconds = 10 | 30 | 60 | 300 | 0
+export const EMBED_REST_SECONDS: readonly EmbedRestSeconds[] = [10, 30, 60, 300, 0]
+/** YAZ-4820 item 3: where a board made from a note goes. */
+export type NewBoardFolder = 'note' | 'assets'
+export const NEW_BOARD_FOLDERS: readonly NewBoardFolder[] = ['note', 'assets']
 
 /** How long a tab stays unseen before it sleeps (YAZ-3737 D10): 30 min is the default. */
 export type TabSleepAfter = '15m' | '30m' | '1h' | '2h' | 'never'
@@ -2744,6 +2760,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarIconRules: [],
   canvas: DEFAULT_CANVAS_PREFS,
   diagramDarkColors: 'adapt',
+  embedRestSeconds: 30,
+  newBoardFolder: 'note',
   libraryFolder: null,
   canvasPanel: DEFAULT_CANVAS_PANEL,
   mediaFilters: DEFAULT_MEDIA_FILTERS,
