@@ -92,6 +92,10 @@ export interface ViewDef {
   cardTitles?: 'clip' | 'wrap'
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. Absent = the Settings › Folder pages default. */
   hideWeekends?: boolean
+  /** A calendar's line between weeks (YAZ-4878): whole px, 1–12. Absent = 1. */
+  weekLine?: number
+  /** A calendar's line between days (YAZ-4878): whole px, 1–12. Absent = 1. */
+  dayLine?: number
   /** A calendar's "Cross out when" (YAZ-4864): the Filter menu's conditions; a card whose note matches has its name struck through. Absent = none. */
   crossOut?: FilterNode
   /**

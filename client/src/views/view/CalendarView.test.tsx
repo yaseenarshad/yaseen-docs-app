@@ -1018,3 +1018,45 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(cardOf(el, 'Away').querySelector('.view-cal__weekend')?.textContent).toBe('Sat')
   })
 })
+
+describe('the grid lines (YAZ-4878)', () => {
+  const grid = (el: ParentNode) => q<HTMLElement>(el, '.view-cal__grid')
+  const seg = (el: ParentNode, label: string) => q<HTMLElement>(el, `.view-popover--properties [role="group"][aria-label="${label}"]`)
+  const pick = (el: ParentNode, label: string, text: string) => {
+    act(() => [...seg(el, label).querySelectorAll('button')].find((b) => b.textContent === text)!.click())
+    draw()
+  }
+  const openView = (el: ParentNode) => {
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+  }
+
+  it('1 px each, the default, sets nothing; a view`s own widths reach the grid, thicker and darker', () => {
+    expect(grid(mount(CALENDAR).el).style.getPropertyValue('--cal-week-line')).toBe('')
+    act(() => root?.unmount())
+    container?.remove()
+    const g = grid(mount(`${CALENDAR}    weekLine: 3\n    dayLine: 2\n`).el)
+    expect(g.style.getPropertyValue('--cal-week-line')).toBe('3px')
+    expect(g.style.getPropertyValue('--cal-day-line')).toBe('2px')
+    expect(g.style.getPropertyValue('--cal-week-line-color')).not.toBe('')
+  })
+
+  it('a stored width out of 1–12 reads as 1 px', () => {
+    expect(grid(mount(`${CALENDAR}    weekLine: 40\n    dayLine: 0\n`).el).style.getPropertyValue('--cal-week-line')).toBe('')
+  })
+
+  it('the View tab: two rows; 3 px writes weekLine: 3; 1 px removes it; Custom opens a field up to 12 px', () => {
+    const { el, yaml } = mount(CALENDAR)
+    openView(el)
+    expect(seg(el, 'Lines between weeks')).toBeTruthy()
+    expect(seg(el, 'Lines between days')).toBeTruthy()
+    pick(el, 'Lines between weeks', '3 px')
+    expect(yaml()).toContain('weekLine: 3')
+    pick(el, 'Lines between weeks', '1 px')
+    expect(yaml()).not.toContain('weekLine')
+    pick(el, 'Lines between days', 'Custom')
+    expect(yaml()).toContain('dayLine: 5')
+    expect(el.querySelector('.view-popover--properties [aria-label="Lines between days in pixels"]')).not.toBeNull()
+  })
+})
+

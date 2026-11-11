@@ -2,7 +2,7 @@ import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type Ke
 import { holdColResize } from '../../lib/colResize'
 import { openByKey, openTarget } from '../../lib/openGesture'
 import {
-  type BarPlace, type DayKey, type Span, type SpanPreview, bucketByDay, addDays, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
+  type BarPlace, type DayKey, type Span, type SpanPreview, bucketByDay, addDays, calLine, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
   todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
 } from '../calendar'
 import type { IndexRecord } from '@shared/types'
@@ -125,6 +125,23 @@ const stretched = (span: { start: DayKey; end: DayKey }, edge: 'start' | 'end', 
  * above the one-day cards (`layoutWeek`); each week row is a grid whose days span all its rows (subgrid), so a lane is
  * as tall as its tallest bar. A card's edges stretch it, a day per step, with one write on release.
  */
+/**
+ * The grid's lines (YAZ-4878): the view's own widths as custom properties that views.css reads. A line wider than 1 px
+ * is also a little darker (`--cal-*-line-color`), so the step shows in light and dark mode.
+ */
+function gridLines(view: ViewDef | undefined): CSSProperties | undefined {
+  const week = calLine(view?.weekLine)
+  const day = calLine(view?.dayLine)
+  if (week === 1 && day === 1) return undefined
+  const strong = 'color-mix(in srgb, var(--border) 55%, var(--fg-muted))'
+  return {
+    '--cal-week-line': `${week}px`,
+    '--cal-day-line': `${day}px`,
+    ...(week > 1 ? { '--cal-week-line-color': strong } : {}),
+    ...(day > 1 ? { '--cal-day-line-color': strong } : {}),
+  } as CSSProperties
+}
+
 export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, noteDoors, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
@@ -524,7 +541,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
           ))}
         </div>
       </div>
-      <div className={`view-cal__grid${isWeek ? ' view-cal__grid--week' : ''}${hideWeekends ? ' view-cal__grid--weekdays' : ''}`} role="grid" aria-label={title}>
+      <div className={`view-cal__grid${isWeek ? ' view-cal__grid--week' : ''}${hideWeekends ? ' view-cal__grid--weekdays' : ''}`} role="grid" aria-label={title} style={gridLines(view)}>
         <div className="view-cal__week" role="row">
           {/* Hide weekends drops Sat and Sun whichever day starts the week (YAZ-4595 S33, YAZ-4585). */}
           {(hideWeekends ? WORKDAYS : sundayFirst ? SUNDAY_FIRST : WEEKDAYS).map((d) => (

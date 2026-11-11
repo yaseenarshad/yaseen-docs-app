@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, shownGroupLevels } from '../viewSchema'
 import { TextField } from './TextField'
 import { cardWidth } from './cardWidth'
-import { hideWeekendsDefault, hidesWeekends } from '../calendar'
+import { MAX_CAL_LINE, calLine, hideWeekendsDefault, hidesWeekends } from '../calendar'
 import { markerStyleOf } from './ListView'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
 import { GroupGuideSettings, HeaderRowSettings, TableLookSettings } from './TableLookSettings'
@@ -196,6 +196,9 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             />
             <FromSettings own={own} viewKey="hideWeekends" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
+          {/* The grid's lines (YAZ-4878): two widths, each 1–4 px or a custom whole number up to 12. */}
+          <CalendarLineRow label="Lines between weeks" viewKey="weekLine" view={view} viewIndex={viewIndex} onUpdate={onUpdate} />
+          <CalendarLineRow label="Lines between days" viewKey="dayLine" view={view} viewIndex={viewIndex} onUpdate={onUpdate} />
           {/* Cross out when (YAZ-4864): a card whose note matches these rows has its name struck through. */}
           {crossOut !== undefined && (
             <div className="view-settings__cross-out" role="group" aria-label="Cross out when">
@@ -277,6 +280,51 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
         </select>
       </label>
       <p className="view-settings__foot">Defaults come from Settings › Folder pages. A ↺ marks a value changed for this view.</p>
+    </div>
+  )
+}
+
+const LINE_PRESETS = [1, 2, 3, 4] as const
+
+/** One calendar line row (YAZ-4878): 1 / 2 / 3 / 4 px, or Custom with a number field. 1 px writes no key. */
+function CalendarLineRow({ label, viewKey, view, viewIndex, onUpdate }: { label: string; viewKey: 'weekLine' | 'dayLine'; view: ViewDef; viewIndex: number; onUpdate: Mutate }) {
+  const width = calLine(view[viewKey])
+  const preset = (LINE_PRESETS as readonly number[]).includes(width)
+  const write = (next: number) =>
+    onUpdate((d) => {
+      const active = d.views[viewIndex]
+      if (next === 1) delete active[viewKey]
+      else active[viewKey] = next
+    })
+  return (
+    <div className="view-settings-row">
+      <RowLabel icon="lineWidth">{label}</RowLabel>
+      <ChoiceSeg
+        label={label}
+        value={preset ? String(width) : 'custom'}
+        options={[...LINE_PRESETS.map((n) => [String(n), `${n} px`] as const), ['custom', 'Custom'] as const]}
+        // Custom starts at 5 px, the first width the presets do not have.
+        onChange={(next) => write(next === 'custom' ? 5 : Number(next))}
+      />
+      {!preset && (
+        <span className="view-width-setting">
+          <TextField
+            className="view-input"
+            aria-label={`${label} in pixels`}
+            type="number"
+            inputMode="decimal"
+            min={1}
+            step={1}
+            value={String(width)}
+            normalize={(draft) => {
+              const n = Math.round(Number(draft))
+              return Number.isFinite(n) && n >= 1 && n <= MAX_CAL_LINE ? String(n) : null
+            }}
+            onCommit={(next) => write(Number(next))}
+          />
+          <span>px</span>
+        </span>
+      )}
     </div>
   )
 }

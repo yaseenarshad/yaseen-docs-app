@@ -2119,7 +2119,8 @@
 }
 
 .view-cal__week + .view-cal__week {
-  border-top: 1px solid var(--border);
+  /* YAZ-4878: the view's own "Lines between weeks" (`--cal-week-line`, set on the grid). */
+  border-top: var(--cal-week-line, 1px) solid var(--cal-week-line-color, var(--border));
 }
 
 .view-cal__weekday {
@@ -2160,7 +2161,8 @@
 
 .view-cal__day + .view-cal__day,
 .view-cal__weekday + .view-cal__weekday {
-  border-left: 1px solid var(--border);
+  /* YAZ-4878: the view's own "Lines between days" (`--cal-day-line`). */
+  border-left: var(--cal-day-line, 1px) solid var(--cal-day-line-color, var(--border));
 }
 
 /* Week (YAZ-4558 D22): 7 tall days, each with every card. */

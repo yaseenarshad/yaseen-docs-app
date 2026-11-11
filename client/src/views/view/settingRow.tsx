@@ -17,6 +17,8 @@ const ICONS = {
   // YAZ-4798: a header held over rows; a line down from a header; a line lit to the row.
   stickyGroups: <><rect x="2.5" y="2.5" width="11" height="3.5" rx="1" /><path d="M4.5 9h9M4.5 12.5h9" /></>,
   groupLines: <path d="M2.5 3h6M4 4.5v9M6.5 8h7M6.5 12h7" />,
+  // YAZ-4878: a thin and a thick line, the calendar grid's line widths.
+  lineWidth: <><path d="M2.5 4.5h11" /><path d="M2.5 10.5h11" strokeWidth="3" /></>,
   groupLineStyle: <path d="M2.5 3h6M4 4.5v4.5a3 3 0 0 0 3 3h6.5M8 8h5.5" />,
   columnWidth: <path d="M3 8h10M5 6 3 8l2 2M11 6l2 2-2 2M1.5 3v10M14.5 3v10" />,
   opensIn: <path d="M2.5 3.5h11v10h-11zM2.5 7h11M6.2 7v6.5M9.8 7v6.5" />,

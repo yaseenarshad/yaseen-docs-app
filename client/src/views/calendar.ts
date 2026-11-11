@@ -287,3 +287,8 @@ export function calendarEndKey(view: ViewDef, dateKey: string | null, decls: Fol
   const key = writableKey(view.endDateProperty, decls)
   return key === dateKey ? null : key
 }
+
+/** The widest a calendar grid line may be (YAZ-4878). */
+export const MAX_CAL_LINE = 12
+/** A calendar grid line's width (YAZ-4878): a stored whole number 1–12, else 1 (today's line). */
+export const calLine = (value: unknown): number => (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_CAL_LINE ? value : 1)
