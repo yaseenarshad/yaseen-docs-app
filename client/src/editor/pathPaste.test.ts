@@ -369,6 +369,29 @@ describe('the cases the checker named (YAZ-3632) and the fixed bugs', () => {
     expect(document.querySelector('.path-paste-chip')).toBeNull()
   })
 
+  it('YAZ-4904 the chip sits under the end of the drawn pill, not at the window`s top left: the link`s `]]` is display: none', async () => {
+    const { view } = await mount()
+    atEnd(view)
+    // The browser's geometry: the drawn pieces of a link (`.wikilink`) have a box; its hidden syntax has none, as
+    // `display: none` gives none. A range's rects are the boxes of the drawn pieces it holds.
+    const pill = new DOMRect(100, 200, 60, 20)
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this.classList.contains('wikilink') ? pill : new DOMRect()
+    })
+    vi.spyOn(Range.prototype, 'getClientRects').mockImplementation(function (this: Range) {
+      return [...view.dom.querySelectorAll('.wikilink')].filter((el) => this.intersectsNode(el)).map((el) => el.getBoundingClientRect()) as unknown as DOMRectList
+    })
+    try {
+      paste(view, '/v/research')
+      expect(view.dom.querySelector('.wikilink__syntax')!.textContent).toBe('[[')
+      const chip = document.querySelector<HTMLElement>('.path-paste-chip')!
+      expect(chip.style.left).toBe(`${pill.right}px`)
+      expect(chip.style.top).toBe(`${pill.bottom + 4}px`)
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   it('U4 a URL with no selection, and U6 a URL over words in code, are a normal paste', async () => {
     const { crepe, view } = await mount('Read the guide.\n\n```\ncode words\n```\n')
     select(view, 'guide', true)

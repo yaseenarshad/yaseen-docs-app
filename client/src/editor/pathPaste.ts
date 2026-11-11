@@ -267,6 +267,36 @@ export function pastePathLinks(view: EditorView, ctx: Ctx, options: PathPasteOpt
   return true
 }
 
+/**
+ * Where the pasted pill ends on screen (YAZ-4904): the last drawn piece of the link between `from` and `to`. The
+ * link's syntax (`[[`, `]]`, a hidden folder or ending) is `display: none`, so `coordsAtPos(to)` measured a hidden
+ * node, got a zero rect, and put the chip at the window's top left corner. A DOM range over the link reads the boxes
+ * of its drawn pieces only: the text, a title widget. `coordsAtPos` stays the fallback when nothing is drawn.
+ */
+function pillEnd(view: EditorView, from: number, to: number): { left: number; bottom: number } {
+  const start = view.domAtPos(from, 1)
+  const end = view.domAtPos(to, 1)
+  const range = document.createRange()
+  range.setStart(start.node, start.offset)
+  range.setEnd(end.node, end.offset)
+  const rects = Array.from(range.getClientRects()).filter((rect) => rect.height > 0)
+  const last = rects[rects.length - 1]
+  if (last === undefined) {
+    const at = view.coordsAtPos(to)
+    return { left: at.left, bottom: at.bottom }
+  }
+  // A piece's box comes before its text in the list, and the text sits inside the box's padding: the chip goes
+  // after the furthest right box on the pill's last line.
+  let left = last.right
+  let bottom = last.bottom
+  for (const rect of rects) {
+    if (rect.bottom <= last.top || rect.top >= last.bottom) continue
+    left = Math.max(left, rect.right)
+    bottom = Math.max(bottom, rect.bottom)
+  }
+  return { left, bottom }
+}
+
 /** The one open chip's close, or null. A new chip or a closing editor closes it (`closePathChip`). */
 let openChip: (() => void) | null = null
 
@@ -318,7 +348,7 @@ function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string
   })
   view.dom.parentElement?.appendChild(chip)
   // Kept inside the window, as the link menu is (`linkMenu.ts` `openMenuAt`).
-  const at = view.coordsAtPos(to)
+  const at = pillEnd(view, from, to)
   chip.style.left = `${Math.max(0, Math.min(at.left, window.innerWidth - chip.offsetWidth))}px`
   chip.style.top = `${Math.max(0, Math.min(at.bottom + 4, window.innerHeight - chip.offsetHeight))}px`
   openChip = close
