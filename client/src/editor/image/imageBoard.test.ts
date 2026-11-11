@@ -37,6 +37,7 @@ vi.mock('../embed/types', async (original) => ({
             Object.assign(fake.host, next)
           },
           setSelected: (on) => fake.calls.push(['setSelected', on]),
+          handleKey: () => false,
           setFolded: (on) => fake.calls.push(['setFolded', on]),
           setFoldable: (on) => fake.calls.push(['setFoldable', on]),
           menuRows: () => [{ label: 'Lock view', run: () => {} }],

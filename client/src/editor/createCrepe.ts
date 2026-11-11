@@ -264,7 +264,7 @@ import { createBoardEmbed } from './drawing/boardEmbed'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
 import { createSlashMenu } from './slashMenu'
 import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
-import { createImageView, imageParseDefaults } from './image/imageView'
+import { createImageView, imageBoardKeys, imageParseDefaults } from './image/imageView'
 import type { FindChannel } from './find/findChannel'
 import { createFindInPage } from './find/findInPage'
 import type { OutsideChangesChannel } from './external/outsideChangesChannel'
@@ -791,7 +791,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     ctx.update(listItemKeymap.key, (prev) => ({ ...prev, LiftFirstListItem: { ...prev.LiftFirstListItem, shortcuts: 'Backspace' } }))
     ctx.update(headingKeymap.key, (prev) => ({ ...prev, DowngradeHeading: { ...prev.DowngradeHeading, shortcuts: [] } }))
   })
-  if (opts.image !== undefined) crepe.editor.use(createImageView(opts.image))
+  if (opts.image !== undefined) crepe.editor.use(createImageView(opts.image)).use(imageBoardKeys)
   // The line (YAZ-3164): its look and its length handle, on every editor — the line's style is in the schema.
   crepe.editor.use(lineView)
   crepe.editor.use(outlinePaste)

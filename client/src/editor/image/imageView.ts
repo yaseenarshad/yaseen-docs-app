@@ -69,9 +69,9 @@
  */
 import { imageSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { NodeSelection } from '@milkdown/kit/prose/state'
+import { NodeSelection, Plugin } from '@milkdown/kit/prose/state'
 import type { Decoration, EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
-import { $view } from '@milkdown/kit/utils'
+import { $prose, $view } from '@milkdown/kit/utils'
 import { optionsSuffix, parseEmbedOptions, type EmbedOptions } from '@shared/embedOptions'
 import { fileKind } from '@shared/fileKind'
 import { holdFrames } from '../../lib/colResize'
@@ -121,7 +121,7 @@ const menuRowOf = (row: WindowMenuRow): MenuRow => ({
   label: row.label,
   run: row.run,
   disabled: row.disabled,
-  hint: (row as WindowMenuRow & { checked?: boolean }).checked === true ? '✓' : undefined,
+  hint: row.checked === true ? '✓' : undefined,
   children: row.children === undefined ? undefined : [row.children.map(menuRowOf)],
 })
 
@@ -148,6 +148,7 @@ class ImageNodeView implements NodeView {
     decorations: readonly Decoration[] = [],
   ) {
     this.dom = document.createElement('span')
+    boardWindows.set(this.dom, () => this.board)
     this.dom.className = IMAGE_VIEW_CLASS
     this.dom.setAttribute('contenteditable', 'false')
     this.fold = foldOf(decorations)
@@ -489,6 +490,27 @@ class ImageNodeView implements NodeView {
 }
 
 /** The node view for `image`, registered by createCrepe when the host supplies `opts.image`. */
+/** Each board image's window, by its node view's DOM: the key plugin below reaches the selected one (D10). */
+const boardWindows = new WeakMap<Node, () => BoardWindowHandle | null>()
+
+/**
+ * ⌘+ ⌘− ⌘0 and Shift+1 on a selected board image (an embed from another vault, D1): the editor keeps the focus, so
+ * the key comes here and goes to that image's window, as `boardEmbed.ts` does for `![[…]]`.
+ */
+export const imageBoardKeys = $prose(
+  () =>
+    new Plugin({
+      props: {
+        handleKeyDown: (view, event) => {
+          const sel = view.state.selection
+          if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'image') return false
+          const dom = view.nodeDOM(sel.from)
+          return dom !== null && boardWindows.get(dom)?.()?.handleKey(event) === true
+        },
+      },
+    }),
+)
+
 export function createImageView(opts: ImageOptions) {
   // Derived once per mount: the note does not move while its editor is open (a rename remounts).
   const fromDir = noteDirRel(opts.root, opts.notePath)

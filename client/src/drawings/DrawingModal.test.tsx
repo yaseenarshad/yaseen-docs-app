@@ -1,6 +1,6 @@
 /**
  * The drawing modal (YAZ-879): open → edit → the modal AUTOSAVES the sidecar (YAZ-3528) → close
- * pokes the feed.
+ * closes; a note's board windows refresh from the file watcher (YAZ-4820 D5).
  *
  * The ENGINE is mocked and nothing else is: `ExcalidrawSurface` — the ONE seam that owns the
  * canvas — stands in as a component that hands its props back, so every rule pinned here is the
@@ -19,7 +19,6 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { api, BridgeRequestError } from '../api'
 import { placeOverTab } from '../keys/keySheetRequest'
-import { createDrawingFeed } from './drawingFeed'
 import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
@@ -104,8 +103,6 @@ afterEach(() => {
 interface Mounted {
   overlay: HTMLElement
   onClose: ReturnType<typeof vi.fn>
-  feed: ReturnType<typeof createDrawingFeed>
-  poked: string[]
 }
 
 /** Mounts the modal over a resolved (or rejected) read and flushes the load. */
@@ -113,20 +110,17 @@ async function open(read: 'ok' | 'broken' = 'ok', mtime = 100, linkProps: Partia
   if (read === 'ok') readAsset.mockResolvedValue(asset(mtime))
   else readAsset.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no such asset'))
   const onClose = vi.fn()
-  const feed = createDrawingFeed()
-  const poked: string[] = []
-  feed.subscribe((t) => poked.push(t))
   container = document.createElement('div')
   document.body.appendChild(container)
   outside = document.createElement('button')
   document.body.appendChild(outside)
   root = createRoot(container)
   await act(async () => {
-    root?.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" feed={feed} onClose={onClose} {...linkProps} />)
+    root?.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" onClose={onClose} {...linkProps} />)
   })
   const overlay = container.querySelector<HTMLElement>('.drawing-modal-overlay')
   if (overlay === null) throw new Error('missing .drawing-modal-overlay')
-  return { overlay, onClose, feed, poked }
+  return { overlay, onClose }
 }
 
 /** The save label in the title bar (D2: it stands where the Save button was); null when there is none. */
@@ -189,8 +183,8 @@ describe('opening', () => {
     expect(placeOverTab()).toBeNull()
   })
 
-  it('S1: a drawing opened and not touched is CLEAN — the label says Saved (D2: no Save button), nothing is written, ✕ closes, the previews are not poked', async () => {
-    const { onClose, poked } = await open()
+  it('S1: a drawing opened and not touched is CLEAN — the label says Saved (D2: no Save button), nothing is written, ✕ closes', async () => {
+    const { onClose } = await open()
     emit(7) // the surface's mount snapshot — the baseline, not an edit
     expect(label()).toBe('Saved')
     expect(byText('Save')).toBeUndefined()
@@ -198,7 +192,6 @@ describe('opening', () => {
     expect(drawingSave).not.toHaveBeenCalled()
     await click(closeBtn())
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(poked).toEqual([])
   })
 })
 
@@ -230,7 +223,7 @@ describe('read only (YAZ-3076 S28)', () => {
 
 describe('autosave (YAZ-3528 D1)', () => {
   it('S2/S3: saves ONCE, 500 ms after the LAST change, to the RESOLVED path with the loaded mtime', async () => {
-    const { onClose, poked } = await open('ok', 4242)
+    const { onClose } = await open('ok', 4242)
     emit(1)
     emit(2)
     expect(label()).toBe('Unsaved')
@@ -244,7 +237,6 @@ describe('autosave (YAZ-3528 D1)', () => {
     expect(label()).toBe('Saved')
     // The modal stays open, and the previews behind the scrim wait for the close.
     expect(onClose).not.toHaveBeenCalled()
-    expect(poked).toEqual([])
   })
 
   it('the next save is guarded by the mtime the last one returned', async () => {
@@ -289,7 +281,7 @@ describe('autosave (YAZ-3528 D1)', () => {
   })
 
   it('S10 (YAZ-3044 A4): a CONFLICT never wins in silence — the bar shows and the autosave stops writing', async () => {
-    const { onClose, poked } = await open('ok', 100)
+    const { onClose } = await open('ok', 100)
     emit(1)
     emit(2)
     drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
@@ -301,7 +293,6 @@ describe('autosave (YAZ-3528 D1)', () => {
     emit(3)
     await idle()
     expect(drawingSave).toHaveBeenCalledTimes(1)
-    expect(poked).toEqual([])
     expect(onClose).not.toHaveBeenCalled()
     // The window's flush says not clean (YAZ-3737 D2): a reload would drop this canvas.
     expect(await act(async () => quitFlush?.())).toBe(false)
@@ -457,19 +448,18 @@ describe('autosave (YAZ-3528 D1)', () => {
 })
 
 describe('leaving (YAZ-3528 D3)', () => {
-  it('S4: ✕ with a change not yet saved saves it NOW, pokes the previews once, and closes — no question', async () => {
-    const { onClose, poked } = await open('ok', 100)
+  it('S4: ✕ with a change not yet saved saves it NOW and closes — no question', async () => {
+    const { onClose } = await open('ok', 100)
     emit(1)
     emit(2)
     await click(closeBtn())
     expect(drawingSave).toHaveBeenCalledTimes(1)
     expect(strip()).toBeNull()
-    expect(poked).toEqual([TARGET])
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('a second ✕ while the close is still saving is the SAME close — one write, one poke, one onClose', async () => {
-    const { onClose, poked } = await open()
+  it('a second ✕ while the close is still saving is the SAME close — one write, one onClose', async () => {
+    const { onClose } = await open()
     emit(1)
     emit(2)
     let land: (() => void) | null = null
@@ -479,18 +469,16 @@ describe('leaving (YAZ-3528 D3)', () => {
     expect(onClose).not.toHaveBeenCalled()
     await act(async () => land?.())
     expect(drawingSave).toHaveBeenCalledTimes(1)
-    expect(poked).toEqual([TARGET])
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('S5: Esc after the autosave already saved closes at once — one write, one poke', async () => {
-    const { overlay, onClose, poked } = await open()
+  it('S5: Esc after the autosave already saved closes at once — one write', async () => {
+    const { overlay, onClose } = await open()
     emit(1)
     emit(2)
     await idle()
     await escOn(overlay)
     expect(drawingSave).toHaveBeenCalledTimes(1)
-    expect(poked).toEqual([TARGET])
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -807,7 +795,7 @@ describe('the outside pictures folder in the popup', () => {
       container = document.createElement('div')
       document.body.appendChild(container)
       root = createRoot(container)
-      root.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" feed={createDrawingFeed()} onClose={vi.fn()} />)
+      root.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" onClose={vi.fn()} />)
     })
     await act(async () => undefined)
     expect(container?.querySelector('.confirm__text')?.textContent).toBe(`${ALLOW_FOLDER_TITLE}${allowFolderBody('~/Pictures/Boards')}`)
@@ -823,7 +811,7 @@ describe('the outside pictures folder in the popup', () => {
       container = document.createElement('div')
       document.body.appendChild(container)
       root = createRoot(container)
-      root.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" feed={createDrawingFeed()} onClose={vi.fn()} />)
+      root.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" onClose={vi.fn()} />)
     })
     expect(list).not.toHaveBeenCalled()
     expect(container?.querySelector('.confirm__text')).toBeNull()

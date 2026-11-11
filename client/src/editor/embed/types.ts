@@ -64,6 +64,8 @@ export interface BoardWindowHandle {
   update(host: Partial<Omit<BoardWindowHost, 'columnWidth'>>): void
   /** The host's selection covers the whole embed: handles show, keys go to the window (D10). */
   setSelected(on: boolean): void
+  /** A key while the embed is selected (the editor keeps the focus): ⌘+ ⌘− ⌘0, Shift+1. True when the window used it (D10). */
+  handleKey(event: KeyboardEvent): boolean
   /** Folded on a bullet (D13): the window unloads its picture and shows the pill line. */
   setFolded(on: boolean): void
   /** Show the fold arrow (the item is foldable). */

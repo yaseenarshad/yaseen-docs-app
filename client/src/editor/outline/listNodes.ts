@@ -2,7 +2,7 @@
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { boardEmbedsIn } from '../drawing/boardEmbedScan'
-import { boardEmbedName, boardEmbedTarget, boardImageName } from '../drawing/boardEmbedText'
+import { boardEmbedTarget, boardImageName } from '../drawing/boardEmbedText'
 import { parseAlt } from '../image/imageSrc'
 
 export const LIST_NODE_NAMES: ReadonlySet<string> = new Set(['bullet_list', 'ordered_list'])
@@ -18,8 +18,9 @@ export const UNTITLED_ITEM = 'Untitled item'
  * An image counts as its alt text (width stripped, src as the fallback), the same stand-in the
  * plain-text copy uses (clipboardPlainText.ts), so an image bullet has an identity of its own
  * instead of every one of them being "Untitled item" (YAZ-1709).
- * A board embed counts as its NAME (YAZ-4830): `![[x.drawio|640x360 view=…]]` is "x", and so is a board image node,
- * so a view write (its options change) never changes the item's fold key.
+ * A board embed counts WITHOUT its options (YAZ-4830): `![[x.drawio|640x360 view=…]]` is `![[x.drawio]]`, so a view
+ * write never changes the item's fold key, and an embed saved folded before YAZ-4820 keeps its key. A board image node
+ * counts as its name.
  */
 export const itemLabelText = (item: ProseNode): string => {
   const first = item.firstChild
@@ -29,7 +30,7 @@ export const itemLabelText = (item: ProseNode): string => {
       ? boardImageName(leaf.attrs.src as string, leaf.attrs.alt as string) ?? (parseAlt(leaf.attrs.alt as string).text || (leaf.attrs.src as string))
       : '',
   )
-  const shown = text.includes('![[') ? text.replace(WIKILINK_RE, (raw, bang: string, inner: string) => (bang === '!' && boardEmbedTarget(inner) !== null ? boardEmbedName(inner) : raw)) : text
+  const shown = text.includes('![[') ? text.replace(WIKILINK_RE, (raw, bang: string, inner: string) => (bang === '!' && boardEmbedTarget(inner) !== null ? `![[${inner.split('|')[0]}]]` : raw)) : text
   return shown.trim() || UNTITLED_ITEM
 }
 

@@ -332,7 +332,7 @@ describe('the window', () => {
     expect(win.dom.style.width).toBe('400px')
   })
 
-  it('keys while selected: ⌘+ ⌘− ⌘0 Shift+1 act and stop; not selected, ⌘+ stays the note`s; Escape deselects (item 20)', async () => {
+  it('keys while selected: ⌘+ ⌘− ⌘0 Shift+1 act and stop; not selected, ⌘+ stays the note`s; the host owns Escape (item 20)', async () => {
     const { win, onOptions } = mount({ options: opts({ view: { x: 0, y: 0, zoom: 1 } }) })
     await settle()
     const key = (init: KeyboardEventInit) => {
@@ -352,9 +352,10 @@ describe('the window', () => {
     // A fit writes no view: the text says "fit".
     expect(onOptions.mock.calls[2][0].view).toBeNull()
     expect(key({ key: 'a' }).defaultPrevented).toBe(false)
-    const esc = key({ key: 'Escape' })
-    expect(esc.defaultPrevented).toBe(true)
-    expect(win.dom.classList.contains('is-selected')).toBe(false)
+    // In a note the editor keeps the focus and hands the keys over (`handleKey`); Escape is the host's (it deselects).
+    expect(win.handleKey(new KeyboardEvent('keydown', { key: '-', metaKey: true }))).toBe(true)
+    expect(win.handleKey(new KeyboardEvent('keydown', { key: 'x' }))).toBe(false)
+    expect(key({ key: 'Escape' }).defaultPrevented).toBe(false)
   })
 
   it('double-click opens in this tab, ⌘ double-click a background tab; the name pill and the zoom % do the same (items 6, 7)', async () => {
@@ -461,6 +462,7 @@ describe('the window', () => {
     const { win } = mount({ options: opts({ view: { x: 0, y: 0, zoom: 1 } }) })
     await settle()
     win.setSelected(true)
+    win.dom.focus() // what had the focus when the overlay opened gets it back
     win.menuRows().find((r) => r.label === 'View full size')!.run()
     await settle()
     const overlay = document.querySelector('.board-window-overlay')!

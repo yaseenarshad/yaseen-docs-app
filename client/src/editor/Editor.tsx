@@ -9,7 +9,6 @@ import { CommentsSection } from '../comments/CommentsSection'
 import { createBoardForNote } from '../drawings/createDrawing'
 import { DrawingModal } from '../drawings/DrawingModal'
 import type { DrawingAppSettings } from '../drawings/ExcalidrawSurface'
-import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
@@ -739,12 +738,7 @@ function CrepeHost({
    */
   const [diskLandings, diskLanded] = useReducer((count: number) => count + 1, 0)
   /**
-   * The drawing modal's feed (YAZ-879): the modal pokes it on close after a save (YAZ-3528). Since YAZ-4827 no note
-   * plugin listens: a board embed's window refreshes from the watcher stream itself (D5). Stable identity.
-   */
-  const drawingFeed = useMemo(() => createDrawingFeed(), [])
-  /**
-   * The CMD+F wiring (YAZ-968/969), ONE per host on the drawing feed's terms: the engine binds
+   * The CMD+F wiring (YAZ-968/969), ONE per host, a holder the host makes: the engine binds
    * itself to this channel at view creation and the bar below drives it. Stable identity — a new
    * channel would remount the editor and leave the bar talking to nothing.
    */
@@ -1474,7 +1468,7 @@ function CrepeHost({
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}
       {openDrawing !== null && (
-        <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} feed={drawingFeed} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} newNoteFolderFor={newNoteFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+        <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} newNoteFolderFor={newNoteFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
       )}
       {/* The image lightbox (YAZ-1656) — the same modal-beside-the-editor shape as the drawing
           modal, opened by the node view's double-click with the whole gallery (every image on

@@ -6,8 +6,8 @@
  * 🔒 A MODAL, NEVER A NODE VIEW. The embed stays plain markdown text under decorations (rule 27),
  * so there is no node to host an editor in — and a full drawing canvas inside a text column would
  * fight the caret for every key it owns. This is React beside the editor, the `FolderView`
- * / `PageTitle` precedent: `Editor`'s `CrepeHost` holds `openDrawing`, the preview's click sets it
- * (`drawingPreview.onOpenDrawing`), and this renders over the window.
+ * / `PageTitle` precedent: `Editor`'s `CrepeHost` holds `openDrawing`, the board embed's
+ * "Edit in a popup" row sets it (YAZ-4820 D7), and this renders over the window.
  *
  * 🔒 CHROME ONLY. Everything about the ENGINE — the canvas, what "changed" means, how a scene
  * serializes — lives behind `ExcalidrawSurface`, and nothing in this file imports the package or
@@ -30,8 +30,7 @@
  * one per pointer move. The quit handshake (`window.onFlush`) and an unmount both save what is
  * pending. A read-only drawing gets no autosave at all.
  *
- * LEAVING (YAZ-3528 D3): Esc / click-away / ✕ are one gesture — save what is left, poke the
- * previews once if anything landed, close. Only a save that FAILED, or one a conflict blocks,
+ * LEAVING (YAZ-3528 D3): Esc / click-away / ✕ are one gesture — save what is left, then close. Only a save that FAILED, or one a conflict blocks,
  * raises the inline strip below the title bar — deliberately not a second sheet stacked over this
  * one, which is a modal over a modal for a one-line question. Discard then writes nothing more.
  *
@@ -52,7 +51,6 @@ import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
-import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingAppSettings, DrawingSnapshot } from './ExcalidrawSurface'
 import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
@@ -84,8 +82,6 @@ interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings {
   target: string
   /** The app's resolved appearance, handed straight to the surface. */
   theme: 'light' | 'dark'
-  /** Poked on close when a save landed, so every preview of this target re-reads (YAZ-878's feed). */
-  feed?: MutableDrawingFeed
   /** Close: the host drops the modal (it is unmounted, never hidden). */
   onClose: () => void
   /** `settings.hotkeys` (YAZ-3564 K5): the drawing keys as the user set them. Omitted = the defaults. */
@@ -96,7 +92,7 @@ interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings {
   onNotice?: (message: string, icon?: NoticeKind) => void
 }
 
-export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, canvasPrefs, onCanvasPrefsChange, ...linkProps }: DrawingModalProps) {
+export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAside, onNotice, canvasPrefs, onCanvasPrefsChange, ...linkProps }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   /** The sheet: the link menu, the Edit link box and the `[[` picker go in it, so a click on them is not a click-away. */
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -113,8 +109,6 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   /** The status and the conflict as the close reads them right after its own flush (state lags a render). */
   const statusRef = useRef<SaveStatus>('saved')
   const conflictRef = useRef<number | null>(null)
-  /** The disk moved under the previews (a save landed, or Reload read a newer scene): close pokes them once. */
-  const stale = useRef(false)
   /** A close is saving: a second Esc / ✕ / click-away while it does is the same close, not another. */
   const closing = useRef(false)
   /** The modal has left (closed or discarded): a close still saving must not leave it a second time. */
@@ -212,7 +206,6 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
         if (res.inside === true || res.movedOut === true) persisted.current = new Set(res.persisted)
         else for (const id of res.persisted) persisted.current.add(id)
         if (res.movedOut === true) onNotice?.(PICTURES_MOVED_OUT)
-        stale.current = true
         setError(null)
         return { mtime: res.mtime }
       } catch (err) {
@@ -279,7 +272,6 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       }
     }
     left.current = true
-    if (stale.current) feed?.poke(target)
     onClose()
   }
 
@@ -288,7 +280,6 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     if (left.current) return
     left.current = true
     autosave.current?.dispose()
-    if (stale.current) feed?.poke(target)
     onClose()
   }
 
@@ -316,7 +307,6 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       // The remounted surface's first snapshot is the new baseline.
       autosave.current = null
       snapshot.current = null
-      stale.current = true
       onStatus('saved')
       setLoaded(drawing)
       setGeneration(generationRef.current)

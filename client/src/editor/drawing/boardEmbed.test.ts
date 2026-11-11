@@ -50,6 +50,8 @@ vi.mock('../embed/types', async (original) => ({
             Object.assign(fake.host, next)
           },
           setSelected: (on) => fake.calls.push(['setSelected', on]),
+          // The real window's Shift+1 is its fit (D10); the fake records it as one.
+          handleKey: (e) => (e.key === '!' && e.shiftKey ? (fake.calls.push(['fit', null]), true) : false),
           setFolded: (on) => fake.calls.push(['setFolded', on]),
           setFoldable: (on) => fake.calls.push(['setFoldable', on]),
           menuRows: () => fakes.rows,
@@ -409,6 +411,33 @@ describe('an outside edit during a view write (item 19)', () => {
     expect(mergeExternalMarkdown(crepe, base, theirs)).toBe('merged')
     expect(md(crepe)).toBe('Top line, edited by the AI\n\n![[CloudFront.drawio|640x360 view=120,-40,0.8]]\n\nEnd\n')
     expect(fakes.list).toHaveLength(1)
+  })
+
+  it('the view write is merged with an edit of the SAME line: a pan is not typing (D2 exempts it)', async () => {
+    const base = 'Diagram: ![[CloudFront.drawio|640x360]]\n\nEnd\n'
+    const { crepe } = await mount(base)
+    await windows(1)
+    fakes.list[0]!.host.onOptions!(OPTS)
+    const theirs = 'Diagram (edited): ![[CloudFront.drawio|640x360]]\n\nEnd\n'
+    expect(mergeExternalMarkdown(crepe, base, theirs)).toBe('merged')
+    expect(md(crepe)).toBe('Diagram (edited): ![[CloudFront.drawio|640x360 view=120,-40,0.8]]\n\nEnd\n')
+  })
+
+  it('a view write and an outside resize of the same embed both land: the size is theirs, the view is yours', async () => {
+    const base = 'Diagram: ![[CloudFront.drawio|640x360]]\n'
+    const { crepe } = await mount(base)
+    await windows(1)
+    fakes.list[0]!.host.onOptions!(OPTS)
+    expect(mergeExternalMarkdown(crepe, base, 'Diagram: ![[CloudFront.drawio|500x200]]\n')).toBe('merged')
+    expect(md(crepe)).toBe('Diagram: ![[CloudFront.drawio|500x200 view=120,-40,0.8]]\n')
+  })
+
+  it('typing on the embed line still conflicts with an outside edit of that line', async () => {
+    const base = 'Diagram: ![[CloudFront.drawio|640x360]]\n'
+    const { crepe, view } = await mount(base)
+    await windows(1)
+    view.dispatch(view.state.tr.insertText('My ', 1))
+    expect(mergeExternalMarkdown(crepe, base, 'Diagram (AI): ![[CloudFront.drawio|640x360]]\n')).toBe('conflict')
   })
 })
 

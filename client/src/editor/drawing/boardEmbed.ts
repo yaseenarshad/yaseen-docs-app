@@ -91,7 +91,7 @@ const menuRowOf = (row: WindowMenuRow): MenuRow => ({
   label: row.label,
   run: row.run,
   disabled: row.disabled,
-  hint: (row as WindowMenuRow & { checked?: boolean }).checked === true ? '✓' : undefined,
+  hint: row.checked === true ? '✓' : undefined,
   children: row.children === undefined ? undefined : [row.children.map(menuRowOf)],
 })
 
@@ -363,15 +363,14 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
         handleKeyDown: (view, event) => {
           const id = selectedId(view.state)
           const mount = id === null ? undefined : byId.get(id)
-          if (mount === undefined || event.metaKey || event.ctrlKey || event.altKey) return false
+          if (mount === undefined) return false
+          // The window's keys (D10): ⌘+ ⌘− ⌘0, and Shift+1 (fit, never a typed "!" over the embed). The editor keeps
+          // the focus, so any other key types over the embed as over any selection (item 21).
+          if (mount.handle?.handleKey(event) === true) return true
+          if (event.metaKey || event.ctrlKey || event.altKey) return false
           // Escape first deselects the window (item 20): the caret goes after the embed.
           if (event.key === 'Escape') {
             view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.to)))
-            return true
-          }
-          // Shift+1 fits the board (D10), as in the board's own tab: never a typed "!" over the embed.
-          if (event.key === '!' && event.shiftKey && mount.handle !== null) {
-            mount.handle.fit()
             return true
           }
           return false

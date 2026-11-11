@@ -24,6 +24,8 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Transform } from '@milkdown/kit/prose/transform'
+import { boardEmbedsIn } from '../drawing/boardEmbedScan'
+import { isBoardSrc } from '../drawing/boardEmbedText'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
 import { EXTERNAL_EDIT_META, firstLineOf, OUTSIDE_RANGES_META, replaceTracked, REWRITE_SHARE, withTrailingParagraphOf } from './applyExternalMarkdown'
 import { diffDocs, onlyDerived, type ReplaceRange } from './diffDocs'
@@ -39,11 +41,31 @@ const blockSpan = (doc: ProseNode, { from, to, attrs }: ReplaceRange): { from: n
   return { from: $from.parent.isTextblock ? $from.start() : from, to: $to.parent.isTextblock ? $to.end() : to }
 }
 
+/**
+ * A board window's own write (YAZ-4820 D4, item 19): a range of yours inside an embed's options (`|640x360 view=…`, or
+ * where they go, before `]]`), or an alt change of a board image. A pan is not typing: it never makes the line "yours"
+ * for D2, so the AI may edit the rest of that line. The order check below still refuses a merge where theirs touches
+ * the same options.
+ */
+const isViewWrite = (base: ProseNode, range: ReplaceRange): boolean => {
+  if (range.attrs !== undefined) {
+    const node = base.nodeAt(range.from)
+    return node?.type.name === 'image' && typeof node.attrs.src === 'string' && isBoardSrc(node.attrs.src)
+  }
+  const $from = base.resolve(range.from)
+  if (!$from.parent.isTextblock) return false
+  return boardEmbedsIn($from.parent, $from.before()).some((m) => {
+    const pipe = m.inner.indexOf('|')
+    const start = pipe < 0 ? m.to - 2 : m.from + 3 + pipe
+    return start <= range.from && range.to <= m.to - 2
+  })
+}
+
 /** D2: a range of yours and a range of theirs in ONE block, or touching, is a conflict. */
 const touchSameBlock = (base: ProseNode, mine: readonly ReplaceRange[], theirs: readonly ReplaceRange[]): boolean => {
   const theirSpans = theirs.filter((range) => !onlyDerived(range)).map((range) => blockSpan(base, range))
   return mine.some((range) => {
-    if (onlyDerived(range)) return false
+    if (onlyDerived(range) || isViewWrite(base, range)) return false
     const a = blockSpan(base, range)
     return theirSpans.some((b) => a.from <= b.to && b.from <= a.to)
   })

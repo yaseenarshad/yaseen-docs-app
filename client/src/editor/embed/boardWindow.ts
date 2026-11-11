@@ -703,25 +703,28 @@ class BoardWindow implements BoardWindowHandle {
     this.host.onContextMenu(e)
   }
 
-  private readonly onKey = (e: KeyboardEvent): void => {
-    if (!this.selected) return
+  /**
+   * The window's own keys (D10): ⌘+ ⌘− ⌘0 and Shift+1. In a note the EDITOR keeps the focus (typing over a selected
+   * embed replaces it, item 21), so the host hands each key here while the embed is selected; the full-size overlay's
+   * window, which has the focus, reaches it through `onKey`. True when the key was the window's.
+   */
+  handleKey(e: KeyboardEvent): boolean {
+    if (this.locked || this.status !== 'ready' || this.folded) return false
     const mod = e.metaKey || e.ctrlKey
-    if (e.key === 'Escape') {
-      // Item 20: Escape first deselects; the caret goes back to the note.
-      this.setSelected(false)
-      const editor = this.dom.parentElement?.closest<HTMLElement>('[contenteditable="true"]')
-      if (editor) editor.focus({ preventScroll: true })
-      else this.dom.blur()
-    } else if (this.locked || this.status !== 'ready') {
-      return
-    } else if (mod && (e.key === '=' || e.key === '+')) this.zoomAtCenter(ZOOM_STEP)
+    if (mod && (e.key === '=' || e.key === '+')) this.zoomAtCenter(ZOOM_STEP)
     else if (mod && (e.key === '-' || e.key === '_')) this.zoomAtCenter(1 / ZOOM_STEP)
     else if (mod && e.key === '0') this.zoomAtCenter('one')
     else if (e.shiftKey && !mod && (e.code === 'Digit1' || e.key === '!')) this.fit()
-    else return
+    else return false
     e.preventDefault()
     e.stopPropagation()
-    if (e.key !== 'Escape') this.wake()
+    this.wake()
+    return true
+  }
+
+  private readonly onKey = (e: KeyboardEvent): void => {
+    if (!this.selected || e.key === 'Escape') return
+    this.handleKey(e)
   }
 
   // ── Resize ──
@@ -863,7 +866,6 @@ class BoardWindow implements BoardWindowHandle {
   setSelected(on: boolean): void {
     this.selected = on
     this.dom.classList.toggle('is-selected', on)
-    if (on && document.activeElement !== this.dom) this.dom.focus({ preventScroll: true })
   }
 
   setFolded(on: boolean): void {
@@ -963,6 +965,8 @@ class BoardWindow implements BoardWindowHandle {
     document.body.appendChild(backdrop)
     inner.setNear(true)
     inner.setSelected(true)
+    // The overlay's window has the focus itself (no editor around it): its keys reach `onKey`.
+    inner.dom.focus({ preventScroll: true })
   }
 
   destroy(): void {
