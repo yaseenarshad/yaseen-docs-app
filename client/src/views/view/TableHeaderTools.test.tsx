@@ -139,8 +139,22 @@ describe('auto-fit width on a double-click of the resize edge (YAZ-4590 S20)', (
     expect(def().views[0].columnSize).toEqual({ 'note.priority': 230 + pads })
   })
 
+  it('a header part\'s side margins count, and the fit rounds UP, so the name never shows "…" (YAZ-4871)', () => {
+    const { el, def } = mount(table('    columnTypeIcons: true\n'))
+    layout(el, 2)
+    const icon = q<HTMLElement>(th(el, 2), '.view-table__type-icon')
+    icon.style.marginRight = '5px' // views.css: the icon stands 5px before the name
+    Object.defineProperty(icon, 'scrollWidth', { configurable: true, value: 12 })
+    icon.getBoundingClientRect = () => ({ width: 12.4 }) as DOMRect
+    const style = getComputedStyle(th(el, 2))
+    const pads = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
+    doubleClick(el)
+    // "Priority" is 56px, the icon 12.4px and its 5px margin: 73.4px, up to 74.
+    expect(def().views[0].columnSize).toEqual({ 'note.priority': Math.ceil(56 + 12.4 + 5 + pads) })
+  })
+
   it('the header label counts too, and the width is clamped to 40–600 (YAZ-4819: 40px, was 60px)', () => {
-    let { el, def } = mount(table())
+    let { el, def } = mount(table('    columnTypeIcons: false\n')) // the label alone: no type icon beside it
     layout(el, 2)
     doubleClick(el)
     expect(def().views[0].columnSize).toEqual({ 'note.priority': 56 }) // "Priority" is 56px: over the 40px floor, so it fits the label

@@ -241,16 +241,19 @@ const clipTitle = (v: Value, resolve: Resolver | undefined): string | undefined 
 
 /** A single click selects the cell without entering edit mode. */
 /**
- * A cell's content width in CSS px (YAZ-4590 S20): its side paddings plus each child's natural width. A text node is
- * measured by a Range; an element by its scroll width, which a `max-width: 100%` box keeps past its clip. The resize
- * edge is absolutely placed, so it does not count.
+ * A cell's content width in CSS px (YAZ-4590 S20): its side paddings plus each child's natural width and side margins
+ * (YAZ-4871: the type icon's 5px and the column mark's 4px, or the name shows "…"). A text node is measured by a Range;
+ * an element by its scroll width, which a `max-width: 100%` box keeps past its clip. The resize edge is absolutely
+ * placed, so it does not count.
  */
 function contentWidth(cell: HTMLElement, zoom: number): number {
   const style = getComputedStyle(cell)
   let width = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
   for (const node of cell.childNodes) {
     if (node instanceof HTMLElement) {
-      if (!node.classList.contains('view-table__resize')) width += Math.max(node.scrollWidth, node.getBoundingClientRect().width / zoom)
+      if (node.classList.contains('view-table__resize')) continue
+      const margins = getComputedStyle(node)
+      width += Math.max(node.scrollWidth, node.getBoundingClientRect().width / zoom) + (parseFloat(margins.marginLeft) || 0) + (parseFloat(margins.marginRight) || 0)
     } else if (node.nodeType === Node.TEXT_NODE) {
       const range = document.createRange()
       range.selectNodeContents(node)
@@ -786,7 +789,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const zoom = cssZoom(th)
     const cells = [th, ...wrap.querySelectorAll<HTMLElement>(`tbody td[data-cell$=":${c}"]`)]
     const widest = Math.max(...cells.map((cell) => contentWidth(cell, zoom)))
-    const width = Math.round(Math.min(MAX_FIT_WIDTH, Math.max(minWidthOf(c), widest)))
+    // Up, never down: a width a fraction under the content cuts it to "…" (YAZ-4871).
+    const width = Math.ceil(Math.min(MAX_FIT_WIDTH, Math.max(minWidthOf(c), widest)))
     if (width !== widthOf(key))
       onUpdate((d) => {
         d.views[viewIndex].columnSize = { ...d.views[viewIndex].columnSize, [key]: width }
