@@ -1106,6 +1106,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           noteDoors={cardDoors()}
           hover={viewHover}
           readOnly={readOnly}
+          def={def}
+          view={view}
+          records={shown}
+          settings={folder.settings}
+          resolve={resolve}
           rows={rows}
           dateKey={dateKey}
           onOpenFile={openRow}

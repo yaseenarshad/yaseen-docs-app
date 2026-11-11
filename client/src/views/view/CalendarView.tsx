@@ -1,9 +1,14 @@
-import { type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type DragEvent as ReactDragEvent, Fragment, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { openByKey, openTarget } from '../../lib/openGesture'
 import { type DayKey, bucketByDay, addDays, dayLabel, dayOf, monthStart, monthWeeks, timeFirst, timeOf, todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from '../calendar'
-import { type Row, propertyLabel } from '../engine'
+import type { IndexRecord } from '@shared/types'
+import { type Row, propertyKeys, propertyLabel } from '../engine'
+import { type Resolver, isEmpty } from '../expr'
+import { type FolderSettings, pageColumnKeys } from '../folderSettings'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
+import { CardLine, CardProp, cardLines } from './cardLines'
+import { canonicalKey } from './keys'
 import { type NoteWindowLink, currentItemClass, useNoteWindowItems } from './NoteWindow'
 import { PageContextMenu } from './PageContextMenu'
 import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
@@ -14,6 +19,12 @@ import type { ViewHover } from './viewHover'
 
 export interface CalendarViewProps {
   hover: ViewHover
+  /** The view's set, the view and its records, the page's settings and the resolver: a card draws the view's shown columns as the board does (YAZ-4857). */
+  def: ViewSet
+  view: ViewDef
+  records: readonly IndexRecord[]
+  settings: FolderSettings
+  resolve?: Resolver
   /** The engine's filtered and sorted rows, after search (D4): group by does not apply, days are the groups. */
   rows: readonly Row[]
   /** The bare key the calendar shows by (`calendarDateKey`); null = the folder has no date column. */
@@ -77,7 +88,7 @@ const SCALES = [
  * order; ‹ › step a week. Both scales show the month or the week that holds `anchor`, so the switch
  * keeps the place.
  */
-export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, noteDoors, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, moveError, onNewOnDay, noteDoors, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
@@ -88,6 +99,13 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
   /** The card's right-click menu (YAZ-4547 D24), as the board's. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string; day: DayKey | null } | null>(null)
   const { days, undated } = useMemo(() => bucketByDay(rows, dateKey), [rows, dateKey])
+  // The card's lines (YAZ-4857): the view's shown columns in the board's layout (`cardLines`), less the date column the
+  // card sits on; the name's line holds the time and the weekend mark. Once per view or records change.
+  const lines = useMemo(() => {
+    const keys = propertyKeys(def, view, records, pageColumnKeys(settings)).filter((k) => dateKey === null || canonicalKey(k) !== `note.${dateKey}`)
+    const all = cardLines(keys, view)
+    return all.some((line) => line.some((k) => canonicalKey(k) === 'file.name')) ? all : [['file.name'], ...all]
+  }, [def, view, records, settings, dateKey])
   // The grid with its weekends; `weeks` is what shows.
   const allWeeks = useMemo(() => (scale === 'week' ? [weekDays(anchor, sundayFirst)] : monthWeeks(month.y, month.m, sundayFirst)), [scale, anchor, month.y, month.m, sundayFirst])
   const weeks = useMemo(() => (hideWeekends ? allWeeks.map(withoutWeekends) : allWeeks), [allWeeks, hideWeekends])
@@ -188,6 +206,22 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
     // A weekend note on its Friday or Monday (YAZ-4595 S33, YAZ-4635 P3) says its day. A drop on that day is a drop on its own day: no write.
     const real = from === null ? null : dayOf(row.record.properties[dateKey])
     const weekend = real === null || real === from ? null : weekendOf(real)
+    // A card is small (YAZ-4857 item 3): an empty value is left out, and so is a line with nothing left on it.
+    const shown = lines.flatMap((line) => {
+      const items = line.filter((k) => canonicalKey(k) === 'file.name' || !isEmpty(row.values[k]))
+      return items.length === 0 ? [] : [items]
+    })
+    const item = (key: string) =>
+      canonicalKey(key) === 'file.name' ? (
+        // Clip shows the full title on a hover (D23); a wrapped title is all there.
+        <span key={key} className="view-cal__card-title" title={wrap ? undefined : row.record.title}>
+          {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too. */}
+          {isFolderRow(row.record) && <FolderIcon size={12} className="view-folder-row__icon" />}
+          {locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}
+        </span>
+      ) : (
+        <CardProp key={key} def={def} view={view} row={row} field={key} resolve={resolve} />
+      )
     return (
       <li
         key={path}
@@ -215,23 +249,35 @@ export function CalendarView({ hover, rows, dateKey, readOnly = NO_READ_ONLY, on
           openByKey(e, path, { onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow })
         }}
       >
-        {time !== null && <span className="view-cal__time">{time}</span>}
-        {weekend !== null && (
-          <span className="view-cal__weekend" title={dayLabel(real!)}>
-            {weekend}
-          </span>
-        )}
-        {/* Clip shows the full title on a hover (D23); a wrapped title is all there. */}
-        <span className="view-cal__card-title" title={wrap ? undefined : row.record.title}>
-          {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too. */}
-          {isFolderRow(row.record) && <FolderIcon size={12} className="view-folder-row__icon" />}
-          {locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}
-        </span>
-        {moveError?.path === path && (
-          <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
-            Move failed
-          </span>
-        )}
+        {shown.map((line) => {
+          const head = line.some((k) => canonicalKey(k) === 'file.name')
+          return (
+            <Fragment key={line[0]}>
+              <CardLine
+                line={line}
+                item={item}
+                className={head ? ' view-cal__card-head' : ''}
+                lead={
+                  head && (
+                    <>
+                      {time !== null && <span className="view-cal__time">{time}</span>}
+                      {weekend !== null && (
+                        <span className="view-cal__weekend" title={dayLabel(real!)}>
+                          {weekend}
+                        </span>
+                      )}
+                    </>
+                  )
+                }
+              />
+              {head && moveError?.path === path && (
+                <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
+                  Move failed
+                </span>
+              )}
+            </Fragment>
+          )
+        })}
       </li>
     )
   }

@@ -367,6 +367,13 @@ function orderInColumnSpelling(order: readonly string[], spelled: ReadonlyMap<st
  */
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   if (view.order) return declared.length === 0 ? [...view.order] : orderInColumnSpelling(view.order, spellings(declared))
+  // A calendar card is small (YAZ-4857 item 4): with no column choice it shows the name alone, and the Columns panel says "Shown · 1".
+  if (view.type === 'calendar') return ['file.name']
+  return defaultKeys(records, declared)
+}
+
+/** `file.name` plus the page's columns (or, with none, every key the rows hold): `propertyKeys` with no `order`, for every view type but the calendar. */
+export function defaultKeys(records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   const keys = new Set<string>(declared.map((k) => `note.${k}`))
   if (declared.length === 0) for (const r of records) for (const k of Object.keys(r.properties)) if (k !== READ_ONLY_KEY) keys.add(`note.${k}`)
   return ['file.name', ...[...keys].sort()]

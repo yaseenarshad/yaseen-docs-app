@@ -348,7 +348,7 @@ export interface ColumnDetailProps {
  * S24); Format for a Number or Date column (YAZ-4591 S21/S22); Relation (a declared link kind's target
  * inline, else "Make relation" seeding a link kind from a legacy vault declaration, YAZ-895); Align (TABLE views only,
  * YAZ-3746 13Y: Auto · Left · Center · Right, the view's `columnAlign` entry through `view/columnAlign.ts`); Card
- * styling (the four `cardStyle` toggles — BOARD views only, the one skin that reads `cardStyle`);
+ * styling (the four `cardStyle` toggles — BOARD and CALENDAR views, the skins that read `cardStyle`, YAZ-4857);
  * and the actions: Hide in this view and Delete column… (`views/deleteColumn.ts`, confirm-first;
  * built-in keys disabled with a tooltip).
  *
@@ -784,8 +784,8 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
             {error}
           </p>
         )}
-        {/* Card styling (YAZ-1206/YAZ-1217): BOARD views only — the one skin that reads `cardStyle` — and only a shown column; the title gets ⤴ alone. */}
-        {view.type === 'board' && on && (
+        {/* Card styling (YAZ-1206/YAZ-1217): BOARD and CALENDAR views (YAZ-4857) — the skins that read `cardStyle` — and only a shown column; the title gets ⤴ alone. */}
+        {(view.type === 'board' || view.type === 'calendar') && on && (
           <div className="column-detail__group">
             <p className="view-menu__label">Card styling</p>
             <div className="column-detail__toggles">

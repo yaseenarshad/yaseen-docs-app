@@ -2218,9 +2218,10 @@
 }
 
 .view-cal__card {
+  /* A column of lines (YAZ-4857): the name's line, then the shown columns' lines, the board's `cardLines`. */
   display: flex;
-  gap: 4px;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
   padding: 2px 6px;
   font-size: 12px;
@@ -2246,6 +2247,26 @@
 
 .view-cal__card--drag {
   opacity: 0.4;
+}
+
+/* The name's line: the time, the weekend mark and the title, as the card's one row was before YAZ-4857. */
+.view-cal__card-head {
+  gap: 4px;
+}
+
+/* The board's lines are spaced for a big card; a calendar card is small. */
+.view-cal__card .view-board__line + .view-board__line {
+  margin-top: 0;
+}
+
+.view-cal__card .view-board__prop {
+  gap: 4px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.view-cal__card .view-board__prop-name {
+  font-size: 10px;
 }
 
 .view-cal__card-title {
@@ -2314,10 +2335,13 @@
   }
 
   .view-cal__card {
-    flex-wrap: wrap;
-    gap: 0;
     padding-right: 1px;
     padding-left: 1px;
+  }
+
+  .view-cal__card-head {
+    flex-wrap: wrap;
+    gap: 0;
   }
 
   .view-cal__time {

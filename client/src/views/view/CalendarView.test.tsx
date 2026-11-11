@@ -599,3 +599,102 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     expect(weekdays(el)).toHaveLength(5)
   })
 })
+
+describe('the shown columns on a card (YAZ-4857)', () => {
+  const records = [...RECORDS, rec('Styled', { due: '2026-12-08 09:00', status: 'Done', priority: 2, owner: 'Sam' }), rec('Sparse', { due: '2026-12-08' })]
+  const SHOWN = (cardStyle = '') => `views:
+  - type: calendar
+    name: C
+    order:
+      - file.name
+      - note.due
+      - note.status
+      - note.priority
+      - note.owner
+${cardStyle === '' ? '' : `    cardStyle:\n${cardStyle}\n`}`
+  const linesOf = (card: HTMLElement) => [...card.querySelectorAll<HTMLElement>('.view-board__line')]
+  const propsOf = (card: HTMLElement) => [...card.querySelectorAll('.view-board__prop')].map((p) => p.textContent)
+  const openColumns = (el: ParentNode) => {
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    const pop = q<HTMLElement>(el, '.view-popover--properties')
+    const columnsTab = pop.querySelector<HTMLElement>('.view-menu__tab[data-tab="columns"]')
+    if (columnsTab !== null) click(columnsTab)
+    return q<HTMLElement>(el, '.view-popover--properties')
+  }
+
+  it('a calendar with no column choice shows the name alone, and the panel says "Shown · 1" (item 4)', () => {
+    const { el } = mount(CALENDAR, { records })
+    expect(linesOf(cardOf(el, 'Styled'))).toHaveLength(1)
+    expect(cardOf(el, 'Styled').querySelector('.view-board__prop')).toBeNull()
+    const pop = openColumns(el)
+    expect(pop.textContent).toContain('Shown · 1')
+  })
+
+  it('a switched-on column shows on the cards: one write of the order, name first', () => {
+    // Status is a column of the page, so the panel lists it with a switch (YAZ-4713 C4).
+    const folder = testFolderHost({ settings: { columns: { status: { kind: 'text' } }, views: [], problems: [] } })
+    const { el, yaml } = mount(CALENDAR, { records, folder })
+    const pop = openColumns(el)
+    expect(pop.textContent).toContain('Shown · 1')
+    act(() => q<HTMLInputElement>(pop, 'input[aria-label="Show Status"]').click())
+    draw()
+    expect(yaml()).toContain('order:\n      - file.name\n      - note.status')
+    expect(propsOf(cardOf(el, 'Styled'))).toEqual(['StatusDone'])
+  })
+
+  it('the shown columns are the board\'s lines: the date column is not drawn, and an empty value or line is left out (items 1–3)', () => {
+    const { el } = mount(SHOWN(), { records })
+    const styled = cardOf(el, 'Styled')
+    // The name's line (time, title), then Status, Priority, Owner: no Due line, the card sits on that date.
+    expect(linesOf(styled)).toHaveLength(4)
+    expect(q(linesOf(styled)[0], '.view-cal__time').textContent).toBe('09:00')
+    expect(propsOf(styled)).toEqual(['StatusDone', 'Priority2', 'OwnerSam'])
+    // A card with none of them is the name's line alone.
+    expect(linesOf(cardOf(el, 'Sparse'))).toHaveLength(1)
+  })
+
+  it('bold, underline, hide label and join work as on the board; a join onto the name sits on the name\'s line', () => {
+    const style = '      note.status: { join: true, bold: true }\n      note.priority: { hideLabel: true, underline: true }\n      note.owner: { join: true }'
+    const { el } = mount(SHOWN(style), { records })
+    const lines = linesOf(cardOf(el, 'Styled'))
+    expect(lines).toHaveLength(2)
+    expect([...lines[0].children].map((k) => k.className.split(' ')[0])).toEqual(['view-cal__time', 'view-cal__card-title', 'view-board__dash', 'view-board__prop'])
+    expect(q(lines[0], '.view-board__prop').classList.contains('view-board__prop--bold')).toBe(true)
+    // Priority starts its own line with no label; Owner joins it.
+    const second = [...lines[1].querySelectorAll('.view-board__prop')]
+    expect(second[0].querySelector('.view-board__prop-name')).toBeNull()
+    expect(second[0].classList.contains('view-board__prop--underline')).toBe(true)
+    expect(second.map((p) => p.textContent)).toEqual(['2', 'OwnerSam'])
+    expect(lines[1].querySelector('.view-board__dash')).not.toBeNull()
+  })
+
+  it('the name keeps its place in the order: a column before it is a line above it', () => {
+    const { el } = mount(`views:\n  - type: calendar\n    name: C\n    order:\n      - note.status\n      - file.name\n`, { records })
+    const lines = linesOf(cardOf(el, 'Styled'))
+    expect(lines.map((l) => l.classList.contains('view-cal__card-head'))).toEqual([false, true])
+  })
+
+  it('an order with no name still draws the title first', () => {
+    const { el } = mount(`views:\n  - type: calendar\n    name: C\n    order:\n      - note.status\n`, { records })
+    const lines = linesOf(cardOf(el, 'Styled'))
+    expect(lines.map((l) => l.classList.contains('view-cal__card-head'))).toEqual([true, false])
+  })
+
+  it('the column panel\'s card styling opens for a calendar view, and writes cardStyle', () => {
+    const { el, yaml } = mount(SHOWN(), { records })
+    const pop = openColumns(el)
+    click(q(pop, '[aria-label="Open Status"]'))
+    click(q(pop, '[aria-label="Bold Status on cards"]'))
+    expect(yaml()).toContain("note.status:\n        bold: true")
+    expect(q(cardOf(el, 'Styled'), '.view-board__prop').classList.contains('view-board__prop--bold')).toBe(true)
+  })
+
+  it('a failed move still flags the card under its name\'s line', async () => {
+    write.mockRejectedValueOnce(new Error('disk full'))
+    const { el } = mount(SHOWN(), { records })
+    drag(cardOf(el, 'Styled'), day(el, '2026-12-09'))
+    await flush()
+    const card = cardOf(el, 'Styled')
+    expect(card.querySelector('[role="alert"]')?.previousElementSibling?.classList.contains('view-cal__card-head')).toBe(true)
+  })
+})

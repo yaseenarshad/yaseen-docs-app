@@ -651,6 +651,13 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name'] }, TEST_RECORDS, ['status'])).toEqual(['file.name'])
   })
 
+  it('propertyKeys: a calendar with no order shows the name alone (YAZ-4857 item 4); its order wins; the other types keep their default', () => {
+    const calendar = { type: 'calendar', name: 'C' }
+    expect(propertyKeys(yasin, calendar, TEST_RECORDS, ['status', 'owner'])).toEqual(['file.name'])
+    expect(propertyKeys(yasin, { ...calendar, order: ['file.name', 'note.status'] }, TEST_RECORDS)).toEqual(['file.name', 'note.status'])
+    for (const type of ['table', 'board', 'list', 'cards']) expect(propertyKeys(yasin, { type, name: 'X' }, [], ['status'])).toEqual(['file.name', 'note.status'])
+  })
+
   it('propertyLabel: displayName (bare or note.-prefixed key) else the default label (YAZ-1513)', () => {
     const def: ViewSet = { properties: { status: { displayName: 'STATUS' }, 'note.views': { displayName: 'Views' }, 'file.name': { displayName: 'Title' } }, views: [] }
     expect(propertyLabel(def, 'status')).toBe('STATUS')
