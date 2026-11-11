@@ -34,7 +34,7 @@ async function showView(markdown: string, name: string) {
 
 const lines = (view: EditorView) =>
   [...view.dom.querySelectorAll<HTMLElement>('.table-super-view tbody tr')].map((tr) => (tr.classList.contains('super-view__group') ? `# ${tr.querySelector('.view-group__value')?.textContent}` : tr.querySelector('td:not(.super-view__gutter)')?.textContent))
-const tool = (view: EditorView, name: string) => [...view.dom.querySelectorAll<HTMLButtonElement>('.table-super-bar__tool')].find((b) => b.textContent?.startsWith(name))!
+const tool = (view: EditorView, name: string) => [...view.dom.querySelectorAll<HTMLButtonElement>('.table-super-bar__tool')].find((b) => b.getAttribute('aria-label') === name)!
 
 describe('YAZ-4874 S3: groups', () => {
   it('item 8: a collapsed group stays collapsed when the note opens again; the note never changes', async () => {

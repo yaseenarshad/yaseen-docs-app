@@ -62,6 +62,14 @@ describe('YAZ-4873 S2: a view of the table', () => {
     const { view, crepe, saved } = await showView(NOTE, 'By layer')
     expect(view.dom.querySelector('.milkdown-table-block')!.classList.contains(SUPER_HIDDEN_CLASS)).toBe(true)
     expect([...view.dom.querySelectorAll('.table-super-bar__tab')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)).toEqual(['Table', 'By layer*', 'Sizes', '+'])
+    // The YAZ-4869 demo: the folder page's bar (its classes, the accent line under the active tab, the icon buttons with
+    // a count badge), the zoom pill at its right end, the view under it.
+    const bar = view.dom.querySelector<HTMLElement>('.table-zoom-anchor > .table-super-bar.view-toolbar')!
+    expect([...bar.querySelectorAll('.view-tabs > .view-tab')].map((t) => `${t.querySelector('.view-tab__btn svg') === null ? '' : 'icon '}${t.textContent}${t.classList.contains('view-tab--active') ? '*' : ''}`)).toEqual(['icon Table', 'icon By layer*', 'icon Sizes'])
+    expect(bar.querySelector('.view-tabs-wrap > .view-tab__add[aria-label="Add a view"]')).not.toBeNull()
+    expect([...bar.querySelectorAll('.view-toolbar__actions .view-toolbar__btn')].map((b) => `${b.getAttribute('aria-label')}${b.classList.contains('view-toolbar__btn--on') ? `:${b.querySelector('.view-toolbar__badge')?.textContent}` : ''}`)).toEqual(['Sort:1', 'Group:1', 'Filter'])
+    expect(bar.querySelector('.view-toolbar__actions > .document-zoom[aria-label="Table zoom"]')).not.toBeNull()
+    expect(bar.nextElementSibling?.classList.contains('table-super-view')).toBe(true)
     expect(linesOf(view)).toEqual(['# Top 2', 'Hat|Top|', 'Roof|Top|3', '# Middle 2', 'Door|Middle|2', 'Wall|Middle|12', '# Ground 1', 'Base|Ground|1,200'])
     expect(saved).toContain('<!-- table: super, view "By layer" group Layer sort Piece, view Sizes sort Size desc summary Size sum -->')
     expect(getMarkdownForSave(crepe)).toBe(saved)

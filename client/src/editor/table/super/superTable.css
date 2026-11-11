@@ -2,62 +2,32 @@
    and the hidden table are `table.css`'s (eager, small). The view looks like a note table: the same borders, header
    shade, fills and text colours (`table.css` tokens), with the folder pages' group headers (`views.css`). */
 
-.table-super-bar__tabs,
+/* The bar is the folder page's view bar (`views.css`: `view-toolbar`, `view-tabs`, `view-tab`, `view-toolbar__btn`), so
+   the two look the same (the YAZ-4869 demo: "almost be 1:1"). Restated here only where Crepe's `.milkdown button` reset
+   (no border, no background) would win over the folder page's bare classes. */
+.milkdown .table-super-bar .view-toolbar__btn--on {
+  background: var(--bg-side);
+}
+
 .table-super-bar__tools {
   display: flex;
   align-items: center;
   gap: 2px;
 }
 
-.table-super-bar__tab,
-.table-super-bar__tool {
-  height: 24px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
+/* The zoom pill at the bar's right end, after Sort / Group / Filter. */
+.table-super-bar .document-zoom {
+  margin-left: 6px;
 }
 
-.table-super-bar__tab:hover,
-.table-super-bar__tool:hover {
-  background: var(--bg-hover);
-  color: var(--fg);
-}
-
-.table-super-bar__tab[aria-selected='true'] {
-  background: var(--bg-side, var(--bg-hover));
-  color: var(--fg);
-  font-weight: 600;
-}
-
-.table-super-bar__tool[aria-pressed='true'] {
-  color: var(--accent);
-}
-
-.table-super-bar__count {
-  margin-left: 4px;
-  padding: 0 5px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  font-size: 11px;
-}
-
-.table-super-bar__tools {
-  padding-left: 6px;
-  margin-left: 4px;
-  border-left: 1px solid var(--border);
-}
-
-.table-super-bar__rename {
+.milkdown .table-super-bar .table-super-bar__rename {
   width: 120px;
   height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .table-super-bar__panel {

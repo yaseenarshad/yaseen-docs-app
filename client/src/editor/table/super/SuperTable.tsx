@@ -1,7 +1,11 @@
 /**
- * A Super table's tabs and its active view (YAZ-4869 S2–S5; CONTRACTS rule 41a), drawn by the zoom pill's anchor
- * (`tableZoomPill.tsx`) in this lazy chunk. The tabs and Sort / Group / Filter sit left of the pill; a view shows in the
- * anchor, in the page's flow, while a node decoration hides the table (`superTables.ts`).
+ * A Super table's bar and its active view (YAZ-4869 S2–S5; CONTRACTS rule 41a), drawn by the zoom pill's anchor
+ * (`tableZoomPill.tsx`) in this lazy chunk. The bar is the folder page's view bar (its `view-toolbar`, `view-tab` and
+ * `view-toolbar__btn` classes, `views.css`; the YAZ-4869 demo: "replicate the same line from folder pages … almost be
+ * 1:1"): the tabs with the table icon and the accent line under the active one, "+", then Sort / Group / Filter as the
+ * folder page's icon buttons with a count badge, and the zoom pill (`zoom`) at the right end, over the thin line. It
+ * stands in the page's flow above the table, so it never covers the block above; a view shows under it in the anchor,
+ * while a node decoration hides the table (`superTables.ts`).
  *
  * - THE VIEW is the engine's output (`superData.ts`), worked out again only for a new table node or another view (item
  *   20): the anchor draws again only when its table changed, debounced while you type in it. Cells show their first
@@ -27,6 +31,7 @@ import { FIND_ACTIVE_CLASS } from '../../find/findInPage'
 import { render } from '../../../views/expr'
 import { GroupHeader } from '../../../views/view/GroupHeader'
 import { groupSpans, holdersOf } from '../../../views/view/groupGuides'
+import { FilterIcon, PropertiesIcon, SortIcon, ViewTypeIcon } from '../../../views/view/icons'
 import '../../../views/views.css'
 import { computeView, groupsHolding, linesOf, markdownTable, rowOf, viewSetOf, type Line } from './superData'
 import { FilterPanel, GroupPanel, SortPanel } from './SuperMenus'
@@ -42,6 +47,8 @@ export interface SuperTableProps {
   active: string | null
   /** ⌘F's current match: its row; `n` counts the finds, so the same row found again scrolls again. */
   found: { row: number; n: number } | null
+  /** The table's zoom pill (`DocumentZoom`), drawn at the bar's right end. */
+  zoom: ReactNode
 }
 
 /** Above this many lines, only those on screen mount (the folder table's `WINDOW_AT`). */
@@ -52,6 +59,9 @@ const FALLBACK_VIEWPORT = 600
 const NO_KEYS: ReadonlySet<string> = new Set()
 
 type Panel = 'sort' | 'group' | 'filter' | 'tab' | null
+
+/** The bar's tools, each with the folder page's icon (the sort arrows, the sliders, the funnel; YAZ-4869 demo). */
+const TOOLS = { sort: ['Sort', <SortIcon />], group: ['Group', <PropertiesIcon />], filter: ['Filter', <FilterIcon />] } as const
 
 /** A name no view has yet: "View 1", "View 2"… */
 const freshName = (views: readonly TableViewDef[], base = 'View'): string => {
@@ -103,7 +113,7 @@ const cellStyle = (fill: string | null, color: string | null): CSSProperties | u
   return Object.keys(style).length > 0 ? (style as CSSProperties) : undefined
 }
 
-export function SuperTable({ editor, getPos, table, active, found }: SuperTableProps) {
+export function SuperTable({ editor, getPos, table, active, found, zoom }: SuperTableProps) {
   const views = table.attrs.views as TableViewDef[]
   const def = active === null ? undefined : views.find((v) => v.name === active)
   const editable = editor.editable
@@ -219,65 +229,84 @@ export function SuperTable({ editor, getPos, table, active, found }: SuperTableP
   }
 
   const tabs = (
-    <div ref={barRef} className="table-super-bar" role="toolbar" aria-label="Super table views">
-      <div className="table-super-bar__tabs" role="tablist">
-        <button type="button" role="tab" className="table-super-bar__tab" aria-selected={active === null} onClick={() => show(null)}>
-          Table
-        </button>
-        {views.map((v) =>
-          renaming === v.name ? (
-            <input
-              key={v.name}
-              className="table-super-bar__rename"
-              aria-label="View name"
-              defaultValue={v.name}
-              autoFocus
-              onBlur={(e) => renameView(v.name, e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') renameView(v.name, e.currentTarget.value)
-                if (e.key === 'Escape') setRenaming(null)
-              }}
-            />
-          ) : (
-            <button
-              key={v.name}
-              type="button"
-              role="tab"
-              className="table-super-bar__tab"
-              aria-selected={active === v.name}
-              title={editable ? 'Double-click to rename · right-click for more' : undefined}
-              onClick={() => show(v.name)}
-              onDoubleClick={() => editable && setRenaming(v.name)}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                if (!editable) return
-                if (active !== v.name) show(v.name)
-                setPanel('tab')
-              }}
-            >
-              {v.name}
+    <div ref={barRef} className="table-super-bar view-toolbar" role="toolbar" aria-label="Super table views">
+      <div className="view-tabs-wrap">
+        <div className="view-tabs scroll-strip table-super-bar__tabs" role="tablist">
+          <div className={`view-tab${active === null ? ' view-tab--active' : ''}`}>
+            <button type="button" role="tab" className="view-tab__btn table-super-bar__tab" aria-selected={active === null} onClick={() => show(null)}>
+              <ViewTypeIcon type="table" />
+              <span>Table</span>
             </button>
-          ),
-        )}
+          </div>
+          {views.map((v) => (
+            <div key={v.name} className={`view-tab${active === v.name ? ' view-tab--active' : ''}`}>
+              {renaming === v.name ? (
+                <input
+                  className="view-tab__rename table-super-bar__rename"
+                  aria-label="View name"
+                  defaultValue={v.name}
+                  autoFocus
+                  onBlur={(e) => renameView(v.name, e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') renameView(v.name, e.currentTarget.value)
+                    if (e.key === 'Escape') setRenaming(null)
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  role="tab"
+                  className="view-tab__btn table-super-bar__tab"
+                  aria-selected={active === v.name}
+                  title={editable ? 'Double-click to rename · right-click for more' : v.name}
+                  onClick={() => show(v.name)}
+                  onDoubleClick={() => editable && setRenaming(v.name)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    if (!editable) return
+                    if (active !== v.name) show(v.name)
+                    setPanel('tab')
+                  }}
+                >
+                  <ViewTypeIcon type="table" />
+                  <span>{v.name}</span>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
         {editable && (
-          <button type="button" className="table-super-bar__tab table-super-bar__add" aria-label="Add a view" title="Add a view" onClick={addView}>
+          <button type="button" className="view-tab__add table-super-bar__tab table-super-bar__add" aria-label="Add a view" title="Add a view" onClick={addView}>
             +
           </button>
         )}
       </div>
-      {def !== undefined && editable && (
-        <div className="table-super-bar__tools">
-          {(['sort', 'group', 'filter'] as const).map((which) => {
-            const count = (which === 'sort' ? def.sort : which === 'group' ? def.group : def.filter)?.length ?? 0
-            return (
-              <button key={which} type="button" className="table-super-bar__tool" aria-expanded={panel === which} aria-pressed={count > 0} onClick={() => setPanel(panel === which ? null : which)}>
-                {which === 'sort' ? 'Sort' : which === 'group' ? 'Group' : 'Filter'}
-                {count > 0 && <span className="table-super-bar__count">{count}</span>}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      <div className="view-toolbar__actions">
+        {def !== undefined && editable && (
+          <div className="table-super-bar__tools">
+            {(['sort', 'group', 'filter'] as const).map((which) => {
+              const count = (which === 'sort' ? def.sort : which === 'group' ? def.group : def.filter)?.length ?? 0
+              const [label, icon] = TOOLS[which]
+              return (
+                <button
+                  key={which}
+                  type="button"
+                  className={`view-toolbar__btn table-super-bar__tool${count > 0 ? ' view-toolbar__btn--on' : ''}`}
+                  aria-label={label}
+                  title={label}
+                  aria-haspopup="dialog"
+                  aria-expanded={panel === which}
+                  onClick={() => setPanel(panel === which ? null : which)}
+                >
+                  {icon}
+                  {count > 0 && <span className="view-toolbar__badge">{count}</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {zoom}
+      </div>
       {panel !== null && def !== undefined && computed !== null && (
         <div className="table-super-bar__panel">
           {panel === 'sort' && <SortPanel def={def} keys={computed.data.keys} onChange={writeDef} />}

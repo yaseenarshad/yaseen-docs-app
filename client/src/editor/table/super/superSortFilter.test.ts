@@ -34,7 +34,7 @@ async function showView(view: string, name: string) {
 }
 
 const firstColumn = (view: EditorView) => [...view.dom.querySelectorAll<HTMLElement>('.table-super-view tbody tr.super-view__row')].map((tr) => tr.querySelector('td')?.textContent)
-const tool = (view: EditorView, name: string) => [...view.dom.querySelectorAll<HTMLButtonElement>('.table-super-bar__tool')].find((b) => b.textContent?.startsWith(name))!
+const tool = (view: EditorView, name: string) => [...view.dom.querySelectorAll<HTMLButtonElement>('.table-super-bar__tool')].find((b) => b.getAttribute('aria-label') === name)!
 const button = (view: EditorView, text: string) => [...view.dom.querySelectorAll<HTMLButtonElement>('.table-super-bar__panel button')].find((b) => b.textContent === text)!
 /** Pick `option` in the picker named `label` (`ColumnPicker` and `DirectionPicker`). */
 async function pick(view: EditorView, label: string, option: string) {

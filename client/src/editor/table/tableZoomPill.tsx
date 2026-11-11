@@ -14,7 +14,8 @@
  *   again only those pills (YAZ-4176), never on an Enter or a paste. Typing only maps the set (`tableSpeed.test.ts`).
  * - THE NOTE EDITOR ONLY (`tableZoomPill` of `createCrepe`, YAZ-4176): a hover preview, a read-only preview and the
  *   outline view mount no plugin, so no React root for each table.
- * - A SUPER TABLE (YAZ-4869 S2): the same anchor draws its tabs, left of the pill, and its active view, from the lazy
+ * - A SUPER TABLE (YAZ-4869 S2): the same anchor draws its bar (the folder page's view bar, in the page's flow, with
+ *   the pill at its right end: the YAZ-4869 demo) and its active view, from the lazy
  *   `super/SuperTable.tsx` (loaded the first time a Super table shows). A pill's spec holds `superTable` too, so a turn
  *   on or off draws it again; `super/superTables.ts` asks the anchor to draw again when its table changed
  *   (`renderSuper`, debounced 150 ms while you type in it) and when ⌘F finds a row in it (`findRow`). A draw for the same
@@ -91,16 +92,9 @@ function zoomAnchor(view: EditorView, getPos: () => number | undefined): HTMLEle
     anchor.toggleAttribute('data-super-view', active !== null)
     if (isSuper && SuperTable === null) void loadSuperTable().then(() => anchor.renderZoom?.())
     const Super = isSuper ? SuperTable : null
-    flushSync(() =>
-      root.render(
-        <>
-          {Super !== null && <Super editor={view} getPos={getPos} table={table} active={active} found={found} />}
-          <DocumentZoom value={zoom} label="Table zoom" onChange={(next) => setZoom(view, getPos(), next)} />
-        </>,
-      ),
-    )
-    // The tabs stand left of the pill: its width, read only when a Super table draws.
-    if (isSuper) anchor.style.setProperty('--table-pill-w', `${anchor.querySelector<HTMLElement>('.document-zoom')?.offsetWidth || 112}px`)
+    const pill = <DocumentZoom value={zoom} label="Table zoom" onChange={(next) => setZoom(view, getPos(), next)} />
+    // A Super table's bar holds the pill at its right end (YAZ-4869 demo); until its chunk loads, the pill stands alone.
+    flushSync(() => root.render(Super === null ? pill : <Super editor={view} getPos={getPos} table={table} active={active} found={found} zoom={pill} />))
   }
   anchor.renderSuper = (typing) => {
     if (timer !== null) clearTimeout(timer)

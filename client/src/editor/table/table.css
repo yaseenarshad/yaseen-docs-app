@@ -534,49 +534,28 @@
   display: none;
 }
 
-.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor[data-super] > .document-zoom {
-  display: none;
-}
-
 /* Super tables (YAZ-4869 S2, `super/superTables.ts`, `super/SuperTable.tsx`). While a view shows, a node decoration
-   hides the table block, and the anchor holds the view in the page's flow. The tabs and Sort / Group / Filter sit left
-   of the zoom pill (`--table-pill-w`, measured when they draw), above the table as the pill is, and show as it does;
-   while a view shows, both show all the time, so "Table" is always one click away. */
+   hides the table block, and the anchor holds the view in the page's flow. The bar is the folder page's view bar
+   (`superTable.css`), in the flow above the table with room over it, the zoom pill at its right end, and it shows all
+   the time (the YAZ-4869 demo: "more margin at the top of the table … replicate the same line from folder pages"). */
 .milkdown .ProseMirror .milkdown-table-block.table-super-hidden {
   display: none;
 }
 
-.milkdown .ProseMirror .table-zoom-anchor[data-super-view] {
+.milkdown .ProseMirror .table-zoom-anchor[data-super] {
   height: auto;
-}
-
-.milkdown .ProseMirror .table-zoom-anchor[data-super-view] > .document-zoom {
-  top: 0;
-  bottom: auto;
-  transform: translateY(calc(-100% + 4px));
+  margin-top: 12px;
 }
 
 .milkdown .ProseMirror .table-zoom-anchor > .table-super-bar {
-  position: absolute;
+  position: relative;
   /* Above the view's sticky column header (3) and group headers (2), which come later in the page (YAZ-4896). */
   z-index: 4;
-  top: 0;
-  right: calc(var(--table-pill-w, 112px) + 6px);
-  display: flex;
-  align-items: center;
-  transform: translateY(calc(-100% + 4px));
-  background: var(--bg);
-  visibility: hidden;
-  transition: visibility 0s linear 0.2s;
+  margin-bottom: 8px;
 }
 
-.milkdown .ProseMirror .table-zoom-anchor:is(:hover, :focus-within, [data-super-view], :has(+ .milkdown-table-block:hover)) > .table-super-bar {
-  visibility: visible;
-  transition-delay: 0s;
-}
-
-.milkdown .ProseMirror .table-zoom-anchor[data-super-view] > .document-zoom {
-  visibility: visible;
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor[data-super] .document-zoom {
+  display: none;
 }
 
 /* The row band (YAZ-4167, D16, `tableRowBand.ts`): a light accent band across the body row under the caret
