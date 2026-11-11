@@ -9,6 +9,8 @@ interface UseMenuEventsOptions {
   onOpenRoot: (path: string) => void
   /** File › Search Vault (⌘K): show the sidebar's Search tab and focus its bar (YAZ-2638 D2), un-collapsing the sidebar first (YAZ-804). */
   onSearch: () => void
+  /** File › Explore Vault… (⌘⇧F, YAZ-2571): open the explore stack, or add a search layer on top (`explore/ExploreStack`). */
+  onExplore: () => void
   /** File › Switch Vault… (⌘O): open the sidebar header's vault switcher, un-collapsing the sidebar first (YAZ-1767 D8). */
   onSwitchVault: () => void
   /** Yaseen Docs › Settings… (⌘,): open the settings dialog (YAZ-1679). */
@@ -57,13 +59,14 @@ interface UseMenuEventsOptions {
 }
 
 /** Menu gestures from the main process (GRO-2161, tabs GRO-2232); main sends them to the focused window only. */
-export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onBack, onForward, onBackNewTab, onForwardNewTab, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyNote, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground }: UseMenuEventsOptions): void {
+export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onExplore, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onBack, onForward, onBackNewTab, onForwardNewTab, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyNote, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground }: UseMenuEventsOptions): void {
   useEffect(() => {
     const menu = api.menu
     const offs = [
       menu.onOpenFolder(onOpenFolder),
       menu.onOpenRoot(onOpenRoot),
       menu.onSearch(onSearch),
+      menu.onExplore(onExplore),
       menu.onSwitchVault(onSwitchVault),
       menu.onSettings(onSettings),
       menu.onToggleSidebar(onToggleSidebar),
@@ -89,5 +92,5 @@ export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVaul
       menu.onCanvasBackground(onCanvasBackground),
     ]
     return () => offs.forEach((off) => off())
-  }, [onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onBack, onForward, onBackNewTab, onForwardNewTab, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyNote, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground])
+  }, [onOpenFolder, onOpenRoot, onSearch, onExplore, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onBack, onForward, onBackNewTab, onForwardNewTab, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyNote, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground])
 }

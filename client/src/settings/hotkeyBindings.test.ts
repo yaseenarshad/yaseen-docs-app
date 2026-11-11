@@ -83,6 +83,7 @@ describe('HOTKEY_COMMANDS (YAZ-3397 D2)', () => {
       ['switchVault', '⌘O'],
       ['openFolder', '⌘⇧O'],
       ['search', '⌘K'],
+      ['explore', '⌘⇧F'],
       ['settings', '⌘,'],
       ['toggleSidebar', '⌘⇧B'],
       ['copyPath', '⌘⇧C'],

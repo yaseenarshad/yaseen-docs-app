@@ -147,6 +147,11 @@ describe('the user\'s diagram keys reach draw.io at configure (YAZ-3564 K4, K9, 
     expect(shortcuts()).toContainEqual({ keyCode: 75, control: true, action: null })
     expect(shortcuts({}, { 'app.search': true })).not.toContainEqual({ keyCode: 75, control: true, action: null })
   })
+
+  it('⌘⇧F is the explore stack\'s on a diagram too (YAZ-2571): draw.io\'s To front is cleared, unless the switch gives the key back', () => {
+    expect(shortcuts()).toContainEqual({ keyCode: 70, control: true, shift: true, action: null })
+    expect(shortcuts({}, { 'app.explore@diagram': true })).not.toContainEqual({ keyCode: 70, control: true, shift: true, action: null })
+  })
 })
 
 describe('readDrawioMessage — only THAT iframe, only the drawio origin (🔒 YAZ-1802 D4)', () => {

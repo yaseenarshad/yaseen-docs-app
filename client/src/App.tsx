@@ -31,7 +31,7 @@ import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
 import { osVerbs } from './lib/osVerbs'
 import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unlessFailed, type DragOutAsk, type NamedItem, type Notice, type NoticeKind, type NoticeType } from './lib/notice'
-import { treeHasPath } from './lib/treeState'
+import { allDirs, treeHasPath } from './lib/treeState'
 import { NoticeToast } from './components/NoticeToast'
 import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
@@ -50,7 +50,7 @@ import { filesWindowTitle, windowTitle } from './lib/windowTitle'
 import { askFromFiles, filesClickHow, watchFilesKeys } from './lib/filesWindow'
 import { FloatingPreview } from './sidebar/HoverPreviewHost'
 import { filesPreviewPopup } from './sidebar/previewPopup'
-import { isFolderPath, pageName, pathTitles, useAllPathTitles } from './lib/pageLabel'
+import { isFolderPath, pageName, pathTitles, useAllPathTitles, useLatestTrees } from './lib/pageLabel'
 import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
@@ -59,6 +59,8 @@ import { setCalendarDaySetting, setCellNoteButtonSetting, setHeaderRowSetting, s
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
 import { dropNoteWindowsAt, renameNoteWindows } from './views/view/NoteWindow'
+import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
+import type { SearchVault } from './search/useSearchResults'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
 import { setEnterKeepsStyle } from './editor/enterKeepsStyle'
@@ -108,6 +110,8 @@ const WhatsNewSheet = lazy(() => import('./update/WhatsNewSheet'))
 const ShareDialog = lazy(() => import('./share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
 /** Version history (YAZ-1897 D4, YAZ-3039): lazy, so a window that never opens it loads none of it. */
 const VersionHistory = lazy(() => import('./history/VersionHistory').then((m) => ({ default: m.VersionHistory })))
+/** The explore stack (YAZ-2571): lazy, loaded on the first ⌘⇧F. */
+const ExploreStack = lazy(() => import('./explore/ExploreStack').then((m) => ({ default: m.ExploreStack })))
 
 /**
  * The tab board (YAZ-3343 D4): its own chunk — the canvas, its layout and its cards — loaded on idle after the
@@ -280,14 +284,23 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
  */
 const NoteWindowEditorProps = createContext<((path: string) => Omit<ComponentProps<typeof Editor>, 'path'>) | null>(null)
 
-/** The note window's editor: the editor a tab has, with all its parts (Properties, comments); memo, as a tab's is. */
-function NoteWindowEditor({ path }: { path: string }) {
+/**
+ * The note window's editor: the editor a tab has, with all its parts (Properties, comments); memo, as a tab's is.
+ * `openLink` (the explore stack, YAZ-2571): a link opened in this tab goes there instead; the other gestures keep their doors.
+ */
+function NoteWindowEditor({ path, openLink }: { path: string; openLink?: (path: string) => void }) {
   const propsFor = useContext(NoteWindowEditorProps)
-  return propsFor === null ? null : <RetainedEditor {...propsFor(path)} path={path} />
+  const base = propsFor?.(path)
+  const baseOpenLink = base?.onOpenLink
+  const onOpenLink = useCallback((to: string, where?: GestureAction) => (where === undefined || where === 'thisTab' ? openLink?.(to) : baseOpenLink?.(to, where)), [openLink, baseOpenLink])
+  if (base === undefined) return null
+  return openLink === undefined ? <RetainedEditor {...base} path={path} /> : <RetainedEditor {...base} path={path} onOpenFile={openLink} onOpenLink={onOpenLink} />
 }
 
 /** `FolderHost.renderNoteEditor` (YAZ-4547): one function, so it never renders a folder page again. */
 const renderNoteEditor = (path: string) => <NoteWindowEditor path={path} />
+/** The explore stack's editor (YAZ-2571): the same, with the stack's link door. */
+const renderExploreEditor = (path: string, openLink: (path: string) => void) => <NoteWindowEditor path={path} openLink={openLink} />
 
 /**
  * A new window's boot tab starts with the page view main gave it (YAZ-2951 D5), when that tab shows
@@ -1264,6 +1277,38 @@ export function App() {
       )
   }, [dailyVault, notify])
 
+  // The explore stack (YAZ-2571): ⌘⇧F / File › Explore Vault…. `exploreRequest` counts the asks while it shows (each one
+  // a search layer on top); 0 is closed. The keyboard goes back where it was when the stack closes.
+  const [exploreRequest, setExploreRequest] = useState(0)
+  const exploreFrom = useRef<Element | null>(null)
+  const openExplore = useCallback(() => {
+    if (root === null || filesWindow) return
+    setExploreRequest((n) => {
+      if (n === 0) exploreFrom.current = document.activeElement
+      return n + 1
+    })
+  }, [root, filesWindow])
+  const closeExplore = useCallback(() => {
+    setExploreRequest(0)
+    const from = exploreFrom.current
+    exploreFrom.current = null
+    if (from instanceof HTMLElement && from.isConnected) from.focus()
+    else focusOpenDocument()
+  }, [])
+  // The stack's search vaults: each vault's folders from the tree the window already holds; no other files (it reads notes).
+  // Built when the stack opens and when a tree lands, not per render: a watcher is one object for a vault's life (`live`).
+  const exploreTrees = useLatestTrees(roots)
+  const exploreOpen = exploreRequest > 0
+  const exploreVaults = useMemo<readonly SearchVault[]>(() => (!exploreOpen ? [] : roots.map((vault, i) => ({ root: vault, watch: live.current.vaults[i].watch, dirs: allDirs(exploreTrees[i]?.tree ?? []), files: [] }))), [exploreOpen, roots, exploreTrees])
+  const exploreVaultOf = useCallback((path: string) => {
+    const scope = scopeOf(path)
+    return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates }
+  }, [scopeOf])
+  // The notes opened most recently, for the stack's empty search: the active tab's note counts.
+  useEffect(() => {
+    if (file !== null && fileKind(file) === 'markdown') rememberExploreRecent(file)
+  }, [file])
+
   // The keys of this tab (YAZ-3564 K11): Help › Keys of This Tab…, its App key, and ? on a drawing (`requestKeySheet`).
   const [keySheetOpen, setKeySheetOpen] = useState(false)
   const openKeySheet = useCallback(() => setKeySheetOpen(true), [])
@@ -2072,6 +2117,7 @@ export function App() {
     onOpenFolder: pick,
     onOpenRoot: openVault,
     onSearch: openSearch,
+    onExplore: openExplore,
     onSwitchVault: openVaultSwitcher,
     onSettings: openSettings,
     onToggleSidebar: toggleSidebar,
@@ -2230,6 +2276,7 @@ export function App() {
         if (kind === 'dir') {
           carryEditorsAcrossDirRename(oldPath, newPath)
           renameNoteWindows(oldPath, newPath)
+          moveExploreRecent(oldPath, newPath)
           const moved = now.roots.map((vault) => movedRoot(vault, oldPath, newPath))
           const vaultMoved = moved.some((vault, i) => vault !== now.roots[i])
           if (vaultMoved) {
@@ -2245,6 +2292,7 @@ export function App() {
         carryEditorAcrossRename(oldPath, newPath)
         // A folder table's note window on the note follows it (YAZ-4544): its editor at the old path is retired now.
         renameNoteWindows(oldPath, newPath)
+        moveExploreRecent(oldPath, newPath)
         renamedUnderOverview(oldPath, newPath, false)
         renameWorkspacePath(oldPath, newPath)
       }),
@@ -2737,12 +2785,14 @@ export function App() {
         if (kind === 'dir') {
           retireDeletedDir(path)
           dropNoteWindowsAt(path)
+          moveExploreRecent(path, null)
           deleteWorkspaceDir(path)
           return
         }
         retireDeletedPath(path)
         // A note window on the note closes with it (YAZ-4544).
         dropNoteWindowsAt(path)
+        moveExploreRecent(path, null)
         deleteWorkspacePath(path)
       }),
     [deleteWorkspacePath, deleteWorkspaceDir],
@@ -3249,6 +3299,12 @@ export function App() {
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Note (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
+      {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
+      {exploreOpen && root !== null && (
+        <Suspense fallback={null}>
+          <ExploreStack request={exploreRequest} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} linkActions={linkActions} openInTab={openNewTabPage} onNotice={notify} onClose={closeExplore} />
+        </Suspense>
+      )}
       {whatsNewOpen && (
         <Suspense fallback={null}>
           <WhatsNewSheet update={update} onClose={closeWhatsNew} />

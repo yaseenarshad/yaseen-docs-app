@@ -17,6 +17,7 @@ const noopHandlers = (): MenuHandlers => ({
   newTab: vi.fn(),
   newItem: vi.fn(),
   goTo: vi.fn(),
+  explore: vi.fn(),
   dailyNote: vi.fn(),
   keySheet: vi.fn(),
   newWindow: vi.fn(),
@@ -381,7 +382,7 @@ describe('buildMenuTemplate', () => {
     const file = menuOf(onTab('drawing', handlers), 'File')
     const at = (id: string) => file.findIndex((i) => i.id === id)
     // Open Today's Daily Note (YAZ-3607 D11) stands right after Go to Your Place, hidden or not.
-    expect([at('menu.file.daily-note'), at('menu.file.export-image')]).toEqual([at('menu.file.go-to') + 1, at('menu.file.go-to') + 3])
+    expect([at('menu.file.explore'), at('menu.file.daily-note'), at('menu.file.export-image')]).toEqual([at('menu.file.go-to') + 1, at('menu.file.go-to') + 2, at('menu.file.go-to') + 4])
     expect([at('menu.file.export-drawing'), at('menu.file.share-link'), at('menu.file.close-tab')]).toEqual([at('menu.file.export-image') + 1, at('menu.file.export-image') + 2, at('menu.file.export-image') + 4])
     expect(file[at('menu.file.share-link') + 1].type).toBe('separator')
     expect(['menu.file.export-image', 'menu.file.export-drawing', 'menu.file.share-link'].map((id) => [file[at(id)].label, file[at(id)].accelerator, file[at(id)].enabled])).toEqual([
@@ -434,6 +435,12 @@ describe('buildMenuTemplate', () => {
     expect(item(overNote, 'File', 'menu.file.export-image')?.enabled).toBe(false)
     // ⌘N never steps aside: the New… box answers on every tab.
     for (const kind of ['drawing', 'diagram', 'text', 'markdown'] as const) expect(item(onTab(kind), 'File', 'menu.file.new-item')?.accelerator, kind).toBe('CmdOrCtrl+N')
+    // ⌘⇧F is the explore stack's on every tab, a diagram too (YAZ-2571, Yaseen: "give priority to explore"); the switch gives it back to draw.io's To front.
+    const explore = (kind: FileKind | null, hotkeysAside?: Record<string, boolean>) =>
+      item(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: kind, hotkeys: {}, hotkeysAside }, noopHandlers()), 'File', 'menu.file.explore')?.accelerator
+    for (const kind of ['drawing', 'diagram', 'text', 'markdown', null] as const) expect(explore(kind), String(kind)).toBe('CmdOrCtrl+Shift+F')
+    expect(explore('diagram', { 'app.explore@diagram': true })).toBeUndefined()
+    expect(explore('markdown', { 'app.explore@diagram': true })).toBe('CmdOrCtrl+Shift+F')
   })
 
   it('⌘⇧S belongs to the menu ONLY while Export Excalidraw Drawing… is enabled: off a drawing the review\'s Skip (YAZ-2322) keeps it (D10)', () => {
