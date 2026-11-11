@@ -510,8 +510,10 @@
 .view-settings .view-seg__opt { padding: 2px 7px; }
 .view-settings .property-board-setting { padding: 0; margin: 0; border: 0; }
 .view-settings .property-board-setting small { margin-top: 2px; }
-/* "Cross out when" (YAZ-4864): its label, then the Filter menu's rows at the width of the tab. */
-.view-settings__cross-out { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--fg-muted); }
+/* "Cross out when" (YAZ-4864): its label as a row, then the Filter menu's rows, all at the rows' inset (round 2 polish:
+   the label and the All · Any · None switch stood at the tab's edge, left of every other row). */
+.view-settings__cross-out { display: flex; flex-direction: column; gap: 6px; padding: 0 8px; font-size: 12px; color: var(--fg-muted); }
+.view-settings__cross-out > .view-settings-row__label { min-height: 32px; color: var(--fg); }
 .view-settings__cross-out .filter-menu { color: var(--fg); }
 .view-settings__cross-out .view-menu__head { margin-bottom: 4px; }
 .view-settings__cross-out .view-menu__foot { margin-top: 4px; }
@@ -3102,10 +3104,12 @@
 }
 .view-menu--tabbed > .view-menu__action:hover:not(:disabled) { color: var(--accent); background: var(--bg-hover); }
 
-/* View tab: sections of 32px rows. A little more room over each heading (YAZ-4864), so the groups read as groups. */
+/* View tab: sections of 32px rows. A line between two sections (YAZ-4864 round 2, Yaseen: "a right click menu has
+   lines for sections ... that is what we also need in the view"): the context menu's separator (`.ctx-menu__group +
+   .ctx-menu__group`, app.css), the same colour and thickness, with even room above and below it. */
 .view-settings { gap: 0; padding: 0; }
-.view-settings > .view-menu__label { margin: 14px 0 2px; padding: 0 8px; font-weight: 500; }
-.view-settings > .view-menu__label:first-child { margin-top: 2px; }
+.view-settings > .view-menu__label { margin: 8px 0 2px; padding: 8px 8px 0; font-weight: 500; border-top: 1px solid var(--border); }
+.view-settings > .view-menu__label:first-child { margin-top: 2px; padding-top: 0; border-top: 0; }
 .view-settings .view-settings-row { min-height: 32px; padding: 0 2px 0 8px; border-radius: 6px; color: var(--fg); }
 .view-settings .view-settings-row:hover { background: var(--bg-hover); }
 .view-settings-row__label { display: flex; align-items: center; gap: 8px; min-width: 0; }
