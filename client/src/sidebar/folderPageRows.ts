@@ -13,7 +13,8 @@ export function showFolderPageFiles(settings: SettingsState): boolean {
  * The folders whose page file the sidebar lists as a row (YAZ-4587, D37), by absolute path: each folder with a
  * `.folder.md` record, where the nearest `show_page_file: true | false` at or above it says so — that folder's own,
  * else its parent's, up to the vault root's — and where none does, the global switch. Another value is no rule.
- * The vault root is no page row (it has no row of its own). One pass over the records, per index snapshot.
+ * The vault root's own page file (YAZ-4921) is in the set by the same rule, as the root's bare path: the Files tree
+ * draws it first at its top level. One pass over the records, per index snapshot.
  */
 export function folderPageRows(root: string, folders: readonly IndexRecord[], globalOn: boolean): Set<string> {
   const rules = new Map<string, boolean>()
@@ -23,7 +24,6 @@ export function folderPageRows(root: string, folders: readonly IndexRecord[], gl
   }
   const rows = new Set<string>()
   for (const { folder } of folders) {
-    if (folder === '') continue
     let at = folder
     let shown = globalOn
     for (;;) {

@@ -111,9 +111,9 @@ describe('what a folder shows (YAZ-2375 D4)', () => {
     expect(pathsIn(records, 'Projects/Deep', NESTED)).toEqual(all)
   })
 
-  it('the vault root has no "everything" list: its entry is the notes directly in the root, as before', () => {
+  it('the vault root\'s entry is EVERY note of the vault, each once (YAZ-4921: the root\'s own page lists the whole vault), in the index\'s order', () => {
     const records = [rec('/vault/Projects/A.md'), rec('/vault/Projects/Deep/B.md', { also_in: [AREAS_ID] }), rec('/vault/Top.md')]
-    expect(pathsIn(records, '', NESTED)).toEqual(['/vault/Top.md'])
+    expect(pathsIn(records, '', NESTED)).toEqual(['/vault/Projects/A.md', '/vault/Projects/Deep/B.md', '/vault/Top.md'])
   })
 
   it('plus the notes whose `also_in` holds the folder’s id — the `id` of its `.folder.md`', () => {
@@ -130,7 +130,7 @@ describe('what a folder shows (YAZ-2375 D4)', () => {
   it('an id no folder has is ignored quietly', () => {
     const records = [rec('/vault/Areas/Health.md', { also_in: [NOBODY_ID, 'Projects'] })]
     expect(pathsIn(records, 'Projects')).toEqual([])
-    expect([...rowsByFolder(records, FOLDERS).keys()]).toEqual(['Areas'])
+    expect([...rowsByFolder(records, FOLDERS).keys()]).toEqual(['Areas', '']) // the root shows every note (YAZ-4921)
   })
 
   it('a scalar `also_in` is ONE entry', () => {
@@ -169,14 +169,14 @@ describe('what a folder shows (YAZ-2375 D4)', () => {
 describe('the folders that show a note', () => {
   const showing = (record: IndexRecord, folders: readonly IndexRecord[] = NESTED): string[] => foldersShowing(record.folder, record.properties, foldersById(folders))
 
-  it('the folder it lives in, then each folder above it, nearest first — never the root', () => {
-    expect(showing(rec('/vault/Projects/Deep/Deeper/C.md'))).toEqual(['Projects/Deep/Deeper', 'Projects/Deep', 'Projects'])
-    expect(showing(rec('/vault/Projects/A.md'))).toEqual(['Projects'])
+  it('the folder it lives in, then each folder above it, nearest first — and the vault root last, whose own page lists every note (YAZ-4921)', () => {
+    expect(showing(rec('/vault/Projects/Deep/Deeper/C.md'))).toEqual(['Projects/Deep/Deeper', 'Projects/Deep', 'Projects', ''])
+    expect(showing(rec('/vault/Projects/A.md'))).toEqual(['Projects', ''])
   })
 
-  it('then each folder it is a shortcut in, followed by the folders above that one — each folder once', () => {
+  it('then each folder it is a shortcut in, followed by the folders above that one — each folder once, the root last', () => {
     const note = rec('/vault/Areas/Health.md', { also_in: [DEEPER_ID, PROJECTS_ID, AREAS_ID, NOBODY_ID] })
-    expect(showing(note)).toEqual(['Areas', 'Projects/Deep/Deeper', 'Projects/Deep', 'Projects'])
+    expect(showing(note)).toEqual(['Areas', 'Projects/Deep/Deeper', 'Projects/Deep', 'Projects', ''])
   })
 
   it('a note directly in the vault root is shown by the root alone', () => {

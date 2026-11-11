@@ -64,7 +64,8 @@ function addWithParents(shown: Set<string>, folder: string): void {
 /**
  * The folders that SHOW a note, in order: the folder it lives in (`folder`, as the index names it)
  * and each folder above it, nearest first, then each folder its `also_in` names with the folders
- * above that one. A note directly in the root is shown by the root ('').
+ * above that one — and last the vault root (''), whose own page lists every note (YAZ-4921). A note
+ * directly in the root is shown by the root alone.
  */
 export function foldersShowing(folder: string, properties: Record<string, unknown>, byId: ReadonlyMap<string, IndexRecord>): string[] {
   // A Set: under a folder and naming it or one under it, or naming it twice, is still one row.
@@ -74,6 +75,7 @@ export function foldersShowing(folder: string, properties: Record<string, unknow
     const named = byId.get(id)?.folder
     if (named !== undefined) addWithParents(shown, named)
   }
+  shown.add('')
   return [...shown]
 }
 

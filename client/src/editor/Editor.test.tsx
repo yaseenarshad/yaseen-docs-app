@@ -1789,6 +1789,15 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     expect(createCrepeMock).not.toHaveBeenCalled()
   })
 
+  it('YAZ-4921: the vault ROOT itself renders the folder view, titled as the vault\'s folder, with no tree waited for and nothing read as a file', async () => {
+    tree.mockImplementation(() => new Promise(() => undefined)) // a tree that never answers: the root is no row of it
+    const el = await open('/wiki', '/wiki')
+    expect(el.querySelector('.folder-view')).not.toBeNull()
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('wiki')
+    expect(readFile).not.toHaveBeenCalled()
+    expect(createCrepeMock).not.toHaveBeenCalled()
+  })
+
   it('a markdown FILE beside it still gets the markdown editor', async () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/Notes.md`), file(`${r}/a.md`)], generatedAt: 1 }))
     readFile.mockResolvedValueOnce({ path: '/files/a.md', content: BODY, mtime: 1, size: BODY.length })
@@ -1835,12 +1844,12 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     expect(readFile).not.toHaveBeenCalled()
   })
 
-  it('The vault’s top level has no page: the root path, as a tab, is never opened as a folder page — whatever its folders — and nothing is read', async () => {
+  it('YAZ-4921 (replacing "the vault’s top level has no page"): the root path, as a tab, is the vault\'s own folder page — whatever its folders — and nothing is read as a file', async () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/Projects`, [file(`${r}/Projects/a.md`)]), file(`${r}/b.md`)], generatedAt: 1 }))
     const el = await open('/toplevel', '/toplevel')
-    expect(el.querySelector('.folder-view')).toBeNull()
-    expect(el.querySelector('.page-title__text')).toBeNull()
-    expect(el.querySelector('.editor-msg--error')?.textContent).toBe('Unsupported file type.') // what the pane says instead: the root is no folder of its own tree
+    expect(el.querySelector('.folder-view')).not.toBeNull()
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('toplevel')
+    expect(el.querySelector('.editor-msg--error')).toBeNull()
     expect(readFile).not.toHaveBeenCalled()
     expect(createCrepeMock).not.toHaveBeenCalled()
   })

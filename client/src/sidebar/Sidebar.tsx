@@ -410,8 +410,9 @@ export interface MenuTargets {
   copyPath: string | null
   /**
    * "Open folder page" — a FOLDER row outside a plural selection (YAZ-2290 D3, YAZ-3377 D2): the folder
-   * opens as a kept tab (YAZ-2648 R1). Null on a file row (its click opens it), on blank space, and inside a 2+ selection, where
-   * "Open N in new tabs" is the item. Its OWN field.
+   * opens as a kept tab (YAZ-2648 R1). Since YAZ-4921 the vault ROOT too: blank space of a window with one vault, and a
+   * vault row of a window with two or more (blank space is no one vault's there, YAZ-2602 S10). Null on a file row (its
+   * click opens it) and inside a 2+ selection, where "Open N in new tabs" is the item. Its OWN field.
    */
   openPath: string | null
   /**
@@ -1297,7 +1298,8 @@ export function Sidebar({
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? blank,
-        openPath: plural === null && node?.type === 'dir' && vaultRow === null ? node.path : null,
+        // The vault root's page (YAZ-4921): blank space of a window with one vault, and a vault row's own root.
+        openPath: plural === null && node?.type === 'dir' ? (vaultRow ?? node.path) : node === null ? blank : null,
         // Both plural fields read the ONE ordered list above and stay separate fields, as the
         // doctrine asks. A folder is a tab too (YAZ-2290 D3), so the open item counts every row.
         copyPaths: pluralRows,
@@ -1681,6 +1683,8 @@ export function Sidebar({
           // The right-click menu (YAZ-1798): the file menu's own OS verbs and notice, App's in-place switch — and its add (YAZ-2602 S8).
           onOpenHere={onOpenVaultHere}
           onAddHere={onAddVault}
+          // "Open folder page" on a vault of this window (YAZ-4921): the root's page as a kept tab, the folder row's door.
+          onOpenFolderPage={keepFromTree}
           onReveal={reveal}
           onOpenVsCode={openVsCode}
           onNotice={onNotice}

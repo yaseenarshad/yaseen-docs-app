@@ -197,8 +197,8 @@ function NoteCell({ value, name, resolve }: { value: Value; name: string; resolv
 
 /**
  * The chip of the folder the note lives in, by the title its Folder group shows (YAZ-4801 demo: "how come no folder
- * showing up here?" — a note directly in the page shows the page, never a blank). A click opens that folder's page;
- * the vault root has no page, so its chip opens nothing.
+ * showing up here?" — a note directly in the page shows the page, never a blank). A click opens that folder's page,
+ * the vault root's too (YAZ-4921: `absFrom(root, '')` is the root itself).
  */
 function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?: Resolver }) {
   const pages = useContext(FolderPages)
@@ -207,7 +207,7 @@ function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?:
   if (pages.folderColumn !== 'last') return <FolderPath dir={dir} pages={pages} />
   const title = pages.title(dir)
   const open = pages.open
-  if (open === undefined || dir === '') return <span className="view-table__chip" title={title}>{title}</span>
+  if (open === undefined) return <span className="view-table__chip" title={title}>{title}</span>
   return (
     <button
       type="button"
