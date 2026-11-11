@@ -1,7 +1,7 @@
 /**
  * The CMD+F channel (YAZ-968): the one object the find bar and the find engine share.
  *
- * `drawingFeed.ts`'s host-created holder idiom, given something to hold. The host makes ONE per
+ * A host-created holder: the host makes ONE per
  * editor mount and hands it to `createCrepe` (the engine binds itself at view creation, unbinds on
  * destroy) and to the bar (YAZ-969), which subscribes and calls the commands. The channel owns only
  * what the bar reads — open / query / total / activeIndex — and forwards every command to the bound
