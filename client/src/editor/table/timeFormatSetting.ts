@@ -45,7 +45,7 @@ let stickySubheaders = true
 
 /**
  * Settings › Tables › All tables › Subheader row and Sticky subheaders (YAZ-4899), App's door: a table's "Subheader
- * row ›" and "Sticky subheaders" read them when they open, and the sticky view reads the default when a table changes.
+ * row ›" and "Sticky subheaders" read them when they open; a change of the sticky default tells each sticky view at once.
  */
 export function setSubheaderRowSetting(value: HeaderRow): void {
   subheaderRow = value
@@ -53,8 +53,19 @@ export function setSubheaderRowSetting(value: HeaderRow): void {
 
 export const subheaderRowSetting = (): HeaderRow => subheaderRow
 
+/** The sticky views to tell when the Settings default changes, so a table that follows it pins or stops at once. */
+const stickyListeners = new Set<() => void>()
+
 export function setStickySubheadersSetting(on: boolean): void {
+  if (stickySubheaders === on) return
   stickySubheaders = on
+  for (const listener of stickyListeners) listener()
+}
+
+/** Calls `listener` on each change of the Settings default; returns the unsubscribe. */
+export function onStickySubheadersSetting(listener: () => void): () => void {
+  stickyListeners.add(listener)
+  return () => stickyListeners.delete(listener)
 }
 
 export const stickySubheadersSetting = (): boolean => stickySubheaders

@@ -57,7 +57,7 @@ import { rowFolded, rowSubhead, sectionEnd, subheadOf, tableHasSubheads } from '
 import { keepingScroll } from './tableFold'
 import { TABLE_HANDLE_PLACE } from './tableFreeze'
 import { changedTables, typingOnly } from './tableStyle'
-import { stickySubheadersSetting } from './timeFormatSetting'
+import { onStickySubheadersSetting, stickySubheadersSetting } from './timeFormatSetting'
 
 /** A section: its subheader row, its last row (`end === row` for an empty section), and whether its rows are folded. */
 export interface Section {
@@ -378,14 +378,21 @@ export const stickyOn = (table: ProseNode): boolean => (table.attrs.stickySubhea
 
 class SubheadView {
   #tables = new Map<HTMLElement, SubheadPinner>()
+  #unsubscribe: () => void
 
   constructor(view: EditorView) {
     this.update(view)
+    // Settings › Tables › Sticky subheaders changed: the tables that follow it pin or stop now, not at their next change.
+    this.#unsubscribe = onStickySubheadersSetting(() => this.#sync(view))
   }
 
   update(view: EditorView, prev?: EditorState): void {
+    if (prev !== undefined && subheadKey.getState(prev)!.generation === subheadKey.getState(view.state)!.generation) return
+    this.#sync(view)
+  }
+
+  #sync(view: EditorView): void {
     const state = subheadKey.getState(view.state)!
-    if (prev !== undefined && subheadKey.getState(prev)!.generation === state.generation) return
     const live = new Map<HTMLElement, ProseNode>()
     for (const deco of state.set.find(undefined, undefined, (spec) => spec.subhead === true)) {
       const node = view.state.doc.nodeAt(deco.from)
@@ -406,6 +413,7 @@ class SubheadView {
   }
 
   destroy(): void {
+    this.#unsubscribe()
     for (const pinner of this.#tables.values()) pinner.destroy()
     this.#tables.clear()
   }
