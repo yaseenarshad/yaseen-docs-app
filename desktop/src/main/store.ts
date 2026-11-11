@@ -699,6 +699,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableHeaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
   tableSubheaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
   tableStickySubheaders: (v): v is boolean => typeof v === 'boolean',
+  tableStickyHeader: (v): v is boolean => typeof v === 'boolean',
   tableTextInCells: (v): v is TableTextInCells => typeof v === 'string' && (TABLE_TEXT_IN_CELLS as readonly string[]).includes(v),
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
   tableNowButton: (v): v is boolean => typeof v === 'boolean',

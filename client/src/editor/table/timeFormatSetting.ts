@@ -70,6 +70,27 @@ export function onStickySubheadersSetting(listener: () => void): () => void {
 
 export const stickySubheadersSetting = (): boolean => stickySubheaders
 
+let stickyHeader = true
+const stickyHeaderListeners = new Set<() => void>()
+
+/**
+ * Settings › Tables › All tables › Sticky header row (YAZ-4899 round 2), App's door: the header row frozen unless a
+ * table says otherwise (`tableFreeze.ts`); a change tells the frozen-row plugin of each editor, which draws again.
+ */
+export function setStickyHeaderSetting(on: boolean): void {
+  if (stickyHeader === on) return
+  stickyHeader = on
+  for (const listener of stickyHeaderListeners) listener()
+}
+
+/** Calls `listener` on each change of the Settings default; returns the unsubscribe. */
+export function onStickyHeaderSetting(listener: () => void): () => void {
+  stickyHeaderListeners.add(listener)
+  return () => stickyHeaderListeners.delete(listener)
+}
+
+export const stickyHeaderSetting = (): boolean => stickyHeader
+
 let textInCells: TableTextInCells = 'wrap'
 
 /**

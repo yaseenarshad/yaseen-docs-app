@@ -41,7 +41,7 @@ import { isListItem } from '../outline/listNodes'
 import { tablerIcon, type TablerIcon } from './tableIcons'
 import { setCellsAttr, tableHasSubheads } from './cells'
 import { fillCalendarDay, goToNow, minutesOf, missingDayTimes, nowPlace, setTimeSlots } from './tableCalendar'
-import { calendarDaySetting, cellNoteButtonSetting, headerRowSetting, stickySubheadersSetting, subheaderRowSetting, textInCellsSetting, timeFormatSetting } from './timeFormatSetting'
+import { calendarDaySetting, cellNoteButtonSetting, headerRowSetting, stickyHeaderSetting, stickySubheadersSetting, subheaderRowSetting, textInCellsSetting, timeFormatSetting } from './timeFormatSetting'
 import { capital, headerSwatch } from './colours'
 import { CELL_ALIGNS, VALIGNS, type TableAttrs } from './tableStyle'
 import { superRule, turnBackPlain, turnIntoSuper } from './super/superTables'
@@ -225,6 +225,7 @@ export const tableRows: RowProvider = (view, target) => {
   const attrs = table.node.attrs as TableAttrs
   const noteDefault = cellNoteButtonSetting() ? 'on' : 'off'
   const stickyDefault = stickySubheadersSetting() ? 'on' : 'off'
+  const stickyHeaderDefault = stickyHeaderSetting() ? 'on' : 'off'
   const textDefault = textInCellsSetting()
   const current = attrs.border ?? BORDER_DEFAULT
   const cells = cellsOf(table.node)
@@ -335,6 +336,11 @@ export const tableRows: RowProvider = (view, target) => {
     // YAZ-4790 demo: Default follows Settings › Tables › Cell notes › Add button (off by default); a pick of Settings' value saves no part.
     choice('Cell note button', attrs.noteButton === null ? noteDefault : attrs.noteButton ? 'on' : 'off', noteDefault, [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) =>
       setTable(view, pos, { noteButton: on === noteDefault ? null : on === 'on' }),
+    ),
+    // YAZ-4899 round 2: this table's header row frozen (as "Freeze up to this row"); its own freeze wins (`tableFreeze.ts`).
+    // Default is Settings › Tables › Sticky header row (On by default); a pick of Settings' value saves no part.
+    choice('Sticky header row', attrs.stickyHeader === null ? stickyHeaderDefault : attrs.stickyHeader ? 'on' : 'off', stickyHeaderDefault, [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) =>
+      setTable(view, pos, { stickyHeader: on === stickyHeaderDefault ? null : on === 'on' }),
     ),
     // YAZ-4899: this table's sticky subheader rows; Default is Settings › Tables › Sticky subheaders (On by default).
     choice('Sticky subheaders', attrs.stickySubheaders === null ? stickyDefault : attrs.stickySubheaders ? 'on' : 'off', stickyDefault, [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) =>

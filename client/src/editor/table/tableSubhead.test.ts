@@ -21,8 +21,10 @@ import { tableData } from './super/superData'
 import { formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
 import { sectionsOf } from './tableSubhead'
 import { cellPos, mountNote, unmountAll } from './tableTestKit'
+import { setStickyHeaderSetting } from './timeFormatSetting'
 
 afterEach(async () => {
+  setStickyHeaderSetting(true)
   await unmountAll()
   vi.restoreAllMocks()
 })
@@ -382,6 +384,8 @@ describe('the sticky subheader row (items 8–9)', () => {
   }
 
   it('the section at the top pins its subheader row by a `translateY`, one update per frame; the next one pushes it up; it stops at the table end', async () => {
+    // The subheader rows alone: Settings › Sticky header row Off (YAZ-4899 round 2 tests both below).
+    setStickyHeaderSetting(false)
     const { offsets, scrollTo, frames, block } = await mount(EIGHT, 0)
     expect(block.hasAttribute('data-table-subheads')).toBe(true)
     expect(offsets()).toEqual(Array(9).fill(''))
@@ -417,9 +421,18 @@ describe('the sticky subheader row (items 8–9)', () => {
   })
 
   it('`nosticky` (and Settings Off by default) has no listener and moves nothing; a table without subheader rows neither', async () => {
+    setStickyHeaderSetting(false)
     const { offsets, scrollTo } = await mount(table(['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'], 'subhead 3 7, nosticky'), 0)
     scrollTo(-100)
     expect(offsets()).toEqual(Array(9).fill(''))
+  })
+
+  it('YAZ-4899 round 2: a sticky header row (Settings On) and sticky subheaders together: the header stays at the top, the section\'s subheader row right under it', async () => {
+    setStickyHeaderSetting(true)
+    const { offsets, scrollTo } = await mount(EIGHT, 0)
+    // The header row (frozen by the default) moves by the scrolled 100 px; r2 (row 2, at 60 px) pins under its 30 px: 30 - (60 - 100) = 70.
+    scrollTo(-100)
+    expect(offsets()).toEqual(['100px', '', '70px', '', '', '', '', '', ''])
   })
 })
 

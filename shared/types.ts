@@ -2122,6 +2122,8 @@ export interface SettingsState {
   tableSubheaderRow: HeaderRow
   /** Settings › Tables › All tables › Sticky subheaders (YAZ-4899): a subheader row stays at the top of the note while its section scrolls by. On by default; a table's own `sticky` / `nosticky` wins. `data-table-sticky-subheaders` on `.app`. */
   tableStickySubheaders: boolean
+  /** Settings › Tables › All tables › Sticky header row (YAZ-4899 round 2): the header row stays at the top of the note while the table scrolls by (frozen, as "Freeze up to this row"). On by default; a table's own `stickyheader` / `nostickyheader` wins, and its own freeze over that. */
+  tableStickyHeader: boolean
   /** Settings › Tables › All tables › Text in cells (YAZ-4900): every note table's cells Wrap (default) or Clip (one line, cut with "…"). A table's own `wrap` / `nowrap` wins, and a column's own `text` over that. `data-table-text` on `.app`. */
   tableTextInCells: TableTextInCells
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
@@ -2806,6 +2808,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableHeaderRow: DEFAULT_HEADER_ROW,
   tableSubheaderRow: DEFAULT_SUBHEADER_ROW,
   tableStickySubheaders: true,
+  tableStickyHeader: true,
   tableTextInCells: 'wrap',
   tableNowMark: 'line',
   tableNowButton: true,

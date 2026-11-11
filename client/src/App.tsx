@@ -55,7 +55,7 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
-import { setCalendarDaySetting, setCellNoteButtonSetting, setHeaderRowSetting, setStickySubheadersSetting, setSubheaderRowSetting, setTextInCellsSetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
+import { setCalendarDaySetting, setCellNoteButtonSetting, setHeaderRowSetting, setStickyHeaderSetting, setStickySubheadersSetting, setSubheaderRowSetting, setTextInCellsSetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
 import { dropNoteWindowsAt, renameNoteWindows } from './views/view/NoteWindow'
@@ -634,6 +634,9 @@ export function App() {
   const stickySubheaders = settings.tableStickySubheaders ?? DEFAULT_SETTINGS.tableStickySubheaders
   useEffect(() => setSubheaderRowSetting(subheaderRow), [subheaderRow])
   useEffect(() => setStickySubheadersSetting(stickySubheaders), [stickySubheaders])
+  // YAZ-4899 round 2: the header row frozen by default; a table's own choice or freeze wins.
+  const stickyHeader = settings.tableStickyHeader ?? DEFAULT_SETTINGS.tableStickyHeader
+  useEffect(() => setStickyHeaderSetting(stickyHeader), [stickyHeader])
   // YAZ-4900: every note table's Wrap or Clip; the page reads it from `.app` (`data-table-text`), the menus as their Default.
   const textInCells = settings.tableTextInCells ?? DEFAULT_SETTINGS.tableTextInCells
   useEffect(() => setTextInCellsSetting(textInCells), [textInCells])

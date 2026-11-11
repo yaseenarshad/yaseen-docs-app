@@ -111,7 +111,7 @@ export interface UnknownPart {
 }
 
 /** The words of the known parts, in the fixed order. */
-export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'merge', 'fold', 'nodim', 'subhead', 'zoom', 'border', 'header', 'subheader', 'sticky', 'nosticky', 'stripes', 'height', 'wrap', 'nowrap', 'text', 'freeze', 'calendar', 'nonow', 'notebutton', 'nonotebutton', 'super', 'view'] as const
+export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'merge', 'fold', 'nodim', 'subhead', 'zoom', 'border', 'header', 'subheader', 'sticky', 'nosticky', 'stickyheader', 'nostickyheader', 'stripes', 'height', 'wrap', 'nowrap', 'text', 'freeze', 'calendar', 'nonow', 'notebutton', 'nonotebutton', 'super', 'view'] as const
 
 /** Text in cells (YAZ-4900): Wrap (onto more lines) or Clip (one line, cut with "…"). Settings' default is Wrap. */
 export const CELL_TEXTS = ['wrap', 'clip'] as const
@@ -182,6 +182,8 @@ export interface TableStyle {
   subheader?: HeaderRowOwn
   /** Sticky subheaders (YAZ-4899): `true` is `sticky`, `false` `nosticky`; absent follows Settings › Tables › Sticky subheaders. */
   sticky?: boolean
+  /** Sticky header row (YAZ-4899 round 2): `true` is `stickyheader`, `false` `nostickyheader`; absent follows Settings › Tables › Sticky header row. */
+  stickyHeader?: boolean
   stripes?: true
   /** The row height; normal is the default. */
   height?: 'compact' | 'tall'
@@ -405,6 +407,11 @@ function readPart(style: TableStyle, word: string, rest: string[], part: string)
       if (rest.length !== 0) return false
       style.sticky = word === 'sticky'
       return true
+    case 'stickyheader':
+    case 'nostickyheader':
+      if (rest.length !== 0) return false
+      style.stickyHeader = word === 'stickyheader'
+      return true
     case 'height':
       if (rest.length !== 1 || !['compact', 'normal', 'tall'].includes(first)) return false
       if (first === 'normal') delete style.height
@@ -559,6 +566,8 @@ export function formatTableComment(style: TableStyle): string | null {
   }
   if (style.sticky === true) push('sticky', 'sticky')
   if (style.sticky === false) push('nosticky', 'nosticky')
+  if (style.stickyHeader === true) push('stickyheader', 'stickyheader')
+  if (style.stickyHeader === false) push('nostickyheader', 'nostickyheader')
   if (style.stripes) push('stripes', 'stripes')
   if (style.height) push('height', `height ${style.height}`)
   if (style.wrap && !style.nowrap) push('wrap', 'wrap')

@@ -54,20 +54,53 @@ import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
 import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
 import { changedTables, typingOnly } from './tableStyle'
+import { onStickyHeaderSetting, stickyHeaderSetting } from './timeFormatSetting'
+
+/** The header row sticks (YAZ-4899 round 2): the table's own choice (`stickyHeader`), else Settings › Tables › Sticky header row. */
+export const stickyHeaderOn = (table: ProseNode): boolean => (table.attrs.stickyHeader as boolean | null) ?? stickyHeaderSetting()
+
+/**
+ * The rows frozen from the top, inside the table: the table's own freeze (`freezeRows`, which wins), else one row for a
+ * sticky header row (YAZ-4899 round 2). The subheader pinner sits under them (`tableSubhead.ts`).
+ */
+export const frozenRowCount = (table: ProseNode): number => {
+  const own = table.attrs.freezeRows as number
+  return Math.max(0, Math.min(own > 0 ? own : stickyHeaderOn(table) ? 1 : 0, table.childCount))
+}
+
+/** A change of Settings › Tables › Sticky header row: the plugin draws every table's frozen rows again. */
+const FREEZE_REFRESH = 'mdapp-table-freeze-refresh'
 
 /** The table's columns: the grid's, not the header row's children (a merged header cell is one child, YAZ-4792). */
 const widthOf = (table: ProseNode): number => TableMap.get(table).width
 
-/** A table's freeze counts, inside the table. */
+/** A table's frozen counts, inside the table: the rows with a sticky header row counted in (`frozenRowCount`). */
 function counts(table: ProseNode): { rows: number; cols: number } {
+  const cols = Math.min(table.attrs.freezeCols as number, widthOf(table))
+  return { rows: frozenRowCount(table), cols: Math.max(0, cols) }
+}
+
+/** The table's OWN counts clamped inside it (the file's, a sticky header row not counted). */
+function ownCounts(table: ProseNode): { rows: number; cols: number } {
   const rows = Math.min(table.attrs.freezeRows as number, table.childCount)
   const cols = Math.min(table.attrs.freezeCols as number, widthOf(table))
   return { rows: Math.max(0, rows), cols: Math.max(0, cols) }
 }
 
 const overCounts = (table: ProseNode): boolean => {
-  const { rows, cols } = counts(table)
+  const { rows, cols } = ownCounts(table)
   return rows !== table.attrs.freezeRows || cols !== table.attrs.freezeCols
+}
+
+/** Every table's decorations in `doc`. */
+function allDecorations(doc: ProseNode): Decoration[] {
+  const decorations: Decoration[] = []
+  doc.descendants((node, pos) => {
+    if (node.type.name !== 'table') return !node.isTextblock
+    decorations.push(...frozenDecorations(node, pos))
+    return false
+  })
+  return decorations
 }
 
 /** What the decorations of a table depend on, besides its positions: the counts, rows and columns. */
@@ -308,16 +341,10 @@ export const tableFreeze = $prose(
     new Plugin<FreezeState>({
       key: freezeKey,
       state: {
-        init: (_, { doc }) => {
-          const decorations: Decoration[] = []
-          doc.descendants((node, pos) => {
-            if (node.type.name !== 'table') return !node.isTextblock
-            decorations.push(...frozenDecorations(node, pos))
-            return false
-          })
-          return { set: DecorationSet.create(doc, decorations), over: [], generation: 0 }
-        },
+        init: (_, { doc }) => ({ set: DecorationSet.create(doc, allDecorations(doc)), over: [], generation: 0 }),
         apply: (tr: Transaction, value) => {
+          // The Settings default changed (YAZ-4899 round 2): every table's frozen rows, drawn again from the new default.
+          if (tr.getMeta(FREEZE_REFRESH) === true) return { set: DecorationSet.create(tr.doc, allDecorations(tr.doc)), over: value.over, generation: value.generation + 1 }
           if (!tr.docChanged) return value
           let set = value.set.map(tr.mapping, tr.doc)
           if (value.over.length === 0 && typingOnly(tr)) return { ...value, set }
@@ -345,12 +372,22 @@ export const tableFreeze = $prose(
         const tr = state.tr
         for (const pos of over) {
           const table = state.doc.nodeAt(pos)!
-          const { rows, cols } = counts(table)
+          const { rows, cols } = ownCounts(table)
           tr.setNodeMarkup(pos, undefined, { ...table.attrs, freezeRows: rows, freezeCols: cols })
         }
         return tr
       },
       props: { decorations: (state) => freezeKey.getState(state)!.set },
-      view: (view) => new FreezeView(view),
+      view: (view) => {
+        const freezer = new FreezeView(view)
+        const unsubscribe = onStickyHeaderSetting(() => view.dispatch(view.state.tr.setMeta(FREEZE_REFRESH, true)))
+        return {
+          update: (v, prev) => freezer.update(v, prev),
+          destroy: () => {
+            unsubscribe()
+            freezer.destroy()
+          },
+        }
+      },
     }),
 )

@@ -97,6 +97,8 @@ export const TABLE_DEFAULTS = {
   subheader: {} as HeaderRowOwn,
   /** Sticky subheaders (YAZ-4899): `true` saves `sticky`, `false` `nosticky`, `null` follows Settings. */
   stickySubheaders: null as boolean | null,
+  /** Sticky header row (YAZ-4899 round 2): `true` saves `stickyheader`, `false` `nostickyheader`, `null` follows Settings; the frozen rows read it (`tableFreeze.ts`). */
+  stickyHeader: null as boolean | null,
   stripes: false,
   height: 'normal' as 'compact' | 'normal' | 'tall',
   /** Text in cells (YAZ-4900): `false` is Clip (saves `nowrap`), `true` Wrap (saves `wrap`), `null` follows Settings › Tables › Text in cells. */
@@ -133,6 +135,7 @@ function tableLevel(attrs: Record<string, unknown>): TableLevel {
   const subheader = headerRowOwn(attrs.subheader)
   if (Object.keys(subheader).length > 0) out.subheader = subheader
   if (typeof attrs.stickySubheaders === 'boolean') out.sticky = attrs.stickySubheaders
+  if (typeof attrs.stickyHeader === 'boolean') out.stickyHeader = attrs.stickyHeader
   if (attrs.stripes === true) out.stripes = true
   if (attrs.height === 'compact' || attrs.height === 'tall') out.height = attrs.height
   if (attrs.wrap === false) out.nowrap = true
@@ -247,6 +250,7 @@ function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> |
   if (style.length > 0) out.style = style.join('; ')
   Object.assign(out, headerRowAttrs(level.header ?? {}), subheaderRowAttrs(level.subheader ?? {}))
   if (level.sticky !== undefined) out['data-table-sticky-subheaders'] = level.sticky ? 'on' : 'off'
+  if (level.stickyHeader !== undefined) out['data-table-sticky-header'] = level.stickyHeader ? 'on' : 'off'
   if (level.stripes) out['data-table-stripes'] = ''
   if (level.height) out['data-table-height'] = level.height
   if (level.nowrap) out['data-table-nowrap'] = ''
@@ -279,6 +283,7 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
     header: Object.fromEntries(HEADER_ROW_PARTS.map((part) => [part, dom.getAttribute(`data-table-header-${part}`)])),
     subheader: Object.fromEntries(HEADER_ROW_PARTS.map((part) => [part, dom.getAttribute(`data-table-subheader-${part}`)])),
     stickySubheaders: dom.getAttribute('data-table-sticky-subheaders') === 'on' ? true : dom.getAttribute('data-table-sticky-subheaders') === 'off' ? false : null,
+    stickyHeader: dom.getAttribute('data-table-sticky-header') === 'on' ? true : dom.getAttribute('data-table-sticky-header') === 'off' ? false : null,
     stripes: dom.hasAttribute('data-table-stripes'),
     height: dom.getAttribute('data-table-height'),
     wrap: dom.hasAttribute('data-table-nowrap') ? false : dom.hasAttribute('data-table-wrap') ? true : null,
@@ -302,6 +307,7 @@ const levelAttrs = (style: TableLevel): TableAttrs => ({
   header: style.header ?? {},
   subheader: style.subheader ?? {},
   stickySubheaders: style.sticky ?? null,
+  stickyHeader: style.stickyHeader ?? null,
   stripes: style.stripes === true,
   height: style.height ?? 'normal',
   wrap: style.nowrap === true ? false : style.wrap === true ? true : null,

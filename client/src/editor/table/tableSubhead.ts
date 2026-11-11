@@ -57,6 +57,7 @@ import { rowFolded, rowSubhead, sectionEnd, subheadOf, tableHasSubheads } from '
 import { keepingScroll } from './tableFold'
 import { TABLE_HANDLE_PLACE } from './tableFreeze'
 import { changedTables, typingOnly } from './tableStyle'
+import { frozenRowCount } from './tableFreeze'
 import { onStickySubheadersSetting, stickySubheadersSetting } from './timeFormatSetting'
 
 /** A section: its subheader row, its last row (`end === row` for an empty section), and whether its rows are folded. */
@@ -332,7 +333,7 @@ class SubheadPinner {
     const naturalTop = (r: number): number => rows[r]!.getBoundingClientRect().top - (pinned !== null && pinned.row === rows[r] ? pinned.offset * zoom : 0)
     const scrollerTop = scroller.getBoundingClientRect().top + scroller.clientTop * zoom
     // Under the frozen rows (`tableFreeze.ts`): their height ends at the last frozen row shown.
-    const frozen = Math.min(node.attrs.freezeRows as number, rows.length)
+    const frozen = Math.min(frozenRowCount(node), rows.length)
     let frozenHeight = 0
     if (frozen > 0) {
       let last = frozen - 1

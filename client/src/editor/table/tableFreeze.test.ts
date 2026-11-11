@@ -10,9 +10,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe } from '../createCrepe'
+import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { TABLE_HANDLE_MENU } from '../noteMenu'
 import { cellPos } from './tableTestKit'
+import { setStickyHeaderSetting } from './timeFormatSetting'
 
 const mounted: Array<{ crepe: Crepe; scroller: HTMLElement }> = []
 afterEach(async () => {
@@ -23,6 +24,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
   delete (HTMLElement.prototype as unknown as Record<string, unknown>).animate
   moved.clear()
+  setStickyHeaderSetting(true)
 })
 
 /** Web Animations, which jsdom lacks: the `translateY` that each row's animation holds now. */
@@ -43,7 +45,10 @@ const box = (top: number, height: number) => new DOMRect(0, top, 300, height)
  * A note in a vertical scroller; every frame is held until `flush`. Rows are 30 px, the table starts at `tableTop`.
  * `tableZoom` is the table's own zoom (YAZ-4091): the table and its rows are drawn at both zooms, the block at the page's.
  */
-async function mount(comment: string, { tableTop = -80, zoom = 1, tableZoom = 1 } = {}) {
+async function mount(comment: string, { tableTop = -80, zoom = 1, tableZoom = 1, stickyHeader = false } = {}) {
+  // The tests of the freeze itself run with Settings › Sticky header row Off (YAZ-4899 round 2): with it On, every
+  // table has a frozen header row. `stickyHeader` mounts with it On.
+  setStickyHeaderSetting(stickyHeader)
   Object.assign(HTMLElement.prototype, { animate: animateStub })
   const frames: FrameRequestCallback[] = []
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -78,6 +83,7 @@ async function mount(comment: string, { tableTop = -80, zoom = 1, tableZoom = 1 
   Object.defineProperty(block, 'currentCSSZoom', { value: zoom, configurable: true })
   return {
     view,
+    crepe,
     block,
     frames,
     scroller,
@@ -105,6 +111,44 @@ const setFreeze = (view: EditorView, rows: number, cols: number) => {
   const pos = tablePos(view)
   view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...view.state.doc.nodeAt(pos)!.attrs, freezeRows: rows, freezeCols: cols }))
 }
+
+describe('the sticky header row (YAZ-4899 round 2): the header row frozen by Settings, a table\'s own choice or freeze over it', () => {
+  const frozenRows = (view: EditorView) => rowsOf(view).map((row) => row.classList.contains('table-frozen-row'))
+  const blockOf = (view: EditorView) => view.dom.querySelector<HTMLElement>('.milkdown-table-block')!
+
+  it('Settings On freezes the header row of a plain table (the frozen-row classes, the block mark); Off at once clears it; On again brings it back', async () => {
+    const { view, crepe } = await mount('', { stickyHeader: true })
+    expect(frozenRows(view)).toEqual([true, false, false, false])
+    expect(rowsOf(view)[0].classList.contains('table-frozen-row-end')).toBe(true)
+    expect(blockOf(view).hasAttribute('data-table-frozen')).toBe(true)
+    setStickyHeaderSetting(false)
+    expect(frozenRows(view)).toEqual([false, false, false, false])
+    expect(blockOf(view).hasAttribute('data-table-frozen')).toBe(false)
+    setStickyHeaderSetting(true)
+    expect(frozenRows(view)).toEqual([true, false, false, false])
+    // No part in the file: the table follows Settings.
+    expect(getMarkdownForSave(crepe)).not.toContain('table:')
+  })
+
+  it('`nostickyheader` keeps the header row free with Settings On; `stickyheader` freezes it with Settings Off; both round-trip', async () => {
+    const off = await mount('<!-- table: nostickyheader -->', { stickyHeader: true })
+    expect(frozenRows(off.view)).toEqual([false, false, false, false])
+    expect(getMarkdownForSave(off.crepe)).toContain('<!-- table: nostickyheader -->')
+    const on = await mount('<!-- table: stickyheader -->')
+    expect(frozenRows(on.view)).toEqual([true, false, false, false])
+    expect(getMarkdownForSave(on.crepe)).toContain('<!-- table: stickyheader -->')
+  })
+
+  it('the table\'s own freeze wins and is kept: `freeze 2 rows` freezes two rows with Settings On, and the file keeps only `freeze`', async () => {
+    const { view, crepe } = await mount('<!-- table: freeze 2 rows -->', { stickyHeader: true })
+    expect(frozenRows(view)).toEqual([true, true, false, false])
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: freeze 2 rows -->')
+    // "Unfreeze rows" (the attribute back to 0): the header row stays frozen by Settings; the file says nothing.
+    setFreeze(view, 0, 0)
+    expect(frozenRows(view)).toEqual([true, false, false, false])
+    expect(getMarkdownForSave(crepe)).not.toContain('table:')
+  })
+})
 
 describe('the frozen cells', () => {
   it('frozen rows and the cells of frozen columns carry their classes, and lose them on unfreeze', async () => {

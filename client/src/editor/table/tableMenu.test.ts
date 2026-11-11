@@ -14,6 +14,7 @@ import type { MenuAction, MenuItem, MenuSection } from '../../sidebar/menuSectio
 import { getMarkdownForSave } from '../createCrepe'
 import { noteMenuSections } from '../noteMenu'
 import { cellDOM, cellPos, mountNote as mount, unmountAll } from './tableTestKit'
+import { setStickyHeaderSetting } from './timeFormatSetting'
 
 afterEach(unmountAll)
 
@@ -295,6 +296,7 @@ describe('freeze (S3)', () => {
     row(view, 1, 0, 'table-unfreeze-rows').onSelect()
     expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: freeze 1 col -->\n`)
     row(view, 1, 0, 'table-unfreeze-cols').onSelect()
+    setStickyHeaderSetting(true)
     expect(getMarkdownForSave(crepe)).toBe(before)
     expect(row(view, 1, 0, 'table-unfreeze-rows').disabled).toBe(true)
     undo(view.state, view.dispatch)
@@ -302,6 +304,8 @@ describe('freeze (S3)', () => {
   })
 
   it('the page shows a freeze at once, and an unfreeze clears it at once (no edit needed)', async () => {
+    // Settings › Sticky header row Off (YAZ-4899 round 2): with it On, an unfreeze keeps the header row frozen.
+    setStickyHeaderSetting(false)
     const { view } = await mount(TABLE)
     const frozenRows = () => [...view.dom.querySelectorAll('tbody[data-content-dom] > tr')].map((tr) => tr.classList.contains('table-frozen-row'))
     const frozenCols = () => [...view.dom.querySelectorAll('tbody[data-content-dom] > tr:nth-child(3) > *')].map((cell) => cell.classList.contains('table-frozen-col'))

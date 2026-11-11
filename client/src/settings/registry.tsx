@@ -1264,6 +1264,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
+            // YAZ-4899 round 2: the header row stays at the top of the note while the table scrolls by (the same freeze as
+            // "Freeze up to this row"); a table's own freeze wins.
+            id: 'tableStickyHeader',
+            label: 'Sticky header row',
+            hint: "The header row stays at the top of the note while the table scrolls by. A table's 6-dot menu can turn its own on or off; a table's own Freeze wins.",
+            keywords: ['header', 'sticky', 'stick', 'pinned', 'frozen', 'freeze', 'scroll', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableStickyHeader ?? true} onChange={(tableStickyHeader) => onChange({ ...settings, tableStickyHeader })} ariaLabel="Sticky header row" />
+            ),
+          },
+          {
             // YAZ-4899: a subheader row stays at the top of the note while its section scrolls by, under any frozen rows.
             id: 'tableStickySubheaders',
             label: 'Sticky subheaders',

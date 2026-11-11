@@ -91,6 +91,7 @@ describe('settingCandidates', () => {
       'tableHeaderRow',
       // Subheader row and Sticky subheaders (YAZ-4899) next to it.
       'tableSubheaderRow',
+      'tableStickyHeader',
       'tableStickySubheaders',
       'tableWidth',
       // Text in cells (YAZ-4900).
