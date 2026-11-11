@@ -15,7 +15,8 @@
  * - `summary <column> count|sum|average`: the summary row.
  * - `lines always|off` (on hover by default) and `thread`: the group lines.
  *
- * A word that is not one plain word (letters, digits, `_ . - + % # : /`), or that is a keyword, is written in double
+ * A word that is not one plain word (letters, digits, `_ . - + % # : /`), or that is a keyword (in small letters: a
+ * column `Group` is a plain word, a column `group` is quoted), is written in double
  * quotes: inside them `\"` is a quote and `\\` a backslash, and any other `\x` is `x` (the writer puts `--\>` for
  * `-->`, so no name can end the comment). A comma inside quotes is a comma: `tableComment.ts` splits at commas outside
  * quotes only. A part the reader cannot read is `null`, and the comment keeps it as its text.
@@ -92,7 +93,7 @@ const PLAIN = /^[\p{L}\p{N}_.+%#:/-]+$/u
 
 /** One word as the comment writes it: bare when plain and no keyword, else quoted. */
 export function formatWord(text: string): string {
-  if (PLAIN.test(text) && !KEYWORDS.has(text.toLowerCase())) return text
+  if (PLAIN.test(text) && !KEYWORDS.has(text)) return text
   return `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/-->/g, '--\\>')}"`
 }
 
@@ -163,7 +164,7 @@ const isKeyword = (token: Token | undefined, word: string): boolean => token !==
 
 /** A value a column or a name can hold: not empty, no keyword left bare. */
 const nameOf = (token: Token | undefined): string | null =>
-  token === undefined || token.text === '' || (!token.quoted && KEYWORDS.has(token.text.toLowerCase())) ? null : token.text
+  token === undefined || token.text === '' || (!token.quoted && KEYWORDS.has(token.text)) ? null : token.text
 
 /** One `view …` part, or `null` when the reader cannot read it. */
 export function readView(part: string): TableViewDef | null {
@@ -214,7 +215,7 @@ export function readView(part: string): TableViewDef | null {
         i += 3
         if (VIEW_OPS[filter.op]) {
           const value = tokens[i]
-          if (value === undefined || (!value.quoted && KEYWORDS.has(value.text.toLowerCase()))) return null
+          if (value === undefined || (!value.quoted && KEYWORDS.has(value.text))) return null
           filter.value = value.text
           i++
         }

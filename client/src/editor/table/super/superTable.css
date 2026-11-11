@@ -1,0 +1,261 @@
+/* A Super table's tabs, panels and view (YAZ-4869 S2–S5, `SuperTable.tsx`); the lazy chunk's own. The place of the bar
+   and the hidden table are `table.css`'s (eager, small). The view looks like a note table: the same borders, header
+   shade, fills and text colours (`table.css` tokens), with the folder pages' group headers (`views.css`). */
+
+.table-super-bar__tabs,
+.table-super-bar__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.table-super-bar__tab,
+.table-super-bar__tool {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.table-super-bar__tab:hover,
+.table-super-bar__tool:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.table-super-bar__tab[aria-selected='true'] {
+  background: var(--bg-side, var(--bg-hover));
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.table-super-bar__tool[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.table-super-bar__count {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  font-size: 11px;
+}
+
+.table-super-bar__tools {
+  padding-left: 6px;
+  margin-left: 4px;
+  border-left: 1px solid var(--border);
+}
+
+.table-super-bar__rename {
+  width: 120px;
+  height: 22px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.table-super-bar__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+}
+
+.super-menu {
+  min-width: 280px;
+  max-width: 520px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.super-menu__segments {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.super-menu__segments .view-chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.super-menu__value {
+  min-width: 90px;
+}
+
+.super-menu__danger {
+  color: var(--danger, #d33);
+}
+
+/* The view: in the page's flow, no sideways scroll, so the column header and the group headers stick natively. */
+.table-super-view {
+  margin: 4px 0 12px;
+}
+
+.table-super-view__tip,
+.table-super-view__empty {
+  margin: 4px 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.super-view {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.super-view :is(th, td) {
+  padding: 4px 10px;
+  border: 0 solid color-mix(in srgb, var(--crepe-color-outline) var(--table-border-darkness, 20%), transparent);
+  border-width: 0 1px 1px 0;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  background-color: var(--table-cell-tint, transparent);
+}
+
+.super-view :is(th, td):first-child {
+  border-left-width: 1px;
+}
+
+.super-view thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  border-top-width: 1px;
+  background-color: var(--bg);
+  background-image: linear-gradient(color-mix(in srgb, var(--crepe-color-on-background) 6%, transparent), color-mix(in srgb, var(--crepe-color-on-background) 6%, transparent));
+  font-weight: 600;
+  text-align: left;
+}
+
+/* S3: the group headers stick under the column header, one row height a level, as on folder pages. */
+.super-view .super-view__group > td {
+  position: sticky;
+  top: calc(var(--super-head-h, 31px) + var(--super-depth, 0) * var(--super-group-h, 31px));
+  z-index: 2;
+  padding: 2px 8px;
+  background: var(--bg);
+}
+
+.super-view .super-view__group > td:not(.super-view__gutter) {
+  padding-left: calc(8px + var(--super-depth, 0) * 12px);
+}
+
+.super-view .super-view__group .view-group {
+  min-height: 26px;
+}
+
+/* The group lines (YAZ-4798's look): one per open group, in a gutter column, on hover by default. */
+.super-view__gutter {
+  position: relative;
+  width: var(--super-gutter, 0);
+  padding: 0 !important;
+}
+
+.super-view__gutter > i {
+  position: absolute;
+  top: 0;
+  bottom: -1px;
+  width: 1px;
+  background: color-mix(in srgb, var(--fg-muted) 40%, transparent);
+  visibility: hidden;
+}
+
+.super-view[data-group-lines='always'] .super-view__gutter > i,
+.super-view[data-group-lines='hover']:hover .super-view__gutter > i {
+  visibility: visible;
+}
+
+.super-view[data-thread] .super-view__gutter > i[data-on-path] {
+  width: 2px;
+  background: var(--accent);
+}
+
+.super-view__row[draggable='true'] {
+  cursor: grab;
+}
+
+.super-view__row[data-found] > td {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* A cell note's corner, as in the table. */
+.super-view td[data-note] {
+  background-image: linear-gradient(225deg, color-mix(in srgb, var(--fg-muted) 35%, transparent) 4.24px, transparent 4.24px);
+}
+
+/* A windowed view (above 500 lines): one line a row, so the spacer rows count true. */
+.super-view[data-windowed] tbody td {
+  height: 33px;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.super-view__edit {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+}
+
+.super-view__summary td {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.super-view__summary-kind {
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  opacity: 0;
+}
+
+.super-view__summary:hover .super-view__summary-kind,
+.super-view__summary-kind:focus,
+.super-view__summary-kind:has(+ .super-view__summary-value) {
+  opacity: 1;
+}
+
+.super-view__summary-value {
+  margin-left: 4px;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Fills and text colours: the table's own tokens (`table.css`). */
+.super-view td[data-fill='red'] { --table-cell-tint: var(--table-fill-red); }
+.super-view td[data-fill='orange'] { --table-cell-tint: var(--table-fill-orange); }
+.super-view td[data-fill='yellow'] { --table-cell-tint: var(--table-fill-yellow); }
+.super-view td[data-fill='green'] { --table-cell-tint: var(--table-fill-green); }
+.super-view td[data-fill='teal'] { --table-cell-tint: var(--table-fill-teal); }
+.super-view td[data-fill='blue'] { --table-cell-tint: var(--table-fill-blue); }
+.super-view td[data-fill='purple'] { --table-cell-tint: var(--table-fill-purple); }
+.super-view td[data-fill='pink'] { --table-cell-tint: var(--table-fill-pink); }
+.super-view td[data-fill='grey'] { --table-cell-tint: var(--table-fill-grey); }
+.super-view td[data-fill='brown'] { --table-cell-tint: var(--table-fill-brown); }
+.super-view td[data-fill^='#'] { --table-cell-tint: color-mix(in srgb, var(--table-fill-custom) var(--table-fill-wash), transparent); }
+.super-view td[data-color='red'] { color: var(--table-text-red); }
+.super-view td[data-color='orange'] { color: var(--table-text-orange); }
+.super-view td[data-color='yellow'] { color: var(--table-text-yellow); }
+.super-view td[data-color='green'] { color: var(--table-text-green); }
+.super-view td[data-color='teal'] { color: var(--table-text-teal); }
+.super-view td[data-color='blue'] { color: var(--table-text-blue); }
+.super-view td[data-color='purple'] { color: var(--table-text-purple); }
+.super-view td[data-color='pink'] { color: var(--table-text-pink); }
+.super-view td[data-color='grey'] { color: var(--table-text-grey); }
+.super-view td[data-color='brown'] { color: var(--table-text-brown); }
+.super-view td[data-color^='#'] { color: var(--table-text-custom); }

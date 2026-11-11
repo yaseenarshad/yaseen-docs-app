@@ -61,6 +61,9 @@ interface SuperMeta {
   view: string | null
 }
 
+/** A view's own write (an edit, a drop): its table draws again at once, not after the typing debounce. */
+export const SUPER_NOW = 'mdapp-super-now'
+
 // ---------- the rules (S1) ----------
 
 /** Why `table` cannot be a Super table (items 17, 18), or `null`. */
@@ -219,7 +222,7 @@ function applyState(tr: Transaction, prev: SuperState): SuperState {
   if (!tr.docChanged && meta === undefined) return prev
   let hidden = tr.docChanged ? prev.hidden.map(tr.mapping, tr.doc) : prev.hidden
   const dirty = new Set<number>()
-  const typing = tr.docChanged && typingOnly(tr)
+  const typing = tr.docChanged && typingOnly(tr) && tr.getMeta(SUPER_NOW) !== true
   if (typing) {
     // A key: only the table around the step, when it is a Super table. Typing anywhere else marks nothing.
     tr.steps.forEach((step, i) => {
