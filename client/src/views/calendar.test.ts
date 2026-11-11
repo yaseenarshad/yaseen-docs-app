@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_FOLDER_PAGES, type IndexRecord } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
-import { addDays, bucketByDay, calendarDateKey, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
+import { addDays, bucketByDay, calendarDateKey, calendarEndKey, daysBetween, layoutWeek, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -255,5 +255,74 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     expect(hidesWeekends(view(), true)).toBe(true)
     expect(hidesWeekends(view({ hideWeekends: true }), false)).toBe(true)
     expect(hidesWeekends(view({ hideWeekends: false }), true)).toBe(false)
+  })
+})
+
+describe('cards over several days (YAZ-4858)', () => {
+  it('spanOf: start to end; an end with no start is its end day (item 5); an end on or before the start is one day', () => {
+    expect(spanOf({ due: '2026-12-03 09:00', end: '2026-12-05' }, 'due', 'end')).toEqual({ start: '2026-12-03', end: '2026-12-05' })
+    expect(spanOf({ end: '2026-12-05' }, 'due', 'end')).toEqual({ start: '2026-12-05', end: '2026-12-05' })
+    expect(spanOf({ due: '2026-12-05', end: '2026-12-03' }, 'due', 'end')).toEqual({ start: '2026-12-05', end: '2026-12-05' })
+    expect(spanOf({ due: '2026-12-05' }, 'due', null)).toEqual({ start: '2026-12-05', end: '2026-12-05' })
+    expect(spanOf({}, 'due', 'end')).toBeNull()
+  })
+
+  it('bucketByDay: a span goes to `multi`, an end-only note on its end day, and a preview moves one card', () => {
+    const rows = [row('Trip', { due: '2026-12-03', end: '2026-12-05' }), row('After', { end: '2026-12-07' }), row('One', { due: '2026-12-04' }), row('None', {})]
+    const { days, multi, undated } = bucketByDay(rows, 'due', 'end')
+    expect(multi.map((m) => [m.row.record.title, m.start, m.end])).toEqual([['Trip', '2026-12-03', '2026-12-05']])
+    expect(days.get('2026-12-07')?.map((r) => r.record.title)).toEqual(['After'])
+    expect(days.get('2026-12-04')?.map((r) => r.record.title)).toEqual(['One'])
+    expect(undated.map((r) => r.record.title)).toEqual(['None'])
+    // With no End date the calendar is as before: by the start alone.
+    expect(bucketByDay(rows, 'due').multi).toEqual([])
+    expect(bucketByDay(rows, 'due').undated.map((r) => r.record.title)).toEqual(['After', 'None'])
+    const preview = bucketByDay(rows, 'due', 'end', { path: '/vault/One.md', start: '2026-12-04', end: '2026-12-06' })
+    expect(preview.multi.map((m) => m.row.record.title)).toEqual(['Trip', 'One'])
+    expect(preview.days.get('2026-12-04')).toBeUndefined()
+  })
+
+  const span = (name: string, start: string, end: string): Span => ({ row: row(name, {}), start, end })
+  const WEEK = weekDays('2026-12-07') // Mon Dec 7 … Sun Dec 13
+  const placed = (bars: ReturnType<typeof layoutWeek>['bars']) => bars.map((b) => [b.span.row.record.title, b.col, b.cols, b.lane, b.cutStart, b.cutEnd])
+
+  it('layoutWeek: each bar cut to the row, in the first free lane; longer first on the same start', () => {
+    const { bars, lanes } = layoutWeek(WEEK, [span('Short', '2026-12-08', '2026-12-09'), span('Long', '2026-12-08', '2026-12-11'), span('Later', '2026-12-10', '2026-12-12'), span('Edge', '2026-12-12', '2026-12-15')])
+    expect(placed(bars)).toEqual([
+      ['Long', 1, 4, 0, false, false],
+      ['Short', 1, 2, 1, false, false],
+      ['Later', 3, 3, 1, false, false],
+      ['Edge', 5, 2, 0, false, true],
+    ])
+    expect(lanes).toBe(2)
+  })
+
+  it('layoutWeek: a bar from an earlier week is cut at the start; one off the row is left out', () => {
+    const { bars } = layoutWeek(WEEK, [span('From before', '2026-12-04', '2026-12-08'), span('Elsewhere', '2026-12-14', '2026-12-16')])
+    expect(placed(bars)).toEqual([['From before', 0, 2, 0, true, false]])
+  })
+
+  it('layoutWeek: with the weekends hidden a bar over a weekend is cut on both rows', () => {
+    const days = withoutWeekends(WEEK) // Mon Dec 7 … Fri Dec 11
+    expect(placed(layoutWeek(days, [span('Weekend trip', '2026-12-11', '2026-12-14')]).bars)).toEqual([['Weekend trip', 4, 1, 0, false, true]])
+    expect(placed(layoutWeek(withoutWeekends(weekDays('2026-12-14')), [span('Weekend trip', '2026-12-11', '2026-12-14')]).bars)).toEqual([['Weekend trip', 0, 1, 0, true, false]])
+    // A bar on Saturday and Sunday alone has no shown day on the row.
+    expect(layoutWeek(days, [span('Sat–Sun', '2026-12-12', '2026-12-13')]).bars).toEqual([])
+  })
+
+  it('daysBetween and spanLabel', () => {
+    expect(daysBetween('2026-12-03', '2026-12-05')).toBe(2)
+    expect(daysBetween('2026-12-05', '2026-11-30')).toBe(-5)
+    // Across the change to summer time the count stays whole.
+    expect(daysBetween('2026-03-28', '2026-03-30')).toBe(2)
+    expect(spanLabel('2026-12-03', '2026-12-05')).toBe('Dec 3 – Dec 5, 2026')
+    expect(spanLabel('2026-12-03', '2026-12-03')).toBe('Dec 3, 2026')
+  })
+
+  it('calendarEndKey: only the view\'s own choice, and never the start column itself', () => {
+    const view = (endDateProperty?: string): ViewDef => ({ type: 'calendar', name: 'C', ...(endDateProperty === undefined ? {} : { endDateProperty }) })
+    expect(calendarEndKey(view(), 'due', {})).toBeNull()
+    expect(calendarEndKey(view('note.end'), 'due', {})).toBe('end')
+    expect(calendarEndKey(view('note.due'), 'due', {})).toBeNull()
   })
 })

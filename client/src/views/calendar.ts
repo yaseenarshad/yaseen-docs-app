@@ -55,21 +55,106 @@ export function timeOf(raw: unknown): string | null {
   return parsed === null || !parsed.hasTime ? null : renderDate(parsed.ms, true).slice(11, 16)
 }
 
-/** The rows on each day, in row order, and the "No date" tray: one pass (the view memoizes it). */
-export function bucketByDay(rows: readonly Row[], key: string | null): { days: Map<DayKey, Row[]>; undated: Row[] } {
+/** A card over several days (YAZ-4858): its row and its first and last day, `start < end`. */
+export interface Span {
+  row: Row
+  start: DayKey
+  end: DayKey
+}
+
+/**
+ * A card's days (YAZ-4858): its start day and its end day (the `endKey` column's), the same day for a one-day card;
+ * null for no day. A note with an end and no start goes on its end day (item 5); an end on or before the start is no
+ * span, the card is a one-day card on its start.
+ */
+export function spanOf(properties: Readonly<Record<string, unknown>>, key: string | null, endKey: string | null): { start: DayKey; end: DayKey } | null {
+  const start = key === null ? null : dayOf(properties[key])
+  const end = endKey === null ? null : dayOf(properties[endKey])
+  if (start === null) return end === null ? null : { start: end, end }
+  return end !== null && end > start ? { start, end } : { start, end: start }
+}
+
+/** A card's days while one of its edges drags (YAZ-4858): `path` shows on `start`…`end` in place of its own. */
+export interface SpanPreview {
+  path: string
+  start: DayKey
+  end: DayKey
+}
+
+/**
+ * The rows on each day, in row order, the cards over several days (`multi`, YAZ-4858, by their `endKey`), and the
+ * "No date" tray: one pass (the view memoizes it). `preview` puts one card on the days an edge drag has reached.
+ */
+export function bucketByDay(rows: readonly Row[], key: string | null, endKey: string | null = null, preview: SpanPreview | null = null): { days: Map<DayKey, Row[]>; multi: Span[]; undated: Row[] } {
   const days = new Map<DayKey, Row[]>()
+  const multi: Span[] = []
   const undated: Row[] = []
   for (const row of rows) {
-    const day = key === null ? null : dayOf(row.record.properties[key])
-    if (day === null) undated.push(row)
+    const span = preview?.path === row.record.path ? preview : endKey === null ? null : spanOf(row.record.properties, key, endKey)
+    const day = span !== null ? span.start : key === null ? null : dayOf(row.record.properties[key])
+    if (span !== null && span.end > span.start) multi.push({ row, start: span.start, end: span.end })
+    else if (day === null) undated.push(row)
     else {
       const list = days.get(day)
       if (list === undefined) days.set(day, [row])
       else list.push(row)
     }
   }
-  return { days, undated }
+  return { days, multi, undated }
 }
+
+/** A bar on one week row (YAZ-4858): its first column, how many columns it spans, its lane, and which ends the row cuts. */
+export interface BarPlace {
+  span: Span
+  col: number
+  cols: number
+  lane: number
+  /** The bar starts before this row's first shown day: that end is cut, square and with no edge. */
+  cutStart: boolean
+  /** The bar ends after this row's last shown day. */
+  cutEnd: boolean
+}
+
+/**
+ * The bars of one week row (YAZ-4858): each span that has a shown day in `days` (the row's days in order, with or
+ * without its weekends), cut to those days, in lanes above the one-day cards. The lanes fill in order: the bar that
+ * starts first, then the longer one, then row order, takes the first lane free from its first column on. Pure.
+ */
+export function layoutWeek(days: readonly DayKey[], multi: readonly Span[]): { bars: BarPlace[]; lanes: number } {
+  const placed: Omit<BarPlace, 'lane'>[] = []
+  if (days.length === 0) return { bars: [], lanes: 0 }
+  const first = days[0]
+  const last = days[days.length - 1]
+  for (const span of multi) {
+    if (span.end < first || span.start > last) continue
+    const col = days.findIndex((d) => d >= span.start)
+    let end = -1
+    for (let i = days.length - 1; i >= 0; i--)
+      if (days[i] <= span.end) {
+        end = i
+        break
+      }
+    if (col === -1 || end < col) continue
+    placed.push({ span, col, cols: end - col + 1, cutStart: span.start < days[col], cutEnd: span.end > days[end] })
+  }
+  placed.sort((a, b) => a.col - b.col || b.cols - a.cols)
+  const laneEnds: number[] = []
+  const bars = placed.map((bar) => {
+    let lane = laneEnds.findIndex((end) => end < bar.col)
+    if (lane === -1) lane = laneEnds.push(0) - 1
+    laneEnds[lane] = bar.col + bar.cols - 1
+    return { ...bar, lane }
+  })
+  return { bars, lanes: laneEnds.length }
+}
+
+/** The days from `from` to `to` (negative when `to` is earlier): a bar's whole-card drag moves both its dates by it (YAZ-4858). */
+export function daysBetween(from: DayKey, to: DayKey): number {
+  return Math.round((localDay(to).getTime() - localDay(from).getTime()) / 86_400_000)
+}
+
+/** A span as a move's toast names it (YAZ-4858): `Dec 3 – Dec 5, 2026`; one day as `dayLabel`. */
+export const spanLabel = (start: DayKey, end: DayKey): string => (end > start ? weekLabel([start, end]) : dayLabel(start))
 
 /** The days from the week's first day to `date`: Monday first (D11), or Sunday first (Settings › Folder pages, YAZ-4585). */
 const intoWeek = (date: Date, sundayFirst: boolean): number => (sundayFirst ? date.getDay() : (date.getDay() + 6) % 7)
@@ -194,4 +279,11 @@ export function dateColumns(
 export function calendarDateKey(view: ViewDef, columns: readonly string[], decls: FolderSettings['columns']): string | null {
   const chosen = typeof view.dateProperty === 'string' ? view.dateProperty : columns[0]
   return chosen === undefined ? null : writableKey(chosen, decls)
+}
+
+/** The bare key of a calendar's End date (YAZ-4858): its own `endDateProperty`, never a default; null = none, or the start column itself. */
+export function calendarEndKey(view: ViewDef, dateKey: string | null, decls: FolderSettings['columns']): string | null {
+  if (typeof view.endDateProperty !== 'string') return null
+  const key = writableKey(view.endDateProperty, decls)
+  return key === dateKey ? null : key
 }

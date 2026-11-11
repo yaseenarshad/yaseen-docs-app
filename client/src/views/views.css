@@ -510,6 +510,11 @@
 .view-settings .view-seg__opt { padding: 2px 7px; }
 .view-settings .property-board-setting { padding: 0; margin: 0; border: 0; }
 .view-settings .property-board-setting small { margin-top: 2px; }
+/* "Cross out when" (YAZ-4864): its label, then the Filter menu's rows at the width of the tab. */
+.view-settings__cross-out { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--fg-muted); }
+.view-settings__cross-out .filter-menu { color: var(--fg); }
+.view-settings__cross-out .view-menu__head { margin-bottom: 4px; }
+.view-settings__cross-out .view-menu__foot { margin-top: 4px; }
 
 .view-prop {
   display: flex;
@@ -2125,14 +2130,32 @@
   background: var(--bg-side);
 }
 
+/* A week row of days (YAZ-4858): row 1 the day heads, then one row per lane of bars, then the one-day cards. Each day
+   spans every row (a subgrid, so its head and its cards sit in the rows); a bar is an item of the row over its days. */
+.view-cal__week--days {
+  row-gap: 3px;
+  min-height: 104px;
+}
+
 .view-cal__day {
+  display: grid;
+  grid-row: 1 / -1;
+  grid-template-rows: subgrid;
+  min-width: 0;
+  padding: 4px;
+  background: var(--bg);
+}
+
+.view-cal__day-head {
+  grid-row: 1;
+}
+
+.view-cal__day-body {
   display: flex;
+  grid-row: -2;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  min-height: 104px;
-  padding: 4px;
-  background: var(--bg);
 }
 
 .view-cal__day + .view-cal__day,
@@ -2141,7 +2164,7 @@
 }
 
 /* Week (YAZ-4558 D22): 7 tall days, each with every card. */
-.view-cal__grid--week .view-cal__day {
+.view-cal__grid--week .view-cal__week--days {
   min-height: 360px;
 }
 
@@ -2218,9 +2241,11 @@
 }
 
 .view-cal__card {
+  /* A column of lines (YAZ-4857): the name's line, then the shown columns' lines, the board's `cardLines`. */
+  position: relative;
   display: flex;
-  gap: 4px;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
   padding: 2px 6px;
   font-size: 12px;
@@ -2248,12 +2273,119 @@
   opacity: 0.4;
 }
 
+/* A card over several days (YAZ-4858): one bar across its columns, in its lane, inside the days' padding. A cut end
+   (the week's edge, or a hidden weekend) runs to the day's edge, square, so the bar reads as going on. */
+.view-cal__bar {
+  z-index: 1;
+  align-self: start;
+  margin: 0 4px;
+}
+
+.view-cal__bar.view-cal__bar--cut-start {
+  margin-left: 0;
+  border-left-style: dashed;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.view-cal__bar.view-cal__bar--cut-end {
+  margin-right: 0;
+  border-right-style: dashed;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* The edges (YAZ-4858): a thin strip at each end that stretches the card a day per step, as a column's edge does. */
+.view-cal__edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.view-cal__edge--start {
+  left: -1px;
+}
+
+.view-cal__edge--end {
+  right: -1px;
+}
+
+.view-cal__edge::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--fg-muted);
+  opacity: 0;
+}
+
+.view-cal__card:hover .view-cal__edge::after,
+.view-cal__card--resize .view-cal__edge::after {
+  opacity: 0.6;
+}
+
+.view-cal__card--resize {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* While an edge drags, every part of the calendar keeps the resize cursor and no text gets selected. */
+.view-cal--resizing,
+.view-cal--resizing * {
+  cursor: ew-resize !important;
+  user-select: none;
+}
+
+/* The message an edge drag gives with no End date column (YAZ-4858 item 4). */
+.view-cal__end-ask {
+  width: 260px;
+}
+
+.view-cal__end-ask-text {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg);
+}
+
+/* The name's line: the time, the weekend mark and the title, as the card's one row was before YAZ-4857. */
+.view-cal__card-head {
+  gap: 4px;
+}
+
+/* The board's lines are spaced for a big card; a calendar card is small. */
+.view-cal__card .view-board__line + .view-board__line {
+  margin-top: 0;
+}
+
+.view-cal__card .view-board__prop {
+  gap: 4px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.view-cal__card .view-board__prop-name {
+  font-size: 10px;
+}
+
 .view-cal__card-title {
   min-width: 0;
   overflow: hidden;
   color: var(--fg);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* "Cross out when" (YAZ-4864): the name struck through and grey, as a done task in a note; the icon stays. */
+.view-cal__card-title--crossed .view-cal__card-name {
+  color: var(--fg-muted);
+  text-decoration: line-through;
 }
 
 /* Wrap (YAZ-4558 D23): the full title on more lines, and the day grows with it. */
@@ -2314,10 +2446,17 @@
   }
 
   .view-cal__card {
-    flex-wrap: wrap;
-    gap: 0;
     padding-right: 1px;
     padding-left: 1px;
+  }
+
+  .view-cal__bar {
+    margin: 0 1px;
+  }
+
+  .view-cal__card-head {
+    flex-wrap: wrap;
+    gap: 0;
   }
 
   .view-cal__time {

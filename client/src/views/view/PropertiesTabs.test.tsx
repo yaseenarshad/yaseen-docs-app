@@ -125,7 +125,7 @@ describe('each view type shows its settings only (D59)', () => {
   // Frozen columns and rows live only on the header and row right-clicks (the View tab's Frozen section went in the YAZ-3746 demo).
   const TABLE = ['Row height', 'Text in cells', 'Row numbers', 'Subfolders', 'Default view']
   const BOARD = ['Column width in pixels', 'Subfolders', 'Default view']
-  const CALENDAR = ['Show by', 'Opens in', 'Card titles', 'Hide weekends', 'Subfolders', 'Default view']
+  const CALENDAR = ['Start date', 'End date', 'Opens in', 'Card titles', 'Hide weekends', 'Cross out when', 'Subfolders', 'Default view']
   const LIST = ['Marker style', 'Indent properties', 'Property separator', 'Subfolders', 'Default view']
   const ALL = [...new Set([...TABLE, ...BOARD, ...CALENDAR, ...LIST, 'Group indent', 'Frozen columns', 'Frozen rows'])]
 
@@ -158,7 +158,7 @@ describe('each view type shows its settings only (D59)', () => {
     expect(pop.textContent).toContain('Show empty columns')
   })
 
-  it('Calendar: Show by, Opens in, Card titles and Hide weekends under Calendar', () => {
+  it('Calendar: Start date and End date (YAZ-4858), Opens in, Card titles, Hide weekends and Cross out when (YAZ-4864) under Calendar', () => {
     const pop = openProperties(mount(view('calendar')).el)
     toTab(pop, 'View')
     expectOnly(pop, CALENDAR)

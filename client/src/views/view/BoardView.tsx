@@ -6,11 +6,12 @@ import { newWindowClick } from '../../lib/newWindowClick'
 import { rowPage } from '../../links/shortcuts'
 import { pageColumnKeys, type FolderSettings } from '../folderSettings'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
-import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import { type Group, type Row, propertyKeys } from '../engine'
 import type { Resolver } from '../expr'
 import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
-import { GroupHeader, rowCell, rowTitle } from './GroupHeader'
+import { GroupHeader, rowTitle } from './GroupHeader'
+import { CardLine, CardProp, cardLines } from './cardLines'
 import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
@@ -96,10 +97,6 @@ export interface BoardViewProps {
  * key starting one unless `join` continues the line being built — so position IS ordering and the
  * title is un-pinned: `file.name` sits at its order position, can be joined onto and can itself join.
  */
-/** The text flags a note row carries (YAZ-1206); the title takes part in the layout only (YAZ-1217). */
-const styleClasses = (style: NonNullable<ViewDef['cardStyle']>[string]) =>
-  `${style.bold === true ? ' view-board__prop--bold' : ''}${style.underline === true ? ' view-board__prop--underline' : ''}`
-
 export function BoardView({
   def,
   view,
@@ -259,19 +256,9 @@ export function BoardView({
 
   const keys = propertyKeys(def, view, records, pageColumnKeys(settings))
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
-  const styleOf = (key: string) => view.cardStyle?.[canonicalKey(key)] ?? {}
-  /** The card's ROWS (YAZ-1217): each ordered key starts a line, `join` appends it to the one being built — so a join with no line yet is a harmless no-op. */
-  const lines = keys.reduce<string[][]>((acc, key) => {
-    if (styleOf(key).join === true && acc.length > 0) acc[acc.length - 1].push(key)
-    else acc.push([key])
-    return acc
-  }, [])
+  const lines = cardLines(keys, view)
   const width = cardWidth(view.cardSize)
-  /**
-   * One item on a line: the title button, or a label/value row. The dash between joined items is
-   * its OWN element — a pseudo on a flex row would become that row's first flex child and drag
-   * the row's internal 8px gap in after itself (the lopsided "App– Sam" bug).
-   */
+  /** One item on a line (`cardLines.tsx`): the title button, or a label/value row. */
   const cardItem = (key: string, row: Row) => {
     if (key === nameKey)
       return (
@@ -287,13 +274,7 @@ export function BoardView({
           {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
         </button>
       )
-    const style = styleOf(key)
-    return (
-      <div key={key} className={`view-board__prop${styleClasses(style)}`}>
-        {style.hideLabel !== true && <span className="view-board__prop-name">{propertyLabel(def, key)}</span>}
-        <span className="view-board__prop-value">{rowCell(row, key, resolve)}</span>
-      </div>
-    )
+    return <CardProp def={def} view={view} row={row} field={key} resolve={resolve} />
   }
   /** A failed move's inline chip (5C, GRO-2143), under the card's first line. */
   const moveChip = (row: Row) =>
@@ -352,18 +333,7 @@ export function BoardView({
         >
           {lines.map((line, i) => (
             <Fragment key={line[0]}>
-              <div className="view-board__line">
-                {line.map((key, item) => (
-                  <Fragment key={key}>
-                    {item > 0 && (
-                      <span className="view-board__dash" aria-hidden>
-                        &ndash;
-                      </span>
-                    )}
-                    {cardItem(key, row)}
-                  </Fragment>
-                ))}
-              </div>
+              <CardLine line={line} item={(key) => cardItem(key, row)} />
               {i === 0 && moveChip(row)}
             </Fragment>
           ))}

@@ -27,6 +27,11 @@ export interface FilterMenuProps {
   /** The folder's own declarations — that ladder's TOP rung (🔒 Q8, YAZ-895). */
   folder: FolderHost
   onUpdate: Mutate
+  /**
+   * The view key the rows edit: `filters` (the Filter menu), or a calendar's `crossOut` (YAZ-4864, View › Calendar
+   * "Cross out when"): the same rows, a card crossed out where they match.
+   */
+  field?: 'filters' | 'crossOut'
 }
 
 const CONJUNCTIONS: { id: Conjunction; label: string }[] = [
@@ -40,6 +45,8 @@ const FILE_EXTRAS = ['file.tags', 'file.folder', 'file.links']
 
 /** A fresh rule matches every row, so adding one never blanks the view before it is filled in. */
 const NEW_RULE: Rule = { property: 'file.name', op: 'contains', value: '' }
+/** A fresh "Cross out when" rule (YAZ-4864) matches NO row, so adding one never crosses out every card before it is filled in. */
+const NEW_CROSS_OUT: Rule = { property: 'file.name', op: 'is', value: '' }
 
 /** A long DATALIST defeats its own purpose (YAZ-1232); the searchable checklist takes every value (YAZ-1469). */
 const SUGGESTION_LIMIT = 50
@@ -65,10 +72,10 @@ function groupNode(item: FilterNode): FilterGroup | null {
  * own conjunction, rows and Add rule, while anything deeper stays the read-only raw row — and a
  * text value offers the values the vault already holds for its property (YAZ-1232).
  */
-export function FilterMenu({ def, view, viewIndex, records, errors, properties, folder, onUpdate }: FilterMenuProps) {
+export function FilterMenu({ def, view, viewIndex, records, errors, properties, folder, onUpdate, field = 'filters' }: FilterMenuProps) {
   const [advanced, setAdvanced] = useState(false)
   const [pendingConj, setPendingConj] = useState<Conjunction>('and')
-  const group = toGroup(view.filters)
+  const group = toGroup(view[field] as FilterNode | undefined)
   const conj = group.items.length ? group.conj : pendingConj
   // Folder is a menu key too since YAZ-4564 D26: each extra once.
   const listed = allPropertyKeys(def, view, records, folder.settings.columns)
@@ -83,9 +90,15 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   const write = (next: FilterGroup) =>
     onUpdate((d) => {
       const node = fromGroup(next)
-      if (node === undefined) delete d.views[viewIndex].filters
-      else d.views[viewIndex].filters = node
+      if (node === undefined) delete d.views[viewIndex][field]
+      else d.views[viewIndex][field] = node
     })
+  /** A new row: a filter's matches every row; a cross-out's is "is checked" on the first checkbox column, else matches none (YAZ-4864). */
+  const newRule = (): string => {
+    if (field === 'filters') return ruleToExpr(NEW_RULE)
+    const checkbox = keys.find((k) => canonicalKey(k).startsWith('note.') && typeOf(k) === 'checkbox')
+    return ruleToExpr(checkbox === undefined ? NEW_CROSS_OUT : { property: canonicalKey(checkbox), op: 'checked', value: '' })
+  }
   const setItem = (i: number, item: FilterNode) => write({ conj, items: group.items.map((x, j) => (j === i ? item : x)) })
   const removeItem = (i: number) => write({ conj, items: group.items.filter((_, j) => j !== i) })
   const setConj = (c: Conjunction) => {
@@ -140,7 +153,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     const kind = operator(rule.op).value
     const picks = Array.isArray(rule.value) ? rule.value : []
     const suggestions = kind === 'text' ? suggestionsFor(rule.property) : []
-    const listId = `filter-sugg-${viewIndex}-${path}`
+    const listId = `${field}-sugg-${viewIndex}-${path}`
     return (
       <>
         <ColumnPicker
@@ -248,7 +261,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
         <button
           type="button"
           className="view-menu__action"
-          onClick={() => writeGroup({ ...nested, items: [...nested.items, ruleToExpr(NEW_RULE)] })}
+          onClick={() => writeGroup({ ...nested, items: [...nested.items, newRule()] })}
         >
           Add rule
         </button>
@@ -257,7 +270,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   }
 
   return (
-    <div className="view-menu filter-menu">
+    <div className={`view-menu filter-menu${field === 'crossOut' ? ' filter-menu--cross-out' : ''}`}>
       {errors.length > 0 && (
         <ul className="view-menu__errors" role="alert">
           {errors.map((e, i) => (
@@ -269,7 +282,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
       )}
       <div className="view-menu__head">{seg('Match', conj, setConj)}</div>
       {group.items.length === 0 ? (
-        <p className="view-menu__empty">No filters</p>
+        <p className="view-menu__empty">{field === 'crossOut' ? 'No conditions. No card is crossed out.' : 'No filters'}</p>
       ) : (
         <ul className="view-menu__list">
           {group.items.map((item, i) => {
@@ -280,13 +293,13 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
       )}
       <div className="view-menu__foot">
         <div className="view-menu__actions">
-          <button type="button" className="view-menu__action" onClick={() => write({ conj, items: [...group.items, ruleToExpr(NEW_RULE)] })}>
+          <button type="button" className="view-menu__action" onClick={() => write({ conj, items: [...group.items, newRule()] })}>
             Add rule
           </button>
           <button
             type="button"
             className="view-menu__action"
-            onClick={() => write({ conj, items: [...group.items, { or: [ruleToExpr(NEW_RULE)] }] })}
+            onClick={() => write({ conj, items: [...group.items, { or: [newRule()] }] })}
           >
             Add group
           </button>

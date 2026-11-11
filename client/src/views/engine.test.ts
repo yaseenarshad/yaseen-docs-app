@@ -109,6 +109,17 @@ describe('runView: filters (GRO-2133)', () => {
     expect(r.errors).toEqual([])
   })
 
+  it('crossOut (YAZ-4864) marks the matching rows `crossed` and filters none; a broken one marks none and reports', () => {
+    const r = run({ crossOut: { and: ['status == "idea"'] }, sort: [] })
+    expect(r.rows).toHaveLength(8)
+    expect(r.rows.filter((row) => row.crossed === true)).toHaveLength(2)
+    expect(r.rows.filter((row) => row.crossed === true).every((row) => row.record.properties.status === 'idea')).toBe(true)
+    const broken = run({ crossOut: 'status ==', sort: [] })
+    expect(broken.rows.some((row) => row.crossed === true)).toBe(false)
+    expect(broken.errors.map((e) => e.where)).toEqual(['views[0].crossOut'])
+    expect(run({ sort: [] }).rows.some((row) => 'crossed' in row)).toBe(false)
+  })
+
   it('file.hasLink matches through the resolver: List of Topics and The Levels of an Agency', () => {
     expect(names(run({ filters: 'file.hasLink("Agentic Agency")', sort: [] }))).toEqual(['The Levels of an Agency', 'List of Topics'])
     expect(names(run({ filters: 'file.hasLink("Content Pillars/1. Agentic Agency/Agentic Agency.md")', sort: [] }))).toEqual([
@@ -649,6 +660,13 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status']).filter((k) => k === 'note.status')).toHaveLength(1)
     // an explicit order still wins
     expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name'] }, TEST_RECORDS, ['status'])).toEqual(['file.name'])
+  })
+
+  it('propertyKeys: a calendar with no order shows the name alone (YAZ-4857 item 4); its order wins; the other types keep their default', () => {
+    const calendar = { type: 'calendar', name: 'C' }
+    expect(propertyKeys(yasin, calendar, TEST_RECORDS, ['status', 'owner'])).toEqual(['file.name'])
+    expect(propertyKeys(yasin, { ...calendar, order: ['file.name', 'note.status'] }, TEST_RECORDS)).toEqual(['file.name', 'note.status'])
+    for (const type of ['table', 'board', 'list', 'cards']) expect(propertyKeys(yasin, { type, name: 'X' }, [], ['status'])).toEqual(['file.name', 'note.status'])
   })
 
   it('propertyLabel: displayName (bare or note.-prefixed key) else the default label (YAZ-1513)', () => {
