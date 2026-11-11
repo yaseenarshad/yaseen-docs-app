@@ -194,6 +194,9 @@
   overflow-y: auto;
   padding: 8px 24px 32px;
 }
+.explore__body:focus {
+  outline: none;
+}
 .explore__body--edit {
   display: flex;
   flex-direction: column;

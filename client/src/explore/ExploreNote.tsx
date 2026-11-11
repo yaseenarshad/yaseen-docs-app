@@ -71,6 +71,8 @@ type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: Pag
 
 export function ExploreNote({ path, mode, title, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   const bodyRef = useRef<HTMLDivElement>(null)
+  /** Where the read-only Crepe mounts: its own box ABOVE the comment stream and the mentions, as the note tab stacks them. */
+  const mountRef = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState<Content>({ kind: 'loading' })
   /** The read-only Crepe once it is up, for the fold-all button (round 1, item 4); null while loading or editing. */
   const [ready, setReady] = useState<ReturnType<typeof createCrepe> | null>(null)
@@ -105,7 +107,7 @@ export function ExploreNote({ path, mode, title, vault, style, onOpenLink, rende
   // The vault's three parts, not the object: App hands a new object each render, and the Crepe is built once per body.
   const { root, wikilinks, wikilinkCandidates } = vault
   useEffect(() => {
-    const parent = bodyRef.current
+    const parent = mountRef.current
     if (body === null || parent === null) return
     const el = document.createElement('div')
     el.className = 'editor-instance'
@@ -226,6 +228,7 @@ export function ExploreNote({ path, mode, title, vault, style, onOpenLink, rende
         </div>
       ) : (
         <div ref={bodyRef} className="explore__body" style={style} tabIndex={-1} data-explore-read>
+          <div ref={mountRef} className="explore__mount" />
           {content.kind === 'gone' && <p className="editor-msg">Can&apos;t read &quot;{title}&quot; — it is no longer there</p>}
           {content.kind === 'empty' && <p className="editor-msg">Empty page</p>}
           {/* The note's right-click menu (item 7): the text rows (Copy, Copy as; no Cut or Paste while reading), then the note menu. */}
