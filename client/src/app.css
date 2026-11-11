@@ -2988,6 +2988,11 @@ body.drag-held iframe {
   z-index: 41;
 }
 
+/* A flyout drawn by DOM code (YAZ-4899, `menuSections.ts` `panel`): the box is no box, so its rows lay out as the menu's own. */
+.ctx-menu__panel {
+  display: contents;
+}
+
 .ctx-menu__item:hover:not(:disabled),
 .tab-row-panel__reset:hover {
   background: var(--accent-soft);

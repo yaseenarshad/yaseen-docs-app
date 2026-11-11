@@ -169,12 +169,14 @@ function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { i
   const onSelect = item.onSelect
   // A glyph on any row (the Search menu's Type list, YAZ-3511 D13): the rows without one line up after its slot.
   const glyphs = item.children.some((section) => section.some((child) => child.icon !== undefined))
+  const panel = item.panel
   return (
     <FlyoutParent
       label={item.icon === undefined ? item.label : <span className="ctx-menu__label">{item.icon}{item.label}</span>}
       open={open}
       hint={item.hint}
-      menuClassName={glyphs ? 'ctx-menu--glyphs' : undefined}
+      // A DOM panel (YAZ-4899) is the editor's own: its classes dress the tabs as the six-dot menu's.
+      menuClassName={panel !== undefined ? 'ctx-menu--editor' : glyphs ? 'ctx-menu--glyphs' : undefined}
       onHover={onHover}
       onOpen={onOpen}
       onCloseFlyout={onCloseFlyout}
@@ -183,9 +185,28 @@ function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { i
         onClose()
       }}
     >
-      <Groups sections={item.children} render={(child) => <ActionButton key={child.id} item={child} onClose={onClose} />} />
+      {panel !== undefined ? <DomPanel panel={panel} onClose={onClose} /> : <Groups sections={item.children} render={(child) => <ActionButton key={child.id} item={child} onClose={onClose} />} />}
     </FlyoutParent>
   )
+}
+
+/**
+ * A parent's `panel` (YAZ-4899): DOM code fills the flyout's box once, when it mounts, before the flyout is measured.
+ * Opened with the keyboard (the parent row has the focus), its first row takes the focus, as the six-dot menu's does.
+ */
+function DomPanel({ panel, onClose }: { panel: NonNullable<MenuParent['panel']>; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const latest = useRef({ panel, onClose })
+  latest.current = { panel, onClose }
+  useLayoutEffect(() => {
+    const host = ref.current
+    if (host === null) return
+    latest.current.panel(host, () => latest.current.onClose())
+    const row = host.closest('.ctx-menu__parent')?.querySelector('.ctx-menu__item--parent')
+    if (row !== undefined && row === document.activeElement) host.querySelector<HTMLButtonElement>('.ctx-menu__item:not(:disabled)')?.focus({ preventScroll: true })
+    return () => host.replaceChildren()
+  }, [])
+  return <div ref={ref} className="ctx-menu__panel" />
 }
 
 /** The sidebar's right-click menu — the file tree's (GRO-2022) and the vault switcher's (YAZ-1798) — and a tab's (YAZ-2949 D6). The overlay catches click-away and stray right-clicks. */

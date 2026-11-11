@@ -18,7 +18,7 @@
  *   (YAZ-4165, `tableFold.ts`; the header row never folds); YAZ-4899: "Make subheader row" / "Make N subheader rows"
  *   on body rows (off in a calendar table, with the reason) or "Turn back into a normal row" on subheader rows; on a
  *   subheader row "Subheader row style ›", "Collapse all subheaders" and "Expand all subheaders"; on a header-row cell
- *   "Header row style ›" (item 3), the six-dot menu's flyout as plain groups (`rowLookParent`);
+ *   "Header row style ›" (item 3), the six-dot menu's own tabbed panel (`rowLookParent`, YAZ-4899 demo);
  * - Freeze up to this row, Freeze up to this column, Unfreeze rows, Unfreeze columns.
  *
  * A row acts on the CellSelection when there is one in the clicked table, else on the clicked cell:
@@ -61,13 +61,14 @@ import {
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createElement } from 'react'
 import type { MenuAction, MenuItem, MenuParent, MenuSection } from '../../sidebar/menuSections'
+import { fillFlyout } from '../blockHandleMenu'
 import { canMoveToCellNote, moveToCellNote, openCellNote } from './cellNoteCard'
 import { deleteText, deleteWithNotes, duplicateWithNotes, type DeleteKind } from './cellNoteGuard'
 import { cellNoteLabelsIn, cellNoteOf, removeCellNote, tableAround } from './cellNotes'
 import { cellAt, isMerged, mergeCrosses, rectHasMerge, rowFolded, rowNoDim, rowSubhead, setCellsAlign, setCellsAttr, setCellsValign, wholeColumns, wholeRows } from './cells'
 import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
 import { foldRows, keepingScroll, unfoldRun } from './tableFold'
-import { rowLookPicks, type LookPick } from './tableRows'
+import { headerRowParent } from './tableRows'
 import { setAllSections, setSubhead } from './tableSubhead'
 import { mergeCells, mergeRect, unmergeCells } from './tableMerge'
 import { CELL_ALIGNS, TABLE_COLORS, VALIGNS, cellText, type CellAlign, type CellText, type TableColor, type Valign } from './tableStyle'
@@ -413,25 +414,30 @@ export const TABLE_HANDLE_MENU = 'milkdown-table-handle-menu'
 const swatch = (background: string) => createElement('span', { className: 'table-menu-swatch', style: { background } })
 
 /**
- * "Header row style ›" (item 3) and "Subheader row style ›" (YAZ-4899): the six-dot menu's flyout (`tableRows.ts`,
- * `rowLookPicks`) in the note menu, which has no tabs: plain groups with a heading each, "Plain, like any row" first.
- * Each pick is a radio row, so the menu stays open and the ✓ moves (YAZ-4460).
+ * "Header row style ›" (item 3) and "Subheader row style ›" (YAZ-4899 demo: "why is subheader row formatting in one
+ * place … but then on the right click on the row itself its in a different way?"): the six-dot menu's own panel
+ * (`tableRows.ts` `headerRowParent`: Plain, the Fill · Text · Style tabs, the Strength switch), drawn by its own
+ * code (`fillFlyout`) in this menu's flyout. A pick keeps the panel open and draws it again from the table (the ✓
+ * moves, the tab stays, the focused row keeps the focus); one ⌘Z each, as the six-dot menu's.
  */
 function rowLookParent(view: EditorView, pos: number, kind: 'header' | 'subheader'): MenuParent {
-  const { plain, parts } = rowLookPicks(view, pos, kind)
-  const row = (group: string, p: LookPick): MenuAction => ({
-    id: `table-${kind}-${group}-${p.value}`,
-    label: p.label,
-    onSelect: p.run,
-    radio: { group: `table-${kind}-${group}`, on: p.on },
-    ...(p.swatch !== undefined && { icon: swatch(p.swatch) }),
-  })
-  const heading = (group: string, label: string): MenuAction => ({ id: `table-${kind}-${group}-heading`, label, heading: true, onSelect: () => {} })
-  const group = (name: keyof typeof parts, label: string): MenuAction[] => [heading(name, label), ...parts[name].map((p) => row(name, p))]
   return {
     id: `table-${kind}-style`,
     label: kind === 'header' ? 'Header row style' : 'Subheader row style',
-    children: [[row('plain', plain)], group('color', 'Fill colour'), group('strength', 'Strength'), group('weight', 'Weight'), group('text', 'Text colour'), group('align', 'Align')],
+    children: [],
+    panel: (host, close) => {
+      const draw = () => {
+        const focused = host.contains(document.activeElement) ? document.activeElement!.textContent : null
+        host.replaceChildren()
+        fillFlyout(host, headerRowParent(view, pos, kind), close, refresh)
+        if (focused !== null) [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === focused)?.focus({ preventScroll: true })
+      }
+      const refresh = (run: () => void) => {
+        run()
+        draw()
+      }
+      draw()
+    },
   }
 }
 

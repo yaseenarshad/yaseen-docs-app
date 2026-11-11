@@ -158,27 +158,38 @@ describe('"Make subheader row" and "Turn back into a normal row" (item 4), one u
     const { crepe, view } = await mountNote(EIGHT)
     const flyout = parent(view, 2, 0, 'table-subheader-style')!
     expect(flyout.label).toBe('Subheader row style')
-    expect(flyout.children.map((g) => g.map((c) => c.label))).toEqual([
-      ['Plain, like any row'],
-      ['Fill colour', 'Gray', 'Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink', 'Black'],
-      ['Strength', 'Off', 'Light', 'Medium', 'Strong'],
-      ['Weight', 'Bold', 'Regular'],
-      ['Text colour', 'Muted', 'Full', 'White', 'Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink'],
-      ['Align', 'Follow column', 'Left', 'Center', 'Right'],
-    ])
-    // ✓ at what the table shows (Settings' default: Medium); a pick that equals Settings saves no part.
-    const strength = flyout.children[2]!
-    expect(strength.map((c) => c.radio?.on ?? '-')).toEqual(['-', false, false, true, false])
-    strength[4]!.onSelect()
+    // YAZ-4899 demo ("in a different way?"): the six-dot menu's own panel, drawn by its code in this flyout.
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    flyout.panel!(host, () => {})
+    const items = () => [...host.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => `${b.textContent}${b.dataset.hint === '✓' ? '*' : ''}`)
+    const tabs = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target:not(.fill-target--sub) > .fill-target__opt')]
+    const bar = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target--sub .fill-target__opt')].map((b) => `${b.textContent}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)
+    expect(items()).toEqual(['Plain, like any row', 'Gray*', 'Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink', 'Black'])
+    expect(tabs().map((t) => `${t.textContent}${t.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)).toEqual(['Fill*', 'Text', 'Style'])
+    // ✓ at what the table shows (Settings' default: Medium); a pick that equals Settings saves no part. The panel
+    // stays, drawn again: the pressed segment moves.
+    expect(bar()).toEqual(['Off', 'Light', 'Medium*', 'Strong'])
+    host.querySelectorAll<HTMLButtonElement>('.fill-target--sub .fill-target__opt')[3]!.click()
     expect(getMarkdownForSave(crepe)).toContain('subhead 3 7, subheader strong')
-    strength[3]!.onSelect()
+    expect(bar()).toEqual(['Off', 'Light', 'Medium', 'Strong*'])
+    host.querySelectorAll<HTMLButtonElement>('.fill-target--sub .fill-target__opt')[2]!.click()
     expect(getMarkdownForSave(crepe)).toBe(EIGHT)
+    // The Style tab: Weight and Align, as the six-dot menu's.
+    tabs()[2]!.click()
+    expect(items()).toEqual(['Plain, like any row', 'Bold*', 'Regular', 'Follow column*', 'Left', 'Center', 'Right'])
+    expect([...host.querySelectorAll('.ctx-menu__heading')].map((h) => h.textContent)).toEqual(['Weight', 'Align'])
+    tabs()[0]!.click()
+    host.remove()
     expect(menuItem(view, 2, 0, 'table-subhead-collapse-all')?.label).toBe('Collapse all subheaders')
     expect(menuItem(view, 2, 0, 'table-subhead-expand-all')?.label).toBe('Expand all subheaders')
     expect(parent(view, 1, 0, 'table-subheader-style')).toBeUndefined()
-    expect(parent(view, 0, 0, 'table-header-style')?.label).toBe('Header row style')
+    const header = parent(view, 0, 0, 'table-header-style')!
+    expect(header.label).toBe('Header row style')
     expect(parent(view, 1, 0, 'table-header-style')).toBeUndefined()
-    parent(view, 0, 0, 'table-header-style')!.children[1]![2]!.onSelect()
+    const headerHost = document.createElement('div')
+    header.panel!(headerHost, () => {})
+    ;[...headerHost.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Red')!.click()
     expect(getMarkdownForSave(crepe)).toContain('header red')
   })
 })

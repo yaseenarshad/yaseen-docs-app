@@ -371,6 +371,74 @@ function rowButton(row: MenuRow, close: () => void, refresh?: (run: () => void) 
 /** The tab each tabbed flyout showed last, by its row's label (YAZ-4794 demo): a `stay` pick draws it again. */
 const lastTab = new Map<string, number>()
 
+/**
+ * A flyout's content (`renderParent`): `row.children` as groups, a line between two, a small grey heading each
+ * (`row.headings`); then the tabs (`row.tabs`, YAZ-4794 demo), the picked tab's switch (`bar`) and groups in a box of
+ * their own, drawn again at a tab click. A `stay` row's picks go through `refresh`; others run and `close`. An empty
+ * group is left out here, the one place (a caller hands its groups as they are). The note's right-click menu draws a
+ * parent's `panel` with it too (YAZ-4899: "Subheader row style ›" is the six-dot menu's "Subheader row ›", one panel).
+ */
+export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, refresh?: (run: () => void) => void): void {
+  const groups = (into: HTMLElement, list: MenuRow[][], headings: (string | undefined)[] | undefined) =>
+    list.forEach((group, i) => {
+      if (group.length === 0) return
+      if (into.childElementCount > 0) into.appendChild(divider())
+      const heading = headings?.[i]
+      if (heading !== undefined) {
+        const el = document.createElement('div')
+        el.className = 'ctx-menu__heading'
+        el.setAttribute('role', 'presentation')
+        el.textContent = heading
+        into.appendChild(el)
+      }
+      for (const child of group) into.appendChild(rowButton(child, close, row.stay === true ? refresh : undefined))
+    })
+  groups(sub, row.children ?? [], row.headings)
+  // YAZ-4794 demo: the tabs, then the picked tab's groups in a box of their own, drawn again at a tab click.
+  const tabs = row.tabs
+  if (tabs === undefined || tabs.length === 0) return
+  const bar = document.createElement('div')
+  bar.className = 'fill-target'
+  bar.setAttribute('role', 'group')
+  bar.setAttribute('aria-label', row.label)
+  const body = document.createElement('div')
+  const show = (at: number) => {
+    lastTab.set(row.label, at)
+    for (const [i, b] of [...bar.children].entries()) b.setAttribute('aria-pressed', String(i === at))
+    body.replaceChildren()
+    const segments = tabs[at]!.bar
+    if (segments !== undefined && segments.length > 0) {
+      const seg = document.createElement('div')
+      seg.className = 'fill-target fill-target--sub'
+      seg.setAttribute('role', 'group')
+      for (const option of segments) {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'fill-target__opt'
+        b.textContent = option.label
+        b.setAttribute('aria-pressed', String(option.hint === '✓'))
+        b.addEventListener('mousedown', (e) => e.preventDefault())
+        b.addEventListener('click', () => (row.stay === true && refresh !== undefined ? refresh(option.run) : (option.run(), close())))
+        seg.appendChild(b)
+      }
+      body.appendChild(seg)
+    }
+    groups(body, tabs[at]!.children, tabs[at]!.headings)
+  }
+  tabs.forEach((tab, i) => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = 'fill-target__opt'
+    b.textContent = tab.label
+    b.addEventListener('mousedown', (e) => e.preventDefault())
+    b.addEventListener('click', () => show(i))
+    bar.appendChild(b)
+  })
+  if (sub.childElementCount > 0) sub.appendChild(divider())
+  sub.append(bar, body)
+  show(Math.min(lastTab.get(row.label) ?? 0, tabs.length - 1))
+}
+
 /** How each open menu closes its flyout alone: `closeSubmenu`. */
 const submenuClosers = new WeakMap<HTMLElement, () => boolean>()
 
@@ -391,7 +459,7 @@ export function closeSubmenu(menu: HTMLElement): boolean {
  * the focus on its first row; ArrowLeft in it, and Escape (`closeSubmenu`), close it alone, and a focus that was in
  * it goes back to the parent row. One parent for each menu.
  */
-function renderParent(row: MenuRow, children: MenuRow[][], menu: HTMLElement, close: () => void, refresh?: (run: () => void) => void): HTMLElement {
+function renderParent(row: MenuRow, menu: HTMLElement, close: () => void, refresh?: (run: () => void) => void): HTMLElement {
   const wrap = document.createElement('div')
   wrap.className = 'ctx-menu__parent'
   const button = document.createElement('button')
@@ -422,67 +490,7 @@ function renderParent(row: MenuRow, children: MenuRow[][], menu: HTMLElement, cl
       flyout = document.createElement('div')
       flyout.className = 'ctx-menu ctx-menu--editor ctx-menu__sub'
       flyout.setAttribute('role', 'menu')
-      // An empty group is left out here, the one place (a caller hands its groups as they are).
-      const sub = flyout
-      const groups = (into: HTMLElement, list: MenuRow[][], headings: (string | undefined)[] | undefined) =>
-        list.forEach((group, i) => {
-          if (group.length === 0) return
-          if (into.childElementCount > 0) into.appendChild(divider())
-          const heading = headings?.[i]
-          if (heading !== undefined) {
-            const el = document.createElement('div')
-            el.className = 'ctx-menu__heading'
-            el.setAttribute('role', 'presentation')
-            el.textContent = heading
-            into.appendChild(el)
-          }
-          for (const child of group) into.appendChild(rowButton(child, close, row.stay === true ? refresh : undefined))
-        })
-      groups(sub, children, row.headings)
-      // YAZ-4794 demo: the tabs, then the picked tab's groups in a box of their own, drawn again at a tab click.
-      const tabs = row.tabs
-      if (tabs !== undefined && tabs.length > 0) {
-        const bar = document.createElement('div')
-        bar.className = 'fill-target'
-        bar.setAttribute('role', 'group')
-        bar.setAttribute('aria-label', row.label)
-        const body = document.createElement('div')
-        const show = (at: number) => {
-          lastTab.set(row.label, at)
-          for (const [i, b] of [...bar.children].entries()) b.setAttribute('aria-pressed', String(i === at))
-          body.replaceChildren()
-          const segments = tabs[at]!.bar
-          if (segments !== undefined && segments.length > 0) {
-            const seg = document.createElement('div')
-            seg.className = 'fill-target fill-target--sub'
-            seg.setAttribute('role', 'group')
-            for (const option of segments) {
-              const b = document.createElement('button')
-              b.type = 'button'
-              b.className = 'fill-target__opt'
-              b.textContent = option.label
-              b.setAttribute('aria-pressed', String(option.hint === '✓'))
-              b.addEventListener('mousedown', (e) => e.preventDefault())
-              b.addEventListener('click', () => (row.stay === true && refresh !== undefined ? refresh(option.run) : (option.run(), close())))
-              seg.appendChild(b)
-            }
-            body.appendChild(seg)
-          }
-          groups(body, tabs[at]!.children, tabs[at]!.headings)
-        }
-        tabs.forEach((tab, i) => {
-          const b = document.createElement('button')
-          b.type = 'button'
-          b.className = 'fill-target__opt'
-          b.textContent = tab.label
-          b.addEventListener('mousedown', (e) => e.preventDefault())
-          b.addEventListener('click', () => show(i))
-          bar.appendChild(b)
-        })
-        if (sub.childElementCount > 0) sub.appendChild(divider())
-        sub.append(bar, body)
-        show(Math.min(lastTab.get(row.label) ?? 0, tabs.length - 1))
-      }
+      fillFlyout(flyout, row, close, refresh)
       flyout.addEventListener('keydown', (event) => {
         if (event.key !== 'ArrowLeft') return
         event.preventDefault()
@@ -586,7 +594,7 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
       el.appendChild(renderStrip(row, close, refresh))
       continue
     }
-    el.appendChild(row.children === undefined ? rowButton(row, close) : renderParent(row, row.children, el, close, refresh))
+    el.appendChild(row.children === undefined ? rowButton(row, close) : renderParent(row, el, close, refresh))
   }
   parent?.appendChild(el)
   return el

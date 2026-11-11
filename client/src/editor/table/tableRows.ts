@@ -134,7 +134,7 @@ export interface LookPick {
  * choices, ✓ at what the table shows: its own part, else Settings' (no Text colour in Settings is Full, a note table's
  * look). A pick that equals Settings removes the part.
  */
-export function rowLookPicks(view: EditorView, pos: number, kind: 'header' | 'subheader'): { plain: LookPick; parts: Record<keyof HeaderRowOwn, LookPick[]> } {
+function rowLookPicks(view: EditorView, pos: number, kind: 'header' | 'subheader'): { plain: LookPick; parts: Record<keyof HeaderRowOwn, LookPick[]> } {
   const own = (view.state.doc.nodeAt(pos)?.attrs[kind] ?? {}) as HeaderRowOwn
   const settings = kind === 'header' ? headerRowSetting() : subheaderRowSetting()
   const fallback: Required<HeaderRowOwn> = { ...settings, text: settings.text ?? 'full' }
@@ -175,9 +175,10 @@ export function rowLookPicks(view: EditorView, pos: number, kind: 'header' | 'su
 /**
  * "Header row ›" (YAZ-4774) and "Subheader row ›" (YAZ-4899): Color, Strength and Text, a ✓ at what the table shows
  * (`rowLookPicks`). YAZ-4794: Text colour (Muted, Full, the eight colours) and Align (Follow column, Left, Center, Right)
- * are parts too.
+ * are parts too. The cell's right-click menu draws the same row as its "Header row style ›" / "Subheader row style ›"
+ * panel (`tableMenu.ts`, YAZ-4899).
  */
-function headerRowParent(view: EditorView, pos: number, kind: 'header' | 'subheader'): MenuRow {
+export function headerRowParent(view: EditorView, pos: number, kind: 'header' | 'subheader'): MenuRow {
   const { plain, parts } = rowLookPicks(view, pos, kind)
   const child = (p: LookPick): MenuRow => ({ label: p.label, icon: p.swatch === undefined ? undefined : swatchIcon(p.swatch), hint: p.on ? '✓' : undefined, run: p.run })
   const plainRow: MenuRow = { label: plain.label, hint: plain.on ? '✓' : undefined, run: plain.run }

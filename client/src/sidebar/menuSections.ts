@@ -89,6 +89,12 @@ export interface MenuParent extends MenuItemBase {
   children: readonly MenuAction[][]
   /** A glyph before the label, as a leaf has: "Add to focus ▸" keeps its eye (YAZ-4460 F4). */
   icon?: ReactNode
+  /**
+   * The flyout drawn by DOM code instead of `children` (then `[]`): the note's table menu shows the six-dot menu's own
+   * tabbed "Subheader row ›" panel (YAZ-4899, `editor/blockHandleMenu.ts` `fillFlyout`), one panel in one place. It
+   * fills `host` (the flyout's box, with the editor menu's classes); `close` closes the whole menu.
+   */
+  panel?: (host: HTMLElement, close: () => void) => void
 }
 
 /** One button of a strip: its icon, its name as the tooltip and the accessible name, lit when `active`. */
