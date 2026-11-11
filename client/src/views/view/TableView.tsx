@@ -259,6 +259,24 @@ function contentWidth(cell: HTMLElement, zoom: number): number {
   return width
 }
 
+/** YAZ-4867: is this clipped cell's text really cut? The cell, its display span or its chip row is wider inside than out. */
+export function cellIsCut(cell: HTMLElement): boolean {
+  const boxes = [cell, ...cell.querySelectorAll<HTMLElement>('.view-cell-edit__display, .property-choice-chips')]
+  return boxes.some((box) => box.scrollWidth > box.clientWidth + 1)
+}
+
+/**
+ * A clipped cell's full value shows on hover ONLY when its text is really cut (YAZ-4867, amends YAZ-4582 D29): the value
+ * waits in `data-clip-title`, and one check on the hover sets or clears `title`. Nothing is measured at render.
+ */
+function tipIfCut(event: ReactMouseEvent<HTMLTableCellElement>): void {
+  const cell = event.currentTarget
+  const full = cell.dataset.clipTitle
+  if (full === undefined) return
+  if (cellIsCut(cell)) cell.title = full
+  else cell.removeAttribute('title')
+}
+
 function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
   if (event.target !== event.currentTarget) return
   event.currentTarget.focus()
@@ -1874,8 +1892,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 // ⇧⌘ opens it in a new window (YAZ-4444 D32), asked first.
                 onClick={c === nameCol ? (e) => (newWindowClick(e, rowPage(path)) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
                 // A read-only note's Name cell opens no title field: a title edit renames the note (YAZ-3076 D6).
-                // A clipped cell shows its full value on hover (YAZ-4582 D29).
-                title={c === nameCol && locked ? READ_ONLY_TIP : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
+                // A clipped cell shows its full value on hover only when it is cut (YAZ-4582 D29, YAZ-4867): `tipIfCut`.
+                title={c === nameCol && locked ? READ_ONLY_TIP : undefined}
+                data-clip-title={c === nameCol && locked ? undefined : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
+                onMouseEnter={clipped[c] && !(c === nameCol && locked) ? tipIfCut : undefined}
                 onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
                 {...(c !== nameCol && !locked && typings[c]?.assigned === 'image' ? imageDrop(line.r, c) : {})}
               >
