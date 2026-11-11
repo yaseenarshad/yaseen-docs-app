@@ -14,6 +14,7 @@
  * toolbar alone, never the views.
  */
 import { createContext, useSyncExternalStore, type ReactNode } from 'react'
+import { ViewTypeIcon } from './view/icons'
 import type { FolderPagesSettings, GithubSyncStatus } from '@shared/types'
 import { type Hint, PageSettings, type PageSettingsProps, type PageSwitch } from '../editor/PageSettings'
 import { MarkGlyph } from './view/ColumnMark'
@@ -94,8 +95,8 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
   /** The folder's own "Show where columns come from" (YAZ-4713 C11): `undefined` follows Settings. Absent: no row. */
   columnMarks?: FolderPagesSettings['columnMarks'] | undefined
   onChangeColumnMarks?: (next: FolderPagesSettings['columnMarks'] | undefined) => void
-  /** "Default view" (YAZ-4909, from the View tab since YAZ-1104): the page's view names, the saved START (`defaultView`, a name, else the first view) and its ONE writer. Absent: no Views section. */
-  views?: readonly string[]
+  /** "Default view" (YAZ-4909, from the View tab since YAZ-1104): the page's views (name and type), the saved START (`defaultView`, a name, else the first view) and its ONE writer. Absent: no Views section. */
+  views?: readonly { name: string; type: string }[]
   defaultView?: string
   onChangeDefaultView?: (next: string | undefined) => void
   sync?: GithubSyncStatus | null
@@ -151,18 +152,19 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
       true,
     ),
     // YAZ-4909 (Yaseen: "doesn't this option belong on the folder page level and not in an individual view?"): the folder's
-    // saved START, First view or a view by name. One line while the names are few; more go on their own line and wrap.
+    // saved START, First view or a view by name, as ONE dropdown line whatever the number of views (Yaseen: "as the number
+    // of views increases this menu is just going to get wider and wider").
     ...(views === undefined || onChangeDefaultView === undefined
       ? []
       : section('Views', [
           {
             label: 'Default view',
             hint: 'The view this page opens on. A view renamed or deleted keeps or clears it.',
-            inline: views.length <= 2,
-            choices: [
-              { label: 'First view', on: defaultView === undefined || !views.includes(defaultView), onPick: () => onChangeDefaultView(undefined) },
-              ...views.map((name) => ({ label: name, on: defaultView === name, onPick: () => onChangeDefaultView(name) })),
-            ],
+            menu: {
+              value: defaultView !== undefined && views.some((v) => v.name === defaultView) ? defaultView : '',
+              options: [{ value: '', label: 'First view' }, ...views.map((v) => ({ value: v.name, label: v.name, icon: <ViewTypeIcon type={v.type} /> }))],
+              onPick: (value) => onChangeDefaultView(value === '' ? undefined : value),
+            },
           },
         ])),
     ...section('Preview on hover', [

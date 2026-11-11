@@ -1453,7 +1453,7 @@ export function FolderView({
         columnMarks={ownMarks}
         onChangeColumnMarks={(next) => setOwnMarks(next, writeOwnKey(COLUMN_MARKS_KEY, next))}
         // Default view (YAZ-4909): the same `defaultView` of the def, ONE settings write through the views' door (`onChange`), as the View tab wrote it.
-        views={parsed.def.views.map((v) => v.name)}
+        views={parsed.def.views.map((v) => ({ name: v.name, type: v.type }))}
         defaultView={parsed.def.defaultView}
         onChangeDefaultView={(next) =>
           onChange(

@@ -136,7 +136,7 @@ describe('the folder page toolbar (D35)', () => {
       'SettingsIconIcon and folder nameOff',
       '',
       'Views',
-      'Default viewFirst viewPipeline',
+      'Default viewFirst view',
       '',
       'Preview on hover',
       'RowsSettingsOnOff',
@@ -155,20 +155,28 @@ describe('the folder page toolbar (D35)', () => {
 
   // YAZ-4909 (Yaseen: "doesn't this option belong on the folder page level and not in an individual view?"): the View
   // tab's "Default view" select is this row now, the same `defaultView` of the folder settings.
-  it('Views › Default view: First view pressed with no key; a view by name writes defaultView, First view removes it; a saved name reads back', async () => {
+  it('Views › Default view: a dropdown, "First view ▾" with no key; its list has each view with a ✓ at the choice; a pick writes defaultView, First view removes it; a saved name reads back', async () => {
     const el = await mount()
     openCog(el)
-    const row = () => q(cogMenu(el), '[role="group"][aria-label="Default view"]')
-    const pressed = () => [...row().querySelectorAll('button')].find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent
-    expect([...row().querySelectorAll('button')].map((b) => b.textContent)).toEqual(['First view', 'Pipeline'])
-    expect(pressed()).toBe('First view')
-    click(button(row(), 'Pipeline'))
+    const trigger = () => q<HTMLButtonElement>(cogMenu(el), '[aria-label="Default view"].view-dropdown')
+    const list = () => [...document.body.querySelectorAll<HTMLButtonElement>('.page-settings__drop-panel button')]
+    expect(trigger().textContent).toBe('First view')
+    expect(trigger().closest('.page-settings__line')).not.toBeNull()
+    click(trigger())
+    // The list is on the body (the ⚙ menu cannot clip it), with a ✓ at the choice.
+    expect(list()[0]!.closest('.page-settings__menu')).toBeNull()
+    expect(list().map((b) => `${b.textContent}${b.getAttribute('aria-checked') === 'true' ? ' ✓' : ''}`)).toEqual(['First view ✓', 'Pipeline'])
+    click(list()[1]!)
     await flush()
     expect(disk.get(SETTINGS_FILE)?.content).toContain('defaultView: Pipeline')
+    // The pick closed the list and left the ⚙ open; the trigger says the choice.
+    expect(document.body.querySelector('.page-settings__drop-panel')).toBeNull()
+    expect(trigger().textContent).toBe('Pipeline')
     feed()
     await flush()
-    expect(pressed()).toBe('Pipeline')
-    click(button(row(), 'First view'))
+    expect(trigger().textContent).toBe('Pipeline')
+    click(trigger())
+    click(list()[0]!)
     await flush()
     expect(disk.get(SETTINGS_FILE)?.content).not.toContain('defaultView')
     // The View tab holds the view's own settings only.
@@ -176,6 +184,20 @@ describe('the folder page toolbar (D35)', () => {
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
     expect(el.querySelector('.view-popover--properties [aria-label="Default view"]')).toBeNull()
     expect([...el.querySelectorAll('.view-popover--properties .view-menu__label')].map((p) => p.textContent)).not.toContain('Folder')
+  })
+
+  // Yaseen: "this is a terrible design, as the number of views increases this menu is just going to get wider and wider".
+  it('Default view with five views (YAZ-4909 polish): still ONE line, "First view ▾", the six choices in the list with their type icons; the ⚙ menu keeps its width', async () => {
+    disk.set(SETTINGS_FILE, { content: `---\nfolder_settings:\n  views:\n${['Pipeline', 'Board', 'Calendar', 'List', 'Table 2'].map((name, i) => `    - type: ${['table', 'board', 'calendar', 'list', 'table'][i]}\n      name: ${name}\n`).join('')}---\n`, mtime: 51 })
+    const el = await mount()
+    openCog(el)
+    const trigger = q<HTMLButtonElement>(cogMenu(el), '[aria-label="Default view"].view-dropdown')
+    expect(trigger.closest('.page-settings__line')).not.toBeNull()
+    expect(cogMenu(el).querySelector('[role="group"][aria-label="Default view"]')).toBeNull()
+    click(trigger)
+    const list = [...document.body.querySelectorAll<HTMLButtonElement>('.page-settings__drop-panel button')]
+    expect(list.map((b) => b.textContent)).toEqual(['First view', 'Pipeline', 'Board', 'Calendar', 'List', 'Table 2'])
+    expect(list.slice(1).every((b) => b.querySelector('svg') !== null)).toBe(true)
   })
 
   // YAZ-4810 5G on the folder ⚙ (merge of PR #257): its menu is on `document.body` too, so Tab crosses between the cog and it.

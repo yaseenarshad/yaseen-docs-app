@@ -205,14 +205,17 @@ const menuItem = (el: ParentNode, text: string): HTMLElement => {
   return b
 }
 const written = (): Record<string, unknown> => write.mock.calls[0][2] as Record<string, unknown>
-/** The folder ⚙'s "Default view" row (YAZ-4909): its menu is a portal under the cog; the row's pills are First view and each view by name. */
-const defaultViewRow = (el: ParentNode): HTMLElement => {
+/** The folder ⚙'s "Default view" row (YAZ-4909): its menu is a portal under the cog; the row is a dropdown ("First view ▾") whose list is on the body. */
+const defaultViewTrigger = (el: ParentNode): HTMLButtonElement => {
   if (el.querySelector('.page-settings > button[aria-expanded="true"]') === null) click(q(el, '.page-settings__trigger'))
   const id = el.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
-  return q(document.getElementById(id ?? '') ?? document.body, '[role="group"][aria-label="Default view"]')
+  return q(document.getElementById(id ?? '') ?? document.body, '[aria-label="Default view"].view-dropdown')
 }
-const pickDefaultView = (el: ParentNode, text: string): void => click([...defaultViewRow(el).querySelectorAll('button')].find((b) => b.textContent === text)!)
-const defaultViewPressed = (el: ParentNode): string => [...defaultViewRow(el).querySelectorAll('button')].find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent ?? ''
+const pickDefaultView = (el: ParentNode, text: string): void => {
+  click(defaultViewTrigger(el))
+  click([...document.body.querySelectorAll('.page-settings__drop-panel button')].find((b) => b.textContent === text)!)
+}
+const defaultViewPressed = (el: ParentNode): string => defaultViewTrigger(el).textContent ?? ''
 
 // ---------- the folder itself (D1/D4/E2) ----------
 

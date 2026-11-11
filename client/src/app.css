@@ -4705,8 +4705,6 @@ body.drag-held iframe {
 
 .page-settings__choices {
   display: flex;
-  /* The folder ⚙'s "Default view" (YAZ-4909) names every view: more than a line of them wrap. */
-  flex-wrap: wrap;
   gap: 2px;
   margin: 0 2px 2px;
   padding: 2px;
