@@ -2403,7 +2403,7 @@
   text-decoration: line-through;
 }
 
-/* A card's own colour (YAZ-4906, `cardColorAttrs`): the note's `color` property on a calendar card and a board card.
+/* A card's own colour (YAZ-4906, `cardStyleAttrs`): the note's `color` property on a calendar card and a board card.
    The colours and the strengths are the header row's (`table.css`): Light 15 %, Medium 30 %, Strong 50 % of the
    colour over the card's background, so the text stays readable in light and dark; a crossed-out card keeps it. */
 :is(.view-cal__card, .view-board__card)[data-color='gray'] { --card-hue: var(--table-fill-solid-grey); }
@@ -2421,7 +2421,6 @@
 :is(.view-cal__card, .view-board__card)[data-color-strength='strong'] { --card-wash: 50%; }
 /* Black at 5 times the strength, as the header row's black (`table.css`, YAZ-4794): Light 30 %, Medium 60 %, Strong
    solid black (Yaseen: "how come i have black selected but its not black?"). */
-:is(.view-cal__card, .view-board__card)[data-color='black']:not([data-color-strength]),
 :is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='medium'] { --card-wash: 60%; }
 :is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='light'] { --card-wash: 30%; }
 :is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='strong'] { --card-wash: 100%; }
@@ -3136,8 +3135,6 @@
 .view-settings { gap: 0; padding: 0; }
 .view-settings > .view-menu__label { margin: 8px 0 2px; padding: 8px 8px 0; font-weight: 500; border-top: 1px solid var(--border); }
 .view-settings > .view-menu__label:first-child { margin-top: 2px; padding-top: 0; border-top: 0; }
-/* A heading with the section's ↺ at the rows' right-hand column (YAZ-4908: the Table's Header row). */
-.view-settings > .view-menu__label--row { display: flex; align-items: center; justify-content: space-between; padding-right: 2px; }
 .view-settings .view-settings-row { min-height: 32px; padding: 0 2px 0 8px; border-radius: 6px; color: var(--fg); }
 .view-settings .view-settings-row:hover { background: var(--bg-hover); }
 .view-settings-row__label { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -3145,10 +3142,6 @@
 .view-settings .view-seg__opt { padding: 2px 8px; }
 /* Header row (YAZ-4774, `TableLookSettings.tsx`): Color, Strength and Text under it, their words where the icons end. */
 .view-settings .view-settings-row--sub > span:first-child { padding-left: 22px; color: var(--fg-muted); }
-.view-header-colors { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 1px; }
-.view-header-colors > button { padding: 2px; border: 1px solid transparent; border-radius: 4px; }
-.view-header-colors > button[aria-pressed='true'] { border-color: var(--accent); }
-.view-header-colors .table-menu-swatch { width: 12px; height: 12px; }
 .view-settings .property-board-setting small { display: block; margin: -6px 0 4px; padding-left: 30px; font-size: 11px; color: var(--fg-muted); }
 .view-from-settings { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: -4px; }
 .view-from-settings--reset { color: var(--accent); text-decoration: none; border-radius: 4px; }
@@ -3156,34 +3149,27 @@
 .view-settings__foot { margin: 8px -10px -10px; padding: 8px 18px 10px; font-size: 11px; color: var(--fg-muted); border-top: 1px solid var(--border); }
 
 /* A calendar line's two controls (YAZ-4878, `CalendarLineControls.tsx`): "3 px ▾" and a colour dot ▾, each a quiet
-   select in the View tab and in Settings › Folder pages; the dropdown's rows, Custom's box and the colour panel. */
+   select in the View tab and in Settings › Folder pages; the thickness rows are the context menu's (`ctx-menu__item`,
+   a ✓ at the width, YAZ-4834 P18), the colour dot opens the style panel's Fill tab. */
 .cal-line { display: flex; flex: none; gap: 4px; align-items: center; }
 .view-dropdown__wrap { position: relative; display: inline-flex; }
-/* The dropdown's trigger (`Dropdown.tsx`): a quiet select with a drawn chevron, in the View tab, Settings and the folder ⚙. */
+/* The dropdown's trigger (`Dropdown.tsx`): the quiet select below (its fill and drawn chevron, `view-select`) as an
+   inline box with a gap, in the View tab, Settings and the folder ⚙. */
 .view-dropdown {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 24px;
-  padding: 0 20px 0 8px;
   font: inherit;
   font-size: 12px;
   color: var(--fg);
-  appearance: none;
   border: 1px solid transparent;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--fg) 6%, transparent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4l2-2 2 2M3 6l2 2 2-2'/%3E%3C/svg%3E") no-repeat right 6px center;
-  cursor: pointer;
 }
-.view-dropdown:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
 .cal-line__colour { padding-left: 6px; }
 .cal-line__dot { width: 12px; height: 12px; }
 /* The panel, on the body (`Popover`'s `portal`), over whatever opened it: the View tab, the Settings dialog (scrim 70,
    `settings.css`) and the folder ⚙ placed on the page (z 1000,
    `app.css` `.page-settings__menu--placed`); at 80 the ⚙'s Default view list opened behind the ⚙ (YAZ-4909 demo). */
 .view-dropdown__panel.view-popover { z-index: 1001; min-width: 0; padding: 4px; }
-.cal-line__panel .view-popover__item { padding: 4px 24px 4px 10px; font-size: 12px; white-space: nowrap; }
-.cal-line__panel .view-popover__item[aria-pressed='true'] { color: var(--accent); }
 .cal-line__custom { padding: 4px 6px 2px; font-size: 12px; }
 .cal-line__custom .view-input { width: 56px; }
 
@@ -3205,22 +3191,16 @@
   border-radius: 4px;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 15%, transparent);
 }
-/* The style panel in a dropdown: the context menu's rows (`ctx-menu__item`, `fill-target`) at the menu's padding. */
-.view-style__panel.view-popover { width: max-content; min-width: 200px; padding: 4px; font-size: 13px; }
-.page-settings__drop-panel.view-popover { width: max-content; min-width: 160px; padding: 4px; font-size: 13px; }
+/* The style panel and the folder ⚙'s list in a dropdown: the context menu's rows (`ctx-menu__item`, `fill-target`) at
+   the menu's padding. */
+:is(.view-style__panel, .page-settings__drop-panel).view-popover { width: max-content; padding: 4px; font-size: 13px; }
+.view-style__panel.view-popover { min-width: 200px; }
+.page-settings__drop-panel.view-popover { min-width: 160px; }
 .page-settings__line .page-settings__drop { max-width: 180px; font-size: 12px; }
 
-/* The colour panel (`ColourPanel.tsx`): the strength switch over two rows of swatches, "No colour" under them. */
-.colour-panel { display: flex; flex-direction: column; gap: 6px; padding: 4px; }
-.colour-panel .view-seg { align-self: flex-start; }
-.colour-panel .view-header-colors { justify-content: flex-start; max-width: 112px; }
-.colour-panel__none { align-self: flex-start; padding: 2px 8px; font-size: 12px; color: var(--fg-muted); border-radius: 4px; }
-.colour-panel__none:hover { color: var(--fg); background: var(--bg-hover); }
-.colour-panel__none[aria-pressed='true'] { color: var(--accent); }
-.colour-panel__group .colour-panel { padding: 2px 6px 4px; }
-
-/* Quiet selects: a soft fill and a drawn chevron, no box. */
-.view-settings .view-select {
+/* Quiet selects: a soft fill and a drawn chevron, no box. The dropdown's trigger (`view-dropdown`, above) is one wherever it sits. */
+.view-settings .view-select,
+.view-dropdown {
   appearance: none;
   height: 24px;
   padding: 0 22px 0 8px;
@@ -3229,7 +3209,8 @@
   border-radius: 5px;
   cursor: pointer;
 }
-.view-settings .view-select:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
+.view-settings .view-select:hover,
+.view-dropdown:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
 
 /* Sort menu: the same quiet fills; the grip and × show on the row's hover. */
 .sort-menu .column-picker__trigger.view-select,

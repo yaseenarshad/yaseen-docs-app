@@ -20,7 +20,7 @@ export interface Row {
   file: FileValue
   /** Keyed by the property key as written in the view (`file.name`, `status`, `note.status`, `formula.x`). */
   values: Record<string, Value>
-  /** The note matches the view's `crossOut` (YAZ-4864): a calendar card strikes its name through. Absent = no. */
+  /** The note matches the view's `crossOut` (YAZ-4864): a calendar card is crossed out whole. Absent = no. */
   crossed?: true
 }
 

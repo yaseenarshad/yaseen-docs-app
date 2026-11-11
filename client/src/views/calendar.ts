@@ -299,8 +299,6 @@ export function calendarEndKey(view: ViewDef, dateKey: string | null, decls: Fol
   return key === dateKey ? null : key
 }
 
-export { MAX_CAL_LINE, calLine } from '@shared/types'
-
 /** A calendar line's colour (YAZ-4878): the stored `gray` / `blue light` (`readColorStrength`), else Gray, Medium: the app's line colour. */
 export const calLineColor = (value: unknown): ColorStrengthValue => readColorStrength(value) ?? { color: 'gray', strength: 'medium' }
 

@@ -4,11 +4,11 @@
  * plugin key lives here so ⌘F can ask for it without importing the host.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { PluginKey, type Selection } from '@milkdown/kit/prose/state'
+import { PluginKey, type EditorState, type Selection } from '@milkdown/kit/prose/state'
 import type { DecorationSet } from '@milkdown/kit/prose/view'
 import { optionsPipe, splitEmbed } from '@shared/embedOptions'
 import { WIKILINK_RE, eachPlainRun } from '../wikilink/wikilinkPlugin'
-import { boardEmbedTarget } from './boardEmbedText'
+import { boardEmbedTarget, isBoardSrc } from './boardEmbedText'
 
 /** One board embed of a textblock. */
 export interface BoardEmbedMatch {
@@ -54,3 +54,19 @@ export function embedRevealed(sel: Selection, from: number, to: number): boolean
 
 /** The host's plugin key (`boardEmbed.ts`): ⌘F asks whether the host is there before it leaves an embed's text out. */
 export const boardEmbedKey = new PluginKey<DecorationSet>('mdapp-board-embed')
+
+/**
+ * The paragraph at `pos` is one board embed and nothing else (YAZ-4907: a line goes beside it, as beside a code block or
+ * a table): a board embed over its whole text (the host plugin there, `boardEmbed.ts`), or one board image node
+ * (`imageView.ts`, a board of another vault). The 6-dot "Add line above / below" and Enter on a selected embed ask it
+ * (`turnIntoRows.ts`, `addLineBeside.ts`).
+ */
+export function embedOnlyParagraph(state: EditorState, pos: number): boolean {
+  const paragraph = state.doc.nodeAt(pos)
+  if (paragraph?.type.name !== 'paragraph' || paragraph.childCount !== 1) return false
+  const only = paragraph.firstChild!
+  if (only.type.name === 'image') return isBoardSrc(only.attrs.src as string)
+  if (boardEmbedKey.getState(state) === undefined) return false
+  const embed = boardEmbedsIn(paragraph, pos)[0]
+  return embed !== undefined && embed.from === pos + 1 && embed.to === pos + 1 + paragraph.content.size
+}

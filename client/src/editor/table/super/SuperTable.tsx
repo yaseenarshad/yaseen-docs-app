@@ -24,6 +24,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent, type ReactNode } from 'react'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { headerRowAttrs, headerRowOwn } from '@shared/types'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { verticalScrollParent } from '../../../lib/pinnedHeader'
@@ -523,6 +524,8 @@ export function SuperTable({ editor, getPos, table, active, found, zoom }: Super
         )}
         <table
           className="super-view"
+          // The table's own header row look (YAZ-4834 P21), as its block wears it; Settings' comes from `.app`.
+          {...headerRowAttrs(headerRowOwn(table.attrs.header))}
           data-grouped={grouped ? '' : undefined}
           data-group-lines={def.lines ?? 'hover'}
           data-thread={def.thread === true ? '' : undefined}

@@ -21,6 +21,9 @@ vi.mock('../calendar', async (load) => {
 })
 import { bucketByDay, dateColumns } from '../calendar'
 import viewsCss from '../views.css?inline'
+import tableCss from '../../editor/table/table.css?inline'
+import { setHeaderRowSetting } from '../../editor/table/timeFormatSetting'
+import { DEFAULT_HEADER_ROW } from '@shared/types'
 import { writeProperties, writeProperty } from '../writeProperty'
 
 const write = vi.mocked(writeProperty)
@@ -708,7 +711,7 @@ ${cardStyle === '' ? '' : `    cardStyle:\n${cardStyle}\n`}`
 describe('"Cross out when" (YAZ-4864)', () => {
   const records = [...RECORDS, rec('Done task', { due: '2026-12-08', done: true, status: 'Done' }), rec('Open task', { due: '2026-12-08', done: false, status: 'Doing' })]
   const CROSS = (cond: string) => `views:\n  - type: calendar\n    name: C\n    crossOut:\n      and:\n        - ${cond}\n`
-  const crossed = (el: ParentNode) => [...el.querySelectorAll('.view-cal__card-title--crossed')].map((t) => t.textContent)
+  const crossed = (el: ParentNode) => [...el.querySelectorAll('.view-cal__card--crossed')].map((t) => t.querySelector('.view-cal__card-name')?.textContent)
   const openView = (el: ParentNode) => {
     click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
@@ -718,10 +721,9 @@ describe('"Cross out when" (YAZ-4864)', () => {
   it('a card whose note matches has its name struck through; the others do not', () => {
     const { el } = mount(CROSS('note.done == true'), { records })
     expect(crossed(el)).toEqual(['Done task'])
-    // The strike is on the name's text: a folder row's icon stays outside it.
-    expect(q(cardOf(el, 'Done task'), '.view-cal__card-title--crossed .view-cal__card-name').textContent).toBe('Done task')
-    // The whole card is crossed out, its column lines too (YAZ-4864, demo request).
+    // The whole card is crossed out, its column lines too (YAZ-4864, demo request); a folder row's icon stays outside the name.
     expect(cardOf(el, 'Done task').closest('.view-cal__card')?.classList.contains('view-cal__card--crossed')).toBe(true)
+    expect(q(cardOf(el, 'Done task'), '.view-cal__card-name').textContent).toBe('Done task')
   })
 
   it('"contains" and Any work as in the Filter menu', () => {
@@ -753,7 +755,7 @@ describe('"Cross out when" (YAZ-4864)', () => {
     const section = openView(el)
     click(byText(section, 'button', 'Add rule'))
     expect(yaml()).toContain('- file.name == ""')
-    expect(el.querySelectorAll('.view-cal__card-title--crossed')).toHaveLength(0)
+    expect(el.querySelectorAll('.view-cal__card--crossed')).toHaveLength(0)
   })
 
   it('the Filter menu keeps its own rows: a filter is not a cross-out', () => {
@@ -1187,8 +1189,20 @@ describe("a card styled by hand (YAZ-4906): \"Card style ›\", the table's Head
     await flush()
     click(menuItem('Plain, like any card'))
     expect(written()![0]).toBe('/vault/Bare.md')
-    expect(written()![1]).toEqual([{ key: 'color', value: undefined }, { key: 'weight', value: undefined }])
+    // `prevRaw` is what the card shows (YAZ-4834 P3): the undo writes Green and Bold back.
+    expect(written()![1]).toEqual([{ key: 'color', value: undefined, prevRaw: 'green' }, { key: 'weight', value: undefined, prevRaw: 'bold' }])
     expect(attrs(el, 'Bare')).toEqual({})
+  })
+
+  it('YAZ-4834 P3: two picks of the fill before the index echoes the first: the undo of the second writes the first back, not nothing', async () => {
+    const { el } = mount(CALENDAR)
+    openStyle(el, 'Bare')
+    click(menuItem('Green'))
+    click(byText(document.body, '.fill-target__opt', 'Strong'))
+    expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'color', 'green strong')
+    undoOn(cardOf(el, 'Bare'))
+    expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'color', 'green')
+    expect(attrs(el, 'Bare')).toEqual({ 'data-color': 'green', 'data-color-strength': 'medium' })
   })
 
   it('⌘Z on a card writes the value the note had back, one step per pick; ⇧⌘Z the pick again', async () => {
@@ -1231,18 +1245,18 @@ describe('the day names\' header row (YAZ-4864 round 3): the Table view\'s heade
   it('the View tab\'s "Header row [Aa ▾]" opens the style panel on the body; Fill › Blue writes headerRow.color and the day names take it; the ↺ hands it back', () => {
     const { el, yaml } = mount(CALENDAR)
     openView(el)
-    expect(dayRow(el).style.getPropertyValue('--table-header-hue')).toBe('')
+    expect(dayRow(el).dataset.tableHeaderColor).toBe('gray')
     click(q(el, '.view-popover--properties [aria-label="Header row style"]'))
     const panel = q<HTMLElement>(document.body, '.view-style__panel')
     expect(panel.closest('.view-popover--properties')).toBeNull()
     expect([...panel.querySelectorAll('.fill-target:not(.fill-target--sub) button')].map((b) => b.textContent)).toEqual(['Fill', 'Text', 'Style'])
     click(panelItem('Blue'))
     expect(yaml()).toMatch(/headerRow:\n\s+color: blue/)
-    expect(dayRow(el).style.getPropertyValue('--table-header-hue')).toBe('var(--table-fill-solid-blue)')
+    expect(dayRow(el).dataset.tableHeaderColor).toBe('blue')
     expect(panelItem('Blue').dataset.hint).toBe('✓')
     click(byText(panel, 'button', 'Strong'))
     expect(yaml()).toContain('strength: strong')
-    expect(dayRow(el).style.getPropertyValue('--table-header-strength')).toBe('20')
+    expect(dayRow(el).dataset.tableHeaderStrength).toBe('strong')
     // Escape in the panel closes the panel alone (its keydown stops before the tab's window listener).
     act(() => void panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     draw()
@@ -1261,26 +1275,41 @@ describe('the day names\' header row (YAZ-4864 round 3): the Table view\'s heade
     click(byText(q(document.body, '.ctx-menu__parent [aria-label="Style part"]'), 'button', 'Text'))
     click(panelItem('White'))
     expect(yaml()).toMatch(/headerRow:\n\s+text: white/)
-    expect(dayRow(el).style.getPropertyValue('--table-header-ink')).toBe('#fff')
+    expect(dayRow(el).dataset.tableHeaderText).toBe('white')
     click(panelItem('Plain, like any row'))
     expect(yaml()).toContain('strength: off')
     expect(yaml()).toContain('weight: regular')
     expect(yaml()).toContain('text: full')
   })
 
+  /** The row's look as the folder table wears it: `data-table-header-*` (`headerRowAttrs`), which `table.css` reads. */
+  const headAttrs = (el: ParentNode) => Object.fromEntries([...dayRow(el).attributes].filter((a) => a.name.startsWith('data-table-header-')).map((a) => [a.name.slice('data-table-header-'.length), a.value]))
+
   it('a stored header row reads the same as the folder table\'s: Red, Strong, Regular, Center; a view without one keeps the look of before', () => {
     const { el } = mount(`${CALENDAR}    headerRow:\n      color: red\n      strength: strong\n      weight: regular\n      align: center\n`)
-    const style = dayRow(el).style
-    expect(style.getPropertyValue('--table-header-hue')).toBe('var(--table-fill-solid-red)')
-    expect(style.getPropertyValue('--table-header-scale')).toBe('2.5')
-    expect(style.getPropertyValue('--table-header-strength')).toBe('20')
-    expect(style.getPropertyValue('--table-header-weight')).toBe('400')
-    expect(style.getPropertyValue('--table-header-align')).toBe('center')
+    expect(headAttrs(el)).toEqual({ color: 'red', strength: 'strong', weight: 'regular', text: 'muted', align: 'center' })
     act(() => root?.unmount())
     container?.remove()
-    const plain = dayRow(mount(CALENDAR).el).style
-    expect(plain.getPropertyValue('--table-header-hue')).toBe('')
-    expect(plain.getPropertyValue('--table-header-strength')).toBe('6')
-    expect(plain.getPropertyValue('--table-header-mute')).toBe('1')
+    expect(headAttrs(mount(CALENDAR).el)).toEqual({ color: 'gray', strength: 'light', weight: 'bold', text: 'muted', align: 'follow' })
+  })
+
+  // YAZ-4834 P1: inline variables set nothing for Gray, Bold, Muted, Full and Follow, so the day names took Settings'
+  // Blue (on `.app`) over the view's own Gray. The attributes make the view's Gray unset the hue, as a table's does.
+  it('YAZ-4834 P1: with Settings › Tables › Header row Blue, Strong and Regular, a calendar whose own header row is Gray and Bold says so in its attributes, and table.css unsets the hue for its row', () => {
+    setHeaderRowSetting({ ...DEFAULT_HEADER_ROW, color: 'blue', strength: 'strong', weight: 'regular' })
+    try {
+      const { el } = mount(`${CALENDAR}    headerRow:\n      color: gray\n      weight: bold\n`)
+      expect(headAttrs(el)).toEqual({ color: 'gray', strength: 'strong', weight: 'bold', text: 'muted', align: 'follow' })
+    } finally {
+      setHeaderRowSetting(DEFAULT_HEADER_ROW)
+    }
+    // The day-name row and the "Aa" chip are in the lists of table.css's header rules: their own part wins over `.app`'s.
+    const rules = [...tableCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ selector: sel.trim(), body }))
+    const ruleOf = (part: string, value: string) => rules.find(({ selector }) => selector.includes('.view-cal__week') && selector.includes('.view-style__chip') && selector.endsWith(`[data-table-header-${part}='${value}']`))
+    expect(ruleOf('color', 'gray')?.body).toContain('--table-header-hue: initial')
+    expect(ruleOf('weight', 'bold')?.body).toContain('--table-header-weight: initial')
+    expect(ruleOf('text', 'muted')?.body).toContain('--table-header-ink: initial')
+    expect(ruleOf('align', 'follow')?.body).toContain('--table-header-align: initial')
+    expect(ruleOf('color', 'blue')?.body).toContain('--table-header-hue: var(--table-fill-solid-blue)')
   })
 })

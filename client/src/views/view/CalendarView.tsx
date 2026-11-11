@@ -1,11 +1,11 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { holdColResize } from '../../lib/colResize'
+import { holdFrames } from '../../lib/colResize'
 import { openByKey, openTarget } from '../../lib/openGesture'
 import {
-  type BarPlace, type DayKey, type Span, type SpanPreview, bucketByDay, addDays, calLine, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
+  type BarPlace, type DayKey, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
   todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
 } from '../calendar'
-import { type ColorStrengthValue, type IndexRecord } from '@shared/types'
+import { type ColorStrengthValue, type IndexRecord, calLine, headerRowAttrs } from '@shared/types'
 import { type Row, propertyKeys, propertyLabel } from '../engine'
 import { type Resolver, isEmpty } from '../expr'
 import { type FolderSettings, pageColumnKeys } from '../folderSettings'
@@ -15,7 +15,7 @@ import { CardLine, CardProp, cardLines, cardStyleAttrs } from './cardLines'
 import { CardStyleFlyout, type CardStyleWrite } from './CardStyleMenu'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { MenuFlyout, useFlyout } from '../../components/Flyout'
-import { StyleFlyout, headerRowVars } from './StylePanel'
+import { StyleFlyout } from './StylePanel'
 import { plainHeaderRow, setHeaderRowPart, shownHeaderRow, toggleHeaderRowPlain } from './TableLookSettings'
 import type { ValueHistory } from './valueHistory'
 import { canonicalKey } from './keys'
@@ -415,12 +415,12 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       window.removeEventListener('keydown', key, true)
-      holdColResize(false)
+      holdFrames(false)
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
     window.addEventListener('keydown', key, true)
-    holdColResize(true)
+    holdFrames(true)
   }
 
   /**
@@ -442,7 +442,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const item = (key: string) =>
       canonicalKey(key) === 'file.name' ? (
         // Clip shows the full title on a hover (D23); a wrapped title is all there.
-        <span key={key} className={`view-cal__card-title${row.crossed === true ? ' view-cal__card-title--crossed' : ''}`} title={wrap ? undefined : row.record.title}>
+        <span key={key} className="view-cal__card-title" title={wrap ? undefined : row.record.title}>
           {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too, unless the view's "Folder icon" is off (YAZ-4848). */}
           {isFolderRow(row.record) && folderIcons && <FolderIcon size={12} className="view-folder-row__icon" />}
           {/* "Cross out when" (YAZ-4864) strikes the whole card's text (`view-cal__card--crossed`): the icon stays as it is. */}
@@ -583,11 +583,11 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
         </div>
       </div>
       <div className={`view-cal__grid${isWeek ? ' view-cal__grid--week' : ''}${hideWeekends ? ' view-cal__grid--weekdays' : ''}`} role="grid" aria-label={title} style={gridLines(view)}>
-        {/* The day names wear the header row's look (YAZ-4864 round 3): the view's `headerRow` over Settings › Tables, as the folder table's; a right-click styles it. */}
+        {/* The day names wear the header row's look (YAZ-4864 round 3): the view's `headerRow` over Settings › Tables, as `data-table-header-*` (`table.css`), as the folder table's; a right-click styles it. */}
         <div
           className="view-cal__week"
           role="row"
-          style={headerRowVars(shownHeaderRow(view))}
+          {...headerRowAttrs(shownHead)}
           onContextMenu={
             onHeaderRow === undefined
               ? undefined

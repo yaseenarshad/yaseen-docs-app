@@ -12,6 +12,7 @@ import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
 import { GroupHeader, rowTitle } from './GroupHeader'
 import { CardLine, CardProp, cardLines, cardStyleAttrs } from './cardLines'
+import { CardStyleFlyout, type CardStyleWrite } from './CardStyleMenu'
 import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
@@ -58,6 +59,8 @@ export interface BoardViewProps {
   onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
   /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
+  /** "Card style ›" in a card's right-click (YAZ-4906, YAZ-4834 P5): the note's `color`, `text_color` and `weight`, as the calendar card's. Absent: no item. */
+  onStyle?: (path: string, writes: CardStyleWrite[]) => void
   /** The last failed move, flagged inline on its card. */
   moveError: { path: string; message: string } | null
   /** Create a note seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
@@ -120,6 +123,7 @@ export function BoardView({
   noteDoors,
   resolve,
   readOnly = NO_READ_ONLY,
+  onStyle,
   hover,
 }: BoardViewProps) {
   const levels = shownGroupLevels(view)
@@ -199,6 +203,17 @@ export function BoardView({
   const [adding, setAdding] = useState<{ key: string; name: string } | null>(null)
   /** The exact rendered record targeted by the latest whole-card secondary click. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
+  /**
+   * The card menu's groups: the note items, then "Card style ›" (YAZ-4906, YAZ-4834 P5: the card shows the note's style,
+   * so it sets it here too) when the pane writes styles and the note is not read-only. The panel's ✓ marks are the
+   * card's style NOW (the rows, optimistic).
+   */
+  const cardMenu = (path: string) => {
+    const items = cardMenuItems(noteDoors, path, () => setMenu(null), noteDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => noteDoors.newBelow!(path) })
+    if (onStyle === undefined || readOnly.has(path)) return items
+    const properties = records.find((r) => r.path === path)?.properties ?? {}
+    return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(path, writes)} />] }
+  }
   /** Browser click tails after secondary-click and drag gestures must not become page opens. */
   const suppressClick = useRef(false)
   const suppressOnce = () => {
@@ -506,7 +521,7 @@ export function BoardView({
           onOpenWindow={onOpenWindow}
           onNotice={onNotice}
           onClose={() => setMenu(null)}
-          {...cardMenuItems(noteDoors, menu.path, () => setMenu(null), noteDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => noteDoors.newBelow!(menu.path) })}
+          {...cardMenu(menu.path)}
         />
       )}
     </>

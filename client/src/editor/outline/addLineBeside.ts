@@ -14,8 +14,7 @@ import { keymap, type EditorView as CodeMirrorView } from '@codemirror/view'
 import { NodeSelection, Plugin, PluginKey, TextSelection, type Command, type EditorState } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { boardEmbedAt, boardEmbedKey } from '../drawing/boardEmbedScan'
-import { isBoardSrc } from '../drawing/boardEmbedText'
+import { embedOnlyParagraph } from '../drawing/boardEmbedScan'
 import { getZoomedItemPos } from './zoom'
 
 export type LineSide = 'above' | 'below'
@@ -82,16 +81,18 @@ const inTable = (side: LineSide): Command => (state, dispatch, view) => {
 }
 
 /**
- * The paragraph of a selected embed (YAZ-4907), or null. A board embed is its text selected whole (`boardEmbed.ts`:
- * the window is selected, the host plugin is there); a board of another vault is an image node, selected
- * (`imageView.ts`). The embed's paragraph is the block the line goes beside, as a code block or a table is.
+ * The paragraph of a selected embed (YAZ-4907), or null: the paragraph is one board embed (`embedOnlyParagraph`) and
+ * the selection is it whole, as text (`boardEmbed.ts`: the window is selected) or as the image node (`imageView.ts`,
+ * a board of another vault). The embed's paragraph is the block the line goes beside, as a code block or a table is.
  */
-export function embedBlockAtSelection(state: EditorState): number | null {
+function embedBlockAtSelection(state: EditorState): number | null {
   const sel = state.selection
-  if (sel instanceof NodeSelection) return sel.node.type.name === 'image' && isBoardSrc(sel.node.attrs.src as string) ? sel.$from.before() : null
-  if (sel.empty || !(sel instanceof TextSelection) || boardEmbedKey.getState(state) === undefined) return null
-  const embed = boardEmbedAt(state.doc, sel.from, 'start')
-  return embed !== null && embed.to === sel.to ? sel.$from.before() : null
+  const $from = sel.$from
+  if ($from.depth === 0) return null
+  const whole = sel instanceof NodeSelection ? sel.node.type.name === 'image' : sel instanceof TextSelection && !sel.empty && sel.from === $from.start() && sel.to === $from.end()
+  if (!whole) return null
+  const pos = $from.before()
+  return embedOnlyParagraph(state, pos) ? pos : null
 }
 
 /** Enter, ⌘↵ and ⌘⇧↵ on a selected embed (YAZ-4907): above the list's Enter (100), which typed over the embed. */

@@ -114,7 +114,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     act(() => inPanel((b) => b.textContent === '3 px').click())
     expect(written().folderPages).toEqual({ ...DEFAULT_SETTINGS.folderPages, weekLine: 3 })
     act(() => row('folderPages.dayLine')!.querySelector<HTMLButtonElement>('.cal-line__colour')!.click())
-    act(() => inPanel((b) => b.getAttribute('aria-label') === 'Teal').click())
+    act(() => inPanel((b) => b.textContent === 'Teal').click())
     expect(written().folderPages).toEqual({ ...DEFAULT_SETTINGS.folderPages, dayLineColor: 'teal' })
   })
 

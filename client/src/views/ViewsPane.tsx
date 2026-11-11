@@ -11,7 +11,7 @@ import { pageResolver } from '../links/folderLinks'
 import { isMentionsColumn, mentionsColumns } from './mentionsColumn'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, hidesSubfolderNotes, parseViews, serializeViews, shownGroupLevels, showsFolderRows, updateViews } from './viewSchema'
+import { type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, hidesSubfolderNotes, parseViews, rewriteViews, serializeViews, shownGroupLevels, showsFolderRows, updateViews } from './viewSchema'
 import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, levelSteps } from './groupLevelSteps'
 import { type Group, type Row, propertyKeys, propertyLabel, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
@@ -431,7 +431,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   latest.current = { parsed, onChange, folder }
   const write = (mutate: (def: ViewSet) => void): ViewSet | null => {
     const now = latest.current
-    const next = parseViews(serializeViews(updateViews(now.parsed, mutate)))
+    const next = rewriteViews(now.parsed, mutate)
     return now.onChange(next) === false ? null : next.def
   }
   /**
@@ -804,12 +804,13 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   /**
    * A card's style (YAZ-4906): the note's `color`, `text_color` and `weight` (`CardStyleMenu.tsx`; an undefined value
    * removes the key), the move's optimistic guarded write with no toast, and ONE step of the page's ⌘Z history (S41)
-   * per pick, whose undo writes the values the note had. A deliberate menu pick, as the table's Fill: it does not ask
-   * Confirm changes.
+   * per pick, whose undo writes the values the note SHOWS (`shown`, the pending moves laid on: a second pick before the
+   * index echoes the first undoes to the first, YAZ-4834 P3). A deliberate menu pick, as the table's Fill: it does not
+   * ask Confirm changes.
    */
   const onCardStyle = (path: string, picks: readonly CardStyleWrite[]) => {
     if (readOnly.has(path) || picks.length === 0) return
-    const props = records.find((r) => r.path === path)?.properties
+    const props = shown.find((r) => r.path === path)?.properties
     const writes: PendingMove = picks.map(({ key, value }) => ({ key, value, prevRaw: props?.[key] }))
     const back: PendingMove = writes.map((w) => ({ key: w.key, value: w.prevRaw, prevRaw: w.value }))
     const ref = noteRef(path)
@@ -1134,6 +1135,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           noteDoors={cardDoors('Added a card')}
           hover={viewHover}
           readOnly={readOnly}
+          onStyle={onCardStyle}
           settings={folder.settings}
           def={def}
           view={view}

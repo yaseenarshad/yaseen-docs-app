@@ -1,6 +1,7 @@
 /* A Super table's tabs, panels and view (YAZ-4869 S2–S5, `SuperTable.tsx`); the lazy chunk's own. The place of the bar
-   and the hidden table are `table.css`'s (eager, small). The view looks like a note table: the same borders, header
-   shade, fills and text colours (`table.css` tokens), with the folder pages' group headers (`views.css`). */
+   and the hidden table are `table.css`'s (eager, small). The view looks like a note table: the same borders, header row
+   look (the table's own `data-table-header-*` on `.super-view`, else Settings › Tables' on `.app`; YAZ-4834 P21), fills
+   and text colours (`table.css` tokens), with the folder pages' group headers (`views.css`). */
 
 /* The bar is the folder page's view bar (`views.css`: `view-toolbar`, `view-tabs`, `view-tab`, `view-toolbar__btn`), so
    the two look the same (the YAZ-4869 demo: "almost be 1:1", then "its all just a bit cramped"). Inside the note,
@@ -184,15 +185,19 @@
   border-left-width: 1px;
 }
 
+/* The column header: the note table's header row formula (`table.css` `th`), its tint as a layer over the opaque page
+   colour so the sticky header hides the rows under it. */
 .super-view thead th {
   position: sticky;
   top: 0;
   z-index: 3;
   border-top-width: 1px;
+  --table-cell-tint: color-mix(in srgb, var(--table-header-hue, var(--crepe-color-on-background)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), transparent);
   background-color: var(--bg);
-  background-image: linear-gradient(color-mix(in srgb, var(--crepe-color-on-background) 6%, transparent), color-mix(in srgb, var(--crepe-color-on-background) 6%, transparent));
-  font-weight: 600;
-  text-align: left;
+  background-image: linear-gradient(var(--table-cell-tint), var(--table-cell-tint));
+  font-weight: var(--table-header-weight, 600);
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 0) * 100%), currentColor));
+  text-align: var(--table-header-align, left);
 }
 
 /* S3: the group headers stick under the column header, one row height a level, as on folder pages. */
@@ -292,26 +297,4 @@
   font-weight: 600;
 }
 
-/* Fills and text colours: the table's own tokens (`table.css`). */
-.super-view td[data-fill='red'] { --table-cell-tint: var(--table-fill-red); }
-.super-view td[data-fill='orange'] { --table-cell-tint: var(--table-fill-orange); }
-.super-view td[data-fill='yellow'] { --table-cell-tint: var(--table-fill-yellow); }
-.super-view td[data-fill='green'] { --table-cell-tint: var(--table-fill-green); }
-.super-view td[data-fill='teal'] { --table-cell-tint: var(--table-fill-teal); }
-.super-view td[data-fill='blue'] { --table-cell-tint: var(--table-fill-blue); }
-.super-view td[data-fill='purple'] { --table-cell-tint: var(--table-fill-purple); }
-.super-view td[data-fill='pink'] { --table-cell-tint: var(--table-fill-pink); }
-.super-view td[data-fill='grey'] { --table-cell-tint: var(--table-fill-grey); }
-.super-view td[data-fill='brown'] { --table-cell-tint: var(--table-fill-brown); }
-.super-view td[data-fill^='#'] { --table-cell-tint: color-mix(in srgb, var(--table-fill-custom) var(--table-fill-wash), transparent); }
-.super-view td[data-color='red'] { color: var(--table-text-red); }
-.super-view td[data-color='orange'] { color: var(--table-text-orange); }
-.super-view td[data-color='yellow'] { color: var(--table-text-yellow); }
-.super-view td[data-color='green'] { color: var(--table-text-green); }
-.super-view td[data-color='teal'] { color: var(--table-text-teal); }
-.super-view td[data-color='blue'] { color: var(--table-text-blue); }
-.super-view td[data-color='purple'] { color: var(--table-text-purple); }
-.super-view td[data-color='pink'] { color: var(--table-text-pink); }
-.super-view td[data-color='grey'] { color: var(--table-text-grey); }
-.super-view td[data-color='brown'] { color: var(--table-text-brown); }
-.super-view td[data-color^='#'] { color: var(--table-text-custom); }
+/* Fills and text colours: the table's own rules (`table.css`) take `.super-view` cells too (YAZ-4834 P17). */

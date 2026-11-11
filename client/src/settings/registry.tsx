@@ -23,6 +23,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { HeaderStyleControl } from '../views/view/StylePanel'
+import { plainHeaderRow } from '../views/view/TableLookSettings'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
@@ -209,7 +210,7 @@ const HEADER_ROW_PREVIEW: readonly (readonly [string, string, 'left' | 'center' 
  * rows of buttons. Text colour null (each table's own) presses nothing in the Text tab.
  */
 function HeaderRowControl({ value, onChange, defaults = DEFAULT_HEADER_ROW }: { value: HeaderRow; onChange: (next: HeaderRow) => void; defaults?: HeaderRow }) {
-  const plain = value.strength === 'off' && value.weight === 'regular' && value.text === 'full'
+  const plain = plainHeaderRow({ ...value, text: value.text ?? 'full' })
   return (
     <span className="settings__header-row">
       <table className="header-row-preview" aria-label="Header row preview" {...headerRowAttrs(value)}>

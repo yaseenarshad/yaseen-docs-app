@@ -270,7 +270,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   }
 
   return (
-    <div className={`view-menu filter-menu${field === 'crossOut' ? ' filter-menu--cross-out' : ''}`}>
+    <div className="view-menu filter-menu">
       {errors.length > 0 && (
         <ul className="view-menu__errors" role="alert">
           {errors.map((e, i) => (

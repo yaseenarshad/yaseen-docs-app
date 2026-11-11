@@ -44,3 +44,13 @@ describe('YAZ-4896: the Super panels open above the view', () => {
     expect(decl(superCss, '.super-menu--rules', 'width')).toBeDefined()
   })
 })
+
+describe('YAZ-4834 P21: the view\'s column header wears the header row look', () => {
+  it('`.super-view thead th` reads the `--table-header-*` variables, and table.css sets them from `data-table-header-*` on `.super-view`', () => {
+    const body = decl(superCss, '.super-view thead th', 'font-weight')
+    expect(body).toContain('var(--table-header-weight')
+    expect(decl(superCss, '.super-view thead th', '--table-cell-tint')).toContain('var(--table-header-hue')
+    expect(decl(superCss, '.super-view thead th', 'color')).toContain('var(--table-header-ink')
+    expect(tableCss).toMatch(/:is\([^)]*\.super-view\)\[data-table-header-color='blue'\]/)
+  })
+})

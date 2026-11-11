@@ -2517,8 +2517,9 @@ export const subheaderRowAttrs = (parts: Partial<HeaderRow>): Record<string, str
 /**
  * A colour with a strength (YAZ-4878, YAZ-4906): a calendar line's colour (`weekLineColor`) and a note's `color`
  * property, one string a person can read: the colour name, then the strength when it is not Medium — `gray`,
- * `blue light`, `black strong`. The colours are the header row's (`HEADER_ROW_CHOICES.color`); Light, Medium and Strong
- * are 15 %, 30 % and 50 % of the colour (`views.css`), the header row's Light, Medium and Strong.
+ * `blue light`, `black strong`. The colours are the header row's (`HEADER_ROW_CHOICES.color`). A card's Light, Medium and
+ * Strong are 15 %, 30 % and 50 % of the colour (`views.css`), Black 30 / 60 / 100 %; a calendar line's are 35 / 65 / 100 %
+ * (`calendar.ts` `calLineCss`).
  */
 export const COLOR_STRENGTHS = ['light', 'medium', 'strong'] as const
 export type ColorStrength = (typeof COLOR_STRENGTHS)[number]

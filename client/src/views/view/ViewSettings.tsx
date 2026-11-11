@@ -230,7 +230,7 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
           <p className="view-menu__label">Lines</p>
           <CalendarLineRow label="Between weeks" widthKey="weekLine" colorKey="weekLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           <CalendarLineRow label="Between days" widthKey="dayLine" colorKey="dayLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
-          {/* Cross out when (YAZ-4864): a card whose note matches these rows has its name struck through. */}
+          {/* Cross out when (YAZ-4864): a card whose note matches these rows is crossed out whole. */}
           {crossOut !== undefined && (
             <>
               <p className="view-menu__label">Cross out</p>

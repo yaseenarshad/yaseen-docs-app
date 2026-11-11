@@ -18,6 +18,7 @@ import { noteFileName } from '@shared/noteName'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import type { CreateFileRequest, IndexRecord, TreeNode } from '@shared/types'
 import { declarationForKind } from './view/declarationForKind'
+import { valueHistory } from './view/valueHistory'
 import { fetchTree } from '../lib/treeFeed'
 import { linkResolver, vaultDirs } from '../links/folderLinks'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -789,6 +790,22 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
     pickDefaultView(el, 'Table')
     await flush()
     expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, defaultView: 'Table' }, expect.any(Function))
+  })
+
+  it('YAZ-4834 P20: a Default view pick is ONE step of the page\'s ⌘Z history: the undo writes the key away, the redo puts it back', async () => {
+    const el = await mount()
+    pickDefaultView(el, 'Table')
+    await flush()
+    expect(written()).toEqual({ ...SETTINGS, defaultView: 'Table' })
+    const history = valueHistory(STAGES)
+    await act(async () => void history.undo())
+    await flush()
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(write.mock.calls[1]![2]).toEqual(SETTINGS)
+    await act(async () => void history.redo())
+    await flush()
+    expect(write).toHaveBeenCalledTimes(3)
+    expect(write.mock.calls[2]![2]).toEqual({ ...SETTINGS, defaultView: 'Table' })
   })
 
   it('the ⚙ row shows the saved value, and First view clears the key', async () => {

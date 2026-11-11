@@ -18,8 +18,7 @@ import type { Node } from '@milkdown/kit/prose/model'
 import type { MenuRow, MenuStrip, RowProvider } from '../blockHandleMenu'
 import { allLinesAre, listLines, toggleListKind, turnLinesIntoText, type LinePick, type ListKind } from '../listButtons'
 import { ownIcon, TOOLBAR_LABELS } from '../toolbarButtons'
-import { boardEmbedKey, boardEmbedsIn } from '../drawing/boardEmbedScan'
-import { isBoardSrc } from '../drawing/boardEmbedText'
+import { embedOnlyParagraph } from '../drawing/boardEmbedScan'
 import { addLineBeside } from './addLineBeside'
 import { getZoomedItemPos } from './zoom'
 
@@ -136,19 +135,12 @@ export const turnIntoRows: RowProvider = (view, target) => {
   return embed === null ? [strip] : [strip, ...addLineRows(view, embed)]
 }
 
-/**
- * The paragraph at `line` when it is an embed's own line (YAZ-4907: "how do you add a bullet under it?"), else null:
- * one board embed (`boardEmbed.ts`, the host plugin there) or one board image node (`imageView.ts`), and nothing else.
- */
+/** The paragraph at `line` when it is an embed's own line (YAZ-4907: "how do you add a bullet under it?", `embedOnlyParagraph`), else null. */
 function embedParagraph(state: EditorState, line: number): number | null {
   const $line = state.doc.resolve(line)
-  const paragraph = $line.parent
-  if (paragraph.type.name !== 'paragraph' || paragraph.childCount !== 1) return null
+  if ($line.depth === 0) return null
   const pos = $line.before()
-  const only = paragraph.firstChild!
-  if (only.type.name === 'image') return isBoardSrc(only.attrs.src as string) ? pos : null
-  const embed = boardEmbedKey.getState(state) === undefined ? undefined : boardEmbedsIn(paragraph, pos)[0]
-  return embed !== undefined && embed.from === pos + 1 && embed.to === pos + 1 + paragraph.content.size ? pos : null
+  return embedOnlyParagraph(state, pos) ? pos : null
 }
 
 /** "Add line above" / "Add line below" beside the block at `blockPos`, as Enter makes one on a bullet (YAZ-4800 demo). */

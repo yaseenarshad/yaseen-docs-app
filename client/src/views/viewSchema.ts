@@ -96,14 +96,14 @@ export interface ViewDef {
   cardTitles?: 'clip' | 'wrap'
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. Absent = the Settings › Folder pages default. */
   hideWeekends?: boolean
-  /** A calendar's line between weeks (YAZ-4878): whole px, 1–12. Absent = 1. */
+  /** A calendar's line between weeks (YAZ-4878): whole px, 1–12. Absent = the Settings › Folder pages default. */
   weekLine?: number
-  /** A calendar's line between days (YAZ-4878): whole px, 1–12. Absent = 1. */
+  /** A calendar's line between days (YAZ-4878): whole px, 1–12. Absent = the Settings › Folder pages default. */
   dayLine?: number
   /** The lines' colours (YAZ-4878): `gray` / `blue light` (`readColorStrength`). Absent = the Settings › Folder pages default (Gray, Medium). */
   weekLineColor?: string
   dayLineColor?: string
-  /** A calendar's "Cross out when" (YAZ-4864): the Filter menu's conditions; a card whose note matches has its name struck through. Absent = none. */
+  /** A calendar's "Cross out when" (YAZ-4864): the Filter menu's conditions; a card whose note matches is crossed out whole, its columns too. Absent = none. */
   crossOut?: FilterNode
   /**
    * "Subfolders" (YAZ-4579 D30, replacing YAZ-4564 D25's boolean): `rows` = a row per direct subfolder plus the
@@ -244,6 +244,14 @@ export function updateViews(parsed: ParsedViews, mutate: (def: ViewSet) => void)
   writeChanges(doc, [], parsed.def, next)
   return { def: next, doc }
 }
+
+/**
+ * `updateViews`, then parsed again from its text: `doc.setIn` stores plain JS values, so a second edit inside a
+ * collection a previous edit created would throw ("Expected YAML collection"). The round trip keeps comments and
+ * rebuilds proper nodes. Every settings write of the views (`ViewsPane`'s `write`, the folder ⚙'s Default view) goes
+ * through it (YAZ-4834 P20).
+ */
+export const rewriteViews = (parsed: ParsedViews, mutate: (def: ViewSet) => void): ParsedViews => parseViews(serializeViews(updateViews(parsed, mutate)))
 
 function writeChanges(doc: Document, path: (string | number)[], prev: unknown, next: unknown): void {
   if (Array.isArray(prev) && Array.isArray(next)) {

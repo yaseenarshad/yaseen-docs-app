@@ -62,7 +62,7 @@ import { addShortcut, folderId, folderRecord, folderRows, isShortcut, removeShor
 import { ShortcutActions, type ShortcutDoors } from './view/shortcutDoors'
 import { columnReservedKeys, reservedKeyText } from '../links/reservedKeys'
 import { vaultDirs } from '../links/folderLinks'
-import { type ParsedViews, type ViewDef, type ViewSet, parseViews, serializeViews, updateViews } from './viewSchema'
+import { type ParsedViews, type ViewDef, type ViewSet, parseViews, rewriteViews, serializeViews, updateViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { folderSettings, moveFolderColumn, rewriteFolderViews, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
@@ -864,6 +864,24 @@ export function FolderView({
   latestCommit.current = commitSettings
   latestOwnColumns.current = liveSettings.columns
 
+  /**
+   * Default view in the folder ⚙ (YAZ-4909): the same `defaultView` of the def, ONE settings write through the views'
+   * door (`onChange`), and ONE step of the page's ⌘Z history (YAZ-4834 P20), as the View tab's row had; the undo and
+   * the redo write on the def current then.
+   */
+  const setDefaultView = (next: string | undefined) => {
+    const before = parsed.def.defaultView
+    if (next === before) return
+    const lay = (value: string | undefined) => () =>
+      onChange(
+        rewriteViews(latestParsed.current, (d) => {
+          if (value === undefined) delete d.defaultView
+          else d.defaultView = value
+        }),
+      )
+    if (!lay(next)()) return
+    valueHistory(path).push({ undo: lay(before), redo: lay(next) })
+  }
   /** Every config change (sort, columns, widths, summaries…) is ONE settings write (🔒 D3). `false`: read only refused it (YAZ-4644 E2). */
   const onChange = (next: ParsedViews): boolean => {
     if (refuseLocked()) return false
@@ -1452,21 +1470,9 @@ export function FolderView({
         onChangeInheritColumns={(next) => setOwnInherit(next, writeOwnKey(INHERIT_COLUMNS_KEY, next))}
         columnMarks={ownMarks}
         onChangeColumnMarks={(next) => setOwnMarks(next, writeOwnKey(COLUMN_MARKS_KEY, next))}
-        // Default view (YAZ-4909): the same `defaultView` of the def, ONE settings write through the views' door (`onChange`), as the View tab wrote it.
         views={parsed.def.views.map((v) => ({ name: v.name, type: v.type }))}
         defaultView={parsed.def.defaultView}
-        onChangeDefaultView={(next) =>
-          onChange(
-            parseViews(
-              serializeViews(
-                updateViews(parsed, (d) => {
-                  if (next === undefined) delete d.defaultView
-                  else d.defaultView = next
-                }),
-              ),
-            ),
-          )
-        }
+        onChangeDefaultView={setDefaultView}
         sync={sync}
         onSyncNow={onSyncNow}
       />

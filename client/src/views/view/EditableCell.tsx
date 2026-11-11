@@ -4,7 +4,6 @@ import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
 import { ColumnDecls, cellContent } from './GroupHeader'
 import { TextField } from './TextField'
-import { createPortal } from 'react-dom'
 import { Popover } from './Popover'
 import { SelectValueEditor } from './SelectValueEditor'
 import { READ_ONLY_TIP } from '../readOnlyRows'
@@ -237,9 +236,11 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
           onDone={close}
         />
       )}
-      {editing && isChoice && createPortal(<Popover label={label} anchor={wrapRef.current} onClose={close} className="property-value-popover">
-        <SelectValueEditor raw={current} options={options} multiple={editor === 'multi-select'} label={label} onCommit={commit} onDone={close} />
-      </Popover>, document.body)}
+      {editing && isChoice && (
+        <Popover label={label} anchor={wrapRef.current} portal onClose={close} className="property-value-popover">
+          <SelectValueEditor raw={current} options={options} multiple={editor === 'multi-select'} label={label} onCommit={commit} onDone={close} />
+        </Popover>
+      )}
     </span>
   )
 }
