@@ -27,8 +27,14 @@ describe('folderPageRows: which folders show their page file row (YAZ-4587, D37)
     expect([...folderPageRows('/v', folders, false)]).toEqual([])
   })
 
-  it('global on: a row for every folder with a page file, by its absolute path; the vault root has none; a trailing slash on the root changes nothing', () => {
-    for (const root of ['/v', '/v/']) expect([...folderPageRows(root, [folderRecord(''), ...folders], true)]).toEqual(['/v/Areas', '/v/Projects', '/v/Projects/Alpha', '/v/Projects/Alpha/Notes'])
+  it('global on: a row for every folder with a page file, by its absolute path — the vault root\'s as the root itself (YAZ-4921); a trailing slash on the root changes nothing', () => {
+    for (const root of ['/v', '/v/']) expect([...folderPageRows(root, [folderRecord(''), ...folders], true)]).toEqual(['/v', '/v/Areas', '/v/Projects', '/v/Projects/Alpha', '/v/Projects/Alpha/Notes'])
+    expect([...folderPageRows('/v', folders, true)]).toEqual(['/v/Areas', '/v/Projects', '/v/Projects/Alpha', '/v/Projects/Alpha/Notes'])
+  })
+
+  it("the root's own `show_page_file` rules its row and, as the top rule, every folder below with no nearer rule (YAZ-4921)", () => {
+    expect([...folderPageRows('/v', [folderRecord('', { show_page_file: true }), folderRecord('Areas'), folderRecord('Projects', { show_page_file: false })], false)]).toEqual(['/v', '/v/Areas'])
+    expect([...folderPageRows('/v', [folderRecord('', { show_page_file: false }), folderRecord('Areas')], true)]).toEqual([])
   })
 
   it("a folder's override on covers that folder and every folder below it, with the global off", () => {
@@ -46,7 +52,8 @@ describe('folderPageRows: which folders show their page file row (YAZ-4587, D37)
 
   it("an override off covers a folder with the global on; the root's own override covers the whole vault", () => {
     expect([...folderPageRows('/v', [folderRecord('Areas', { show_page_file: false }), folderRecord('Projects')], true)]).toEqual(['/v/Projects'])
-    expect([...folderPageRows('/v', [folderRecord('', { show_page_file: true }), ...folders], false)]).toHaveLength(4)
+    // The root's own row too (YAZ-4921): five rows, the root first.
+    expect([...folderPageRows('/v', [folderRecord('', { show_page_file: true }), ...folders], false)]).toHaveLength(5)
   })
 
   it('a value that is not true or false is no override: the folder follows the rule above it', () => {

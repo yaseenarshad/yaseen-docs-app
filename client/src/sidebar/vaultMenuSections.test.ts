@@ -77,6 +77,17 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
     ])
   })
 
+  it('YAZ-4921: "Open folder page" LEADS on a vault of this window where the caller hands the door, and hands it the vault path; another vault, and a caller with no door (the Welcome screen), get none', () => {
+    const h = { ...handlers(), onOpenFolderPage: vi.fn() }
+    const current = buildVaultMenuSections(target({ isCurrent: true, isAloneHere: true }), h)
+    expect(groupsOf(current)[0]).toEqual(['Open folder page'])
+    item(current, 'open-page').onSelect()
+    expect(h.onOpenFolderPage).toHaveBeenCalledExactlyOnceWith(OTHER)
+    expect(groupsOf(buildVaultMenuSections(target({ isCurrent: true, isAloneHere: false }), h))[0]).toEqual(['Open folder page', 'Open by itself'])
+    expect(groupsOf(buildVaultMenuSections(target(), h))[0]).toEqual(['Open by itself', 'Add to this window', 'Open in this window'])
+    expect(groupsOf(buildVaultMenuSections(target({ isCurrent: true, isAloneHere: true }), handlers()))[0]).toEqual(['Set display name', 'Set shortcut'])
+  })
+
   it('nothing is danger-styled and nothing is disabled — Remove only forgets an MRU entry', () => {
     const all = buildVaultMenuSections(target({ renamed: true }), handlers()).flat()
     expect(all.some((i) => i.danger === true || (i as MenuAction).disabled === true)).toBe(false)

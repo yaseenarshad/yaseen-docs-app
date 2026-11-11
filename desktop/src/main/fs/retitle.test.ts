@@ -198,8 +198,13 @@ describe('retitle: a folder (table C)', () => {
     expect(await listed(root)).toEqual(['upwork'])
   })
 
-  it("the vault's top-level folder is untouched: retitling the root is refused", async () => {
-    expect((await failure(retitle(root, { path: root, title: 'Vault' }))).code).toBe('BAD_REQUEST')
-    expect(await listed(root)).toEqual([])
+  it("the vault's top-level folder is never renamed: a retitle of the root writes `title:` into its own `.folder.md`, created when missing, and answers the root itself (YAZ-4921)", async () => {
+    expect(await retitle(root, { path: root, title: 'My Wiki' })).toEqual({ oldPath: root, newPath: root, kind: 'dir' })
+    expect(await read(FOLDER_SETTINGS_FILE)).toBe('---\ntitle: My Wiki\n---\n')
+    expect(await listed(root)).toEqual([FOLDER_SETTINGS_FILE])
+    await note(FOLDER_SETTINGS_FILE, `---\nid: ${FOLDER_ID}\ntitle: My Wiki\nviews: []\n---\n`)
+    expect(await retitle(root, { path: root, title: 'Wiki 2' })).toEqual({ oldPath: root, newPath: root, kind: 'dir' })
+    expect(await read(FOLDER_SETTINGS_FILE)).toBe(`---\nid: ${FOLDER_ID}\ntitle: Wiki 2\nviews: []\n---\n`)
+    expect(path.basename(root)).toMatch(/^mdapp-retitle-/)
   })
 })

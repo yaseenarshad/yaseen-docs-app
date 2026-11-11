@@ -487,8 +487,9 @@ function TreeLevel({
           />
         </li>
       )}
-      {pageRows?.has(dirPath) === true && onOpenPage !== undefined && (
-        // The folder's page file (YAZ-4587, D37), first under it. No `data-path` (it is no row on disk: the selection,
+      {pageRows?.has(dirPath) === true && onOpenPage !== undefined && !(copies && depth === 0) && (
+        // The folder's page file (YAZ-4587, D37), first under it — the vault root's first at the Files tree's top (YAZ-4921;
+        // the top of Focus and Favorites is no folder's). No `data-path` (it is no row on disk: the selection,
         // a reveal and the drops never find it); `data-walk` lets the arrows walk it. Right-click: the folder page menu.
         <li role="treeitem">
           <button

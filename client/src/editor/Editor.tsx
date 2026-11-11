@@ -75,7 +75,7 @@ import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
 import { BacklinksSection } from '../links/BacklinksSection'
 import { ReviewsSection } from '../review/ReviewsSection'
-import { pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
+import { isVaultRoot, pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
 import { namingTab } from '../lib/focusHandoff'
 import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
 import { onTwinSave } from '../lib/twinEditors'
@@ -296,7 +296,8 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
   const drawingSettings: DrawingAppSettings = { canvasPrefs, onCanvasPrefsChange: onChangeCanvasPrefs }
   // The folder itself is a tab (YAZ-2290 D3), and only the Files tree can say which path is one:
   // a folder may be named `Notes.md`. Until the tree for an in-root path is known, nothing is guessed.
-  const inRoot = path.startsWith(`${root.replace(/\/+$/, '')}/`)
+  // The vault root is a folder too (YAZ-4921): its page lists the whole vault, and `useTreeKind` answers for it at once.
+  const inRoot = path.startsWith(`${root.replace(/\/+$/, '')}/`) || isVaultRoot(root, path)
   if (inRoot) {
     if (inTree === null) return <section className="editor" />
     if (inTree === 'dir') {
