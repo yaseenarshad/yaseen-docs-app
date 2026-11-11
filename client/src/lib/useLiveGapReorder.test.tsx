@@ -105,14 +105,45 @@ describe('useLiveGapReorder (YAZ-4606 D58)', () => {
     expect(transforms()).toEqual(['', 'translateY(100px)', 'translateY(100px)', ''])
   })
 
-  it('a drop in the middle is ONE move to the final index; the gap closes', () => {
-    const onMove = mount()
+  it('a drop in the middle is ONE move to the final index; the gap closes once the new order renders', () => {
+    const onMove = mount(vi.fn(), true)
     fire(li(0), 'dragstart')
     fire(li(2), 'dragover', 260)
     fire(li(2), 'drop', 260)
     expect(onMove).toHaveBeenCalledExactlyOnceWith(0, 2)
     expect(transforms()).toEqual(['', '', '', ''])
     expect(host!.querySelector('[data-live-lifted], [data-live-parting]')).toBeNull()
+  })
+
+  it('NO SNAP-BACK (YAZ-4877): after a drop the gap holds until the new order arrives, the drag\'s end included; a drop whose order never comes ends after 1s', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const onMove = mount() // a list that never takes the move: a slow or refused write
+      fire(li(0), 'dragstart')
+      fire(li(2), 'dragover', 260)
+      fire(li(2), 'drop', 260)
+      expect(onMove).toHaveBeenCalledExactlyOnceWith(0, 2)
+      // The old order is NOT drawn while the move is written: the items keep their parted places.
+      expect(transforms()).toEqual(['', 'translateY(-100px)', 'translateY(-100px)', ''])
+      fire(li(0), 'dragend') // the browser's end comes after the drop
+      expect(transforms()).toEqual(['', 'translateY(-100px)', 'translateY(-100px)', ''])
+      act(() => void vi.advanceTimersByTime(999))
+      expect(host!.querySelector('ul')!.hasAttribute('data-live-parting')).toBe(true)
+      act(() => void vi.advanceTimersByTime(1))
+      expect(transforms()).toEqual(['', '', '', ''])
+      expect(host!.querySelector('[data-live-parting]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('NO SNAP-BACK (YAZ-4877): Esc after a drop still ends it at once', () => {
+    mount()
+    fire(li(0), 'dragstart')
+    fire(li(2), 'dragover', 260)
+    fire(li(2), 'drop', 260)
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(transforms()).toEqual(['', '', '', ''])
   })
 
   it('a drop on its own place writes nothing', () => {

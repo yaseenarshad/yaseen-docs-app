@@ -17,7 +17,15 @@ interface LiveDrag {
   room: number
   lifted: boolean
   list: string
+  /**
+   * Dropped, and waiting for the new order (YAZ-4877): the parting holds until the list changes, so the items do not
+   * jump back to the old order while the move is written. A drop whose order never comes ends after `LANDING_MS`.
+   */
+  landed?: boolean
 }
+
+/** How long a drop waits for its new order before the parting ends anyway (a refused or slow write). */
+const LANDING_MS = 1000
 
 export interface LiveGapOptions {
   axis: Axis
@@ -71,7 +79,8 @@ export function useLiveGapReorder<T extends HTMLElement = HTMLElement>({ axis, k
 
   const end = (): void => {
     edge.stop()
-    setState(null)
+    // The browser's `dragend` comes after a drop: a landed drag keeps its parting until its new order (YAZ-4877).
+    setState((now) => (now?.landed === true ? now : null))
   }
   // Esc cancels: a real drag fires `dragend`; jsdom, and any missed `dragend`, go through this (`useGroupDrag`'s idiom).
   // Subscribed once per drag, not once per slot the pointer crosses.
@@ -117,8 +126,16 @@ export function useLiveGapReorder<T extends HTMLElement = HTMLElement>({ axis, k
     if (drag === null) return false
     e.preventDefault()
     const to = dropIndex(drag.from, slotOf(e))
-    end()
-    if (to !== drag.from) onMove(drag.from, to)
+    edge.stop()
+    if (to === drag.from) {
+      setState(null)
+      return true
+    }
+    // Hold the parting until the new order arrives (YAZ-4877): ending it here drew the old order for the frames the
+    // write takes, and the items snapped back before they glided to their new places.
+    setState({ ...drag, landed: true })
+    setTimeout(() => setState((now) => (now?.landed === true && now.list === list ? null : now)), LANDING_MS)
+    onMove(drag.from, to)
     return true
   }
 
@@ -139,7 +156,9 @@ export function useLiveGapReorder<T extends HTMLElement = HTMLElement>({ axis, k
   const glideFrom = useRef<Map<string, number> | null>(null)
   const items = (): HTMLElement[] => [...(ref.current?.querySelectorAll<HTMLElement>(ITEM) ?? [])]
   const reordered = keys.length === order.current.length && keys.some((k, i) => k !== order.current[i]) && keys.every((k) => order.current.includes(k))
-  if (reordered && glideFrom.current === null && !motionOff()) glideFrom.current = drawnPlaces(ref.current, items().filter((el) => !el.hasAttribute(LIFTED)), keyOfItem, axis)
+  // The dropped item stood nowhere (it had left the list): it shows at its new place and does not glide (YAZ-4877).
+  const dropped = state?.landed === true ? order.current[state.from] : undefined
+  if (reordered && glideFrom.current === null && !motionOff()) glideFrom.current = drawnPlaces(ref.current, items().filter((el) => !el.hasAttribute(LIFTED) && keyOfItem(el) !== dropped), keyOfItem, axis)
   useLayoutEffect(() => {
     order.current = keys
     const from = glideFrom.current
