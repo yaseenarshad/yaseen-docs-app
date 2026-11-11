@@ -1,5 +1,8 @@
 /** List node helpers shared by the folding plugin, zoom and the outliner keymap. */
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
+import { WIKILINK_RE } from '@shared/linkRewrite'
+import { boardEmbedsIn } from '../drawing/boardEmbedScan'
+import { boardEmbedName, boardEmbedTarget, boardImageName } from '../drawing/boardEmbedText'
 import { parseAlt } from '../image/imageSrc'
 
 export const LIST_NODE_NAMES: ReadonlySet<string> = new Set(['bullet_list', 'ordered_list'])
@@ -15,16 +18,19 @@ export const UNTITLED_ITEM = 'Untitled item'
  * An image counts as its alt text (width stripped, src as the fallback), the same stand-in the
  * plain-text copy uses (clipboardPlainText.ts), so an image bullet has an identity of its own
  * instead of every one of them being "Untitled item" (YAZ-1709).
+ * A board embed counts as its NAME (YAZ-4830): `![[x.drawio|640x360 view=…]]` is "x", and so is a board image node,
+ * so a view write (its options change) never changes the item's fold key.
  */
 export const itemLabelText = (item: ProseNode): string => {
   const first = item.firstChild
   if (!first) return UNTITLED_ITEM
   const text = first.textBetween(0, first.content.size, '', (leaf) =>
     leaf.type.name === 'image'
-      ? parseAlt(leaf.attrs.alt as string).text || (leaf.attrs.src as string)
+      ? boardImageName(leaf.attrs.src as string, leaf.attrs.alt as string) ?? (parseAlt(leaf.attrs.alt as string).text || (leaf.attrs.src as string))
       : '',
   )
-  return text.trim() || UNTITLED_ITEM
+  const shown = text.includes('![[') ? text.replace(WIKILINK_RE, (raw, bang: string, inner: string) => (bang === '!' && boardEmbedTarget(inner) !== null ? boardEmbedName(inner) : raw)) : text
+  return shown.trim() || UNTITLED_ITEM
 }
 
 export interface NestedList {
@@ -75,6 +81,31 @@ export const findOwnImages = (item: ProseNode): OwnImage[] => {
     })
   })
   return found
+}
+
+/** A board embed's text range, `![[x.drawio|…]]`, relative to its item (`itemPos + 1 + from` is its document position). */
+export interface OwnEmbed {
+  from: number
+  to: number
+}
+
+/**
+ * Every board embed (`![[x.drawio]]`, `![[x.excalidraw]]`) in the item's OWN text blocks (nested lists and tables
+ * excluded), in order (YAZ-4830), by the host's own scan (`boardEmbedsIn`). A board image node is an image (`findOwnImages`).
+ */
+export const findOwnEmbeds = (item: ProseNode): OwnEmbed[] => {
+  const found: OwnEmbed[] = []
+  item.forEach((block, blockOffset) => {
+    if (LIST_NODE_NAMES.has(block.type.name) || block.type.name === 'table' || !block.textContent.includes('![[')) return
+    if (block.isTextblock) found.push(...boardEmbedsIn(block, blockOffset))
+    else
+      block.descendants((node, pos) => {
+        if (!node.isTextblock) return true
+        found.push(...boardEmbedsIn(node, blockOffset + 1 + pos))
+        return false
+      })
+  })
+  return found.map(({ from, to }) => ({ from, to }))
 }
 
 /** The first nested list owned by a list_item, or null for a leaf item. */

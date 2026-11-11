@@ -46,6 +46,7 @@ import { collapsedItemsHiding, hasOutlineFoldMeta, setOutlineFoldSet } from '../
 import { getZoomedItemPos } from '../outline/zoom'
 import { closeCellNote, openCellNote, revealOpenCell, showInCard } from '../table/cellNoteCard'
 import { cellNoteAround, cellNoteCardKey, isCellNoteHidden, markPosOf } from '../table/cellNotes'
+import { boardEmbedKey, boardEmbedsIn, embedRevealed } from '../drawing/boardEmbedScan'
 import { pillLinks, type PillLink, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { FindChannel, FindController, FindResult } from './findChannel'
@@ -179,10 +180,16 @@ const findMatches = (state: EditorState, query: string, zoom: Match | null, link
   const needle = query.toLowerCase()
   if (needle === '') return []
   const matches: Match[] = []
+  // What the board embeds hide, by the host's own scan and reveal rule; nothing in an editor without the host. Its
+  // plugin, not its state: find's state is built first, before the host's for the same transaction.
+  const host = boardEmbedKey.get(state) !== undefined
   state.doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
     const pills = links === undefined || node.type.spec.code === true ? [] : pillLinks(node, pos, state.selection, links.wikilinks, links.viewOnly)
+    // A board embed's text is under its window (YAZ-4827 item 15): none of it is a match, unless "Edit link" opened it.
+    const embeds = host ? boardEmbedsIn(node, pos).filter((embed) => !embedRevealed(state.selection, embed.from, embed.to)) : []
     for (const match of blockMatches(node, pos, needle, pills)) {
+      if (embeds.some((embed) => match.from < embed.to && match.to > embed.from)) continue
       if ((zoom === null || (match.from >= zoom.from && match.from < zoom.to)) && (!shownOnly || shows(state, match.from))) matches.push(match)
     }
     return false

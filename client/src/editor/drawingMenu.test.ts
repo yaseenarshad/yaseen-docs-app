@@ -40,14 +40,25 @@ function stubCtx() {
 beforeEach(() => vi.clearAllMocks())
 
 describe('drawingMenu', () => {
-  it('appends one "Drawing" row to Crepe\'s stock advanced group', () => {
+  it('appends "Drawing" and, beside it, "Diagram" to Crepe\'s stock advanced group (YAZ-4831 item 2)', () => {
     const { builder, added } = stubBuilder()
     drawingMenu({ create: vi.fn() })(builder)
-    expect(added).toHaveLength(1)
-    expect(added[0].group).toBe('advanced')
-    expect(added[0].key).toBe('drawing')
-    expect(added[0].item.label).toBe('Drawing')
-    expect(added[0].item.icon).toContain('<svg')
+    expect(added.map((a) => [a.group, a.key, a.item.label])).toEqual([
+      ['advanced', 'drawing', 'Drawing'],
+      ['advanced', 'diagram', 'Diagram'],
+    ])
+    for (const a of added) expect(a.item.icon).toContain('<svg')
+  })
+
+  it('"Diagram" makes a diagram and inserts its embed', async () => {
+    const { builder, added } = stubBuilder()
+    const create = vi.fn().mockResolvedValue('Plan diagram.drawio')
+    drawingMenu({ create })(builder)
+    const { ctx, dispatch, tr } = stubCtx()
+    added[1].item.onRun?.(ctx)
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
+    expect(create).toHaveBeenCalledWith('diagram')
+    expect(tr.insertText).toHaveBeenCalledWith('![[Plan diagram.drawio]]')
   })
 
   it('clears the typed /query first (the stock items\' own opening move), then inserts the embed as plain text', async () => {
@@ -62,7 +73,7 @@ describe('drawingMenu', () => {
     expect(dispatch).not.toHaveBeenCalled()
 
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
-    expect(create).toHaveBeenCalledTimes(1)
+    expect(create).toHaveBeenCalledWith('drawing')
     expect(tr.insertText).toHaveBeenCalledWith('![[Drawing 2026-08-25 20.31.02.excalidraw]]')
     expect(drawingEmbed('x.excalidraw')).toBe('![[x.excalidraw]]')
   })

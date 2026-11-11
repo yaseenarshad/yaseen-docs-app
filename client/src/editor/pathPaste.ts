@@ -17,6 +17,7 @@ import { AddMarkStep, ReplaceStep } from '@milkdown/kit/prose/transform'
 import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
+import { isBoardTarget } from '@shared/embedOptions'
 import { fileKind } from '@shared/fileKind'
 import { parseFileLink } from '@shared/links'
 import { fileLabel } from '../lib/pageLabel'
@@ -255,8 +256,12 @@ export function pastePathLinks(view: EditorView, ctx: Ctx, options: PathPasteOpt
   const to = view.state.selection.from
   const slice = Slice.maxOpen(ctx.get(parserCtx)(link).content)
   view.dispatch(closeHistory(view.state.tr).replace(to - raw.length, to, slice).scrollIntoView())
+  // A drawing or a diagram can be an embed too (YAZ-4829 D8): `!` before the link as it is written. A `[[link]]` stays
+  // text under the host's decorations; a Markdown link parses as the image node (another vault, 2B).
+  const path = pastedPath(raw)
+  const embed = path !== null && isBoardTarget(path) ? Slice.maxOpen(ctx.get(parserCtx)(`!${link}`).content) : undefined
   // No chip after a paste over words (K5): ⌘Z gives the words back.
-  if (empty) offerKeepAsPath(view, to - raw.length, to - raw.length + slice.size, raw)
+  if (empty) offerKeepAsPath(view, to - raw.length, to - raw.length + slice.size, raw, embed)
   return true
 }
 
@@ -266,8 +271,12 @@ let openChip: (() => void) | null = null
 /** Closes the "Keep as path" chip, if one is open: its editor is going away. */
 export const closePathChip = (): void => openChip?.()
 
-/** The small "Keep as path" chip under a pasted link (D2). The next key, click outside or scroll closes it. */
-function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string): void {
+/**
+ * The small "Keep as path" chip under a pasted link (D2), with "Embed" beside it for a drawing or a diagram (YAZ-4829
+ * D8): `embed` is the link with its `!`. Each button is one undo step of its own, so ⌘Z gives the pill back. The next
+ * key, click outside or scroll closes it.
+ */
+function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string, embed?: Slice): void {
   closePathChip()
   const pasted = view.state.doc
   const chip = document.createElement('div')
@@ -277,6 +286,18 @@ function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string
   keep.className = 'ctx-menu__item'
   keep.textContent = 'Keep as path'
   chip.appendChild(keep)
+  if (embed !== undefined) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'ctx-menu__item'
+    button.textContent = 'Embed'
+    button.addEventListener('mousedown', (event) => event.preventDefault())
+    button.addEventListener('click', () => {
+      if (view.state.doc === pasted) view.dispatch(closeHistory(view.state.tr).replace(from, to, embed).scrollIntoView())
+      close()
+    })
+    chip.appendChild(button)
+  }
   const close = () => {
     openChip = null
     chip.remove()

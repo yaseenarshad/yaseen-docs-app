@@ -116,10 +116,11 @@
  *    the patched Crepe (`client/vendor/milkdown-crepe-7.22.1-yaz3550.*`) opens the menu in a
  *    bullet too and filters by a row's `keywords`; Divider and Bullet List are hidden there.
  *    "Current time" (`h:mmam - `, plain text) ends the Text group on every editor.
- *  - Drawing previews (YAZ-878, `drawing/drawingPreview.ts`): `![[x.excalidraw]]` renders as the
- *    scene through inline decorations only (the match's text hidden, a widget in its place,
- *    caret-inside reveals the raw syntax) — never a schema or serializer change. Registered only
- *    when `opts.drawingPreview` gives it the vault root; every other embed is untouched.
+ *  - Board embeds (YAZ-4827, was YAZ-878's drawing preview; `drawing/boardEmbed.ts`): `![[x.excalidraw|…]]` and
+ *    `![[x.drawio|…]]` render as a window into the board (`embed/types.ts`, lazy) through inline decorations only
+ *    (the match's text hidden, a widget in its place, rescanned only in the blocks an edit touched) — never a schema
+ *    or serializer change. Its pill rows, its open and its icon are the link plugins' own sources. Registered only
+ *    when `opts.boardEmbeds` gives it the vault root; every other embed is untouched.
  *  - CMD+F find (YAZ-968, `find/findInPage.ts`): matches + highlight decorations + fold-reveal,
  *    driven through the `FindChannel` the host also gives the find bar. Registered only when
  *    `opts.find` supplies that channel; every transaction it makes is metadata-only.
@@ -259,7 +260,7 @@ import { blockHandleGate } from './blockHandleGate'
 import { readOnlyKeys } from './readOnlyKeys'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { breakMarks } from './breakMarks'
-import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/drawingPreview'
+import { createBoardEmbed } from './drawing/boardEmbed'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
 import { createSlashMenu } from './slashMenu'
 import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
@@ -348,7 +349,7 @@ import { openBulletRow } from './outline/openBulletRow'
 import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, wikilinkFollower, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
-import { createWikilinkMenu } from './wikilink/wikilinkMenu'
+import { createWikilinkMenu, linkMenuOf } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
@@ -405,8 +406,11 @@ export interface CreateCrepeOptions {
   pathPaste?: PathPasteOptions
   /** Drawing creator (YAZ-877): the host writes the sidecar, the item inserts the embed. Absent → NO Drawing row is added to the slash menu. */
   drawing?: DrawingCreator
-  /** Drawing previews (YAZ-878): the vault root to read scenes against, plus the optional refresh feed and click handler. Absent → `.excalidraw` embeds stay plain text. */
-  drawingPreview?: DrawingPreviewOptions
+  /**
+   * Board embeds (YAZ-4827): the vault root the boards load from, and "Edit in a popup" (D7, the drawing modal).
+   * Absent → `![[x.excalidraw]]` and `![[x.drawio]]` stay plain text.
+   */
+  boardEmbeds?: { root: string; onEditInPopup?: (target: string) => void }
   /** First-class images (YAZ-1656): root + note path for src resolution, the lightbox opener, the paste notice. Absent → stock `<img>`, and pasted image bytes are not written. */
   image?: ImageOptions
   /**
@@ -742,16 +746,29 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createIdLinkCaret())
   // A selected link is one lit box, not its letters alone (YAZ-3747 demo).
   crepe.editor.use(createPillSelection())
-  if (opts.wikilinkNav !== undefined) {
-    // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
-    const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)
+  // A click, the link menu's Open rows and a board embed's open follow a link the same way (YAZ-3609 D23, YAZ-4829).
+  const follow = opts.wikilinkNav === undefined ? undefined : wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)
+  if (opts.wikilinkNav !== undefined && follow !== undefined) {
     const nav = opts.wikilinkNav
     crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.())).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav)).config(noPreviewOnPills)
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
-  if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
+  if (opts.boardEmbeds !== undefined) {
+    // The same sources as the pills (YAZ-4827): a board's path and icon, its open, and its link's menu rows.
+    const nav = opts.wikilinkNav
+    crepe.editor.use(
+      createBoardEmbed({
+        ...opts.boardEmbeds,
+        source: wikilinks,
+        viewOnly: viewOnlyLinks,
+        look: opts.linkLook,
+        follow,
+        linkMenu: nav === undefined || follow === undefined ? undefined : (inner) => linkMenuOf(inner, wikilinks, nav, follow, viewOnlyLinks, opts.vaultsOfLetters, undefined, undefined),
+      }),
+    )
+  }
   // Images (YAZ-1656): the node view takes the options directly; the ctx slice carries the SAME
   // object to `clipboardPaste`, which has no constructor of its own. Injected on every editor (null
   // when the host gave none) so the paste handler can always read it and simply decline.

@@ -6,7 +6,7 @@ import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, HotkeyAside } from '@shared/keys'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
-import { createDrawing } from '../drawings/createDrawing'
+import { createBoardForNote } from '../drawings/createDrawing'
 import { DrawingModal } from '../drawings/DrawingModal'
 import type { DrawingAppSettings } from '../drawings/ExcalidrawSurface'
 import { createDrawingFeed } from '../drawings/drawingFeed'
@@ -15,7 +15,7 @@ import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
 import { FolderPageChips, type FolderPageTab } from '../views/FolderToolbar'
 import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
-import type { LinkActions } from './linkMenu'
+import { placeRows, type LinkActions } from './linkMenu'
 import { redrawLinkPills } from './markdownLink'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, editorViewOf, focusEditor, getCaretOf, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo } from './createCrepe'
@@ -739,9 +739,8 @@ function CrepeHost({
    */
   const [diskLandings, diskLanded] = useReducer((count: number) => count + 1, 0)
   /**
-   * The drawing wiring (YAZ-879), ONE per host: the preview plugin subscribes to this feed and the
-   * modal pokes it on close after a save (YAZ-3528), so a scene written back re-renders every preview of it in this editor
-   * without a remount. Stable identity — a new feed would silently orphan the subscription.
+   * The drawing modal's feed (YAZ-879): the modal pokes it on close after a save (YAZ-3528). Since YAZ-4827 no note
+   * plugin listens: a board embed's window refreshes from the watcher stream itself (D5). Stable identity.
    */
   const drawingFeed = useMemo(() => createDrawingFeed(), [])
   /**
@@ -932,15 +931,60 @@ function CrepeHost({
       pathPaste: linkPlace === undefined ? undefined : { ...linkPlace, onNotice },
       // The slash menu's Drawing row (YAZ-877): this window's root is the only thing the creator
       // needs; failures ride the same passive notice as a failed link create.
-      drawing: { create: () => createDrawing(root), onNotice },
-      // Drawing previews (YAZ-878): the root is all a preview needs — the embed's own target
-      // carries the rest and `readAsset` resolves it. Both live wires are YAZ-879's: the feed
-      // the modal pokes on close after a save, and the click that opens that modal.
-      drawingPreview: { root, feed: drawingFeed, onOpenDrawing: setOpenDrawing },
+      // "/drawing" and "/diagram" (YAZ-4831): the board is named after this note and goes where Settings say. The bare
+      // name is the embed's target only when no other file of the vault has it.
+      drawing: {
+        create: (kind) =>
+          createBoardForNote(
+            {
+              root,
+              notePath: file.path,
+              title: titleRef.current,
+              nameTaken: (name) => {
+                const resolve = viewOnlyLinks?.resolve ?? wikilinks?.resolve ?? null
+                return resolve === null || resolve(name) !== null
+              },
+            },
+            kind,
+          ),
+        onNotice,
+      },
+      // Board embeds (YAZ-4827): a window into each `![[x.drawio]]` / `![[x.excalidraw]]`. The window loads from this
+      // root and refreshes from the watcher itself; "Edit in a popup" opens the drawing modal (D7, the old click path).
+      boardEmbeds: { root, onEditInPopup: setOpenDrawing },
       // First-class images (YAZ-1656): the root and THIS note's absolute path are what a relative
       // src resolves against (main's `app://vault/` protocol); double-click opens the lightbox
       // below, and a paste that could not be written rides the same passive notice.
-      image: { root, notePath: file.path, onOpenImage: setOpenImage, onNotice },
+      image: {
+        root,
+        notePath: file.path,
+        onOpenImage: setOpenImage,
+        onNotice,
+        // A board in another vault of the window (YAZ-4828): `![name|640x360](../Other/x.drawio)` is a window, found as
+        // the Markdown link pill finds its file, opened as it opens, with the same link rows.
+        boards:
+          linkPlace === undefined
+            ? undefined
+            : {
+                place: (src) => {
+                  const target = vaultHref(src, linkPlace)
+                  if (target === null) return null
+                  const own = rootOfPath([root], target) !== null
+                  return { root: own ? root : (rootOfPath(vaultLinks.current?.roots ?? [], target) ?? root), path: target, vault: own ? null : (vaultLinks.current?.vaultOf(target) ?? null) }
+                },
+                icon: (target) => fileIconDecoration(icons.current, target, false),
+                open: (target, how) => (how === 'backgroundTab' ? (onOpenLinkBackground ?? onOpenLink)(target) : onOpenLink(target, how)),
+                linkMenu: (target) => {
+                  const notice = onNotice ?? (() => undefined)
+                  return {
+                    labels: [],
+                    open: () => onOpenLink(target, 'thisTab'),
+                    openNew: () => (onOpenLinkBackground ?? onOpenLink)(target),
+                    ...placeRows(target, linkActions, notice),
+                  }
+                },
+              },
+      },
       find: findChannel,
       outsideChanges,
       toc: tocChannel,
@@ -1086,7 +1130,7 @@ function CrepeHost({
       offRefused()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, drawingFeed, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom, inFolderPage])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom, inFolderPage])
 
   /**
    * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1), and the cog's on/off rows
