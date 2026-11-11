@@ -24,8 +24,8 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Transform } from '@milkdown/kit/prose/transform'
-import { boardEmbedsIn } from '../drawing/boardEmbedScan'
-import { isBoardSrc } from '../drawing/boardEmbedText'
+import { boardCheckOf, boardEmbedsIn } from '../drawing/boardEmbedScan'
+import { isBoardSrc, type BoardCheck } from '../drawing/boardEmbedText'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
 import { EXTERNAL_EDIT_META, firstLineOf, OUTSIDE_RANGES_META, replaceTracked, REWRITE_SHARE, withTrailingParagraphOf } from './applyExternalMarkdown'
 import { diffDocs, onlyDerived, type ReplaceRange } from './diffDocs'
@@ -47,25 +47,25 @@ const blockSpan = (doc: ProseNode, { from, to, attrs }: ReplaceRange): { from: n
  * for D2, so the AI may edit the rest of that line. The order check below still refuses a merge where theirs touches
  * the same options.
  */
-const isViewWrite = (base: ProseNode, range: ReplaceRange): boolean => {
+const isViewWrite = (base: ProseNode, range: ReplaceRange, isBoard: BoardCheck | undefined): boolean => {
   if (range.attrs !== undefined) {
     const node = base.nodeAt(range.from)
     return node?.type.name === 'image' && typeof node.attrs.src === 'string' && isBoardSrc(node.attrs.src)
   }
   const $from = base.resolve(range.from)
   if (!$from.parent.isTextblock) return false
-  return boardEmbedsIn($from.parent, $from.before()).some((m) => {
+  return boardEmbedsIn($from.parent, $from.before(), isBoard).some((m) => {
     const pipe = m.inner.indexOf('|')
     const start = pipe < 0 ? m.to - 2 : m.from + 3 + pipe
     return start <= range.from && range.to <= m.to - 2
   })
 }
 
-/** D2: a range of yours and a range of theirs in ONE block, or touching, is a conflict. */
-const touchSameBlock = (base: ProseNode, mine: readonly ReplaceRange[], theirs: readonly ReplaceRange[]): boolean => {
+/** D2: a range of yours and a range of theirs in ONE block, or touching, is a conflict. `isBoard`: an id embed's write is a view write too (YAZ-4920). */
+const touchSameBlock = (base: ProseNode, mine: readonly ReplaceRange[], theirs: readonly ReplaceRange[], isBoard: BoardCheck | undefined): boolean => {
   const theirSpans = theirs.filter((range) => !onlyDerived(range)).map((range) => blockSpan(base, range))
   return mine.some((range) => {
-    if (onlyDerived(range) || isViewWrite(base, range)) return false
+    if (onlyDerived(range) || isViewWrite(base, range, isBoard)) return false
     const a = blockSpan(base, range)
     return theirSpans.some((b) => a.from <= b.to && b.from <= a.to)
   })
@@ -98,7 +98,7 @@ export const mergeExternalMarkdown = (crepe: Crepe, baseBody: string, diskBody: 
     const theirs = diffDocs(baseDoc, theirsDoc)
     const rewriteWidth = baseDoc.content.size * REWRITE_SHARE
     if (theirs.some(({ from, to }) => to - from >= rewriteWidth)) return
-    if (touchSameBlock(baseDoc, mine, theirs)) return
+    if (touchSameBlock(baseDoc, mine, theirs, boardCheckOf(view.state))) return
     const onBase = (ranges: readonly ReplaceRange[]): Transform => {
       const tr = new Transform(baseDoc)
       replaceTracked(tr, ranges, baseDoc)

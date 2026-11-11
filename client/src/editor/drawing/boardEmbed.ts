@@ -48,7 +48,7 @@ import { OPEN_ID_LINK } from '../wikilink/idLinkCaret'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { linkPath, type LinkLook, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { boardEmbedAt, boardEmbedKey, boardEmbedsIn, embedRevealed, type BoardEmbedMatch } from './boardEmbedScan'
-import { boardEmbedName, isIdTarget, type BoardCheck } from './boardEmbedText'
+import { boardEmbedName, hasIdEmbed, isIdTarget, type BoardCheck } from './boardEmbedText'
 import { isBoardTarget } from '@shared/embedOptions'
 import './boardEmbed.css'
 
@@ -61,8 +61,6 @@ export const BOARD_EMBED_CLASS = 'board-embed'
 export const BOARD_VIEW_META = 'mdapp-board-view'
 /** The resolver changed and the note has an id embed (YAZ-4920): every textblock is scanned again, the ids kept. */
 const BOARD_RESCAN = 'mdapp-board-rescan'
-/** An id-shaped embed in a block's text, resolved or not: the resolver's next change scans again. */
-const ID_EMBED_RE = /!\[\[[A-Za-z]{2,5}-[1-9]\d{0,14}(?:[|#\]])/
 
 export interface BoardEmbedOptions {
   /** The vault root the boards load from. */
@@ -130,7 +128,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
     /** One textblock's decorations; `idFor` gives each embed its id (inherited, or new). */
     const decorateBlock = (out: Decoration[], doc: ProseNode, block: ProseNode, pos: number, sel: Selection, idFor: (target: string) => number): void => {
       boardEmbedStats.blocksScanned++
-      if (!sawIdEmbed && block.textContent.includes('![[') && ID_EMBED_RE.test(block.textContent)) sawIdEmbed = true
+      if (!sawIdEmbed && hasIdEmbed(block.textContent)) sawIdEmbed = true
       const found = boardEmbedsIn(block, pos, isBoard)
       const cell = found.length > 0 && inCellOrNote(doc.resolve(pos + 1))
       for (const m of found) {

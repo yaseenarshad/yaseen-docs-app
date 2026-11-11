@@ -32,6 +32,8 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { findFoldedChildren, findOwnEmbeds, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
+import { boardCheckOf } from '../drawing/boardEmbedScan'
+import { hasIdEmbed, type BoardCheck } from '../drawing/boardEmbedText'
 import { IMAGE_FOLD_CLASS } from '../image/imageView'
 import { outlineFoldKeyFromStem, outlineFoldKeyStem, outlineFoldLabel } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
@@ -390,29 +392,34 @@ interface BlockEntry {
  */
 const blockEntries = new WeakMap<ProseNode, readonly BlockEntry[]>()
 
-const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
+/**
+ * `isBoard` is the host's word on an id embed (`boardCheckOf`, YAZ-4920). A block with an id-shaped embed is not cached:
+ * what the embed is can change when the resolver does, with the block unchanged.
+ */
+const entriesOfBlock = (block: ProseNode, isBoard: BoardCheck | undefined): readonly BlockEntry[] => {
   const cached = blockEntries.get(block)
   if (cached !== undefined) return cached
+  const keep = !hasIdEmbed(block.textContent)
   const entries: BlockEntry[] = []
   if (block.type.name === 'table') {
     block.forEach((row, offset) => {
       const base = offset + 1
       const shift = ({ from, to }: { from: number; to: number }) => ({ from: base + from, to: base + to })
-      for (const entry of entriesOfBlock(row)) {
+      for (const entry of entriesOfBlock(row, isBoard)) {
         entries.push({ ...entry, itemPos: base + entry.itemPos, foldedRanges: entry.foldedRanges.map(shift), imageRanges: entry.imageRanges.map(shift), embedRanges: entry.embedRanges.map(shift) })
       }
     })
-    blockEntries.set(block, entries)
+    if (keep) blockEntries.set(block, entries)
     return entries
   }
   block.descendants((node, itemPos) => {
     if (node.type.name !== 'list_item') return true
     const foldedChildren = findFoldedChildren(node)
     const images = findOwnImages(node)
-    const embeds = findOwnEmbeds(node)
+    const embeds = findOwnEmbeds(node, isBoard)
     if (foldedChildren.length === 0 && images.length === 0 && embeds.length === 0) return true
 
-    const label = itemLabelText(node)
+    const label = itemLabelText(node, isBoard)
     entries.push({
       keyLabel: outlineFoldLabel(label),
       keyStem: outlineFoldKeyStem(label),
@@ -430,17 +437,17 @@ const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
     })
     return true
   })
-  blockEntries.set(block, entries)
+  if (keep) blockEntries.set(block, entries)
   return entries
 }
 
-const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
+const getOutlineEntries = (doc: ProseNode, isBoard: BoardCheck | undefined): OutlineEntry[] => {
   const entries: OutlineEntry[] = []
   const labelOccurrences = new Map<string, number>()
   doc.forEach((block, offset) => {
     const base = offset + 1
     const shift = ({ from, to }: { from: number; to: number }) => ({ from: base + from, to: base + to })
-    for (const entry of entriesOfBlock(block)) {
+    for (const entry of entriesOfBlock(block, isBoard)) {
       const occurrence = labelOccurrences.get(entry.keyLabel) ?? 0
       labelOccurrences.set(entry.keyLabel, occurrence + 1)
       entries.push({
@@ -493,7 +500,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
         key: pluginKey,
         state: {
           init: (_config, state) => {
-            const entries = getOutlineEntries(state.doc)
+            const entries = getOutlineEntries(state.doc, boardCheckOf(state))
             const seed = seedCollapsedKeys()
             return {
               entries,
@@ -507,7 +514,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             // A caret move changes no entry, fold or ⌘Z eligibility: keep the SAME state object (YAZ-2131 4C).
             if (!transaction.docChanged && transaction.getMeta(pluginKey) === undefined && transaction.getMeta(VIEW_ACTION_META) === undefined)
               return previousState
-            const entries = transaction.docChanged ? getOutlineEntries(newState.doc) : previousState.entries
+            const entries = transaction.docChanged ? getOutlineEntries(newState.doc, boardCheckOf(newState)) : previousState.entries
             const foldablePositions = new Set(entries.map(({ itemPos }) => itemPos))
             const collapsedItemPositions = new Set<number>()
             previousState.collapsedItemPositions.forEach((position) => {

@@ -2,7 +2,7 @@
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { boardEmbedsIn } from '../drawing/boardEmbedScan'
-import { boardEmbedTarget, boardImageName } from '../drawing/boardEmbedText'
+import { boardEmbedTarget, boardImageName, type BoardCheck } from '../drawing/boardEmbedText'
 import { parseAlt } from '../image/imageSrc'
 
 export const LIST_NODE_NAMES: ReadonlySet<string> = new Set(['bullet_list', 'ordered_list'])
@@ -20,9 +20,10 @@ export const UNTITLED_ITEM = 'Untitled item'
  * instead of every one of them being "Untitled item" (YAZ-1709).
  * A board embed counts WITHOUT its options (YAZ-4830): `![[x.drawio|640x360 view=…]]` is `![[x.drawio]]`, so a view
  * write never changes the item's fold key, and an embed saved folded before YAZ-4820 keeps its key. A board image node
- * counts as its name.
+ * counts as its name. `isBoard` is the host's word on an id embed (`boardCheckOf`, YAZ-4920): with it, `![[EMB-40|…]]`
+ * counts as `![[EMB-40]]` too.
  */
-export const itemLabelText = (item: ProseNode): string => {
+export const itemLabelText = (item: ProseNode, isBoard?: BoardCheck): string => {
   const first = item.firstChild
   if (!first) return UNTITLED_ITEM
   const text = first.textBetween(0, first.content.size, '', (leaf) =>
@@ -30,7 +31,7 @@ export const itemLabelText = (item: ProseNode): string => {
       ? boardImageName(leaf.attrs.src as string, leaf.attrs.alt as string) ?? (parseAlt(leaf.attrs.alt as string).text || (leaf.attrs.src as string))
       : '',
   )
-  const shown = text.includes('![[') ? text.replace(WIKILINK_RE, (raw, bang: string, inner: string) => (bang === '!' && boardEmbedTarget(inner) !== null ? `![[${inner.split('|')[0]}]]` : raw)) : text
+  const shown = text.includes('![[') ? text.replace(WIKILINK_RE, (raw, bang: string, inner: string) => (bang === '!' && boardEmbedTarget(inner, isBoard) !== null ? `![[${inner.split('|')[0]}]]` : raw)) : text
   return shown.trim() || UNTITLED_ITEM
 }
 
@@ -92,17 +93,18 @@ export interface OwnEmbed {
 
 /**
  * Every board embed (`![[x.drawio]]`, `![[x.excalidraw]]`) in the item's OWN text blocks (nested lists and tables
- * excluded), in order (YAZ-4830), by the host's own scan (`boardEmbedsIn`). A board image node is an image (`findOwnImages`).
+ * excluded), in order (YAZ-4830), by the host's own scan (`boardEmbedsIn`, with the host's `isBoard` for an id embed,
+ * YAZ-4920). A board image node is an image (`findOwnImages`).
  */
-export const findOwnEmbeds = (item: ProseNode): OwnEmbed[] => {
+export const findOwnEmbeds = (item: ProseNode, isBoard?: BoardCheck): OwnEmbed[] => {
   const found: OwnEmbed[] = []
   item.forEach((block, blockOffset) => {
     if (LIST_NODE_NAMES.has(block.type.name) || block.type.name === 'table' || !block.textContent.includes('![[')) return
-    if (block.isTextblock) found.push(...boardEmbedsIn(block, blockOffset))
+    if (block.isTextblock) found.push(...boardEmbedsIn(block, blockOffset, isBoard))
     else
       block.descendants((node, pos) => {
         if (!node.isTextblock) return true
-        found.push(...boardEmbedsIn(node, blockOffset + 1 + pos))
+        found.push(...boardEmbedsIn(node, blockOffset + 1 + pos, isBoard))
         return false
       })
   })

@@ -12,6 +12,9 @@ export type BoardCheck = (target: string) => boolean
 /** An id-shaped link target (`EMB-40`, the vault's note ids): no ending to read, so only a resolver knows its kind. */
 export const isIdTarget = (page: string): boolean => /^[A-Za-z]{2,5}-[1-9]\d{0,14}$/.test(page.trim())
 
+/** The text has an id-shaped embed (`![[EMB-40`, resolved or not): what it is can change when the resolver does. */
+export const hasIdEmbed = (text: string): boolean => text.includes('![[') && /!\[\[[A-Za-z]{2,5}-[1-9]\d{0,14}(?:[|#\]])/.test(text)
+
 /**
  * The board an `![[inner]]` embeds (with any `#…`), or null when it is no board: `![[img.png]]`, `![[note]]`. An id
  * link (`![[EMB-40]]`, YAZ-4920: the paste chip's "Embed" and the picker's ⌥Enter write the id in an ID vault, D1 on

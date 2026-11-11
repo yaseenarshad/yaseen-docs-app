@@ -12,7 +12,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { createCrepe } from '../createCrepe'
-import { findOwnImages, innermostItemPos, itemInCell, itemLabelText } from './listNodes'
+import { findOwnEmbeds, findOwnImages, innermostItemPos, itemInCell, itemLabelText } from './listNodes'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -44,6 +44,25 @@ const items = (doc: ProseNode): { item: ProseNode; itemPos: number }[] => {
 
 const srcsOf = (doc: ProseNode, itemPos: number, own: { offset: number }[]) =>
   own.map(({ offset }) => doc.nodeAt(itemPos + 1 + offset)?.attrs.src as string)
+
+describe('YAZ-4920: an id embed on a bullet, with the host\'s board check', () => {
+  const isBoard = (target: string) => target === 'EMB-40'
+
+  it('the label counts the id embed as a board, without its options (the fold key stays through a view write); without the check it is text', async () => {
+    const doc = await docOf('* ![[EMB-40|640x360 view=1,2,0.5]]\n* ![[YAZ-12|x]]\n')
+    const [board, note] = items(doc)
+    expect(itemLabelText(board.item, isBoard)).toBe('![[EMB-40]]')
+    expect(itemLabelText(board.item)).toBe('![[EMB-40|640x360 view=1,2,0.5]]')
+    expect(itemLabelText(note.item, isBoard)).toBe('![[YAZ-12|x]]')
+  })
+
+  it('findOwnEmbeds finds the id embed with the check, and not without it', async () => {
+    const doc = await docOf('* ![[EMB-40|640x360]] and ![[CloudFront.drawio]]\n')
+    const [item] = items(doc)
+    expect(findOwnEmbeds(item.item, isBoard)).toHaveLength(2)
+    expect(findOwnEmbeds(item.item)).toHaveLength(1)
+  })
+})
 
 describe('itemLabelText', () => {
   it('an image bullet is labelled by its alt text, width stripped', async () => {

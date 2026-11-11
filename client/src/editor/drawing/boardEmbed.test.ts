@@ -610,6 +610,30 @@ describe('YAZ-4920: an id link to a board embeds (D1 on YAZ-4821: id links keep 
     expect(fakes.list[0]!.host.ref.path).toBe('/v/Boards/Slides with frames.excalidraw')
   })
 
+  it('an id embed makes its bullet foldable, and a view write keeps the fold key (the fold label counts it as a board)', async () => {
+    const keys: string[][] = []
+    const { crepe } = await mount('* ![[EMB-40|640x360]]\n* plain\n', { wikilinks: idVault(), folding: { onCollapsedKeysChange: (k) => keys.push([...k]) } })
+    await windows(1)
+    const fake = fakes.list[0]!
+    await vi.waitFor(() => expect(fake.calls).toContainEqual(['setFoldable', true]))
+    fake.host.onFold!()
+    expect(fake.calls.at(-1)).toEqual(['setFolded', true])
+    const folded = keys.at(-1)!
+    expect(folded).toHaveLength(1)
+    fake.host.onOptions!(OPTS)
+    expect(md(crepe)).toBe('* ![[EMB-40|640x360 view=120,-40,0.8]]\n* plain\n')
+    expect(keys.at(-1)).toEqual(folded)
+  })
+
+  it('an id embed\'s view write is a view write for the merge: an outside edit of the same line merges, no conflict', async () => {
+    const base = 'Diagram: ![[EMB-40|640x360]]\n\nEnd\n'
+    const { crepe } = await mount(base, { wikilinks: idVault() })
+    await windows(1)
+    fakes.list[0]!.host.onOptions!(OPTS)
+    expect(mergeExternalMarkdown(crepe, base, 'Diagram (edited): ![[EMB-40|640x360]]\n\nEnd\n')).toBe('merged')
+    expect(md(crepe)).toBe('Diagram (edited): ![[EMB-40|640x360 view=120,-40,0.8]]\n\nEnd\n')
+  })
+
   it('⌥Enter in the `[[` picker on a board with an id: the id embed, a window; the pill\'s right-click offers "Show as embed" on an id link to a board', async () => {
     const candidates = createWikilinkCandidateSource()
     candidates.update([{ name: 'Slides with frames.excalidraw', insert: 'EMB-40', label: 'Slides with frames', path: '/v/Boards/Slides with frames.excalidraw' }])
