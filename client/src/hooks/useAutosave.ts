@@ -36,6 +36,8 @@ export interface AutosaveHandle {
    * Returns the unsubscribe.
    */
   onSaveRefused: (listener: (diskMtime: number) => void) => () => void
+  /** Save now, with the live content (YAZ-4939: a timed "Allow edits" saves at zero, then locks). A retired editor does nothing. */
+  flushNow: () => void
 }
 
 /** Owns the Autosave controller for one open file (`path`): debounce, flush on unmount and window close. */
@@ -195,5 +197,5 @@ export function useAutosave(path: string): AutosaveHandle {
     }
   }, [])
 
-  return { status, conflictMtime, attach, keepMine, markReloaded, reportConflict: setConflictMtime, absorbFrontmatterOnly, diskParts, onSaveRefused }
+  return { status, conflictMtime, attach, keepMine, markReloaded, reportConflict: setConflictMtime, absorbFrontmatterOnly, diskParts, onSaveRefused, flushNow }
 }

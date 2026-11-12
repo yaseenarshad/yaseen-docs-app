@@ -4414,6 +4414,97 @@ body.drag-held iframe {
   opacity: 0.85;
 }
 
+/* The time choices (YAZ-4939): three rows, the first the dark one Enter takes; "Turn Read only off" and Cancel on the
+   row under them. The box grows for the words. */
+.read-only-chip__ask {
+  width: 212px;
+}
+
+.read-only-chip__times {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.read-only-chip__times button {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.read-only-chip__times button:hover {
+  background: var(--bg-hover);
+}
+
+.read-only-chip__times button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.read-only-chip__times .read-only-chip__allow {
+  border-color: var(--fg);
+  background: var(--fg);
+  color: var(--bg);
+}
+
+.read-only-chip__times .read-only-chip__allow:hover {
+  background: var(--fg);
+  opacity: 0.85;
+}
+
+/* "Editing · mm:ss" (YAZ-4939): the chip in amber while a timed unlock runs — the pencil and the border in `--warn`,
+   the words in the page's colour as the lock chip's are — with "Lock now" beside it, the chip's size. */
+.read-only-chip {
+  gap: 4px;
+}
+
+.read-only-chip__button--editing {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+.read-only-chip__button--editing svg {
+  color: var(--warn);
+}
+
+.read-only-chip__button--editing:hover,
+.read-only-chip__button--editing[aria-expanded="true"] {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 24%, transparent);
+}
+
+.read-only-chip__lock {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.read-only-chip__lock:hover {
+  background: var(--bg-hover);
+  border-color: var(--warn);
+}
+
+.read-only-chip__lock:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* The message of an edit attempt (YAZ-4446, D33): a card under the chip, a red arrow pointing up at it, and one red pulse
    of the chip. The live region is always there and draws nothing; the card is absolute in the chip's box, so nothing
    in the page moves, and it takes no pointer, so the page under it still answers. The toast's surface and shadow

@@ -27,8 +27,11 @@ import { SettingsDialog } from './SettingsDialog'
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string, readOnlyVault?: { on: boolean }) {
   const onChange = vi.fn()
+  // The vault's Read only (YAZ-4939): no settings handed over is no vault open, so no row.
+  const saveReadOnly = vi.fn()
+  const readOnly = readOnlyVault === undefined ? undefined : { settings: readOnlyVault, save: saveReadOnly, fileActionsAllowed: () => true, allowFileActions: () => undefined }
   const onClose = vi.fn()
   const setEnabled = vi.fn()
   const save = vi.fn()
@@ -54,10 +57,10 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   document.body.appendChild(container)
   root = createRoot(container)
   // The active vault's name (YAZ-2602 R10): App hands it only with two or more vaults in the window.
-  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName }} onClose={onClose} />))
+  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName, readOnlyVault: readOnly }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
   const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, el: container }
+  return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, saveReadOnly, el: container }
 }
 
 /** Upkeep turned on, the rest as a new vault has it. */
@@ -2068,5 +2071,29 @@ describe('SettingsDialog: Old IDs (YAZ-2677 D6, S88 to S91)', () => {
     await act(async () => sheetBtn(el, 'Give them numbers').click())
     expect(backfill).toHaveBeenCalledTimes(2)
     expect(line(el)).toBe('Each note has a number now.')
+  })
+})
+
+/** Settings › This vault › "Read only" (YAZ-4939): Off (default) · On, saved in the vault. */
+describe('This vault › Read only (YAZ-4939)', () => {
+  it('with no vault open the row is absent', () => {
+    const { el } = mount()
+    expect(row(el, 'readOnlyVault')).toBeNull()
+  })
+
+  it('a vault open: the row sits under "This vault" with its label, hint and On / Off; it shows the vault’s answer', () => {
+    const { el } = mountOn('Files & Links', undefined, undefined, undefined, undefined, undefined, { on: false })
+    expect(row(el, 'readOnlyVault')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
+    expect(row(el, 'readOnlyVault')?.querySelector('.setting__label')?.textContent).toBe('Read only')
+    expect(row(el, 'readOnlyVault')?.querySelector('.setting__hint')?.textContent).toContain('every note, drawing, diagram, code file and folder page in this vault opens read only')
+    expect(rowButtons(el, 'readOnlyVault').map((b) => b.textContent)).toEqual(['On', 'Off'])
+    expect(rowButtons(el, 'readOnlyVault').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+    expect(rowButtons(mountOn('Files & Links', undefined, undefined, undefined, undefined, undefined, { on: true }).el, 'readOnlyVault').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+  })
+
+  it('On and Off save the vault’s file', () => {
+    const { el, saveReadOnly } = mountOn('Files & Links', undefined, undefined, undefined, undefined, undefined, { on: false })
+    act(() => rowButtons(el, 'readOnlyVault')[0].click())
+    expect(saveReadOnly).toHaveBeenCalledExactlyOnceWith({ on: true })
   })
 })

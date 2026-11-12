@@ -100,6 +100,8 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   /** The file's read-only switch as the board document holds it, and what draw.io was last told (YAZ-3076 D2). draw.io starts editable. */
   const loadedReadOnly = useMemo(() => isDiagramReadOnly(loaded.xml), [loaded.xml])
   const wantedReadOnly = useRef(loadedReadOnly)
+  /** What the GRAPH should be (YAZ-4939): the file's switch or the vault's lock, minus this tab's timed unlock. A save never writes it. */
+  const wantedLock = useRef(false)
   const shownReadOnly = useRef(false)
   /** draw.io reported a change while read only: never saved, and the canvas is put back to the disk at "Allow edits". */
   const strayWhileReadOnly = useRef(false)
@@ -153,11 +155,11 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     post({ action: 'yaseenAdaptiveColors', value: drawioAdaptiveColors(wantedColors.current) })
   }, [post])
 
-  /** The file's switch, once draw.io listens: our PostConfig's `yaseenReadOnly`, which turns the graph off or on (YAZ-3076 D2). */
+  /** The graph's lock, once draw.io listens: our PostConfig's `yaseenReadOnly`, which turns the graph off or on (YAZ-3076 D2). */
   const syncReadOnly = useCallback(() => {
-    if (!handshake.current.initialised || shownReadOnly.current === wantedReadOnly.current) return
-    shownReadOnly.current = wantedReadOnly.current
-    post({ action: 'yaseenReadOnly', value: wantedReadOnly.current })
+    if (!handshake.current.initialised || shownReadOnly.current === wantedLock.current) return
+    shownReadOnly.current = wantedLock.current
+    post({ action: 'yaseenReadOnly', value: wantedLock.current })
   }, [post])
 
   /** File › Export Image… (🔒 D9): the XML draw.io last posted, unsaved edits included, drawn before the sheet opens because the pick decides the format. */
@@ -302,7 +304,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           if (a === null || retired.current || pendingLoad.current !== null) return
           // A read-only diagram does not save (YAZ-3076 D1/D2): the graph is off, so this is draw.io's
           // own chrome at most. It is kept off disk, and the canvas goes back to the disk at "Allow edits".
-          if (wantedReadOnly.current) {
+          if (wantedLock.current) {
             strayWhileReadOnly.current = true
             return
           }
@@ -324,9 +326,13 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
 
   // YAZ-3076 D2: the file's switch, live — the load, this tab's toggle, or a change on disk.
   // At "Allow edits" after a stray change, the board's own reload (the drawing's rule) puts the disk back.
-  const { readOnly, reload } = board
+  const { readOnly, switchOn, reload } = board
+  // The file's switch is what a save keeps (YAZ-4939): never the vault's lock, never this tab's unlock.
   useEffect(() => {
-    wantedReadOnly.current = readOnly
+    wantedReadOnly.current = switchOn
+  }, [switchOn])
+  useEffect(() => {
+    wantedLock.current = readOnly
     syncReadOnly()
     if (readOnly || !strayWhileReadOnly.current) return
     strayWhileReadOnly.current = false

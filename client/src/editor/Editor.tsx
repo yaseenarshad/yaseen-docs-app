@@ -59,6 +59,8 @@ import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
 import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
 import { StatusChips } from './StatusChips'
+import { useTimedUnlock } from './useTimedUnlock'
+import { NO_VAULT_READ_ONLY, VaultReadOnly, type VaultReadOnlyScope } from '../vault/readOnlyVault'
 import { NoteMenu } from './noteMenu'
 import { ZOOM_EVENT } from './zoomRequest'
 import { onGoToNowRequest, takeGoToNow } from './table/goToNowRequest'
@@ -151,6 +153,10 @@ interface EditorProps {
   onOpenExplore?: (path: string) => void
   /** This vault's "Clicking a link" (YAZ-4936), read at each click: a plain click on a note pill opens it in Explore. */
   exploreOnClick?: () => boolean
+  /** This vault's Read only (YAZ-4939): every page this editor draws opens read only, with a timed "Allow edits". Absent = off. */
+  vaultReadOnly?: boolean
+  /** The door a file action of a read-only vault asks through (YAZ-4939): App's sheet, true = go on. Absent = always. */
+  onFileAction?: (root: string) => Promise<boolean>
   /**
    * The link menu's place rows (YAZ-3740): Show in sidebar, Focus and Favorites, "Open in ▸" — App's one object for
    * the window's life (a new one makes a new Crepe). Absent → no such rows.
@@ -293,7 +299,18 @@ interface EditorProps {
   onChangeOutsideListPinned?: (pinned: boolean) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, onOpenFileNewTab, renderNoteEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, hoverFolderLinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
+/** The vault's Read only (YAZ-4939) reaches every page the editor draws — a note, a board, a code tab, a folder page and its cells — through one context. */
+export function Editor(props: EditorProps) {
+  const { vaultReadOnly = false, onFileAction } = props
+  const vault = useMemo((): VaultReadOnlyScope => ({ on: vaultReadOnly, allowFileAction: onFileAction ?? NO_VAULT_READ_ONLY.allowFileAction }), [vaultReadOnly, onFileAction])
+  return (
+    <VaultReadOnly.Provider value={vault}>
+      <EditorBody {...props} />
+    </VaultReadOnly.Provider>
+  )
+}
+
+function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, onOpenFileNewTab, renderNoteEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, hoverFolderLinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -710,7 +727,13 @@ function CrepeHost({
   const folderChips = inFolderPage ? chipsHere : null
   /** A read-only folder page (YAZ-3746 D36) keeps its Page read only, whatever the `.folder.md` bytes say yet. */
   const folderLocked = useSyncExternalStore(folderChips?.subscribe ?? noSubscribe, () => folderChips?.getState().readOnly ?? false)
-  const readOnly = diskReadOnly || folderLocked
+  /** The vault's Read only (YAZ-4939). A folder page's Page tab takes it through the folder's store above: one unlock for the whole tab. */
+  const vaultLocked = useContext(VaultReadOnly).on && !inFolderPage
+  /** The page is under Read only: its own switch, its folder page's, or the vault's. The chip shows while this is true. */
+  const lockedBase = diskReadOnly || folderLocked || vaultLocked
+  /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves, then locks again. */
+  const unlock = useTimedUnlock(autosave.flushNow)
+  const readOnly = lockedBase && unlock.until === null
   /**
    * The page cog's on/off rows (YAZ-4094 G4, G1): IN the note's frontmatter too, read off `disk` the same
    * way, so a toggle in another tab or window, or an agent's edit, shows here at once. A key that is absent
@@ -740,8 +763,8 @@ function CrepeHost({
   /** The chip's "Allow edits?" box is open (YAZ-3076 D4): this tab's own, and gone once read only is. */
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
-    if (!readOnly) setAskingUnlock(false)
-  }, [readOnly])
+    if (!lockedBase) setAskingUnlock(false)
+  }, [lockedBase])
   /**
    * Counts the outside changes that landed in this editor (YAZ-2643): a reload, a frontmatter-only
    * absorb. `disk` cannot say it — it does not follow this editor's own saves, so a file put back
@@ -1404,10 +1427,12 @@ function CrepeHost({
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. The toolbar a folder page shares
           (YAZ-3746 D35): this note's fold-all button and cog, then the shared chips. A folder's Page tab has none of its
           own: it hands its fold-all button, cog and save state to the folder page's toolbar (YAZ-4584 D38, 10D, below). */}
+      {/* The chip's box (YAZ-4939): a time choice unlocks this tab; "Turn Read only off" writes the note's own switch, and is not there while the vault's lock would keep the page locked anyway. */}
       {!inFolderPage && (
-        <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={readOnly ? { asking: askingUnlock, onAsk: () => setAskingUnlock(true), onAllow: () => { setAskingUnlock(false); void setReadOnly(false) }, onCancel: () => setAskingUnlock(false) } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
+        <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={lockedBase ? { asking: askingUnlock, onAsk: () => setAskingUnlock(true), onAllow: (choice) => { setAskingUnlock(false); unlock.allow(choice) }, onCancel: () => setAskingUnlock(false), onTurnOff: diskReadOnly && !vaultLocked ? () => { setAskingUnlock(false); void setReadOnly(false) } : undefined, editingUntil: unlock.until, onLock: unlock.lock } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
           {foldAllButton}
-          <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} {...cog} />
+          {/* The cog's row reads the page's lock; a click while a timed unlock runs is "Lock now". */}
+          <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAskingUnlock(true)) : void setReadOnly(true))} {...cog} />
         </StatusChips>
       )}
       {/* The one-line note of outside changes (YAZ-3704 D6) takes the conflict bar's place and hides while it shows. */}

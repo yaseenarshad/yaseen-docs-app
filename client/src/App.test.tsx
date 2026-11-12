@@ -4400,6 +4400,50 @@ describe('App rename door (⚡ YAZ-888)', () => {
         trashing(b.bridge)
       })
 
+    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "Allow for 15 minutes" opens the vault’s file actions that long, then it asks again', async () => {
+      // "Ask before renaming" off: the rename sheet would otherwise stand between the vault's sheet and the rename.
+      const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        trashing(b.bridge)
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+      // Delete asks; Cancel deletes nothing.
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/B.md']))
+      await act(async () => {})
+      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow its file actions — rename, move, delete, new and paste — for 15 minutes?')
+      expect(bridge.file.delete).not.toHaveBeenCalled()
+      await act(async () => button('Cancel')?.click())
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete).not.toHaveBeenCalled()
+      // Rename asks too; "Allow for 15 minutes" lets it run.
+      act(() => void captured.sidebar?.onRenameFile('/v/B.md', '/v/C.md', 'file'))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      await act(async () => button('Allow for 15 minutes')?.click())
+      await act(async () => {})
+      expect(sheet()).toBeNull()
+      expect(renames(bridge)).toEqual([['/v/B.md', '/v/C.md']])
+      // Within the 15 minutes a Delete does not ask.
+      const now = Date.now()
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 14 * 60_000)
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md']))
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/A.md' }])
+      // After them it asks again.
+      clock.mockReturnValue(now + 15 * 60_000 + 1)
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('Cancel')?.click())
+      expect(bridge.file.delete.mock.calls.length).toBe(1)
+      clock.mockRestore()
+    })
+
     it('S66 (YAZ-3272, as D23 of YAZ-3293 words it): one row deleted says "Deleted 1 file (Todo.md)" with Undo, by its kind and its name on disk', async () => {
       const { el } = await mountVault()
       await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Todo.md']))
@@ -5691,12 +5735,12 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
-      // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a note (YAZ-4938), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json']],
+      // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a note (YAZ-4938), its "Read only" (YAZ-4939), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
+      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json']],
       coldDiff: [['/v']],
-      // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a note (YAZ-4938), text formatting and link pills (YAZ-4924), each subscribed
-      // once for each mount effect (6 × 2), plus the WikilinkIndexBridge's `useIndex`, which hears the vault's config too (2 since YAZ-2602: the count was [2, 2, 4] with review.json alone).
-      subscriptions: [2, 2, 14],
+      // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a note (YAZ-4938), read only (YAZ-4939), text formatting and link pills (YAZ-4924), each subscribed
+      // once for each mount effect (7 × 2), plus the WikilinkIndexBridge's `useIndex`, which hears the vault's config too (2 since YAZ-2602: the count was [2, 2, 4] with review.json alone).
+      subscriptions: [2, 2, 16],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -5810,7 +5854,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(12) // review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), text-formatting.json (YAZ-3066) and link-pills.json (YAZ-4924)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(14) // review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066) and link-pills.json (YAZ-4924)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
