@@ -39,6 +39,24 @@ describe('the ID at the right end of a files-list row', () => {
     expect(label).toMatch(/white-space:\s*nowrap;/)
   })
 
+  it('a long name never pushes the ID (or the date) out: the row lays its items out in one line, the label is the one item that shrinks, and the ID and the date keep their width', () => {
+    const row = body('.tree__row')
+    expect(row).toMatch(/display:\s*flex;/)
+    expect(row).not.toMatch(/flex-wrap:\s*wrap;/)
+    const label = body('.tree__label')
+    // The label may shrink to nothing: `min-width: 0` (its overflow alone allows it too), and nothing stops its shrink.
+    expect(label).toMatch(/min-width:\s*0;/)
+    expect(label).not.toMatch(/flex(-shrink)?:\s*(none|0)\b/)
+    expect(body('.tree__id')).toMatch(/flex:\s*none;/)
+    expect(body('.tree__date')).toMatch(/flex:\s*none;/)
+  })
+
+  it('the ID is muted, with digits of one width ("#5" and "#12" line up at the right end)', () => {
+    const id = body('.tree__id')
+    expect(id).toMatch(/font-variant-numeric:\s*tabular-nums;/)
+    expect(id).toMatch(/color:\s*color-mix\(in srgb, var\(--fg-muted\)/)
+  })
+
   it('after a vault tag the ID gives up its own push, and a date after the ID does the same: one column at the right end', () => {
     expect(body('.tree__vault + .tree__id')).toMatch(/margin-left:\s*0;/)
     expect(body('.tree__id + .tree__date')).toMatch(/margin-left:\s*0;/)
