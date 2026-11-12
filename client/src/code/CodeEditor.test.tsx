@@ -426,14 +426,14 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     expect(created.editors.map((e) => e.options.readOnly)).toEqual([true, true])
   })
 
-  it('S2: "Allow edits for 15 minutes" unlocks only that tab, the setting stays; a closed and reopened tab is locked again', async () => {
+  it('S2: "Allow edits for 1 minute" unlocks only that tab, the setting stays; a closed and reopened tab is locked again', async () => {
     await openTwo({ codeReadOnly: true })
     const [a, b] = created.editors
     act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
     act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__allow')!.click())
     expect(a.options.readOnly).toBe(false)
     // The chip stays, as "Editing · mm:ss" (YAZ-4939), with "Lock now".
-    expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Editing · 15:00')
+    expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Editing · 1:00')
     expect(chipIn('a')?.querySelector('.read-only-chip__lock')?.textContent).toBe('Lock now')
     expect(b.options.readOnly).toBe(true)
     expect(chipIn('b')).not.toBeNull()
@@ -471,12 +471,12 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     expect([a, b].map((e) => e.options.readOnly)).toEqual([true, true])
     expect(chipIn('a')).not.toBeNull()
     act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
-    expect([...chipIn('a')!.querySelectorAll('.read-only-chip__ask button')].map((x) => x.textContent)).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Cancel'])
+    expect([...chipIn('a')!.querySelectorAll('.read-only-chip__ask button')].map((x) => x.textContent)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
     act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__allow')!.click())
     expect(a.options.readOnly).toBe(false)
     expect(b.options.readOnly).toBe(true)
-    expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Editing · 15:00')
-    await after(15 * 60_000)
+    expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Editing · 1:00')
+    await after(60_000)
     await settle()
     expect(a.options.readOnly).toBe(true)
     expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Read only')

@@ -43,7 +43,7 @@
  * opens as the error state (message + close, nothing to save), and a failed write leaves the modal
  * open with its error line and the canvas untouched — a save that failed must not eat the drawing.
  */
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { lazy, Suspense, useCallback, useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
 import { api } from '../api'
@@ -57,6 +57,7 @@ import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing
 import { missingPicturesNotice, picturesFolderOutside, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import type { NoticeKind } from '../lib/notice'
 import { CardPreviewHost } from '../tabs/cardPreview'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
 import { usePicturesFolderAllow } from './usePicturesFolderAllow'
 import './drawingModal.css'
@@ -174,8 +175,12 @@ export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAsi
     }
   }, [])
 
-  /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
-  const readOnly = loaded?.scene.readOnly === true
+  /**
+   * The drawing's own file says read only (YAZ-3076 D2, S28), or the vault is (YAZ-4939): the engine's view mode, and
+   * nothing to save. The popup has no timed unlock: to edit a board of a read-only vault, open it in its tab.
+   */
+  const vaultLocked = useContext(VaultReadOnly).on
+  const readOnly = loaded?.scene.readOnly === true || vaultLocked
   // The drawing's page links (YAZ-4039), as in a drawing tab: pills, hover, the open gestures, the menu, the picker, paste.
   // The hover preview: "Links in drawings and diagrams" AND the board's own switch (YAZ-3943 demo 2), read from the file.
   const hoverLinks = linkProps.hoverLinks === true && loaded?.scene.hoverLinksOff !== true
@@ -222,14 +227,14 @@ export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAsi
       if (generation !== generationRef.current) return
       snapshot.current = next
       const drawing = loadedRef.current
-      // Read only: never an edit, so there is nothing to autosave.
-      if (drawing === null || drawing.scene.readOnly === true) return
+      // Read only (the file's switch or the vault's): never an edit, so there is nothing to autosave.
+      if (drawing === null || drawing.scene.readOnly === true || vaultLocked) return
       const a = autosave.current
       // The first snapshot IS the clean baseline (the surface restored the disk scene first).
       if (a === null) autosave.current = new Autosave<number>({ content: next.version, mtime: drawing.mtime, delayMs: 500, save: write, onStatus, onConflict })
       else a.update(next.version)
     },
-    [write, onStatus, onConflict, generation],
+    [write, onStatus, onConflict, generation, vaultLocked],
   )
 
   // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).

@@ -5,7 +5,7 @@
  * the file: a click on the chip opens a small box under it, and only a choice in it unlocks. Turning read only ON
  * never asks; that is the cog's row.
  *
- * THE BOX'S CHOICES (YAZ-4939): "Allow edits for 15 minutes" (first, so Enter takes it) · "1 hour" · "Until I close
+ * THE BOX'S CHOICES (YAZ-4939): "Allow edits for 1 minute" (first, so Enter takes it) · "10 minutes" · "Until I close
  * this tab" — each a TIMED unlock of THIS page, in the host's own state (`useTimedUnlock`): the page's own switch, a
  * board's and the vault's Read only all stay in their files. Where the page has its own switch on and the vault is not
  * read only, a fourth button, "Turn Read only off", turns the switch off in the file (what "Allow edits" did before);
@@ -129,8 +129,8 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
         <div className="read-only-chip__ask" role="dialog" aria-label="Allow edits">
           <p>Allow edits?</p>
           <div className="read-only-chip__times">
-            <button type="button" className="read-only-chip__allow" autoFocus onClick={() => onAllow('fifteen')}>Allow edits for 15 minutes</button>
-            <button type="button" onClick={() => onAllow('hour')}>1 hour</button>
+            <button type="button" className="read-only-chip__allow" autoFocus onClick={() => onAllow('minute')}>Allow edits for 1 minute</button>
+            <button type="button" onClick={() => onAllow('ten')}>10 minutes</button>
             <button type="button" onClick={() => onAllow('close')}>Until I close this tab</button>
           </div>
           <div className="read-only-chip__actions">

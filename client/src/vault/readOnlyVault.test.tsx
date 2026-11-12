@@ -1,6 +1,6 @@
 /**
  * `useReadOnlyVault` (YAZ-4939): a vault's `.yaseendocs/read-only.json`, read once per root, re-read on that file's
- * change broadcast, Off with no file; the vault's file-actions allowance ("Allow for 15 minutes"). The bridge is mocked.
+ * change broadcast, Off with no file; the vault's file-actions allowance ("Allow for 10 minutes"). The bridge is mocked.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -100,7 +100,7 @@ describe('useReadOnlyVault', () => {
     expect(state.settings.on).toBe(true)
   })
 
-  it('file actions: always allowed with the vault Off; with it On, only for 15 minutes after "Allow"', async () => {
+  it('file actions: always allowed with the vault Off; with it On, only for 10 minutes after "Allow"', async () => {
     vi.useFakeTimers()
     await mount('/vault')
     expect(state.fileActionsAllowed()).toBe(true)
@@ -108,6 +108,7 @@ describe('useReadOnlyVault', () => {
     expect(state.fileActionsAllowed()).toBe(false)
     act(() => state.allowFileActions())
     expect(state.fileActionsAllowed()).toBe(true)
+    expect(FILE_ACTIONS_ALLOW_MS).toBe(10 * 60_000)
     vi.advanceTimersByTime(FILE_ACTIONS_ALLOW_MS - 1)
     expect(state.fileActionsAllowed()).toBe(true)
     vi.advanceTimersByTime(1)

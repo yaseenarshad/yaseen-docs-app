@@ -23,6 +23,7 @@ import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
 import { ALLOW_FOLDER_TITLE, allowFolderBody } from './usePicturesFolderAllow'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import type { DrawingAppSettings, DrawingSurfaceProps } from './ExcalidrawSurface'
 import { DEFAULT_CANVAS_PREFS, type CanvasPrefs } from '@shared/types'
 
@@ -218,6 +219,27 @@ describe('read only (YAZ-3076 S28)', () => {
   it('an editable drawing does not', async () => {
     await open()
     expect(seam.props?.readOnly).toBe(false)
+  })
+
+  it('a read-only VAULT (YAZ-4939) locks the popup too: view mode, no label, never a write', async () => {
+    readAsset.mockResolvedValue(asset(100))
+    const onClose = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <VaultReadOnly.Provider value={{ on: true, allowFileAction: () => Promise.resolve(true) }}>
+          <DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" onClose={onClose} />
+        </VaultReadOnly.Provider>,
+      )
+    })
+    expect(seam.props?.readOnly).toBe(true)
+    expect(label()).toBeNull()
+    emit(7)
+    emit(8)
+    await idle()
+    expect(drawingSave).not.toHaveBeenCalled()
   })
 })
 

@@ -5,6 +5,7 @@
  * picker and the paste are made once, and every live value is read through a ref at the event.
  */
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { fileKind } from '@shared/fileKind'
 import type { GestureAction } from '@shared/keys'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { DiagramDarkColors } from '@shared/types'
@@ -37,6 +38,10 @@ export interface DrawingLinkProps {
   onOpenLink?: (path: string, where?: GestureAction) => void
   /** ⌘-click on a pill: a background tab. */
   onOpenLinkBackground?: (path: string) => void
+  /** "Open in Explore" on a note pill (YAZ-4936, on a board since YAZ-4939): a reading layer. Absent → no row. */
+  onOpenExplore?: (path: string) => void
+  /** This vault's "Clicking a link" (YAZ-4936), read at each click: on a read-only board a plain click on a note pill opens it in Explore (YAZ-4939). */
+  exploreOnClick?: () => boolean
   /** The link menu's place rows (YAZ-3740). */
   linkActions?: LinkActions
   /** Where a missing page of a bare link is made (C2-, GRO-2240). */
@@ -113,6 +118,9 @@ export function useDrawingLinks(host: DrawingLinkHost) {
       openCurrent: (page) => live.current.props.onOpenLink?.(page, 'thisTab'),
       openNewTab: (page) => live.current.props.onOpenLink?.(page, 'newTab'),
       openBackground: (page) => live.current.props.onOpenLinkBackground?.(page),
+      // "Open in Explore" and the vault's "Clicking a link" (YAZ-4936, YAZ-4939), as a note's pills have them.
+      ...(props.onOpenExplore === undefined ? {} : { openExplore: (page: string) => live.current.props.onOpenExplore?.(page) }),
+      exploreClick: () => live.current.props.exploreOnClick?.() === true,
       hotkeys: () => live.current.hotkeys,
       onNotice: (message) => live.current.onNotice?.(message),
     }
@@ -164,10 +172,13 @@ export function useDrawingLinks(host: DrawingLinkHost) {
     })
     return { hostLinks: drawingHostLinks(deps), openShapeLink: (link, event) => openShapeLink(link, event, deps()) }
   })
-  // The card says how to open the link (YAZ-3879 point 9): "⌘-click to open in a background tab".
+  // The card says how to open the link (YAZ-3879 point 9): "⌘-click to open in a background tab"; on a read-only board
+  // with the vault's "Clicking a link" at Explore, "Click to open in Explore" for a note (YAZ-4939).
   const linkCard = (_: string, page: string): { root: string | null; name: string; hint?: string } | null => {
     const source = drawingVaultOf(page)?.source ?? live.current.props.wikilinks
-    return source === undefined ? null : { root: null, name: pageLabel(page, false, pathTitles(source.records, source.folders)), hint: linkOpenHint(live.current.hotkeys, !live.current.readOnly) }
+    const { readOnly, hotkeys } = live.current
+    const explore = readOnly && live.current.props.exploreOnClick?.() === true && fileKind(page) === 'markdown'
+    return source === undefined ? null : { root: null, name: pageLabel(page, false, pathTitles(source.records, source.folders)), hint: linkOpenHint(hotkeys, !readOnly, explore) }
   }
   return { links, linkPreview, linkCard }
 }

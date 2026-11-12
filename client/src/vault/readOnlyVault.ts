@@ -7,7 +7,7 @@
  * `VaultReadOnly`; each page's timed "Allow edits" is its own (`useTimedUnlock`).
  *
  * THE VAULT'S FILE ACTIONS (Rename, Move, Delete, New, Paste) ask "This vault is read only" while it is On, with "Allow
- * for 15 minutes": one allowance for the vault, kept here as a time, read at each action and never rendered, so it costs
+ * for 10 minutes": one allowance for the vault, kept here as a time, read at each action and never rendered, so it costs
  * no timer and no render. The app's own writes (the ID sweep, link rewrites after an allowed rename, the autosave of an
  * unlocked page) never ask.
  */
@@ -20,8 +20,8 @@ export interface ReadOnlyVaultSettings {
 }
 export const DEFAULT_READ_ONLY_VAULT: ReadOnlyVaultSettings = { on: false }
 
-/** "Allow for 15 minutes" of the file-actions sheet. */
-export const FILE_ACTIONS_ALLOW_MS = 15 * 60_000
+/** "Allow for 10 minutes" of the file-actions sheet. */
+export const FILE_ACTIONS_ALLOW_MS = 10 * 60_000
 
 /** What a refused file action says (the sheet's first words; a folder page's create error). */
 export const VAULT_READ_ONLY_TIP = 'This vault is read only'
@@ -35,9 +35,9 @@ export function sanitizeReadOnlyVault(raw: unknown): ReadOnlyVaultSettings {
 export interface ReadOnlyVaultState {
   settings: ReadOnlyVaultSettings
   save: (next: ReadOnlyVaultSettings) => void
-  /** A file action may run now: the vault is not read only, or "Allow for 15 minutes" still runs. Read at each action. */
+  /** A file action may run now: the vault is not read only, or "Allow for 10 minutes" still runs. Read at each action. */
   fileActionsAllowed: () => boolean
-  /** "Allow for 15 minutes": the vault's file actions, that long from now. */
+  /** "Allow for 10 minutes": the vault's file actions, that long from now. */
   allowFileActions: () => void
 }
 
@@ -88,7 +88,7 @@ export function useReadOnlyVault(root: string | null): ReadOnlyVaultState {
 
 /**
  * What a page reads of its vault (YAZ-4939): the vault's Read only, and the door a file action asks through ("This vault
- * is read only" › Allow for 15 minutes · Cancel; true = go on). `Editor` provides it; the default is a vault with no lock.
+ * is read only" › Allow for 10 minutes · Cancel; true = go on). `Editor` provides it; the default is a vault with no lock.
  */
 export interface VaultReadOnlyScope {
   on: boolean
