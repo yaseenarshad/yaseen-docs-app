@@ -96,7 +96,7 @@ describe('help and usage', () => {
   })
 
   it('the contract names every verb and both rules an agent must know', () => {
-    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs mentions ', 'yaseendocs due ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
+    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs mentions ', 'yaseendocs due ', 'yaseendocs card add ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
       expect(HELP).toContain(word)
     }
   })
@@ -670,7 +670,89 @@ describe('label and find', () => {
   })
 })
 
-// DUE_TESTS
+describe('note cards: due and card add (YAZ-4963)', () => {
+  const DAY = 86_400_000
+  const day = (ms: number): string => new Date(ms).toLocaleDateString('en-CA')
+  const minute = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
+  const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
+
+  it('due lists the cards due now and the new ones, not one that is not due nor one turned off; a page lists each card with its day', async () => {
+    const long = minute(Date.now() - 400 * DAY)
+    const now = minute(Date.now() - 60_000)
+    const root = await vault('cards', {
+      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('**Overdue** {{word}}', `YAZ-10, ${long} good`)}\n${card('Just learned', `YAZ-11, ${now} good`)}\n${card('Brand new', 'YAZ-12')}\n${card('Turned off', `YAZ-13, off, ${long} good`)}`,
+      'sub/other.md': `---\nid: YAZ-2\n---\n${card('In a subfolder', 'YAZ-14')}`,
+    })
+    const deck = path.join(root, 'deck.md')
+    const other = path.join(root, 'sub', 'other.md')
+    const listed = await run(['due', root])
+    expect(listed.code).toBe(0)
+    const lines = listed.out.trimEnd().split('\n')
+    expect(lines).toHaveLength(3)
+    expect(lines[0]).toMatch(new RegExp(`^\\d{4}-\\d{2}-\\d{2}  YAZ-10  Overdue word  ${deck}$`))
+    expect(lines.slice(1)).toEqual([`new         YAZ-12  Brand new  ${deck}`, `new         YAZ-14  In a subfolder  ${other}`])
+    const json = JSON.parse((await run(['due', root, '--json'])).out) as { id: string; page: string; title: string; due: string; isNew: boolean }[]
+    expect(json.map(({ id, page, title, isNew }) => ({ id, page, title, isNew }))).toEqual([
+      { id: 'YAZ-10', page: deck, title: 'Overdue word', isNew: false },
+      { id: 'YAZ-12', page: deck, title: 'Brand new', isNew: true },
+      { id: 'YAZ-14', page: other, title: 'In a subfolder', isNew: true },
+    ])
+    expect(Date.parse(json[0].due)).toBeLessThan(Date.now())
+    // A folder keeps its own cards; the vault's "new cards a day" counts the whole vault (YAZ-11 began today).
+    expect(JSON.parse((await run(['due', path.join(root, 'sub'), '--json'])).out).map((r: { id: string }) => r.id)).toEqual(['YAZ-14'])
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ newPerDay: 2 }))
+    expect(JSON.parse((await run(['due', root, '--json'])).out).map((r: { id: string }) => r.id)).toEqual(['YAZ-10', 'YAZ-12'])
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ enabled: false }))
+    expect((await run(['due', root])).out).toBe(`nothing is due under ${root}\n`)
+    await rm(path.join(root, VAULT_CONFIG_DIR, 'review.json'))
+    // One page: every card, with its day, new or off.
+    const page = (await run(['due', deck])).out.trimEnd().split('\n')
+    expect(page.map((l) => l.replace(/^\d{4}-\d{2}-\d{2}/, 'DAY'))).toEqual(['DAY  YAZ-10  Overdue word', 'DAY  YAZ-11  Just learned', 'new         YAZ-12  Brand new', 'off         YAZ-13  Turned off'])
+    expect(day(Date.parse((JSON.parse((await run(['due', deck, '--json'])).out) as { due: string }[])[1].due))).not.toBe(day(Date.now()))
+  })
+
+  it('card add writes a card with the next number of the vault counter, at the end of the heading\'s section, in order, atomically', async () => {
+    const root = await vault('cards', {
+      'geo.md': '---\nid: YAZ-5\n---\n# Geography\n\n## Cards\n\nIntro.\n\n## Later\n\nText.\n',
+      'other.md': `---\nid: YAZ-6\n---\n${card('Held', 'YAZ-20')}`,
+    })
+    const geo = path.join(root, 'geo.md')
+    expect(await run(['card', 'add', geo, '--after', 'cards', '--body', '-'], 'The capital of {{France}}\n---\nParis\n')).toEqual({ code: 0, out: `added YAZ-21 to ${geo}\n`, err: '' })
+    const second = await run(['card', 'add', geo, '--after', '## Cards', '--body', 'Code inside:\n```js\nx\n```', '--json'])
+    expect(JSON.parse(second.out)).toEqual({ id: 'YAZ-22', page: geo, title: 'Code inside:' })
+    expect(await readFile(geo, 'utf8')).toBe(
+      '---\nid: YAZ-5\n---\n# Geography\n\n## Cards\n\nIntro.\n\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-21 -->\n\n````card\nCode inside:\n```js\nx\n```\n````\n<!-- card: YAZ-22 -->\n\n## Later\n\nText.\n',
+    )
+    // No --after: the end of the page. The app's scanner reads each card, and `due` shows them as new.
+    await run(['card', 'add', geo, '--body', 'Last'])
+    expect((await scanFile(root, geo)).cards?.map((c) => c.id)).toEqual(['YAZ-21', 'YAZ-22', 'YAZ-23'])
+    expect((await readFile(geo, 'utf8')).endsWith('Text.\n\n```card\nLast\n```\n<!-- card: YAZ-23 -->\n')).toBe(true)
+    expect(JSON.parse((await run(['due', geo, '--json'])).out).map((r: { id: string; isNew: boolean }) => [r.id, r.isNew])).toEqual([['YAZ-21', true], ['YAZ-22', true], ['YAZ-23', true]])
+  })
+
+  it('refuses in a vault without IDs, for a heading the page does not have (no number taken), and for bad usage', async () => {
+    const plain = await vault('plain', { 'a.md': 'Text.\n' }, false)
+    const a = path.join(plain, 'a.md')
+    for (const argv of [['card', 'add', a, '--body', 'x'], ['due', plain], ['due', a]]) {
+      const refused = await run(argv)
+      expect(refused.code).toBe(1)
+      expect(refused.err).toMatch(/does not give its notes IDs, so it has no note cards/)
+    }
+    expect(await readFile(a, 'utf8')).toBe('Text.\n')
+    const root = await vault('cards', { 'geo.md': '---\nid: YAZ-5\n---\n# Geo\n' })
+    const geo = path.join(root, 'geo.md')
+    expect(await run(['card', 'add', geo, '--after', 'Nope', '--body', 'x'])).toMatchObject({ code: 1, err: 'no heading "Nope" on the page\n' })
+    expect(await readdir(path.join(root, VAULT_CONFIG_DIR))).not.toContain('ids')
+    expect((await run(['card', 'add', geo, '--body', '  \n'])).code).toBe(2)
+    expect((await run(['card', 'add', geo])).code).toBe(2)
+    expect((await run(['card', 'add'])).code).toBe(2)
+    expect((await run(['card', 'remove', geo])).code).toBe(2)
+    expect((await run(['card', 'add', geo, '--body', 'x', '--title', 'y'])).code).toBe(2)
+    expect((await run(['due', path.join(root, 'nope.md')])).code).toBe(1)
+    expect((await run(['due'])).code).toBe(2)
+    expect(await readFile(geo, 'utf8')).toBe('---\nid: YAZ-5\n---\n# Geo\n')
+  })
+})
 
 describe('vaults (YAZ-2556 D2)', () => {
   /** The app's state file, in a profile of its own: the temp dir stands in for the user-data folder (S13), so no test reads the real one. */

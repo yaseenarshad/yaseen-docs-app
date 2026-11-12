@@ -37,7 +37,7 @@ import { newestFile } from '@shared/settingsSync'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
-import { findCards } from '@shared/cardLine'
+import { cardBlock, pageCards } from '@shared/cardLine'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
@@ -52,7 +52,7 @@ import { otherMacFiles } from '../main/settingsFiles'
 import { mergeFolderSettings, parseState } from '../main/store'
 import { STATE_FILE, userDataDir } from '../main/userData'
 import { giveId, nextId, readPage } from '../main/vaultIndex/idSweep'
-import { idVault, macId, vaultIds } from '../main/vaultIndex/mint'
+import { idVault, macId, mintIds, vaultIds } from '../main/vaultIndex/mint'
 import { scanAll } from '../main/vaultIndex/reconcile'
 import { fileTitle, scanFile, walk } from '../main/vaultIndex/scan'
 
@@ -75,12 +75,13 @@ export const USAGE = `usage:
   yaseendocs links    <page.md> [--json]
   yaseendocs mentions <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
+  yaseendocs card add <page.md> --body <text | -> [--after <heading>] [--json]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
   yaseendocs --help`
 
-export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, the pages that link to it, when it is next due for review, the app's list of vaults, and a new note or the day's daily note, from the shell.
+export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, the pages that link to it, its note cards and the ones due for review, the app's list of vaults, and a new note or the day's daily note, from the shell.
 
 ${USAGE}
 
@@ -131,11 +132,24 @@ a vault with IDs or without. A line is the title and the path of the note, or of
 \`title\`, \`path\` (from the vault's folder) and \`kind\` (\`note\` or \`folder\`). A link counts as
 the app counts it: by id, path, title, file name or alias, in the body or the properties.
 
-\`due\` prints the day a page is next up for review. The app works that date out from the page's
-\`reviews:\` log, when the page last changed and the vault's settings, and never writes it into the
-file, so this is the place to read it. Given a folder, \`due\` lists the pages due now under it,
-each by title and path, most overdue first (\`--json\` for the raw shape of either). Nothing is due
-in a vault until upkeep is turned on for it, in the app's Settings.
+A note card is a spaced-repetition card inside a page: a \`\`\`card\` fence with its text, and the card
+line under it, \`<!-- card: <id>, <time> <answer>, ... -->\`, which holds the card's id and each review.
+\`---\` alone on a line splits the front from the back, and \`{{word}}\` hides a word. Only a vault that
+gives its notes IDs has cards, and \`due\` and \`card\` are refused in any other. Never write or change a
+card line by hand: \`card add\` writes it, and the app writes each review.
+
+\`due\` lists the note cards due now under a folder (the whole vault for its root), as the app's Inbox
+shows them: the cards due today, most overdue first, then new cards, as many as the vault's "new cards a
+day" leaves for today. A line is the day it was due (or \`new\`), the card's id, its title (its first line)
+and its page. Given a page, \`due\` lists every card on it, each with the day it is next due, \`new\`, or
+\`off\` (review turned off). The app works the dates out from each card's reviews with FSRS and never writes
+them, so this is the place to read them. \`--json\` gives \`id\`, \`page\`, \`title\`, \`due\` (ISO time) and
+\`isNew\` (and \`off\` for a page).
+
+\`card add\` adds a note card to a page, with a new id from the vault's counter, as the app gives one:
+\`--body\` (\`--body -\` for stdin) is the card's text. It goes at the end of the page, or with \`--after\` at
+the end of that heading's section (the heading's text, without the \`#\` marks; case does not count). It
+prints \`added <id> to <page>\`; \`--json\` gives \`id\`, \`page\` and \`title\`.
 
 \`vaults\` lists the vaults the app knows: the recent ones, last used first, then each other vault
 that is open or has a number. A line is the name, the folder, \`⌘<n>\` for number n, \`(open)\` for
@@ -174,10 +188,14 @@ Plan a day:
 
 Make a note with its first text:
   printf '## Plan\\n- Gym' | yaseendocs new "/vault/projects" --title "Gym plan" --body -
+
+Make a note card, and see what is due:
+  printf 'The capital of {{France}}\\n---\\nParis' | yaseendocs card add "/vault/Geography.md" --after "Cards" --body -
+  yaseendocs due /vault --json
 `
 
 /** Every flag the contract names; anything else is refused, because `--help` IS the contract (🔒 D1) and a typo must not be absorbed. */
-const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date'])
+const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date', '--after'])
 /** Flags that take no value. */
 const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen'])
 
@@ -327,7 +345,7 @@ async function cardVault(dir: string, what: string): Promise<string> {
 
 /** The title of each card of a page (idea 3), in page order: its text is read here, the index does not hold it (D4). */
 async function cardTitles(page: string): Promise<string[]> {
-  return findCards(splitFrontmatter((await readPage(page)).content).body).map((card) => cardTitle(card.text))
+  return pageCards((await readPage(page)).content).map((card) => cardTitle(card.text))
 }
 
 /**
@@ -508,6 +526,54 @@ async function newCommand(target: string | undefined, flags: Map<string, string 
   report(io, flags, note)
 }
 
+/** Where a new card goes in `body`: after the line index returned (the end of the heading's section), or the end. */
+function cardPlace(body: string, after: string | undefined): number {
+  const lines = body.split('\n')
+  if (after === undefined) return lines.length
+  const want = after.replace(/^#+\s*/, '').trim().toLowerCase()
+  let fence: string | null = null
+  const headings: { at: number; level: number; text: string }[] = []
+  lines.forEach((line, at) => {
+    const m = /^[ \t]*(`{3,}|~{3,})/.exec(line)
+    if (m !== null) fence = fence === null ? m[1] : m[1][0] === fence[0] && m[1].length >= fence.length && line.trim() === m[1] ? null : fence
+    const h = fence === null && m === null ? /^(#{1,6})[ \t]+(.*?)[ \t#]*$/.exec(line) : null
+    if (h !== null) headings.push({ at, level: h[1].length, text: h[2].trim().toLowerCase() })
+  })
+  const i = headings.findIndex((h) => h.text === want)
+  if (i === -1) throw new Error(`no heading "${after}" on the page`)
+  const end = headings.slice(i + 1).find((h) => h.level <= headings[i].level)
+  return end === undefined ? lines.length : end.at
+}
+
+/** `card add` (YAZ-4963, idea 16): a note card with a real ID from the vault's counter, written atomically. */
+async function cardAdd(page: string, flags: Map<string, string | true>, io: Io): Promise<void> {
+  onlyFlags('card add', flags, ['--body', '--after', '--json'])
+  const text = (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '')
+  if (text === '') throw new Usage('card add needs a --body with text')
+  const root = await cardVault(dirname(page), page)
+  const after = str(flags, '--after')
+  // The page and the heading are checked before a number is taken: a refusal costs no number.
+  cardPlace(splitFrontmatter((await readFile(page)).content).body, after)
+  // The door (YAZ-2677 D4): the count file is on disk before the card is written (R18), the app's own number.
+  const id = (await mintIds(root, 1))?.[0]
+  if (id === undefined) throw new Error(`${page}'s vault does not give its notes IDs, so it has no note cards`)
+  const block = cardBlock(text, { parts: [{ kind: 'id', id }] })
+  await transformOnDisk(page, (fresh) => {
+    const { frontmatter, body } = splitFrontmatter(fresh)
+    const lines = body.split('\n')
+    const at = cardPlace(body, after)
+    // One blank line before the card and one after it; the page's own blank lines stay.
+    let from = at
+    while (from > 0 && lines[from - 1].trim() === '') from--
+    const before = lines.slice(0, from)
+    const rest = lines.slice(at)
+    const next = [...before, ...(before.length > 0 ? [''] : []), block, ...(rest.length > 0 && rest.some((l) => l !== '') ? ['', ...rest] : [''])]
+    return frontmatter + next.join('\n')
+  })
+  const title = cardTitle(text)
+  io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page, title }, null, 2)}\n` : `added ${id} to ${page}\n`)
+}
+
 async function run(argv: readonly string[], io: Io): Promise<void> {
   const { verb, args, flags } = parse(argv)
   if (verb === '' || verb === 'help' || flags.has('--help') || flags.has('-h')) {
@@ -524,7 +590,15 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
     requireMarkdownFile(page)
     return mentions(page, flags.has('--json'), io)
   }
+  if (verb === 'card') {
+    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add' : `unknown card command: ${args[0]}`)
+    if (args[1] === undefined) throw new Usage('card add needs a page')
+    const page = resolve(args[1])
+    requireMarkdownFile(page)
+    return cardAdd(page, flags, io)
+  }
   if (verb === 'due') {
+    onlyFlags('due', flags, ['--json'])
     if (args[0] === undefined) throw new Usage('due needs a page or a folder')
     return due(resolve(args[0]), flags.has('--json'), io)
   }

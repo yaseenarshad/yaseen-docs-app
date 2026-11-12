@@ -224,6 +224,17 @@ export function rewriteCardLines(text: string, change: (card: CardBlock, index: 
   return lines.join('\n')
 }
 
+/**
+ * The Markdown of one new card: its fence, its text and its card line (none for an empty line). The fence is one
+ * backtick longer than the longest backtick fence in the text, so the text can never close the card.
+ */
+export function cardBlock(text: string, line: CardLine): string {
+  const longest = Math.max(2, ...[...text.matchAll(/^[ \t]*(`{3,})/gm)].map((m) => m[1].length))
+  const fence = '`'.repeat(longest + 1)
+  const formatted = formatCardLine(line)
+  return `${fence}card\n${text.replace(/\n+$/, '')}\n${fence}${formatted === null ? '' : `\n${formatted}`}`
+}
+
 /** The cards of a whole page (a Markdown file's text): those of its body, as the index reads them (`cardRecords` of the body). */
 export const pageCards = (content: string): CardBlock[] => findCards(splitFrontmatter(content).body)
 

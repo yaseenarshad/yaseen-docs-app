@@ -153,11 +153,13 @@ comments:
     body: The Q3 figure in the second table is off by one row.
 ```
 
-### Review
+### Note cards (YAZ-4946)
 
-Upkeep review is off until you turn it on for a vault (Settings › Review). Once it is on, a note that has gone unchanged and unchecked for 30 days comes up in the **Inbox** (the row above the sidebar's tabs, with the number due). With several vaults in one window, each vault that has it on has its own Inbox row, "Inbox · <vault>". Clicking it shows each due note's whole page in place of your tabs: **Still relevant** (`⌘⇧Enter`) pushes its next check out — 60 days, then 120, 240, up to 365 — and editing the page starts it again at 30. **Skip** (`⌘⇧S`) brings it back after the others, **Undo** takes back the last answer, `Esc` (or the Inbox row again) returns to your tabs exactly as they were. A folder's right-click menu has **Review this folder**.
+A **note card** is a spaced-repetition card that lives in a page, in a vault that gives its notes IDs. It is a ```` ```card ```` block: `---` alone on a line splits the front from the back, and `{{word}}` hides a word (Mochi's `{{1::word}}` reads the same; all hidden words of a card are one review). The card's first line is its title. Under the block, one line keeps the card's ID and its reviews, `<!-- card: WIKI-512, 2026-11-12T14:05Z good, … -->`, so the card and its history move together; GitHub and Obsidian hide it. A card ID is the vault's next number, from the same counter as notes and drawings. A card with no ID gets one; a copy of a card on the same page, or one still on two pages a minute after a paste, gets a new ID and starts with no history; a card cut from one page and pasted into another keeps both. Links, tags and backlinks inside a card work as in the page, and a rename updates them.
 
-A review writes one line into the note's own frontmatter, under `reviews`; when it is next due is worked out from that log, never stored, so the three numbers (Settings › Review, kept per vault in `.yaseendocs/review.json`) can change at any time. A note's right-click menu turns its review off (`review: false`); its page lists its reviews under "Linked mentions". For agents, `yaseendocs due "<page.md>"` prints the day a page is next due, and `yaseendocs due "<folder>"` lists what is due now, each page by its title and path.
+When a card is next due is worked out with FSRS (`ts-fsrs` 5.4.2) from its reviews, never stored: the same reviews give the same day on every Mac. Each vault keeps its review settings in `.yaseendocs/review.json`: review cards on or off (on), two answer buttons — Forgot and Remembered — or four (two), remember rate (90%), longest wait (365 days), new cards a day (10), spread due dates (on), and the FSRS weights (Yaseen's Mochi weights).
+
+For agents: `yaseendocs card add "<page.md>" --body <text | -> [--after <heading>]` adds a card with a real ID (never write the card line by hand), and `yaseendocs due "<folder>"` lists the cards due now, each by its day, ID, title and page; `yaseendocs due "<page.md>"` lists every card on a page. Page upkeep review (YAZ-2322) is gone: a page's `reviews:` frontmatter is an ordinary property now.
 
 ## Two kinds of vault
 
