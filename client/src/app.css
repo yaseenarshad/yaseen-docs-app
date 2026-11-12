@@ -283,6 +283,32 @@ button {
   background: var(--bg-hover);
 }
 
+/* The note's ID after its title (YAZ-4940 "In the title"): its own element on the title's line, small and muted,
+   never in the heading's text. The box wraps, so a title too long for the ID beside it sends the ID to the next
+   line by itself. A click copies it; it is no part of a selection of the title. */
+.page-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+}
+.page-title__id {
+  flex: none;
+  padding: 1px 4px;
+  margin-left: -4px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--fg-muted);
+  user-select: none;
+  cursor: pointer;
+}
+.page-title__id:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
 .page-title__input {
   width: 100%;
   padding: 2px 4px;
@@ -3871,6 +3897,23 @@ body.drag-held iframe {
   color: color-mix(in srgb, var(--fg-muted) 60%, transparent);
 }
 .tree__vault + .tree__date {
+  margin-left: 0;
+}
+
+/* A note row's ID (YAZ-4940 "In the files list"): as quiet as the date, at the right end, so the IDs line up in a
+   column and the names stay where they are; a long name is cut (the label's ellipsis) before the ID. After a vault
+   tag it gives up its own push to the right, as the date does; a date after it does the same. */
+.tree__id {
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--fg-muted) 60%, transparent);
+}
+.tree__vault + .tree__id,
+.tree__id + .tree__date {
   margin-left: 0;
 }
 

@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
-import type { IdsInSearch } from '../search/showIds'
+import { useAllPathIds, type IdsInSearch } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
@@ -86,6 +86,8 @@ export interface SidebarVault {
   index: WikilinkResolveSource
   /** This vault's "Show IDs in search" (YAZ-4940), read when the search rows draw; absent → only on a row found by its ID. */
   idsInSearch?: () => IdsInSearch
+  /** This vault's "Show IDs in the files list" (YAZ-4940): each note row of Files, Focus and Favorites ends with its ID. Absent → off. */
+  idsInFiles?: boolean
   /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): off, it has no Inbox row and its folders no "Review this folder". */
   upkeep: boolean
   /**
@@ -892,6 +894,9 @@ export function Sidebar({
   }, [roots, indexes, pagesOn])
   // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
   const titles = useAllPathTitles(indexes)
+  // The rows' IDs (YAZ-4940 "In the files list"), off the indexes of the vaults that chose it alone: none chose it, no map and no read.
+  const idSources = useMemo(() => vaults.filter((vault) => vault.idsInFiles === true).map((vault) => vault.index), [vaults])
+  const ids = useAllPathIds(idSources)
   /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
   const nameOf = useCallback((path: string) => pageName(rootOf(path), path, titles), [rootOf, titles])
 
@@ -1647,13 +1652,14 @@ export function Sidebar({
     pageRows,
     onOpenPage: openPageFromTree,
     titles,
+    ids,
     onLeaveToPage,
     onHoverFile: hoverFile,
     // The tab's own date switch (YAZ-3511 D10); the search tree reads Search's.
     dates: sortedTab !== null && settings.rowDates[sortedTab],
   }
-  // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags.
-  const searchTreeProps = { ...treeProps, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, sort: searchSort, dates: settings.rowDates.search, scores }
+  // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags. Its IDs are "Show IDs in search"'s (`marks`), not the files list's.
+  const searchTreeProps = { ...treeProps, ids: undefined, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, sort: searchSort, dates: settings.rowDates.search, scores }
 
   // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
   const errorLines = errors.map((message, at) => (

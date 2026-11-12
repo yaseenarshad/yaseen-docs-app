@@ -228,8 +228,8 @@ const inboxOf = ({ upkeep, dueCount, reviewing }: Inbox): Partial<Vault> => ({ .
  * says otherwise. Upkeep review (YAZ-2322) is off, as in a new vault, with nothing due and no review open.
  */
 const oneVault = ({ root = '/v', watch = { subscribe: () => () => undefined }, indexSource = indexFor(true), ...over }: Partial<SidebarProps>): Vault[] => [
-  // `idsInSearch` (YAZ-4940) rides on the vault: a test hands it as if it were a prop.
-  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, upkeep: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}) },
+  // `idsInSearch` and `idsInFiles` (YAZ-4940) ride on the vault: a test hands them as if they were props.
+  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, upkeep: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}), ...('idsInFiles' in over ? { idsInFiles: (over as { idsInFiles?: boolean }).idsInFiles } : {}) },
 ]
 
 async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => unknown) {
@@ -10391,8 +10391,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
   it('the vault name\'s rule is its own: 10px, the muted colour at 60%, 40% of the row at most with an ellipsis (YAZ-2631 S41, S44, R10)', () => {
     const rule = appCss.match(/\n\.tree__vault \{([^}]*)\}/)?.[1]
     for (const declaration of ['font-size: 10px;', 'color: color-mix(in srgb, var(--fg-muted) 60%, transparent);', 'max-width: 40%;', 'text-overflow: ellipsis;']) expect(rule).toContain(declaration)
-    // No other rule names the vault name: none shares the number's, none follows a count. A search row's date after it gives up its own push to the right (YAZ-3511 D5).
-    expect(appCss.match(/\.tree__vault[^{]*\{/g)).toEqual(['.tree__vault {', '.tree__vault + .tree__date {'])
+    // No other rule names the vault name: none shares the number's, none follows a count. A search row's date after it gives up its own push to the right (YAZ-3511 D5), and so does a files-list row's ID (YAZ-4940).
+    expect(appCss.match(/\.tree__vault[^{]*\{/g)).toEqual(['.tree__vault {', '.tree__vault + .tree__date {', '.tree__vault + .tree__id,\n.tree__id + .tree__date {'])
   })
 
   it('a selection across two vaults goes in, in panel order; a remove on a row of the second vault keeps the tab; a mixed selection reads Add and puts in the missing row; all in reads "Remove 2 from focus" (A7)', async () => {
@@ -11788,5 +11788,46 @@ describe('the sidebar in a read-only vault (YAZ-4939)', () => {
     act(() => itemByLabel(el, 'New note')?.click())
     await act(async () => {})
     expect(el.querySelector('.create-inline__input')).not.toBeNull()
+  })
+})
+
+describe('Show IDs in the files list (YAZ-4940 part 2)', () => {
+  /** The `/v` vault's index: `a.md` holds an ID, and the folder `sub` holds one through its settings file. */
+  const withIds = (on: boolean | undefined, ids = true) => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), ...(ids && { id: 'EMB-46' }) }], [{ ...indexRecord('/v/sub/.folder.md'), ...(ids && { id: 'EMB-3' }) }], ids)
+    return mount({ indexSource, ...(on !== undefined && ({ idsInFiles: on } as Partial<SidebarProps>)) })
+  }
+  const idOf = (el: HTMLElement, path: string) => el.querySelector(`.tree__row[data-path="${path}"] .tree__id`)?.textContent ?? null
+
+  it('On: a note row ends with its ID, after the label and as the row\'s last child; a folder row shows none; the label keeps the name alone', async () => {
+    const { el } = await withIds(true)
+    const row = fileRow(el)!
+    expect(idOf(el, '/v/a.md')).toBe('EMB-46')
+    expect(row.lastElementChild?.className).toBe('tree__id')
+    expect(row.querySelector('.tree__label')?.textContent).toBe('a')
+    expect(idOf(el, '/v/sub')).toBeNull()
+  })
+
+  it('Off, or not said (the default): no row shows an ID', async () => {
+    const off = await withIds(false)
+    expect(off.el.querySelector('.tree__id')).toBeNull()
+    act(() => root?.unmount())
+    const unsaid = await withIds(undefined)
+    expect(unsaid.el.querySelector('.tree__id')).toBeNull()
+  })
+
+  it('a vault without IDs shows none even with the choice On: its records hold no `id`', async () => {
+    const { el } = await withIds(true, false)
+    expect(el.querySelector('.tree__id')).toBeNull()
+  })
+
+  it('a snapshot that gives the note a new ID redraws the row; one that changes a title alone does not change the map', async () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [indexRecord('/v/a.md')], [], true)
+    const { el } = await mount({ indexSource, idsInFiles: true } as Partial<SidebarProps>)
+    expect(idOf(el, '/v/a.md')).toBeNull()
+    act(() => indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), id: 'EMB-46' }], [], true))
+    expect(idOf(el, '/v/a.md')).toBe('EMB-46')
   })
 })

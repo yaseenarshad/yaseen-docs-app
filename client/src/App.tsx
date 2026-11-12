@@ -1375,7 +1375,7 @@ export function App() {
         : roots.map((vault, i) => {
             const folder = storage.folderIn(vault)
             const dirs = allDirs(exploreTrees[i]?.tree ?? [])
-            return { root: vault, watch: live.current.vaults[i].watch, dirs: folder === null ? dirs : dirs.filter((dir) => inPlace(folder, dir)), files: [], idsInSearch: live.current.vaults[i].showIds.inSearch, ...(folder !== null && { folder }) }
+            return { root: vault, watch: live.current.vaults[i].watch, dirs: folder === null ? dirs : dirs.filter((dir) => inPlace(folder, dir)), files: [], idsInSearch: live.current.vaults[i].showIds.inSearch, idsInTitle: live.current.vaults[i].showIds.inTitle, ...(folder !== null && { folder }) }
           }),
     [exploreOpen, roots, exploreTrees],
   )
@@ -3111,6 +3111,8 @@ export function App() {
       // "Open in Explore" on a pill, and the vault's "Clicking a link" (YAZ-4936).
       onOpenExplore: openExploreOn,
       exploreOnClick: exploreOnClickFor(path),
+      // The vault's "Show IDs in the title" (YAZ-4940): the note's ID after its title.
+      idInTitle: scope.showIds.settings.title,
       // The vault's Read only (YAZ-4939), and the door a file action asks through.
       vaultReadOnly: scope.readOnlyVault.settings.on,
       onFileAction: allowFileAction,
@@ -3445,7 +3447,7 @@ export function App() {
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
+          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
           lists={lists}
           icons={vaultIcons}
           recentVault={recentPick}

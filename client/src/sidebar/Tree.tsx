@@ -2,6 +2,7 @@ import { memo, type CSSProperties } from 'react'
 import type { TabSort, TreeNode } from '@shared/types'
 import type { Needle } from '../links/completion'
 import { marked } from '../search/marked'
+import type { PathIds } from '../search/showIds'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
@@ -293,6 +294,8 @@ interface TreeProps {
   onOpenPage?: (dir: string, top?: string) => void
   /** What each row is labelled with (YAZ-2420 🔒 D15): its title; a row the index does not hold shows its file name. Name sorts by this label (YAZ-3227 D8). */
   titles: PathTitles
+  /** Each note row ends with its ID (YAZ-4940 "In the files list"), from the vaults that chose it; a folder row shows none. Absent: no row does. A stable Map. */
+  ids?: PathIds
   /** A tab whose top rows reorder (YAZ-2631 D3): they drag along the list instead of moving on disk. Without it no row reorders. The top level alone gets it, so a drag's line draws no level below again. */
   reorder?: TreeReorder
   /** The tab's sort (YAZ-3227); the Search tab's own since YAZ-3511 (`searchSort`). */
@@ -374,6 +377,7 @@ function TreeLevel({
   pageRows,
   onOpenPage,
   titles,
+  ids,
   reorder,
   sort,
   dates,
@@ -390,7 +394,7 @@ function TreeLevel({
   shift = 0,
 }: TreeProps) {
   const level = depth + shift
-  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
+  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
@@ -684,6 +688,7 @@ function TreeLevel({
               <ShareMark badge={shareBadges?.get(node.path)} />
               {isShortcutRow(node) && <ShortcutIcon />}
               {vaultTag(node.path)}
+              {ids?.get(node.path) !== undefined && <span className="tree__id">{ids.get(node.path)}</span>}
               {dates === true && <RowDate node={node} />}
             </button>
             {/* A New … picked on this pinned row (YAZ-4782): its name field right under it, where the item will stand. */}
