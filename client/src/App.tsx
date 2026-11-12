@@ -104,7 +104,7 @@ import { SAME_WORD, UnitContext, vaultUnit, type UnitText } from './vault/unitWo
 import { folderHome } from './vault/folderHome'
 import { inPlace } from './vault/placeScope'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
-import type { FileActionsFor } from './vault/readOnlyVault'
+import { FILE_ACTIONS_ALLOW, READ_ONLY_VAULT_FILE, sanitizeReadOnlyVault, type FileActionsFor } from './vault/readOnlyVault'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { duplicateTabIds, nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
@@ -518,11 +518,23 @@ export function App() {
    * ONE sheet asks: "Just this once" (Enter) lets this one action through and starts no allowance, "1 minute" and
    * "10 minutes" open the vault's file actions that long (the sidebar's lock shows it), and Cancel (Esc) refuses. An action
    * on several files is one action: it asks once. The app's own writes never come here.
+   *
+   * A vault the app knows that only ANOTHER window shows (YAZ-4985: a cut made there, pasted here, moves the file out of
+   * it): its own `read-only.json` says, read at the action. The other window's allowance is not seen here, so the same
+   * sheet asks; its "1 minute" and "10 minutes" are kept for that vault in this window (`outsideAllowed`).
    */
   const [readOnlyAsk, setReadOnlyAsk] = useState<{ root: string; resolve: (ok: boolean) => void } | null>(null)
-  const allowFileAction = useCallback((root: string): Promise<boolean> => {
+  const outsideAllowed = useRef(new Map<string, number>())
+  const allowFileAction = useCallback(async (root: string): Promise<boolean> => {
     const scope = scopeOf(root)
-    if (scope.root !== root || scope.readOnlyVault.fileActionsAllowed()) return Promise.resolve(true)
+    if (scope.root === root) {
+      if (scope.readOnlyVault.fileActionsAllowed()) return true
+    } else {
+      if (!storage.listVaults().some((vault) => vault.path === root) || Date.now() < (outsideAllowed.current.get(root) ?? 0)) return true
+      // As the vault's own window reads it: a file that cannot be read is Off.
+      const on = await api.vaultConfig.read(root, READ_ONLY_VAULT_FILE).then((raw) => sanitizeReadOnlyVault(raw).on, () => false)
+      if (!on) return true
+    }
     return new Promise((resolve) => setReadOnlyAsk({ root, resolve }))
   }, [scopeOf])
   const allowFileChanges = useCallback((root: string, choice: FileActionsFor) => scopeOf(root).readOnlyVault.allowFileActions(choice), [scopeOf])
@@ -535,7 +547,11 @@ export function App() {
     if (ask === null) return
     readOnlyAskNow.current = null
     setReadOnlyAsk(null)
-    if (choice !== false && choice !== null) scopeOf(ask.root).readOnlyVault.allowFileActions(choice)
+    if (choice !== false && choice !== null) {
+      const scope = scopeOf(ask.root)
+      if (scope.root === ask.root) scope.readOnlyVault.allowFileActions(choice)
+      else outsideAllowed.current.set(ask.root, Date.now() + FILE_ACTIONS_ALLOW[choice])
+    }
     ask.resolve(choice !== false)
   }, [scopeOf])
   /** A link to a page of a vault the app knows but this window does not show (YAZ-3609 D21): the sheet that asks to add it. */

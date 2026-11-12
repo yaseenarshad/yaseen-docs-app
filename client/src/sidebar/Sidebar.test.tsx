@@ -8790,6 +8790,29 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(4)
   })
 
+  it("YAZ-4985: a Paste of a Cut made in ANOTHER window's vault (one this window does not show, the app knows it) asks THAT vault too: refused, nothing is pasted; a path in no known vault asks only the target", async () => {
+    const onFileAction = vi.fn(async (root: string) => root !== '/w')
+    const { el, bridge } = await mount({ onFileAction }, async (b) => {
+      withClipboard(b)
+      // The vault of the other window: the app's list of vaults knows it (`storage.listVaults`).
+      b.state.get.mockResolvedValue({ ...defaultAppState(), recents: [{ path: '/w', lastOpened: 1 }] })
+      await storage.init()
+    })
+    act(() => pushClip?.(clipOf('cut', '/w/far.md')))
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(onFileAction.mock.calls).toEqual([['/v'], ['/w']])
+    expect(bridge.file.paste).not.toHaveBeenCalled()
+    // A cut of a folder no vault of the app holds is no vault's file: only the vault it lands in asks.
+    onFileAction.mockClear()
+    act(() => pushClip?.(clipOf('cut', '/elsewhere/x.md')))
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: '/elsewhere/x.md', to: '/v/sub/x.md', kind: 'file' }], failed: [] })
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(onFileAction.mock.calls).toEqual([['/v']])
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/sub', 'cut', '/elsewhere/x.md'))
+  })
+
   it('Cut on a single row clips that one path and SAYS SO (YAZ-1341); the menu closes', async () => {
     const { el, bridge, props } = await mount({}, withClipboard)
     rightClick(rowByPath(el, '/v/a.md'))

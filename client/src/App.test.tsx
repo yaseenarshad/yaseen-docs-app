@@ -72,6 +72,8 @@ interface SidebarStubProps {
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
+  /** App's read-only door (YAZ-4939, YAZ-4985): true = go on. */
+  onFileAction?: (root: string) => Promise<boolean>
   /** The vault lock's choices (YAZ-4985). */
   onAllowFileChanges?: (root: string, choice: 'minute' | 'ten') => void
   onLockFileChanges?: (root: string) => void
@@ -4528,6 +4530,35 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Docs/R.md'], true))
       expect(sheet()).toBeNull()
       expect(bridge.file.delete).toHaveBeenCalledTimes(3)
+    })
+
+    it("YAZ-4985: a vault that only ANOTHER window shows (a cut made there, pasted here) is asked by its own read-only file; its \"10 minutes\" is kept for it and never opens this window's vault", async () => {
+      const { el } = await mount({ ...defaultAppState(), recents: [{ path: '/w', lastOpened: 1 }] }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+      let answer: Promise<boolean> | undefined
+      act(() => void (answer = captured.sidebar?.onFileAction?.('/w')))
+      await act(async () => {})
+      expect(sheet()?.textContent).toBe('This vault (w) is read only. Allow this file change?')
+      await act(async () => button('10 minutes')?.click())
+      await expect(answer).resolves.toBe(true)
+      // Within the 10 minutes that vault does not ask again.
+      await act(async () => void (answer = captured.sidebar?.onFileAction?.('/w')))
+      await expect(answer).resolves.toBe(true)
+      expect(sheet()).toBeNull()
+      // This window's own read-only vault still asks: the allowance was the other vault's.
+      act(() => void (answer = captured.sidebar?.onFileAction?.('/v')))
+      await act(async () => {})
+      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow this file change?')
+      await act(async () => button('Cancel')?.click())
+      await expect(answer).resolves.toBe(false)
+      // A folder the app knows as no vault never asks.
+      await expect(captured.sidebar?.onFileAction?.('/nowhere')).resolves.toBe(true)
     })
 
     it('YAZ-4985: the sidebar lock and the ask box share ONE allowance: "1 minute" from the lock lets a move through with no ask, the lock counts it, and at zero the vault locks again by itself; the box\'s "1 minute" shows on the lock', async () => {

@@ -6,9 +6,10 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { isMarkdown, isSkipped } from '@shared/fileKind'
-import { BETWEEN_VAULTS, CLIP_CHANGED, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
+import { BETWEEN_VAULTS, CLIP_CHANGED, rootOfPath, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { playGestureSound } from '../../lib/gestureSound'
+import { storage } from '../../lib/storage'
 import type { MovedGesture } from '../../lib/moveHistory'
 import { gestureNotice, namedItems, onDisk, unlessFailed, type NoticeKind, type NoticeType } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
@@ -688,11 +689,15 @@ export function useFileClipboard(
         return onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
       if (now === null) return onNotice('Nothing to paste', 'info')
-      // A paste of a CUT moves the items out of their vault (YAZ-4985): each other vault of this window they leave asks too.
+      // A paste of a CUT moves the items out of their vault (YAZ-4985): each other vault they leave asks too — one of this
+      // window, or one the app knows that only ANOTHER window shows (the cut was made there). App's door reads that vault's
+      // own Read only. A path in no vault the app knows is no vault's file.
       if (allowFileAction !== undefined && now.op === 'cut') {
+        const known = storage.listVaults().map((vault) => vault.path)
         const from = new Set(now.paths.flatMap((path) => {
-          const vault = vaultOf(path).root
-          return vault !== target && path.startsWith(`${vault}/`) ? [vault] : []
+          const here = vaultOf(path).root
+          const vault = path.startsWith(`${here}/`) ? here : rootOfPath(known, path)
+          return vault !== null && vault !== target ? [vault] : []
         }))
         for (const vault of from) if (!(await allowFileAction(vault))) return
       }
