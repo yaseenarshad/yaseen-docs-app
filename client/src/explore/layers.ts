@@ -52,6 +52,33 @@ export function topNote(layers: readonly ExploreLayer[]): Extract<ExploreLayer, 
   return null
 }
 
+/* ---------- layers act like windows (round 6) ---------- */
+
+/**
+ * The layers from back to front. The list keeps its meaning (the open order: stack places, the trail, ‹ ›'s `from`);
+ * `order` is the front order as of the last raise, by id. A layer not in it opened after that raise, so it stands
+ * in front, in list order; a closed layer simply leaves.
+ */
+export function frontOrder<L extends { id: number }>(layers: readonly L[], order: readonly number[]): L[] {
+  if (order.length === 0) return [...layers]
+  const byId = new Map(layers.map((l) => [l.id, l]))
+  const out: L[] = []
+  for (const id of order) {
+    const layer = byId.get(id)
+    if (layer !== undefined) out.push(layer)
+  }
+  const raised = new Set(order)
+  for (const layer of layers) if (!raised.has(layer.id)) out.push(layer)
+  return out
+}
+
+/** The front order with layer `id` in front and the others in their order; the same order when it is in front or unknown. */
+export function raiseLayer(layers: readonly { id: number }[], order: readonly number[], id: number): readonly number[] {
+  const ids = frontOrder(layers, order).map((l) => l.id)
+  if (!ids.includes(id) || ids[ids.length - 1] === id) return order
+  return [...ids.filter((x) => x !== id), id]
+}
+
 /** A panel's width in a window `windowWidth` wide: its own, cut to leave `EDGE_GAP` at each side. */
 export const panelWidth = (kind: ExploreLayer['kind'], windowWidth: number): number => Math.max(240, Math.min(kind === 'search' ? SEARCH_WIDTH : NOTE_WIDTH, windowWidth - 2 * EDGE_GAP))
 

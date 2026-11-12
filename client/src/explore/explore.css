@@ -83,12 +83,12 @@
   }
 }
 
-/* The trail (YAZ-4925): chips at the top of the window, one per layer, the top one bold. Above every layer. */
+/* The trail (YAZ-4925): chips at the top of the window, one per layer, the front one bold. Above every layer (each layer's z-index is its place in the front order, 12 at most). */
 .explore__trail {
   position: absolute;
   top: 12px;
   left: 50%;
-  z-index: 1;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 2px;

@@ -84,6 +84,18 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
     placeAll()
   }, [layers, W, H, placeAll])
 
+  /**
+   * Before a layer behind moves (round 6: every layer you see takes the pointer): the layers over it in the list that
+   * were never moved stay where they stand now, so they do not follow it. "Next to the layer under it" places a NEW layer.
+   */
+  const pinAbove = useCallback((id: number) => {
+    const list = layersRef.current
+    for (const layer of list.slice(list.findIndex((l) => l.id === id) + 1)) {
+      const box = boxes.current.get(layer.id)
+      if (box !== undefined && !moved.current.has(layer.id)) moved.current.set(layer.id, box)
+    }
+  }, [])
+
   /** After a drag, a resize or a reset of the FIRST layer: its box is kept for the next stack of this window. */
   const keep = useCallback((id: number) => {
     const first = layersRef.current[0]
@@ -126,12 +138,13 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
       if (from === undefined) return
       // The keyboard stays where it is (the reading body, the editor): the press takes no focus.
       event.preventDefault()
+      pinAbove(id)
       track(id, 'grabbing', event, (dx, dy) => {
         moved.current.set(id, { ...from, x: from.x + dx, y: from.y + dy })
         placeAll()
       })
     },
-    [track, placeAll],
+    [track, placeAll, pinAbove],
   )
 
   const onGripDown = useCallback(
@@ -147,6 +160,7 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
       const { W, H } = size.current
       const right = from.x + from.width
       const bottom = from.y + from.height
+      pinAbove(id)
       track(id, grip.cursor, event, (dx, dy) => {
         let { x, y, width, height } = from
         if (grip.x === 1) width = clamp(from.width + dx, MIN_BOX_WIDTH, Math.max(MIN_BOX_WIDTH, W - x))
@@ -163,17 +177,18 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
         placeAll()
       })
     },
-    [layerEl, track, placeAll],
+    [layerEl, track, placeAll, pinAbove],
   )
 
   const reset = useCallback(
     (id: number, event: ReactMouseEvent) => {
       if (event.target instanceof Element && event.target.closest('button, input') !== null) return
+      pinAbove(id)
       moved.current.delete(id)
       placeAll()
       keep(id)
     },
-    [placeAll, keep],
+    [placeAll, keep, pinAbove],
   )
 
   return { onHeadDown, onGripDown, reset }

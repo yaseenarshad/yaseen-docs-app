@@ -10,7 +10,8 @@
  * E (read → edit), ⌘↵ (the top note in a tab, the stack closes), and ‹ › (round 3: a note opened from a search
  * steps through that search's rows in place, ← / → while reading, ⌘⌥↑ / ⌘⌥↓ in any mode; `shared/keys/explore.ts`).
  * A menu, a picker or a pop-up that takes Esc keeps it (the mini window's rule, YAZ-4547). At most 12 layers; a
- * 13th says so and opens nothing. Each layer moves like a cell note (round 3, `layerBoxes.ts`).
+ * 13th says so and opens nothing. Each layer moves like a cell note (round 3, `layerBoxes.ts`). The layers act like
+ * windows (round 6): a press on a layer behind brings it to the front (`frontOrder`); the keys and Esc go to the front one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
@@ -32,7 +33,7 @@ import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreR
 import { ExploreSearch, type SearchLink } from './ExploreSearch'
 import { textCandidates } from './exploreRows'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
-import { MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepPlace, stepResult, topNote, type ExploreLayer } from './layers'
+import { frontOrder, MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepPlace, stepResult, topNote, type ExploreLayer } from './layers'
 import './explore.css'
 
 export interface ExploreStackProps {
@@ -79,10 +80,16 @@ const reducedMotion = (): boolean => window.matchMedia?.('(prefers-reduced-motio
 /** A key typed into a field, an editor or a menu belongs to it, never to the stack's letters. */
 const inField = (target: EventTarget | null): boolean => target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="listbox"]') !== null
 
+/** What Tab can reach: the trail's chips and the front layer (round 6). */
+const TABBABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), [contenteditable="true"]'
+
 export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
+  /** The front order as of the last raise (round 6), by id: the list keeps the open order, this says which layer is in front. */
+  const [order, setOrder] = useState<readonly number[]>([])
+  const ordered = useMemo(() => frontOrder(layers, order), [layers, order])
   /**
    * A layer in edit on its way out (a close, ⌘↵, a menu row that closes the stack): its editor's pending save goes
    * through the one flush door first, so a read of the note anywhere (`savedFirst`) waits for it. The unmount's own
@@ -227,35 +234,37 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     return true
   }, [])
 
-  /** The top layer leaves: the exit motion, then it is gone; the last one closes the stack. */
-  const pop = useCallback(() => {
-    const live = layers.filter((l) => !leaving.has(l.id))
-    const top = live[live.length - 1]
-    if (top === undefined) return
-    if (top.kind === 'note' && top.mode === 'edit') void flushRenamedPath(top.path)
+  /** A layer leaves (the front one by default: Esc, the backdrop): the exit motion, then it is gone; the last one closes the stack. */
+  const close = useCallback((id?: number) => {
+    const live = ordered.filter((l) => !leaving.has(l.id))
+    const gone = id === undefined ? live[live.length - 1] : live.find((l) => l.id === id)
+    if (gone === undefined) return
+    if (gone.kind === 'note' && gone.mode === 'edit') void flushRenamedPath(gone.path)
     if (live.length === 1) {
       doors.current.onClose()
       return
     }
-    const ms = reducedMotion() ? 0 : top.kind === 'search' ? SEARCH_MS : NOTE_MS
+    const ms = reducedMotion() ? 0 : gone.kind === 'search' ? SEARCH_MS : NOTE_MS
     const remove = () => {
-      setLayers((prev) => prev.filter((l) => l.id !== top.id))
+      setLayers((prev) => prev.filter((l) => l.id !== gone.id))
       setLeaving((prev) => {
         const next = new Set(prev)
-        next.delete(top.id)
+        next.delete(gone.id)
         return next
       })
     }
     if (ms === 0) return remove()
-    setLeaving((prev) => new Set(prev).add(top.id))
+    setLeaving((prev) => new Set(prev).add(gone.id))
     const timer = setTimeout(() => {
       timers.current.delete(timer)
       remove()
     }, ms)
     timers.current.add(timer)
-  }, [layers, leaving])
+  }, [ordered, leaving])
+  const pop = useCallback(() => close(), [close])
 
-  const live = useMemo(() => layers.filter((l) => !leaving.has(l.id)), [layers, leaving])
+  /** The live layers from back to front: the last one is the front layer, the one the keys go to. */
+  const live = useMemo(() => ordered.filter((l) => !leaving.has(l.id)), [ordered, leaving])
   const top = live[live.length - 1]
   const topRef = useRef(top)
   topRef.current = top
@@ -276,16 +285,11 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     return () => document.removeEventListener(ZOOM_EVENT, onZoom, true)
   }, [setZoom])
 
-  /** The trail's click (YAZ-4925): back to `id`; the layers above it close at once, a note in edit among them saved first. */
-  const backTo = useCallback(
-    (id: number) => {
-      const at = layersRef.current.findIndex((l) => l.id === id)
-      if (at === -1 || at === layersRef.current.length - 1) return
-      for (const l of layersRef.current.slice(at + 1)) if (l.kind === 'note' && l.mode === 'edit') void flushRenamedPath(l.path)
-      setLayers((prev) => prev.slice(0, prev.findIndex((l) => l.id === id) + 1))
-    },
-    [],
-  )
+  /**
+   * A layer comes to the front (round 6): a press on it, or its chip in the trail. It keeps its box, scroll, search and
+   * mode; only the draw and key order change. The front layer takes the keyboard (its `active` effects).
+   */
+  const raise = useCallback((id: number) => setOrder((prev) => raiseLayer(layersRef.current, prev, id)), [])
 
   const setMode = useCallback((id: number, mode: 'read' | 'edit') => setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'note' && l.mode !== mode ? { ...l, mode } : l))), [])
   /**
@@ -334,6 +338,19 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     // A key inside an IME composition (Japanese input; keyCode 229 on some keyboards) is the composition's: Esc cancels it, nothing else.
     if (event.nativeEvent.isComposing || event.keyCode === 229) return
     const el = rootRef.current?.querySelector<HTMLElement>(`[data-layer="${top.id}"]`) ?? null
+    // Tab (round 6): the layers behind take the pointer, not the keyboard. Tab goes round the trail and the front layer only.
+    if (event.key === 'Tab' && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.altKey && el !== null) {
+      const chips = rootRef.current?.querySelectorAll<HTMLElement>('.explore__trail button') ?? []
+      const reach = [...chips, ...el.querySelectorAll<HTMLElement>(TABBABLE)].filter((e) => e.closest('[hidden]') === null)
+      const from = document.activeElement
+      if (reach.length === 0 || from === null) return
+      event.preventDefault()
+      const after = reach.filter((e) => (from.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0)
+      const before = reach.filter((e) => (from.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_PRECEDING) !== 0)
+      const next = event.shiftKey ? (before[before.length - 1] ?? reach[reach.length - 1]) : (after[0] ?? reach[0])
+      next.focus()
+      return
+    }
     if (event.key === 'Escape') {
       // The note menu's own Esc (the `ContextMenu` closes itself) and a menu's: nothing else closes.
       if (event.target instanceof Element && event.target.closest('.ctx-menu') !== null) return
@@ -385,7 +402,19 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     }
   }
 
-  // A click on the dim outside every layer: the top layer closes, as Esc does.
+  // A press on a layer behind brings it to the front (round 6), before the press does its own thing (a focus, ×, a drag).
+  const onPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+    const layer = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-layer]') : null
+    if (layer === null || top === undefined) return
+    const id = Number(layer.dataset.layer)
+    if (id !== top.id && !leaving.has(id)) raise(id)
+  }
+
+  /** For each search layer, the note from it nearest the front (round 3, round 6): its row is the one marked. */
+  const markedOf = new Map<number, { path: string; at: number }>()
+  for (const l of live) if (l.kind === 'note' && l.from !== undefined) markedOf.set(l.from.search, { path: l.path, at: l.from.at })
+
+  // A click on the dim outside every layer: the front layer closes, as Esc does.
   const onBackdropMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return
     event.preventDefault()
@@ -393,28 +422,28 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
   }
 
   return (
-    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" onKeyDown={onKeyDown} onMouseDown={onBackdropMouseDown}>
-      {/* The trail (YAZ-4925): one chip per layer from two layers on, the top one bold; a click goes back to that layer. */}
+    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" onKeyDown={onKeyDown} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
+      {/* The trail (YAZ-4925): one chip per layer from two layers on, in the open order, the front one bold; a click brings that layer to the front (round 6). */}
       {live.length > 1 && (
         <nav className="explore__trail" aria-label="Layers">
-          {live.map((layer, i) => (
+          {layers.filter((l) => !leaving.has(l.id)).map((layer, i) => (
             <span key={layer.id} className="explore__trail-step">
               {i > 0 && <span className="explore__trail-sep">›</span>}
-              <button type="button" className={`explore__chip${layer === top ? ' explore__chip--top' : ''}`} aria-current={layer === top ? 'true' : undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => backTo(layer.id)}>
+              <button type="button" className={`explore__chip${layer === top ? ' explore__chip--top' : ''}`} aria-current={layer === top ? 'true' : undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => raise(layer.id)}>
                 {layer.kind === 'search' ? 'Search' : nameOf(layer.path)}
               </button>
             </span>
           ))}
         </nav>
       )}
-      {layers.map((layer, index) => {
+      {layers.map((layer) => {
         const covered = layer !== top
         const out = leaving.has(layer.id)
         // The place and size come from `useLayerBoxes`, written to the style; only the motion's length is rendered.
-        const style = { '--explore-ms': `${layer.kind === 'search' ? SEARCH_MS : NOTE_MS}ms` } as CSSProperties
-        /** A search layer: the note over it that came from it, whose row stays marked (round 3). */
-        const above = layers[index + 1]
-        const marked = layer.kind === 'search' && above !== undefined && above.kind === 'note' && above.from?.search === layer.id ? { path: above.path, at: above.from.at } : null
+        // The draw order is the front order (round 6): the DOM keeps the open order, so no layer moves in it (a move would lose its scroll).
+        const style = { '--explore-ms': `${layer.kind === 'search' ? SEARCH_MS : NOTE_MS}ms`, zIndex: ordered.indexOf(layer) + 1 } as CSSProperties
+        /** A search layer: the note that came from it nearest the front, whose row stays marked (round 3). */
+        const marked = layer.kind === 'search' ? markedOf.get(layer.id) ?? null : null
         /** A note layer from a search: its place among that search's rows, and whether a step each way exists. */
         const rows = layer.kind === 'note' && layer.from !== undefined ? (links.current.get(layer.from.search)?.rows ?? []) : null
         const steps =
@@ -428,8 +457,10 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
             data-kind={layer.kind}
             className={`explore__layer explore__layer--${layer.kind}${covered ? ' explore__layer--covered' : ''}${out ? ' explore__layer--out' : ' explore__layer--in'}`}
             style={style}
-            // A covered layer stays on screen, at its scroll, and takes no click and no key.
-            inert={covered}
+            // A covered layer stays on screen, at its scroll; a press brings it to the front (round 6). Until then no key
+            // reaches it (the stack's keys go to the front layer, Tab goes round the front layer) and assistive tech skips it.
+            // A layer on its way out takes nothing.
+            inert={out}
             aria-hidden={covered}
           >
             {layer.kind === 'search' ? (
@@ -463,7 +494,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
                 onOpenInTab={toTab}
                 onHeadMenu={(x, y) => setMenu({ x, y, path: layer.path })}
                 noteMenu={() => noteSections(layer.path)}
-                onClose={pop}
+                onClose={() => close(layer.id)}
                 active={!covered}
               />
             )}

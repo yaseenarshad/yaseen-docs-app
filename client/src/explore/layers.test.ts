@@ -1,7 +1,7 @@
 /** The explore stack's model (YAZ-2571): the layer list, its cap, the top note, and where each layer stands. */
 import { describe, expect, it } from 'vitest'
 import { exploreRecents, MAX_EXPLORE_RECENTS, moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
-import { EDGE_GAP, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, NOTE_WIDTH, panelWidth, pushLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, stepPlace, stepResult, topNote, type ExploreLayer, type LayerBox } from './layers'
+import { EDGE_GAP, frontOrder, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, NOTE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, stepPlace, stepResult, topNote, type ExploreLayer, type LayerBox } from './layers'
 
 const search = (): ExploreLayer => ({ id: newLayerId(), kind: 'search' })
 const note = (path: string): ExploreLayer => ({ id: newLayerId(), kind: 'note', path, mode: 'read' })
@@ -22,6 +22,29 @@ describe('the layer list', () => {
     expect(topNote([search(), a, search()])).toBe(a)
     expect(topNote([search()])).toBeNull()
     expect(topNote([])).toBeNull()
+  })
+})
+
+describe('layers act like windows (round 6): the front order', () => {
+  it('with no raise the front order is the list; a raise puts one layer in front and the others keep their order', () => {
+    const [s, a, s2, b] = [search(), note('/v/a.md'), search(), note('/v/b.md')]
+    const list = [s, a, s2, b]
+    expect(frontOrder(list, [])).toEqual(list)
+    const order = raiseLayer(list, [], a.id)
+    expect(frontOrder(list, order)).toEqual([s, s2, b, a])
+    // Raised again: the search goes to the front, the rest keep their order.
+    expect(frontOrder(list, raiseLayer(list, order, s.id))).toEqual([s2, b, a, s])
+    // The front one raised: no change.
+    expect(raiseLayer(list, order, a.id)).toEqual(order)
+  })
+
+  it('a layer opened after a raise goes in front; a closed layer leaves the order; an unknown id changes nothing', () => {
+    const [s, a, b] = [search(), note('/v/a.md'), note('/v/b.md')]
+    const order = raiseLayer([s, a, b], [], s.id)
+    const c = note('/v/c.md')
+    expect(frontOrder([s, a, b, c], order)).toEqual([a, b, s, c])
+    expect(frontOrder([a, b, c], order)).toEqual([a, b, c])
+    expect(raiseLayer([s, a, b], order, 999)).toEqual(order)
   })
 })
 

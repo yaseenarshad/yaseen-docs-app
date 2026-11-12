@@ -200,10 +200,11 @@ describe('the explore stack', () => {
     expect(crepes[0].setReadonly).toHaveBeenCalledWith(true)
     expect(crepes[0].opts.features).toMatchObject({ [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false })
     expect(editors).toEqual([])
-    // The search under it stays mounted with its text, covered: no click and no key reach it.
+    // The search under it stays mounted with its text, covered: dimmed, out of assistive tech; a click brings it to the front (round 6).
     const search = layers()[0]
     expect(search.querySelector<HTMLInputElement>('.explore__input')?.value).toBe('alp')
-    expect(search.hasAttribute('inert')).toBe(true)
+    expect(search.hasAttribute('inert')).toBe(false)
+    expect(search.getAttribute('aria-hidden')).toBe('true')
     expect(search.classList.contains('explore__layer--covered')).toBe(true)
     expect(top().hasAttribute('inert')).toBe(false)
     // The reading body has the focus, so E and Esc are heard.
@@ -526,7 +527,7 @@ describe('the explore stack', () => {
     off()
   })
 
-  it('YAZ-4925: a trail of chips from two layers on, the top one bold; a click goes back to that layer, the layers above close, and the ones below keep their scroll', async () => {
+  it('YAZ-4925 + round 6: a trail of chips from two layers on, the front one bold; a click brings that layer to the front, every layer stays, each keeps its scroll', async () => {
     await mount()
     expect(el.querySelector('.explore__trail')).toBeNull()
     await typeQuery('alp')
@@ -538,18 +539,21 @@ describe('the explore stack', () => {
     await typeQuery('beta')
     await openResult()
     const chips = () => [...el.querySelectorAll<HTMLButtonElement>('.explore__chip')]
-    expect(chips().map((c) => [c.textContent, c.classList.contains('explore__chip--top')])).toEqual([['Search', false], ['alpha', false], ['Search', false], ['beta', true]])
+    const bold = () => chips().map((c) => [c.textContent, c.classList.contains('explore__chip--top'), c.getAttribute('aria-current')])
+    expect(bold()).toEqual([['Search', false, null], ['alpha', false, null], ['Search', false, null], ['beta', true, 'true']])
     act(() => chips()[1].click())
-    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note'])
-    expect(top().querySelector('.explore__body')).toBe(bodyA)
+    await flush()
+    // Nothing closes: alpha comes to the front, in its own place, at its scroll, with the keyboard.
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note', 'search', 'note'])
+    const front = live().filter((l) => !l.classList.contains('explore__layer--covered'))
+    expect(front).toEqual([layers()[1]])
     expect(bodyA.scrollTop).toBe(210)
-    expect(chips().map((c) => c.textContent)).toEqual(['Search', 'alpha'])
-    expect(chips()[1].classList.contains('explore__chip--top')).toBe(true)
-    // The top chip does nothing; the first search alone shows no trail.
+    expect(document.activeElement).toBe(bodyA)
+    expect(bold()).toEqual([['Search', false, null], ['alpha', true, 'true'], ['Search', false, null], ['beta', false, null]])
+    // The front chip does nothing.
     act(() => chips()[1].click())
-    expect(layers()).toHaveLength(2)
-    escape()
-    expect(el.querySelector('.explore__trail')).toBeNull()
+    expect(layers()).toHaveLength(4)
+    expect(bodyA.scrollTop).toBe(210)
   })
 
   it('YAZ-4926: ⇧Esc closes every layer from any depth, a note in edit flushed first; plain Esc still goes back one', async () => {
@@ -1033,5 +1037,219 @@ describe('round 5: find a note by a short ID number (YAZ-2571)', () => {
     await typeQuery('#5')
     expect(rows()).toEqual(['Release #5', 'Plan 5'])
     expect(chips()).toEqual([null, null])
+  })
+})
+
+describe('round 6: layers act like windows (YAZ-2571): a click on a layer behind brings it to the front', () => {
+  const TITLE_PATH: Record<string, string> = { Alpha: '/v/alpha.md', Beta: '/v/beta.md', 'conjecture (vocab)': '/v/conjecture.md' }
+  /** The front layer: the one live layer that is not covered. */
+  const front = () => {
+    const shown = live().filter((l) => !l.classList.contains('explore__layer--covered'))
+    expect(shown).toHaveLength(1)
+    return shown[0]
+  }
+  const press = (target: Element) => act(() => void target.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 })))
+  const z = (layer: HTMLElement) => Number(layer.style.zIndex)
+  const titleOf = (layer: HTMLElement) => layer.querySelector('.explore__title')?.textContent
+  const countOf = (layer: HTMLElement) => layer.querySelector('.explore__count')?.textContent
+  const activeRowOf = (layer: HTMLElement) => layer.querySelector('.search-results__row--active')?.getAttribute('title')
+  const mouse = (target: EventTarget, type: string, x: number, y: number) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y })))
+  /** Search › alpha › Search › beta: two searches, each with the note it opened. */
+  async function fourLayers() {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    render(2)
+    await flush()
+    await typeQuery('beta')
+    await openResult()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note', 'search', 'note'])
+  }
+  beforeEach(() => {
+    localStorage.removeItem('explore:box:search')
+    localStorage.removeItem('explore:box:note')
+    localStorage.removeItem('explore:zoom')
+  })
+
+  it('a press on the search behind brings it to the front with the keyboard; it keeps its query, selection and list scroll; the note keeps its box, scroll, zoom and mode; a press on the note brings it back', async () => {
+    await mount()
+    await typeQuery('a')
+    const paths = rows().map((t) => TITLE_PATH[t])
+    key(input(), { key: 'ArrowDown' })
+    await openResult()
+    const [search, note] = layers()
+    expect(countOf(note)).toBe('2/3')
+    const body = note.querySelector('.explore__body') as HTMLElement
+    body.scrollTop = 120
+    const list = search.querySelector('.explore__results') as HTMLElement
+    list.scrollTop = 40
+    const box = [note.style.left, note.style.top, note.style.width]
+    const zoomed = body.style.getPropertyValue('--document-zoom')
+    // No layer is inert: every layer you can see takes the pointer.
+    expect(layers().some((l) => l.hasAttribute('inert'))).toBe(false)
+    expect(z(note)).toBeGreaterThan(z(search))
+    press(list)
+    await flush()
+    expect(front()).toBe(search)
+    expect(z(search)).toBeGreaterThan(z(note))
+    expect(note.classList.contains('explore__layer--covered')).toBe(true)
+    expect(note.getAttribute('aria-hidden')).toBe('true')
+    expect(search.getAttribute('aria-hidden')).not.toBe('true')
+    expect(document.activeElement).toBe(search.querySelector('.explore__input'))
+    expect((search.querySelector('.explore__input') as HTMLInputElement).value).toBe('a')
+    expect(activeRowOf(search)).toBe(paths[1])
+    expect(list.scrollTop).toBe(40)
+    // The list keeps its meaning: the same elements in the same order; the note did not move.
+    expect(layers()).toEqual([search, note])
+    expect([note.style.left, note.style.top, note.style.width]).toEqual(box)
+    expect(body.scrollTop).toBe(120)
+    // The keys go to the front layer only: E types in the search, ← → are the field's.
+    key(search.querySelector('.explore__input') as HTMLElement, { key: 'e' })
+    expect(note.querySelector('.explore__mode')?.textContent).toBe('Reading')
+    press(body)
+    await flush()
+    expect(front()).toBe(note)
+    expect(document.activeElement).toBe(body)
+    expect(body.scrollTop).toBe(120)
+    expect(body.style.getPropertyValue('--document-zoom')).toBe(zoomed)
+    // In edit, raised away and back: still in edit, the same editor.
+    key(body, { key: 'e' })
+    await flush()
+    const editor = note.querySelector('[data-editor]')
+    expect(editor).not.toBeNull()
+    press(list)
+    await flush()
+    expect(front()).toBe(search)
+    press(note.querySelector('.explore__head') as HTMLElement)
+    await flush()
+    expect(front()).toBe(note)
+    expect(note.querySelector('.explore__mode')?.textContent).toBe('Editing')
+    expect(note.querySelector('[data-editor]')).toBe(editor)
+  })
+
+  it('× on a layer behind closes that layer only; the next layer in the front order comes to the front', async () => {
+    await fourLayers()
+    const [s, alpha, s2, beta] = layers()
+    const close = alpha.querySelector('[aria-label="Close this layer"]') as HTMLButtonElement
+    press(close)
+    act(() => close.click())
+    await flush()
+    expect(layers()).toEqual([s, s2, beta])
+    expect(front()).toBe(beta)
+    expect(document.activeElement).toBe(beta.querySelector('.explore__body'))
+    expect(props.onClose).not.toHaveBeenCalled()
+  })
+
+  it('Esc closes the front layer, then the next in the front order; ⇧Esc still closes all', async () => {
+    await fourLayers()
+    const [s, alpha, s2, beta] = layers()
+    press(alpha.querySelector('.explore__body') as HTMLElement)
+    await flush()
+    expect(front()).toBe(alpha)
+    escape()
+    await flush()
+    expect(layers()).toEqual([s, s2, beta])
+    expect(front()).toBe(beta)
+    expect(document.activeElement).toBe(beta.querySelector('.explore__body'))
+    // The first search to the front, then Esc: it closes, and beta (used before it) is the front again.
+    press(s.querySelector('.explore__results') as HTMLElement)
+    await flush()
+    expect(front()).toBe(s)
+    escape()
+    await flush()
+    expect(layers()).toEqual([s2, beta])
+    expect(front()).toBe(beta)
+    expect(props.onClose).not.toHaveBeenCalled()
+    key(document.activeElement as Element, { key: 'Escape', shiftKey: true })
+    expect(props.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('‹ › still follow the search that opened the note, after a raise; a second note from the same search marks its row there', async () => {
+    await mount()
+    await typeQuery('a')
+    const paths = rows().map((t) => TITLE_PATH[t])
+    await openResult()
+    render(2)
+    await flush()
+    await typeQuery('beta')
+    await openResult()
+    const [s, n1, , n2] = layers()
+    expect(countOf(n1)).toBe('1/3')
+    expect(countOf(n2)).toBe('1/1')
+    // The first note to the front: → steps through ITS search, the first one.
+    const body = n1.querySelector('.explore__body') as HTMLElement
+    press(body)
+    await flush()
+    key(body, { key: 'ArrowRight', code: 'ArrowRight' })
+    await flush()
+    await flush()
+    expect(titleOf(n1)).toBe(props.nameOf(paths[1]))
+    expect(countOf(n1)).toBe('2/3')
+    expect(countOf(n2)).toBe('1/1')
+    expect(activeRowOf(s)).toBe(paths[1])
+    // The first search to the front: ↓ ↵ opens the next row as a new note in front, from that search.
+    press(s.querySelector('.explore__results') as HTMLElement)
+    await flush()
+    key(s.querySelector('.explore__input') as HTMLElement, { key: 'ArrowDown' })
+    key(s.querySelector('.explore__input') as HTMLElement, { key: 'Enter' })
+    await flush()
+    await flush()
+    const n3 = layers()[4]
+    expect(front()).toBe(n3)
+    expect(countOf(n3)).toBe('3/3')
+    expect(activeRowOf(s)).toBe(paths[2])
+    key(n3.querySelector('.explore__body') as HTMLElement, { key: 'ArrowLeft', code: 'ArrowLeft' })
+    await flush()
+    await flush()
+    expect(countOf(n3)).toBe('2/3')
+    expect(activeRowOf(s)).toBe(paths[1])
+  })
+
+  it('a drag on a layer behind: the press brings it to the front, then it moves by its style only; a double click puts it back', async () => {
+    const nameOf = vi.fn((path: string) => path.slice(3, -3))
+    props = { ...props, nameOf }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const [search, note] = layers()
+    const noteBox = [note.style.left, note.style.top]
+    const start = { left: parseInt(search.style.left, 10), top: parseInt(search.style.top, 10) }
+    const grab = search.querySelector('.explore__grab') as HTMLElement
+    press(grab)
+    await flush()
+    expect(front()).toBe(search)
+    const renders = nameOf.mock.calls.length
+    mouse(grab, 'mousedown', 100, 100)
+    for (const [dx, dy] of [[10, 5], [-200, 30], [-300, 40]]) mouse(window, 'mousemove', 100 + dx, 100 + dy)
+    mouse(window, 'mouseup', -200, 140)
+    expect([search.style.left, search.style.top]).toEqual([`${Math.max(0, start.left - 300)}px`, `${start.top + 40}px`])
+    expect(nameOf.mock.calls.length).toBe(renders)
+    expect([note.style.left, note.style.top]).toEqual(noteBox)
+    act(() => void grab.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect([search.style.left, search.style.top]).toEqual([`${start.left}px`, `${start.top}px`])
+    // The note over it never followed: it was not moved, and it stays where it stood.
+    expect([note.style.left, note.style.top]).toEqual(noteBox)
+    expect(front()).toBe(search)
+  })
+
+  it('Tab stays in the front layer and the trail: it never lands in a layer behind', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const [search, note] = layers()
+    ;(note.querySelector('[aria-label="Close this layer"]') as HTMLElement).focus()
+    const seen = new Set<Element>()
+    for (let i = 0; i < 40; i++) {
+      key(document.activeElement as Element, { key: 'Tab' })
+      const at = document.activeElement as Element
+      seen.add(at)
+      expect(search.contains(at)).toBe(false)
+      expect(note.contains(at) || at.closest('.explore__trail') !== null).toBe(true)
+    }
+    // It went round: the trail and the note's own buttons both had it.
+    expect([...seen].some((e) => e.closest('.explore__trail') !== null)).toBe(true)
+    expect([...seen].some((e) => note.contains(e))).toBe(true)
+    key(document.activeElement as Element, { key: 'Tab', shiftKey: true })
+    expect(search.contains(document.activeElement)).toBe(false)
   })
 })
