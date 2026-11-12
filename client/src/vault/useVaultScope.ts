@@ -7,7 +7,7 @@ import { createWikilinkCandidateSource, type MutableWikilinkCandidateSource } fr
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { useGithubSync, type GithubSyncState } from '../hooks/useGithubSync'
 import { useWatch, type WatchSource } from '../hooks/useWatch'
-import type { NoticeKind } from '../lib/notice'
+import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { attentionCopy, type AttentionCopy } from '../lib/syncAttention'
 import { useVaultName } from '../lib/useVaultName'
 import { useExternalRenames, type ExternalRenames } from '../links/useExternalRenames'
@@ -84,7 +84,7 @@ export interface VaultScope {
 }
 
 /** `root` is nullable because `App` calls this for every slot: with no vault there is no bridge call. */
-export function useVaultScope(root: string | null, notify: (text: string, icon?: NoticeKind) => void): VaultScope {
+export function useVaultScope(root: string | null, notify: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void): VaultScope {
   const watch = useWatch(root)
   // Wikilinks (Links A, GRO-2190): ONE resolve source per vault — a stable object every editor's
   // wikilink plugin subscribes to; the vault's WikilinkIndexBridge keeps it fed from the vault

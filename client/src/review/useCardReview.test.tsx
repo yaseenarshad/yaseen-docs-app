@@ -77,9 +77,14 @@ vi.mock('../api', async (importOriginal) => {
 let root: Root | null = null
 let review: CardReviewApi
 const notices: string[] = []
+/** The last notice's button (the delete's Undo). */
+let noticeAction: { label: string; run: () => void } | undefined
 
 function Probe({ settings }: { settings: ReviewSettings }) {
-  review = useCardReview(ROOT, source, settings, (text) => void notices.push(text))
+  review = useCardReview(ROOT, source, settings, (text, _icon, _type, action) => {
+    notices.push(text)
+    noticeAction = action
+  })
   return null
 }
 
@@ -118,8 +123,8 @@ describe('useCardReview', () => {
     await act(async () => review.start())
     expect(review.session).toMatchObject({ label: 'Inbox', position: 1, total: 2 })
     expect(review.session?.card).toMatchObject({ path: `${ROOT}/Geo.md`, id: 'WIKI-1', isNew: false, page: { text: 'Capital of {{France}}?' } })
-    await act(async () => review.skip())
-    expect(review.session?.card).toMatchObject({ id: 'WIKI-3', isNew: true, page: { text: 'What is a {{cell}}?' } })
+    await act(async () => review.answer('again'))
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-3', isNew: true, page: { text: 'What is a {{cell}}?' } }))
   })
 
   it('an answer writes exactly the review the button showed, fixed when the buttons appeared — also a minute later', async () => {
@@ -176,9 +181,13 @@ describe('useCardReview', () => {
     expect(review.session).toBeNull()
   })
 
-  it('deleteReview works on any card, in a session or not', async () => {
+  it('deleteReview works on any card, in a session or not; its notice`s Undo writes the review back', async () => {
     await mount()
-    await act(async () => review.deleteReview(`${ROOT}/Geo.md`, 'WIKI-2', '2026-11-12T07:00Z'))
+    const before = reviewsOn('Geo.md', 'WIKI-2')
+    await act(async () => review.deleteReview(`${ROOT}/Geo.md`, 'WIKI-2', { at: '2026-11-12T07:00Z', rating: 'good' }))
     expect(reviewsOn('Geo.md', 'WIKI-2')).toEqual([])
+    expect([notices.at(-1), noticeAction?.label]).toEqual(['Review deleted', 'Undo'])
+    await act(async () => noticeAction?.run())
+    await vi.waitFor(() => expect(reviewsOn('Geo.md', 'WIKI-2')).toEqual(before))
   })
 })

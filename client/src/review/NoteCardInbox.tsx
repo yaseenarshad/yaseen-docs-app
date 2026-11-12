@@ -3,7 +3,8 @@
  * middle, in the Explore window's look, over the tab stack. The page under it never renders for it. Read-only: the
  * card is `renderNoteCard`, the page's own render. The session is `useCardReview`'s (YAZ-4967): this screen draws it.
  *
- *  - Head: the card title, the card ID small and grey (a click copies it, D20), "3 of 12", the page's name, ×.
+ *  - Head: the card ID first, small and grey (a click copies it, D20; its place in the page's card and the card window
+ *    too), the page's name (O), "3 of 12", ×. No card title: the card is right below it.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. After the last step the answer buttons show,
  *    and `showAnswers()` fixes what each one writes then (the hover is the truth, D13). A card with one side and no
@@ -11,14 +12,17 @@
  *  - The buttons (D5): Forgot · Remembered, or Again · Hard · Good · Easy, by the setting; the hover says when the
  *    card comes back ("Remembered · 9 days").
  *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (once the buttons show), ⌘Z, O (the page on top, landed on
- *    the card; Esc there comes back to this card at the same step), E (the same, in edit), ⌘↵ (the page in a
+ *    the card; Esc there comes back to this card at the same step), E (the same, in edit; to read in a read-only
+ *    vault — read only locks the text, not the review), ⌘↵ (the page in a
  *    background tab: the review stays), Esc (the review closes). A key typed in a field, or while a dialog or a menu
  *    is open (Explore is a dialog), is not the Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
- *  - Under the card, "Reviews (n)", closed (silence). Nothing left: "Inbox complete."
+ *  - The hint row shows a key only while it does something; the digits are on the buttons.
+ *  - Under the card, "Reviews (n)", closed (silence). Nothing left: "Inbox complete." for the vault; for one page or
+ *    folder "This page is done." and, quiet, "21 more in the Inbox", which starts the vault's review.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { answerLabel, answerRatings } from '@shared/cardSchedule'
-import { cardSides, cardTitle, hiddenCount } from '@shared/cardText'
+import { cardSides, hiddenCount } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
 import type { ExploreVault } from '../explore/ExploreNote'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
@@ -129,45 +133,61 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
         if (done && rating !== undefined && !event.repeat) void review.answer(rating)
         return
       }
-      if (key.kind === 'open' || key.kind === 'edit') return openPage(card.path, card.index, key.kind === 'edit')
+      // E opens the page in edit mode; in a read-only vault the page opens to read, as O does (the text stays locked).
+      if (key.kind === 'open' || key.kind === 'edit') return openPage(card.path, card.index, key.kind === 'edit' && !vaultOf(card.path).readOnly)
       if (key.kind === 'tab') return openInTab(card.path)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [advance, openPage, openInTab])
+  }, [advance, openPage, openInTab, vaultOf])
 
   const doors = useMemo(() => ({ openLayer, openTab: openLinkIn, onNotice }), [openLayer, openLinkIn, onNotice])
-  const title = text === null ? '' : cardTitle(text)
+  // The rest of the vault, after a review of one page or one folder: the way on.
+  const more = session.scope === 'vault' ? 0 : review.dueCount
+  const hints = noteCardInboxHints({ card: card !== null, answering: done, canUndo: session.canUndo, editable: card !== null && !vaultOf(card.path).readOnly })
 
   return (
     <div ref={rootRef} className="note-card-inbox" tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
       <div className="note-card-inbox__panel">
         <div className="explore__head note-card-inbox__head">
+          {/* The ID first, then the page (O opens it); no card title: the card is right below (say each thing once). */}
           {card === null ? (
             <span className="explore__title">{session.label}</span>
           ) : (
             <>
-              <span className="explore__title" title={card.path}>
-                {title}
-              </span>
               <NoteCardId id={card.id} onNotice={onNotice} />
+              <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path, card.index, false)}>
+                {nameOf(card.path)}
+              </button>
               <span className="note-card-inbox__place">
                 {session.position} of {session.total}
               </span>
-              <button type="button" className="note-card-strip__page" title="Open the page at this card (O)" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path, card.index, false)}>
-                {nameOf(card.path)}
-              </button>
             </>
           )}
-          <button type="button" className="explore__button" onMouseDown={(e) => e.preventDefault()} onClick={review.close} title="Close the review (Esc)" aria-label="Close the review">
+          <button type="button" className="explore__button" onMouseDown={(e) => e.preventDefault()} onClick={review.close} aria-label="Close the review">
             ×
           </button>
         </div>
         <div className="note-card-inbox__body">
           {card === null ? (
             <div className="note-card-inbox__done" role="status">
-              <p className="note-card-inbox__done-title">{session.label === 'Inbox' ? 'Inbox complete.' : `${session.label}: done.`}</p>
-              <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
+              {session.scope === 'vault' ? (
+                <>
+                  <p className="note-card-inbox__done-title">Inbox complete.</p>
+                  <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
+                </>
+              ) : (
+                <>
+                  <p className="note-card-inbox__done-title">{session.scope === 'page' ? 'This page is done.' : 'This folder is done.'}</p>
+                  {more > 0 ? (
+                    <button type="button" className="note-card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.start({})}>
+                      {more} more in the Inbox
+                    </button>
+                  ) : (
+                    <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
+                  )}
+                </>
+              )}
             </div>
           ) : (
             text !== null &&
@@ -180,7 +200,7 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
                   <div className="note-card-inbox__answers">
                     {session.answers.map((a, i) => {
                       const label = answerLabel(a.review.rating, review.settings)
-                      // The app's own hover box (a native title shows nothing in the app): when the card comes back.
+                      // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
                       const comesBack = `${label} · ${noteCardWait(a.interval)}`
                       return (
                         <HoverTip key={a.review.rating} text={comesBack}>
@@ -193,19 +213,17 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
                     })}
                   </div>
                 )}
-                <NoteCardReviews key={cardKey ?? ''} reviews={card.page.reviews} settings={review.settings} onDelete={(at) => void review.deleteReview(card.path, card.id, at)} defaultOpen={false} />
+                <NoteCardReviews key={cardKey ?? ''} reviews={card.page.reviews} settings={review.settings} onDelete={(gone) => void review.deleteReview(card.path, card.id, gone)} />
               </>
             )
           )}
         </div>
         <div className="explore__foot note-card-inbox__hints" aria-hidden="true">
-          {noteCardInboxHints(ratings.length)
-            .filter((h) => card !== null || h.keys === 'Esc' || (h.keys === '⌘Z' && session.canUndo))
-            .map((h) => (
-              <span key={h.label}>
-                <kbd>{h.keys}</kbd> {h.label}
-              </span>
-            ))}
+          {hints.map((h) => (
+            <span key={h.label}>
+              <kbd>{h.keys}</kbd> {h.label}
+            </span>
+          ))}
         </div>
       </div>
     </div>

@@ -3,12 +3,12 @@ import type { CardRating, CardReview } from '@shared/cardLine'
 import { cardQueue, previewAnswers, type CardAnswer, type DueCard } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
-import type { NoticeKind } from '../lib/notice'
+import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { folderTitle } from '../links/shortcuts'
 import { deleteCardReview, isCardGone, readCard, writeCardReview, type CardOnPage } from './cardFile'
 
 /**
- * Note card review as App sees it (YAZ-4967; the screen is YAZ-4962): how many cards are due, and the one review
+ * Note card review as App sees it (YAZ-4967): how many cards are due, and the one review
  * session a vault can have open. The queue comes from the index (`cardQueue`) and is taken ONCE, at start; a card is
  * checked against the live index only when its turn comes, and read from its page when it shows (the index holds no
  * text, D4). A card whose page or ID is gone is passed over.
@@ -33,6 +33,8 @@ export interface ShownCard extends DueCard {
 export interface CardReviewSession {
   /** "Inbox", the folder's title or the page's title. */
   label: string
+  /** What the session reviews: the done screen says what is true for it (a page done is not the Inbox done). */
+  scope: 'vault' | 'folder' | 'page'
   /** The card showing; null once nothing is left (the done screen). */
   card: ShownCard | null
   /** The showing card's place among the `total` the session started with. */
@@ -56,11 +58,12 @@ export interface CardReviewApi {
   answer: (rating: CardRating) => Promise<void>
   /** Removes the last answer's review and shows that card again. */
   undo: () => Promise<void>
-  /** Nothing written; the card comes back after the others. */
-  skip: () => void
   close: () => void
-  /** The Reviews table's delete (YAZ-4962): removes the review made at `at` from card `id` of `path`. Any card, in a session or not. */
-  deleteReview: (path: string, id: string, at: string) => Promise<void>
+  /**
+   * The Reviews table's delete (YAZ-4962): removes `review` from card `id` of `path`, any card, in a session or not.
+   * Its notice has Undo, which writes the review back (the app's undo of a file move is a notice the same way).
+   */
+  deleteReview: (path: string, id: string, review: CardReview) => Promise<void>
 }
 
 /** How many answers ⌘Z can take back in one session. */
@@ -87,7 +90,7 @@ const reason = (err: unknown): string => (err instanceof Error ? err.message : S
 const sameCard = (a: DueCard, b: DueCard): boolean => a.path === b.path && a.id === b.id
 const titleOf = (records: readonly IndexRecord[], path: string): string => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
 
-export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind) => void): CardReviewApi {
+export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void): CardReviewApi {
   const records = useSyncExternalStore(source.subscribe, () => source.records)
   const [session, setSession] = useState<Session | null>(null)
   // The card showing, read from its page, and its fixed answers: each for one turn (`turnKey`).
@@ -196,10 +199,6 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     [fixAnswers, onNotice, settle],
   )
 
-  const skip = useCallback(() => {
-    setSession((s) => (s === null || s.queue.length < 2 ? s : { ...s, queue: settle([...s.queue.slice(1), s.queue[0]], s.scope), turn: s.turn + 1 }))
-  }, [settle])
-
   const undo = useCallback(async () => {
     const last = live.current.session?.undo.at(-1)
     if (last === undefined || busy.current) return
@@ -217,20 +216,31 @@ export function useCardReview(root: string | null, source: IndexSource, settings
 
   const close = useCallback(() => setSession(null), [])
 
+  /** The card showing, when it is card `id` of `path`, is read again, and its answers fixed again, on its new log. */
+  const readAgain = useCallback((path: string, id: string) => {
+    const shown = live.current.session?.queue[0]
+    if (shown !== undefined && shown.path === path && shown.id === id) setSession((s) => (s === null ? s : { ...s, turn: s.turn + 1 }))
+  }, [])
+
   const deleteReview = useCallback(
-    async (path: string, id: string, at: string) => {
-      const done = await deleteCardReview(path, id, at).then(
+    async (path: string, id: string, review: CardReview) => {
+      const done = await deleteCardReview(path, id, review.at).then(
         () => true,
         (err: unknown) => {
           onNotice(`Can't delete the review: ${reason(err)}`, 'error')
           return false
         },
       )
-      // The card showing is read again, and its answers fixed again, on its new log.
-      const shown = live.current.session?.queue[0]
-      if (done && shown !== undefined && shown.path === path && shown.id === id) setSession((s) => (s === null ? s : { ...s, turn: s.turn + 1 }))
+      if (!done) return
+      readAgain(path, id)
+      const restore = () =>
+        void writeCardReview(path, id, review).then(
+          () => readAgain(path, id),
+          (err: unknown) => onNotice(`Can't put the review back: ${reason(err)}`, 'error'),
+        )
+      onNotice('Review deleted', 'info', 'undo', { label: 'Undo', run: restore, fades: true })
     },
-    [onNotice],
+    [onNotice, readAgain],
   )
 
   const shownSession = useMemo<CardReviewSession | null>(() => {
@@ -238,6 +248,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     const card = session.queue[0]
     return {
       label: session.label,
+      scope: session.scope.page !== undefined ? 'page' : session.scope.folder ? 'folder' : 'vault',
       card: card === undefined ? null : { ...card, page: loaded?.key === turnKey ? loaded.page : null },
       position: Math.min(session.total - session.queue.length + 1, session.total),
       total: session.total,
@@ -246,5 +257,5 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     }
   }, [session, loaded, fixed, turnKey])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, skip, close, deleteReview }
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview }
 }

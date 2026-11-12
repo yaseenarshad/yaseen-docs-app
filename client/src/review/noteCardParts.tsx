@@ -3,16 +3,15 @@
  * card drawn read-only (`renderNoteCard`, the page's own function) with its pills and links live, the grey card ID
  * that copies on a click (D20), and the Reviews section with the full table (D3, D13).
  */
-import { useContext, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type { CardReview } from '@shared/cardLine'
-import { answerLabel, cardHistory, cardState, dayCount, isCardDue } from '@shared/cardSchedule'
+import { answerLabel, cardHistory, dayCount, isCardDue } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { GestureAction } from '@shared/keys'
 import { api } from '../api'
 import { noteCardLook } from '../editor/createCrepe'
-import { linkClickAction } from '../editor/linkGesture'
 import { copyText } from '../editor/linkMenu'
-import { NOTE_CARD_LINK_ATTR, renderNoteCard, type NoteCardShow } from '../editor/noteCard/noteCardRender'
+import { NOTE_CARD_LINK_ATTR, noteCardLinkWhere, refreshNoteCardLook, renderNoteCard, type NoteCardShow } from '../editor/noteCard/noteCardRender'
 import { hrefTarget } from '../editor/pathPaste'
 import { linkPath } from '../editor/wikilink/wikilinkPlugin'
 import type { ExploreVault } from '../explore/ExploreNote'
@@ -30,13 +29,13 @@ export function noteCardDate(ms: number, now = Date.now()): string {
 /** A wait as the screens say it: "today" for 0 (Forgot brings the card back the same day), else "9 days". */
 export const noteCardWait = (days: number): string => (days === 0 ? 'today' : dayCount(days))
 
-/** The card ID in a head (D20): small and grey, after the title; a click copies it. The page's card block has the same (`noteCardView.ts`). */
+/** The card ID in a head (D20): small and grey, FIRST in the head; a click copies it. The page's card block has the same (`noteCardView.ts`). */
 export function NoteCardId({ id, onNotice }: { id: string; onNotice: (message: string) => void }) {
   return (
     <button
       type="button"
       className="note-card__id"
-      title="Copy card ID"
+      aria-label="Copy card ID"
       onMouseDown={(e) => {
         // Not the head's drag, and the keyboard stays where it is.
         e.preventDefault()
@@ -69,27 +68,26 @@ interface NoteCardBodyProps {
 }
 
 /**
- * The card read-only (D11, D13): `renderNoteCard` into a box, drawn again when the text, the steps or the index (the
- * pills' labels) change, never per render. A pill and a Markdown link open as the page's do (idea 6, `linkClickAction`).
+ * The card read-only (D11, D13): `renderNoteCard` into a box, drawn again when the text or the steps change, never per
+ * render; an index change redraws only the pills (`refreshNoteCardLook`). A pill and a Markdown link open as the
+ * page's do (idea 6, `noteCardLinkWhere`).
  */
 export function NoteCardBody({ text, path, vault, show, doors }: NoteCardBodyProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const icons = useContext(IconsContext)
   const { root, wikilinks, viewOnlyLinks } = vault
-  // The pills follow the index: a card with a link draws again on each snapshot.
-  const [indexTick, setIndexTick] = useState(0)
-  const hasLink = text.includes('[[')
-  useEffect(() => (hasLink ? wikilinks.subscribe(() => setIndexTick((n) => n + 1)) : undefined), [hasLink, wikilinks])
   const sides = show?.sides
   const shown = show?.shown
+  // `icons` is read at each draw; a change of the icon rules alone draws no card again (the preview panel's rule).
+  const iconsRef = useRef(icons)
+  iconsRef.current = icons
+  const lookOf = useCallback(() => noteCardLook(wikilinks, viewOnlyLinks, { root, notePath: path }, { icon: (target, folder) => fileIconDecoration(iconsRef.current, target, folder) }), [wikilinks, viewOnlyLinks, root, path])
   useEffect(() => {
-    const box = boxRef.current
-    if (box === null) return
-    const look = noteCardLook(wikilinks, viewOnlyLinks, { root, notePath: path }, { icon: (target, folder) => fileIconDecoration(icons, target, folder) })
-    box.replaceChildren(renderNoteCard(text, { sides, shown }, look))
-    // `icons` is read at each draw; a change of the icon rules alone draws no card again (the preview panel's rule).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, sides, shown, path, root, wikilinks, viewOnlyLinks, indexTick])
+    boxRef.current?.replaceChildren(renderNoteCard(text, { sides, shown }, lookOf()))
+  }, [text, sides, shown, lookOf])
+  // The pills follow the index: on each snapshot only they draw again.
+  const hasLink = text.includes('[[')
+  useEffect(() => (hasLink ? wikilinks.subscribe(() => boxRef.current !== null && refreshNoteCardLook(boxRef.current, lookOf())) : undefined), [hasLink, wikilinks, lookOf])
 
   const doorsRef = useRef(doors)
   doorsRef.current = doors
@@ -101,7 +99,7 @@ export function NoteCardBody({ text, path, vault, show, doors }: NoteCardBodyPro
     if (pill !== null) {
       event.preventDefault()
       event.stopPropagation()
-      const where = linkClickAction({ editable: true }, event, storage.getSettings()?.hotkeys) ?? (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey ? null : 'explore')
+      const where = noteCardLinkWhere(event, storage.getSettings()?.hotkeys)
       if (where === null) return
       const inner = pill.getAttribute(NOTE_CARD_LINK_ATTR) ?? ''
       const to = linkPath(inner, wikilinks, viewOnlyLinks)
@@ -129,23 +127,25 @@ export function NoteCardBody({ text, path, vault, show, doors }: NoteCardBodyPro
 interface NoteCardReviewsProps {
   reviews: readonly CardReview[]
   settings: ReviewSettings
-  /** The table's delete: the review made at `at`. Absent (a card with no ID yet): no delete. */
-  onDelete?: (at: string) => void
-  /** Open when it mounts: the card window's; the Inbox's starts closed (silence). */
-  defaultOpen: boolean
+  /** The table's delete of one review (its notice has Undo). Absent (a card with no ID yet): no delete. */
+  onDelete?: (review: CardReview) => void
   now?: number
 }
 
 /**
  * "Reviews (n)" (D3, D13): the full table, one row per review in time order — Answer, Days (since the review before),
- * Review date, Next due, a delete — and a last row for the review to come (its due date, no answer). A section with
- * a title, as "Linked mentions" is: the card window has no second footer section, so no tab strip.
+ * Review date, Next due, a delete — and a last row for the review to come: its due date under Next due ("Overdue ·
+ * Oct 18" when that day is past). A section with a title, as "Linked mentions" is, CLOSED until asked for: the strip
+ * and the Inbox say the state ("a footer lets the table expand", D13).
  */
-export function NoteCardReviews({ reviews, settings, onDelete, defaultOpen, now = Date.now() }: NoteCardReviewsProps) {
-  const [open, setOpen] = useState(defaultOpen)
+export function NoteCardReviews({ reviews, settings, onDelete, now = Date.now() }: NoteCardReviewsProps) {
+  const [open, setOpen] = useState(false)
+  // One replay: each row is a review's step; the last row's step is the card's state.
   const rows = cardHistory(reviews, settings)
-  const state = cardState(reviews, settings)
-  const next = state.due ?? now
+  const last = rows.at(-1)
+  const next = last?.due ?? now
+  const today = new Date(now).setHours(0, 0, 0, 0)
+  const nextDue = next < today ? `Overdue · ${noteCardDate(next, now)}` : isCardDue(next, now) ? 'Today' : noteCardDate(next, now)
   return (
     <section className="note-card-reviews">
       <button type="button" className="backlinks__header" aria-expanded={open} onClick={() => setOpen((o) => !o)} onMouseDown={(e) => e.preventDefault()}>
@@ -168,27 +168,28 @@ export function NoteCardReviews({ reviews, settings, onDelete, defaultOpen, now 
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.review.at}>
+            {/* Keyed by place: two reviews in one minute are two rows (`withoutCardReview` takes the last of them). */}
+            {rows.map((row, i) => (
+              <tr key={i}>
                 <td>{answerLabel(row.review.rating, settings)}</td>
                 <td>{row.elapsed}</td>
                 <td>{noteCardDate(Date.parse(row.review.at), now)}</td>
                 <td>{noteCardDate(row.due, now)}</td>
                 <td>
                   {onDelete !== undefined && (
-                    <button type="button" className="comments__action comments__action--danger" aria-label={`Delete the review of ${noteCardDate(Date.parse(row.review.at), now)}`} title="Delete this review" onMouseDown={(e) => e.preventDefault()} onClick={() => onDelete(row.review.at)}>
+                    <button type="button" className="comments__action comments__action--danger" aria-label={`Delete the review of ${noteCardDate(Date.parse(row.review.at), now)}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onDelete(row.review)}>
                       ×
                     </button>
                   )}
                 </td>
               </tr>
             ))}
-            {/* The review to come: its due date, no answer yet. */}
+            {/* The review to come: no answer and no review date yet; when it is due. */}
             <tr className="note-card-reviews__next">
               <td>Next</td>
-              <td>{rows.length === 0 ? '' : state.interval}</td>
-              <td>{isCardDue(next, now) ? 'Today' : noteCardDate(next, now)}</td>
+              <td>{last === undefined ? '' : last.interval}</td>
               <td />
+              <td>{nextDue}</td>
               <td />
             </tr>
           </tbody>

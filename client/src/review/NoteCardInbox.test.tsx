@@ -29,7 +29,7 @@ let review: CardReviewApi
 let props: NoteCardInboxProps
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false } }, position: 3, total: 12, answers: null, canUndo: false, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false } }, position: 3, total: 12, answers: null, canUndo: false, ...over }
 }
 
 function render() {
@@ -51,7 +51,6 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     }),
     answer: vi.fn(async () => {}),
     undo: vi.fn(async () => {}),
-    skip: vi.fn(),
     close: vi.fn(),
     deleteReview: vi.fn(async () => {}),
   }
@@ -89,13 +88,29 @@ afterEach(() => {
 })
 
 describe('the Inbox screen (YAZ-4962)', () => {
-  it('the head: the card title, the grey card ID, "3 of 12", the page name; the hint row says each key once', () => {
+  it('the head: the grey card ID first, the page name, "3 of 12" — no card title (the card is below); the hint row shows only keys that act now', async () => {
     mount(TWO_SIDES)
-    expect(el.querySelector('.explore__title')?.textContent).toBe('Capital of France')
-    expect(el.querySelector('.note-card__id')?.textContent).toBe('WIKI-9')
+    expect(el.querySelector('.explore__title')).toBeNull()
+    expect(el.querySelector('.note-card-inbox__head > .note-card__id:first-child')?.textContent).toBe('WIKI-9')
     expect(el.querySelector('.note-card-inbox__place')?.textContent).toBe('3 of 12')
     expect(el.querySelector('.note-card-strip__page')?.textContent).toBe('Cards')
-    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).toEqual(['Space', '1–2', '⌘Z', 'O', 'E', '⌘↵', 'Esc'])
+    const hints = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)
+    // Nothing to undo; the digits are on the buttons.
+    expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit page', '⌘↵ Open page in a new tab', 'Esc Close'])
+    for (let i = 0; i < 4; i++) press(' ')
+    await flush()
+    // The last step: Space has nothing more to show.
+    expect(hints()).toEqual(['O Open page', 'E Edit page', '⌘↵ Open page in a new tab', 'Esc Close'])
+  })
+
+  it('a read-only vault: E opens the page to read (no edit mode), and the hint row does not offer E', () => {
+    mount(TWO_SIDES)
+    const plain = props.vaultOf
+    props.vaultOf = (path) => ({ ...plain(path), readOnly: true })
+    render()
+    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).not.toContain('E')
+    press('e')
+    expect(props.openPage).toHaveBeenCalledExactlyOnceWith(PATH, 0, false)
   })
 
   it('Space (D18): the next hidden word, one at a time, in page order; then the next side, whose words show one by one; then the buttons, and showAnswers is called exactly then', async () => {
@@ -133,7 +148,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.showAnswers).toHaveBeenCalledOnce()
     await flush()
     expect(buttons().map((b) => b.getAttribute('aria-description'))).toEqual(['Again · today', 'Hard · 3 days', 'Good · 9 days', 'Easy · 20 days'])
-    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).toContain('1–4')
+    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).not.toContain('1–4')
     press('3')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good')
   })
@@ -204,6 +219,18 @@ describe('the Inbox screen (YAZ-4962)', () => {
     press(' ')
     press('o')
     expect(props.openPage).not.toHaveBeenCalled()
+  })
+
+  it('the done screen of "Review this page" says the page is done, and "N more in the Inbox" starts the vault`s review', () => {
+    mount(TWO_SIDES)
+    session = { ...session, label: 'Cards', scope: 'page', card: null }
+    render()
+    expect(el.querySelector('.note-card-inbox__done-title')?.textContent).toBe('This page is done.')
+    expect(el.querySelector('.note-card-inbox__done-line')).toBeNull()
+    const more = el.querySelector<HTMLButtonElement>('.note-card-inbox__done-more')!
+    expect(more.textContent).toBe('12 more in the Inbox')
+    act(() => more.click())
+    expect(review.start).toHaveBeenCalledExactlyOnceWith({})
   })
 
   it('the Reviews section under the card starts closed (silence) and opens with the full table', () => {

@@ -16,6 +16,7 @@ import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { notePageSwitches, type PageSwitches } from '@shared/pageSwitches'
 import type { CommentsOrder } from '@shared/types'
+import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -53,7 +54,7 @@ export interface ExploreVault {
   /** The vault's Read only (YAZ-4939): E asks with the timed "Allow edits" box before the layer edits. */
   readOnly?: boolean
   /** The vault's card review (YAZ-4962): the card window's strip and Reviews table read the settings; its delete writes. */
-  review?: { settings: ReviewSettings; deleteReview: (path: string, id: string, at: string) => Promise<void> }
+  review?: { settings: ReviewSettings; deleteReview: (path: string, id: string, review: CardReview) => Promise<void> }
 }
 
 interface ExploreNoteProps {

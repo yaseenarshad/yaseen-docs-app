@@ -34,13 +34,26 @@ export function noteCardInboxKey(event: KeyPress): NoteCardInboxKey | null {
   return null
 }
 
-/** The hint row (D18): each key once, quiet, in the order a review uses them. `answers` is the number of buttons. */
-export const noteCardInboxHints = (answers: number): { keys: string; label: string }[] => [
-  { keys: 'Space', label: 'Show' },
-  { keys: answers === 4 ? '1–4' : '1–2', label: 'Answer' },
-  { keys: '⌘Z', label: 'Undo' },
-  { keys: 'O', label: 'Open page' },
-  { keys: 'E', label: 'Edit' },
-  { keys: '⌘↵', label: 'New tab' },
+/** What the hint row knows of the moment: a key shows only while it does something (silence is the default). */
+export interface NoteCardInboxMoment {
+  /** A card shows (not the done screen). */
+  card: boolean
+  /** The buttons show: Space has no more to show. */
+  answering: boolean
+  canUndo: boolean
+  /** The page can open in edit mode (not a read-only vault). */
+  editable: boolean
+}
+
+/**
+ * The hint row (D18): each key once, quiet, in the order a review uses them, and only while it does something. The
+ * answer digits are on the buttons, so the row does not say them again.
+ */
+export const noteCardInboxHints = ({ card, answering, canUndo, editable }: NoteCardInboxMoment): { keys: string; label: string }[] => [
+  ...(card && !answering ? [{ keys: 'Space', label: 'Show' }] : []),
+  ...(canUndo ? [{ keys: '⌘Z', label: 'Undo' }] : []),
+  ...(card ? [{ keys: 'O', label: 'Open page' }] : []),
+  ...(card && editable ? [{ keys: 'E', label: 'Edit page' }] : []),
+  ...(card ? [{ keys: '⌘↵', label: 'Open page in a new tab' }] : []),
   { keys: 'Esc', label: 'Close' },
 ]

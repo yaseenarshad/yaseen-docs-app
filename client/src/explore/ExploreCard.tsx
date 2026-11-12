@@ -1,12 +1,16 @@
 /**
  * A card layer of the explore stack (YAZ-4962, D13): ONE note card of a page, read-only, with what review knows of it.
  *
- *  - Head: the card title (`cardTitle`), the card ID small and grey (a click copies it, D20), ⋯ and ×, as every layer.
+ *  - Head: the card ID first, small and grey (a click copies it, D20) — its place in the page's card and the Inbox
+ *    too —, then the card title (`cardTitle`, the layer's name, as every layer has one; "New note card" for an empty
+ *    card), ↗, ⋯ and ×. The ⋯ menu: Open page, Open page in a new tab, Turn review off / on, Reset history (D13, the
+ *    card line through `changeCardLine`, the app's own write), Copy card ID.
  *  - The card, everything shown (`renderNoteCard`), its pills and links live: a click opens the page on top, a bound
  *    gesture (⌘-click) a tab.
- *  - The strip: the page's name (a click opens the page on top, landed on the card), the last answer, the wait, the
- *    next due date and the recall chance ("83%", idea 11). A card with no review says "New", never empty numbers.
- *  - "Reviews (n)": the full table with a delete on each row (`deleteReview`).
+ *  - The strip: the page's name (a click opens the page on top, landed on the card), then each fact with a quiet label:
+ *    Last answer, Interval, Due, Recall ("83%", idea 11). A card with no review says "New", with no label.
+ *  - "Reviews (n)": the full table, closed until asked for (the strip says the state; D13 "a footer lets the table
+ *    expand"), a delete on each row (`deleteReview`, with Undo in its notice).
  *
  * The card is read from its page (`readCardAt`: by ID, or by its place while it has none) and read again whenever the
  * index has a new version of the page: an answer in the Inbox or a delete elsewhere shows here at once.
@@ -15,7 +19,9 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouse
 import { answerLabel, cardState, recallChance } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
-import { readCardAt, type CardAtPage } from '../review/cardFile'
+import { withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
+import { changeCardLine, readCardAt, type CardAtPage } from '../review/cardFile'
+import { HoverTip } from '../components/HoverTip'
 import { NoteCardBody, NoteCardId, NoteCardReviews, noteCardDate, noteCardWait } from '../review/noteCardParts'
 import { copyText } from '../editor/linkMenu'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
@@ -99,10 +105,18 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
   const deleteReview =
     review === undefined || card === null || card.id === null
       ? undefined
-      : (at: string) => {
+      : (gone: CardReview) => {
           const cardIdNow = card.id
-          if (cardIdNow !== null) void review.deleteReview(path, cardIdNow, at).then(() => read())
+          if (cardIdNow !== null) void review.deleteReview(path, cardIdNow, gone).then(() => read())
         }
+  /** A ⋯ change of the card line (D13): a write of the file as the app's own, then the card read again. */
+  const changeLine = (change: Parameters<typeof changeCardLine>[2]) => {
+    if (card === null || card.id === null) return
+    changeCardLine(path, card.id, change, card.index).then(
+      () => read(),
+      (err: unknown) => onNotice(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`),
+    )
+  }
 
   return (
     <>
@@ -112,27 +126,39 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
         onMouseDown={onHeadDown}
         onDoubleClick={onHeadReset}
       >
-        <span ref={titleRef} className={`explore__title${title === '' ? ' note-card__title--empty' : ''}`} title={path}>
-          {loaded.kind === 'loading' ? '' : title === '' ? 'Note card' : title}
-        </span>
         {id !== null && <NoteCardId id={id} onNotice={onNotice} />}
+        <span ref={titleRef} className={`explore__title${title === '' ? ' note-card__title--empty' : ''}`}>
+          {loaded.kind === 'loading' ? '' : title === '' ? 'New note card' : title}
+        </span>
         <span className="explore__fold">
-          <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} title="Open the page in a tab and close the stack (⌘↵)" aria-label="Open the page in a tab">
-            ↗
-          </button>
+          <HoverTip text="Open page in a new tab (⌘↵)">
+            <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} aria-label="Open page in a new tab">
+              ↗
+            </button>
+          </HoverTip>
         </span>
         <HeadMore
           sections={() => [
             [
-              { id: 'open-page', label: 'Open the page', onSelect: () => onOpenPage(card?.index ?? index) },
-              { id: 'open-tab', label: 'Open the page in a tab', hint: '⌘↵', onSelect: onOpenInTab },
-              ...(id === null ? [] : [{ id: 'copy-id', label: 'Copy card ID', hint: id, onSelect: () => copyText(id, 'card ID', onNotice, undefined, true) }]),
+              { id: 'open-page', label: 'Open page', onSelect: () => onOpenPage(card?.index ?? index) },
+              { id: 'open-tab', label: 'Open page in a new tab', hint: '⌘↵', onSelect: onOpenInTab },
             ],
+            ...(card === null || card.id === null
+              ? []
+              : [
+                  [
+                    { id: 'review-off', label: card.off ? 'Turn review on' : 'Turn review off', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
+                    ...(card.reviews.length === 0 ? [] : [{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => changeLine(withoutCardReviews) }]),
+                  ],
+                ]),
+            ...(id === null ? [] : [[{ id: 'copy-id', label: 'Copy card ID', hint: id, onSelect: () => copyText(id, 'card ID', onNotice, undefined, true) }]]),
           ]}
         />
-        <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onClose} title="Close this layer (Esc)" aria-label="Close this layer">
-          ×
-        </button>
+        <HoverTip text="Close (Esc)">
+          <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onClose} aria-label="Close this layer">
+            ×
+          </button>
+        </HoverTip>
       </div>
       <div ref={bodyRef} className="explore__body explore__body--card" tabIndex={-1} data-explore-card>
         {loaded.kind === 'gone' && <p className="editor-msg">This card is no longer there</p>}
@@ -142,7 +168,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
               <NoteCardBody text={card.text} path={path} vault={vault} doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }} />
             </div>
             <NoteCardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage(card.index)} />
-            {review !== undefined && <NoteCardReviews reviews={card.reviews} settings={review.settings} onDelete={deleteReview} defaultOpen />}
+            {review !== undefined && <NoteCardReviews reviews={card.reviews} settings={review.settings} onDelete={deleteReview} />}
           </>
         )}
       </div>
@@ -151,33 +177,34 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
 }
 
 /**
- * The strip under the card (D13, idea 11): the page, then what review knows, each said once. A card with no review is
- * "New"; a card with review off says so.
+ * The strip under the card (D13, idea 11): the page, then what review knows, each said once with a quiet label in the
+ * reader's words. A card with no review is "New"; a card with review off says so.
  */
 function NoteCardStrip({ card, pageName, vault, onOpenPage }: { card: CardAtPage; pageName: string; vault: ExploreVault; onOpenPage: () => void }) {
   const settings = vault.review?.settings
-  const facts: { key: string; text: string; title?: string }[] = []
+  const facts: { key: string; label?: string; text: string }[] = []
   if (card.off) facts.push({ key: 'off', text: 'Review off' })
   if (settings !== undefined) {
     const state = cardState(card.reviews, settings)
-    const last = card.reviews.length === 0 ? null : [...card.reviews].sort((a, b) => (a.at < b.at ? -1 : 1)).at(-1)!
-    if (state.isNew || last === null) facts.push({ key: 'new', text: 'New' })
+    const last = state.lastReview === null ? null : card.reviews.filter((r) => r.at === state.lastReview).at(-1)
+    if (state.isNew || last == null) facts.push({ key: 'new', text: 'New' })
     else {
       const now = Date.now()
       const chance = recallChance(card.reviews, settings, now)
-      facts.push({ key: 'last', text: answerLabel(last.rating, settings), title: `Last answer, ${noteCardDate(Date.parse(last.at), now)}` })
-      facts.push({ key: 'wait', text: noteCardWait(state.interval), title: 'The wait the last answer set' })
-      if (state.due !== null) facts.push({ key: 'due', text: `Due ${noteCardDate(state.due, now)}`, title: 'The next review' })
-      if (chance !== null) facts.push({ key: 'recall', text: `${Math.round(chance * 100)}%`, title: 'The chance you remember it now' })
+      facts.push({ key: 'last', label: 'Last answer', text: `${answerLabel(last.rating, settings)}, ${noteCardDate(Date.parse(last.at), now)}` })
+      facts.push({ key: 'wait', label: 'Interval', text: noteCardWait(state.interval) })
+      if (state.due !== null) facts.push({ key: 'due', label: 'Due', text: noteCardDate(state.due, now) })
+      if (chance !== null) facts.push({ key: 'recall', label: 'Recall', text: `${Math.round(chance * 100)}%` })
     }
   }
   return (
     <div className="note-card-strip">
-      <button type="button" className="note-card-strip__page" title="Open the page at this card" onMouseDown={keepFocus} onClick={onOpenPage}>
+      <button type="button" className="note-card-strip__page" onMouseDown={keepFocus} onClick={onOpenPage}>
         {pageName}
       </button>
       {facts.map((f) => (
-        <span key={f.key} className="note-card-strip__fact" title={f.title}>
+        <span key={f.key} className="note-card-strip__fact">
+          {f.label !== undefined && <span className="note-card-strip__label">{f.label}</span>}
           {f.text}
         </span>
       ))}

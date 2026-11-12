@@ -2245,7 +2245,8 @@ export function App() {
     onWhatsNew: openWhatsNew,
     onKeySheet: openKeySheet,
     onExportImage: exportImage,
-    onExportDrawing: reviewer === null ? exportDrawing : review.skip,
+    // A board under the Inbox is not on show: its export key does nothing while a review is open.
+    onExportDrawing: reviewer === null ? exportDrawing : () => undefined,
     onShareLink: shareActiveBoard,
     onCanvasBackground: setCanvasBackground,
   })

@@ -48,6 +48,9 @@ export interface Notice {
   action?: { label: string; run: () => void; fades?: true }
 }
 
+/** A notice's one button (`Notice.action`). */
+export type NoticeAction = NonNullable<Notice['action']>
+
 /** "1 item" / "3 items" — the one spelling the menu's labels and the notices share. */
 export const countItems = (n: number) => (n === 1 ? '1 item' : `${n} items`)
 

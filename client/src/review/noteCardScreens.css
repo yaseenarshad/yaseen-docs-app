@@ -37,6 +37,14 @@
   text-decoration: underline;
 }
 
+/* A fact's label (D13): quiet, small and grey, before its value. */
+.note-card-strip__label {
+  margin-right: 4px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  opacity: 0.8;
+}
+
 /* "Reviews (n)": the "Linked mentions" header, then the table. */
 .note-card-reviews {
   margin-top: 16px;
@@ -158,6 +166,24 @@
   margin: 0;
   font-size: 13px;
   color: var(--fg-muted);
+}
+.note-card-inbox__done-more {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.note-card-inbox__done-more:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+/* The page's name in the Inbox head takes the room the title had. */
+.note-card-inbox__page {
+  margin-right: auto;
 }
 .note-card-inbox__hints {
   flex-wrap: wrap;

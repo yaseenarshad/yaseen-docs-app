@@ -30,14 +30,15 @@ import { ago } from './recentSections'
 
 type Crepe = { opts: Record<string, unknown> & { root: HTMLElement; defaultValue?: string; wikilinkNav?: { openCurrent: (path: string) => void }; markdownLinkNav?: { openPath: (path: string, where: string) => void } }; create: Mock; setReadonly: Mock; destroy: Mock }
 
-const { readFile, index, openLink, crepes } = vi.hoisted(() => ({
+const { readFile, writeFile, index, openLink, crepes } = vi.hoisted(() => ({
   readFile: vi.fn<(path: string) => Promise<{ path: string; content: string; mtime: number; size: number }>>(),
+  writeFile: vi.fn<(req: { path: string; content: string }) => Promise<{ path: string; mtime: number; size: number }>>(),
   index: vi.fn(),
   openLink: vi.fn(),
   crepes: [] as Crepe[],
 }))
 
-vi.mock('../api', () => ({ api: { readFile, index, shell: { openLink } } }))
+vi.mock('../api', () => ({ api: { readFile, writeFile, index, shell: { openLink } } }))
 vi.mock('../editor/createCrepe', () => ({
   createCrepe: vi.fn((opts: Crepe['opts']) => {
     const inst: Crepe = { opts, create: vi.fn(async () => {}), setReadonly: vi.fn(), destroy: vi.fn() }
@@ -2161,21 +2162,29 @@ describe('the card window (YAZ-4962)', () => {
     props.vaultOf = () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, review: { settings: SETTINGS, deleteReview } })
   })
   const strip = () => [...top().querySelectorAll('.note-card-strip > *')].map((e) => e.textContent)
-  const tableRows = () => [...top().querySelectorAll('.note-card-reviews__table tbody tr')].map((tr) => [...tr.querySelectorAll('td')].slice(0, 4).map((td) => td.textContent))
+  /** The Reviews table, opened first (it starts closed: the strip says the state). */
+  const tableRows = () => {
+    const header = top().querySelector<HTMLButtonElement>('.note-card-reviews .backlinks__header')!
+    if (header.getAttribute('aria-expanded') === 'false') act(() => header.click())
+    return [...top().querySelectorAll('.note-card-reviews__table tbody tr')].map((tr) => [...tr.querySelectorAll('td')].slice(0, 4).map((td) => td.textContent))
+  }
+  const factText = (i: number) => top().querySelectorAll('.note-card-strip > *')[i]
 
-  it('opens from the ask with the card: its title, the grey ID that copies, everything shown; a new card says "New", and its table has only the review to come', async () => {
+  it('opens from the ask with the card: the grey ID first, then its title, everything shown; a new card says "New", and its table has only the review to come', async () => {
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()
     await flush()
     expect(layers().map((l) => l.dataset.kind)).toEqual(['card'])
     expect(top().querySelector('.explore__title')?.textContent).toBe('Capital of France')
     expect(top().querySelector('.explore__head .note-card__id')?.textContent).toBe('WIKI-9')
+    expect(top().querySelector('.explore__head .note-card__id + .explore__title')).not.toBeNull()
     expect(top().querySelectorAll('.note-card__side')).toHaveLength(2)
     expect([...top().querySelectorAll('.note-card__hidden')].map((s) => s.textContent)).toEqual(['France', 'Paris'])
     expect(top().querySelector('.note-card__blank')).toBeNull()
     expect(strip()).toEqual(['cards', 'New'])
     expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (0)')
-    expect(tableRows()).toEqual([['Next', '', 'Today', '']])
+    expect(top().querySelector('.note-card-reviews__table')).toBeNull()
+    expect(tableRows()).toEqual([['Next', '', '', 'Today']])
   })
 
   it('a card with reviews: the strip says the last answer, the wait, the next due date and the recall chance; each row of the table deletes its review', async () => {
@@ -2185,10 +2194,12 @@ describe('the card window (YAZ-4962)', () => {
     await flush()
     const facts = strip()
     expect(facts[0]).toBe('cards')
-    expect(facts[1]).toBe('Remembered')
-    expect(facts[2]).toMatch(/^\d+ days?$|^today$/)
-    expect(facts[3]).toMatch(/^Due /)
-    expect(facts[4]).toMatch(/^\d+%$/)
+    // Each fact has a quiet label in the reader's words.
+    expect([...top().querySelectorAll('.note-card-strip__label')].map((l) => l.textContent)).toEqual(['Last answer', 'Interval', 'Due', 'Recall'])
+    expect(facts[1]).toBe('Last answerRemembered, Jan 11')
+    expect(factText(2).lastChild?.textContent).toMatch(/^\d+ days?$|^today$/)
+    expect(factText(3).textContent).toMatch(/^Due/)
+    expect(factText(4).lastChild?.textContent).toMatch(/^\d+%$/)
     expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (3)')
     const rows = tableRows()
     expect(rows.map((r) => r[0])).toEqual(['Remembered', 'Forgot', 'Remembered', 'Next'])
@@ -2197,7 +2208,32 @@ describe('the card window (YAZ-4962)', () => {
     const deletes = top().querySelectorAll<HTMLButtonElement>('.note-card-reviews__table .comments__action--danger')
     expect(deletes).toHaveLength(3)
     act(() => deletes[1].click())
-    expect(deleteReview).toHaveBeenCalledExactlyOnceWith(PAGE, 'WIKI-9', '2026-01-10T09:00Z')
+    expect(deleteReview).toHaveBeenCalledExactlyOnceWith(PAGE, 'WIKI-9', { at: '2026-01-10T09:00Z', rating: 'again' })
+  })
+
+  it('D13: the ⋯ menu turns review off and on and resets the history, through the card line of the file', async () => {
+    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->')
+    writeFile.mockImplementation(async ({ path, content }) => {
+      files[path] = content
+      return { path, mtime: 2, size: content.length }
+    })
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    const pick = async (label: string) => {
+      act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
+      const item = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
+      expect(item, label).toBeDefined()
+      act(() => item!.click())
+      await flush()
+      await flush()
+    }
+    await pick('Turn review off')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, off, 2026-01-02T09:00Z good -->')
+    expect(strip()).toContain('Review off')
+    await pick('Turn review on')
+    await pick('Reset history')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9 -->\n')
   })
 
   it('stays live: a new version of the page in the index reads the card again (an answer in the Inbox shows here)', async () => {
@@ -2214,7 +2250,7 @@ describe('the card window (YAZ-4962)', () => {
     feed(2)
     await flush()
     await flush()
-    expect(strip()[1]).toBe('Remembered')
+    expect(strip()[1]).toBe('Last answerRemembered, Jan 2')
     expect(tableRows().map((r) => r[0])).toEqual(['Remembered', 'Next'])
   })
 
