@@ -71,7 +71,7 @@ interface SidebarStubProps {
   onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[] }, text: string, skipped: boolean) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
-  onDeleteEntries: (paths: string[]) => Promise<void>
+  onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
   onDraggedOut: (paths: string[]) => void
   pendingSearchFocus: boolean
   pendingSearchClear: boolean
