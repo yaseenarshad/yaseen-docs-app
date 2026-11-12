@@ -69,8 +69,8 @@ async function mount(markdown: string, withDoors = true, letters: VaultsOfLetter
 }
 
 /** A note with one Markdown link; `inApp` finds `/Other/Plan.md` for a relative href. */
-async function mountMarkdown(markdown: string) {
-  const nav: Partial<MarkdownLinkNav> = { open: vi.fn(), copy: vi.fn().mockResolvedValue(undefined), onNotice: vi.fn() }
+async function mountMarkdown(markdown: string, extra: Partial<MarkdownLinkNav> = {}) {
+  const nav: Partial<MarkdownLinkNav> = { open: vi.fn(), copy: vi.fn().mockResolvedValue(undefined), onNotice: vi.fn(), ...extra }
   const m = await mountWith(markdown, (acts) => {
     Object.assign(nav, acts, {
       inApp: (href: string) => (href.startsWith('../') ? '/Other/Plan.md' : null),
@@ -183,6 +183,14 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(['VS Code', 'Default app', '──', 'Reveal in Finder'])
+  })
+
+  it('YAZ-4936: a Markdown pill to a note has "Open in Explore" too, and it opens the page through `openPath` with "explore"', async () => {
+    const { root, view, nav } = await mountMarkdown('[the plan](../Other/Plan.md)\n', { exploreClick: () => false })
+    const menu = menuOf(root, view, 'the plan')
+    expect(shape(menu).slice(0, 3)).toEqual(['Open', 'Open in new tab', 'Open in Explore'])
+    rowOf(menu, 'Open in Explore').click()
+    expect(nav.openPath).toHaveBeenCalledWith('/Other/Plan.md', 'explore')
   })
 
   it('a Markdown link into another vault of the window: no top line (the pill shows its vault), Copy name, and the place rows of its page', async () => {

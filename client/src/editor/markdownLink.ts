@@ -28,6 +28,7 @@ import { isBoardSrc } from './drawing/boardEmbedText'
 import { inCellOrNote } from './table/cellBlocks'
 import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import { linkClickAction } from './linkGesture'
+import type { LinkWhere } from './wikilink/wikilinkClick'
 import { fileLabel } from '../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkActions, type LinkMenu } from './linkMenu'
 import { followDrag, nearerEdge } from './wikilink/wikilinkClick'
@@ -38,8 +39,10 @@ export interface MarkdownLinkNav extends LinkActions {
   open: (href: string) => Promise<void> | void
   /** A link to a page, folder or file of this vault (YAZ-3609 D8): its path, or null to leave it to `open`. */
   inApp?: (href: string) => string | null
-  /** Opens that path where the open gesture says (YAZ-3936): this tab, a new tab or a background tab. */
-  openPath?: (path: string, where: GestureAction) => void
+  /** Opens that path where the open gesture says (YAZ-3936): this tab, a new tab or a background tab, or Explore (YAZ-4936). */
+  openPath?: (path: string, where: LinkWhere) => void
+  /** This vault's "Clicking a link" (YAZ-4936), read at each click: a plain click on a note pill opens it in Explore. A Markdown pill behaves as a [[link]] does. */
+  exploreClick?: () => boolean
   /** The user's changes of Settings › Hotkeys (`settings.hotkeys`), read at each click: the gestures that open a link. Absent → the defaults. */
   hotkeys?: () => HotkeyOverrides | undefined
   /** A link into a vault the app knows but this window does not show (YAZ-3609 D21): true when the host asked to add it. */
@@ -200,7 +203,7 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
  * has the place rows (Show in sidebar, Copy path, Focus, Favorites, "Open in ▸"). Any other link opens only through
  * the OS, and "Copy address" copies its href.
  */
-function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: GestureAction) => void): LinkMenu {
+function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: LinkWhere) => void): LinkMenu {
   const path = nav.vaultPath?.(hit.href) ?? null
   // The page's name as the sidebar shows it (YAZ-3778 D2): no `.md`, no drawing's or diagram's extension.
   const name = path === null ? null : fileLabel(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1))
@@ -212,6 +215,8 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
     labels: [],
     open: local ? undefined : () => follow(hit.href, 'thisTab'),
     openNew: path === null ? undefined : () => follow(hit.href, 'backgroundTab'),
+    // "Open in Explore" (YAZ-4936): a note that is there, as on a [[link]]; the host's `openPath` takes 'explore'.
+    openExplore: found !== null && fileKind(found) === 'markdown' && nav.openPath !== undefined && nav.exploreClick !== undefined ? () => follow(hit.href, 'explore') : undefined,
     copyName: name === null || name === '' ? undefined : () => copyText(name, 'name', nav.onNotice, nav.copy, true),
     copyAddress: path === null ? () => copyText(hit.href, 'address', nav.onNotice, nav.copy) : undefined,
     ...(found === null ? {} : placeRows(found, nav, nav.onNotice, nav.copy)),
@@ -252,7 +257,7 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
 
     /** Opens `href` as an open gesture does: a page or file of a vault in the window in a tab, `where` it says (D8, D14, YAZ-3936), anything else through the OS. */
     const type = linkSchema.type(ctx)
-    const follow = (href: string, where: GestureAction) => {
+    const follow = (href: string, where: LinkWhere) => {
       const path = nav.inApp?.(href) ?? null
       if (path !== null && nav.openPath !== undefined) nav.openPath(path, where)
       else if (nav.elsewhere?.(href, where === 'backgroundTab') !== true) attempt(() => nav.open(href), 'Could not open link', nav.onNotice)
@@ -327,7 +332,11 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
             if (hit === null || hit.href.startsWith('#')) return false
             // Only an open gesture opens (YAZ-3936). A click no gesture has: on a pill, as on a [[link]] (YAZ-4021); on any
             // other link, the editor's, as on text (YAZ-3935).
-            const where = linkClickAction(view, event, nav.hotkeys?.())
+            const bound = linkClickAction(view, event, nav.hotkeys?.())
+            // A plain click on a note pill opens it in Explore while the vault says so (YAZ-4936), as on a [[link]].
+            const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.detail === 1
+            const explore = plain && bound === null && nav.exploreClick?.() === true && fileKind(nav.inApp?.(hit.href) ?? '') === 'markdown'
+            const where: LinkWhere | null = bound ?? (explore ? 'explore' : null)
             if (where !== null) {
               event.preventDefault()
               follow(hit.href, where)

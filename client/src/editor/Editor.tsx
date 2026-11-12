@@ -919,7 +919,9 @@ function CrepeHost({
         open: (href) => api.shell.openLink({ href, sourcePath: file.path }),
         // A link to a page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8).
         inApp: (href) => (linkPlace === undefined ? null : hrefTarget(href, linkPlace)),
-        openPath: (target, where) => (where === 'backgroundTab' ? (onOpenLinkBackground ?? onOpenLink)(target) : onOpenLink(target, where)),
+        openPath: (target, where) => (where === 'backgroundTab' ? (onOpenLinkBackground ?? onOpenLink)(target) : where === 'explore' ? (onOpenExplore ?? ((p: string) => onOpenLink(p, 'thisTab')))(target) : onOpenLink(target, where)),
+        // A Markdown pill to a note follows the vault's "Clicking a link" as a [[link]] does (YAZ-4936).
+        exploreClick: exploreOnClick,
         hotkeys: hotkeysNow,
         // A link into a vault the app knows but this window does not show asks to add that vault (YAZ-3609 D21).
         elsewhere: (href, background) => {
