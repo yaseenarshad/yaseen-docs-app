@@ -12,6 +12,7 @@
  * `GroupLevelStepsContext`, which `ViewsPane` gives while the view has two levels or more.
  */
 import { createContext } from 'react'
+import type { ValueHistory } from './view/valueHistory'
 
 export interface LevelNode {
   key: string
@@ -98,6 +99,8 @@ export interface GroupLevelStepActions {
   expandOne?: () => void
   /** A nested Folder group header's "Expand all" / "Collapse all" (YAZ-4928), by its collapse key; undefined for any other header. */
   branch?: (key: string) => { expandAll?: () => void; collapseAll?: () => void } | undefined
+  /** The page's ⌘Z history (YAZ-4928): each "Expand all" / "Collapse all" is one step; ⌘Z / ⇧⌘Z on a group header run it. */
+  history?: Pick<ValueHistory, 'undo' | 'redo'>
 }
 
 export const GroupLevelStepsContext = createContext<GroupLevelStepActions | null>(null)
