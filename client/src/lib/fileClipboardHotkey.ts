@@ -17,8 +17,12 @@ const VERBS: readonly (readonly [string, boolean, FileClipboardVerb])[] = [
   ['backspace', false, 'delete'],
 ]
 
-/** The pages that keep their own copy, cut and paste (YAZ-4372): a drawing (Excalidraw) and a diagram (draw.io). A note keeps its own rules (D6, YAZ-3140). */
-const OWN_CLIPBOARD = '.editor--drawing, .editor--diagram'
+/**
+ * The pages that keep their own copy, cut and paste (YAZ-4372): a drawing (Excalidraw) and a diagram (draw.io). A note
+ * keeps its own rules (D6, YAZ-3140). The Inbox screen (YAZ-4962) too: its ⌘Z undoes the last answer, never a file
+ * move, and a copy there copies the card's text.
+ */
+const OWN_CLIPBOARD = '.editor--drawing, .editor--diagram, .note-card-inbox'
 
 /** The pages that keep their own undo (audit 22) and their own ⌘⌫ (YAZ-3272 D20): a note, a drawing, a diagram. */
 const OWN_UNDO = `${NOTE_PAGE}, ${OWN_CLIPBOARD}`

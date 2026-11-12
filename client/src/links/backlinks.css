@@ -5,10 +5,9 @@
  * and draws no hairline of its own (YAZ-1680, after YAZ-1675 did the same for Comments).
  * Header affordance mirrors the view-group / ViewTabs chevron: one stroked SVG, rotated -90°
  * while collapsed. Colours are app theme tokens only, so dark mode follows for free.
- * "Reviews" (YAZ-2322) is the same frame and header under its own names, so both are listed.
+ * The note card Reviews section (YAZ-4962, `review/noteCardParts.tsx`) reuses the header.
  */
 
-.reviews,
 .backlinks {
   width: 100%;
   max-width: var(--content-max-width);
@@ -16,7 +15,6 @@
   padding: 0 48px;
 }
 
-.reviews__header,
 .backlinks__header {
   display: flex;
   align-items: center;
@@ -27,7 +25,6 @@
   color: var(--fg-muted);
 }
 
-.reviews__header:hover,
 .backlinks__header:hover {
   color: var(--fg);
 }
@@ -37,7 +34,6 @@
   transition: transform 120ms ease;
 }
 
-.reviews__header[aria-expanded='false'] .backlinks__chevron,
 .backlinks__header[aria-expanded='false'] .backlinks__chevron {
   transform: rotate(-90deg);
 }

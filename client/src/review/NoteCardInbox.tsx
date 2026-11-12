@@ -73,6 +73,8 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
   const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
   const [stepState, setStep] = useState<Step>({ key: cardKey, sides: 1, shown: 0 })
   const step = stepState.key === cardKey ? stepState : { key: cardKey, sides: 1, shown: 0 }
+  // A card that goes and comes back (⌘Z after the last answer) starts again from its first step.
+  useEffect(() => setStep((s) => (s.key === cardKey ? s : { key: cardKey, sides: 1, shown: 0 })), [cardKey])
   const hiddenUpTo = (sides: number): number => counts.slice(0, sides).reduce((a, b) => a + b, 0)
   const done = text !== null && step.sides >= counts.length && step.shown >= hiddenUpTo(counts.length)
 
