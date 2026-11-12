@@ -129,7 +129,7 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
   /** The dead links whose note is being made (null), or was made at that path and is not in the index yet (YAZ-2478): a click on one makes nothing more. */
   const making = new Map<string, string | null>()
   return (inner, where) => {
-    const page = linkPageName(inner)
+    const page = linkPageName(inner, source)
     if (page === '') return // same-file [[#h]] — the heading jump is GRO-2239, not this unit
     const background = where === 'backgroundTab'
     const open = openerOf(nav, where)

@@ -43,6 +43,13 @@ describe('rewriteInner / renamedTarget (form + suffix + alias preservation)', ()
     expect(rewriteBodyLinks('See [[staging|WIKI-116]] and ![[EMB-40|640x360]]', resolvesId, toNext)).toBe('See [[staging|WIKI-200]] and ![[EMB-40|640x360]]')
   })
 
+  it('YAZ-4935 round 2: words that only look like an ID — the left side is the renamed note, so the left side is rewritten', () => {
+    const resolvesCovid = (t: string) => t === 'Covid notes'
+    const toNext = (t: string) => (t === 'Covid notes' ? 'Covid 2020' : t)
+    expect(rewriteInner('Covid notes|COVID-19', resolvesCovid, toNext)).toBe('Covid 2020|COVID-19')
+    expect(rewriteBodyLinks('See [[Covid notes|COVID-19]].', resolvesCovid, toNext)).toBe('See [[Covid 2020|COVID-19]].')
+  })
+
   it('a match whose target text would not change is left untouched — byte-identical, padding included (E1b pin)', () => {
     expect(rewriteInner('B', () => true, (t) => t)).toBeNull()
     expect(rewriteInner(' B |Bee', () => true, (t) => t)).toBeNull() // padding survives because the match is never spliced

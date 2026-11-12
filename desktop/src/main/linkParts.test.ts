@@ -61,6 +61,23 @@ describe('splitLink: the page on either side of the | (YAZ-4935)', () => {
     expect(splitLink('x.drawio|My name|640x360')).toMatchObject({ page: 'x.drawio', words: 'My name|640x360', pageFirst: true })
   })
 
+  it('with the notes known: the left side wins when it names a found page; the right side is the page only when the left does not resolve (YAZ-4935 round 2)', () => {
+    const found = (page: string) => page === 'Covid notes'
+    // Words that only LOOK like an ID: the left side is a note, so it is the page.
+    expect(splitLink('Covid notes|COVID-19', found)).toMatchObject({ page: 'Covid notes', head: 'Covid notes', words: 'COVID-19', pageFirst: true })
+    // The left side names no note: the right side is the ID, as before.
+    expect(splitLink('staging|WIKI-116', found)).toMatchObject({ page: 'WIKI-116', words: 'staging', pageFirst: false })
+    // Page first stays page first; an empty left side is no page.
+    expect(splitLink('WIKI-116|staging', found)).toMatchObject({ page: 'WIKI-116', words: 'staging', pageFirst: true })
+    expect(splitLink('|WIKI-116', () => true)).toMatchObject({ page: 'WIKI-116', pageFirst: false })
+    // The heading goes with the left side when it wins; the check is asked only when the shape alone would pick the right.
+    expect(splitLink('Covid notes#Intro|COVID-19', found)).toMatchObject({ page: 'Covid notes', hash: '#Intro', pageFirst: true })
+    const asked: string[] = []
+    splitLink('Postgres|database', (p) => (asked.push(p), false))
+    splitLink('WIKI-116|staging', (p) => (asked.push(p), false))
+    expect(asked).toEqual([])
+  })
+
   it('a second | belongs to the words: only the first one splits', () => {
     expect(splitLink('A|B|C')).toMatchObject({ page: 'A', words: 'B|C', pageFirst: true })
   })

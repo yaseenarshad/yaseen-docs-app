@@ -61,7 +61,7 @@ export interface DrawingLinkHit {
 export function drawingLinkLook(inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): DrawingLink | null {
   const titles = pathTitles(source.records, source.folders)
   const resolved = linkIsResolved(inner, source, viewOnly)
-  const label = linkDisplayText(inner, (target) => idLinkTitle(target, source.resolve, titles), () => resolved)
+  const label = linkDisplayText(inner, (target) => idLinkTitle(target, source.resolve, titles), () => resolved, source)
   if (label === '') return null
   if (!resolved) {
     // A gone note of this vault says so, with its ID, where its title stood (S10).

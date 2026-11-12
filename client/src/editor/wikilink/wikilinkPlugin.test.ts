@@ -24,6 +24,7 @@ import {
   WIKILINK_UNRESOLVED_CLASS,
   createWikilinkResolveSource,
   linkDisplayText,
+  linkPageName,
   linkPath,
   type MutableWikilinkResolveSource,
   type VaultsOfLetters,
@@ -141,6 +142,23 @@ describe('wikilink decorations: collapsed display (GRO-2190)', () => {
     expect(links(root)).toEqual(['staging', 'staging', 'staging'])
     expect(Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => el.classList.contains(WIKILINK_UNRESOLVED_CLASS))).toEqual([false, false, true])
     expect(linkPath('staging|WIKI-116', source, undefined)).toBe('/vault/Staging vs Production.md')
+  })
+
+  it('YAZ-4935 round 2: words that only look like an ID — when the left side is a note, it is the page; else the right side is', async () => {
+    const source = createWikilinkResolveSource()
+    source.update((target) => (target === 'Covid notes' ? '/vault/Covid notes.md' : target === 'COVID-19' ? '/vault/Covid 19 id.md' : target === 'WIKI-116' ? '/vault/Staging.md' : null))
+    const { root } = await mount('A [[Covid notes|COVID-19]] b [[staging|WIKI-116]] c [[WIKI-116|staging]]\n', source)
+    // The left side wins when it resolves: the pill shows the right side's words and hides the left.
+    expect(links(root)).toEqual(['COVID-19', 'staging', 'staging'])
+    expect(syntax(root)).toBe('[[Covid notes|]][[|WIKI-116]][[WIKI-116|]]')
+    expect(linkPath('Covid notes|COVID-19', source, undefined)).toBe('/vault/Covid notes.md')
+    expect(linkPageName('Covid notes|COVID-19', source)).toBe('Covid notes')
+    expect(linkDisplayText('Covid notes|COVID-19', undefined, undefined, source)).toBe('COVID-19')
+    // The left side names no note: the right side is the ID (Mochi's order), in both orders.
+    expect(linkPath('staging|WIKI-116', source, undefined)).toBe('/vault/Staging.md')
+    expect(linkPath('WIKI-116|staging', source, undefined)).toBe('/vault/Staging.md')
+    // Before the index loads, by shape.
+    expect(linkPageName('Covid notes|COVID-19')).toBe('COVID-19')
   })
 
   it('embeds (![[…]]) are never decorated', async () => {

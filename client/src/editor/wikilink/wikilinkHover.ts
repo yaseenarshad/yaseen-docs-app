@@ -45,7 +45,7 @@ function linkPathOf(view: EditorView, target: EventTarget | null, source: Wikili
   }
   const inner = wikilinkInnerAt(view.state.doc, linkPosAtDOM(view, span))
   if (inner === null) return null
-  const page = linkPageName(inner)
+  const page = linkPageName(inner, source)
   if (page === '') return null
   const viewTarget = viewOnlyLinkTarget(inner)
   if (viewTarget !== null) {

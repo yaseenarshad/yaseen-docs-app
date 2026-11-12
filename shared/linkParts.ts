@@ -6,6 +6,10 @@
  * goes with the page side (`[[staging|WIKI-116#Intro]]`). An empty side is no ID: `[[|WIKI-116]]` is the page WIKI-116
  * with no words. The app still WRITES the page first (the picker, a pasted path, a table cell); only reading is both ways.
  *
+ * Words can LOOK like an ID (`[[Covid notes|COVID-19]]`). A reader that knows the vault's notes passes `isPage`: when
+ * the left side names a found page, the left side wins; the right side is the page only when the left does not resolve
+ * (YAZ-4935, round 2). `isPage` is asked only when the shape alone would pick the right side. Without it, the shape decides.
+ *
  * Every reader of a `[[…]]` splits here: the index (`vaultIndex/scan.ts`), the rename rewrite (`linkRewrite.ts`), the
  * resolver's key (`linkResolver.ts`), and the editor's pill, menu, read-only links and picker (`client/src/editor/wikilink/`).
  * An embed's options (`embedOptions.ts`, `![[x.drawio|640x360 view=…]]`) never look like an ID, so an embed reads as before.
@@ -33,13 +37,13 @@ const sideOf = (text: string): { page: string; hash: string } => {
 }
 
 /** The parts of the text inside `[[…]]`. One `indexOf`, and the ID test on each side only when there is a `|`. */
-export function splitLink(inner: string): LinkParts {
+export function splitLink(inner: string, isPage?: (page: string) => boolean): LinkParts {
   const pipe = inner.indexOf('|')
   if (pipe < 0) return { ...sideOf(inner), head: inner, words: null, pipe, pageFirst: true }
   const left = inner.slice(0, pipe)
   const right = inner.slice(pipe + 1)
   const l = sideOf(left)
   const r = sideOf(right)
-  const pageFirst = isNoteId(l.page) || !isNoteId(r.page)
+  const pageFirst = isNoteId(l.page) || !isNoteId(r.page) || (isPage !== undefined && l.page !== '' && isPage(l.page))
   return pageFirst ? { ...l, head: left, words: right, pipe, pageFirst } : { ...r, head: right, words: left, pipe, pageFirst }
 }

@@ -51,7 +51,7 @@ import { Plugin, PluginKey, type EditorState, type Selection, type Transaction }
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { isBoardTarget } from '@shared/embedOptions'
-import { splitLink } from '@shared/linkParts'
+import { splitLink, type LinkParts } from '@shared/linkParts'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
 import { boardBaseName, fileKind } from '@shared/fileKind'
@@ -190,13 +190,23 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
 export { WIKILINK_RE }
 
 /**
+ * The parts of a raw `[[inner]]` with the vault's notes known (`source`, YAZ-4935 round 2): words that only LOOK like
+ * an ID (`[[Covid notes|COVID-19]]`) leave the left side the page when it resolves; the right side is the page only
+ * when the left does not. No `source`, or no index yet: the shape decides (`splitLink`).
+ */
+export function linkSplit(inner: string, source?: { resolve: ResolveLink | null }): LinkParts {
+  const resolve = source?.resolve ?? null
+  return splitLink(inner, resolve === null ? undefined : (page) => resolve(page) !== null)
+}
+
+/**
  * The page-name half of a raw `[[inner]]` text: the `|words` (on either side, `splitLink`, YAZ-4935)
  * and `#heading` / `#^block` stripped, trimmed. '' for the same-file `[[#h]]` form. The ONE strip
  * shared by the decorations below, click navigation and create-on-click (`wikilinkClick.ts` /
- * `createFromLink.ts`, Links C).
+ * `createFromLink.ts`, Links C). With `source`, the left side wins when it resolves (`linkSplit`).
  */
-export function linkPageName(inner: string): string {
-  return splitLink(inner).page
+export function linkPageName(inner: string, source?: { resolve: ResolveLink | null }): string {
+  return linkSplit(inner, source).page
 }
 
 /**
@@ -242,7 +252,7 @@ export const nameAndId = (title: string, id: string): string => `${title} (${id}
  */
 export function missingId(inner: string, source: WikilinkResolveSource): string | undefined {
   if (!source.ids || source.resolve === null) return undefined
-  const page = linkPageName(inner)
+  const page = linkPageName(inner, source)
   const id = vaultNoteId(page, source.letters)
   return id !== undefined && source.resolve(page) === null ? id : undefined
 }
@@ -253,7 +263,7 @@ export function missingId(inner: string, source: WikilinkResolveSource): string 
  * the rest: this vault's letters win (then it is this vault's ID), a found link, and before the index loads.
  */
 export function otherVaultId(inner: string, source: WikilinkResolveSource, vaultsOf: VaultsOfLetters | undefined): { id: string; vault: string | null } | null {
-  const page = linkPageName(inner)
+  const page = linkPageName(inner, source)
   if (vaultsOf === undefined || source.resolve === null || !isNumberId(page) || vaultNoteId(page, source.letters) !== undefined || source.resolve(page) !== null) return null
   const names = vaultsOf(page.slice(0, page.indexOf('-')).toUpperCase())
   return names.length === 0 ? null : { id: page, vault: names.length === 1 ? names[0]! : null }
@@ -281,8 +291,8 @@ function pageTrim(page: string): [lead: number, trail: number] {
  * `decorate`). Exported for the backlinks snippets (FN9, GRO-2197), which must read exactly as
  * the editor renders: one mapping, never a second regex.
  */
-export function linkDisplayText(inner: string, titleOf?: (target: string) => string | undefined, named?: (page: string) => boolean): string {
-  const { words } = splitLink(inner)
+export function linkDisplayText(inner: string, titleOf?: (target: string) => string | undefined, named?: (page: string) => boolean, source?: { resolve: ResolveLink | null }): string {
+  const { words } = linkSplit(inner, source)
   if (words !== null) return words
   const parts = inner.split('#')
   const page = parts[0]
@@ -311,7 +321,7 @@ export function linksAsShown(text: string, source: WikilinkResolveSource, viewOn
     return path !== null && isBoardTarget(path)
   }
   return text.replace(WIKILINK_RE, (raw, bang: string, inner: string) => {
-    if (bang !== '!') return linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly)) || raw
+    if (bang !== '!') return linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly), source) || raw
     if (boardEmbedTarget(inner, isBoard) === null) return raw
     const page = splitLink(inner).page
     return boardEmbedName(isIdTarget(page) ? linkPath(inner, source, viewOnly) ?? inner : inner)
@@ -362,7 +372,7 @@ function titleSpan(cls: string, title: string, icon?: Record<string, string>): H
 /** The file or folder a `[[link]]` opens, or null: unresolved, a heading of a view-only file, or no index yet. The link menu's place rows (YAZ-3740). */
 export function linkPath(inner: string, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined): string | null {
   const view = viewOnly === undefined ? null : viewOnlyLinkTarget(inner)
-  return view !== null ? (view.hasSubtarget ? null : viewOnly?.resolve?.(view.page) ?? null) : source.resolve?.(linkPageName(inner)) ?? null
+  return view !== null ? (view.hasSubtarget ? null : viewOnly?.resolve?.(view.page) ?? null) : source.resolve?.(linkPageName(inner, source)) ?? null
 }
 
 /** The icon of the page a resolved link opens (D13), or undefined: no look, unresolved, or no index yet. */
@@ -383,7 +393,7 @@ export function linkIsResolved(inner: string, source: WikilinkResolveSource, vie
     if (viewTarget.hasSubtarget) return false
     return viewSource.resolve === null || viewSource.resolve(viewTarget.page) !== null
   }
-  const target = linkPageName(inner)
+  const target = linkPageName(inner, source)
   return source.resolve === null || target === '' || source.resolve(target) !== null
 }
 
@@ -412,7 +422,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   // and only exact caret placement can recover — raw-and-editable, the revealed state, is the
   // consistent answer (FN12, GRO-2197).
   const titleOf = (target: string) => idLinkTitle(target, source.resolve, pathTitles(source.records, source.folders))
-  if (linkDisplayText(inner, titleOf) === '') return
+  if (linkDisplayText(inner, titleOf, undefined, source) === '') return
   const resolved = linkIsResolved(inner, source, viewOnly)
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`
   // The icon where the vault's format puts it (YAZ-4924): on the name's own span (`{icon}{name}`, today's), as a
@@ -422,7 +432,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const icon = iconPlace === 'name' ? found : undefined
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
-  const { pipe, pageFirst } = splitLink(inner)
+  const { pipe, pageFirst } = linkSplit(inner, source)
   const parts = inner.split('#')
   // A missing note shows that it is missing, with its ID (YAZ-3905 S10): in the title's place, as a title is drawn.
   const missing = resolved ? undefined : missingId(inner, source)

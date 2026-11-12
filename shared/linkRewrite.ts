@@ -55,7 +55,7 @@ export function maskCode(body: string): string {
 
 /**
  * `[[inner]]` → the rewritten inner, or null when this match is not what changed.
- * The target part (the page side of `splitLink`, YAZ-4935: either side of the `|`) is replaced;
+ * The target part (the page side of `splitLink`, YAZ-4935: either side of the `|`; the left side when it resolves) is replaced;
  * `#heading`/`#^block` and the words ride along untouched, in the order they were written.
  * Surrounding whitespace inside the target is dropped (`[[ B ]]` → `[[C]]`), matching how the
  * resolver reads it anyway — EXCEPT when the target text would not change at all (E1b: a bare
@@ -63,7 +63,8 @@ export function maskCode(body: string): string {
  * padding included.
  */
 export function rewriteInner(inner: string, resolves: ResolvesToOld, newTarget: NewTarget): string | null {
-  const { page: target, hash, words, pageFirst } = splitLink(inner)
+  // Words that only look like an ID (`[[Covid notes|COVID-19]]`): the left side is the page when it is the renamed note.
+  const { page: target, hash, words, pageFirst } = splitLink(inner, resolves)
   if (target === '' || !resolves(target)) return null
   const next = newTarget(target)
   if (next === target) return null

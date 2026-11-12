@@ -18,7 +18,6 @@
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { splitLink } from '@shared/linkParts'
 import { pathTitles } from '../../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
 import { boardCheckOf } from '../drawing/boardEmbedScan'
@@ -28,7 +27,7 @@ import { OPEN_ID_LINK } from './idLinkCaret'
 import { fileKind } from '@shared/fileKind'
 import { newEmbed } from '@shared/embedOptions'
 import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from './wikilinkClick'
-import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
+import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, linkSplit, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import { pillStyleRow } from './pillStyle'
 
@@ -48,13 +47,13 @@ function linkAt(view: EditorView, target: EventTarget | null): { from: number; t
  * `[[GPT-4]]` is a name there (R6). As the app writes it, whatever the link's case.
  */
 function idOf(inner: string, source: WikilinkResolveSource): string | null {
-  return linkNoteId(linkPageName(inner), source) ?? null
+  return linkNoteId(linkPageName(inner, source), source) ?? null
 }
 
 /** The one link menu of the `[[inner]]` at `from`..`to` (YAZ-3740, YAZ-3905). */
 function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, keep: (run: () => void) => () => void): LinkMenu {
   // The page side of the link, on either side of the `|` (`splitLink`, YAZ-4935).
-  const { head: target, pipe, pageFirst } = splitLink(inner)
+  const { head: target, pipe, pageFirst } = linkSplit(inner, source)
   // The caret inside the raw `[[…]]`, its target selected: the link shows as text to type over.
   const edit = view.editable
     ? () => {
@@ -81,11 +80,11 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
  * `remove` are the place's own; absent (a read-only page), their rows are left out. `remove` gets the text to leave.
  */
 export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, edit: (() => void) | undefined, removeWith: ((text: string) => void) | undefined): LinkMenu {
-  const page = linkPageName(inner)
+  const page = linkPageName(inner, source)
   const titles = pathTitles(source.records, source.folders)
   const titleOf = (target: string) => idLinkTitle(target, source.resolve, titles)
   const named = () => linkIsResolved(inner, source, viewOnly)
-  const remove = removeWith === undefined ? undefined : () => removeWith(linkDisplayText(inner, titleOf, named))
+  const remove = removeWith === undefined ? undefined : () => removeWith(linkDisplayText(inner, titleOf, named, source))
   const copyIdRow = (id: string) => () => copyText(id, 'ID', nav.onNotice, undefined, true)
   // A note that is gone (S10) and an ID of another vault (S23): what can be said, the ID to copy, and the link's own rows.
   const missing = missingId(inner, source)
