@@ -27,7 +27,7 @@ interface SidebarStubProps {
   /** The first vault of `vaults`, read off them by the stub: the vault the panel is keyed on. */
   root: string
   /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
-  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[] }[]
+  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[]; readOnly?: boolean; fileChangesUntil?: number | null }[]
   /** Right-click → "Share" on a board row (YAZ-3040). */
   onShareFile?: (path: string) => void
   /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
@@ -71,7 +71,10 @@ interface SidebarStubProps {
   onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[] }, text: string, skipped: boolean) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
-  onDeleteEntries: (paths: string[]) => Promise<void>
+  onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
+  /** The vault lock's choices (YAZ-4985). */
+  onAllowFileChanges?: (root: string, choice: 'minute' | 'ten') => void
+  onLockFileChanges?: (root: string) => void
   onDraggedOut: (paths: string[]) => void
   pendingSearchFocus: boolean
   pendingSearchClear: boolean
@@ -2568,6 +2571,24 @@ describe('App ⌘-click on the daily note button (YAZ-3776)', () => {
     expect(captured.sidebar?.lens).toBe('files')
     expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: `${v}/Daily/${today()}.md`, focus: false })
   })
+
+  it('YAZ-4985: in a read-only vault today\'s note is a New note, so it asks first; Cancel makes nothing, "Allow for 10 minutes" makes it', async () => {
+    const { el, v, files, bridge } = await mountDaily()
+    bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+    await act(async () => (bridge.vaultConfig.onChange.mock.calls as unknown as [(c: { root: string; name: string }) => void][]).forEach(([listener]) => listener({ root: v, name: 'read-only.json' })))
+    await act(async () => {})
+    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+    await press(false)
+    expect(el.querySelector('#confirm-read-only-vault-text')).not.toBeNull()
+    await act(async () => button('Cancel')?.click())
+    await act(async () => {})
+    expect(bridge.makeDailyNote).not.toHaveBeenCalled()
+    await press(false)
+    await act(async () => button('10 minutes')?.click())
+    await act(async () => {})
+    await act(async () => {})
+    expect(Object.keys(files)).toEqual([`${v}/Daily/${today()}.md`])
+  })
 })
 
 describe('App settings dialog (YAZ-1679)', () => {
@@ -4427,7 +4448,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         trashing(b.bridge)
       })
 
-    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "Allow for 10 minutes" opens the vault’s file actions that long, then it asks again', async () => {
+    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "10 minutes" opens the vault’s file actions that long, then it asks again', async () => {
       // "Ask before renaming" off: the rename sheet would otherwise stand between the vault's sheet and the rename.
       const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
         feed(b)
@@ -4441,7 +4462,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
       // Delete asks; Cancel deletes nothing.
       act(() => void captured.sidebar?.onDeleteEntries(['/v/B.md']))
       await act(async () => {})
-      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow its file actions — rename, move, delete, new and paste — for 10 minutes?')
+      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow this file change?')
+      expect([...el.querySelectorAll('.confirm__actions button')].map((b) => b.textContent)).toEqual(['1 minute', '10 minutes', 'Cancel', 'Just this once'])
       expect(bridge.file.delete).not.toHaveBeenCalled()
       await act(async () => button('Cancel')?.click())
       expect(sheet()).toBeNull()
@@ -4451,7 +4473,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => {})
       expect(sheet()).not.toBeNull()
       expect(bridge.file.rename).not.toHaveBeenCalled()
-      await act(async () => button('Allow for 10 minutes')?.click())
+      await act(async () => button('10 minutes')?.click())
       await act(async () => {})
       expect(sheet()).toBeNull()
       expect(renames(bridge)).toEqual([['/v/B.md', '/v/C.md']])
@@ -4469,6 +4491,146 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => button('Cancel')?.click())
       expect(bridge.file.delete.mock.calls.length).toBe(1)
       clock.mockRestore()
+    })
+
+    it('YAZ-4985: "Just this once" (Enter) lets one action through and leaves no allowance: the next action asks again; a pure move by rename asks once; a delete the sidebar asked already does not ask again', async () => {
+      const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        trashing(b.bridge)
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const enter = () => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+      // Two files in one Delete: one action, one ask.
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/A.md', '/v/B.md']))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      enter()
+      await settle()
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete.mock.calls.map(([req]) => req.path)).toEqual(['/v/A.md', '/v/B.md'])
+      // No allowance stayed: the next action asks again.
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')?.click())
+      expect(bridge.file.delete).toHaveBeenCalledTimes(2)
+      // A drag's move of one row comes to the rename door, which hands it to the move door: one ask, not two.
+      act(() => void captured.sidebar?.onRenameFile('/v/R.md', '/v/Docs/R.md', 'file'))
+      await act(async () => {})
+      enter()
+      await settle()
+      expect(sheet()).toBeNull()
+      expect(renames(bridge)).toEqual([['/v/R.md', '/v/Docs/R.md']])
+      // The sidebar asked before its delete sheet (`asked`): App does not ask again.
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Docs/R.md'], true))
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete).toHaveBeenCalledTimes(3)
+    })
+
+    it('YAZ-4985: the sidebar lock and the ask box share ONE allowance: "1 minute" from the lock lets a move through with no ask, the lock counts it, and at zero the vault locks again by itself; the box\'s "1 minute" shows on the lock', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      try {
+        const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+          feed(b)
+          b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+          b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+        })
+        await act(async () => {})
+        const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+        const lock = () => captured.sidebar?.vaults[0]
+        expect([lock()?.readOnly, lock()?.fileChangesUntil]).toEqual([true, null])
+        act(() => captured.sidebar?.onAllowFileChanges?.('/v', 'minute'))
+        const until = lock()?.fileChangesUntil
+        expect(until).toBeGreaterThan(Date.now() + 59_000)
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/A.md', newPath: '/v/Docs/A.md', kind: 'file' }, { oldPath: '/v/B.md', newPath: '/v/Docs/B.md', kind: 'file' }]))
+        expect(sheet()).toBeNull()
+        expect(renames(bridge)).toHaveLength(2)
+        // At zero: locked again, and the lock says so.
+        await act(async () => vi.advanceTimersByTime(60_000))
+        expect(lock()?.fileChangesUntil).toBeNull()
+        act(() => void captured.sidebar?.onMoveEntries([{ oldPath: '/v/R.md', newPath: '/v/Docs/R.md', kind: 'file' }, { oldPath: '/v/Docs/A.md', newPath: '/v/A.md', kind: 'file' }]))
+        await act(async () => {})
+        expect(sheet()).not.toBeNull()
+        // The box's "1 minute" is the same allowance: the lock shows it.
+        await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === '1 minute')?.click())
+        await act(async () => {})
+        expect(lock()?.fileChangesUntil).toBeGreaterThan(Date.now() + 59_000)
+        expect(renames(bridge)).toHaveLength(4)
+        // "Lock now" from the lock ends it for the box too.
+        act(() => captured.sidebar?.onLockFileChanges?.('/v'))
+        expect(lock()?.fileChangesUntil).toBeNull()
+        act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
+        await act(async () => {})
+        expect(sheet()).not.toBeNull()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('YAZ-4985: an Undo or a Redo in a read-only vault asks first — a Delete made while the vault was not read only does not come back by ⌘Z, and ⌘⇧Z does not delete it again, until "Allow for 10 minutes"', async () => {
+      let on = false
+      const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        trashing(b.bridge)
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+      const turn = async (next: boolean) => {
+        on = next
+        await act(async () => (bridge.vaultConfig.onChange.mock.calls as unknown as [(c: { root: string; name: string }) => void][]).forEach(([listener]) => listener({ root: '/v', name: 'read-only.json' })))
+        await settle()
+      }
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/B.md']))
+      expect(bridge.file.delete).toHaveBeenCalledTimes(1)
+      await turn(true)
+      // ⌘Z asks; Cancel puts nothing back, and the step stays on the undo list.
+      await press()
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('Cancel')?.click())
+      await settle()
+      expect(putBacks(bridge)).toEqual([])
+      await press()
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('10 minutes')?.click())
+      await settle()
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/B.md 1`, '/v/B.md']])
+      // The redo of the delete: allowed for 10 minutes now, so it runs; past them it asks.
+      const now = Date.now()
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 10 * 60_000 + 1)
+      await press(true)
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('Cancel')?.click())
+      await settle()
+      expect(bridge.file.delete).toHaveBeenCalledTimes(1)
+      clock.mockRestore()
+    })
+
+    it('YAZ-4985: the Undo of a move in a read-only vault asks first; Cancel moves nothing back', async () => {
+      let on = false
+      const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on } : null))
+      })
+      await act(async () => {})
+      await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/A.md', newPath: '/v/Docs/A.md', kind: 'file' }, { oldPath: '/v/B.md', newPath: '/v/Docs/B.md', kind: 'file' }]))
+      await settle()
+      const before = renames(bridge).length
+      expect(before).toBe(2)
+      on = true
+      await act(async () => (bridge.vaultConfig.onChange.mock.calls as unknown as [(c: { root: string; name: string }) => void][]).forEach(([listener]) => listener({ root: '/v', name: 'read-only.json' })))
+      await settle()
+      await press()
+      expect(el.querySelector('#confirm-read-only-vault-text')).not.toBeNull()
+      await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')?.click())
+      await settle()
+      expect(renames(bridge).length).toBe(before)
     })
 
     it('S66 (YAZ-3272, as D23 of YAZ-3293 words it): one row deleted says "Deleted 1 file (Todo.md)" with Undo, by its kind and its name on disk', async () => {

@@ -100,20 +100,37 @@ describe('useReadOnlyVault', () => {
     expect(state.settings.on).toBe(true)
   })
 
-  it('file actions: always allowed with the vault Off; with it On, only for 10 minutes after "Allow"', async () => {
+  it('file actions: always allowed with the vault Off; with it On, only while "1 minute" or "10 minutes" runs; at zero it locks again by itself, and the state says so (YAZ-4985)', async () => {
     vi.useFakeTimers()
     await mount('/vault')
     expect(state.fileActionsAllowed()).toBe(true)
     await act(async () => state.save({ on: true }))
     expect(state.fileActionsAllowed()).toBe(false)
+    expect(state.allowedUntil).toBeNull()
     act(() => state.allowFileActions())
     expect(state.fileActionsAllowed()).toBe(true)
     expect(FILE_ACTIONS_ALLOW_MS).toBe(10 * 60_000)
-    vi.advanceTimersByTime(FILE_ACTIONS_ALLOW_MS - 1)
+    expect(state.allowedUntil).toBe(Date.now() + FILE_ACTIONS_ALLOW_MS)
+    act(() => vi.advanceTimersByTime(FILE_ACTIONS_ALLOW_MS - 1))
     expect(state.fileActionsAllowed()).toBe(true)
-    vi.advanceTimersByTime(1)
+    act(() => vi.advanceTimersByTime(1))
     expect(state.fileActionsAllowed()).toBe(false)
-    // The allowance costs no timer: nothing is armed for it.
+    expect(state.allowedUntil).toBeNull()
+    // One timer runs while an allowance does, none after it.
     expect(vi.getTimerCount()).toBe(0)
+    act(() => state.allowFileActions('minute'))
+    expect(state.allowedUntil).toBe(Date.now() + 60_000)
+    expect(vi.getTimerCount()).toBe(1)
+    act(() => state.lockFileActions())
+    expect([state.fileActionsAllowed(), state.allowedUntil, vi.getTimerCount()]).toEqual([false, null, 0])
+  })
+
+  it('a vault that is not read only shows no allowance, even one granted before it went Off', async () => {
+    vi.useFakeTimers()
+    await mount('/vault')
+    await act(async () => state.save({ on: true }))
+    act(() => state.allowFileActions('minute'))
+    await act(async () => state.save({ on: false }))
+    expect(state.allowedUntil).toBeNull()
   })
 })

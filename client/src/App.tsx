@@ -22,7 +22,7 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
 import type { Move } from './links/shortcuts'
-import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
+import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
 import { dropIndex } from './lib/dragSlot'
@@ -104,6 +104,7 @@ import { SAME_WORD, UnitContext, vaultUnit, type UnitText } from './vault/unitWo
 import { folderHome } from './vault/folderHome'
 import { inPlace } from './vault/placeScope'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
+import type { FileActionsFor } from './vault/readOnlyVault'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { duplicateTabIds, nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
@@ -513,14 +514,29 @@ export function App() {
   const candidatesOf = useCallback((path: string) => (rootOfPath(live.current.roots, path) === null ? null : scopeOf(path).wikilinkCandidates), [scopeOf])
   /**
    * A file action in a read-only vault (YAZ-4939): Rename, Move, Delete, the sidebar's New … and Paste, a folder page's
-   * New. The vault's own allowance answers at once; else ONE sheet asks, "Allow for 10 minutes" opens the vault's file
-   * actions that long, and Cancel refuses. The app's own writes never come here.
+   * New and Duplicate, today's note, an undo or a redo of them (YAZ-4985). The vault's own allowance answers at once; else
+   * ONE sheet asks: "Just this once" (Enter) lets this one action through and starts no allowance, "1 minute" and
+   * "10 minutes" open the vault's file actions that long (the sidebar's lock shows it), and Cancel (Esc) refuses. An action
+   * on several files is one action: it asks once. The app's own writes never come here.
    */
   const [readOnlyAsk, setReadOnlyAsk] = useState<{ root: string; resolve: (ok: boolean) => void } | null>(null)
   const allowFileAction = useCallback((root: string): Promise<boolean> => {
     const scope = scopeOf(root)
     if (scope.root !== root || scope.readOnlyVault.fileActionsAllowed()) return Promise.resolve(true)
     return new Promise((resolve) => setReadOnlyAsk({ root, resolve }))
+  }, [scopeOf])
+  const allowFileChanges = useCallback((root: string, choice: FileActionsFor) => scopeOf(root).readOnlyVault.allowFileActions(choice), [scopeOf])
+  const lockFileChanges = useCallback((root: string) => scopeOf(root).readOnlyVault.lockFileActions(), [scopeOf])
+  /** The sheet's answer: false = Cancel; null = Just this once (no allowance); a time = that allowance, then go on. */
+  const readOnlyAskNow = useRef(readOnlyAsk)
+  readOnlyAskNow.current = readOnlyAsk
+  const answerReadOnly = useCallback((choice: FileActionsFor | null | false) => {
+    const ask = readOnlyAskNow.current
+    if (ask === null) return
+    readOnlyAskNow.current = null
+    setReadOnlyAsk(null)
+    if (choice !== false && choice !== null) scopeOf(ask.root).readOnlyVault.allowFileActions(choice)
+    ask.resolve(choice !== false)
   }, [scopeOf])
   /** A link to a page of a vault the app knows but this window does not show (YAZ-3609 D21): the sheet that asks to add it. */
   const [addAsk, setAddAsk] = useState<{ root: string; path: string; background: boolean } | null>(null)
@@ -1224,7 +1240,7 @@ export function App() {
     if (vaults.length === 0) return
     const title = dailyNoteName(now.dailyNoteFormat, new Date()).trim()
     void dailyVault(vaults, now.dailyNoteFolder)
-      .then(({ vault, tree }) => {
+      .then(async ({ vault, tree }): Promise<string | null> => {
         const index = scopeOf(vault).wikilinks
         // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
         if (index.resolve === null) throw new Error('the vault index is still loading — try again in a moment')
@@ -1233,7 +1249,10 @@ export function App() {
         const held = dailyMaking.current?.key === key ? dailyMaking.current : null
         const found = todaysNote({ records: index.records, tree, folder: now.dailyNoteFolder, title, dayFolder: now.dailyNoteDayFolder, made: held?.path })
         if (found !== null) return found
+        // Today's note is a New note: a read-only vault asks first (YAZ-4985). Opening one that is there never asks.
+        if ((held === null || held.path !== undefined) && !(await allowFileAction(vault))) return null
         // One note at a time for a key: a press while it is made waits for it. Made but gone from the tree: made again (D16).
+        if (dailyMaking.current?.key === key && dailyMaking.current.path === undefined && held === null) return dailyMaking.current.note
         if (held === null || held.path !== undefined) {
           // A fresh tree before the row is shown: the sidebar hears it (`onTree`), so the new note's row is there to show.
           const note = api.makeDailyNote(vault).then(async ({ path }) => {
@@ -1251,6 +1270,7 @@ export function App() {
       })
       .then(
         (path) => {
+          if (path === null) return
           if (background) return openBehindSidebar.current(path)
           if (sidebarCollapsedRef.current) toggleSidebar()
           openAsSidebar.current(path)
@@ -1260,7 +1280,7 @@ export function App() {
         },
         (err: unknown) => notify(`Can't open today's daily note: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
-  }, [scopeOf, dailyVault, toggleSidebar, revealInFiles, notify])
+  }, [scopeOf, dailyVault, toggleSidebar, revealInFiles, notify, allowFileAction])
 
   // ⌘D (YAZ-3556 D9): the place of `settings.goTo`, in the active tab's vault. A tab shows. A folder shows in Files, open,
   // with the keyboard on its row. A file opens as a sidebar click opens it, and its row shows. A hidden sidebar shows
@@ -2724,6 +2744,16 @@ export function App() {
   }, [nameOf, notify, stepToast])
 
   /**
+   * An undo or a redo changes the vault's files as the gesture did (YAZ-4985): it asks the read-only door of each vault
+   * the step touches, once each, as `trashMany` does. Main's own writes never come here.
+   */
+  const allowStep = useCallback(async (entry: UndoStep): Promise<boolean> => {
+    const paths = isMoveStep(entry) ? entry.moves.flatMap((move) => [move.oldPath, move.newPath]) : entry.step === 'rename' ? [entry.path] : entry.items.map((item) => item.path)
+    for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return false
+    return true
+  }, [scopeOf, allowFileAction])
+
+  /**
    * ⌘Z (YAZ-3255 D10, S33): the newest gesture moves back, all its items, newest first, through
    * `runMoves` — so links follow. A move clears no value (YAZ-4713 C9), so none has to come back. What moved back goes on the redo list. One
    * that moved nothing stays on the undo list, so the next ⌘Z tries again — unless every item moved
@@ -2737,6 +2767,8 @@ export function App() {
     replaying.current = true
     void (async () => {
       try {
+        // A read-only vault asks first (YAZ-4985), as the gesture did: a Cancel keeps the step on the undo list.
+        if (!(await allowStep(entry))) return moveHistory.current.redone(entry)
         // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'undo') : putBackStep(entry))
         const back = await runMoves(invertMoves(entry.moves), { record: false })
@@ -2758,7 +2790,7 @@ export function App() {
       }
     })()
     return true
-  }, [runMoves, notify, stepToast, replayRename, putBackStep])
+  }, [runMoves, notify, stepToast, replayRename, putBackStep, allowStep])
 
   /**
    * ⌘⇧Z (YAZ-3255 D10 amended, S37): the newest undone gesture runs forward again through
@@ -2772,6 +2804,8 @@ export function App() {
     replaying.current = true
     void (async () => {
       try {
+        // A read-only vault asks first (YAZ-4985): a Cancel keeps the step on the redo list.
+        if (!(await allowStep(entry))) return moveHistory.current.undone(entry)
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'redo') : deleteAgain(entry))
         const run = await runMoves(entry.moves, { record: false })
         if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves })
@@ -2790,7 +2824,7 @@ export function App() {
       }
     })()
     return true
-  }, [runMoves, notify, stepToast, replayRename, deleteAgain])
+  }, [runMoves, notify, stepToast, replayRename, deleteAgain, allowStep])
   moveReplay.current = { undo: undoMove, redo: redoMove }
 
   /**
@@ -2799,7 +2833,8 @@ export function App() {
    * the item is already in is no move (S7). All moves stay in one vault (YAZ-2602 R11).
    */
   const requestMoves = useCallback(
-    async (list: readonly Move[]): Promise<void> => {
+    // `asked`: the rename door asked already (YAZ-4985), so "Just this once" covers its move too.
+    async (list: readonly Move[], asked = false): Promise<void> => {
       const moves = list.filter((move) => move.newPath !== move.oldPath)
       const first = moves[0]
       if (first === undefined) return
@@ -2807,7 +2842,7 @@ export function App() {
       if (root === null) return
       if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return notify(BETWEEN_VAULTS)
       // A read-only vault asks first (YAZ-4939).
-      if (!(await allowFileAction(root))) return
+      if (!asked && !(await allowFileAction(root))) return
       await runMoves(moves)
     },
     [scopeOf, runMoves, notify, allowFileAction],
@@ -2817,10 +2852,10 @@ export function App() {
     async (oldPath: string, to: RenameTo, kind: TreeNode['type']): Promise<void> => {
       const { root, wikilinks } = scopeOf(oldPath)
       if (root === null) return
-      // A read-only vault asks first (YAZ-4939); a move's door below then finds the allowance.
+      // A read-only vault asks first (YAZ-4939), once: the move door below does not ask again (YAZ-4985).
       if (!(await allowFileAction(root))) return
       // A MOVE keeps the name: it is the list door's, a list of one (YAZ-3250 D1).
-      if (to.title === undefined && !isNameChange(oldPath, to.newPath)) return requestMoves([{ oldPath, newPath: to.newPath, kind }])
+      if (to.title === undefined && !isNameChange(oldPath, to.newPath)) return requestMoves([{ oldPath, newPath: to.newPath, kind }], true)
       const catalog = await catalogForRename(oldPath, kind)
       if (catalog === undefined) return
       if (!settings.confirmRename) return renameFile(oldPath, to, catalog)
@@ -2946,9 +2981,10 @@ export function App() {
         : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`
     }
   }, [])
-  const trashMany = useCallback(async (paths: readonly string[]): Promise<void> => {
-    // A read-only vault asks first (YAZ-4939), once for each vault of the list.
-    for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return
+  const trashMany = useCallback(async (paths: readonly string[], asked = false): Promise<void> => {
+    // A read-only vault asks first (YAZ-4939), once for each vault of the list; not again when the sidebar asked before its
+    // delete sheet (YAZ-4985: the read-only ask comes first).
+    if (!asked) for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return
     // The names before the delete, while the index still has the pages.
     const names = new Map(paths.map((path) => [path, nameOf(path)]))
     const went: DeleteResponse[] = []
@@ -3464,7 +3500,7 @@ export function App() {
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
+          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge, readOnly: vault.readOnlyVault.settings.on, fileChangesUntil: vault.readOnlyVault.allowedUntil }))}
           lists={lists}
           icons={vaultIcons}
           recentVault={recentPick}
@@ -3528,6 +3564,9 @@ export function App() {
           onRetitle={requestRetitle}
           onDeleteEntries={trashMany}
           onFileAction={allowFileAction}
+          // The vault's lock in the header (YAZ-4985): the ask box's allowance, granted and ended there too.
+          onAllowFileChanges={allowFileChanges}
+          onLockFileChanges={lockFileChanges}
           onDraggedOut={(paths) => void askAfterDragOut(paths)}
           onNotice={notify}
           // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.
@@ -3761,23 +3800,21 @@ export function App() {
           onCancel={() => setPendingRename(null)}
         />
       )}
-      {/* A file action in a read-only vault (YAZ-4939): the focus starts on Cancel, as on every sheet that guards something. */}
+      {/* A file action in a read-only vault (YAZ-4939, YAZ-4985): Enter is "Just this once", Esc is Cancel. */}
       {readOnlyAsk !== null && (
         <ConfirmSheet
           labelId="confirm-read-only-vault-text"
-          text={`This vault (${storage.vaultName(readOnlyAsk.root)}) is read only. Allow its file actions — rename, move, delete, new and paste — for 10 minutes?`}
-          confirmLabel="Allow for 10 minutes"
-          onConfirm={() => {
-            const ask = readOnlyAsk
-            setReadOnlyAsk(null)
-            scopeOf(ask.root).readOnlyVault.allowFileActions()
-            ask.resolve(true)
-          }}
-          onCancel={() => {
-            const ask = readOnlyAsk
-            setReadOnlyAsk(null)
-            ask.resolve(false)
-          }}
+          text={`This vault (${storage.vaultName(readOnlyAsk.root)}) is read only. Allow this file change?`}
+          confirmLabel="Just this once"
+          focusConfirm
+          onConfirm={() => answerReadOnly(null)}
+          onCancel={() => answerReadOnly(false)}
+          other={
+            <>
+              <button type="button" className="confirm__btn" onClick={() => answerReadOnly('minute')}>1 minute</button>
+              <button type="button" className="confirm__btn" onClick={() => answerReadOnly('ten')}>10 minutes</button>
+            </>
+          }
         />
       )}
       {/* Another window's tab of a vault this window does not show (YAZ-3637 D6): add the vault, then the tab moves here. */}

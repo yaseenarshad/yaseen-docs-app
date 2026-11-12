@@ -135,7 +135,7 @@ interface EditorProps {
   /** A folder's table opens a row in a window with this editor (YAZ-4547): App's, stable. Only a folder page uses it. */
   renderNoteEditor?: (path: string) => ReactNode
   /** A folder table's "Delete note…" (YAZ-4592 S26): App's `trashMany`, the sidebar's delete. Only a folder page uses it. */
-  onDeleteEntries?: (paths: readonly string[]) => Promise<void>
+  onDeleteEntries?: (paths: readonly string[], asked?: boolean) => Promise<void>
   /**
    * ⌘-click on an editor wiki link (Links C, GRO-2192) opens a background tab; App passes
    * the tabs API's `openBackground`. Absent → wiki-link clicks stay plain editing.

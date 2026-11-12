@@ -20,18 +20,24 @@ export const ALWAYS_ASK_OVER = 10
  */
 export function useDeleteNotes(
   ask: boolean,
-  trash: ((paths: readonly string[]) => Promise<void>) | undefined,
+  trash: ((paths: readonly string[], asked?: boolean) => Promise<void>) | undefined,
+  /** A read-only vault's door (YAZ-4985): asked FIRST, before the sheet; a refusal ends it. Absent: no ask. */
+  allow: (() => Promise<boolean>) | undefined,
   titleOf: (path: string) => string,
 ): { confirmDeleteNotes?: (paths: readonly string[]) => void; sheet: ReactNode } {
   /** The paths the open sheet asks about, and its words, taken once as it opens. */
-  const [asking, setAsking] = useState<{ paths: readonly string[]; text: string } | null>(null)
+  const [asking, setAsking] = useState<{ paths: readonly string[]; asked: boolean; text: string } | null>(null)
   const unit = useUnit()
   if (trash === undefined) return { sheet: null }
+  const confirmNow = (paths: readonly string[], asked: boolean): void => {
+    // More than 10 notes always ask (YAZ-4612 S49), also with the setting off.
+    if (ask || paths.length > ALWAYS_ASK_OVER) setAsking({ paths, asked, text: deleteNotesMessage(paths.map(titleOf), unit) })
+    else void (asked ? trash(paths, true) : trash(paths))
+  }
   const confirmDeleteNotes = (paths: readonly string[]): void => {
     if (paths.length === 0) return
-    // More than 10 notes always ask (YAZ-4612 S49), also with the setting off.
-    if (ask || paths.length > ALWAYS_ASK_OVER) setAsking({ paths, text: deleteNotesMessage(paths.map(titleOf), unit) })
-    else void trash(paths)
+    if (allow === undefined) return confirmNow(paths, false)
+    void allow().then((ok) => ok && confirmNow(paths, true))
   }
   const sheet =
     asking === null ? null : (
@@ -43,7 +49,7 @@ export function useDeleteNotes(
         keys="sheet"
         onConfirm={() => {
           setAsking(null)
-          void trash(asking.paths)
+          void (asking.asked ? trash(asking.paths, true) : trash(asking.paths))
         }}
         onCancel={() => setAsking(null)}
       />

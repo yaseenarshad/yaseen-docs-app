@@ -181,7 +181,9 @@ export interface FolderHost {
    * The row menu's "Delete note…" (YAZ-4592 S26): App's own delete, the sidebar's (`trashMany`: the Trash, the
    * sound, the Undo toast). The pane asks first (`useDeleteNotes`). Absent: no such item.
    */
-  trash?: (paths: readonly string[]) => Promise<void>
+  trash?: (paths: readonly string[], asked?: boolean) => Promise<void>
+  /** The read-only door (YAZ-4985), asked BEFORE the delete sheet; `trash` then hears `asked`. Absent: no ask. */
+  allowDelete?: () => Promise<boolean>
   /** The row menu's "Duplicate note" (YAZ-4592 S26): a copy beside the note (`file.duplicate`). Absent: no such item. */
   duplicate?: (path: string) => void
 }
@@ -392,7 +394,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const withFolders = showsFolderRows(view) && folderRows.length > 0
   const records = useMemo(() => (withFolders ? [...noteRecords, ...folderRows] : noteRecords), [withFolders, noteRecords, folderRows])
   // "Delete note…" (YAZ-4592 S26): the confirm sheet, unless Settings › Folder pages › Ask before deleting notes is off.
-  const { confirmDeleteNotes, sheet: deleteSheet } = useDeleteNotes(defaults.askBeforeDelete, folder.trash, (path) => noteRecords.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, ''))
+  const { confirmDeleteNotes, sheet: deleteSheet } = useDeleteNotes(defaults.askBeforeDelete, folder.trash, folder.allowDelete, (path) => noteRecords.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, ''))
   useEffect(() => {
     if (backKey !== undefined) keepBackView(backKey, view.name)
   }, [backKey, view.name])

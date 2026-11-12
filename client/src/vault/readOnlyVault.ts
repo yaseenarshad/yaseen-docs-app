@@ -6,10 +6,12 @@
  * keeps its own switch, `shared/readOnly.ts`). `Editor` hands the vault's On to every page it draws through
  * `VaultReadOnly`; each page's timed "Allow edits" is its own (`useTimedUnlock`).
  *
- * THE VAULT'S FILE ACTIONS (Rename, Move, Delete, New, Paste) ask "This vault is read only" while it is On, with "Allow
- * for 10 minutes": one allowance for the vault, kept here as a time, read at each action and never rendered, so it costs
- * no timer and no render. The app's own writes (the ID sweep, link rewrites after an allowed rename, the autosave of an
- * unlocked page) never ask.
+ * THE VAULT'S FILE ACTIONS (Rename, Move, Delete, New, Paste, an undo or redo of them) ask "This vault is read only"
+ * while it is On (YAZ-4985): **Just this once** (that one action, no allowance), **1 minute**, **10 minutes** or
+ * **Cancel**. The two timed choices are ONE allowance for the vault, kept here: the sidebar's lock shows it as an amber
+ * countdown with **Lock now**, and grants it too. One timer runs while it does, to lock again at zero (a render, so the
+ * lock turns back). Each action reads it with the clock at that moment. The app's own writes (the ID sweep, link
+ * rewrites after an allowed rename, the autosave of an unlocked page, sync, reviews) never ask.
  */
 import { createContext, useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
@@ -20,8 +22,11 @@ export interface ReadOnlyVaultSettings {
 }
 export const DEFAULT_READ_ONLY_VAULT: ReadOnlyVaultSettings = { on: false }
 
-/** "Allow for 10 minutes" of the file-actions sheet. */
-export const FILE_ACTIONS_ALLOW_MS = 10 * 60_000
+/** The two timed choices of the file-actions ask and of the sidebar's lock (YAZ-4985), as the page chip's. */
+export type FileActionsFor = 'minute' | 'ten'
+export const FILE_ACTIONS_ALLOW: Readonly<Record<FileActionsFor, number>> = { minute: 60_000, ten: 10 * 60_000 }
+/** "10 minutes" of the file-actions ask. */
+export const FILE_ACTIONS_ALLOW_MS = FILE_ACTIONS_ALLOW.ten
 
 /** What a refused file action says (the sheet's first words; a folder page's create error). */
 export const VAULT_READ_ONLY_TIP = 'This vault is read only'
@@ -35,10 +40,14 @@ export function sanitizeReadOnlyVault(raw: unknown): ReadOnlyVaultSettings {
 export interface ReadOnlyVaultState {
   settings: ReadOnlyVaultSettings
   save: (next: ReadOnlyVaultSettings) => void
-  /** A file action may run now: the vault is not read only, or "Allow for 10 minutes" still runs. Read at each action. */
+  /** A file action may run now: the vault is not read only, or a timed allowance still runs. Read at each action. */
   fileActionsAllowed: () => boolean
-  /** "Allow for 10 minutes": the vault's file actions, that long from now. */
-  allowFileActions: () => void
+  /** "1 minute" or "10 minutes" (default): the vault's file actions, that long from now. */
+  allowFileActions: (choice?: FileActionsFor) => void
+  /** "Lock now": the allowance ends at once. */
+  lockFileActions: () => void
+  /** When the allowance ends (ms since the epoch), or null while none runs. Only the sidebar's lock draws it. */
+  allowedUntil: number | null
 }
 
 /** `root` is nullable because App's hooks cannot be conditional: no vault, no bridge call, the default. */
@@ -46,13 +55,22 @@ export function useReadOnlyVault(root: string | null): ReadOnlyVaultState {
   const [settings, setSettings] = useState(DEFAULT_READ_ONLY_VAULT)
   const now = useRef(settings)
   now.current = settings
-  /** When the file-actions allowance ends; nothing to render, so a ref. A vault that leaves the slot takes it with it. */
+  /** When the file-actions allowance ends: a ref for the actions (read with the clock of the moment), state for the lock. */
   const allowedUntil = useRef(0)
+  const [until, setUntil] = useState<number | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const lockFileActions = useCallback(() => {
+    clearTimeout(timer.current)
+    timer.current = undefined
+    allowedUntil.current = 0
+    setUntil(null)
+  }, [])
   /** Only a change renders: a vault with no file, or one that says what the state says, costs App no render (the editors' memo). */
   const show = useCallback((next: ReadOnlyVaultSettings) => setSettings((prev) => (prev.on === next.on ? prev : next)), [])
   useEffect(() => {
     show(DEFAULT_READ_ONLY_VAULT)
-    allowedUntil.current = 0
+    // A vault that leaves the slot takes its allowance with it.
+    lockFileActions()
     if (root === null) return
     let live = true
     const load = (): void => {
@@ -69,7 +87,8 @@ export function useReadOnlyVault(root: string | null): ReadOnlyVaultState {
       live = false
       unsubscribe()
     }
-  }, [root, show])
+  }, [root, show, lockFileActions])
+  useEffect(() => () => clearTimeout(timer.current), [])
   const save = useCallback(
     (next: ReadOnlyVaultSettings) => {
       if (root === null) return
@@ -80,10 +99,15 @@ export function useReadOnlyVault(root: string | null): ReadOnlyVaultState {
     [root, show],
   )
   const fileActionsAllowed = useCallback(() => !now.current.on || Date.now() < allowedUntil.current, [])
-  const allowFileActions = useCallback(() => {
-    allowedUntil.current = Date.now() + FILE_ACTIONS_ALLOW_MS
-  }, [])
-  return { settings, save, fileActionsAllowed, allowFileActions }
+  const allowFileActions = useCallback((choice: FileActionsFor = 'ten') => {
+    const ms = FILE_ACTIONS_ALLOW[choice]
+    clearTimeout(timer.current)
+    allowedUntil.current = Date.now() + ms
+    setUntil(allowedUntil.current)
+    // At zero it locks again by itself, and the lock turns back.
+    timer.current = setTimeout(lockFileActions, ms)
+  }, [lockFileActions])
+  return { settings, save, fileActionsAllowed, allowFileActions, lockFileActions, allowedUntil: settings.on ? until : null }
 }
 
 /**
