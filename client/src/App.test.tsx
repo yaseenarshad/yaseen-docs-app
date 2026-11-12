@@ -5382,6 +5382,31 @@ describe('App: the note card flow from /card, through the real editor (YAZ-4965)
     await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-9 -->'))
     expect(el.querySelector('.outside-changes-bar')).toBeNull()
   }, 30_000)
+
+  it('a READ-ONLY vault: the page is locked, yet Remembered writes the review line to the file, and the open page shows no bar', async () => {
+    captured.realEditor = true
+    const line = '<!-- card: WIKI-9 -->'
+    const files: Record<string, { content: string; mtime: number }> = { [PAGE]: { content: `# Cards\n\n\`\`\`card\nCapital of {{France}}\n\`\`\`\n${line}\n`, mtime: 1 } }
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: PAGE, tabs: [PAGE] }, files, (b) => {
+      b.bridge.index.mockImplementation(async () => ({ root: '/v', records: Object.entries(files).map(([p, f]) => scan(p, f.content)), folders: [], generatedAt: 1, ids: true }))
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+    })
+    await vi.waitFor(() => expect(el.querySelector('.ProseMirror')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    // The page is locked (read only for the whole vault).
+    await vi.waitFor(() => expect(captured.crepes.at(-1)!.editor.action((ctx) => ctx.get(editorViewCtx)).editable).toBe(false), { timeout: SLOW_RUNNER_MS })
+    act(() => captured.sidebar?.onOpenInbox())
+    const inbox = () => el.querySelector<HTMLElement>('.note-card-inbox')
+    await vi.waitFor(() => expect(inbox()?.querySelector('.note-card__side')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    // No "Edit page" in a read-only vault.
+    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).not.toContain('E')
+    const press = (key: string) => act(async () => void inbox()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
+    await press(' ')
+    await vi.waitFor(() => expect(el.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2))
+    await press('2')
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good -->$/m), { timeout: SLOW_RUNNER_MS })
+    await vi.waitFor(() => expect(getMarkdownForSave(captured.crepes.at(-1)!)).toMatch(/<!-- card: WIKI-9, \S+ good -->/))
+    expect(el.querySelector('.outside-changes-bar')).toBeNull()
+  }, 30_000)
 })
 
 /**
