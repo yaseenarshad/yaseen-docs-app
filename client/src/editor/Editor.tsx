@@ -18,6 +18,7 @@ import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
 import { placeRows, type LinkActions } from './linkMenu'
 import { redrawLinkPills } from './markdownLink'
 import { editorViewCtx } from '@milkdown/kit/core'
+import { takeNoteId } from '../views/scaffold'
 import { createCrepe, editorViewOf, focusEditor, getCaretOf, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { mergeExternalMarkdown } from './external/mergeExternal'
@@ -867,6 +868,8 @@ function CrepeHost({
       root: el,
       defaultValue: body,
       onMarkdownUpdated: (md) => controller?.update(md),
+      // Note cards (YAZ-4961): `/card` takes its ID from the vault's door at once; the card's open hook names this page.
+      noteCards: { path: file.path, mintId: takeNoteId },
       // A calendar table's marker moves each minute here (YAZ-4162 D2, D9); a preview card starts no timer.
       calendarClock: true,
       // The table zoom pill on each table (YAZ-4091); the previews and the outline view have none (YAZ-4176).

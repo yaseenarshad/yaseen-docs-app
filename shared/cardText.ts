@@ -39,6 +39,15 @@ export function cardPieces(side: string): CardPiece[] {
   return pieces
 }
 
+/**
+ * `text` with each hidden word put through `mark(word, n)`: `n` counts the hidden words in page order, from `from`. The
+ * same words `cardPieces` finds, so the card render (YAZ-4961) and the Inbox's steps (D18) count alike.
+ */
+export function markHidden(text: string, mark: (word: string, n: number) => string, from = 0): string {
+  let n = from
+  return text.replace(HIDDEN_RE, (_, word: string) => mark(word, n++))
+}
+
 /** How many hidden words a side holds. */
 export const hiddenCount = (side: string): number => cardPieces(side).filter((p) => p.kind === 'hidden').length
 

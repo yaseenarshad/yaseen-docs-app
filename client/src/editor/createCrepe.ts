@@ -351,11 +351,16 @@ import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap,
 import { foldAllRows } from './outline/foldAllRows'
 import { openBulletRow } from './outline/openBulletRow'
 import { focusSidebar } from '../lib/focusHandoff'
-import { createWikilinkClick, wikilinkFollower, type WikilinkNav } from './wikilink/wikilinkClick'
+import { createWikilinkClick, wikilinkFollower, type LinkFollow, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu, linkMenuOf } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
-import { createWikilink, createWikilinkResolveSource, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createWikilink, createWikilinkResolveSource, linkIsResolved, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { languages as codeLanguages } from '@codemirror/language-data'
+import { basename } from '@shared/types'
+import { imageSrc, noteDirRel } from './image/imageSrc'
+import { NOTE_CARD_ID_META, noteCardCodeKeys, noteCardLanguage, noteCardPlugins, noteCardRow, type NoteCardDeps, type NoteCardHost } from './noteCard/noteCardView'
+import type { NoteCardLook } from './noteCard/noteCardRender'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createPillSelection } from './wikilink/pillSelection'
 import { createMarkdownLink, noPreviewOnPills, type MarkdownLinkNav } from './markdownLink'
@@ -454,6 +459,11 @@ export interface CreateCrepeOptions {
   extendToolbar?: (builder: ToolbarBuilder) => void
   /** Whether Enter keeps the line's style (YAZ-3746 13AB). Absent → the notes' switch; a drawing text box passes its own. */
   enterKeepsStyle?: () => boolean
+  /**
+   * Note cards (YAZ-4961): the page's path and the vault's ID door. Absent → no "Note card" slash row; a card still
+   * draws (a preview, a read layer). The row also hides while the vault gives no IDs (idea 9, `wikilinks.ids`).
+   */
+  noteCards?: NoteCardHost
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
@@ -606,7 +616,9 @@ const escapeToSidebar = $shortcut(() => ({
 }))
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
-  const slashMenu = createSlashMenu(opts.drawing === undefined ? undefined : drawingMenu(opts.drawing), opts.hidden?.slash)
+  // The "Note card" row (YAZ-4961, idea 9): only in a vault that gives IDs, read at each update of the menu's flags.
+  const noteCardSlash = opts.noteCards === undefined ? undefined : { row: noteCardRow(opts.noteCards), on: () => (opts.wikilinks?.ids ?? false) }
+  const slashMenu = createSlashMenu(opts.drawing === undefined ? undefined : drawingMenu(opts.drawing), opts.hidden?.slash, noteCardSlash)
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
@@ -633,7 +645,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // app.css `--code-*` so they follow Appearance (codeTheme.ts replaces Crepe's One Dark).
       // `codeLines` (YAZ-2643 D8): a code block's own line numbers are lines of the file while the numbers show.
       // `addLineCodeKeys` (YAZ-4800 demo): ⌘↵ / ⌘⇧↵ add a line below / above the code block, before Crepe's exit-code.
-      [CrepeFeature.CodeMirror]: { theme: codeTheme, extensions: [CodeMirrorView.lineWrapping, codeLines, codeBlockFind, addLineCodeKeys] },
+      // `noteCardCodeKeys` (YAZ-4961): in a note card's editor ⌘↵ opens the card and Esc is Done, before `addLineCodeKeys`.
+      // The `card` language: Markdown with spell check (idea 8).
+      [CrepeFeature.CodeMirror]: { theme: codeTheme, languages: [...codeLanguages, noteCardLanguage], extensions: [CodeMirrorView.lineWrapping, codeLines, codeBlockFind, noteCardCodeKeys, addLineCodeKeys] },
     },
   })
   crepe.editor.use(
@@ -764,6 +778,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.(), exploreClick)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
+  // Note cards (YAZ-4961): a ```card block draws as a card in every editor that has code blocks (idea 10: the hover
+  // preview, QuickLook, read-only notes and Explore too); its pills, images and links as the note's.
+  if ({ ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false) crepe.editor.use(noteCardPlugins(noteCardDeps(opts, wikilinks, viewOnlyLinks, follow)))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav, wikilinks)).config(noPreviewOnPills)
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
   if (opts.boardEmbeds !== undefined) {
@@ -896,7 +913,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
         const key = new PluginKey<number>('mdapp-board-view-save')
         return new Plugin({
           key,
-          state: { init: () => 0, apply: (tr, n) => (tr.docChanged && tr.getMeta(BOARD_VIEW_META) === true ? n + 1 : n) },
+          // A new note card's ID (YAZ-4961) is such a write too: out of undo, so ⌘Z removes the card in one step.
+          state: { init: () => 0, apply: (tr, n) => (tr.docChanged && (tr.getMeta(BOARD_VIEW_META) === true || tr.getMeta(NOTE_CARD_ID_META) === true) ? n + 1 : n) },
           view: () => {
             let timer: ReturnType<typeof setTimeout> | undefined
             return {
@@ -913,6 +931,40 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     )
   }
   return crepe
+}
+
+/** What the note cards of one editor read (YAZ-4961): the editor's own link sources, follower, images and doors. */
+function noteCardDeps(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, follow: LinkFollow | undefined): NoteCardDeps {
+  const image = opts.image
+  const nav = opts.markdownLinkNav
+  const look: NoteCardLook = {
+    link: (inner) => {
+      const path = linkPath(inner, wikilinks, viewOnly)
+      return {
+        label: linksAsShown(`[[${inner}]]`, wikilinks, viewOnly),
+        resolved: linkIsResolved(inner, wikilinks, viewOnly),
+        attrs: path === null || opts.linkLook === undefined ? undefined : opts.linkLook.icon(path, fileKind(basename(path)) === null),
+      }
+    },
+    image: image === undefined ? undefined : (src) => imageSrc(image.root, noteDirRel(image.root, image.notePath), src),
+  }
+  return {
+    host: opts.noteCards,
+    path: image?.notePath ?? null,
+    look: () => look,
+    subscribe: (listener) => wikilinks.subscribe(listener),
+    follow,
+    hotkeys: () => opts.wikilinkNav?.hotkeys?.(),
+    openHref:
+      nav === undefined
+        ? undefined
+        : (href) => {
+            const path = nav.inApp?.(href) ?? null
+            if (path !== null && nav.openPath !== undefined) nav.openPath(path, 'explore')
+            else void nav.open(href)
+          },
+    onNotice: opts.wikilinkNav?.onNotice ?? nav?.onNotice,
+  }
 }
 
 /**
