@@ -10,7 +10,8 @@ import { canonicalKey } from './keys'
  * `view.order` round-trips), then `file.name` + the page's columns (YAZ-895 — a DECLARED column is offerable before
  * any note carries a value for it; since YAZ-1549 `propertyKeys` itself shows it by default), then every other field
  * the rows hold — Columns ⚙'s "Other properties in these notes" (YAZ-4713 C4) — then "File name" (`file.basename`,
- * YAZ-2420 🔒 D18), Folder (`file.folder`, a column since YAZ-4564 D26) and the formulas; de-duplicated by canonical
+ * YAZ-2420 🔒 D18), Folder (`file.folder`, a column since YAZ-4564 D26), Cards and Due (`file.cards`, `file.due`, YAZ-4967)
+ * where a row holds a note card, and the formulas; de-duplicated by canonical
  * key. The rows are the notes' own fields less the app's keys (the folder host's `columnReservedKeys`, C1).
  */
 export function allPropertyKeys(
@@ -38,6 +39,11 @@ export function allPropertyKeys(
   if (records.some((r) => READ_ONLY_KEY in r.properties)) add(`note.${READ_ONLY_KEY}`)
   add('file.basename')
   add('file.folder')
+  // The note card counts (YAZ-4967, idea 2): offered only where a row holds a card, hidden until the reader shows them.
+  if (records.some((r) => r.cards !== undefined && r.cards.length > 0)) {
+    add('file.cards')
+    add('file.due')
+  }
   for (const name of Object.keys(def.formulas ?? {})) add(`formula.${name}`)
   return out
 }

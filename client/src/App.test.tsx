@@ -27,7 +27,7 @@ interface SidebarStubProps {
   /** The first vault of `vaults`, read off them by the stub: the vault the panel is keyed on. */
   root: string
   /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
-  vaults: { root: string; name: string; watch: unknown; index: unknown; upkeep: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[] }[]
+  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[] }[]
   /** Right-click → "Share" on a board row (YAZ-3040). */
   onShareFile?: (path: string) => void
   /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
@@ -112,9 +112,9 @@ interface SidebarStubProps {
   onNotice: (message: string, icon?: NoticeKind, type?: NoticeType) => void
   /** ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App asks, the Sidebar (here a stub) answers. */
   clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean; delete: () => boolean } | null }
-  /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): the Inbox row and "Review this folder" exist only then. */
-  upkeep: boolean
-  /** The Inbox row (YAZ-2322): App counts what is due and owns the one review session. */
+  /** Whether this vault has note card review on (YAZ-4967): the Inbox row and the review items exist only then. */
+  review: boolean
+  /** The Inbox row (YAZ-4967): App counts the cards due and owns the one review session. */
   dueCount: number
   reviewing: boolean
   onOpenInbox: () => void
@@ -122,9 +122,8 @@ interface SidebarStubProps {
   onInbox: (root: string) => void
   /** "Review this folder" (YAZ-2322): the sidebar hands the folder's ABSOLUTE path. */
   onReviewFolder: (dirPath: string) => void
-  /** The row menu's review toggle (YAZ-2322): the hook's lookup and its write, straight through. */
-  reviewState: (path: string) => boolean | null
-  onSetReview: (path: string, on: boolean) => void
+  /** "Review this page" (YAZ-4967): the page's absolute path. */
+  onReviewPage: (path: string) => void
   /** The vault menu's "Open in this window" (YAZ-1798 D11): the one in-place switch. */
   onOpenVaultHere: (path: string) => Promise<boolean>
   /** The Sessions tab's doors (YAZ-3147 D3, D5): App restores, saves and updates; the new row's name field is App's request. */
@@ -193,10 +192,10 @@ vi.mock('./workspace/StartPage', async () => {
   }
 })
 vi.mock('./sidebar/Sidebar', () => ({
-  Sidebar: (props: Omit<SidebarStubProps, 'root' | 'upkeep' | 'dueCount' | 'reviewing' | 'onOpenInbox'>) => {
+  Sidebar: (props: Omit<SidebarStubProps, 'root' | 'review' | 'dueCount' | 'reviewing' | 'onOpenInbox'>) => {
     // The first vault's own, as a window with one vault reads them: its folder and its Inbox row (YAZ-2602 R5).
-    const { root, upkeep, dueCount, reviewing } = props.vaults[0]
-    captured.sidebar = { ...props, root, upkeep, dueCount, reviewing, onOpenInbox: () => props.onInbox(root) }
+    const { root, review, dueCount, reviewing } = props.vaults[0]
+    captured.sidebar = { ...props, root, review, dueCount, reviewing, onOpenInbox: () => props.onInbox(root) }
     captured.sidebarRenders++
     return <aside ref={props.asideRef} data-sidebar data-root={root} />
   },
@@ -205,7 +204,6 @@ vi.mock('./sidebar/Sidebar', () => ({
 import { App, preloadTabBoard, replayNotice } from './App'
 import { dropAllNoteWindows, keepNoteWindow, noteWindowKey, noteWindowMemory, openNoteWindow } from './views/view/NoteWindow'
 import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
-import type { UpkeepRecord } from './review/upkeepLegacy'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -537,7 +535,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       stats: vi.fn(async (r: string) => ({ root: r, boards: { bytes: 0, count: 0 }, pictures: { bytes: 0, count: 0 }, other: { bytes: 0, count: 0 }, git: null, large: [], embedded: { bytes: 0, boards: 0 } })),
       shrink: vi.fn(async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 })),
     },
-    // No `review.json` (YAZ-2322), so upkeep is off: App owns one `useReviewSettings`, which reads and subscribes on vault open.
+    // No `review.json` (YAZ-4967), so card review has its defaults: each vault owns one `useReviewSettings`, which reads and subscribes on vault open.
     vaultConfig: { read: vi.fn(async (_root?: string, _name?: string): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
     // A vault's IDs (YAZ-2677): main saves the answer and runs the duplicate check.
     ids: {
@@ -5127,363 +5125,65 @@ describe('opening a vault creates no file (YAZ-2290)', () => {
 })
 
 /**
- * An upkeep review (YAZ-2322) REPLACES the main pane and is not a tab: the strip gives way to the
- * review bar, the session's note is the one visible page, and nothing about the workspace —
- * tabs, active tab, right panel — moves until the user moves it. One editor per note, always.
+ * Note card review in App (YAZ-4967): each vault counts its due cards for the sidebar's Inbox row and holds one
+ * session; the Inbox screen that draws it is YAZ-4962, so App draws no review surface yet. Page upkeep is gone (D6).
  */
-describe('App upkeep review (YAZ-2322)', () => {
-  /** A note last changed in 1970: in review by default, and long overdue. */
-  const due = (name: string, folder = ''): UpkeepRecord => ({
+describe('App note card review (YAZ-4967)', () => {
+  const H = 3_600_000
+  /** A page of `cards`: each `[id, reviews]`, as the index hands them (D4). */
+  const page = (name: string, folder: string, ...cards: [string, { at: string; rating: 'again' | 'good' }[]][]): IndexRecord => ({
     path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`, name: `${name}.md`, basename: name, title: name, folder, ext: 'md', size: 1, ctime: 1, mtime: 1,
-    properties: {}, aliases: [], tags: [], links: [], embeds: [], text: 'x',
+    properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cards.map(([id, reviews]) => ({ id, off: false, reviews })),
   })
-  const withIndex = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) =>
-    void b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true })
-  /** The vault's `review.json` turns upkeep on, and the index holds `records`. */
-  const upkeepOn = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) => {
-    b.bridge.vaultConfig.read.mockResolvedValue({ enabled: true })
-    withIndex(...records)(b)
-  }
+  const hourAgo = () => [{ at: new Date(Date.now() - H).toISOString().slice(0, 16) + 'Z', rating: 'good' as const }]
+  const RECORDS = () => [
+    page('x', '', ['V-1', [{ at: '2020-01-01T09:00Z', rating: 'good' }]], ['V-2', hourAgo()]), // due; not due
+    page('p', 'Work', ['V-3', []]), // new
+  ]
+  const withIndex = (records: IndexRecord[], ids = true) => (b: ReturnType<typeof installBridge>) =>
+    void b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids })
   const TABS: IdentityFixture = { id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'] }
-
-  const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
-  const activeLabel = (el: HTMLElement) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent
-  const layers = (el: HTMLElement) =>
-    [...el.querySelectorAll<HTMLElement>('.tabstack__layer')].map((l) => [
-      l.querySelector('[data-editor]')?.getAttribute('data-path'),
-      l.classList.contains('tabstack__layer--hidden'),
-    ])
-  const editorsOn = (el: HTMLElement, path: string) => el.querySelectorAll(`[data-editor][data-path="${path}"]`).length
-  const button = (el: HTMLElement, name: string) => [...el.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') ?? b.textContent) === name)
   const openInbox = () => act(() => captured.sidebar?.onOpenInbox())
 
-  it('the sidebar is handed the due count, and told while a review is open', async () => {
-    await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    expect(captured.sidebar?.upkeep).toBe(true)
+  it('a vault with no review.json reviews cards: the sidebar gets the due count — a due card and a new one, not the card answered an hour ago', async () => {
+    await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    expect(captured.sidebar?.review).toBe(true)
     expect(captured.sidebar?.dueCount).toBe(2)
     expect(captured.sidebar?.reviewing).toBe(false)
+  })
+
+  it('the Inbox row opens the session and a second click closes it; App draws no review surface until YAZ-4962, and the strip stays', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
     openInbox()
     expect(captured.sidebar?.reviewing).toBe(true)
-  })
-
-  it('starting a review moves nothing in the workspace, and closing it returns to exactly the tabs that were there', async () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
-    const { bridge, el } = await mount(
-      defaultAppState(),
-      { ...TABS, rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' } },
-      {},
-      upkeepOn(due('x'), due('y')),
-    )
-    bridge.window.setIdentity.mockClear()
+    expect(el.querySelector('.review-bar, .review-answers')).toBeNull()
+    expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['a', 'b'])
     openInbox()
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
-    expect(document.title).toBe('v — b')
-    expect(location.hash).toBe('#/v/b.md')
-    expect(el.querySelector('.right-panel__header')?.textContent).toBe('r')
-    act(() => button(el, 'Close review')?.click())
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
-    expect(stripLabels(el)).toEqual(['a', 'b'])
-    expect(activeLabel(el)).toBe('b')
-    expect(layers(el)).toEqual([['/v/b.md', false]])
-    expect(el.querySelector('.right-panel__header')?.textContent).toBe('r')
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(el.querySelector('.review-answers')).toBeNull()
-  })
-
-  it('S48: a review that starts closes the tab board, and the board does not open during a review — by the key or by the button', async () => {
-    const { el, emitTabOverview } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    act(() => emitTabOverview())
-    expect(el.querySelector('.taboverview')).not.toBeNull()
-    openInbox()
-    expect(el.querySelector('.taboverview')).toBeNull()
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    act(() => emitTabOverview())
-    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.click())
-    expect(el.querySelector('.taboverview')).toBeNull()
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-  })
-
-  it('the new tab page does not show while a review is open, and shows again when it closes (YAZ-2663 S25)', async () => {
-    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, upkeepOn(due('x')))
-    expect(el.querySelector('[data-start-page]')).not.toBeNull()
-    openInbox()
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    expect(el.querySelector('[data-start-page]')).toBeNull()
-    act(() => button(el, 'Close review')?.click())
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(el.querySelector('[data-start-page]')).not.toBeNull()
-  })
-
-  it('YAZ-2662 S67: a review that starts closes the preview panel of the search, and no panel shows during a review or comes back when it closes', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    const shown = () => [el.querySelector('.quicklook') !== null, captured.sidebar?.previewPath, el.querySelector('.review-bar') !== null]
-    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
-    expect(shown()).toEqual([true, '/v/archive.zip', false])
-    openInbox()
-    expect(shown()).toEqual([false, null, true])
-    await act(async () => captured.sidebar?.onPreview('/v/archive.zip'))
-    expect(shown()).toEqual([false, null, true])
-    await act(async () => button(el, 'Close review')?.click())
-    expect(shown()).toEqual([false, null, false])
-  })
-
-  it('⌘T during a review does nothing (YAZ-2655 S82)', async () => {
-    const { el, emitNewTab } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    openInbox()
-    act(() => emitNewTab())
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    expect(captured.sidebar?.pendingSearchFocus).toBe(false)
-    act(() => button(el, 'Close review')?.click())
-    expect(stripLabels(el)).toEqual(['a', 'b'])
-  })
-
-  it('with a session open the tab strip gives way to the review bar, and the note\'s editor is the only visible layer', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    openInbox()
-    expect(el.querySelector('.tabbar')).toBeNull()
-    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Inbox')
-    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
-    expect(layers(el)).toEqual([
-      ['/v/b.md', true],
-      ['/v/x.md', false],
-    ])
-    expect(button(el, 'Still relevant⌘⇧⏎')).toBeDefined()
-  })
-
-  it('Skip shows the next note in a layer of its own; the one before is gone', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    openInbox()
-    act(() => button(el, 'Skip⌘⇧S')?.click())
-    expect(layers(el)).toEqual([
-      ['/v/b.md', true],
-      ['/v/y.md', false],
-    ])
-  })
-
-  it('⌘⇧S stays the review\'s Skip (YAZ-3037, YAZ-3028 D10): with a review open, the menu\'s Export Excalidraw Drawing… gesture skips the note', async () => {
-    const { el, emitExportDrawing } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    openInbox()
-    act(() => emitExportDrawing())
-    expect(layers(el)).toEqual([
-      ['/v/b.md', true],
-      ['/v/y.md', false],
-    ])
-  })
-
-  it('a note that is already an open tab shows through that tab\'s layer — one editor for the path', async () => {
-    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
-    act(() => captured.sidebar?.onOpenFile('/v/b.md'))
-    expect(layers(el)).toEqual([
-      ['/v/a.md', true],
-      ['/v/b.md', false],
-    ])
-    openInbox()
-    expect(layers(el)).toEqual([
-      ['/v/a.md', false],
-      ['/v/b.md', true],
-    ])
-    expect(editorsOn(el, '/v/a.md')).toBe(1)
-    act(() => button(el, 'Close review')?.click())
-    expect(layers(el)).toEqual([
-      ['/v/a.md', true],
-      ['/v/b.md', false],
-    ])
-  })
-
-  it('S9 (YAZ-2940): a note that has copies shows through ONE copy\'s layer — the active copy when it shows the note, else the first from the left — and no other editor mounts', async () => {
-    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
-    act(() => void el.querySelector('.tabbar__tab')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
-    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((item) => item.textContent === 'Duplicate tab')!.click())
-    const [first, copy] = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((tab) => tab.dataset.tab)
-    act(() => captured.sidebar?.onOpenFile('/v/b.md')) // a · a′ · b, b active
-    const shown = () => [...el.querySelectorAll<HTMLElement>('.tabstack__layer:not(.tabstack__layer--hidden)')].map((layer) => layer.dataset.tab)
-    openInbox()
-    expect(shown()).toEqual([first])
-    expect(editorsOn(el, '/v/a.md')).toBe(2)
-    act(() => button(el, 'Close review')?.click())
-    act(() => el.querySelectorAll<HTMLElement>('.tabbar [role="tab"]')[1].click()) // the copy a′
-    openInbox()
-    expect(shown()).toEqual([copy])
-    expect(editorsOn(el, '/v/a.md')).toBe(2)
-  })
-
-  it('a note open in the side panel is reviewed there: the main pane says so and mounts no second editor', async () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
-    const { el } = await mount(
-      defaultAppState(),
-      { ...TABS, rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' } },
-      {},
-      upkeepOn(due('r')),
-    )
-    openInbox()
-    expect(el.querySelector('.tabstack .review-message')?.textContent).toBe('This note is open in the side panel.')
-    expect(layers(el)).toEqual([['/v/b.md', true]])
-    expect(editorsOn(el, '/v/r.md')).toBe(1)
-    expect(el.querySelector('.review-answers')).not.toBeNull() // the answers still work
-  })
-
-  it('nothing due: the empty state, no answers, and "Back to tabs" closes', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn())
-    openInbox()
-    expect(el.querySelector('.tabstack .review-message p')?.textContent).toBe('Inbox complete.')
-    expect(el.querySelector('.review-answers')).toBeNull()
-    act(() => button(el, 'Back to tabs')?.click())
-    expect(el.querySelector('.review-message')).toBeNull()
-    expect(stripLabels(el)).toEqual(['a', 'b'])
-  })
-
-  it('a link clicked in the note opens in a background tab; the review stays', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-    openInbox()
-    act(() => el.querySelector<HTMLButtonElement>('[data-path="/v/x.md"] [data-open-right-current]')?.click())
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    act(() => button(el, 'Close review')?.click())
-    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
-    expect(activeLabel(el)).toBe('b')
-  })
-
-  it('YAZ-3943 5B: a plain link click during a review to a page a tab shows makes no copy: the strip is as it was', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-    openInbox()
-    const open = (path: string) => act(() => captured.editorOpeners.filter((o) => o.path === '/v/x.md').at(-1)!.open(path))
-    open('/v/a.md')
-    open('/v/b.md')
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    act(() => button(el, 'Close review')?.click())
-    expect(stripLabels(el)).toEqual(['a', 'b'])
-    expect(activeLabel(el)).toBe('b')
-  })
-
-  it('"Review this folder" starts a session over that folder alone, named for it', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('p', 'Work/Projects'), due('q', 'Work/Projects/sub')))
-    act(() => captured.sidebar?.onReviewFolder('/v/Work/Projects'))
-    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Projects')
-    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
-    expect(el.querySelector('.tabstack__layer:not(.tabstack__layer--hidden) [data-editor]')?.getAttribute('data-path')).toBe('/v/Work/Projects/p.md')
-  })
-
-  it('the sidebar and the tab menu get the SAME review lookup and write: a note answers, anything else is null', async () => {
-    const files = { '/v/a.md': { content: 'Body.\n', mtime: 1 } }
-    const { bridge, el } = await mount(defaultAppState(), TABS, files, upkeepOn(due('a')))
-    expect(captured.sidebar?.reviewState('/v/a.md')).toBe(true)
-    expect(captured.sidebar?.reviewState('/v/photo.png')).toBeNull()
-    act(() => void el.querySelector('.tabbar__tab')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
-    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === 'Turn review off')?.click())
-    expect(bridge.writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: '/v/a.md', content: '---\nreview: false\n---\nBody.\n' }))
-  })
-
-  it('the same holds for a note shown through its own tab: its link does not navigate the active tab under the review', async () => {
-    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
-    act(() => captured.sidebar?.onOpenFile('/v/b.md'))
-    openInbox()
-    act(() => el.querySelector<HTMLButtonElement>('[data-path="/v/a.md"] [data-open-right-current]')?.click())
-    act(() => button(el, 'Close review')?.click())
-    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
-    expect(activeLabel(el)).toBe('b')
-  })
-
-  it('clicking the Inbox row again closes the review', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-    openInbox()
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    openInbox()
-    expect(el.querySelector('.review-bar')).toBeNull()
     expect(captured.sidebar?.reviewing).toBe(false)
   })
 
-  it('opening a file from the sidebar ends the review and shows that file', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-    openInbox()
-    act(() => captured.sidebar?.onOpenFile('/v/a.md'))
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(activeLabel(el)).toBe('a')
+  it('"Review this folder" and "Review this page" start a session over that scope: its first card\'s page is read', async () => {
+    const { bridge } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    bridge.readFile.mockClear()
+    await act(async () => captured.sidebar?.onReviewFolder('/v/Work'))
+    expect(captured.sidebar?.reviewing).toBe(true)
+    expect(bridge.readFile).toHaveBeenCalledWith('/v/Work/p.md')
+    bridge.readFile.mockClear()
+    await act(async () => captured.sidebar?.onReviewPage('/v/x.md'))
+    expect(bridge.readFile).toHaveBeenCalledWith('/v/x.md')
+    expect(bridge.readFile).not.toHaveBeenCalledWith('/v/Work/p.md')
   })
 
-  it('File › Close Tab closes the review, not the tab hidden under it', async () => {
-    const { el, emitCloseTab } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
+  it('review off in review.json: no Inbox, nothing due, no session; and no page gets the old Reviews footer', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, (b) => {
+      b.bridge.vaultConfig.read.mockImplementation(async (_root, name) => (name === 'review.json' ? { enabled: false } : null))
+      withIndex(RECORDS())(b)
+    })
+    expect(captured.sidebar?.review).toBe(false)
+    expect(captured.sidebar?.dueCount).toBe(0)
     openInbox()
-    act(() => emitCloseTab())
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(stripLabels(el)).toEqual(['a', 'b'])
-  })
-
-  /** Upkeep is off until a vault turns it on (🔒 D7): every test below starts with no `review.json`. */
-  describe('off until the vault turns it on', () => {
-    const editorSettings = (el: HTMLElement, path: string) => el.querySelector(`[data-editor][data-path="${path}"]`)?.getAttribute('data-review-settings')
-    const tabMenu = (el: HTMLElement) => {
-      act(() => void el.querySelector('.tabbar__tab')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
-      return [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].map((b) => b.textContent ?? '')
-    }
-    /** The Settings dialog's "Enable upkeep review" switch, clicked On or Off. */
-    const setUpkeep = (el: HTMLElement, emitSettings: () => void, on: boolean) => {
-      act(() => emitSettings())
-      settingsPage(el, 'Review')
-      act(() => el.querySelectorAll<HTMLButtonElement>('[data-setting="enabled"] button')[on ? 0 : 1].click())
-      act(() => button(el, 'Close settings')?.click())
-    }
-
-    it('upkeep off: the sidebar is told so — no Inbox row, no "Review this folder" — nothing is due, and nothing is written', async () => {
-      const { bridge } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
-      expect(captured.sidebar?.upkeep).toBe(false)
-      expect(captured.sidebar?.dueCount).toBe(0)
-      expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
-      expect(bridge.writeFile).not.toHaveBeenCalled()
-    })
-
-    it('upkeep off: a note\'s row menu and its tab menu have no "Turn review on" / "Turn review off"', async () => {
-      const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('a')))
-      expect(captured.sidebar?.reviewState('/v/a.md')).toBeNull()
-      const items = tabMenu(el)
-      expect(items).toContain('Copy path')
-      expect(items.some((label) => label.startsWith('Turn review'))).toBe(false)
-    })
-
-    it('upkeep off: a page is handed no review settings, so it has no Reviews section', async () => {
-      const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('b')))
-      expect(editorSettings(el, '/v/b.md')).toBe('none')
-    })
-
-    it('upkeep off: the review hotkeys do nothing', async () => {
-      const { bridge, el } = await mount(defaultAppState(), TABS, { '/v/x.md': { content: 'Body.\n', mtime: 1 } }, withIndex(due('x')))
-      for (const key of ['Enter', 'S', 'Escape']) {
-        const event = new KeyboardEvent('keydown', { key, metaKey: key !== 'Escape', shiftKey: key !== 'Escape', bubbles: true, cancelable: true })
-        act(() => void document.body.dispatchEvent(event))
-        expect(event.defaultPrevented).toBe(false)
-      }
-      expect(bridge.writeFile).not.toHaveBeenCalled()
-      expect(el.querySelector('.review-bar')).toBeNull()
-      expect(stripLabels(el)).toEqual(['a', 'b'])
-    })
-
-    it('turned on in Settings: the Inbox row, the menu items and the Reviews section are there at once, and a review runs', async () => {
-      const files = { '/v/a.md': { content: 'Body.\n', mtime: 1 } }
-      const { bridge, el, emitSettings } = await mount(defaultAppState(), TABS, files, withIndex(due('a'), due('p', 'Work')))
-      setUpkeep(el, emitSettings, true)
-      expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', 'review.json', { algorithm: 'upkeep', enabled: true, baseDays: 30, growth: 2, maxDays: 365, reviewByDefault: true })
-      expect(captured.sidebar?.upkeep).toBe(true)
-      expect(captured.sidebar?.dueCount).toBe(2)
-      expect(captured.sidebar?.reviewState('/v/a.md')).toBe(true)
-      expect(tabMenu(el)).toContain('Turn review off')
-      expect(editorSettings(el, '/v/b.md')).toBe('given')
-      act(() => captured.sidebar?.onReviewFolder('/v/Work'))
-      expect(el.querySelector('.review-bar__label')?.textContent).toBe('Work')
-      expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 1')
-    })
-
-    it('turned off while a review is open: the review closes, the tabs are as they were, and nothing is written to a note', async () => {
-      const { bridge, el, emitSettings } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-      openInbox()
-      expect(el.querySelector('.review-bar')).not.toBeNull()
-      setUpkeep(el, emitSettings, false)
-      expect(el.querySelector('.review-bar')).toBeNull()
-      expect(el.querySelector('.review-answers')).toBeNull()
-      expect(captured.sidebar?.upkeep).toBe(false)
-      expect(captured.sidebar?.reviewing).toBe(false)
-      expect(captured.sidebar?.dueCount).toBe(0)
-      expect(stripLabels(el)).toEqual(['a', 'b'])
-      expect(activeLabel(el)).toBe('b')
-      expect(bridge.writeFile).not.toHaveBeenCalled()
-    })
+    expect(captured.sidebar?.reviewing).toBe(false)
+    expect(el.querySelector('[data-editor][data-path="/v/b.md"]')?.getAttribute('data-review-settings')).toBe('none')
   })
 })
 
@@ -5762,15 +5462,15 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     const name = path.slice(path.lastIndexOf('/') + 1)
     return { path, name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
   }
-  /** A note last changed in 1970: in review by default, and long overdue. */
-  const due = (path: string, folder = ''): IndexRecord => ({ ...note(path, { folder }), text: 'x' }) as UpkeepRecord
+  /** A page with one new note card: due at once (YAZ-4967). */
+  const due = (path: string, folder = ''): IndexRecord => note(path, { folder, cards: [{ id: `C-${path}`, off: false, reviews: [] }] })
   /** Vault `/v` first, `/w` second, one tab in each; the `/v` tab is the active one. */
   const TWO: IdentityFixture = { id: 'w1', root: '/v', roots: ['/v', '/w'], file: '/v/a.md', tabs: ['/v/a.md', '/w/b.md'] }
   /** Each vault's own index answer. */
   const feed = (byRoot: Record<string, Partial<IndexResponse>>) => (b: Bridge) =>
     void b.bridge.index.mockImplementation(async (vault) => ({ root: vault, records: [], folders: [], generatedAt: 1, ids: true, ...byRoot[vault] }))
-  /** Each vault's own `review.json`: upkeep on, or no file. */
-  const upkeep = (on: Record<string, boolean>) => (b: Bridge) => void b.bridge.vaultConfig.read.mockImplementation(async (vault) => (vault !== undefined && on[vault] ? { enabled: true } : null))
+  /** Each vault's own `review.json`: card review on, or off (YAZ-4967; no file would be on). */
+  const upkeep = (on: Record<string, boolean>) => (b: Bridge) => void b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'review.json' ? { enabled: vault !== undefined && on[vault] === true } : null))
   const NOTES = feed({ '/v': { records: [note('/v/a.md', { title: 'Ay' })] }, '/w': { records: [note('/w/b.md', { title: 'Bee' })] } })
   const callsFor = (spy: { mock: { calls: unknown[][] } }, vault: string) => spy.mock.calls.filter(([first]) => first === vault).length
   const editor = (path: string) => captured.editors.filter((e) => e.path === path).at(-1)
@@ -6040,64 +5740,34 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
   })
 
-  it('a review of a folder of /w runs with /w\'s settings and /w\'s notes while the active tab is in /v (S42)', async () => {
-    const files = { '/w/Work/p.md': { content: 'Body.\n', mtime: 1 } }
-    const { bridge, el } = await mount(defaultAppState(), TWO, files, (b) => {
-      upkeep({ '/w': true })(b)
+  it('a review of a folder of /w runs with /w\'s settings and /w\'s cards while the active tab is in /v; one review per window (S41, S42)', async () => {
+    const { bridge } = await mount(defaultAppState(), TWO, {}, (b) => {
+      upkeep({ '/v': true, '/w': true })(b)
       feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/q.md'), due('/w/Work/p.md', 'Work')] } })(b)
     })
-    act(() => captured.sidebar?.onReviewFolder('/w/Work'))
-    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Work')
-    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 1')
-    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/w/Work/p.md')
-    expect(shownEditor(el)?.getAttribute('data-root')).toBe('/w')
-    expect(shownEditor(el)?.getAttribute('data-review-settings')).toBe('given')
-    expect(el.querySelector('[data-editor][data-path="/v/a.md"]')?.getAttribute('data-review-settings')).toBe('none')
-    await act(async () => button(el, 'Still relevant⌘⇧⏎')?.click())
-    expect(bridge.writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: '/w/Work/p.md' }))
-    act(() => button(el, 'Close review')?.click())
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(activeLabel(el)).toBe('a')
-    expect(captured.sidebar?.reviewState('/w/q.md')).toBe(true) // by path, to the vault that holds it
-    expect(captured.sidebar?.reviewState('/v/x.md')).toBeNull() // upkeep is off in /v
+    const reviewing = () => captured.sidebar?.vaults.map((vault) => vault.reviewing)
+    bridge.readFile.mockClear()
+    await act(async () => captured.sidebar?.onReviewFolder('/w/Work'))
+    expect(bridge.readFile).toHaveBeenCalledWith('/w/Work/p.md')
+    expect(bridge.readFile).not.toHaveBeenCalledWith('/w/q.md')
+    expect(reviewing()).toEqual([false, true])
+    await act(async () => captured.sidebar?.onOpenInbox())
+    expect(reviewing()).toEqual([true, false]) // the review of /w is not waiting under it
   })
 
-  it('one review per window: a start in /v closes the review of /w (S41, S42)', async () => {
-    const { el } = await mount(defaultAppState(), TWO, {}, (b) => {
-      upkeep({ '/v': true, '/w': true })(b)
-      feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/Work/p.md', 'Work')] } })(b)
-    })
-    act(() => captured.sidebar?.onReviewFolder('/w/Work'))
-    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Work')
-    expect(captured.sidebar?.reviewing).toBe(false) // the sidebar's Inbox row is the first vault's
-    act(() => captured.sidebar?.onOpenInbox())
-    expect([...el.querySelectorAll('.review-bar__label')].map((l) => l.textContent)).toEqual(['Inbox'])
-    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/x.md')
-    expect(captured.sidebar?.reviewing).toBe(true)
-    act(() => button(el, 'Close review')?.click())
-    expect(el.querySelector('.review-bar')).toBeNull() // the review of /w is not waiting under it
-    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/a.md')
-  })
-
-  it('the sidebar is handed each vault\'s own Inbox — upkeep, count, state — and a row\'s click opens ITS vault\'s review, closes the other vault\'s, and closes its own when it is the one open (R5, S41)', async () => {
-    const { el } = await mount(defaultAppState(), { ...TWO, roots: ['/v', '/w', '/x'] }, {}, (b) => {
+  it('the sidebar is handed each vault\'s own Inbox — review, count, state — and a row\'s click opens ITS vault\'s review, closes the other vault\'s, and closes its own when it is the one open (R5, S41)', async () => {
+    await mount(defaultAppState(), { ...TWO, roots: ['/v', '/w', '/x'] }, {}, (b) => {
       upkeep({ '/v': true, '/w': true })(b)
       feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/p.md'), due('/w/q.md')] }, '/x': { records: [due('/x/z.md')] } })(b)
     })
-    const rows = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.upkeep, vault.dueCount, vault.reviewing])
+    const rows = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.review, vault.dueCount, vault.reviewing])
     expect(rows()).toEqual([['/v', true, 1, false], ['/w', true, 2, false], ['/x', false, 0, false]])
-    act(() => captured.sidebar?.onInbox('/w'))
+    await act(async () => captured.sidebar?.onInbox('/w'))
     expect(rows()).toEqual([['/v', true, 1, false], ['/w', true, 2, true], ['/x', false, 0, false]])
-    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
-    expect(shownEditor(el)?.getAttribute('data-root')).toBe('/w')
-    act(() => captured.sidebar?.onInbox('/v'))
+    await act(async () => captured.sidebar?.onInbox('/v'))
     expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([true, false, false])
-    expect(el.querySelectorAll('.review-bar')).toHaveLength(1)
-    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/x.md')
-    act(() => captured.sidebar?.onInbox('/v'))
+    await act(async () => captured.sidebar?.onInbox('/v'))
     expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([false, false, false])
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/a.md')
   })
 
   it('each vault syncs as in its own window: the attention banner is the vault\'s that has a problem, and its prompt names that vault (S43)', async () => {

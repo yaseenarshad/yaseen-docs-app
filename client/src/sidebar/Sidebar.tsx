@@ -88,10 +88,13 @@ export interface SidebarVault {
   idsInSearch?: () => IdsInSearch
   /** This vault's "Show IDs in the files list" (YAZ-4940): each note row of Files, Focus and Favorites ends with its ID's number ("#12") or the full ID. Absent → off. */
   idsInFiles?: IdsInFiles
-  /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): off, it has no Inbox row and its folders no "Review this folder". */
-  upkeep: boolean
   /**
-   * Its Inbox row (YAZ-2322; one per vault with upkeep on, YAZ-2602 R5): how many notes are due, and
+   * Whether this vault has note card review on (Settings › Review, YAZ-4967). Off — or a vault that gives no IDs, so
+   * has no cards (D8) — it has no Inbox row, and no "Review this folder" or "Review this page".
+   */
+  review: boolean
+  /**
+   * Its Inbox row (YAZ-4967; one per vault with review on, YAZ-2602 R5): how many cards are due, and
    * whether its review is open. App counts and owns the session — this component is unmounted
    * while collapsed, and the count has to be right the moment it comes back.
    */
@@ -333,14 +336,10 @@ interface SidebarProps {
    * input changes and emptied on unmount. Each verb answers whether it acted, so App knows what to swallow.
    */
   clipboardRef: { current: SidebarClipboard | null }
-  /** The folder row's "Review this folder" (YAZ-2322): App starts a review of what is due inside it. */
+  /** The folder row's "Review this folder" (YAZ-2322): App starts a review of the cards due inside it. */
   onReviewFolder: (dirPath: string) => void
-  /**
-   * The note row's review toggle (YAZ-2322): whether a path is in review — null for anything
-   * that is not a note in the index — and the write. Both App's: the sidebar has no index.
-   */
-  reviewState: (path: string) => boolean | null
-  onSetReview: (path: string, on: boolean) => void
+  /** The page row's "Review this page" (YAZ-4967, idea 4): App starts a review of that page's due cards. */
+  onReviewPage: (path: string) => void
   /** An Inbox row was clicked (YAZ-2602 R5): App opens the review of THAT vault, or closes it when it is the one open. */
   onInbox: (root: string) => void
 }
@@ -512,10 +511,8 @@ export interface MenuTargets {
   favoriteIsOn: boolean
   /** "Review this folder" (YAZ-2322) — FOLDER rows only: a review is of the notes inside one. */
   reviewDir: string | null
-  /** "Turn review off" / "Turn review on" (YAZ-2322) — a NOTE row only; null for every other row and blank space. */
-  reviewPath: string | null
-  /** That note's state when the menu opened; picks the label. */
-  reviewIsOn: boolean
+  /** "Review this page" (YAZ-4967) — a PAGE row that holds a note card, outside a plural selection; null for every other row. */
+  reviewPage: string | null
   /**
    * "Add note shortcut" — a FOLDER row outside a plural selection (YAZ-2290 D2): the folder the
    * picked note will also appear in. Null on a file row, on blank space and inside a 2+
@@ -624,6 +621,7 @@ const PAGE_ROW_MENU = {
   iconPaths: null,
   iconRule: null,
   reviewDir: null,
+  reviewPage: null,
   shortcutDir: null,
   folderPaths: [] as string[],
 }
@@ -707,8 +705,7 @@ export function Sidebar({
   selectionRef,
   clipboardRef,
   onReviewFolder,
-  reviewState,
-  onSetReview,
+  onReviewPage,
   onInbox,
   width,
   asideRef,
@@ -773,8 +770,8 @@ export function Sidebar({
     () => (multi && recentVault === null && settings.recentsByVault ? { nameOf: (at: string) => vaultsRef.current.find((vault) => vault.root === at)?.name ?? at } : undefined),
     [multi, recentVault, settings.recentsByVault, vaultNames], // eslint-disable-line react-hooks/exhaustive-deps -- a renamed vault draws the headings again
   )
-  /** The vaults that have an Inbox row (YAZ-2602 R5): the ones with upkeep on. */
-  const inboxes = vaults.filter((vault) => vault.upkeep)
+  /** The vaults that have an Inbox row (YAZ-2602 R5): the ones with review on that give IDs, so can have cards (D8). */
+  const inboxes = vaults.filter((vault) => vault.review && vault.index.ids)
   /**
    * The vault that holds `path` — the most specific one, else the first (YAZ-2602): every rule
    * about "the vault of this row" asks it. Ref-backed, so the callbacks that ask keep their identity.
@@ -1289,8 +1286,9 @@ export function Sidebar({
       const home = node === null ? vaultsRef.current[0] : vaultOf(node.path)
       // Blank space is the vault ROOT (GRO-2273) — of a window with one vault. With two or more it is no one vault's (S10).
       const blank = multi ? null : root.replace(/\/+$/, '')
-      // App's answer for the row (YAZ-2322), asked ONCE here like every other target this menu pins.
-      const inReview = filePath === null ? null : reviewState(filePath)
+      // "Review this page" (YAZ-4967): a page row whose index record holds a card, read ONCE here like every other target this menu pins.
+      const cardsOn = home.review && home.index.ids
+      const reviewPage = cardsOn && plural === null && filePath !== null && vaultRow === null && (home.index.records.find((r) => r.path === filePath)?.cards?.length ?? 0) > 0 ? filePath : null
       // Only a ROW opens a menu on the Search tab (blank space there offers none), and a search row is a disk row.
       const asSearch = searching || outside
       const menuLens: SidebarLens = asSearch ? 'files' : lens
@@ -1363,10 +1361,9 @@ export function Sidebar({
         ...iconTargets(iconPaths, iconRule),
         // Each row by the list of the vault that holds it (YAZ-2631 D1).
         favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favoritesByRoot[rootOf(p)]?.includes(p) === true || listsNow.current.favoritesTab.folderOf(p) !== undefined),
-        // By the upkeep of the vault that holds the folder (R5).
-        reviewDir: home.upkeep && node?.type === 'dir' && vaultRow === null ? node.path : null,
-        reviewPath: inReview === null ? null : filePath,
-        reviewIsOn: inReview === true,
+        // By the review setting of the vault that holds the folder (R5).
+        reviewDir: cardsOn && node?.type === 'dir' && vaultRow === null ? node.path : null,
+        reviewPage,
         // A shortcut is a folder's ID on a note: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
         shortcutDir: home.index.ids && plural === null && node?.type === 'dir' && vaultRow === null ? node.path : null,
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
@@ -1380,7 +1377,7 @@ export function Sidebar({
         ...(node?.pageOf !== undefined ? PAGE_ROW_MENU : {}),
       })
     },
-    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState, dirs, iconTargets, focusOnly],
+    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly],
   )
   // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
   // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
@@ -1740,8 +1737,8 @@ export function Sidebar({
           </button>
         )}
       </div>
-      {/* The Inbox (YAZ-2322), with upkeep on: above the tabs, so it shows on every tab — the Search tab too.
-          One row per vault that has upkeep on (YAZ-2602 R5), in vault order; two or more say whose each is. */}
+      {/* The Inbox (YAZ-4967), with note card review on: above the tabs, so it shows on every tab — the Search tab too.
+          One row per vault that has it (YAZ-2602 R5), in vault order; two or more say whose each is. Silent with no card due. */}
       {inboxes.map((vault) => {
         const label = inboxes.length > 1 ? `Inbox · ${vault.name}` : 'Inbox'
         return (
@@ -2264,7 +2261,7 @@ export function Sidebar({
               onNewDiagram: viaTree(() => startCreate('diagram')),
               onToggleFavorite: toggleFavorite,
               onReviewFolder,
-              onSetReview,
+              onReviewPage,
               onAddShortcut: setPickingShortcut,
               // A removal clears no value (YAZ-4713 C9): it runs at once, with no sheet.
               onRemoveShortcut: (path, dir) => removeShortcutRow(path, dir),

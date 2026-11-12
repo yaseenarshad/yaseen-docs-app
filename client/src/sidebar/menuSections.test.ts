@@ -36,8 +36,7 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   iconRuleSet: false,
   favoriteIsOn: false,
   reviewDir: null,
-  reviewPath: null,
-  reviewIsOn: false,
+  reviewPage: null,
   shortcutDir: null,
   removeShortcut: null,
   // The window's vaults (YAZ-2602): no flyout to add one and no vault row, as on every row of a window with one vault.
@@ -85,7 +84,7 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onNewDiagram: vi.fn(),
   onToggleFavorite: vi.fn(),
   onReviewFolder: vi.fn(),
-  onSetReview: vi.fn(),
+  onReviewPage: vi.fn(),
   onAddShortcut: vi.fn(),
   onRemoveShortcut: vi.fn(),
   onRename: vi.fn(),
@@ -577,11 +576,10 @@ describe('Rename / Delete', () => {
 })
 
 /**
- * The review items (YAZ-2322) act ON the right-clicked row, so they lead the this-row group, above
- * Rename: a FOLDER row starts a review of what is due inside it, and a NOTE row carries ONE
- * state-aware item that takes it out of review or puts it back (the favorite toggle's idiom).
+ * The review items (YAZ-2322, YAZ-4967) act ON the right-clicked row, so they lead the this-row group, above
+ * Rename: a FOLDER row starts a review of the cards due inside it, a PAGE row with a card one of that page's cards.
  */
-describe('review items (YAZ-2322)', () => {
+describe('review items (YAZ-2322, YAZ-4967)', () => {
   it('"Review this folder" is offered on a folder row only, and hands the folder to its handler', () => {
     const onReviewFolder = vi.fn()
     expect(labelsOf(build(FILE_ROW))).not.toContain('Review this folder')
@@ -592,25 +590,15 @@ describe('review items (YAZ-2322)', () => {
     expect(onReviewFolder).toHaveBeenCalledExactlyOnceWith('/v/sub')
   })
 
-  it('a note in review reads "Turn review off", one out of it "Turn review on" — above Rename', () => {
-    const on = build({ ...FILE_ROW, reviewPath: '/v/Note.md', reviewIsOn: true })
-    expect(on[3].map((i) => i.label)).toEqual(['Turn review off', 'Rename'])
-    const off = build({ ...FILE_ROW, reviewPath: '/v/Note.md', reviewIsOn: false })
-    expect(off[3].map((i) => i.label)).toEqual(['Turn review on', 'Rename'])
-  })
-
-  it('hands the select its target and the state to SET', () => {
-    const onSetReview = vi.fn()
-    select(build({ reviewPath: '/v/a.md', reviewIsOn: true }, { onSetReview }), 'Turn review off')
-    expect(onSetReview).toHaveBeenCalledExactlyOnceWith('/v/a.md', false)
-    const turnOn = vi.fn()
-    select(build({ reviewPath: '/v/a.md', reviewIsOn: false }, { onSetReview: turnOn }), 'Turn review on')
-    expect(turnOn).toHaveBeenCalledExactlyOnceWith('/v/a.md', true)
-  })
-
-  it('is absent with no target — a folder, blank space, a file that is not a note', () => {
-    expect(labelsOf(build(FILE_ROW)).some((l) => l.startsWith('Turn review'))).toBe(false)
-    expect(labelsOf(build(BLANK)).some((l) => l.startsWith('Turn review'))).toBe(false)
+  it('"Review this page" is offered on a page row with a target only, beside where "Review this folder" sits, and hands the page to its handler', () => {
+    const onReviewPage = vi.fn()
+    expect(labelsOf(build(FILE_ROW))).not.toContain('Review this page')
+    expect(labelsOf(build(BLANK))).not.toContain('Review this page')
+    const sections = build({ ...FILE_ROW, reviewPage: '/v/Note.md' }, { onReviewPage })
+    expect(sections[3].map((i) => i.label)).toEqual(['Review this page', 'Rename'])
+    select(sections, 'Review this page')
+    expect(onReviewPage).toHaveBeenCalledExactlyOnceWith('/v/Note.md')
+    expect(labelsOf(sections).some((l) => l.startsWith('Turn review'))).toBe(false)
   })
 })
 

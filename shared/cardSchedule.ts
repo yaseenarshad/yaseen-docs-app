@@ -139,32 +139,111 @@ export interface DueCard {
   isNew: boolean
 }
 
-/** Is `ms` today, on this computer's calendar? */
-const isToday = (ms: number, now: number): boolean => new Date(ms).toDateString() === new Date(now).toDateString()
+/**
+ * The due date of a card that has reviews (NaN for a new card), cached (YAZ-4967) by its log as text, one map per
+ * settings object: new settings are a new object, so a settings change starts empty. A hit costs a string join and
+ * a lookup, no FSRS step.
+ */
+const dueCache = new WeakMap<ReviewSettings, Map<string, number>>()
+/** A cap so a long session cannot grow a map without end: past it, the map starts again. */
+const CACHE_MAX = 200_000
+
+export function cardDueAt(reviews: readonly CardReview[], s: ReviewSettings): number {
+  if (reviews.length === 0) return Number.NaN
+  let map = dueCache.get(s)
+  if (map === undefined) dueCache.set(s, (map = new Map()))
+  let key = ''
+  for (const r of reviews) key += `${r.at} ${r.rating},`
+  let due = map.get(key)
+  if (due === undefined) {
+    if (map.size >= CACHE_MAX) map.clear()
+    map.set(key, (due = replay(reviews, s)?.due.getTime() ?? Number.NaN))
+  }
+  return due
+}
+
+/** What the queue needs of each card of a page, in page order: its due date (NaN when new) and its first review's time. */
+interface CardFacts {
+  due: number
+  first: string | null
+}
+
+/** A page as the index hands it: `mtime` and `size` say its bytes did not change. */
+type CardPage = { path: string; folder: string; mtime?: number; size?: number; cards?: readonly NoteCardRecord[] }
+
+const pageCache = new WeakMap<ReviewSettings, Map<string, readonly CardFacts[]>>()
+
+/**
+ * The facts of each card of `r`. The Inbox count runs on every index change, and a snapshot is new objects each
+ * time (IPC), so a page whose path, mtime and size are the same as last time takes its facts from the cache: a
+ * lookup per PAGE. A page without mtime (a test, the command) is worked out card by card through `cardDueAt`.
+ */
+function cardFacts(r: CardPage, s: ReviewSettings): readonly CardFacts[] {
+  const cards = r.cards ?? []
+  const key = typeof r.mtime === 'number' && typeof r.size === 'number' ? `${r.path}\n${r.mtime}\n${r.size}` : null
+  let map = key === null ? undefined : pageCache.get(s)
+  if (key !== null && map === undefined) pageCache.set(s, (map = new Map()))
+  const hit = key === null ? undefined : map?.get(key)
+  if (hit !== undefined && hit.length === cards.length) return hit
+  const facts = cards.map((card) => ({
+    due: cardDueAt(card.reviews, s),
+    // The earliest review, without a sort.
+    first: card.reviews.reduce<string | null>((a, x) => (a === null || x.at < a ? x.at : a), null),
+  }))
+  if (key !== null && map !== undefined) {
+    if (map.size >= CACHE_MAX) map.clear()
+    map.set(key, facts)
+  }
+  return facts
+}
+
+/** How many cards a page has, and how many of them are due now (idea 2, the folder columns "Cards" and "Due"). */
+export interface PageCardCounts {
+  cards: number
+  /** Cards in review that are due now: a new card counts; `newPerDay` is the Inbox's limit, not the page's. 0 while review is off. */
+  due: number
+}
+
+export function pageCardCounts(r: CardPage, s: ReviewSettings, now: number): PageCardCounts {
+  const cards = r.cards ?? []
+  let due = 0
+  if (s.enabled && cards.length > 0) {
+    const facts = cardFacts(r, s)
+    cards.forEach((card, i) => {
+      if (!card.off && card.id !== null && (card.reviews.length === 0 || isCardDue(facts[i].due, now))) due++
+    })
+  }
+  return { cards: cards.length, due }
+}
+
 
 /**
  * The cards due now (D11): each card that is in review — it has an ID, and is not `off` — and whose due date is
  * before local midnight tonight, most overdue first; then new cards in page order, as many as `newPerDay` leaves
  * today (a card counts as new on the day of its first review). None while the vault has review off.
- * `folder` (root-relative, '' = the vault) keeps the cards of that folder and its subfolders.
+ * `folder` (root-relative, '' = the vault) keeps the cards of that folder and its subfolders; `page` (a page's
+ * absolute path, "Review this page", idea 4) keeps that page's cards alone. Either way the new cards begun today
+ * are counted over the whole vault: the limit is the vault's.
  */
-export function cardQueue(records: readonly { path: string; folder: string; cards?: readonly NoteCardRecord[] }[], s: ReviewSettings, now: number, folder = ''): DueCard[] {
+export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string): DueCard[] {
   if (!s.enabled) return []
   const due: DueCard[] = []
   const fresh: DueCard[] = []
   let startedToday = 0
-  const sorted = [...records].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  // Today on this computer's calendar, as minutes the line writes: a card line's time sorts as text.
+  const today = cardTime(new Date(now).setHours(0, 0, 0, 0))
+  const tomorrow = cardTime(new Date(now).setHours(24, 0, 0, 0))
+  // Only the pages with cards: most pages have none, and the sort is the loop's one cost per page.
+  const sorted = records.filter((r) => r.cards !== undefined && r.cards.length > 0).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   for (const r of sorted) {
-    const mine = inFolder(r.folder, folder)
+    const mine = page === undefined ? inFolder(r.folder, folder) : r.path === page
+    const facts = cardFacts(r, s)
     ;(r.cards ?? []).forEach((card, index) => {
-      const first = card.reviews.length === 0 ? undefined : inOrder(card.reviews)[0]
-      if (first !== undefined && isToday(Date.parse(first.at), now)) startedToday++
+      const { due: at, first } = facts[index]
+      if (first !== null && first >= today && first < tomorrow) startedToday++
       if (!mine || card.off || card.id === null) return
-      if (first === undefined) fresh.push({ path: r.path, index, id: card.id, due: now, isNew: true })
-      else {
-        const at = cardState(card.reviews, s).due!
-        if (isCardDue(at, now)) due.push({ path: r.path, index, id: card.id, due: at, isNew: false })
-      }
+      if (first === null) fresh.push({ path: r.path, index, id: card.id, due: now, isNew: true })
+      else if (isCardDue(at, now)) due.push({ path: r.path, index, id: card.id, due: at, isNew: false })
     })
   }
   due.sort((a, b) => a.due - b.due || (a.path < b.path ? -1 : a.path > b.path ? 1 : a.index - b.index))

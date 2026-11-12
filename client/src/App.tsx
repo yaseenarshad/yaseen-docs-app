@@ -69,7 +69,7 @@ import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
-import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
+import type { CardReviewScope } from './review/useCardReview'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
@@ -1416,23 +1416,20 @@ export function App() {
   const openWhatsNew = useCallback(() => setWhatsNewOpen(true), [])
   const closeWhatsNew = useCallback(() => setWhatsNewOpen(false), [])
 
-  // Upkeep review (YAZ-2322): each vault counts what is due and can hold a session, and the window
+  // Note card review (YAZ-4967): each vault counts its due cards and can hold a session, and the window
   // shows ONE (YAZ-2602 S41): a start in one vault closes the session of every other. App's,
   // because the sidebar that shows the count unmounts while collapsed.
   const reviewer = vaults.find((vault) => vault.review.session !== null) ?? null
   const review = (reviewer ?? first).review
-  const startReview = useCallback((scope: VaultScope, folder?: string) => {
+  const startReview = useCallback((scope: VaultScope, cards?: CardReviewScope) => {
     for (const vault of live.current.vaults) if (vault !== scope) vault.review.close()
-    scope.review.start(folder)
+    scope.review.start(cards)
   }, [])
   const toggleInbox = useCallback((vault: string) => {
     const scope = live.current.vaults[live.current.roots.indexOf(vault)]
     if (scope.review.session === null) startReview(scope)
     else scope.review.close()
   }, [startReview])
-  // The row menus ask and write by path: a note is in review by its own vault's settings (S42).
-  const reviewState = useCallback((path: string) => scopeOf(path).review.inReview(path), [scopeOf])
-  const setReview = useCallback((path: string, on: boolean) => scopeOf(path).review.setInReview(path, on), [scopeOf])
   // A link clicked in a tab's page opens in that tab (`navigate`, YAZ-2648 D3: the sidebar's click
   // goes to the preview tab, a page's own link does not). While a review is open it opens in a
   // background tab instead: the review stays in front and the active tab under it does not move.
@@ -2049,8 +2046,7 @@ export function App() {
     if (action.kind === 'duplicate') duplicateTab(tab.id)
     else if (action.kind === 'set-name') setTabName(tab.id, action.name)
     else if (action.kind === 'show-in-sidebar') showInSidebar(tab.path)
-    else setReview(tab.path, action.on)
-  }, [duplicateTab, setTabName, showInSidebar, setReview])
+  }, [duplicateTab, setTabName, showInSidebar])
   /** A Files window's click, run here (YAZ-3357 D2): set further down, where every door it calls is made. Main holds the push until `link.ready`. */
   const fromFiles = useRef<(action: FilesAction) => void>(() => undefined)
   const openFromFiles = useCallback((action: FilesAction) => fromFiles.current(action), [])
@@ -2331,7 +2327,7 @@ export function App() {
       case 'share':
         return openShare(action.path)
       case 'review':
-        return startReview(scopeOf(action.dir), relLabel(action.dir))
+        return startReview(scopeOf(action.dir), action.page === true ? { page: action.dir } : { folder: relLabel(action.dir) })
       case 'session':
         return restoreSavedSession(action.id)
       case 'inbox': {
@@ -3190,8 +3186,6 @@ export function App() {
       findFolds: settings.findFolds,
       outsideListPinned: settings.outsideListPinned,
       onChangeOutsideListPinned: changeOutsideListPinned,
-      // Upkeep off (🔒 D7): no settings, so no Reviews section.
-      reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }
   }
 
@@ -3202,8 +3196,7 @@ export function App() {
    */
   const noteWindowEditorProps = (path: string) => ({ ...editorPropsFor(path), onOpenFile: openBackground, onOpenFileBackground: openBackground, onOpenLinkBackground: openBackgroundCopy })
 
-  // While a review is open (YAZ-2322) the main pane shows ITS note, not the active tab's page.
-  // The tabs, their history and the right panel are not touched: closing the review uncovers them.
+  // The card review session of the vault in review (YAZ-4967), or null: the Inbox screen's (YAZ-4962).
   const session = review.session
   /** The first vault whose sync needs attention: one banner at a time. */
   const unsynced = vaults.find((vault) => vault.syncBanner !== null)
@@ -3211,20 +3204,15 @@ export function App() {
   // Each tab's page, by id: a layer is a tab's (YAZ-2940 D1), and its editor is that tab's page.
   const pathOf = new Map(tabs.map((t) => [t.id, t.path]))
   const zoomOf = new Map(tabs.map((t) => [t.id, t.zoom ?? null]))
-  // The tab whose layer a review's note shows through (S9): the tab a trip to the note goes to,
-  // else another of its copies that is mounted; null when no mounted tab shows it.
-  const reviewPath = session?.path ?? null
-  const reviewed = reviewPath === null ? null : tabOf({ tabs, active: activeTab }, reviewPath)
-  const reviewLayer = reviewed !== null && mounted.includes(reviewed.id) ? reviewed.id : (mounted.find((id) => pathOf.get(id) === reviewPath) ?? null)
-  /** The tab whose layer shows: the active one, none under the blank tab, and the reviewed note's during a review. */
-  const shown = session === null ? (pageOnShow === null ? null : activeTab) : reviewLayer
+  /** The tab whose layer shows: the active one, none under the blank tab. */
+  const shown = pageOnShow === null ? null : activeTab
   // Tab sleep (YAZ-3737 5A, S10): this window is hidden or minimized; then the active tab may sleep too. A boolean
   // each, so a hide of another window renders no App here.
   const hiddenHere = useWindowHidden(storage.getWindowId())
   const minimizedHere = useWindowMinimized(storage.getWindowId())
   const away = hiddenHere || minimizedHere
   const tabSleep = useTabSleep(
-    { setting: settings.tabSleepAfter, tabs, mounted, active: activeTab, shown, boardOpen: overview.phase !== 'closed', review: session === null ? null : reviewLayer, away },
+    { setting: settings.tabSleepAfter, tabs, mounted, active: activeTab, shown, boardOpen: overview.phase !== 'closed', review: null, away },
     { startView, sleep: sleepTabs, wake: wakeTab },
   )
   const held = tabSleep.held
@@ -3259,6 +3247,7 @@ export function App() {
       history: (path: string) => ask({ kind: 'history', path }),
       share: (path: string) => ask({ kind: 'share', path }),
       review: (dir: string) => ask({ kind: 'review', dir }),
+      reviewPage: (path: string) => ask({ kind: 'review', dir: path, page: true }),
       inbox: (root: string) => ask({ kind: 'inbox', root }),
       session: (id: string) => ask({ kind: 'session', id }),
     }
@@ -3332,8 +3321,6 @@ export function App() {
       onSetName={setTabName}
       onShowInSidebar={showInSidebar}
       onNotice={notify}
-      reviewState={reviewState}
-      onSetReview={setReview}
       // A card's "Add to focus" and "Add to favorites" (YAZ-3264 D4): the same lists and toggles as the tab row's.
       listState={lists.stateOf}
       onToggleFocus={lists.toggleFocus}
@@ -3456,7 +3443,7 @@ export function App() {
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
+          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
           lists={lists}
           icons={vaultIcons}
           recentVault={recentPick}
@@ -3547,10 +3534,9 @@ export function App() {
           onHistoryFile={filesDoors?.history ?? openHistory}
           onShareFile={filesDoors?.share ?? openShare}
           // The menu names the folder by its absolute path; a session takes it relative to the vault that holds it.
-          onReviewFolder={filesDoors?.review ?? ((dir) => startReview(scopeOf(dir), relLabel(dir)))}
-          reviewState={reviewState}
-          onSetReview={setReview}
-          // An Inbox row (YAZ-2322), one per vault with upkeep on (YAZ-2602 R5): it opens ITS vault's review, and closes it when it is the one open.
+          onReviewFolder={filesDoors?.review ?? ((dir) => startReview(scopeOf(dir), { folder: relLabel(dir) }))}
+          onReviewPage={filesDoors?.reviewPage ?? ((path) => startReview(scopeOf(path), { page: path }))}
+          // An Inbox row (YAZ-4967), one per vault with review on that gives IDs (YAZ-2602 R5): it opens ITS vault's review, and closes it when it is the one open.
           onInbox={filesDoors?.inbox ?? toggleInbox}
         />
       )}
@@ -3580,76 +3566,69 @@ export function App() {
           {/* One per vault (YAZ-2602 D1): each feeds its own vault's sources from that vault's index.
               In SLOT order: a new order of the vaults moves none, so none reads its index again (YAZ-2631 D5). */}
           {scopes.map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
-          {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs.
-              A review (YAZ-2322) is not a tab: its bar stands in the strip's place until it closes. */}
-          {session !== null ? (
-            <ReviewBar session={session} onKeep={review.keep} onSkip={review.skip} onUndo={review.undo} onClose={review.close} />
-          ) : (
-            <TabBar
-              roots={roots}
-              windowId={storage.getWindowId()}
-              tabs={tabs}
-              hotkeys={settings.hotkeys}
-              active={activeTab}
-              preview={preview}
-              blank={blank}
-              onNewTab={newTab}
-              onCloseBlank={closeBlank}
-              // The "Show right panel" button floats over the row's end while that panel is closed (YAZ-2656 S93).
-              reserveEnd={!rightPanel.open}
-              // Under the board the strip acts as the pages do: a tab — the active one too — is zoomed
-              // into, and a tab's ✕ leaves the board open.
-              onActivate={overviewOpen ? leaveOverview : activate}
-              onKeep={keep}
-              onClose={overviewOpen ? closeOneUnderOverview : closeTab}
-              onMove={moveTab}
-              onDropPage={dropOnMain}
-              // A tab of another window's strip dropped here, and a tab of this one let go off every window (YAZ-3637).
-              takesDrag={takesDrag}
-              onDropFromWindow={takeFromWindow}
-              onRaise={raiseSelf}
-              onTearOff={tearOff}
-              onMoveToRight={movePageToRight}
-              onMoveToNewWindow={movePageToNewWindow}
-              onMoveTargets={moveTargets}
-              onMoveToWindow={movePageToWindow}
-              onHighlightWindow={highlightWindow}
-              onDuplicate={duplicateTab}
-              onSetName={setTabName}
-              canBack={canBack}
-              canForward={canForward}
-              onBack={toBack}
-              onForward={toForward}
-              backSteps={nearSteps(tabHistory, -1)}
-              forwardSteps={nearSteps(tabHistory, 1)}
-              onGoToStep={toStep}
-              onOpenStep={toOpenStep}
-              zoomLabels={zoomLabels}
-              onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
-              onShowInSidebar={showInSidebar}
-              onRenameFile={renameInSidebar}
-              onToggleOverview={toggleOverview}
-              overviewOpen={overviewOpen}
-              onKillAll={askKillAll}
-              onCloseDuplicates={closeDuplicateTabs}
-              onSaveSession={saveFromGrid}
-              onNotice={notify}
-              titles={titles}
-              reviewState={reviewState}
-              onSetReview={setReview}
-              // The tab menu's "Add to focus" and "Add to favorites" (YAZ-3264 D2): App's lists, so they work with the sidebar hidden.
-              listState={lists.stateOf}
-              onToggleFocus={lists.toggleFocus}
-              onToggleFavorite={lists.toggleFavorite}
-              // The hover panel below a tab that is not on show (YAZ-3403).
-              hoverPreview={hoverOn(settings, 'tabs')}
-              previewScope={boardPreviewScope}
-              diagramDarkColors={settings.diagramDarkColors}
-              // Tab sleep (YAZ-3737 D11, S7): the zzz mark, and a hover that wakes a sleeping tab behind the page on show.
-              asleep={tabSleep.asleep}
-              onWake={tabSleep.wake}
-            />
-          )}
+          {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
+          <TabBar
+            roots={roots}
+            windowId={storage.getWindowId()}
+            tabs={tabs}
+            hotkeys={settings.hotkeys}
+            active={activeTab}
+            preview={preview}
+            blank={blank}
+            onNewTab={newTab}
+            onCloseBlank={closeBlank}
+            // The "Show right panel" button floats over the row's end while that panel is closed (YAZ-2656 S93).
+            reserveEnd={!rightPanel.open}
+            // Under the board the strip acts as the pages do: a tab — the active one too — is zoomed
+            // into, and a tab's ✕ leaves the board open.
+            onActivate={overviewOpen ? leaveOverview : activate}
+            onKeep={keep}
+            onClose={overviewOpen ? closeOneUnderOverview : closeTab}
+            onMove={moveTab}
+            onDropPage={dropOnMain}
+            // A tab of another window's strip dropped here, and a tab of this one let go off every window (YAZ-3637).
+            takesDrag={takesDrag}
+            onDropFromWindow={takeFromWindow}
+            onRaise={raiseSelf}
+            onTearOff={tearOff}
+            onMoveToRight={movePageToRight}
+            onMoveToNewWindow={movePageToNewWindow}
+            onMoveTargets={moveTargets}
+            onMoveToWindow={movePageToWindow}
+            onHighlightWindow={highlightWindow}
+            onDuplicate={duplicateTab}
+            onSetName={setTabName}
+            canBack={canBack}
+            canForward={canForward}
+            onBack={toBack}
+            onForward={toForward}
+            backSteps={nearSteps(tabHistory, -1)}
+            forwardSteps={nearSteps(tabHistory, 1)}
+            onGoToStep={toStep}
+            onOpenStep={toOpenStep}
+            zoomLabels={zoomLabels}
+            onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
+            onShowInSidebar={showInSidebar}
+            onRenameFile={renameInSidebar}
+            onToggleOverview={toggleOverview}
+            overviewOpen={overviewOpen}
+            onKillAll={askKillAll}
+            onCloseDuplicates={closeDuplicateTabs}
+            onSaveSession={saveFromGrid}
+            onNotice={notify}
+            titles={titles}
+            // The tab menu's "Add to focus" and "Add to favorites" (YAZ-3264 D2): App's lists, so they work with the sidebar hidden.
+            listState={lists.stateOf}
+            onToggleFocus={lists.toggleFocus}
+            onToggleFavorite={lists.toggleFavorite}
+            // The hover panel below a tab that is not on show (YAZ-3403).
+            hoverPreview={hoverOn(settings, 'tabs')}
+            previewScope={boardPreviewScope}
+            diagramDarkColors={settings.diagramDarkColors}
+            // Tab sleep (YAZ-3737 D11, S7): the zzz mark, and a hover that wakes a sleeping tab behind the page on show.
+            asleep={tabSleep.asleep}
+            onWake={tabSleep.wake}
+          />
           <div className="tabstack">
             {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden, until it sleeps (YAZ-3737 5A). Mounted only while it shows (R1). */}
             {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} favorites={startFavorites} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
@@ -3687,26 +3666,13 @@ export function App() {
                 </div>
               )
             })}
-            {/* A review's note (YAZ-2322) shows through its own tab's layer, above, when it has
-                one. Open in the side panel it is reviewed THERE. Otherwise it gets the one extra
-                layer, whose links open in background tabs so the review stays in front. Two editors
-                on one path would run two autosaves, so there is never a second. */}
-            {session !== null &&
-              (session.path === null || (rightPanel.open && rightPanel.items.includes(session.path)) ? (
-                <UnitContext.Provider value={active.unit.unit}><ReviewMessage session={session} onClose={review.close} /></UnitContext.Provider>
-              ) : (
-                reviewLayer === null && (
-                  <div key={session.path} className="tabstack__layer" style={textVarsFor(session.path)}>
-                    <UnitContext.Provider value={scopeOf(session.path).unit.unit}><RetainedEditor {...editorPropsFor(session.path)} path={session.path} onOpenFile={openBackground} onOpenFileBackground={openBackground} onOpenLinkBackground={openBackgroundCopy} /></UnitContext.Provider>
-                  </div>
-                )
-              ))}
+            {/* YAZ-4962: Inbox screen. It draws `session` (`review.session`, a `CardReviewSession`) with `review`, the
+                `CardReviewApi` of the vault in review (`reviewer`; client/src/review/useCardReview.ts). Nothing draws here until then. */}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}
             {overview.phase !== 'closed' && session === null && tabBoard()}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
             {panelPath !== null && <QuickLook path={panelPath} title={nameOf(panelPath)} watch={scopeOf(panelPath).watch} wikilinks={scopeOf(panelPath).wikilinks} root={scopeOf(panelPath).root} darkColors={settings.diagramDarkColors} style={textVarsFor(panelPath)} onClose={closePreview} />}
           </div>
-          {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>
       )}
       {root !== null && rightPanel.open && !filesWindow && (

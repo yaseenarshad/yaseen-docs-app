@@ -211,8 +211,8 @@ function WithPreview(props: PanelProps) {
   return <Sidebar {...props} lists={lists} icons={icons} previewPath={path} onPreview={show} />
 }
 type Vault = PanelProps['vaults'][number]
-/** A vault's own review facts (YAZ-2602 R5): upkeep on or off, what is due, whether its review is open; and the Inbox row's click. */
-type Inbox = Partial<Pick<Vault, 'upkeep' | 'dueCount' | 'reviewing'>> & { onOpenInbox?: () => void }
+/** A vault's own review facts (YAZ-2602 R5): review on or off, what is due, whether its review is open; and the Inbox row's click. */
+type Inbox = Partial<Pick<Vault, 'review' | 'dueCount' | 'reviewing'>> & { onOpenInbox?: () => void }
 /**
  * What a test hands the harness: the panel's props, and for a window with ONE vault that vault's
  * own — its folder, its watcher, its index source and its review facts — which the harness makes
@@ -221,15 +221,15 @@ type Inbox = Partial<Pick<Vault, 'upkeep' | 'dueCount' | 'reviewing'>> & { onOpe
 type SidebarProps = PanelProps & { root?: string; watch?: Vault['watch']; indexSource?: Vault['index'] } & Inbox
 
 /** The review facts a test named, and no others. */
-const inboxOf = ({ upkeep, dueCount, reviewing }: Inbox): Partial<Vault> => ({ ...(upkeep !== undefined && { upkeep }), ...(dueCount !== undefined && { dueCount }), ...(reviewing !== undefined && { reviewing }) })
+const inboxOf = ({ review, dueCount, reviewing }: Inbox): Partial<Vault> => ({ ...(review !== undefined && { review }), ...(dueCount !== undefined && { dueCount }), ...(reviewing !== undefined && { reviewing }) })
 
 /**
  * The window's one vault, as App hands it: `/v`, a silent watcher and an empty index unless a test
- * says otherwise. Upkeep review (YAZ-2322) is off, as in a new vault, with nothing due and no review open.
+ * says otherwise. Card review (YAZ-4967) is off, with nothing due and no review open.
  */
 const oneVault = ({ root = '/v', watch = { subscribe: () => () => undefined }, indexSource = indexFor(true), ...over }: Partial<SidebarProps>): Vault[] => [
   // `idsInSearch` and `idsInFiles` (YAZ-4940) ride on the vault: a test hands them as if they were props.
-  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, upkeep: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}), ...('idsInFiles' in over ? { idsInFiles: (over as { idsInFiles?: Vault['idsInFiles'] }).idsInFiles } : {}) },
+  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, review: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}), ...('idsInFiles' in over ? { idsInFiles: (over as { idsInFiles?: Vault['idsInFiles'] }).idsInFiles } : {}) },
 ]
 
 async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => unknown) {
@@ -240,7 +240,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
   container = el
   root = createRoot(el)
   // Split the one vault's own from the panel's props: the harness makes the vault of them.
-  const panel = ({ root: _root, watch: _watch, indexSource: _indexSource, upkeep: _upkeep, dueCount: _dueCount, reviewing: _reviewing, onOpenInbox: _onOpenInbox, ...rest }: Partial<SidebarProps>): Partial<PanelProps> => rest
+  const panel = ({ root: _root, watch: _watch, indexSource: _indexSource, review: _review, dueCount: _dueCount, reviewing: _reviewing, onOpenInbox: _onOpenInbox, ...rest }: Partial<SidebarProps>): Partial<PanelProps> => rest
   /** The window's vaults with a test's review facts on each. */
   const withInbox = (vaults: readonly Vault[], facts: Inbox): Vault[] => vaults.map((vault) => ({ ...vault, ...inboxOf(facts) }))
   // The Inbox row's click, as the tests of a window with one vault read it: App's door without the vault it names.
@@ -314,9 +314,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     // The shortcut rows and the titles read the vault's index source (`oneVault`): empty unless a test
     // feeds it, and of a vault that uses IDs unless a test says otherwise (YAZ-2523).
     onReviewFolder: vi.fn(),
-    // No row is a note the index knows unless a test says so: null hides the review toggle.
-    reviewState: () => null,
-    onSetReview: vi.fn(),
+    onReviewPage: vi.fn(),
     // An Inbox row's click (YAZ-2602 R5) names its vault.
     onInbox: vi.fn(() => onOpenInbox()),
     ...panel(over),
@@ -3418,7 +3416,7 @@ describe('the Search tab (YAZ-2638 D2)', () => {
   })
 
   it('S25: the Inbox row stays above the tabs on each tab', async () => {
-    const { el, rerender } = await open({ upkeep: true, dueCount: 2 })
+    const { el, rerender } = await open({ review: true, dueCount: 2 })
     for (const lens of ['files', 'search', 'focus', 'favorites'] as const) {
       await rerender({ lens })
       const inbox = el.querySelector('.sidebar__inbox')
@@ -8531,32 +8529,32 @@ describe('Sidebar multi-select: folded rows and the ⌘⇧C window (YAZ-1338)', 
 })
 
 /**
- * The Inbox row (YAZ-2322): the notes due for review, counted by App — the sidebar only shows
+ * The Inbox row (YAZ-2322, YAZ-4967): the note cards due for review, counted by App — the sidebar only shows
  * the number and reports the click. It sits above the lens tabs, so no lens and no search hides it.
  */
 describe('Inbox row (YAZ-2322)', () => {
   const inbox = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__inbox')
 
   it('shows the due count, and carries it in its accessible name', async () => {
-    const { el } = await mount({ upkeep: true, dueCount: 3 })
+    const { el } = await mount({ review: true, dueCount: 3 })
     expect(inbox(el)?.textContent).toBe('Inbox3')
     expect(inbox(el)?.getAttribute('aria-label')).toBe('Inbox, 3 due')
   })
 
   it('shows no number at zero: the row reads "Inbox" alone', async () => {
-    const { el } = await mount({ upkeep: true, dueCount: 0 })
+    const { el } = await mount({ review: true, dueCount: 0 })
     expect(inbox(el)?.textContent).toBe('Inbox')
     expect(inbox(el)?.getAttribute('aria-label')).toBe('Inbox')
   })
 
   it('a click asks App to open the Inbox', async () => {
-    const { el, props } = await mount({ upkeep: true, dueCount: 3 })
+    const { el, props } = await mount({ review: true, dueCount: 3 })
     act(() => inbox(el)?.click())
     expect(props.onOpenInbox).toHaveBeenCalledTimes(1)
   })
 
   it('reads as active exactly while a review is open', async () => {
-    const { el, rerender } = await mount({ upkeep: true, dueCount: 3 })
+    const { el, rerender } = await mount({ review: true, dueCount: 3 })
     expect(inbox(el)?.getAttribute('aria-pressed')).toBe('false')
     expect(inbox(el)?.classList.contains('sidebar__inbox--active')).toBe(false)
     await rerender({ dueCount: 3, reviewing: true })
@@ -8566,29 +8564,34 @@ describe('Inbox row (YAZ-2322)', () => {
 
   it('stays put in every lens and on the Search tab, with a query typed', async () => {
     for (const lens of ['files', 'favorites'] as const) {
-      const { el } = await mount({ upkeep: true, lens, dueCount: 2 })
+      const { el } = await mount({ review: true, lens, dueCount: 2 })
       expect(inbox(el)?.textContent).toBe('Inbox2')
     }
-    const { el } = await mount({ upkeep: true, dueCount: 2 })
+    const { el } = await mount({ review: true, dueCount: 2 })
     await type(searchInput(el)!, 'a')
     expect(inbox(el)?.textContent).toBe('Inbox2')
   })
 
-  it('upkeep off: no Inbox row, in any lens, on the Search tab with a query typed, whatever App counts', async () => {
+  it('review off: no Inbox row, in any lens, on the Search tab with a query typed, whatever App counts', async () => {
     for (const lens of ['files', 'favorites'] as const) {
-      const { el } = await mount({ upkeep: false, lens, dueCount: 2 })
+      const { el } = await mount({ review: false, lens, dueCount: 2 })
       expect(inbox(el)).toBeNull()
     }
-    const { el } = await mount({ upkeep: false, dueCount: 2 })
+    const { el } = await mount({ review: false, dueCount: 2 })
     await type(searchInput(el)!, 'a')
     expect(inbox(el)).toBeNull()
   })
 
+  it('a vault that gives no IDs has no cards, so no Inbox row (YAZ-4967, D8)', async () => {
+    const { el } = await mount({ review: true, dueCount: 2, indexSource: indexFor(false) })
+    expect(inbox(el)).toBeNull()
+  })
+
   it('turned on: the Inbox row appears at once; turned off, it goes', async () => {
-    const { el, rerender } = await mount({ upkeep: false, dueCount: 2 })
-    await rerender({ upkeep: true })
+    const { el, rerender } = await mount({ review: false, dueCount: 2 })
+    await rerender({ review: true })
     expect(inbox(el)?.textContent).toBe('Inbox2')
-    await rerender({ upkeep: false })
+    await rerender({ review: false })
     expect(inbox(el)).toBeNull()
   })
 })
@@ -8600,7 +8603,7 @@ describe('review menu items (YAZ-2322)', () => {
 
   it('"Review this folder" sits on a FOLDER row, above Rename, and hands App the folder — in Favorites too', async () => {
     for (const lens of ['files', 'favorites'] as const) {
-      const { el, props } = await mount({ upkeep: true, lens }, (b) => b.favorites.get.mockResolvedValue(['/v/sub']))
+      const { el, props } = await mount({ review: true, lens }, (b) => b.favorites.get.mockResolvedValue(['/v/sub']))
       rightClick(el, '.tree__row--dir')
       const labels = menuItems(el).map((b) => b.textContent)
       expect(labels.indexOf('Review this folder')).toBe(labels.indexOf('Rename') - 1)
@@ -8609,49 +8612,49 @@ describe('review menu items (YAZ-2322)', () => {
     }
   })
 
-  it('upkeep off: a folder\'s menu has no "Review this folder" — in Favorites too — until it is turned on', async () => {
+  it('review off: a folder\'s menu has no "Review this folder" — in Favorites too — until it is turned on', async () => {
     for (const lens of ['files', 'favorites'] as const) {
-      const { el, rerender } = await mount({ upkeep: false, lens }, (b) => b.favorites.get.mockResolvedValue(['/v/sub']))
+      const { el, rerender } = await mount({ review: false, lens }, (b) => b.favorites.get.mockResolvedValue(['/v/sub']))
       rightClick(el, '.tree__row--dir')
       expect(menuItems(el).map((b) => b.textContent)).toContain('Rename')
       expect(itemByLabel(el, 'Review this folder')).toBeUndefined()
-      await rerender({ upkeep: true })
+      await rerender({ review: true })
       rightClick(el, '.tree__row--dir')
       expect(itemByLabel(el, 'Review this folder')).toBeDefined()
     }
   })
 
   it('a FILE row and blank space do not offer it', async () => {
-    const { el } = await mount({ upkeep: true })
+    const { el } = await mount({ review: true })
     rightClick(el, '.tree__row--file')
     expect(itemByLabel(el, 'Review this folder')).toBeUndefined()
     rightClick(el, '.sidebar__body')
     expect(itemByLabel(el, 'Review this folder')).toBeUndefined()
   })
 
-  it.each([
-    [true, 'Turn review off'],
-    [false, 'Turn review on'],
-  ])('a note whose review state is %s reads "%s", above Rename, and asks App for the opposite', async (state, label) => {
-    const reviewState = vi.fn(() => state)
-    const { el, props } = await mount({ upkeep: true, reviewState })
+  it('"Review this page" sits on a PAGE row that holds a card, beside "Review this folder"\'s place, and hands App the page (YAZ-4967)', async () => {
+    const indexSource = indexFor(true)
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), cards: [{ id: 'V-1', off: false, reviews: [] }] }, indexRecord('/v/sub/b.md')], [], true)
+    const { el, props } = await mount({ review: true, indexSource })
     rightClick(el, '.tree__row--file')
-    expect(reviewState).toHaveBeenCalledExactlyOnceWith('/v/a.md')
     const labels = menuItems(el).map((b) => b.textContent)
-    expect(labels.indexOf(label)).toBe(labels.indexOf('Rename') - 1)
-    act(() => itemByLabel(el, label)?.click())
-    expect(props.onSetReview).toHaveBeenCalledExactlyOnceWith('/v/a.md', !state)
+    expect(labels.indexOf('Review this page')).toBe(labels.indexOf('Rename') - 1)
+    expect(labels.some((l) => l?.startsWith('Turn review'))).toBe(false)
+    act(() => itemByLabel(el, 'Review this page')?.click())
+    expect(props.onReviewPage).toHaveBeenCalledExactlyOnceWith('/v/a.md')
   })
 
-  it('a file App has no review state for — every note, with upkeep off — gets no toggle, and a folder is never asked about', async () => {
-    const reviewState = vi.fn(() => null)
-    const { el } = await mount({ reviewState })
-    rightClick(el, '.tree__row--file')
-    expect(menuItems(el).some((b) => b.textContent?.startsWith('Turn review'))).toBe(false)
-    reviewState.mockClear()
-    rightClick(el, '.tree__row--dir')
-    expect(reviewState).not.toHaveBeenCalled()
-    expect(menuItems(el).some((b) => b.textContent?.startsWith('Turn review'))).toBe(false)
+  it('no "Review this page" on a page with no card, with review off, or in a vault that gives no IDs', async () => {
+    const withCard = (ids: boolean) => {
+      const source = indexFor(ids)
+      source.update(() => null, [{ ...indexRecord('/v/a.md'), cards: [{ id: 'V-1', off: false, reviews: [] }] }], [], ids)
+      return source
+    }
+    for (const over of [{ review: true }, { review: false, indexSource: withCard(true) }, { review: true, indexSource: withCard(false) }]) {
+      const { el } = await mount(over)
+      rightClick(el, '.tree__row--file')
+      expect(itemByLabel(el, 'Review this page')).toBeUndefined()
+    }
   })
 })
 
@@ -9636,7 +9639,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
       },
     }
   }
-  const vault = (root: string, name: string, over: Partial<Vault> = {}): Vault => ({ root, name, watch: { subscribe: () => () => undefined }, index: indexFor(true), upkeep: false, dueCount: 0, reviewing: false, ...over })
+  const vault = (root: string, name: string, over: Partial<Vault> = {}): Vault => ({ root, name, watch: { subscribe: () => () => undefined }, index: indexFor(true), review: false, dueCount: 0, reviewing: false, ...over })
   /** Mount a window on this test's vaults, each with its own tree, on a window identity of its own. */
   const mountVaults = async (vaults: Vault[], over: Partial<SidebarProps> = {}, tweak?: (bridge: Bridge) => unknown) =>
     mount({ vaults, ...over }, async (bridge) => {
@@ -9782,7 +9785,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
   it('the vault row\'s menu: Open folder page (YAZ-4921) · Paste, Copy path · the three create rows (YAZ-3085) · Open in (VS Code, Reveal in Finder) · Remove from this window — and nothing else: a vault is no item of the focus list (S13, A2)', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const { el, b, props } = await two({ upkeep: true })
+    const { el, b, props } = await two({ review: true })
     rightClick(rowByPath(el, b))
     expect(topItems(el)).toEqual(['Open folder page', 'Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open by itself', 'Open in', 'Remove from this window'])
     expect(flyout(el, 'Open in').map((item) => item.textContent)).toEqual(['VS Code', 'Reveal in Finder'])
@@ -10223,10 +10226,10 @@ describe('several vaults in one window (YAZ-2602)', () => {
       const records = [{ ...indexRecord(`${at.a}/sub/in.md`), folder: 'sub' }, { ...indexRecord(`${at.b}/docs/d.md`), folder: 'docs' }]
       const vaults = roots.map((root, i) => {
         const index = createWikilinkResolveSource()
-        index.update(() => null, [records[i]])
+        index.update(() => null, [records[i]], undefined, true) // a vault that gives IDs: only it has cards and an Inbox (YAZ-4967)
         return vault(root, i === 0 ? 'Notes' : 'Work', { index })
       })
-      const { el, rerender } = await mountVaults(vaults, { upkeep: true, dueCount: 3 }, async (bridge) => {
+      const { el, rerender } = await mountVaults(vaults, { review: true, dueCount: 3 }, async (bridge) => {
         favoritesOf(bridge, Object.fromEntries(roots.map((root, i) => [root, [dirs[i]]])))
         bridge.index.mockImplementation(async (root: string) => ({ root, records: [records[roots.indexOf(root)]], folders: [], generatedAt: 1, ids: true }))
         await withFocus(...dirs)(bridge)
@@ -11156,10 +11159,10 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(searchBar(el)?.value).toBe('plan')
   })
 
-  it('the Inbox: one row per vault that has upkeep on, in vault order, named for its vault when there are two or more; each shows its own count and state and opens its own vault\'s review (R5, S41)', async () => {
+  it('the Inbox: one row per vault that has review on, in vault order, named for its vault when there are two or more; each shows its own count and state and opens its own vault\'s review (R5, S41)', async () => {
     const at = pair()
     const plain = at.b.replace('/work', '/plain')
-    const all = [vault(at.a, 'Notes', { upkeep: true, dueCount: 2 }), vault(plain, 'Plain', { dueCount: 9 }), vault(at.b, 'Work', { upkeep: true, reviewing: true })]
+    const all = [vault(at.a, 'Notes', { review: true, dueCount: 2 }), vault(plain, 'Plain', { dueCount: 9 }), vault(at.b, 'Work', { review: true, reviewing: true })]
     const { el, props, rerender } = await mountVaults(all)
     expect(inboxes(el).map((row) => row.textContent)).toEqual(['Inbox · Notes2', 'Inbox · Work'])
     expect(inboxes(el).map((row) => row.getAttribute('aria-label'))).toEqual(['Inbox · Notes, 2 due', 'Inbox · Work'])
@@ -11169,18 +11172,18 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(props.onInbox).toHaveBeenCalledExactlyOnceWith(at.b)
     act(() => inboxes(el)[0].click())
     expect(props.onInbox).toHaveBeenLastCalledWith(at.a)
-    // Exactly one vault with upkeep on: the row reads "Inbox", as in a window with one vault.
-    await rerender({ vaults: [{ ...all[0], upkeep: false }, all[1], { ...all[2], reviewing: false, dueCount: 4 }] })
+    // Exactly one vault with review on: the row reads "Inbox", as in a window with one vault.
+    await rerender({ vaults: [{ ...all[0], review: false }, all[1], { ...all[2], reviewing: false, dueCount: 4 }] })
     expect(inboxes(el).map((row) => [row.textContent, row.getAttribute('aria-label'), row.getAttribute('aria-pressed')])).toEqual([['Inbox4', 'Inbox, 4 due', 'false']])
     act(() => inboxes(el)[0].click())
     expect(props.onInbox).toHaveBeenLastCalledWith(at.b)
-    await rerender({ vaults: all.map((one) => ({ ...one, upkeep: false })) })
+    await rerender({ vaults: all.map((one) => ({ ...one, review: false })) })
     expect(inboxes(el)).toEqual([])
   })
 
-  it('"Review this folder" is offered by the upkeep of the vault that holds the folder, whatever the first vault has (R5)', async () => {
+  it('"Review this folder" is offered by the review setting of the vault that holds the folder, whatever the first vault has (R5)', async () => {
     const at = pair()
-    const { el, props } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work', { upkeep: true })])
+    const { el, props } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work', { review: true })])
     rightClick(rowByPath(el, `${at.a}/sub`))
     expect(itemByLabel(el, 'Review this folder')).toBeUndefined()
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))

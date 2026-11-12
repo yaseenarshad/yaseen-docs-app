@@ -13,7 +13,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_UPKEEP_SETTINGS, type UpkeepSettings } from '../review/upkeepLegacy'
+import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { ShowIdsSettings } from '../search/showIds'
 import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
@@ -29,7 +29,7 @@ import { SettingsDialog } from './SettingsDialog'
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: UpkeepSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string, readOnlyVault?: { on: boolean }, showIdsSettings?: ShowIdsSettings) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string, readOnlyVault?: { on: boolean }, showIdsSettings?: ShowIdsSettings) {
   const onChange = vi.fn()
   // The vault's "Show IDs" (YAZ-4940): no settings handed over is no vault open, so no rows.
   const saveShowIds = vi.fn()
@@ -64,12 +64,13 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   // The active vault's name (YAZ-2602 R10): App hands it only with two or more vaults in the window.
   act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName, readOnlyVault: readOnly, showIds }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
-  const rerender = (next: UpkeepSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
+  const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
   return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, saveReadOnly, saveShowIds, el: container }
 }
 
-/** Upkeep turned on, the rest as a new vault has it. */
-const REVIEW_ON: UpkeepSettings = { ...DEFAULT_UPKEEP_SETTINGS, enabled: true }
+/** Note card review as a new vault has it: on (YAZ-4959 D14). */
+const REVIEW_ON: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS }
+const REVIEW_OFF: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, enabled: false }
 
 const unmount = () => {
   act(() => root?.unmount())
@@ -169,7 +170,7 @@ const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 
 /** Settings › Folder pages (YAZ-4585): its personal rows, with the folder views' hover row moved from Files & Links, the view defaults, the page default. */
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
-const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
+const REVIEW_ROWS = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'fuzz', 'weights']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -307,7 +308,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
     expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Sync', '—', 'Memory', 'Hotkeys'])
     unmount()
-    const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_UPKEEP_SETTINGS)
+    const withVault = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON)
     expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Review', 'Sync', '—', 'Memory', 'Hotkeys'])
   })
 
@@ -402,7 +403,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
   })
 
   it('the two per-vault sections, Review and Sync, and Memory (YAZ-3977) carry a note under their titles; no other page does', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_UPKEEP_SETTINGS)
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON)
     const notes = onEachPage(el, () => [...el.querySelectorAll('.settings-section__note')].map((n) => [n.closest('[data-section]')?.id, n.textContent]))
     expect(notes).toEqual([
       ['General', []],
@@ -429,7 +430,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       onEachPage(el, () =>
         [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].filter((n) => n.textContent?.startsWith('Vault: ')).map((n) => ({ text: n.textContent, under: n.previousElementSibling?.textContent, className: n.className })),
       )
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_UPKEEP_SETTINGS, { enabled: true, held: false }, 'Work')
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON, { enabled: true, held: false }, 'Work')
     // The same muted lines the dialog already has: a group's hint, a section's note.
     expect(lines(el)).toEqual([
       ['General', []],
@@ -451,7 +452,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Review')
     expect([...el.querySelectorAll('.settings-section__note')].map((n) => n.textContent)).toEqual(['Vault: Work', "These settings are saved in this vault's .yaseendocs folder and sync with it."])
     unmount()
-    const one = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_UPKEEP_SETTINGS, { enabled: true, held: false })
+    const one = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON, { enabled: true, held: false })
     expect(lines(one.el).flatMap(([, found]) => found)).toEqual([])
   })
 
@@ -1379,122 +1380,86 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 })
 
-describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)', () => {
+describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, D14)', () => {
   const S = REVIEW_ON
-  const number = (el: HTMLElement, id: string) => row(el, id)?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
+  const input = (el: HTMLElement, id: string) => row(el, id)?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
   const reviewRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('#settings-review .setting')].map((r) => r.dataset.setting)
+  const ALL = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'fuzz', 'weights']
 
   it('is absent with no vault open: no Review item in the nav, and no page holds its section or a row of it', () => {
     const { el } = mount()
     expect(navByTitle(el, 'Review')).toBeUndefined()
-    const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
+    const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'weights')])
     expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Memory', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 
-  it('upkeep off: the Review section shows one row, a switch labelled "Enable upkeep review", reading Off', () => {
-    const { el } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), DEFAULT_UPKEEP_SETTINGS)
-    expect(reviewRows(el)).toEqual(['enabled'])
-    expect(row(el, 'enabled')?.querySelector('.setting__label')?.textContent).toBe('Enable upkeep review')
-    expect(rowButtons(el, 'enabled').map((b) => b.textContent)).toEqual(['On', 'Off'])
-    expect(rowButtons(el, 'enabled').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+  it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
+    const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), S)
+    expect(reviewRows(el)).toEqual(ALL)
+    expect(ALL.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'Answer buttons', 'Remember rate', 'Longest wait', 'New cards a day', 'Spread due dates', 'Weights'])
+    expect(rowButtons(el, 'buttons').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Two', 'true'], ['Four', 'false']])
+    expect(['retention', 'maxDays', 'newPerDay'].map((id) => input(el, id).value)).toEqual(['90', '365', '10'])
+    expect(input(el, 'weights').value).toBe(DEFAULT_REVIEW_SETTINGS.weights.join(', '))
     expect(el.querySelector('#settings-review .settings-section__note')).not.toBeNull()
-  })
-
-  it('Enable upkeep review: On saves the whole object with enabled true, Off with it false — never onChange', () => {
-    const off = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, DEFAULT_UPKEEP_SETTINGS)
-    act(() => rowButtons(off.el, 'enabled')[0].click())
-    expect(off.save).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_UPKEEP_SETTINGS, enabled: true })
-    expect(off.onChange).not.toHaveBeenCalled()
-    unmount()
-    const on = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14 })
-    act(() => rowButtons(on.el, 'enabled')[1].click())
-    expect(on.save).toHaveBeenCalledExactlyOnceWith({ ...S, baseDays: 14, enabled: false })
-  })
-
-  it('turned on: the three numbers and "New notes are in review" appear under the switch at once; turned off, they go', () => {
-    const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, DEFAULT_UPKEEP_SETTINGS)
-    rerender(S)
-    expect(reviewRows(el)).toEqual(['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault'])
-    expect(rowButtons(el, 'enabled').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
-    rerender(DEFAULT_UPKEEP_SETTINGS)
+    rerender(REVIEW_OFF)
     expect(reviewRows(el)).toEqual(['enabled'])
+    expect(rowButtons(el, 'enabled').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
   })
 
-  it('upkeep off: search finds the switch and none of the rows it hides; turned on, it finds them', () => {
-    const { el, rerender } = mount({ ...DEFAULT_SETTINGS }, undefined, DEFAULT_UPKEEP_SETTINGS)
-    type(searchInput(el), 'upkeep')
-    expect(rowIds(el)).toEqual(['enabled'])
-    type(searchInput(el), 'longest wait')
-    expect(rowIds(el)).toEqual([])
-    expect(el.querySelector('.settings-empty')).not.toBeNull()
-    rerender(S)
-    expect(rowIds(el)).toEqual(['maxDays'])
-  })
-
-  it('turned on, the four rows under the switch show the current values, each number beside its unit', () => {
-    const { el } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14, growth: 1.5, maxDays: 90, reviewByDefault: false })
-    expect(['baseDays', 'growth', 'maxDays', 'reviewByDefault'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Check a note after', 'Each time it is still relevant, wait', 'Longest wait', 'New notes are in review'])
-    expect(['baseDays', 'growth', 'maxDays'].map((id) => number(el, id).value)).toEqual(['14', '1.5', '90'])
-    expect(['baseDays', 'growth', 'maxDays'].map((id) => row(el, id)?.querySelector('.setting__control')?.textContent)).toEqual(['days', '× longer', 'days'])
-    expect(number(el, 'baseDays').getAttribute('aria-label')).toBe('Check a note after')
-    expect(rowButtons(el, 'reviewByDefault').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
-  })
-
-  it('says the schedule in words under the three numbers', () => {
-    const { el } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
-    expect(row(el, 'maxDays')?.querySelector('.setting__hint')?.textContent).toBe('30 days, then 60, 120, 240, 365.')
-    unmount()
-    const fixed = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, { ...S, growth: 1 })
-    expect(row(fixed.el, 'maxDays')?.querySelector('.setting__hint')?.textContent).toBe('Every 30 days.')
-  })
-
-  it('a valid number commits on Enter or blur: save gets the whole object with that one field changed — never onChange', () => {
+  it('the switches save the whole object with one field changed — never onChange', () => {
     const { el, save, onChange } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
-    type(number(el, 'baseDays'), '45')
-    expect(save).not.toHaveBeenCalled() // a draft until it is committed
-    pressEnter(number(el, 'baseDays'))
-    expect(save).toHaveBeenCalledExactlyOnceWith({ ...S, baseDays: 45 })
-    type(number(el, 'growth'), '1.5')
-    blur(number(el, 'growth'))
-    expect(save).toHaveBeenLastCalledWith({ ...S, growth: 1.5 })
-    type(number(el, 'maxDays'), '90')
-    blur(number(el, 'maxDays'))
-    expect(save).toHaveBeenLastCalledWith({ ...S, maxDays: 90 })
-    expect(save).toHaveBeenCalledTimes(3)
+    act(() => rowButtons(el, 'buttons')[1].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, buttons: 4 })
+    act(() => rowButtons(el, 'fuzz')[1].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, fuzz: false })
+    act(() => rowButtons(el, 'enabled')[1].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, enabled: false })
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('an unchanged number saves nothing', () => {
+  it('a valid field commits on Enter or blur: the remember rate as a percent, the weights as numbers; an unchanged one saves nothing', () => {
     const { el, save } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
-    blur(number(el, 'baseDays'))
+    blur(input(el, 'maxDays'))
     expect(save).not.toHaveBeenCalled()
+    type(input(el, 'retention'), '85')
+    expect(save).not.toHaveBeenCalled() // a draft until it is committed
+    pressEnter(input(el, 'retention'))
+    expect(save).toHaveBeenLastCalledWith({ ...S, retention: 0.85 })
+    type(input(el, 'newPerDay'), '0')
+    blur(input(el, 'newPerDay'))
+    expect(save).toHaveBeenLastCalledWith({ ...S, newPerDay: 0 })
+    const weights = S.weights.map((w, i) => (i === 0 ? 0.3 : w))
+    type(input(el, 'weights'), weights.join(','))
+    blur(input(el, 'weights'))
+    expect(save).toHaveBeenLastCalledWith({ ...S, weights })
   })
 
   it('a draft the rules refuse is marked while it stands, is not saved, and gives way to the last good value', () => {
     const { el, save } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
-    // Each is one of `sanitizeUpkeepSettings`' rules: whole days from 1, growth from 1, the longest wait never under the first.
-    for (const [id, draft, stored] of [['baseDays', '0', '30'], ['baseDays', '7.5', '30'], ['growth', '0.5', '2'], ['maxDays', '10', '365'], ['maxDays', 'soon', '365'], ['growth', '', '2']] as const) {
-      const input = number(el, id)
-      expect(input.getAttribute('aria-invalid')).toBe('false')
-      type(input, draft)
-      expect(input.getAttribute('aria-invalid')).toBe('true')
-      expect(input.classList.contains('settings__input--error')).toBe(true)
-      blur(input)
-      expect(input.value).toBe(stored)
-      expect(input.getAttribute('aria-invalid')).toBe('false')
+    // Each is one of `sanitizeReviewSettings`' rules: 70 to 99 %, whole days from 1, whole cards from 0, 17, 19 or 21 numbers.
+    const weights = S.weights.join(', ')
+    for (const [id, draft, stored] of [['retention', '50', '90'], ['retention', '', '90'], ['maxDays', '0', '365'], ['maxDays', '7.5', '365'], ['newPerDay', 'many', '10'], ['weights', '1, 2, 3', weights], ['weights', `${weights}, x`, weights]] as const) {
+      const box = input(el, id)
+      expect(box.getAttribute('aria-invalid')).toBe('false')
+      type(box, draft)
+      expect(box.getAttribute('aria-invalid')).toBe('true')
+      expect(box.classList.contains('settings__input--error')).toBe(true)
+      blur(box)
+      expect(box.value).toBe(stored)
+      expect(box.getAttribute('aria-invalid')).toBe('false')
     }
     expect(save).not.toHaveBeenCalled()
   })
 
-  it('New notes are in review: On · Off, and Off saves the whole object with reviewByDefault flipped', () => {
-    const { el, save, onChange } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
-    const buttons = rowButtons(el, 'reviewByDefault')
-    expect(buttons.map((b) => b.textContent)).toEqual(['On', 'Off'])
-    expect(buttons.map((b) => b.classList.contains('settings__option--active'))).toEqual([true, false])
-    act(() => buttons[1].click())
-    expect(save).toHaveBeenCalledExactlyOnceWith({ ...S, reviewByDefault: false })
-    expect(onChange).not.toHaveBeenCalled()
+  it('review off: search finds the switch and none of the rows it hides; turned on, it finds them', () => {
+    const { el, rerender } = mount({ ...DEFAULT_SETTINGS }, undefined, REVIEW_OFF)
+    type(searchInput(el), 'note cards')
+    expect(rowIds(el)).toEqual(['enabled'])
+    type(searchInput(el), 'longest wait')
+    expect(rowIds(el)).toEqual([])
+    rerender(S)
+    expect(rowIds(el)).toEqual(['maxDays'])
   })
 })
 

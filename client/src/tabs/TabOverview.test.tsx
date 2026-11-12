@@ -1222,10 +1222,10 @@ describe('TabOverview', () => {
   })
 
   it('YAZ-2648 S45, R29: right-click: a page opens the tab strip\'s own menu, an island its folder\'s — Show in sidebar, Copy path, Close N tabs — and a menu\'s Esc is not the board\'s', async () => {
-    const { el, props } = await mount({ reviewState: (path) => (path === '/v/a.md' ? false : null), onSetReview: vi.fn() })
+    const { el, props } = await mount()
     rightClick(page(el, '/v/a.md'))
     // `TabMenu`, the one the strip's tabs open: the same items in the same order.
-    expect(menuItems(el)).toEqual(['Go to tab', 'Move to new window', 'Move to', 'Show in sidebar', 'Copy path', 'Turn review on', 'Reveal in Finder', 'Open in VS Code', 'Close tab'])
+    expect(menuItems(el)).toEqual(['Go to tab', 'Move to new window', 'Move to', 'Show in sidebar', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Close tab'])
     key(el, 'Escape')
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(props.onDismiss).not.toHaveBeenCalled()

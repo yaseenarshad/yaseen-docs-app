@@ -154,7 +154,7 @@ function requireFilesAction(v: unknown, from: WindowEntry): FilesAction {
     case 'share':
       return { kind: v.kind, path: inVault(v.path, 'action.path') }
     case 'review':
-      return { kind: 'review', dir: inVault(v.dir, 'action.dir') }
+      return { kind: 'review', dir: inVault(v.dir, 'action.dir'), ...(v.page === true ? { page: true as const } : {}) }
     case 'inbox':
       return { kind: 'inbox', root: inVault(v.root, 'action.root') }
     case 'session':
@@ -420,8 +420,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     let clean: TabAction
     if (action.kind === 'duplicate' || action.kind === 'show-in-sidebar') clean = { kind: action.kind }
     else if (action.kind === 'set-name' && (action.name === null || typeof action.name === 'string')) clean = { kind: 'set-name', name: action.name === null ? null : cleanVaultName(action.name) }
-    else if (action.kind === 'set-review' && typeof action.on === 'boolean') clean = { kind: 'set-review', on: action.on }
-    else throw new BridgeFailure('BAD_REQUEST', "'action' must be duplicate, set-name, show-in-sidebar or set-review")
+    else throw new BridgeFailure('BAD_REQUEST', "'action' must be duplicate, set-name or show-in-sidebar")
     if (!windows.tabAction(target, tab, clean)) throw new BridgeFailure('NOT_FOUND', 'that window is closed')
   })
 

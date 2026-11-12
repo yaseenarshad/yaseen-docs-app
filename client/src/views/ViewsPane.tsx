@@ -10,6 +10,7 @@ import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
 import { isMentionsColumn, mentionsColumns } from './mentionsColumn'
+import { useVaultReviewSettings } from '../review/useReviewSettings'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { type FilterNode, type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, groupDepthOf, hidesSubfolderNotes, parseViews, rewriteViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
@@ -589,12 +590,14 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // The page's Linked mentions columns (YAZ-4738): off the snapshot's one reverse map, built once per snapshot.
   const resolveLink = folder.resolveLink
   const mentions = useMemo(() => mentionsColumns(settings.columns, vaultRecords, vaultFolders, resolveLink), [settings, vaultRecords, vaultFolders, resolveLink])
+  // The vault's note card settings (YAZ-4967): the "Due" column counts with them; published by the vault's scope.
+  const cardSettings = useVaultReviewSettings(root)
   // An Image column sorts by the picture's file name (YAZ-4802).
   const byFileName = useMemo(() => (key: string) => settings.columns[key.startsWith('note.') ? key.slice(5) : key]?.kind === 'image', [settings])
   const result = useMemo(
     // The week's start for "is this week" (YAZ-4919); the clock is the run's own.
-    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: defaults.weekStartsOn }),
-    [def, view, shown, resolve, page, optionOrder, optionParent, mentions, byFileName, defaults.weekStartsOn],
+    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: defaults.weekStartsOn, cardSettings }),
+    [def, view, shown, resolve, page, optionOrder, optionParent, mentions, byFileName, defaults.weekStartsOn, cardSettings],
   )
 
   /**
@@ -612,9 +615,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       delete probe.crossOut
       if (filters === undefined) delete probe.filters
       else probe.filters = filters
-      return runView(def, probe, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: defaults.weekStartsOn }).rows.map((r) => r.record)
+      return runView(def, probe, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: defaults.weekStartsOn, cardSettings }).rows.map((r) => r.record)
     },
-    [def, view, shown, resolve, folder.settings, page, optionOrder, optionParent, mentions, byFileName, defaults.weekStartsOn],
+    [def, view, shown, resolve, folder.settings, page, optionOrder, optionParent, mentions, byFileName, defaults.weekStartsOn, cardSettings],
   )
 
   const configuredGroups = boardOptionGroups(result.groups, view, key => columnTyping(key, shown, properties, folder.settings), optionParent)
@@ -1031,7 +1034,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     const all = showsFolderRows(v) && folderRows.length > 0 ? [...noteRecords, ...folderRows] : noteRecords
     const input = hidesSubfolderNotes(v) ? all.filter((r) => directlyIn(r, pageFolder)) : all
     const declared = pageColumnKeys(settings)
-    const out = runView(def, v, input, { resolve, declared, page, optionOrder, mentions, byFileName, weekStartsOn: defaults.weekStartsOn })
+    const out = runView(def, v, input, { resolve, declared, page, optionOrder, mentions, byFileName, weekStartsOn: defaults.weekStartsOn, cardSettings })
     const grouped = boardOptionGroups(out.groups, v, (key) => columnTyping(key, input, properties, settings))
     const list = shownRows(out.rows, grouped)
     const ctx = { resolve, decls: settings.columns, pageFolder, folderTitle: folderPages.title }

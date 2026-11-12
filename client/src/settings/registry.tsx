@@ -12,9 +12,9 @@
  * in `.yaseendocs/github.json`, read and written through the engine, so its section is
  * `available` only when App hands the engine's status + setter over.
  *
- * Review (YAZ-2322 🔒 D7) is per-vault the same way: `.yaseendocs/review.json`, read and saved
- * through App's one `useReviewSettings`, so its section is `available` only with a vault open and
- * its rows call `review.save` — never `onChange`. Its switch is the one row while upkeep is off.
+ * Review (note cards, YAZ-4959 D14, YAZ-4967) is per-vault the same way: `.yaseendocs/review.json`, read and saved
+ * through the vault's one `useReviewSettings`, so its section is `available` only with a vault open and
+ * its rows call `review.save` — never `onChange`. Its switch is the one row while review is off.
  *
  * "Give this vault's notes IDs" (YAZ-2523 🔒 V4) is per-vault too: `.yaseendocs/ids.json`, so its
  * row is `available` only with a vault open and calls `ids.set`. On asks first (YAZ-2677 🔒 D2).
@@ -25,7 +25,6 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { HeaderStyleControl } from '../views/view/StylePanel'
 import { plainHeaderRow } from '../views/view/TableLookSettings'
 import { isIdLetters } from '@shared/noteId'
-import { scheduleInWords } from '../review/upkeepLegacy'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
@@ -66,7 +65,7 @@ import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
-import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
+import { RETENTION_FIELD, ReviewNumberControl, WEIGHTS_FIELD, wholeField, type ReviewField } from './ReviewNumberControl'
 import { LinkPillsControl } from './LinkPillsControl'
 import type { LinkPillsState } from './useLinkPills'
 import { SettingsFolderControl } from './SettingsFolderControl'
@@ -396,7 +395,7 @@ export interface SettingDef {
    * Search still finds the row by its label and hint, and the label names the row for a screen reader.
    */
   bare?: true
-  /** A row that only exists in some states (the Review rows need upkeep on); absent = always. */
+  /** A row that only exists in some states (the Review rows need review on); absent = always. */
   available?: (ctx: SettingsCtx) => boolean
   render: (ctx: SettingsCtx) => ReactNode
 }
@@ -481,19 +480,21 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
   }
 }
 
-/** What the section title does not say: the feature's other name, and where its notes turn up. */
-const REVIEW_KEYWORDS = ['upkeep', 'inbox']
+/** What the section title does not say: the feature's name, and where its cards turn up. */
+const REVIEW_KEYWORDS = ['note cards', 'cards', 'flashcards', 'inbox', 'spaced repetition', 'fsrs']
 
-/** Every Review row but the switch is there only while upkeep is on (🔒 D7). */
-const upkeepOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled === true
+/** Every Review row but the switch is there only while review is on. */
+const reviewOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled === true
 
-/** One number row of the Review section; the row's id is the `UpkeepSettings` field it edits. */
-const reviewNumber = (field: ReviewNumberField, label: string, unit: string): SettingDef => ({
-  id: field,
+/** One typed row of the Review section; `id` is the `ReviewSettings` field it edits. */
+const reviewField = (id: string, field: ReviewField, label: string, hint: string, unit?: string, wide = false): SettingDef => ({
+  id,
   label,
+  hint,
   keywords: REVIEW_KEYWORDS,
-  available: upkeepOn,
-  render: ({ review }) => review && <ReviewNumberControl field={field} label={label} unit={unit} review={review} />,
+  available: reviewOn,
+  ...(wide && { wide: true }),
+  render: ({ review }) => review && <ReviewNumberControl field={field} label={label} unit={unit} review={review} wide={wide} />,
 })
 
 /** The counts of a vault whose snapshot carries none: a yes there writes into no note and no folder. */
@@ -1866,22 +1867,42 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         items: [
           {
             id: 'enabled',
-            label: 'Enable upkeep review',
+            label: 'Review cards',
+            hint: 'Note cards in this vault come back in the Inbox when they are due.',
             keywords: REVIEW_KEYWORDS,
-            render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.enabled} onChange={(enabled) => review.save({ ...review.settings, enabled })} ariaLabel="Enable upkeep review" />,
+            render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.enabled} onChange={(enabled) => review.save({ ...review.settings, enabled })} ariaLabel="Review cards" />,
           },
-          reviewNumber('baseDays', 'Check a note after', 'days'),
-          reviewNumber('growth', 'Each time it is still relevant, wait', '× longer'),
-          // The hint is the three numbers' result in words, so it sits under the last of them.
-          { ...reviewNumber('maxDays', 'Longest wait', 'days'), hint: ({ review }) => (review === undefined ? '' : scheduleInWords(review.settings)) },
           {
-            id: 'reviewByDefault',
-            label: (ctx) => unit(ctx, 'New notes are in review'),
+            id: 'buttons',
+            label: 'Answer buttons',
+            hint: 'Two: Forgot and Remembered. Four: Again, Hard, Good and Easy.',
             keywords: REVIEW_KEYWORDS,
-            available: upkeepOn,
-            render: (ctx) =>
-              ctx.review && <Segmented options={ON_OFF_OPTIONS} value={ctx.review.settings.reviewByDefault} onChange={(reviewByDefault) => ctx.review?.save({ ...ctx.review.settings, reviewByDefault })} ariaLabel={unit(ctx, 'New notes are in review')} />,
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Two', value: 2 as const },
+                    { label: 'Four', value: 4 as const },
+                  ]}
+                  value={review.settings.buttons}
+                  onChange={(buttons) => review.save({ ...review.settings, buttons })}
+                  ariaLabel="Answer buttons"
+                />
+              ),
           },
+          reviewField('retention', RETENTION_FIELD, 'Remember rate', 'How sure you want to be to remember a card when it comes back. Higher means shorter waits. 70 to 99.', '%'),
+          reviewField('maxDays', wholeField('maxDays'), 'Longest wait', 'A card never waits longer than this.', 'days'),
+          reviewField('newPerDay', wholeField('newPerDay'), 'New cards a day', 'How many cards you have never answered the Inbox shows each day.', 'cards'),
+          {
+            id: 'fuzz',
+            label: 'Spread due dates',
+            hint: 'Cards made together do not all come back on one day.',
+            keywords: REVIEW_KEYWORDS,
+            available: reviewOn,
+            render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.fuzz} onChange={(fuzz) => review.save({ ...review.settings, fuzz })} ariaLabel="Spread due dates" />,
+          },
+          reviewField('weights', WEIGHTS_FIELD, 'Weights', 'The 21 FSRS numbers, separated by commas. Change them only if you know FSRS.', undefined, true),
         ],
       },
     ],

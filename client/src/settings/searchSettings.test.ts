@@ -4,14 +4,15 @@
  * prefix → substring rule.
  */
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_UPKEEP_SETTINGS } from '../review/upkeepLegacy'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { SettingsCtx } from './registry'
 import { searchSettings, settingCandidates, wordMatches, type SettingHit } from './searchSettings'
 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
-const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_UPKEEP_SETTINGS, save: () => undefined }
-const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
+const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
+// Settings › Review (YAZ-4967, D14): the note card settings.
+const REVIEW_ROWS = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'fuzz', 'weights']
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
 const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
@@ -377,9 +378,10 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(moved), '⌘K'))).not.toContain('hotkey-search')
   })
 
-  it('"review", "upkeep" and "inbox" each find every row of the Review section (YAZ-2322)', () => {
+  it('"review", "note cards", "inbox" and "fsrs" each find every row of the Review section; "upkeep" finds none (YAZ-4967)', () => {
     const candidates = settingCandidates(ctx(undefined, REVIEW))
-    for (const query of ['review', 'upkeep', 'inbox']) {
+    expect(searchSettings(candidates, 'upkeep').filter((h) => h.section.id === 'review')).toEqual([])
+    for (const query of ['review', 'note cards', 'inbox', 'fsrs']) {
       expect(ids(searchSettings(candidates, query).filter((h) => h.section.id === 'review')).sort()).toEqual([...REVIEW_ROWS].sort())
     }
   })
