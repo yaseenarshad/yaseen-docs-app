@@ -324,6 +324,8 @@ export interface SettingsCtx {
   linkPills?: LinkPillsState
   /** What this vault calls a note (YAZ-4938); absent with no vault open, and the labels then say "note". */
   unitWord?: UnitWordState
+  /** Does this vault have note cards (YAZ-4946 D16)? The word row warns against "Card". */
+  hasNoteCards?: boolean
   /** This vault's Read only (YAZ-4939); absent with no vault open. */
   readOnlyVault?: ReadOnlyVaultState
   /**
@@ -1718,7 +1720,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['note', 'card', 'doc', 'page', 'word', 'name', 'unit', 'call', 'rename', 'flavour', 'flavor'],
             wide: (ctx) => ctx.unitWord?.settings.unit === 'own',
             available: (ctx) => ctx.unitWord !== undefined,
-            render: ({ unitWord }) => unitWord && <UnitWordControl unitWord={unitWord} />,
+            render: ({ unitWord, hasNoteCards }) => unitWord && <UnitWordControl unitWord={unitWord} hasNoteCards={hasNoteCards} />,
           },
           // YAZ-4940: "Show IDs", three rows in one block, saved in the vault (`.yaseendocs/show-ids.json`), in a vault with IDs only.
           {

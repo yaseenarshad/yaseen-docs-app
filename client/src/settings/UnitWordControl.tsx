@@ -15,7 +15,14 @@ const CHOICES: readonly { label: string; value: UnitChoice }[] = [
   { label: 'Your own word', value: 'own' },
 ]
 
-export function UnitWordControl({ unitWord }: { unitWord: UnitWordState }) {
+/**
+ * True when the vault's word is "Card" (or an own word "card") in a vault that has note cards (YAZ-4946 D16): its
+ * pages and its note cards would both be "cards". Note cards keep their name; the row says so.
+ */
+export const clashesWithNoteCards = (settings: UnitWordState['settings'], hasNoteCards: boolean): boolean =>
+  hasNoteCards && (settings.unit === 'card' || (settings.unit === 'own' && /^cards?$/i.test(settings.own.one.trim())))
+
+export function UnitWordControl({ unitWord, hasNoteCards = false }: { unitWord: UnitWordState; hasNoteCards?: boolean }) {
   const { settings, save } = unitWord
   const [one, setOne] = useState(settings.own.one)
   const [many, setMany] = useState(settings.own.many)
@@ -35,6 +42,11 @@ export function UnitWordControl({ unitWord }: { unitWord: UnitWordState }) {
   return (
     <>
       <Segmented options={CHOICES} value={settings.unit} onChange={(unit) => save({ unit, own: settings.own })} ariaLabel="Call a note a" />
+      {clashesWithNoteCards(settings, hasNoteCards) && (
+        <p className="settings__error" role="status">
+          This vault has note cards. With the word Card, its pages and its note cards are both cards. Note cards keep the name Note card.
+        </p>
+      )}
       {settings.unit === 'own' && (
         <>
           <input type="text" className={`settings__input${bad(one) ? ' settings__input--error' : ''}`} aria-label="Your own word, one" aria-invalid={bad(one)} placeholder="One, like Entry" maxLength={OWN_WORD_MAX} spellCheck={false} value={one} onChange={(e) => setOne(e.target.value)} onBlur={commit} onKeyDown={onKeyDown} />

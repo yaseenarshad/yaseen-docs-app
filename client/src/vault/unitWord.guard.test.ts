@@ -26,6 +26,7 @@ const ALLOWED: readonly { why: string; test: RegExp }[] = [
   { why: 'Notes from: a link column\'s setting', test: /\bNotes from\b/ },
   { why: 'Release notes', test: /^update\/WhatsNewSheet\.tsx:/ },
   { why: 'Missing note: a link pill\'s state, next to "ID from another vault"', test: /\bMissing note\b/ },
+  { why: 'Note card: the block\'s name in every vault (YAZ-4946 D16), never "Card card"', test: /\bnote cards?\b/i },
   { why: 'The hotkeys sheet describes the app\'s gestures, like the help docs', test: /^settings\/hotkeys(?:Section)?\.tsx?:/ },
   { why: 'The Settings row that names the word itself, and its control', test: /^settings\/UnitWordControl\.tsx:|\bCall a note a\b/ },
   { why: 'The sidebar\'s icon rules: the icon packs\' own name lists', test: /^sidebar\/materialIconData\.ts:/ },
