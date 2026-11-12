@@ -1952,24 +1952,66 @@
   cursor: pointer;
 }
 
-/* The toolbar: the cell toolbar's look (`table.css` `.cell-toolbar`: Crepe's surface and shadow), its groups and
-   letters, laid out in a strip that wraps when the card is narrow. */
+/* The style panel: the cell toolbar's look (`table.css` `.cell-toolbar`: Crepe's surface and shadow), a title line
+   ("Styling: the name", the part a quiet dropdown) and three rows, each with its short label on the left (round 3:
+   the unnamed strip read as four ways to style one thing). */
 .pill-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  max-width: 520px;
-  padding: 6px 8px;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  /* Wide enough for the Colour row on one line: Accent · Text · Muted and the ten swatches. */
+  max-width: 600px;
+  padding: 8px 10px 10px;
   border-radius: 8px;
   background: var(--crepe-color-surface, var(--bg));
   box-shadow: var(--crepe-shadow-1, 0 2px 8px rgba(0, 0, 0, 0.12));
+}
+.pill-toolbar__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.pill-toolbar__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+/* The title's dropdown reads as the title's last words, not as a form control: no box, the title's weight, a chevron. */
+.pill-toolbar__title .settings__select {
+  padding: 2px 20px 2px 4px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pill-toolbar__title .settings__select:hover {
+  border-color: var(--border);
+}
+.pill-toolbar__title .settings__select-wrap::after {
+  right: 6px;
+}
+/* No wrap: the label keeps its controls beside it; a long group (the colours) wraps inside itself instead. */
+.pill-toolbar__row {
+  display: flex;
+  align-items: center;
+  gap: 4px 8px;
+}
+.pill-toolbar__label {
+  flex: 0 0 56px;
+  font-size: 12px;
+  color: var(--fg-muted);
 }
 .pill-toolbar__group {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 .pill-toolbar .pill-toolbar__item {
   min-width: 32px;
