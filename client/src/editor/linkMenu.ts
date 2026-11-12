@@ -81,6 +81,8 @@ export interface LinkMenu {
   labels: string[]
   open?: () => void
   openNew?: () => void
+  /** "Open in Explore" (YAZ-4936): a note, as a reading layer of the explore stack. */
+  openExplore?: () => void
   showInSidebar?: () => void
   /** "Copy name and ID" of an ID link that is found (S8's text); else "Copy name". Never both. */
   copyNameAndId?: () => void
@@ -112,7 +114,7 @@ export function linkMenuRows(menu: LinkMenu): MenuRow[] {
     [row('New window', menu.openIn?.newWindow), row('VS Code', menu.openIn?.vsCode), row('Default app', menu.openIn?.defaultApp)],
     [row('Reveal in Finder', menu.openIn?.reveal)],
   ].map((list) => list.filter((child): child is MenuRow => child !== null))
-  group([row('Open', menu.open), row('Open in new tab', menu.openNew), row('Show in sidebar', menu.showInSidebar)])
+  group([row('Open', menu.open), row('Open in new tab', menu.openNew), row('Open in Explore', menu.openExplore), row('Show in sidebar', menu.showInSidebar)])
   group([row('Copy name and ID', menu.copyNameAndId), row('Copy name', menu.copyName), row('Copy ID', menu.copyId), row('Copy path', menu.copyPath, undefined, copyGlyph), row('Copy address', menu.copyAddress)])
   group([
     menu.favorite === undefined ? null : { label: menu.favorite.on ? 'Remove from favorites' : 'Add to favorites', run: menu.favorite.run, icon: heartGlyph },

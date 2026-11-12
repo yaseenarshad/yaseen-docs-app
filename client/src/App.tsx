@@ -292,7 +292,7 @@ function NoteWindowEditor({ path, openLink }: { path: string; openLink?: (path: 
   const propsFor = useContext(NoteWindowEditorProps)
   const base = propsFor?.(path)
   const baseOpenLink = base?.onOpenLink
-  const onOpenLink = useCallback((to: string, where?: GestureAction) => (where === undefined || where === 'thisTab' ? openLink?.(to) : baseOpenLink?.(to, where)), [openLink, baseOpenLink])
+  const onOpenLink = useCallback((to: string, where?: GestureAction | 'explore') => (where === undefined || where === 'thisTab' || where === 'explore' ? openLink?.(to) : baseOpenLink?.(to, where)), [openLink, baseOpenLink])
   if (base === undefined) return null
   return openLink === undefined ? <RetainedEditor {...base} path={path} /> : <RetainedEditor {...base} path={path} onOpenFile={openLink} onOpenLink={onOpenLink} />
 }
@@ -1290,13 +1290,26 @@ export function App() {
 
   // The explore stack (YAZ-2571): ⌘⇧F / File › Explore Vault…. `exploreRequest` and `exploreFrom` are declared above
   // `openSearch` (⌘K closes the stack). The keyboard goes back where it was when the stack closes.
+  /** What the next ask opens: a search (⌘⇧F), or a note as a reading layer with no search under it ("Open in Explore", YAZ-4936). */
+  const exploreNote = useRef<string | null>(null)
   const openExplore = useCallback(() => {
     if (root === null || filesWindow) return
+    exploreNote.current = null
     setExploreRequest((n) => {
       if (n === 0) exploreFrom.current = document.activeElement
       return n + 1
     })
   }, [root, filesWindow])
+  const openExploreOn = useCallback((path: string) => {
+    if (root === null || filesWindow) return
+    exploreNote.current = path
+    setExploreRequest((n) => {
+      if (n === 0) exploreFrom.current = document.activeElement
+      return n + 1
+    })
+  }, [root, filesWindow])
+  /** This vault's "Clicking a link" (YAZ-4936), for the editors of `path`: read at each click. */
+  const exploreOnClickFor = useCallback((path: string) => scopeOf(path).linkClick.isExplore, [scopeOf])
   const closeExplore = useCallback(() => {
     setExploreRequest(0)
     const from = exploreFrom.current
@@ -3031,6 +3044,9 @@ export function App() {
       wikilinks: scope.wikilinks,
       wikilinkCandidates: scope.wikilinkCandidates,
       viewOnlyLinks: scope.viewOnlyLinks,
+      // "Open in Explore" on a pill, and the vault's "Clicking a link" (YAZ-4936).
+      onOpenExplore: openExploreOn,
+      exploreOnClick: exploreOnClickFor(path),
       properties: scope.properties,
       onOpenFileRight: openRight,
       // YAZ-4564: a folder page's Folder chips and ↗ open a subfolder's page as the sidebar's "Open folder page" does.
@@ -3304,14 +3320,14 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Note (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} linkActions={linkActions} openInTab={openNewTabPage} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} />
+          <ExploreStack request={exploreRequest} requestNote={exploreNote.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} linkActions={linkActions} openInTab={openNewTabPage} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} />
         </Suspense>
       )}
       {whatsNewOpen && (

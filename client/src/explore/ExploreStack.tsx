@@ -30,6 +30,8 @@ import './explore.css'
 export interface ExploreStackProps {
   /** Bumped by each ⌘⇧F while the stack shows: one more search layer on top. */
   request: number
+  /** With the ask: a note to open as a reading layer instead of a search ("Open in Explore", YAZ-4936). */
+  requestNote?: string | null
   /** The window's vaults for the search: root, watcher, folders; no other files (the stack reads notes). */
   vaults: readonly SearchVault[]
   vaultOf: (path: string) => ExploreVault
@@ -69,7 +71,7 @@ const reducedMotion = (): boolean => window.matchMedia?.('(prefers-reduced-motio
 /** A key typed into a field, an editor or a menu belongs to it, never to the stack's letters. */
 const inField = (target: EventTarget | null): boolean => target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="listbox"]') !== null
 
-export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose }: ExploreStackProps) {
+export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -144,8 +146,9 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
   useEffect(() => {
     if (request === served.current) return
     served.current = request
-    push({ id: newLayerId(), kind: 'search' })
-  }, [request, push])
+    if (requestNote === null) push({ id: newLayerId(), kind: 'search' })
+    else if (push({ id: newLayerId(), kind: 'note', path: requestNote, mode: 'read', wide: preferWide() })) rememberExploreRecent(requestNote)
+  }, [request, requestNote, push])
 
   /** A note goes on top for reading; a folder or another file opens in a tab and the stack closes. */
   const openPath = useCallback(

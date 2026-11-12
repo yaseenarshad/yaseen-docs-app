@@ -159,6 +159,20 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
   })
 
+  it('YAZ-4936: "Open in Explore" after "Open in new tab" when the host has the door, for a note only; it opens the note\'s path there', async () => {
+    const source = createWikilinkResolveSource()
+    source.update(resolve, records, folders, true, ['YAS'])
+    const openExplore = vi.fn()
+    const note = await mountWith('pad [[YAS-466]] tail\n', () => ({ wikilinks: source, wikilinkNav: { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn(), openExplore }, vaultsOfLetters: vaultsOf }))
+    const menu = menuOf(note.root, note.view, 'AR v2 plan')
+    expect(shape(menu).slice(2, 6)).toEqual(['Open', 'Open in new tab', 'Open in Explore', '──'])
+    rowOf(menu, 'Open in Explore').click()
+    expect(openExplore).toHaveBeenCalledOnce()
+    expect(openExplore.mock.calls[0][0]).toMatch(/\.md$/)
+    const folder = await mountWith('pad [[Projects]] tail\n', () => ({ wikilinks: source, wikilinkNav: { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn(), openExplore }, vaultsOfLetters: vaultsOf }))
+    expect(shape(menuOf(folder.root, folder.view, 'Projects'))).not.toContain('Open in Explore')
+  })
+
   it('a folder link: no top line, and Open in ▸ has no New window, as in the sidebar', async () => {
     const { root, view } = await mount('pad [[Projects]] tail\n')
     const menu = menuOf(root, view, 'Projects')

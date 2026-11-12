@@ -35,6 +35,7 @@ import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
 import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
+import type { LinkClickState } from '../explore/linkClick'
 import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
 import { FOLDER_PAGES_SECTION } from './folderPagesSection'
@@ -308,6 +309,8 @@ export interface SettingsCtx {
   sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
   /** This vault's review settings (YAZ-2322); absent with no vault open. */
   review?: ReviewSettingsState
+  /** This vault's "Clicking a link" (YAZ-4936); absent with no vault open. */
+  linkClick?: LinkClickState
   /**
    * This vault's IDs (YAZ-2523 🔒 V4); absent until a vault's index has loaded. `enabled` is its
    * answer, and no answer reads as no. `held`: a note holds an ID. `ask`: what a yes would write,
@@ -1673,6 +1676,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         title: 'This vault',
         vault: true,
         items: [
+          // YAZ-4936: one row of its own, saved in the vault (`.yaseendocs/link-click.json`).
+          {
+            id: 'linkClick',
+            label: 'Clicking a link',
+            hint: 'A plain click on a note pill. With Explore it opens the note as a reading layer, as ⌘⇧F does; ⌘-click and the other keys keep their doors, and a board or a folder pill keeps its click.',
+            keywords: ['link', 'pill', 'click', 'explore', 'open', 'reading'],
+            available: (ctx) => ctx.linkClick !== undefined,
+            render: ({ linkClick }) =>
+              linkClick && (
+                <Segmented
+                  options={[
+                    { label: 'Opens the note', value: 'open' as const },
+                    { label: 'Opens it in Explore', value: 'explore' as const },
+                  ]}
+                  value={linkClick.settings.click}
+                  onChange={(click) => linkClick.save({ click })}
+                  ariaLabel="Clicking a link"
+                />
+              ),
+          },
           {
             id: 'ids',
             label: "Give this vault's notes IDs",

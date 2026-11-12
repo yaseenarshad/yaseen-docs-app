@@ -652,6 +652,16 @@ describe('the explore stack', () => {
     tabRoot.remove()
   })
 
+  it('YAZ-4936: an ask with a note opens it as a reading layer with no search under it; Esc closes the stack', async () => {
+    props.requestNote = '/v/beta.md'
+    await mount()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['note'])
+    expect(top().querySelector('.explore__title')?.textContent).toBe('beta')
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    escape()
+    expect(props.onClose).toHaveBeenCalledOnce()
+  })
+
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {
     Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false }), configurable: true, writable: true })
     vi.useFakeTimers()

@@ -24,6 +24,7 @@ import { boardCheckOf } from '../drawing/boardEmbedScan'
 import { boardEmbedTarget } from '../drawing/boardEmbedText'
 import { inCellOrNote } from '../table/cellBlocks'
 import { OPEN_ID_LINK } from './idLinkCaret'
+import { fileKind } from '@shared/fileKind'
 import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
@@ -97,6 +98,8 @@ export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: Wi
     // `[[#heading]]` of this note: the heading jump is GRO-2239, so nothing to open.
     open: page === '' ? undefined : () => follow(inner, 'thisTab'),
     openNew: page === '' ? undefined : () => follow(inner, 'backgroundTab'),
+    // "Open in Explore" (YAZ-4936): a note that is there, where the host has the door.
+    openExplore: path !== null && fileKind(path) === 'markdown' && nav.openExplore !== undefined ? () => follow(inner, 'explore') : undefined,
     ...(id !== null && title !== undefined
       ? { copyNameAndId: () => copyText(nameAndId(title, id), 'name and ID', nav.onNotice, undefined, true) }
       : shown !== '' && found ? { copyName: () => copyText(shown, 'name', nav.onNotice, undefined, true) } : {}),

@@ -234,6 +234,7 @@
  *    `table/colours.ts`), and frozen rows and columns (`table/tableFreeze.ts`; the right-click
  *    Table part is `noteMenu.tsx`'s).
  */
+import { fileKind } from '@shared/fileKind'
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -354,7 +355,7 @@ import { createWikilinkClick, wikilinkFollower, type WikilinkNav } from './wikil
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu, linkMenuOf } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
-import { createWikilink, createWikilinkResolveSource, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createWikilink, createWikilinkResolveSource, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createPillSelection } from './wikilink/pillSelection'
 import { createMarkdownLink, noPreviewOnPills, type MarkdownLinkNav } from './markdownLink'
@@ -758,7 +759,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const follow = opts.wikilinkNav === undefined ? undefined : wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)
   if (opts.wikilinkNav !== undefined && follow !== undefined) {
     const nav = opts.wikilinkNav
-    crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.())).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
+    // A plain click opens a note pill in Explore while the vault says so (YAZ-4936): a note that is there, never a board or a folder.
+    const exploreClick = (inner: string): boolean => nav.exploreClick?.() === true && fileKind(linkPath(inner, wikilinks, viewOnlyLinks) ?? '') === 'markdown'
+    crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.(), exploreClick)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav)).config(noPreviewOnPills)
