@@ -1435,15 +1435,18 @@
 .view-link-pill:has(+ .view-link-pill) {
   margin-right: 4px;
 }
-/* Each pill wears its page's icon (YAZ-4544 4G): a `FileIcon` inside it, after the head piece, as the note's pill
-   draws it; the vault's look hides it (`--pill-icon-display`, YAZ-4924). */
-.view-link-pill > .file-icon::before {
-  display: var(--pill-icon-display, inline-block) !important;
-}
-/* The pieces the vault's look adds (YAZ-4924, `LinkPillParts.tsx`) are inside the pill's span here: no sibling rules to join. */
+/* Each pill wears its page's icon (YAZ-4544 4G): a `FileIcon` inside it, where the vault's format puts it (YAZ-4924:
+   on the name, or a piece of the head or the tail). The pieces the format adds (`LinkPillParts.tsx`) are inside the
+   pill's span here: no sibling rules to join; they take the words' own style and each part its own variables, as the
+   note's do (`wikilink.css`). */
 .view-link-pill .link-pill__head,
 .view-link-pill .link-pill__tail {
   display: inline;
+  color: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+  font-size: inherit;
+  text-decoration-line: var(--pill-decoration, none);
 }
 /* The table cell owns the mouse (`pointer-events: none` on its editable value): a pill takes its own clicks and hovers. */
 .view-table tbody td .view-link-pill {

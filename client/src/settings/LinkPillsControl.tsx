@@ -1,70 +1,75 @@
 /**
- * Settings › Link pills (YAZ-4924): how every link pill of THIS vault looks, saved in the vault
- * (`.yaseendocs/link-pills.json`, `useLinkPills`). The preview at the top draws a sentence with four pills under the
- * look as the rows change it: a note, a board, a pill into another vault and a missing note. Each row writes one field
- * through `withLinkPills`, so the file holds only changes; Plain strips the background, the colour and the icon in one
- * click, and Reset brings today's look back. Every default is today's look.
+ * Settings › This vault › Link pills (YAZ-4924, the redo): ONE row, three parts, saved in the vault
+ * (`.yaseendocs/link-pills.json`, `useLinkPills`, `shared/linkPills.ts`).
+ *  1. **Format:** a text box with tokens in braces (`{icon}` `{name}` `{id}` `{vault}` `{folder}` `{path}`), draft +
+ *     commit on Enter or blur (the pattern of `TimeFormatControl.tsx`): a format the app cannot read (an unknown token,
+ *     no `{name}`, too long) keeps the STORED format, marks the box red and says why. The token chips insert at the
+ *     caret and keep at once. A dropdown of ready formats beside it. The vault rule (other vaults only · always ·
+ *     never) shows only while the format has `{vault}`.
+ *  2. **Preview:** a sentence with four pills (a note, a board, a pill into another vault, a missing note), drawn by
+ *     the folder page's pill (`PillEnds`, the same pieces the note's widgets draw) under the look's variables.
+ *  3. **Click to style:** a click on a part of a pill (the name, the ID, the vault, the folder, your own text) opens that
+ *     part's toolbar under the preview — B I U, the colour (accent · same as text · muted · the ten palette colours),
+ *     the size — and a click on the pill's icon, or the toolbar's own picker, the box's: Shape, Fill, Strength. Each
+ *     button writes one field through `withLinkPillPart` / `withLinkPillBox`, so the file holds only changes.
+ * Reset brings today's look back. Every default is today's look.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import { useUnit } from '../vault/unitWord'
-import { LINK_PILL_COLORS, LINK_PILL_QUICK_PICKS, LINK_PILL_TEXT_MAX, isDefaultLinkPills, isPlainLinkPills, plainLinkPills, withLinkPills, type LinkPillColor, type LinkPills } from '@shared/linkPills'
-import { linkPillVars, pillParts } from '../editor/wikilink/linkPillLook'
-import { PillHead, PillTail } from '../editor/wikilink/LinkPillParts'
+import {
+  DEFAULT_LINK_PILL_FORMAT,
+  LINK_PILL_COLORS,
+  LINK_PILL_FORMAT_MAX,
+  LINK_PILL_PART_DEFAULTS,
+  LINK_PILL_READY,
+  LINK_PILL_TOKENS,
+  isDefaultLinkPills,
+  linkPillFormatProblem,
+  linkPillFormatTokens,
+  parseLinkPillFormat,
+  withLinkPillBox,
+  withLinkPillPart,
+  withLinkPillReady,
+  withLinkPills,
+  type LinkPillColor,
+  type LinkPillPart,
+  type LinkPillPartColor,
+  type LinkPills,
+} from '@shared/linkPills'
+import { linkPillVars, pillsShowVault } from '../editor/wikilink/linkPillLook'
+import { PillEnds, PillLook } from '../editor/wikilink/LinkPillParts'
 import { capital, fillSwatch, textSwatch } from '../editor/table/colours'
 import { FileIcon } from '../sidebar/FileIcon'
-import { Segmented } from './controls'
+import { Segmented, Select } from './controls'
 import type { Option } from './options'
 import type { LinkPillsState } from './useLinkPills'
 
-interface RowProps {
-  look: LinkPillsState
-}
+/** What the toolbar styles: one part, or the box. */
+type Target = { kind: 'part'; part: LinkPillPart } | { kind: 'box' }
 
-const ACCENT_NONE_COLOUR: readonly Option<'accent' | 'none' | 'colour'>[] = [
-  { label: 'Accent', value: 'accent' },
-  { label: 'None', value: 'none' },
-  { label: 'Colour', value: 'colour' },
+const PART_LABELS: Record<LinkPillPart, string> = { name: 'Name', id: 'ID', vault: 'Vault', folder: 'Folder', path: 'Path', text: 'Your text' }
+const VAULT_OPTIONS: readonly Option<'other' | 'always' | 'never'>[] = [
+  { label: 'Vault name: other vaults only', value: 'other' },
+  { label: 'Vault name: always', value: 'always' },
+  { label: 'Vault name: never', value: 'never' },
 ]
-const TEXT_OPTIONS: readonly Option<'accent' | 'same' | 'colour'>[] = [
-  { label: 'Accent', value: 'accent' },
-  { label: 'Same as text', value: 'same' },
-  { label: 'Colour', value: 'colour' },
+const SIZE_OPTIONS: readonly Option<'normal' | 'small'>[] = [
+  { label: 'Normal', value: 'normal' },
+  { label: 'Small', value: 'small' },
+]
+const SHAPE_OPTIONS: readonly Option<'round' | 'square' | 'underline'>[] = [
+  { label: 'Round', value: 'round' },
+  { label: 'Square', value: 'square' },
+  { label: 'Underline', value: 'underline' },
 ]
 const STRENGTH_OPTIONS: readonly Option<'light' | 'medium' | 'strong'>[] = [
   { label: 'Light', value: 'light' },
   { label: 'Medium', value: 'medium' },
   { label: 'Strong', value: 'strong' },
 ]
-const ICON_OPTIONS: readonly Option<'show' | 'hide'>[] = [
-  { label: 'Show', value: 'show' },
-  { label: 'Hide', value: 'hide' },
-]
-const VAULT_OPTIONS: readonly Option<'other' | 'always' | 'never'>[] = [
-  { label: 'Other vaults only', value: 'other' },
-  { label: 'Always', value: 'always' },
-  { label: 'Never', value: 'never' },
-]
-const VAULT_PLACE_OPTIONS: readonly Option<'after' | 'before'>[] = [
-  { label: 'After', value: 'after' },
-  { label: 'Before', value: 'before' },
-]
-const ID_OPTIONS: readonly Option<'off' | 'show'>[] = [
-  { label: 'Off', value: 'off' },
-  { label: 'Show', value: 'show' },
-]
-const FOLDER_OPTIONS: readonly Option<'off' | 'parent' | 'full'>[] = [
-  { label: 'Off', value: 'off' },
-  { label: 'Parent folder', value: 'parent' },
-  { label: 'Full path', value: 'full' },
-]
-const SHAPE_OPTIONS: readonly Option<'pill' | 'square' | 'underline'>[] = [
-  { label: 'Pill', value: 'pill' },
-  { label: 'Square', value: 'square' },
-  { label: 'Underline only', value: 'underline' },
-]
-
-/** The colour a "Colour" pick starts on. */
-const FIRST_COLOUR: LinkPillColor = 'blue'
+/** The ready formats dropdown: a picker, so its own value never changes. */
+const READY_PICK = -1
+const READY_OPTIONS: readonly Option<number>[] = [{ label: 'Ready formats…', value: READY_PICK }, ...LINK_PILL_READY.map((r, i) => ({ label: r.label, value: i }))]
 
 /** The ten palette swatches as a radio row (the Band colour row's look). */
 function Swatches({ label, value, swatch, onPick }: { label: string; value: LinkPillColor | undefined; swatch: (c: LinkPillColor) => string; onPick: (c: LinkPillColor) => void }) {
@@ -79,167 +84,194 @@ function Swatches({ label, value, swatch, onPick }: { label: string; value: Link
   )
 }
 
-/** Background: the accent's tint (today), none, or a palette colour with its strength. */
-export function PillBackgroundControl({ look }: RowProps) {
-  const { pills, save } = look
-  const mode = pills.background === undefined ? 'accent' : pills.background === 'none' ? 'none' : 'colour'
-  const colour = mode === 'colour' ? (pills.background as LinkPillColor) : undefined
+/** A small toggle or pick button of the toolbar. */
+function Tool({ label, on, mark, onClick, className = '' }: { label: string; on: boolean; mark: string; onClick: () => void; className?: string }) {
   return (
-    <span className="settings__pill-row">
-      <Segmented
-        options={ACCENT_NONE_COLOUR}
-        value={mode}
-        onChange={(next) => save(withLinkPills(pills, { background: next === 'accent' ? undefined : next === 'none' ? 'none' : (colour ?? FIRST_COLOUR), ...(next !== 'colour' && { strength: undefined }) }))}
-        ariaLabel="Link pill background"
-      />
-      {mode === 'colour' && (
-        <>
-          <Swatches label="Background colour" value={colour} swatch={fillSwatch} onPick={(c) => save(withLinkPills(pills, { background: c }))} />
-          <Segmented options={STRENGTH_OPTIONS} value={pills.strength ?? 'medium'} onChange={(strength) => save(withLinkPills(pills, { strength: strength === 'medium' ? undefined : strength === 'light' ? 'light' : 'strong' }))} ariaLabel="Background strength" />
-        </>
-      )}
-    </span>
-  )
-}
-
-/** Text colour: the accent (today), the text around the pill, or a palette colour's text colour. */
-export function PillTextControl({ look }: RowProps) {
-  const { pills, save } = look
-  const mode = pills.text === undefined ? 'accent' : pills.text === 'same' ? 'same' : 'colour'
-  const colour = mode === 'colour' ? (pills.text as LinkPillColor) : undefined
-  return (
-    <span className="settings__pill-row">
-      <Segmented options={TEXT_OPTIONS} value={mode} onChange={(next) => save(withLinkPills(pills, { text: next === 'accent' ? undefined : next === 'same' ? 'same' : (colour ?? FIRST_COLOUR) }))} ariaLabel="Link pill text colour" />
-      {mode === 'colour' && <Swatches label="Text colour" value={colour} swatch={textSwatch} onPick={(c) => save(withLinkPills(pills, { text: c }))} />}
-    </span>
-  )
-}
-
-export function PillIconControl({ look }: RowProps) {
-  const { pills, save } = look
-  return <Segmented options={ICON_OPTIONS} value={pills.icon ?? 'show'} onChange={(icon) => save(withLinkPills(pills, { icon: icon === 'show' ? undefined : 'hide' }))} ariaLabel="Link pill icon" />
-}
-
-/** Bold · Italic · Underline: three toggles. */
-export function PillStyleControl({ look }: RowProps) {
-  const { pills, save } = look
-  const toggle = (field: 'bold' | 'italic' | 'underline', label: string, mark: string) => (
-    <button type="button" className={`settings__option${pills[field] ? ' settings__option--active' : ''}`} aria-pressed={pills[field] === true} aria-label={label} title={label} onClick={() => save(withLinkPills(pills, { [field]: pills[field] ? undefined : true }))}>
+    <button type="button" className={`settings__option pill-toolbar__item${on ? ' settings__option--active' : ''}${className}`} aria-pressed={on} aria-label={label} title={label} onClick={onClick}>
       {mark}
     </button>
   )
+}
+
+/** The toolbar of one part: B I U, the colour, the size. */
+function PartToolbar({ look, part }: { look: LinkPillsState; part: LinkPillPart }) {
+  const { pills, save } = look
+  const style = pills.parts?.[part] ?? {}
+  const defaults = LINK_PILL_PART_DEFAULTS[part]
+  const color: LinkPillPartColor = style.color ?? defaults.color
+  const named = (c: LinkPillPartColor) => (c === defaults.color ? undefined : c)
+  const toggle = (field: 'bold' | 'italic' | 'underline') => save(withLinkPillPart(pills, part, { [field]: style[field] ? undefined : true }))
   return (
-    <div className="settings__options settings__pill-style" role="group" aria-label="Link pill style">
-      {toggle('bold', 'Bold', 'B')}
-      {toggle('italic', 'Italic', 'I')}
-      {toggle('underline', 'Underline', 'U')}
-    </div>
+    <>
+      <span className="pill-toolbar__group" role="group" aria-label={`${PART_LABELS[part]} style`}>
+        <Tool label="Bold" on={style.bold === true} mark="B" className=" pill-toolbar__b" onClick={() => toggle('bold')} />
+        <Tool label="Italic" on={style.italic === true} mark="I" className=" pill-toolbar__i" onClick={() => toggle('italic')} />
+        <Tool label="Underline" on={style.underline === true} mark="U" className=" pill-toolbar__u" onClick={() => toggle('underline')} />
+      </span>
+      <span className="pill-toolbar__group" role="group" aria-label={`${PART_LABELS[part]} colour`}>
+        <Tool label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => save(withLinkPillPart(pills, part, { color: named('accent') }))} />
+        <Tool label="Same as text" on={color === 'same'} mark="Same as text" onClick={() => save(withLinkPillPart(pills, part, { color: named('same') }))} />
+        <Tool label="Muted" on={color === 'muted'} mark="Muted" onClick={() => save(withLinkPillPart(pills, part, { color: named('muted') }))} />
+        <Swatches label={`${PART_LABELS[part]} text colour`} value={color === 'accent' || color === 'same' || color === 'muted' ? undefined : color} swatch={textSwatch} onPick={(c) => save(withLinkPillPart(pills, part, { color: named(c) }))} />
+      </span>
+      <Segmented options={SIZE_OPTIONS} value={style.size ?? defaults.size} onChange={(size) => save(withLinkPillPart(pills, part, { size: size === defaults.size ? undefined : size }))} ariaLabel={`${PART_LABELS[part]} size`} />
+    </>
   )
 }
 
-/** One of the Before / After fields: kept on blur or ⏎, up to 8 characters; empty is today's look. */
-function PillTextField({ label, value, onKeep }: { label: string; value: string; onKeep: (next: string) => void }) {
-  const [draft, setDraft] = useState(value)
-  useEffect(() => setDraft(value), [value])
-  const keep = () => {
-    if (draft !== value) onKeep(draft)
+/** The box's toolbar: Shape, Fill, Strength. */
+function BoxToolbar({ look }: { look: LinkPillsState }) {
+  const { pills, save } = look
+  const box = pills.box ?? {}
+  const fill = box.fill
+  return (
+    <>
+      <Segmented options={SHAPE_OPTIONS} value={box.shape ?? 'round'} onChange={(shape: 'round' | 'square' | 'underline') => save(withLinkPillBox(pills, { shape: shape === 'round' ? undefined : shape }))} ariaLabel="Shape" />
+      <span className="pill-toolbar__group" role="group" aria-label="Fill">
+        <Tool label="Accent tint" on={fill === undefined} mark="Tint" onClick={() => save(withLinkPillBox(pills, { fill: undefined, strength: undefined }))} />
+        <Tool label="No fill" on={fill === 'none'} mark="None" onClick={() => save(withLinkPillBox(pills, { fill: 'none', strength: undefined }))} />
+        <Swatches label="Fill colour" value={fill === undefined || fill === 'none' ? undefined : fill} swatch={fillSwatch} onPick={(c) => save(withLinkPillBox(pills, { fill: c }))} />
+      </span>
+      {fill !== undefined && fill !== 'none' && <Segmented options={STRENGTH_OPTIONS} value={box.strength ?? 'medium'} onChange={(strength: 'light' | 'medium' | 'strong') => save(withLinkPillBox(pills, { strength: strength === 'medium' ? undefined : strength }))} ariaLabel="Strength" />}
+    </>
+  )
+}
+
+/** One pill of the preview, as a folder page's cell draws one: the editor's classes, the pieces the format adds. */
+function PreviewPill({ text, path, otherVault = null, info, missing = false }: { text: string; path?: string; otherVault?: string | null; info?: { id?: string; folder: string }; missing?: boolean }) {
+  const unit = useUnit()
+  return (
+    <span className={`wikilink view-link-pill${missing || path === undefined ? ' wikilink--unresolved' : ''}`} title={missing ? unit('A link to a note that does not exist yet') : text}>
+      <PillEnds text={text} info={info} otherVault={otherVault} icon={!missing && path !== undefined ? <FileIcon path={path} /> : undefined} />
+    </span>
+  )
+}
+
+/** The part a click in the preview lands on, or null: a piece's class names its part; the pill's own span is the name; the icon is the box. */
+function targetAt(el: Element): Target | null {
+  const hit = el.closest('.link-pill__text, .link-pill__id, .link-pill__vault, .link-pill__folder, .link-pill__path, .file-icon, .link-pill__icon, .wikilink')
+  if (hit === null) return null
+  if (hit.classList.contains('file-icon') || hit.classList.contains('link-pill__icon')) return { kind: 'box' }
+  if (hit.classList.contains('wikilink')) return { kind: 'part', part: 'name' }
+  const part = hit.className.replace('link-pill__', '') as LinkPillPart
+  return { kind: 'part', part }
+}
+
+/** The format's text box: draft + commit, the chips, the ready formats. */
+function FormatBox({ look }: { look: LinkPillsState }) {
+  const { pills, save } = look
+  const format = pills.format ?? DEFAULT_LINK_PILL_FORMAT
+  const [draft, setDraft] = useState(format)
+  const [problem, setProblem] = useState<string | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+  const caret = useRef<number | null>(null)
+  useEffect(() => {
+    setDraft(format)
+    setProblem(null)
+  }, [format])
+  // After a chip: the caret after the token it put in.
+  useLayoutEffect(() => {
+    if (caret.current === null || input.current === null) return
+    input.current.focus()
+    input.current.setSelectionRange(caret.current, caret.current)
+    caret.current = null
+  })
+  const commit = (raw: string) => {
+    const why = linkPillFormatProblem(raw)
+    setProblem(why)
+    if (why === null && raw !== format) save(withLinkPills(pills, { format: raw }))
+  }
+  const insert = (token: string) => {
+    const el = input.current
+    const start = el?.selectionStart ?? draft.length
+    const end = el?.selectionEnd ?? start
+    const next = `${draft.slice(0, start)}{${token}}${draft.slice(end)}`
+    caret.current = start + token.length + 2
+    setDraft(next)
+    commit(next)
   }
   return (
-    <label className="settings__pill-text">
-      <span>{label}</span>
-      <input className="settings__input settings__pill-input" aria-label={`Text ${label.toLowerCase()} a link pill`} placeholder="None" maxLength={LINK_PILL_TEXT_MAX} spellCheck={false} value={draft}
-        onChange={(event) => setDraft(event.target.value)} onBlur={keep}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') keep()
-        }} />
-    </label>
-  )
-}
-
-/** Before and After: two short fields and the quick picks. */
-export function PillBeforeAfterControl({ look }: RowProps) {
-  const { pills, save } = look
-  const set = (before: string, after: string) => save(withLinkPills(pills, { before: before === '' ? undefined : before, after: after === '' ? undefined : after }))
-  return (
-    <span className="settings__pill-row">
-      <PillTextField label="Before" value={pills.before ?? ''} onKeep={(before) => set(before, pills.after ?? '')} />
-      <PillTextField label="After" value={pills.after ?? ''} onKeep={(after) => set(pills.before ?? '', after)} />
-      <span className="settings__options" role="group" aria-label="Quick picks">
-        {LINK_PILL_QUICK_PICKS.map(([label, before, after]) => (
-          <button key={label} type="button" className={`settings__option${(pills.before ?? '') === before && (pills.after ?? '') === after ? ' settings__option--active' : ''}`} aria-label={`Quick pick ${label.trim()}`} onClick={() => set(before, after)}>
-            {label}
+    <>
+      <span className="settings__style-pick link-pills-format">
+        <input
+          ref={input}
+          type="text"
+          className={`settings__input settings__input--fill${problem !== null ? ' settings__input--error' : ''}`}
+          aria-label="Link pill format"
+          aria-invalid={problem !== null}
+          maxLength={LINK_PILL_FORMAT_MAX}
+          spellCheck={false}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            setProblem(null)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit(e.currentTarget.value)
+          }}
+          onBlur={(e) => commit(e.target.value)}
+        />
+        <Select options={READY_OPTIONS} value={READY_PICK} onChange={(i) => i !== READY_PICK && save(withLinkPillReady(pills, LINK_PILL_READY[i]!))} ariaLabel="Ready formats" />
+      </span>
+      <span className="settings__options link-pills-chips" role="group" aria-label="Tokens">
+        {LINK_PILL_TOKENS.map((token) => (
+          <button key={token} type="button" className="settings__option link-pills-chip" aria-label={`Add {${token}}`} onMouseDown={(e) => e.preventDefault()} onClick={() => insert(token)}>
+            {`{${token}}`}
           </button>
         ))}
       </span>
-    </span>
-  )
-}
-
-/** Vault name: on pills into other vaults only (today), on every pill, or never; after or before the name. */
-export function PillVaultControl({ look }: RowProps) {
-  const { pills, save } = look
-  return (
-    <span className="settings__pill-row">
-      <Segmented options={VAULT_OPTIONS} value={pills.vault ?? 'other'} onChange={(vault) => save(withLinkPills(pills, { vault: vault === 'other' ? undefined : vault === 'always' ? 'always' : 'never' }))} ariaLabel="Vault name on a link pill" />
-      {pills.vault !== 'never' && <Segmented options={VAULT_PLACE_OPTIONS} value={pills.vaultPlace ?? 'after'} onChange={(place) => save(withLinkPills(pills, { vaultPlace: place === 'after' ? undefined : 'before' }))} ariaLabel="Where the vault name goes" />}
-    </span>
-  )
-}
-
-export function PillIdControl({ look }: RowProps) {
-  const { pills, save } = look
-  return <Segmented options={ID_OPTIONS} value={pills.id ?? 'off'} onChange={(id) => save(withLinkPills(pills, { id: id === 'off' ? undefined : 'show' }))} ariaLabel="ID on a link pill" />
-}
-
-export function PillFolderControl({ look }: RowProps) {
-  const { pills, save } = look
-  return <Segmented options={FOLDER_OPTIONS} value={pills.folder ?? 'off'} onChange={(folder) => save(withLinkPills(pills, { folder: folder === 'off' ? undefined : folder === 'parent' ? 'parent' : 'full' }))} ariaLabel="Folder on a link pill" />
-}
-
-export function PillShapeControl({ look }: RowProps) {
-  const { pills, save } = look
-  return <Segmented options={SHAPE_OPTIONS} value={pills.shape ?? 'pill'} onChange={(shape) => save(withLinkPills(pills, { shape: shape === 'pill' ? undefined : shape === 'square' ? 'square' : 'underline' }))} ariaLabel="Link pill shape" />
-}
-
-/** One pill of the preview, as a folder page's cell draws one: the editor's classes, the icon after the head piece, the pieces the look adds. */
-function PreviewPill({ pills, vault, text, path, otherVault = null, info, missing = false }: { pills: LinkPills; vault: string | null; text: string; path?: string; otherVault?: string | null; info?: { id?: string; folder: string }; missing?: boolean }) {
-  const unit = useUnit()
-  const { head, tail } = pillParts(pills, { info, otherVault }, vault)
-  return (
-    <span className={`wikilink view-link-pill${missing || path === undefined ? ' wikilink--unresolved' : ''}`} title={missing ? unit('A link to a note that does not exist yet') : text}>
-      {head !== null && <PillHead head={head} />}
-      {!missing && path !== undefined && <FileIcon path={path} />}
-      {text}
-      {tail !== null && <PillTail tail={tail} />}
-    </span>
+      {problem !== null ? <span className="settings__error settings__error--inline">{problem}</span> : <span className="settings__tokens">Other text shows as you type it. An empty part, like the ID of a note without one, takes its text with it.</span>}
+    </>
   )
 }
 
 /**
- * The live preview, with Plain and Reset. `vault`: what the app calls this vault, for "Always"; `ids`: whether the
- * vault gives its notes IDs, so the note pill can show one.
+ * The row. `vault`: what the app calls this vault, for "Always"; `ids`: whether the vault gives its notes IDs, so the
+ * note pill can show one.
  */
-export function LinkPillsPreview({ look, vault, ids }: RowProps & { vault: string | null; ids: boolean }) {
+export function LinkPillsControl({ look, vault, ids }: { look: LinkPillsState; vault: string | null; ids: boolean }) {
   const unit = useUnit()
   const { pills, save } = look
-  const plain = isPlainLinkPills(pills)
+  const [target, setTarget] = useState<Target | null>(null)
+  const format = pills.format ?? DEFAULT_LINK_PILL_FORMAT
+  const tokens = linkPillFormatTokens(format)
+  // The parts the toolbar can switch to: the name, each token of the format, and your text when the format has some.
+  const parts: LinkPillPart[] = ['name', ...(['id', 'vault', 'folder', 'path'] as const).filter((t) => tokens.has(t)), ...(parseLinkPillFormat(format).segments.some((s) => 'text' in s) ? (['text'] as const) : [])]
+  const pickOptions: readonly Option<string>[] = [...parts.map((p) => ({ label: PART_LABELS[p], value: p })), { label: 'Box', value: 'box' }]
+  const picked = target === null ? 'name' : target.kind === 'box' ? 'box' : target.part
+  const pick = (e: MouseEvent<HTMLElement>) => {
+    const next = targetAt(e.target as Element)
+    if (next !== null) setTarget(next)
+  }
+  // A part that left the format (its token removed) closes its toolbar.
+  const live = target === null || target.kind === 'box' || parts.includes(target.part) ? target : null
   return (
-    <div className="link-pills-preview-row">
-      <p className="link-pills-preview" aria-label="Link pills preview" style={linkPillVars(pills)}>
-        Read the <PreviewPill pills={pills} vault={vault} text="Roadmap" path="/preview/Roadmap.md" info={ids ? { id: 'YAS-12', folder: 'Projects/Plans' } : { folder: 'Projects/Plans' }} /> {unit('note, the')}{' '}
-        <PreviewPill pills={pills} vault={vault} text="Q3 plan" path="/preview/Q3 plan.excalidraw" info={{ folder: 'Boards' }} /> board, and{' '}
-        <PreviewPill pills={pills} vault={vault} text="Budget" path="/preview/Budget.md" otherVault="Wiki" /> in another vault. <PreviewPill pills={pills} vault={vault} text="Old plan" missing /> {unit('has no note yet.')}
-      </p>
-      <span className="settings__options" role="group" aria-label="Link pills quick buttons">
-        <button type="button" className={`settings__option${plain ? ' settings__option--active' : ''}`} aria-pressed={plain} title="No background, the text's colour, no icon" onClick={() => save(plain ? withLinkPills(pills, { background: undefined, strength: undefined, text: undefined, icon: undefined }) : plainLinkPills(pills))}>
-          Plain
-        </button>
-        {!isDefaultLinkPills(pills) && (
+    <div className="link-pills-row">
+      <FormatBox look={look} />
+      {pillsShowVault(pills) && <Select options={VAULT_OPTIONS} value={pills.vault ?? 'other'} onChange={(rule: 'other' | 'always' | 'never') => save(withLinkPills(pills, { vault: rule === 'other' ? undefined : rule }))} ariaLabel="Vault name on a link pill" />}
+      <PillLook.Provider value={{ pills, vault }}>
+        {/* The toolbar's own picker is the keyboard's way to a part; the click is the mouse's. */}
+        <p className="link-pills-preview" aria-label="Link pills preview" title="Click a part of a pill to style it" style={linkPillVars(pills)} onClick={pick}>
+          Read the <PreviewPill text="Roadmap" path="/preview/Roadmap.md" info={ids ? { id: 'YAS-12', folder: 'Projects/Plans' } : { folder: 'Projects/Plans' }} /> {unit('note, the')} <PreviewPill text="Q3 plan" path="/preview/Q3 plan.excalidraw" info={{ folder: 'Boards' }} /> board, and{' '}
+          <PreviewPill text="Budget" path="/preview/Budget.md" otherVault="Wiki" info={{ folder: '' }} /> in another vault. <PreviewPill text="Old plan" missing /> {unit('has no note yet.')}
+        </p>
+      </PillLook.Provider>
+      {live !== null && (
+        <div className="pill-toolbar" role="toolbar" aria-label={`${live.kind === 'box' ? 'Box' : PART_LABELS[live.part]} toolbar`}>
+          <Select options={pickOptions} value={picked} onChange={(v) => setTarget(v === 'box' ? { kind: 'box' } : { kind: 'part', part: v as LinkPillPart })} ariaLabel="What to style" />
+          {live.kind === 'box' ? <BoxToolbar look={look} /> : <PartToolbar look={look} part={live.part} />}
+          <button type="button" className="settings__option pill-toolbar__item pill-toolbar__close" aria-label="Close the toolbar" title="Close" onClick={() => setTarget(null)}>
+            ×
+          </button>
+        </div>
+      )}
+      {!isDefaultLinkPills(pills) && (
+        <span className="settings__options">
           <button type="button" className="settings__option" title="Back to today's look" onClick={() => save({})}>
             Reset
           </button>
-        )}
-      </span>
+        </span>
+      )}
     </div>
   )
 }

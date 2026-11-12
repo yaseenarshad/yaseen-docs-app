@@ -13,7 +13,7 @@ const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): Settin
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
-const LINK_PILL_ROWS = ['linkPills', 'linkPillBackground', 'linkPillTextColour', 'linkPillIcon', 'linkPillStyle', 'linkPillBeforeAfter', 'linkPillVault', 'linkPillId', 'linkPillFolder', 'linkPillShape']
+const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and
 // their style (YAZ-4798) after Group indent.
@@ -367,7 +367,7 @@ describe('searchSettings', () => {
     // "underline" is also a word of Appearance › Text formatting (YAZ-3068); a note and a draw.io diagram both
     // underline with ⌘U (YAZ-3037): both rows answer, the note's first (its label is the word). The Selection toolbar
     // row has the word among its keywords (YAZ-3806 T7), and so do the two "Enter keeps the text style" rows (YAZ-3746 13AB).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar', 'enterKeepsStyleNotes', 'enterKeepsStyleBoxes', 'linkPillStyle', 'linkPillShape'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar', 'enterKeepsStyleNotes', 'enterKeepsStyleBoxes', 'linkPills'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-app-menuExportExcalidrawDrawing', 'hotkey-drawing-saveAs'])
     // A changed key is searched by the key it has NOW.
     const moved = { ...ctx(), settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K' } } }

@@ -10,17 +10,19 @@
  *
  * The vault's link pills look (YAZ-4924, Settings › Link pills, `.yaseendocs/link-pills.json`) is the `--pill-*`
  * variables App puts on the vault's page layers (`linkPillLook.ts` `linkPillVars`), each read with today's look as its
- * fallback: a vault that changed nothing sets none, and a change costs one style update, never a redraw. `--pill-bg`
- * and `--pill-pad` (the box), `--pill-fg` (the name's colour; a missing note keeps its own), `--pill-icon-display`,
- * `--pill-weight`, `--pill-style`, `--pill-decoration`, `--pill-radius` (the shape). The text a pill gains at its ends
- * (before / after, the vault's name, the ID, the folder) is two pieces, `link-pill__head` and `link-pill__tail`.
+ * fallback: a vault that changed nothing sets none, and a change costs one style update, never a redraw. The box:
+ * `--pill-bg` and `--pill-pad`, `--pill-radius` (the shape), `--pill-decoration` (the underline shape). Each part:
+ * `--pill-<part>-weight`, `-style`, `-decoration`, `-fg`, `-size`, for the name (the pill's own span), the ID, the
+ * vault, the folder, the path and your own text (`link-pill__<part>` pieces inside the head and the tail). The pieces
+ * the format puts around the name are two widgets, `link-pill__head` and `link-pill__tail`.
  */
 
 .wikilink {
-  color: var(--pill-fg, var(--accent));
-  font-weight: var(--pill-weight, inherit);
-  font-style: var(--pill-style, inherit);
-  text-decoration-line: var(--pill-decoration, none);
+  color: var(--pill-name-fg, var(--accent));
+  font-weight: var(--pill-name-weight, inherit);
+  font-style: var(--pill-name-style, inherit);
+  font-size: var(--pill-name-size, inherit);
+  text-decoration-line: var(--pill-name-decoration, var(--pill-decoration, none));
   cursor: text;
 }
 .milkdown .ProseMirror a {
@@ -39,9 +41,9 @@
   border-radius: var(--pill-radius, 4px);
   background: var(--pill-bg, color-mix(in srgb, var(--accent) 10%, transparent));
 }
-/* The icon hides under the look (`--pill-icon-display: none`); before the sibling rule below, which hides a later piece's. */
+/* The icon is the format's say (`{icon}`): a name with the icon's attributes draws it; before the sibling rule below, which hides a later piece's. */
 .wikilink.file-icon::before {
-  display: var(--pill-icon-display, inline-block) !important;
+  display: inline-block !important;
 }
 /* A heading part (` > Q1`) follows its pill as plain link text. */
 .wikilink.wikilink__sub {
@@ -94,10 +96,10 @@
   content: none !important;
   display: none !important;
 }
-/* The piece after a head (YAZ-4924) is the pill's first text: it keeps its icon, under the look's say. */
+/* The piece after a head (YAZ-4924) is the pill's first text: it keeps its icon. */
 .wikilink.link-pill__head + .wikilink.file-icon::before {
   content: '' !important;
-  display: var(--pill-icon-display, inline-block) !important;
+  display: inline-block !important;
 }
 /* On a Markdown link pill the page preview says where it goes (YAZ-3609 D20): Crepe's address bar stays away.
    Its rows are on the pill's right-click menu, the one link menu (D23). */
@@ -106,18 +108,55 @@
 }
 /* A pill into another vault names that vault in brackets after its text, quietly (YAZ-3609 D22): inside the pill's tail
    piece at its end, so the caret at the link's end shows after it (YAZ-3738 D4). The piece rules above join the head and
-   the tail to the pill. The ID and the folder (YAZ-4924) are as quiet, a small gap after the name; the Before and After
-   text is the pill's own text. */
-.link-pill__vault,
-.link-pill__id,
-.link-pill__folder {
-  color: var(--fg-muted);
-  font-size: 0.85em;
+   the tail to the pill. The head and the tail wear the box, not the name's style: they take the words' own, and each
+   piece inside them has its part's variables (YAZ-4924). The quiet parts (the ID, the vault, the folder, the path) and
+   your own text are small and muted until a part's style says otherwise; the gaps are the format's own spaces. */
+.wikilink.link-pill__head,
+.wikilink.link-pill__tail {
+  color: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+  font-size: inherit;
+  text-decoration-line: var(--pill-decoration, none);
 }
-/* Two classes deep: Crepe's reset (`.milkdown *`) zeroes every margin at one class. */
-.wikilink .link-pill__id,
-.wikilink .link-pill__folder {
-  margin-left: 0.35em;
+.link-pill__text {
+  color: var(--pill-text-fg, var(--fg-muted));
+  font-weight: var(--pill-text-weight, inherit);
+  font-style: var(--pill-text-style, inherit);
+  font-size: var(--pill-text-size, 0.85em);
+  text-decoration-line: var(--pill-text-decoration, none);
+}
+.link-pill__id {
+  color: var(--pill-id-fg, var(--fg-muted));
+  font-weight: var(--pill-id-weight, inherit);
+  font-style: var(--pill-id-style, inherit);
+  font-size: var(--pill-id-size, 0.85em);
+  text-decoration-line: var(--pill-id-decoration, none);
+}
+.link-pill__vault {
+  color: var(--pill-vault-fg, var(--fg-muted));
+  font-weight: var(--pill-vault-weight, inherit);
+  font-style: var(--pill-vault-style, inherit);
+  font-size: var(--pill-vault-size, 0.85em);
+  text-decoration-line: var(--pill-vault-decoration, none);
+}
+.link-pill__folder {
+  color: var(--pill-folder-fg, var(--fg-muted));
+  font-weight: var(--pill-folder-weight, inherit);
+  font-style: var(--pill-folder-style, inherit);
+  font-size: var(--pill-folder-size, 0.85em);
+  text-decoration-line: var(--pill-folder-decoration, none);
+}
+.link-pill__path {
+  color: var(--pill-path-fg, var(--fg-muted));
+  font-weight: var(--pill-path-weight, inherit);
+  font-style: var(--pill-path-style, inherit);
+  font-size: var(--pill-path-size, 0.85em);
+  text-decoration-line: var(--pill-path-decoration, none);
+}
+/* An icon piece (`{icon}` away from `{name}`): the icon span alone, drawn as the name's `::before` is. */
+.link-pill__icon {
+  display: inline-block;
 }
 /* A find match inside a pill shows the find colour over the pill's tint (YAZ-3657). */
 .wikilink.find-match {
