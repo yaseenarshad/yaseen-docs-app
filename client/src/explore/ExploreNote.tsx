@@ -85,6 +85,8 @@ interface ExploreNoteProps {
   onToggleEdit: () => void
   /** Bumped by the stack's E in a Read only vault (YAZ-4939): the layer asks first, or edits while its unlock runs. */
   editAsk?: number
+  /** Bumped by ⌘↵ in edit (YAZ-4988): save, lock again at once while the timed unlock runs (Lock now), and read. */
+  leaveAsk?: number
   /** The note card to land on once the page shows (YAZ-4962): its place among the page's cards. */
   card?: number
   /**
@@ -159,7 +161,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, card, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, leaveAsk = 0, card, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   // The layer's vault's word for a note (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const noteId = useNoteId(idInTitle ? vault.wikilinks : undefined, path)
@@ -329,6 +331,16 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   useEffect(() => {
     if (editAsk > 0) editRef.current()
   }, [editAsk])
+  /** ⌘↵ in edit (YAZ-4988): Lock now while the unlock runs (it saves and reads, `useTimedUnlock`'s `beforeLock`), else Done. */
+  const leaveEdit = () => {
+    if (unlocked) unlock.lock()
+    else if (mode === 'edit') onToggleEdit()
+  }
+  const leaveRef = useRef(leaveEdit)
+  leaveRef.current = leaveEdit
+  useEffect(() => {
+    if (leaveAsk > 0) leaveRef.current()
+  }, [leaveAsk])
   const chip = locked && (
     // A press in the chip or its box is not the head's drag, and a double click is not its reset.
     <span className="explore__lock" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
@@ -408,8 +420,10 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
               {/* In a Read only vault the chip says it: "Editing · 0:58" with Lock now. */}
               {chip || <span className="explore__mode">Editing</span>}
               {/* Done (item 5): back to reading, as Esc does; the note saved as you typed. */}
-              <button type="button" className="explore__button" onClick={onToggleEdit} title="Back to reading (Esc)">
+              {/* ⌘↵ (YAZ-4988) reads too, and locks again at once in a Read only vault. */}
+              <button type="button" className="explore__button" onClick={onToggleEdit} title={locked ? 'Back to reading (Esc); ⌘↵ also locks again' : 'Back to reading (Esc or ⌘↵)'}>
                 Done<kbd>esc</kbd>
+                <kbd>⌘↵</kbd>
               </button>
             </>
           )}

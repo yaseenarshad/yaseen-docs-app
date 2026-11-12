@@ -487,6 +487,24 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     }
   }, [top])
 
+  /**
+   * ⌘↵ in an edit layer (YAZ-4988, Yaseen: "CMD enter kinda acts as your way to put it back into read mode"): back to
+   * reading, locked again at once in a Read only vault; the next ⌘↵ opens the tab. Heard in the capture phase, ahead of
+   * the editor's own ⌘↵ (a task box, a line below a table or an embed, Open card): the layer's key wins in the text and
+   * on a note card. Inside a code block's editor the key stays the code's (a new line): a key typed into code keeps its meaning.
+   */
+  const onKeyDownCapture = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (top === undefined || top.kind !== 'note' || top.mode !== 'edit') return
+    if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return
+    const target = event.target instanceof Element ? event.target : null
+    const layer = rootRef.current?.querySelector(`[data-layer="${top.id}"]`) ?? null
+    if (target === null || layer === null || !layer.contains(target)) return
+    if (target.closest('.cm-editor') !== null && target.closest('.note-card') === null) return
+    event.preventDefault()
+    event.stopPropagation()
+    setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'note' ? { ...l, leaveAsk: (l.leaveAsk ?? 0) + 1 } : l)))
+  }
+
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (top === undefined) return
     // A key inside an IME composition (Japanese input; keyCode 229 on some keyboards) is the composition's: Esc cancels it, nothing else.
@@ -528,7 +546,8 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       return
     }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey) {
-      if (topNote(live) === null) return
+      // In edit, the layer's ⌘↵ went back to reading (`onKeyDownCapture`); a code block's ⌘↵ is the code's.
+      if (topNote(live) === null || (top.kind === 'note' && top.mode === 'edit')) return
       event.preventDefault()
       event.stopPropagation()
       toTab()
@@ -601,7 +620,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   }
 
   return (
-    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" onKeyDown={onKeyDown} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
+    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
       {/* The trail (YAZ-4925): one chip per layer from two layers on, in the open order, the front one bold; a click brings that layer to the front (round 6). */}
       {live.length > 1 && (
         <nav className="explore__trail" aria-label="Layers">
@@ -725,6 +744,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 onNotice={onNotice}
                 onToggleEdit={() => toggleEdit(layer.id)}
                 editAsk={layer.editAsk}
+                leaveAsk={layer.leaveAsk}
                 card={layer.card}
                 steps={steps}
                 zoom={zoom}

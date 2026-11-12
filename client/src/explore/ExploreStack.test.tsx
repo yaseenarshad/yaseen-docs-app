@@ -1826,6 +1826,83 @@ describe('YAZ-4945: the empty box shows Opened and Edited', () => {
   })
 })
 
+describe('YAZ-4988: ⌘↵ in an edit layer goes back to reading', () => {
+  /** What the editor itself heard (its own ⌘↵: a task box, a line below a table, Open card). */
+  const heard: string[] = []
+  beforeEach(() => {
+    heard.length = 0
+    props = {
+      ...props,
+      renderEditor: (path): ReactNode => {
+        editors.push(path)
+        return (
+          <div className="editor" data-editor={path}>
+            <div
+              className="ProseMirror"
+              contentEditable
+              suppressContentEditableWarning
+              ref={(pm) => {
+                if (pm === null || pm.dataset.wired === 'yes') return
+                pm.dataset.wired = 'yes'
+                pm.addEventListener('keydown', (e) => heard.push((e.target as HTMLElement).className))
+              }}
+            >
+              <p className="text">text</p>
+              <div className="cm-editor">
+                <div className="cm-content code">code</div>
+              </div>
+              <div className="note-card">
+                <div className="cm-editor">
+                  <div className="cm-content card">card</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      },
+    }
+  })
+  const editing = () => top().querySelector('.explore__body--edit') !== null
+  async function edit() {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(editing()).toBe(true)
+  }
+  const cmdEnter = async (selector: string) => {
+    key(top().querySelector(selector) as Element, { key: 'Enter', metaKey: true })
+    await flush()
+    await flush()
+  }
+
+  it('in the text: the layer reads again and the editor never hears the key; the tab opens on the next ⌘↵', async () => {
+    await edit()
+    await cmdEnter('.text')
+    expect(editing()).toBe(false)
+    expect(heard).toEqual([])
+    expect(props.openInTab).not.toHaveBeenCalled()
+    key(document.activeElement ?? top(), { key: 'Enter', metaKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
+  })
+
+  it('in a code block the key stays the code\'s (a new line): the layer stays in edit, no tab', async () => {
+    await edit()
+    await cmdEnter('.code')
+    expect(editing()).toBe(true)
+    expect(heard).toEqual(['cm-content code'])
+    expect(props.openInTab).not.toHaveBeenCalled()
+  })
+
+  it('on a note card (its editor too) the layer reads again: Open card stays in ⋯ and in reading', async () => {
+    await edit()
+    await cmdEnter('.card')
+    expect(editing()).toBe(false)
+    expect(heard).toEqual([])
+  })
+})
+
 describe('YAZ-4939: a note layer in a Read only vault', () => {
   const unlockedArgs: boolean[] = []
   beforeEach(() => {
@@ -1895,6 +1972,33 @@ describe('YAZ-4939: a note layer in a Read only vault', () => {
     await flush()
     expect(top().querySelector('.explore__body--edit')).toBeNull()
     expect(chip()?.textContent).toBe('Read only')
+  })
+
+  it('YAZ-4988: ⌘↵ in edit saves, locks again at once (as Lock now) and reads; a second ⌘↵ opens the tab', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    act(() => choice('10 minutes').click())
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).not.toBeNull()
+    // The edit head shows the key beside Done's Esc.
+    expect([...head().querySelectorAll('.explore__button kbd')].map((k) => k.textContent)).toContain('⌘↵')
+    key(top().querySelector('[data-editor]') as Element, { key: 'Enter', metaKey: true })
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    expect(chip()?.textContent).toBe('Read only')
+    expect(props.openInTab).not.toHaveBeenCalled()
+    // Locked again: E asks once more.
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(ask()).not.toBeNull()
+    key(choice('Allow edits for 1 minute'), { key: 'Escape' })
+    await flush()
+    key(document.activeElement ?? top(), { key: 'Enter', metaKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
   })
 
   it('at the end of the minute the layer saves and reads again, locked', async () => {

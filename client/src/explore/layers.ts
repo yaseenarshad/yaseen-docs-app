@@ -19,6 +19,8 @@ export type ExploreLayer =
       gone?: number
       /** Bumped by E in a Read only vault (YAZ-4939): the layer asks with its timed "Allow edits", or edits while unlocked. */
       editAsk?: number
+      /** Bumped by ⌘↵ in edit (YAZ-4988): the layer saves, locks again if its timed unlock runs (Lock now), and reads. */
+      leaveAsk?: number
       /** The note card to land on when the page opens (YAZ-4962): its place among the page's cards. */
       card?: number
     }
