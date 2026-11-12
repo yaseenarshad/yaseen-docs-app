@@ -385,21 +385,21 @@ export function linkIsResolved(inner: string, source: WikilinkResolveSource, vie
 }
 
 /**
- * The pieces a pill gains at its ends under the vault's look (YAZ-4924, `pillParts`): its head at `innerStart` and its
- * tail at `end`, each `side: -1`, so the head draws before the link's hidden text and the tail after everything the
- * link draws (an ID link's title stands at `end` too, pushed before it). Both are widgets, never text, with the pill's
- * classes: pieces of the pill, so a click on one is a click on the pill (`linkPosAtDOM` reads a widget as the position
- * before it, inside the link), and the caret at the link's end shows after the whole pill (YAZ-3738 D4). Today's look
- * gives only the vault's name of an ID of another vault (YAZ-3905 S23), at the tail, as `vaultSpan` drew it.
+ * The pieces a pill gains at its ends under the vault's look (YAZ-4924, `pillParts`): its head and its tail, widgets
+ * with the pill's classes, never text. The head stands where the pill's first shown piece starts and the tail where
+ * its last shown piece ends (`side: -1` both; an ID link's lone title stands at the link's end, so both stand there
+ * too, the head pushed before the title and the tail after it): each is the next sibling of a piece of the pill, so
+ * the sibling rules of `wikilink.css` join it to the box, with no hidden syntax span between. Pieces of the pill: a
+ * click on one is a click on the pill (`linkPosAtDOM` reads a widget as the position before it, inside the link), and
+ * the caret at the link's end shows after the whole pill (YAZ-3738 D4). Today's look gives only the vault's name of
+ * an ID of another vault (YAZ-3905 S23), at the tail, as `vaultSpan` drew it.
  */
-function pillEnds(out: Decoration[], innerStart: number, end: number, cls: string, inner: string, resolved: boolean, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, otherVault: string | null): void {
+function pillEnds(inner: string, resolved: boolean, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, otherVault: string | null): ReturnType<typeof pillParts> {
   const { pills } = source
-  if (pills === NO_LINK_PILLS && otherVault === null) return
+  if (pills === NO_LINK_PILLS && otherVault === null) return { head: null, tail: null }
   const path = resolved && pillsNeedInfo(pills) ? linkPath(inner, source, viewOnly) : null
   const meta: PillMeta = { info: path === null ? undefined : pathInfo(source.records, source.folders).get(path), otherVault }
-  const { head, tail } = pillParts(pills, meta, source.vault)
-  if (head !== null) out.push(Decoration.widget(innerStart, () => headSpan(cls, head), { side: -1, key: headKey(head) }))
-  if (tail !== null) out.push(Decoration.widget(end, () => tailSpan(cls, tail), { side: -1, key: tailKey(tail) }))
+  return pillParts(pills, meta, source.vault)
 }
 
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
@@ -413,20 +413,36 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const resolved = linkIsResolved(inner, source, viewOnly)
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`
   const icon = resolved ? linkIcon(inner, source, viewOnly, look) : undefined
-  /** The vault an unresolved ID of another vault names (YAZ-3905 S23), drawn at the pill's tail; null otherwise. */
-  let otherVault: string | null = null
+  const innerStart = start + 2
+  const end = innerStart + inner.length + 2
+  const pipe = inner.indexOf('|')
+  const parts = inner.split('#')
+  // A missing note shows that it is missing, with its ID (YAZ-3905 S10): in the title's place, as a title is drawn.
+  const missing = resolved ? undefined : missingId(inner, source)
+  const title = pipe >= 0 ? undefined : titleOf(parts[0].trim()) ?? (missing === undefined ? undefined : `Missing note · ${missing}`)
+  // An ID of another vault says which vault (S23), after the ID.
+  const other = pipe >= 0 || resolved || missing !== undefined ? null : otherVaultId(inner, source, vaultsOf)
+  // The pieces the vault's look adds at the pill's ends (YAZ-4924): the head goes before the first shown piece, the tail after the last.
+  const ends = pillEnds(inner, resolved, source, viewOnly, other === null ? null : (other.vault ?? 'another vault'))
+  let lastShown = -1
+  /** The first shown piece starts at `pos`: the head stands there, before it. */
+  const first = (pos: number) => {
+    if (lastShown >= 0) return
+    const { head } = ends
+    if (head !== null) out.push(Decoration.widget(pos, () => headSpan(cls, head), { side: -1, key: headKey(head) }))
+    lastShown = pos
+  }
   /**
    * The first shown text: its own span carries the file's icon on its `::before`, so icon and text are one box
    * (YAZ-3648) and the text stays real text, which find highlights and the caret walks (YAZ-3657).
    */
   const shown = (from: number, to: number) => {
+    first(from)
     // No spellcheck underline on a link's name (YAZ-3778 S13): it is a page's name, not a word to check.
     out.push(Decoration.inline(from, to, icon === undefined ? { class: cls, spellcheck: 'false' } : { ...icon.attrs, class: `${cls} ${icon.attrs.class}`, spellcheck: 'false' }))
+    lastShown = to
   }
-  const innerStart = start + 2
-  const end = innerStart + inner.length + 2
   hide(out, start, innerStart) // [[
-  const pipe = inner.indexOf('|')
   if (pipe >= 0) {
     hide(out, innerStart, innerStart + pipe + 1) // target(#heading)?| — the alias is the display
     shown(innerStart + pipe + 1, end - 2) // never empty: guarded above
@@ -434,12 +450,6 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
     // target, then ` > `-separated sub segments for each `#heading` / `#^block` part
     let at = innerStart
     let segments = 0
-    const parts = inner.split('#')
-    // A missing note shows that it is missing, with its ID (YAZ-3905 S10): in the title's place, as a title is drawn.
-    const missing = resolved ? undefined : missingId(inner, source)
-    const title = titleOf(parts[0].trim()) ?? (missing === undefined ? undefined : `Missing note · ${missing}`)
-    // An ID of another vault says which vault (S23), after the ID.
-    const other = resolved || missing !== undefined ? null : otherVaultId(inner, source, vaultsOf)
     for (let i = 0; i < parts.length; i++) {
       if (i > 0) {
         hide(out, at, at + 1) // the #
@@ -454,7 +464,9 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
         // or ↓ onto its right half, reads as the link's end, an edge, and never as a point inside the link. With a
         // heading after it (`[[id#h]]`) it stands where the id was, so it reads before the heading.
         const lone = parts.length === 1
+        first(lone ? end : at)
         out.push(Decoration.widget(lone ? end : at, () => titleSpan(cls, title, icon?.attrs), { key: `${title}|${icon?.key ?? ''}`, title, side: lone ? -1 : 0 }))
+        lastShown = lone ? end : at
         segments++
       } else if (part.length > 0) {
         if (i === 0) {
@@ -466,19 +478,23 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
           // A drawing's or a diagram's extension is the pill's last piece, shown only with File icons Off, as the sidebar's
           // `name-ending` (app.css; YAZ-3924). ⌘F reads it as hidden text (`syntax`), as it is with the icons on.
           const name = part.slice(lead)
-          if (trail > 0 && boardBaseName(name) !== name)
+          if (trail > 0 && boardBaseName(name) !== name) {
             out.push(Decoration.inline(at + part.length - trail, at + part.length, { class: `${cls} name-ending`, spellcheck: 'false' }, { syntax: true }))
-          else hide(out, at + part.length - trail, at + part.length)
-          if (other !== null) otherVault = other.vault ?? 'another vault'
+            lastShown = at + part.length
+          } else hide(out, at + part.length - trail, at + part.length)
         } else if (segments === 0) shown(at, at + part.length)
-        else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}`, spellcheck: 'false' }))
+        else {
+          out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}`, spellcheck: 'false' }))
+          lastShown = at + part.length
+        }
         segments++
       }
       at += part.length
     }
   }
   hide(out, end - 2, end) // ]]
-  pillEnds(out, innerStart, end, cls, inner, resolved, source, viewOnly, otherVault)
+  const { tail } = ends
+  if (tail !== null && lastShown >= 0) out.push(Decoration.widget(lastShown, () => tailSpan(cls, tail), { side: -1, key: tailKey(tail) }))
 }
 
 /** True when the selection touches [from, to] with inclusive boundaries — the reveal rule. */

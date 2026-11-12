@@ -94,6 +94,11 @@
   content: none !important;
   display: none !important;
 }
+/* The piece after a head (YAZ-4924) is the pill's first text: it keeps its icon, under the look's say. */
+.wikilink.link-pill__head + .wikilink.file-icon::before {
+  content: '' !important;
+  display: var(--pill-icon-display, inline-block) !important;
+}
 /* On a Markdown link pill the page preview says where it goes (YAZ-3609 D20): Crepe's address bar stays away.
    Its rows are on the pill's right-click menu, the one link menu (D23). */
 .milkdown[data-pill-hover] .milkdown-link-preview {
@@ -109,8 +114,9 @@
   color: var(--fg-muted);
   font-size: 0.85em;
 }
-.link-pill__id,
-.link-pill__folder {
+/* Two classes deep: Crepe's reset (`.milkdown *`) zeroes every margin at one class. */
+.wikilink .link-pill__id,
+.wikilink .link-pill__folder {
   margin-left: 0.35em;
 }
 /* A find match inside a pill shows the find colour over the pill's tint (YAZ-3657). */

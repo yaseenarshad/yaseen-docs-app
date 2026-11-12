@@ -721,8 +721,8 @@ describe("the vault's link pills look (YAZ-4924)", () => {
       ['wikilink wikilink--unresolved', 'Nope'],
       ['wikilink wikilink--unresolved link-pill__tail', ')'],
     ])
-    // The tail stands after the hidden `]]`, where an ID link's title stands (YAZ-3916): after everything the link draws.
-    expect(root.querySelector('.ProseMirror')?.textContent).toBe('Intro [[(Roadmap]]) and [[(Nope]]) outro')
+    // The head and the tail stand against the shown text, inside the hidden brackets: pieces of one box.
+    expect(root.querySelector('.ProseMirror')?.textContent).toBe('Intro [[(Roadmap)]] and [[(Nope)]] outro')
     // Look only: the saved note, the Markdown copy and the plain-text copy are what they were (check 29).
     expect(getMarkdownForSave(crepe)).toBe(md)
     expect(copyOf(view)).toEqual(copyOf(plain.view))
@@ -785,8 +785,8 @@ describe("the vault's link pills look (YAZ-4924)", () => {
     source.setLook({ before: '(', after: ')' }, 'Mine')
     const end = 1 + 'pad [[Roadmap]]'.length
     view.dispatch(view.state.tr.insert(end, view.state.schema.text('X')))
-    expect(root.querySelector('.ProseMirror')?.textContent).toBe('pad [[(Roadmap]])X tail')
-    expect(root.querySelector('.link-pill__tail')?.nextSibling?.textContent).toBe('X tail')
+    expect(root.querySelector('.ProseMirror')?.textContent).toBe('pad [[(Roadmap)]]X tail')
+    expect(root.querySelector('.link-pill__tail')?.nextElementSibling?.textContent).toBe(']]')
   })
 
   it('a keystroke elsewhere redraws nothing of a pill with pieces: the same widget DOM stays', async () => {
