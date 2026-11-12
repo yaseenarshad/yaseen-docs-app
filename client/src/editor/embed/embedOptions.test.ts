@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatEmbedOptions, isBoardTarget, movedEnough, optionsSuffix, parseEmbedOptions, splitEmbed, type EmbedOptions } from '@shared/embedOptions'
+import { formatEmbedOptions, isBoardTarget, movedEnough, newEmbed, newEmbedAlt, optionsSuffix, parseEmbedOptions, splitEmbed, type EmbedOptions } from '@shared/embedOptions'
 import { rewriteBodyLinks } from '@shared/linkRewrite'
 
 const base: EmbedOptions = { width: 640, height: 360, view: { x: 120, y: -40, zoom: 0.8 }, locked: false, page: null, rest: [] }
@@ -29,6 +29,20 @@ describe('embed options (YAZ-4820 1A)', () => {
     expect(formatEmbedOptions(parseEmbedOptions('300 locked')!)).toBe('300 locked')
     // The first write with a height keeps the user's width.
     expect(formatEmbedOptions({ ...parsed!, height: 169, view: { x: 1, y: 2, zoom: 1 } })).toBe('300x169 view=1,2,1')
+  })
+
+  it('a new embed`s `locked` alone (YAZ-2571 round 7): no size, so the window takes its own; it writes back as it was', () => {
+    expect(parseEmbedOptions('locked')).toEqual({ width: null, height: null, view: null, locked: true, page: null, rest: [] })
+    expect(formatEmbedOptions(parseEmbedOptions('locked')!)).toBe('locked')
+    expect(splitEmbed('CloudFront.drawio|locked')).toEqual({ target: 'CloudFront.drawio', options: 'locked' })
+    expect(splitEmbed('CloudFront.drawio|My name|locked')).toEqual({ target: 'CloudFront.drawio', options: 'locked' })
+    // An alias that only starts with one of our words stays an alias.
+    expect(parseEmbedOptions('locked door')).toBeNull()
+    expect(newEmbed('CloudFront.drawio')).toBe('![[CloudFront.drawio|locked]]')
+    expect(newEmbed('EMB-40')).toBe('![[EMB-40|locked]]')
+    expect(newEmbedAlt('CloudFront')).toBe('CloudFront|locked')
+    // The first write with a size keeps the lock.
+    expect(formatEmbedOptions({ ...parseEmbedOptions('locked')!, width: 700, height: 394 })).toBe('700x394 locked')
   })
 
   it('keeps a word it does not know, in its place after ours', () => {

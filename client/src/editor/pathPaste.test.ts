@@ -428,6 +428,18 @@ describe('links across the vaults of a window (D14, D15, D16)', () => {
     expect(linkFor('/w/Board.excalidraw', options)).toBe('[Board](../../w/Board.excalidraw)')
   })
 
+  it('"Embed" on a pasted board of another vault: a NEW embed, its view locked (YAZ-2571 round 7)', async () => {
+    const other = createWikilinkCandidateSource()
+    other.update([{ name: 'Board.excalidraw', insert: 'Board.excalidraw', label: 'Board', path: '/w/Board.excalidraw' }])
+    const options = { ...optionsFor('/v', '/v/a/today.md'), candidatesOf: (path: string) => (path.startsWith('/w/') ? other : null) }
+    const { crepe, view } = await mount('Next:\n', options)
+    atEnd(view)
+    paste(view, '/w/Board.excalidraw')
+    const embed = Array.from(document.querySelectorAll<HTMLButtonElement>('.path-paste-chip button')).find((b) => b.textContent === 'Embed')!
+    embed.click()
+    expect(saved(crepe)).toBe('Next:![Board|locked](../../w/Board.excalidraw)')
+  })
+
   it('W1 a Markdown link into another vault of the window resolves; W2 one into a vault not in the window does not', () => {
     const options = workspace()
     expect(hrefTarget('../../w/plan.md', options)).toBe(PLAN)

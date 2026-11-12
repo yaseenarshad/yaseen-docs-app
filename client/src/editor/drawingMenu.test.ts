@@ -58,7 +58,7 @@ describe('drawingMenu', () => {
     added[1].item.onRun?.(ctx)
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
     expect(create).toHaveBeenCalledWith('diagram')
-    expect(tr.insertText).toHaveBeenCalledWith('![[Plan diagram.drawio]]')
+    expect(tr.insertText).toHaveBeenCalledWith('![[Plan diagram.drawio|locked]]')
   })
 
   it('clears the typed /query first (the stock items\' own opening move), then inserts the embed as plain text', async () => {
@@ -74,8 +74,8 @@ describe('drawingMenu', () => {
 
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
     expect(create).toHaveBeenCalledWith('drawing')
-    expect(tr.insertText).toHaveBeenCalledWith('![[Drawing 2026-08-25 20.31.02.excalidraw]]')
-    expect(drawingEmbed('x.excalidraw')).toBe('![[x.excalidraw]]')
+    expect(tr.insertText).toHaveBeenCalledWith('![[Drawing 2026-08-25 20.31.02.excalidraw|locked]]')
+    expect(drawingEmbed('x.excalidraw')).toBe('![[x.excalidraw|locked]]')
   })
 
   it('a failed create inserts nothing and goes to the notice path, never a throw', async () => {

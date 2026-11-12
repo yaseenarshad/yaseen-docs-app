@@ -17,7 +17,10 @@
  * STATES (D9): Live — the wheel moves it, except for 300 ms after a page scroll (the scroll guard); Resting — after
  * `embedRestSeconds` with no gesture (read live; 0 = never) the wheel scrolls the page, a hover says "Click to move",
  * a click wakes it, and nothing is written; Locked — nothing moves it, the lock button or the menu unlocks it, saved
- * as `locked`.
+ * as `locked`. A new embed is written `|locked` (YAZ-2571 round 7); an embed with no options is an old one, unlocked.
+ * In a read-only host (a Read only note or vault, Explore's reading layer) every window starts locked, whatever the
+ * text saved; an unlock there is this view's only and is never written, and an editable host again gets the saved lock.
+ * View full size is never locked so: it is there to look around in.
  *
  * WRITES (D4, item 18): 800 ms after the last wheel or drag, the rounded view goes to `onOptions` — only when it moved
  * enough (`movedEnough`) and the host is editable. A resize, a lock, a page and a fit write at once. While a gesture
@@ -286,7 +289,7 @@ class BoardWindow implements BoardWindowHandle {
     const size = firstWindowSize(o, o !== null && o.height !== null ? null : (this.cachedPicture(o?.page ?? null)?.bounds ?? null), host.columnWidth())
     this.width = size.width
     this.height = size.height
-    this.locked = o?.locked ?? false
+    this.locked = (o?.locked ?? false) || this.readOnlyLock()
     this.page = o?.page ?? null
     this.lastWritten = o
     if (o?.view != null) {
@@ -657,7 +660,8 @@ class BoardWindow implements BoardWindowHandle {
     this.width = size.width
     this.height = size.height
     this.renderSize()
-    if (this.locked !== (options?.locked ?? false)) {
+    // A read-only host keeps the view's own lock (YAZ-2571 round 7): the text's lock is for an editable note.
+    if (!this.readOnlyLock() && this.locked !== (options?.locked ?? false)) {
       this.locked = options?.locked ?? false
       this.renderLock()
     }
@@ -859,6 +863,11 @@ class BoardWindow implements BoardWindowHandle {
     this.lockButton.setAttribute('aria-pressed', String(this.locked))
   }
 
+  /** A read-only host's window starts locked (YAZ-2571 round 7); View full size never does. */
+  private readOnlyLock(): boolean {
+    return !this.host.editable && !this.full
+  }
+
   private renderEditable(): void {
     this.dom.classList.toggle('board-window--readonly', !this.host.editable)
   }
@@ -917,6 +926,14 @@ class BoardWindow implements BoardWindowHandle {
     }
     if (r !== undefined) this.renderRef()
     if (next.editable !== undefined) this.renderEditable()
+    if (next.editable !== undefined && next.editable !== prev.editable && !this.full) {
+      // Read only: locked; editable again: the saved lock (YAZ-2571 round 7). Nothing is written.
+      const locked = this.readOnlyLock() || (this.lastWritten?.locked ?? false)
+      if (locked !== this.locked) {
+        this.locked = locked
+        this.renderLock()
+      }
+    }
     if (options !== undefined) {
       this.host = { ...this.host, options }
       if (this.busy()) this.pendingOptions = { value: options }

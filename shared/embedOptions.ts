@@ -6,7 +6,9 @@
  *   another vault  `![CloudFront|640x360 view=120,-40,0.8](../Other/CloudFront.drawio)`  (the stock image node's alt)
  *
  * `640x360` is Obsidian's own embed size, and so is `300`, a width alone (its height comes from the board's shape, A7);
- * the words after it are ours. A word this build does not know is KEPT and
+ * the words after it are ours. A NEW embed is `![[CloudFront.drawio|locked]]` (YAZ-2571 round 7, `newEmbed`): no size,
+ * only our words, so the window takes a new window's size and starts with its view locked. An embed with no options at
+ * all is an older one, and stays unlocked as it always was. A word this build does not know is KEPT and
  * written back as it was, so a newer build's option survives an older build's write. `view` is the board point at the
  * window's top-left and the zoom; `formatEmbedOptions` rounds it (whole board units, zoom to 2 decimals) so a write
  * is short and a tiny move never changes the text (item 18 also gates the write itself: `movedEnough`).
@@ -22,8 +24,8 @@ export interface EmbedView {
 }
 
 export interface EmbedOptions {
-  /** The window's size in CSS pixels. */
-  width: number
+  /** The window's size in CSS pixels. Null: no size stored (a new embed's `|locked`), so the window takes a new one's. */
+  width: number | null
   /** Null: a width alone (`|300`, Obsidian's form); the window takes its height from the board's shape. */
   height: number | null
   /** Null: no view stored yet, so the window fits the board. */
@@ -61,16 +63,26 @@ export function splitEmbed(inner: string): { target: string; options: string | n
   return { target: (pipe < 0 ? inner : inner.slice(0, pipe)).trim(), options: at < 0 ? null : inner.slice(at + 1) }
 }
 
+/** What a NEW embed's text carries after its `|` (YAZ-2571 round 7): its view starts locked. */
+const NEW_EMBED_OPTIONS = 'locked'
+
+/** A new embed of `inner` (a target, or a target and an alias): `![[CloudFront.drawio|locked]]`. Every way that makes an embed writes this. */
+export const newEmbed = (inner: string): string => `![[${inner}|${NEW_EMBED_OPTIONS}]]`
+
+/** A new board image's alt (an embed into another vault, `![CloudFront|locked](…)`): the same lock. */
+export const newEmbedAlt = (name: string): string => `${name}|${NEW_EMBED_OPTIONS}`
+
 /** The options text → options, or null when it is not an embed's options (a plain alias, say). */
 export function parseEmbedOptions(text: string): EmbedOptions | null {
   const words = text.trim().split(/\s+/)
   const size = SIZE_RE.exec(words[0] ?? '')
-  if (size === null) return null
-  const width = Number(size[1])
-  const height = size[2] === undefined ? null : Number(size[2])
-  if (width <= 0 || height === 0) return null
+  // No size (a new embed's `locked`): options only when every word is one of ours, so an alias stays an alias.
+  if (size === null && !words.every((w) => KNOWN.has(w.split('=', 1)[0]!))) return null
+  const width = size === null ? null : Number(size[1])
+  const height = size?.[2] === undefined ? null : Number(size[2])
+  if (width === 0 || height === 0) return null
   const out: EmbedOptions = { width, height, view: null, locked: false, page: null, rest: [] }
-  for (const word of words.slice(1)) {
+  for (const word of size === null ? words : words.slice(1)) {
     const eq = word.indexOf('=')
     const key = eq < 0 ? word : word.slice(0, eq)
     const value = eq < 0 ? '' : word.slice(eq + 1)
@@ -97,7 +109,7 @@ export function roundView(view: EmbedView): EmbedView {
 
 /** Options → their text; the inverse of `parseEmbedOptions` for every value it returns. */
 export function formatEmbedOptions(options: EmbedOptions): string {
-  const words = [options.height === null ? `${Math.round(options.width)}` : `${Math.round(options.width)}x${Math.round(options.height)}`]
+  const words = options.width === null ? [] : [options.height === null ? `${Math.round(options.width)}` : `${Math.round(options.width)}x${Math.round(options.height)}`]
   if (options.view !== null) {
     const v = roundView(options.view)
     words.push(`view=${v.x},${v.y},${v.zoom}`)
