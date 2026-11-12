@@ -24,6 +24,7 @@ import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStac
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { layerPlace, MAX_LAYERS } from './layers'
 import { tileCells } from './tile'
+import { TITLE_ROOM } from './ExploreHeadMore'
 import { ago } from './recentSections'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -452,7 +453,7 @@ describe('the explore stack', () => {
     // The fold-all button, the note tab's own, in the head: its command runs on this layer's view.
     const fold = top().querySelector<HTMLButtonElement>('.explore__head .fold-all__trigger')
     expect(fold).not.toBeNull()
-    expect(fold?.nextElementSibling?.textContent).toContain('Edit')
+    expect(fold?.closest('[data-fold-part]')?.nextElementSibling?.textContent).toContain('Edit')
     act(() => fold?.click())
     await flush()
     expect(folds.runs).toEqual([true])
@@ -2095,15 +2096,37 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
   const head = (layer: HTMLElement = top()) => layer.querySelector('.explore__head') as HTMLElement
   const titleEl = (layer: HTMLElement = top()) => head(layer).querySelector('.explore__title') as HTMLElement
   const compact = (layer: HTMLElement = top()) => head(layer).hasAttribute('data-compact')
-  /** The head laid out `width` px wide, its parts other than the title `rest` px: the title gets what is left (0 at least). */
+  /** Each part's width in the stand-in layout, the chip's word apart (inside the chip); ⋯'s width once it shows. */
+  const PART = 40
+  const WORD = 30
+  const MORE = 28
+  /**
+   * The head laid out `width` px wide; its parts other than the title take `rest` px when nothing is folded. Each fold
+   * part takes `PART` px (the chip `PART` + `WORD`, its word `WORD`) while it shows, nothing once folded (CSS
+   * `[data-folded]`); ⋯ takes `MORE` px while the head is folded; the rest (padding, the ID, ×) stays. The title gets
+   * what is left (0 at least).
+   */
   const layout = (width: number, rest: number, layer: HTMLElement = top()) => {
     const h = head(layer)
     const t = titleEl(layer)
+    const parts = [...h.querySelectorAll<HTMLElement>('[data-fold-part]')]
+    const word = h.querySelector<HTMLElement>('[data-fold-part="chip"] .read-only-chip__button > span')
+    const own = (e: HTMLElement) => (e.dataset.foldPart === 'chip' && word !== null ? PART + WORD : PART)
+    const fixed = rest - parts.reduce((sum, e) => sum + own(e), 0)
+    const shown = (e: HTMLElement) => !e.hasAttribute('data-folded')
+    const wordShown = () => word !== null && shown(word) && shown(word.closest<HTMLElement>('[data-fold-part]')!)
+    for (const e of parts) Object.defineProperty(e, 'offsetWidth', { get: () => (shown(e) ? own(e) - (e.dataset.foldPart === 'chip' && word !== null && !shown(word) ? WORD : 0) : 0), configurable: true })
+    if (word !== null) Object.defineProperty(word, 'offsetWidth', { get: () => (wordShown() ? WORD : 0), configurable: true })
+    const m = h.querySelector<HTMLElement>('.explore__more')
+    if (m !== null) Object.defineProperty(m, 'offsetWidth', { get: () => (h.hasAttribute('data-compact') ? MORE : 0), configurable: true })
+    const others = () => fixed + parts.reduce((sum, e) => sum + e.offsetWidth, 0) + (m?.offsetWidth ?? 0)
     Object.defineProperty(h, 'clientWidth', { value: width, configurable: true })
-    Object.defineProperty(h, 'scrollWidth', { value: Math.max(width, rest), configurable: true })
-    Object.defineProperty(t, 'offsetWidth', { value: Math.max(0, width - rest), configurable: true })
+    Object.defineProperty(h, 'scrollWidth', { get: () => Math.max(width, others()), configurable: true })
+    Object.defineProperty(t, 'offsetWidth', { get: () => Math.max(0, width - others()), configurable: true })
     act(() => observers.filter((o) => o.watched.includes(t)).forEach((o) => o.run()))
   }
+  /** The parts folded now, in the head's order. */
+  const folded = (layer: HTMLElement = top()) => [...head(layer).querySelectorAll<HTMLElement>('[data-folded]')].map((e) => e.dataset.foldPart ?? 'chip-word')
   const more = () => head().querySelector<HTMLButtonElement>('.explore__more') as HTMLButtonElement
   const menu = () => el.querySelector<HTMLElement>('.explore > .ctx-overlay .ctx-menu, .explore .ctx-menu')
   const items = () => [...(menu()?.querySelectorAll<HTMLElement>('.ctx-menu__heading, .ctx-menu__item') ?? [])].map((e) => (e.classList.contains('ctx-menu__heading') ? `# ${e.textContent}` : `${e.textContent}${e.dataset.hint ? ` [${e.dataset.hint}]` : ''}${(e as HTMLButtonElement).disabled ? ' (off)' : ''}`))
@@ -2128,9 +2151,9 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     const flips: string[] = []
     const watch = new MutationObserver((records) => records.forEach((r) => flips.push(r.oldValue === null ? 'folded' : 'full')))
     watch.observe(head(), { attributes: true, attributeFilter: ['data-compact'], attributeOldValue: true })
-    for (let w = 800; w >= 260; w -= 10) layout(w, compact() ? 120 : 410)
+    for (let w = 800; w >= 260; w -= 10) layout(w, 410)
     expect(compact()).toBe(true)
-    for (let w = 260; w <= 800; w += 10) layout(w, compact() ? 120 : 410)
+    for (let w = 260; w <= 800; w += 10) layout(w, 410)
     await Promise.resolve()
     watch.disconnect()
     expect(flips).toEqual(['folded', 'full'])
@@ -2215,7 +2238,7 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(paths[1])
   })
 
-  it('a note ID: Copy ID in ⋯ (the ID is folded too)', async () => {
+  it('YAZ-4986: a note ID stays in the narrowest head (Yaseen: "esp i need to see the id please"); Copy ID is in ⋯ too', async () => {
     const withIds = createWikilinkResolveSource()
     withIds.update(() => null, RECORDS, [], true)
     props.vaultOf = () => ({ root: '/v', wikilinks: withIds, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly })
@@ -2226,6 +2249,10 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     await mount()
     layout(300, 420)
     expect(compact()).toBe(true)
+    const id = head().querySelector<HTMLElement>('.explore__id')
+    expect(id?.textContent).toBe('EMB-1')
+    expect(id?.hasAttribute('data-folded')).toBe(false)
+    expect(id?.hasAttribute('data-fold-part')).toBe(false)
     act(() => more().click())
     expect(items()).toContain('Copy ID [EMB-1]')
     act(() => [...(menu()?.querySelectorAll<HTMLButtonElement>('.ctx-menu__item') ?? [])].find((b) => b.textContent === 'Copy ID')?.click())
@@ -2276,6 +2303,64 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     } finally {
       proto.checkVisibility = was
     }
+  })
+
+  it('YAZ-4986: the parts leave ONE BY ONE as the layer narrows, least important first: zoom, Collapse all, ‹ › , ↗, the chip\'s word, the chip, Edit last', async () => {
+    props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }) }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    // Six parts (‹ ›, zoom, fold-all, chip with its word, Edit, ↗): 40 px each, the word 30 more; 120 px the rest.
+    const rest = 120 + 6 * PART + WORD
+    const full = rest + TITLE_ROOM
+    layout(full, rest)
+    expect(folded()).toEqual([])
+    expect(compact()).toBe(false)
+    // Each step narrower by one part's width (and ⋯'s, once) folds exactly the next part in the order.
+    const seen: string[][] = []
+    for (const w of [full - 1, full - PART - 1 + MORE, full - 2 * PART - 1 + MORE, full - 3 * PART - 1 + MORE, full - 4 * PART - 1 + MORE, full - 4 * PART - WORD - 1 + MORE, full - 5 * PART - WORD - 1 + MORE]) {
+      layout(w, rest)
+      seen.push(folded())
+    }
+    expect(seen.map((f) => f.join(' '))).toEqual([
+      'zoom',
+      'zoom fold-all',
+      'steps zoom fold-all',
+      'steps zoom fold-all open',
+      'steps zoom fold-all chip-word open',
+      'steps zoom fold-all chip chip-word open',
+      'steps zoom fold-all chip chip-word edit open',
+    ])
+    // The chip's lock stays alone before the chip goes: its word folded, the chip still shown.
+    layout(full - 4 * PART - 1 + MORE, rest)
+    expect(head().querySelector('[data-fold-part="chip"]')?.hasAttribute('data-folded')).toBe(false)
+    expect(head().querySelector('.read-only-chip__button > span')?.hasAttribute('data-folded')).toBe(true)
+    // ⋯ shows from the first fold, and still holds every action.
+    expect(compact()).toBe(true)
+    act(() => more().click())
+    expect(items()).toEqual(expect.arrayContaining(['Zoom in [⌘+]', 'Edit [E]', 'Open in a tab [⌘↵]', 'Allow edits…']))
+    act(() => more().click())
+    // Wide again: everything back, in one step.
+    layout(full + 50, rest)
+    expect(folded()).toEqual([])
+    expect(compact()).toBe(false)
+  })
+
+  it('YAZ-4986: a card layer keeps its card ID; ↗ folds into ⋯', async () => {
+    const PAGE = '/v/cards.md'
+    readFile.mockImplementation(async (path) => ({ path, content: '# Cards\n\n```card\nCapital of {{France}}\n---\n{{Paris}}\n```\n<!-- card: WIKI-9 -->\n', mtime: 1, size: 1 }))
+    const source = createWikilinkResolveSource()
+    source.update(() => null, [rec(PAGE, 'Cards', { mtime: 1 })], [], true)
+    props.vaultOf = () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly })
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    layout(200, 260)
+    expect(folded()).toEqual(['open'])
+    expect(compact()).toBe(true)
+    const id = head().querySelector<HTMLElement>('.note-card__id')
+    expect(id?.textContent).toContain('WIKI-9')
+    expect(id?.closest('[data-folded]')).toBeNull()
   })
 
   it('a board layer folds too: ⋯ has Previous / Next result and Open in a tab', async () => {

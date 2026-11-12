@@ -127,7 +127,7 @@ export const keepFocus = (event: ReactMouseEvent) => event.preventDefault()
 /** ‹ n/m › in a layer's head (a note's, a board's: YAZ-4943). */
 export function ExploreSteps({ steps }: { steps: LayerSteps }) {
   return (
-    <span className="explore__steps">
+    <span className="explore__steps" data-fold-part="steps">
       <button type="button" className="explore__step" title="Previous search result (← or ⌘⌥↑)" aria-label="Previous search result" disabled={!steps.prev} onMouseDown={keepFocus} onClick={() => steps.onStep(-1)}>
         ‹
       </button>
@@ -343,7 +343,7 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   }, [leaveAsk])
   const chip = locked && (
     // A press in the chip or its box is not the head's drag, and a double click is not its reset.
-    <span className="explore__lock" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+    <span className="explore__lock" data-fold-part="chip" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
       <ReadOnlyChip
         asking={asking}
         onAsk={() => setAsking(true)}
@@ -399,18 +399,25 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
           {title}
         </span>
         {noteId !== undefined && <span className="explore__id">{noteId}</span>}
-        {/* The parts a narrow layer folds into ⋯ (YAZ-4956); `display: contents`, so a wide head is laid out as before. */}
+        {/* The parts a narrow layer folds into ⋯ one by one (YAZ-4956, YAZ-4986: `data-fold-part`, `FOLD_ORDER`); the
+            title, the ID and × stay. `display: contents`, so a wide head is laid out as before. */}
         <span className="explore__fold">
           {steps !== undefined && <ExploreSteps steps={steps} />}
           {/* The page zoom's pill (round 4): one value for every note layer; a press on it is the pill's, not a drag. */}
-          <DocumentZoom value={zoom} onChange={onZoom} />
-          {foldAll}
+          <span className="explore__part" data-fold-part="zoom">
+            <DocumentZoom value={zoom} onChange={onZoom} />
+          </span>
+          {foldAll !== false && (
+            <span className="explore__part" data-fold-part="fold-all">
+              {foldAll}
+            </span>
+          )}
           {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit E" says what you can do. */}
           {mode === 'read' ? (
             <>
               {note && chip}
               {note && (
-                <button type="button" className="explore__button" onClick={edit} title={unit('Edit this note here (E)')}>
+                <button type="button" className="explore__button" data-fold-part="edit" onClick={edit} title={unit('Edit this note here (E)')}>
                   Edit<kbd>E</kbd>
                 </button>
               )}
@@ -418,16 +425,19 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
           ) : (
             <>
               {/* In a Read only vault the chip says it: "Editing · 0:58" with Lock now. */}
-              {chip || <span className="explore__mode">Editing</span>}
-              {/* Done (item 5): back to reading, as Esc does; the note saved as you typed. */}
-              {/* ⌘↵ (YAZ-4988) reads too, and locks again at once in a Read only vault. */}
-              <button type="button" className="explore__button" onClick={onToggleEdit} title={locked ? 'Back to reading (Esc); ⌘↵ also locks again' : 'Back to reading (Esc or ⌘↵)'}>
+              {chip || (
+                <span className="explore__mode" data-fold-part="chip">
+                  Editing
+                </span>
+              )}
+              {/* Done (item 5): back to reading, as Esc does; the note saved as you typed. ⌘↵ (YAZ-4988) reads too, and locks again at once in a Read only vault. */}
+              <button type="button" className="explore__button" data-fold-part="edit" onClick={onToggleEdit} title={locked ? 'Back to reading (Esc); ⌘↵ also locks again' : 'Back to reading (Esc or ⌘↵)'}>
                 Done<kbd>esc</kbd>
                 <kbd>⌘↵</kbd>
               </button>
             </>
           )}
-          <button type="button" className="explore__button" onClick={onOpenInTab} title="Open in a tab and close the stack (⌘↵)" aria-label="Open in a tab">
+          <button type="button" className="explore__button" data-fold-part="open" onClick={onOpenInTab} title="Open in a tab and close the stack (⌘↵)" aria-label="Open in a tab">
             ↗
           </button>
         </span>

@@ -130,8 +130,9 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
         <span ref={titleRef} className={`explore__title${title === '' ? ' note-card__title--empty' : ''}`}>
           {loaded.kind === 'loading' ? '' : title === '' ? 'New note card' : title}
         </span>
+        {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}
         <span className="explore__fold">
-          <HoverTip text="Open page in a new tab (⌘↵)">
+          <HoverTip text="Open page in a new tab (⌘↵)" data-fold-part="open">
             <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} aria-label="Open page in a new tab">
               ↗
             </button>
