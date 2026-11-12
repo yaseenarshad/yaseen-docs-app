@@ -128,6 +128,20 @@ describe('the gestures of Settings › Hotkeys, read at the click (YAZ-3936)', (
     expect(mouse(anchorOf(root), 'mousedown', { button: 0 }).defaultPrevented).toBe(true)
     expect(openPath).toHaveBeenCalledExactlyOnceWith('/v/note.md', 'thisTab')
   })
+
+  it('the vault\'s "Clicking a link: Explore" holds on a read-only note too (YAZ-4939); ⌘-click keeps its door', async () => {
+    const openPath = vi.fn()
+    let explore = true
+    const { crepe, root } = await mount('[Note](../note.md)\n', { inApp: () => '/v/note.md', openPath, exploreClick: () => explore })
+    // A single click (`detail` 1), as the browser sends it.
+    expect(mouse(anchorOf(root), 'mousedown', { button: 0, detail: 1 }).defaultPrevented).toBe(true)
+    crepe.setReadonly(true)
+    expect(mouse(anchorOf(root), 'mousedown', { button: 0, detail: 1 }).defaultPrevented).toBe(true)
+    mouse(anchorOf(root), 'mousedown', BEHIND)
+    explore = false
+    mouse(anchorOf(root), 'mousedown', { button: 0, detail: 1 })
+    expect(openPath.mock.calls).toEqual([['/v/note.md', 'explore'], ['/v/note.md', 'explore'], ['/v/note.md', 'backgroundTab'], ['/v/note.md', 'thisTab']])
+  })
 })
 
 describe('a link into a vault this window does not show (YAZ-3609 D21)', () => {

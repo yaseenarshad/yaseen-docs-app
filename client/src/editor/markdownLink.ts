@@ -343,11 +343,8 @@ export const createMarkdownLink = (nav: MarkdownLinkNav, source?: WikilinkResolv
             if (hit === null || hit.href.startsWith('#')) return false
             // Only an open gesture opens (YAZ-3936). A click no gesture has: on a pill, as on a [[link]] (YAZ-4021); on any
             // other link, the editor's, as on text (YAZ-3935).
-            const bound = linkClickAction(view, event, nav.hotkeys?.())
-            // A plain click on a note pill opens it in Explore while the vault says so (YAZ-4936), as on a [[link]].
-            const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.detail === 1
-            const explore = plain && bound === null && nav.exploreClick?.() === true && fileKind(nav.inApp?.(hit.href) ?? '') === 'markdown'
-            const where: LinkWhere | null = bound ?? (explore ? 'explore' : null)
+            // A single plain click on a note pill opens it in Explore while the vault says so (YAZ-4936), as on a [[link]], on a read-only note too (YAZ-4939).
+            const where: LinkWhere | null = linkClickAction(view, event, nav.hotkeys?.(), () => event.detail === 1 && nav.exploreClick?.() === true && fileKind(nav.inApp?.(hit.href) ?? '') === 'markdown')
             if (where !== null) {
               event.preventDefault()
               follow(hit.href, where)

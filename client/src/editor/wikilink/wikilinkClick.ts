@@ -267,9 +267,8 @@ export function createWikilinkClick(follow: LinkFollow, hotkeys: () => HotkeyOve
               if (span === null || !view.dom.contains(span)) return false
               const match = wikilinkMatchAt(view.state.doc, linkPosAtDOM(view, span))
               if (match === null) return false
-              const bound = linkClickAction(view, event, hotkeys())
-              const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.detail === 1
-              const where = bound ?? (plain && exploreClick(match.inner) ? 'explore' : null)
+              // A single plain click follows the vault's "Clicking a link" (YAZ-4936), on a read-only note too (YAZ-4939).
+              const where = linkClickAction(view, event, hotkeys(), () => event.detail === 1 && exploreClick(match.inner))
               if (where !== null) {
                 // From here the gesture is ours: no caret placement, no focus change, no reveal.
                 event.preventDefault()
