@@ -90,8 +90,7 @@ describe('getIndex: cold scan', () => {
 
   it('deep-equals TEST_RECORDS once path and stat fields are normalised', async () => {
     const { records } = await getIndex(root)
-    // `text` (the body fingerprint, YAZ-2322) is left off the shared fixture, so no client test sees its records as review cards.
-    const normalised = records.map(({ text: _text, ...r }) => ({ ...r, path: '/vault' + r.path.slice(root.length), size: 0, ctime: 0, mtime: 0 }))
+    const normalised = records.map((r) => ({ ...r, path: '/vault' + r.path.slice(root.length), size: 0, ctime: 0, mtime: 0 }))
     expect(normalised).toEqual(TEST_RECORDS)
   })
 

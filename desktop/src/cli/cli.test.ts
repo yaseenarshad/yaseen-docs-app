@@ -9,7 +9,6 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { readComments } from '@shared/comments'
 import { IDS_FILE, isNoteId } from '@shared/noteId'
-import { addReview } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { createStore } from '../main/store'
 import { sweepIds } from '../main/vaultIndex/idSweep'
@@ -671,111 +670,7 @@ describe('label and find', () => {
   })
 })
 
-describe('due (YAZ-2322)', () => {
-  const DAY = 86_400_000
-  const day = (ms: number): string => new Date(ms).toLocaleDateString('en-CA')
-  /** A note last changed `daysOld` days ago. */
-  async function aged(name: string, daysOld: number, content = `Body of ${name}.\n`): Promise<{ file: string; changed: number }> {
-    const file = path.join(dir, name)
-    await mkdir(path.dirname(file), { recursive: true })
-    await writeFile(file, content, 'utf8')
-    const changed = Math.floor((Date.now() - daysOld * DAY) / 1000) * 1000 // whole seconds, so the file's mtime is exactly this
-    await utimes(file, changed / 1000, changed / 1000)
-    return { file, changed }
-  }
-
-  async function reviewJson(settings: Record<string, unknown>): Promise<void> {
-    await mkdir(path.join(dir, VAULT_CONFIG_DIR), { recursive: true })
-    await writeFile(path.join(dir, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify(settings))
-  }
-  /** The vault's `review.json` turns upkeep on, and says whatever else a test sets. */
-  const upkeepOn = (settings: Record<string, unknown> = {}): Promise<void> => reviewJson({ enabled: true, ...settings })
-
-  it('a page: prints the date it is next due, from the defaults for what the vault\'s settings do not say', async () => {
-    await upkeepOn()
-    const { file, changed } = await aged('fresh.md', 2)
-    expect(await run(['due', file])).toEqual({ code: 0, out: `${day(changed + 30 * DAY)}  fresh  ${file}\n`, err: '' })
-  })
-
-  it('upkeep off: `due <page>` and `due <folder>` report nothing due — no review.json, one with no `enabled` or a bad one, one that says false', async () => {
-    const { file } = await aged('old.md', 90)
-    const kept = await aged('sub/kept.md', 400, '---\nreview: true\n---\nKept.\n')
-    const nothing = async (): Promise<void> => {
-      for (const [title, page] of [['old', file], ['kept', kept.file]]) {
-        expect(await run(['due', page])).toEqual({ code: 0, out: `${title}  ${page} is not in review\n`, err: '' })
-        expect(JSON.parse((await run(['due', page, '--json'])).out)).toEqual({ title, path: page, inReview: false, due: null })
-      }
-      expect(await run(['due', dir])).toEqual({ code: 0, out: `nothing is due under ${dir}\n`, err: '' })
-      expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([])
-    }
-    await nothing()
-    for (const settings of [{ baseDays: 7 }, { enabled: 'yes', baseDays: 7 }, { enabled: false }]) {
-      await reviewJson(settings)
-      await nothing()
-    }
-    await upkeepOn()
-    expect((await run(['due', dir])).out).toContain(`  ${file}\n`)
-  })
-
-  it('a page: a review on the same text pushes the date out from the review', async () => {
-    await upkeepOn()
-    const reviewedAt = '2026-01-10T12:00:00Z'
-    const { file } = await aged('kept.md', 1, addReview('Kept.\n', reviewedAt))
-    expect((await run(['due', file])).out).toBe(`${day(Date.parse(reviewedAt) + 60 * DAY)}  kept  ${file}\n`)
-  })
-
-  it('a page: uses the settings of the vault it is in', async () => {
-    await upkeepOn({ baseDays: 7 })
-    const { file, changed } = await aged('notes/deep/quick.md', 2)
-    expect((await run(['due', file])).out).toBe(`${day(changed + 7 * DAY)}  quick  ${file}\n`)
-  })
-
-  it('a page that is not in review says so; --json gives the raw shape', async () => {
-    await upkeepOn()
-    const { file } = await aged('off.md', 90, '---\nreview: false\n---\nOff.\n')
-    expect((await run(['due', file])).out).toBe(`off  ${file} is not in review\n`)
-    expect(JSON.parse((await run(['due', file, '--json'])).out)).toEqual({ title: 'off', path: file, inReview: false, due: null })
-    const on = await aged('on.md', 2)
-    expect(JSON.parse((await run(['due', on.file, '--json'])).out)).toEqual({ title: 'on', path: on.file, inReview: true, due: new Date(on.changed + 30 * DAY).toISOString() })
-  })
-
-  it('E: a page is printed by its title, then its path, and --json carries `title` (YAZ-2420 D14)', async () => {
-    await upkeepOn()
-    const abdul = await aged('up-001-abdul-k3m9x2pq7abc.md', 2, '---\ntitle: UP-001 - Abdul\n---\nBody.\n')
-    expect((await run(['due', abdul.file])).out).toBe(`${day(abdul.changed + 30 * DAY)}  UP-001 - Abdul  ${abdul.file}\n`)
-    expect(JSON.parse((await run(['due', abdul.file, '--json'])).out)).toEqual({ title: 'UP-001 - Abdul', path: abdul.file, inReview: true, due: new Date(abdul.changed + 30 * DAY).toISOString() })
-  })
-
-  it('a folder: lists what is due now under it, most overdue first', async () => {
-    await upkeepOn()
-    const old = await aged('old.md', 90)
-    const older = await aged('sub/older.md', 120)
-    await aged('fresh.md', 2)
-    await aged('off.md', 200, '---\nreview: false\n---\nOff.\n')
-    await aged('sub/.folder.md', 300, '---\nviews: []\n---\n') // a folder's settings file is never a note
-    expect((await run(['due', dir])).out).toBe(`${day(older.changed + 30 * DAY)}  older  ${older.file}\n${day(old.changed + 30 * DAY)}  old  ${old.file}\n`)
-    expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([{ title: 'older', path: older.file, due: new Date(older.changed + 30 * DAY).toISOString() }])
-  })
-
-  it('E: a folder: each page is listed by its title, then its path, and --json carries `title` (YAZ-2420 D14)', async () => {
-    await upkeepOn()
-    const abdul = await aged('candidates/up-001-abdul-k3m9x2pq7abc.md', 120, '---\ntitle: UP-001 - Abdul\n---\nBody.\n')
-    expect((await run(['due', dir])).out).toBe(`${day(abdul.changed + 30 * DAY)}  UP-001 - Abdul  ${abdul.file}\n`)
-    expect(JSON.parse((await run(['due', dir, '--json'])).out)).toEqual([{ title: 'UP-001 - Abdul', path: abdul.file, due: new Date(abdul.changed + 30 * DAY).toISOString() }])
-  })
-
-  it('a folder with nothing due says so', async () => {
-    await upkeepOn()
-    await aged('fresh.md', 2)
-    expect((await run(['due', dir])).out).toBe(`nothing is due under ${dir}\n`)
-  })
-
-  it('refuses a missing path and a file that is not Markdown', async () => {
-    expect((await run(['due', path.join(dir, 'nope.md')])).code).toBe(1)
-    expect((await run(['due', await page('notes.txt', 'x')])).code).toBe(1)
-    expect((await run(['due'])).code).toBe(2)
-  })
-})
+// DUE_TESTS
 
 describe('vaults (YAZ-2556 D2)', () => {
   /** The app's state file, in a profile of its own: the temp dir stands in for the user-data folder (S13), so no test reads the real one. */

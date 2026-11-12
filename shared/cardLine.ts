@@ -1,0 +1,225 @@
+import { canonicalNoteId, isNumberId } from './noteId'
+
+/**
+ * NOTE CARDS (YAZ-4946, YAZ-4959 D3): a note card is a ```` ```card ```` fence in a Markdown page, and its ONE card line
+ * right under the closing fence:
+ *
+ *   ```card
+ *   What is the capital of {{France}}?
+ *   ---
+ *   Paris
+ *   ```
+ *   <!-- card: WIKI-512, 2026-11-12T14:05Z good, 2026-11-20T09:00Z again -->
+ *
+ * The line holds the card's ID (the vault's counter, D2), then each review: a UTC time to the minute and the FSRS
+ * rating (`again | hard | good | easy`, D5). `off` takes the card out of review. A card with no ID yet has no ID part:
+ * the index's sweep gives it one (YAZ-4960). The due date is never written: `cardSchedule.ts` replays the reviews.
+ *
+ * The reader is tolerant, as `<!-- code: … -->` is (`client/src/editor/code/codeComment.ts`): a part it does not know
+ * is KEPT as its text, in its place, and written back; an empty part is skipped. The ONE copy of these rules: the
+ * index (main), the command (`yaseendocs`) and the editor and the Inbox (client) all read and write through here.
+ * Pure: no fs, no React.
+ */
+
+export type CardRating = 'again' | 'hard' | 'good' | 'easy'
+export const CARD_RATINGS: readonly CardRating[] = ['again', 'hard', 'good', 'easy']
+
+/** One review on a card line. */
+export interface CardReview {
+  /** UTC to the minute, `2026-11-12T14:05Z`: it sorts as a string. */
+  at: string
+  rating: CardRating
+}
+
+/** One part of a card line, in the order the line holds them. */
+export type CardPart = { kind: 'id'; id: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'other'; text: string }
+
+/** What a card line holds. `parts` keeps every part in place; the getters below read it. */
+export interface CardLine {
+  parts: CardPart[]
+}
+
+/** What the index keeps of each card (`IndexRecord.cards`, D4), in page order: no card text. */
+export interface NoteCardRecord {
+  /** The card's ID as the line holds it (canonical form, `WIKI-512`); null before the sweep gives one. */
+  id: string | null
+  /** Review is off for this card (the line's `off` part). */
+  off: boolean
+  /** The reviews, in the order the line holds them. */
+  reviews: CardReview[]
+}
+
+/** `<!-- card: … -->` on one line, any spaces inside the delimiters. */
+const LINE_RE = /^<!--[ \t]*card:[ \t]*(.*?)[ \t]*-->$/
+const REVIEW_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z)[ \t]+(again|hard|good|easy)$/
+
+/** A review time as the line writes it: UTC, to the minute (`2026-11-12T14:05Z`). */
+export const cardTime = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
+
+/** The card line `value` holds (one line, trimmed or not), or null when it is no card line. */
+export function parseCardLine(value: string): CardLine | null {
+  const body = LINE_RE.exec(value.trim())?.[1]
+  if (body === undefined || body.includes('-->')) return null
+  const parts: CardPart[] = []
+  let id = false
+  for (const text of body.split(/[ \t]*,[ \t]*/)) {
+    if (text === '') continue
+    const review = REVIEW_RE.exec(text)
+    if (review !== null && !Number.isNaN(Date.parse(review[1]))) parts.push({ kind: 'review', review: { at: review[1], rating: review[2] as CardRating } })
+    else if (text === 'off') parts.push({ kind: 'off' })
+    else if (!id && isNumberId(text)) {
+      id = true
+      parts.push({ kind: 'id', id: canonicalNoteId(text) })
+    } else parts.push({ kind: 'other', text })
+  }
+  return { parts }
+}
+
+/** The card line for `line`, or null when it holds no part (a card with no ID and no review writes no line). */
+export function formatCardLine(line: CardLine): string | null {
+  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'review' ? `${p.review.at} ${p.review.rating}` : p.kind === 'off' ? 'off' : p.text))
+  return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
+}
+
+export const EMPTY_CARD_LINE: CardLine = { parts: [] }
+
+export const cardIdOf = (line: CardLine): string | null => line.parts.find((p) => p.kind === 'id')?.id ?? null
+export const isCardOff = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'off')
+export const cardReviewsOf = (line: CardLine): CardReview[] => line.parts.flatMap((p) => (p.kind === 'review' ? [p.review] : []))
+export const cardRecordOf = (line: CardLine): NoteCardRecord => ({ id: cardIdOf(line), off: isCardOff(line), reviews: cardReviewsOf(line) })
+
+/** The line with `id` as its ID: the ID part changes in place, or comes first. */
+export function withCardId(line: CardLine, id: string): CardLine {
+  const at = line.parts.findIndex((p) => p.kind === 'id')
+  const part: CardPart = { kind: 'id', id }
+  return { parts: at === -1 ? [part, ...line.parts] : line.parts.map((p, i) => (i === at ? part : p)) }
+}
+
+/** Review on or off for the card (the ⋯ menu's "Turn review off"): `off` goes right after the ID, or first. */
+export function withCardOff(line: CardLine, off: boolean): CardLine {
+  if (isCardOff(line) === off) return line
+  if (!off) return { parts: line.parts.filter((p) => p.kind !== 'off') }
+  const at = line.parts.findIndex((p) => p.kind === 'id') + 1
+  return { parts: [...line.parts.slice(0, at), { kind: 'off' }, ...line.parts.slice(at)] }
+}
+
+/** One more review: right after the last review part, else at the end. */
+export function withCardReview(line: CardLine, review: CardReview): CardLine {
+  const last = line.parts.map((p) => p.kind === 'review').lastIndexOf(true)
+  const at = last === -1 ? line.parts.length : last + 1
+  return { parts: [...line.parts.slice(0, at), { kind: 'review', review }, ...line.parts.slice(at)] }
+}
+
+/** Without the review made at `at` (the last one, should two share a minute). An unknown `at` changes nothing. */
+export function withoutCardReview(line: CardLine, at: string): CardLine {
+  const i = line.parts.map((p) => p.kind === 'review' && p.review.at === at).lastIndexOf(true)
+  return i === -1 ? line : { parts: line.parts.filter((_, j) => j !== i) }
+}
+
+/** No reviews: the ⋯ menu's "Reset history", and the history of a copy. Every other part stays. */
+export const withoutCardReviews = (line: CardLine): CardLine => ({ parts: line.parts.filter((p) => p.kind !== 'review') })
+
+// ---------- cards in a page ----------
+
+/** A fence that opens a note card: three or more backticks or tildes, then the language `card` and nothing else. */
+const CARD_FENCE_RE = /^([ \t]*)(`{3,}|~{3,})[ \t]*card[ \t]*$/
+/** Any fence line: what can open or close a code block. */
+const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/
+/** A cheap first look: no page without a card fence pays for the line walk. */
+const ANY_CARD_FENCE_RE = /^[ \t]*(?:`{3,}|~{3,})[ \t]*card[ \t]*$/m
+
+/** Is `line` the opening fence of a note card? (The index and `linkRewrite.ts` read its body as Markdown, D17.) */
+export const isCardFence = (line: string): boolean => CARD_FENCE_RE.test(line)
+
+/** One note card of a page, by line number (0-based, in the text it was found in). */
+export interface CardBlock {
+  /** The opening fence's line. */
+  open: number
+  /** The closing fence's line. */
+  close: number
+  /** The card line's line (`close + 1`), or null when the card has none yet. */
+  lineAt: number | null
+  /** The indent of the opening fence: the card line is written with it. */
+  indent: string
+  /** The card's text: the lines between the fences, without the fence's indent. */
+  text: string
+  /** What its card line holds (`EMPTY_CARD_LINE` when it has none). */
+  line: CardLine
+}
+
+/**
+ * Every note card in `text` (a page's body, or the whole file), in page order. A code block of any other language is
+ * skipped whole, so a ```` ```card ```` written inside a ```` ```markdown ```` block is no card.
+ */
+export function findCards(text: string): CardBlock[] {
+  if (!ANY_CARD_FENCE_RE.test(text)) return []
+  const lines = text.split('\n')
+  const cards: CardBlock[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const open = FENCE_RE.exec(lines[i])
+    if (open === null) continue
+    const fence = open[1]
+    const card = CARD_FENCE_RE.exec(lines[i])
+    let close = i + 1
+    while (close < lines.length && !closes(lines[close], fence)) close++
+    // A card fence that is never closed is no card yet: its line would land inside the block.
+    if (card !== null && close < lines.length) {
+      const indent = card[1]
+      const body = lines.slice(i + 1, close).map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l.trimStart()))
+      const next = close + 1 < lines.length ? parseCardLine(lines[close + 1]) : null
+      cards.push({ open: i, close, lineAt: next === null ? null : close + 1, indent, text: body.join('\n'), line: next ?? EMPTY_CARD_LINE })
+    }
+    i = close
+  }
+  return cards
+}
+
+/** Does `line` close a code block opened by `fence`? Same character, at least as long, nothing after it. */
+function closes(line: string, fence: string): boolean {
+  const m = FENCE_RE.exec(line)
+  return m !== null && m[1][0] === fence[0] && m[1].length >= fence.length && line.trim() === m[1]
+}
+
+/** What the index keeps of a page's cards (D4): one entry per card, in page order. */
+export const cardRecords = (text: string): NoteCardRecord[] => findCards(text).map((c) => cardRecordOf(c.line))
+
+/**
+ * `text` with the card line of each card `change` names rewritten: `change` gets each card in page order and returns
+ * the new line, or undefined to leave that card as it is. A card that had no line gets one right under its fence;
+ * a line that empties is removed. The ONE writer of card lines in a page: the sweep, the command and the Inbox.
+ */
+export function rewriteCardLines(text: string, change: (card: CardBlock, index: number) => CardLine | undefined): string {
+  const cards = findCards(text)
+  if (cards.length === 0) return text
+  const lines = text.split('\n')
+  // Back to front, so each card's line numbers stay right while the ones after it change.
+  for (let n = cards.length - 1; n >= 0; n--) {
+    const card = cards[n]
+    const next = change(card, n)
+    if (next === undefined) continue
+    const formatted = formatCardLine(next)
+    const written = formatted === null ? [] : [card.indent + formatted]
+    if (card.lineAt !== null) lines.splice(card.lineAt, 1, ...written)
+    else lines.splice(card.close + 1, 0, ...written)
+  }
+  return lines.join('\n')
+}
+
+/** Thrown when a page holds no card with the ID asked for: the card was deleted, or the page changed under the caller. */
+export class CardNotFoundError extends Error {
+  constructor(readonly id: string) {
+    super(`no note card ${id} on this page`)
+    this.name = 'CardNotFoundError'
+  }
+}
+
+/**
+ * `text` with the card line of card `id` changed by `change` — for the Inbox, the card window and the ⋯ menu:
+ * `transformFile(path, (c) => changeCard(c, 'WIKI-512', (l) => withCardReview(l, { at: cardTime(Date.now()), rating: 'good' })))`.
+ * Throws `CardNotFoundError` when no card holds `id`. Two cards with one ID (a copy the sweep has not met): the first.
+ */
+export function changeCard(text: string, id: string, change: (line: CardLine) => CardLine): string {
+  const at = findCards(text).findIndex((card) => cardIdOf(card.line) === id)
+  if (at === -1) throw new CardNotFoundError(id)
+  return rewriteCardLines(text, (card, n) => (n === at ? change(card.line) : undefined))
+}

@@ -5,17 +5,17 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_REVIEW_SETTINGS,
+  DEFAULT_UPKEEP_SETTINGS,
   ReviewsShapeError,
   addReview,
   deleteReview,
   resetReviews,
   reviewEntries,
   reviewsOf,
-  sanitizeReviewSettings,
+  sanitizeUpkeepSettings,
   setInReview,
   textFingerprint,
-} from '@shared/reviews'
+} from './upkeepLegacy'
 
 const AT = '2026-10-04T14:02:11Z'
 const LATER = '2026-11-03T09:00:00Z'
@@ -109,8 +109,8 @@ describe('deleteReview and resetReviews', () => {
 })
 
 describe('setInReview', () => {
-  const on = DEFAULT_REVIEW_SETTINGS
-  const off = { ...DEFAULT_REVIEW_SETTINGS, reviewByDefault: false }
+  const on = DEFAULT_UPKEEP_SETTINGS
+  const off = { ...DEFAULT_UPKEEP_SETTINGS, reviewByDefault: false }
 
   it('writes the flag only when it differs from the vault default, and keeps the log either way', () => {
     const reviewed = addReview(BODY, AT)
@@ -122,28 +122,28 @@ describe('setInReview', () => {
   })
 })
 
-describe('sanitizeReviewSettings', () => {
+describe('sanitizeUpkeepSettings', () => {
   it('gives the defaults for a missing or malformed file: upkeep is off', () => {
-    for (const raw of [undefined, null, 'text', [], {}]) expect(sanitizeReviewSettings(raw)).toEqual(DEFAULT_REVIEW_SETTINGS)
-    expect(DEFAULT_REVIEW_SETTINGS).toEqual({ algorithm: 'upkeep', enabled: false, baseDays: 30, growth: 2, maxDays: 365, reviewByDefault: true })
+    for (const raw of [undefined, null, 'text', [], {}]) expect(sanitizeUpkeepSettings(raw)).toEqual(DEFAULT_UPKEEP_SETTINGS)
+    expect(DEFAULT_UPKEEP_SETTINGS).toEqual({ algorithm: 'upkeep', enabled: false, baseDays: 30, growth: 2, maxDays: 365, reviewByDefault: true })
   })
 
   it('a review.json with no `enabled`, or one that is not true or false, is off; the other fields still fall back one by one', () => {
-    expect(sanitizeReviewSettings({ baseDays: 7 })).toEqual({ ...DEFAULT_REVIEW_SETTINGS, enabled: false, baseDays: 7 })
-    for (const enabled of ['true', 'yes', 1, 0, null, [], {}]) expect(sanitizeReviewSettings({ enabled, baseDays: 7, growth: 'fast' })).toEqual({ ...DEFAULT_REVIEW_SETTINGS, enabled: false, baseDays: 7 })
-    expect(sanitizeReviewSettings({ enabled: true }).enabled).toBe(true)
-    expect(sanitizeReviewSettings({ enabled: false }).enabled).toBe(false)
+    expect(sanitizeUpkeepSettings({ baseDays: 7 })).toEqual({ ...DEFAULT_UPKEEP_SETTINGS, enabled: false, baseDays: 7 })
+    for (const enabled of ['true', 'yes', 1, 0, null, [], {}]) expect(sanitizeUpkeepSettings({ enabled, baseDays: 7, growth: 'fast' })).toEqual({ ...DEFAULT_UPKEEP_SETTINGS, enabled: false, baseDays: 7 })
+    expect(sanitizeUpkeepSettings({ enabled: true }).enabled).toBe(true)
+    expect(sanitizeUpkeepSettings({ enabled: false }).enabled).toBe(false)
   })
 
   it('keeps good values and falls back field by field on bad ones', () => {
-    expect(sanitizeReviewSettings({ enabled: true, baseDays: 7, growth: 1, maxDays: 90, reviewByDefault: false })).toEqual({ algorithm: 'upkeep', enabled: true, baseDays: 7, growth: 1, maxDays: 90, reviewByDefault: false })
-    expect(sanitizeReviewSettings({ enabled: 'on', baseDays: 0, growth: 0.5, maxDays: 'long', reviewByDefault: 'no', algorithm: 'fsrs' })).toEqual(DEFAULT_REVIEW_SETTINGS)
-    expect(sanitizeReviewSettings({ baseDays: 7.5 }).baseDays).toBe(30)
+    expect(sanitizeUpkeepSettings({ enabled: true, baseDays: 7, growth: 1, maxDays: 90, reviewByDefault: false })).toEqual({ algorithm: 'upkeep', enabled: true, baseDays: 7, growth: 1, maxDays: 90, reviewByDefault: false })
+    expect(sanitizeUpkeepSettings({ enabled: 'on', baseDays: 0, growth: 0.5, maxDays: 'long', reviewByDefault: 'no', algorithm: 'fsrs' })).toEqual(DEFAULT_UPKEEP_SETTINGS)
+    expect(sanitizeUpkeepSettings({ baseDays: 7.5 }).baseDays).toBe(30)
   })
 
   it('never lets the longest wait be shorter than the first', () => {
-    expect(sanitizeReviewSettings({ baseDays: 400 }).maxDays).toBe(400)
-    expect(sanitizeReviewSettings({ baseDays: 60, maxDays: 10 }).maxDays).toBe(365)
+    expect(sanitizeUpkeepSettings({ baseDays: 400 }).maxDays).toBe(400)
+    expect(sanitizeUpkeepSettings({ baseDays: 60, maxDays: 10 }).maxDays).toBe(365)
   })
 })
 

@@ -7,7 +7,7 @@ import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
 import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
-import { REVIEW_KEY, REVIEWS_KEY } from '@shared/reviews'
+import { REVIEW_KEY, REVIEWS_KEY } from '../review/upkeepLegacy'
 import { reservedKeys } from './reservedKeys'
 
 /** The keys the app owns where the vault uses IDs. */

@@ -3,7 +3,7 @@ import path from 'node:path'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, noteIdNumber, vaultNoteId } from '@shared/noteId'
-import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IndexRecord } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, createDurable } from '../fs/fsUtils'
 import { myNote, settleClash, type ClashFix, type Pair } from './clash'
@@ -201,7 +201,7 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   // This sweep waited for the ones before it: what the index holds for a path NOW is what is swept.
   const among = await ownOnly([...new Map(events.map((r) => [r.path, records.get(r.path) ?? r])).values()], (r) => mine(r.path))
   /** A note the index could not read (its YAML is invalid, or it is over the size limit) takes no id. */
-  const takes = (r: IndexRecord): boolean => r.frontmatterError === undefined && r.text !== undefined
+  const takes = (r: IndexRecord): boolean => r.frontmatterError === undefined && r.size <= MAX_FILE_BYTES
   /**
    * The sweep's one write of an id: `file` takes `to` while it still holds `held` (`giveId`). False
    * when it took none: it changed under the sweep, or cannot be written — and one that cannot be

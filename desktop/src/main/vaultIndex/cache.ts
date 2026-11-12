@@ -23,7 +23,7 @@ import { atomicWrite } from '../fs/fsUtils'
  * Discard IS the migration: a version mismatch degrades to one full rescan, never a converter.
  * The fingerprint pin in `cache.test.ts` fails on such changes until the bump lands here.
  */
-export const CACHE_VERSION = 10
+export const CACHE_VERSION = 11
 /** Trailing debounce per root; bursts (a big paste, a sync tool landing) coalesce into one write. */
 const PERSIST_DEBOUNCE_MS = 5000
 /**
@@ -119,8 +119,7 @@ function isCachedRecord(v: unknown): v is IndexRecord {
     isStringArray(r.tags) &&
     isStringArray(r.links) &&
     isStringArray(r.embeds) &&
-    (r.reviews === undefined || Array.isArray(r.reviews)) &&
-    (r.text === undefined || typeof r.text === 'string')
+    (r.cards === undefined || Array.isArray(r.cards))
   )
 }
 

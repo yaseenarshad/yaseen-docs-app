@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { ZOOM_EVENT } from './zoomRequest'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import { DEFAULT_UPKEEP_SETTINGS, type UpkeepSettings } from '../review/upkeepLegacy'
 import type { FileResponse, IndexRecord, PageView, TableOfContents, TocSource, TreeNode, WatchEvent } from '@shared/types'
 import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
@@ -205,7 +205,7 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean; vaultReadOnly?: boolean; onFileAction?: (root: string) => Promise<boolean> } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: UpkeepSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean; vaultReadOnly?: boolean; onFileAction?: (root: string) => Promise<boolean> } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
@@ -1733,7 +1733,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
 
   it('with the review settings, "Reviews" is the last block, after "Linked mentions" (YAZ-2322)', async () => {
     const source = createWikilinkResolveSource()
-    const el = await mount(BODY, 1, { wikilinks: source, reviewSettings: { ...DEFAULT_REVIEW_SETTINGS, enabled: true } })
+    const el = await mount(BODY, 1, { wikilinks: source, reviewSettings: { ...DEFAULT_UPKEEP_SETTINGS, enabled: true } })
     feed(source, [record('/vault/other.md', ['note']), record(PATH)])
     expect([...(el.querySelector('.editor-host')?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'comments', 'backlinks', 'reviews'])
   })

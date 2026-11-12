@@ -4,13 +4,13 @@
  * prefix → substring rule.
  */
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
+import { DEFAULT_UPKEEP_SETTINGS } from '../review/upkeepLegacy'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { SettingsCtx } from './registry'
 import { searchSettings, settingCandidates, wordMatches, type SettingHit } from './searchSettings'
 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
-const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
+const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_UPKEEP_SETTINGS, save: () => undefined }
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
 const LINK_PILL_ROWS = ['linkPills']

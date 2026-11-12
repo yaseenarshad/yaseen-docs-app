@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE } from '@shared/reviews'
+import { DEFAULT_UPKEEP_SETTINGS, REVIEW_SETTINGS_FILE } from './upkeepLegacy'
 import type { VaultConfigChange } from '@shared/types'
 import { useReviewSettings, type ReviewSettingsState } from './useReviewSettings'
 
@@ -63,26 +63,26 @@ describe('useReviewSettings', () => {
   it('a vault with no review.json: upkeep is off and nothing is written; no call at all with no vault open', async () => {
     await mount('/vault')
     expect(read).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE)
-    expect(state.settings).toEqual(DEFAULT_REVIEW_SETTINGS)
+    expect(state.settings).toEqual(DEFAULT_UPKEEP_SETTINGS)
     expect(state.settings.enabled).toBe(false)
     expect(write).not.toHaveBeenCalled()
     act(() => root?.unmount())
     read.mockClear()
     await mount(null)
     expect(read).not.toHaveBeenCalled()
-    expect(state.settings).toEqual(DEFAULT_REVIEW_SETTINGS)
+    expect(state.settings).toEqual(DEFAULT_UPKEEP_SETTINGS)
   })
 
   it('sanitises what the file holds', async () => {
     read.mockResolvedValue({ baseDays: 7, growth: 'fast' })
     await mount('/vault')
-    expect(state.settings).toEqual({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 7 })
+    expect(state.settings).toEqual({ ...DEFAULT_UPKEEP_SETTINGS, baseDays: 7 })
   })
 
   it('turned on: the file says so, and a change broadcast turns it on or off in place', async () => {
     read.mockResolvedValue({ enabled: true })
     await mount('/vault')
-    expect(state.settings).toEqual({ ...DEFAULT_REVIEW_SETTINGS, enabled: true })
+    expect(state.settings).toEqual({ ...DEFAULT_UPKEEP_SETTINGS, enabled: true })
     read.mockResolvedValue({ enabled: false })
     await act(async () => listeners.forEach((l) => l({ root: '/vault', name: REVIEW_SETTINGS_FILE })))
     expect(state.settings.enabled).toBe(false)
@@ -100,7 +100,7 @@ describe('useReviewSettings', () => {
 
   it('save shows the new settings at once and writes only the settings file', async () => {
     await mount('/vault')
-    const next = { ...DEFAULT_REVIEW_SETTINGS, baseDays: 10 }
+    const next = { ...DEFAULT_UPKEEP_SETTINGS, baseDays: 10 }
     await act(async () => state.save(next))
     expect(state.settings).toEqual(next)
     expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, next)
@@ -108,13 +108,13 @@ describe('useReviewSettings', () => {
 
   it('save sanitises, so the file never holds a longest wait under the first', async () => {
     await mount('/vault')
-    await act(async () => state.save({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 400 }))
+    await act(async () => state.save({ ...DEFAULT_UPKEEP_SETTINGS, baseDays: 400 }))
     expect(state.settings.maxDays).toBe(400)
-    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { ...DEFAULT_REVIEW_SETTINGS, baseDays: 400, maxDays: 400 })
+    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { ...DEFAULT_UPKEEP_SETTINGS, baseDays: 400, maxDays: 400 })
   })
 
   it('a review.json that stops being valid JSON mid-session: the settings stay as they were and a save is refused with a notice, until the file parses again', async () => {
-    const on = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
+    const on = { ...DEFAULT_UPKEEP_SETTINGS, enabled: true }
     const changed = () => act(async () => listeners.forEach((l) => l({ root: '/vault', name: REVIEW_SETTINGS_FILE })))
     read.mockResolvedValue({ enabled: true })
     await mount('/vault')
@@ -134,7 +134,7 @@ describe('useReviewSettings', () => {
   it('a save that fails falls back to what the file holds', async () => {
     await mount('/vault')
     write.mockRejectedValue(new Error('read-only'))
-    await act(async () => state.save({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 10 }))
-    expect(state.settings).toEqual(DEFAULT_REVIEW_SETTINGS)
+    await act(async () => state.save({ ...DEFAULT_UPKEEP_SETTINGS, baseDays: 10 }))
+    expect(state.settings).toEqual(DEFAULT_UPKEEP_SETTINGS)
   })
 })

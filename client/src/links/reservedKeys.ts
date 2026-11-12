@@ -6,7 +6,7 @@ import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
 import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
-import { REVIEWS_KEY } from '@shared/reviews'
+import { REVIEWS_KEY } from '../review/upkeepLegacy'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 
 // `show_page_file` (YAZ-3746 D37), `hover_preview` (YAZ-4601 D51; legacy), `hover_rows` and `hover_links` (demo 13D), `show_other_files` (YAZ-4597), `confirm_changes` (13AN), `inherit_columns` (YAZ-4713 C12), `column_marks` (C11) and `show_new_buttons` (13BL): a folder page's cog sets them, as a note's cog sets its page switches.

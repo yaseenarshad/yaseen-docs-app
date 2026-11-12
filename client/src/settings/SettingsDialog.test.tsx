@@ -13,7 +13,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import { DEFAULT_UPKEEP_SETTINGS, type UpkeepSettings } from '../review/upkeepLegacy'
 import type { ShowIdsSettings } from '../search/showIds'
 import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
@@ -29,7 +29,7 @@ import { SettingsDialog } from './SettingsDialog'
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string, readOnlyVault?: { on: boolean }, showIdsSettings?: ShowIdsSettings) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: UpkeepSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string, readOnlyVault?: { on: boolean }, showIdsSettings?: ShowIdsSettings) {
   const onChange = vi.fn()
   // The vault's "Show IDs" (YAZ-4940): no settings handed over is no vault open, so no rows.
   const saveShowIds = vi.fn()
@@ -64,12 +64,12 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   // The active vault's name (YAZ-2602 R10): App hands it only with two or more vaults in the window.
   act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName, readOnlyVault: readOnly, showIds }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
-  const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
+  const rerender = (next: UpkeepSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
   return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, saveReadOnly, saveShowIds, el: container }
 }
 
 /** Upkeep turned on, the rest as a new vault has it. */
-const REVIEW_ON: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
+const REVIEW_ON: UpkeepSettings = { ...DEFAULT_UPKEEP_SETTINGS, enabled: true }
 
 const unmount = () => {
   act(() => root?.unmount())
@@ -307,7 +307,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
     expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Sync', '—', 'Memory', 'Hotkeys'])
     unmount()
-    const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
+    const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_UPKEEP_SETTINGS)
     expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Review', 'Sync', '—', 'Memory', 'Hotkeys'])
   })
 
@@ -402,7 +402,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
   })
 
   it('the two per-vault sections, Review and Sync, and Memory (YAZ-3977) carry a note under their titles; no other page does', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_UPKEEP_SETTINGS)
     const notes = onEachPage(el, () => [...el.querySelectorAll('.settings-section__note')].map((n) => [n.closest('[data-section]')?.id, n.textContent]))
     expect(notes).toEqual([
       ['General', []],
@@ -429,7 +429,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       onEachPage(el, () =>
         [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].filter((n) => n.textContent?.startsWith('Vault: ')).map((n) => ({ text: n.textContent, under: n.previousElementSibling?.textContent, className: n.className })),
       )
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS, { enabled: true, held: false }, 'Work')
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_UPKEEP_SETTINGS, { enabled: true, held: false }, 'Work')
     // The same muted lines the dialog already has: a group's hint, a section's note.
     expect(lines(el)).toEqual([
       ['General', []],
@@ -451,7 +451,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Review')
     expect([...el.querySelectorAll('.settings-section__note')].map((n) => n.textContent)).toEqual(['Vault: Work', "These settings are saved in this vault's .yaseendocs folder and sync with it."])
     unmount()
-    const one = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS, { enabled: true, held: false })
+    const one = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_UPKEEP_SETTINGS, { enabled: true, held: false })
     expect(lines(one.el).flatMap(([, found]) => found)).toEqual([])
   })
 
@@ -1393,7 +1393,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
   })
 
   it('upkeep off: the Review section shows one row, a switch labelled "Enable upkeep review", reading Off', () => {
-    const { el } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
+    const { el } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), DEFAULT_UPKEEP_SETTINGS)
     expect(reviewRows(el)).toEqual(['enabled'])
     expect(row(el, 'enabled')?.querySelector('.setting__label')?.textContent).toBe('Enable upkeep review')
     expect(rowButtons(el, 'enabled').map((b) => b.textContent)).toEqual(['On', 'Off'])
@@ -1402,9 +1402,9 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
   })
 
   it('Enable upkeep review: On saves the whole object with enabled true, Off with it false — never onChange', () => {
-    const off = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, DEFAULT_REVIEW_SETTINGS)
+    const off = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, DEFAULT_UPKEEP_SETTINGS)
     act(() => rowButtons(off.el, 'enabled')[0].click())
-    expect(off.save).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_REVIEW_SETTINGS, enabled: true })
+    expect(off.save).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_UPKEEP_SETTINGS, enabled: true })
     expect(off.onChange).not.toHaveBeenCalled()
     unmount()
     const on = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14 })
@@ -1413,16 +1413,16 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
   })
 
   it('turned on: the three numbers and "New notes are in review" appear under the switch at once; turned off, they go', () => {
-    const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, DEFAULT_REVIEW_SETTINGS)
+    const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, DEFAULT_UPKEEP_SETTINGS)
     rerender(S)
     expect(reviewRows(el)).toEqual(['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault'])
     expect(rowButtons(el, 'enabled').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
-    rerender(DEFAULT_REVIEW_SETTINGS)
+    rerender(DEFAULT_UPKEEP_SETTINGS)
     expect(reviewRows(el)).toEqual(['enabled'])
   })
 
   it('upkeep off: search finds the switch and none of the rows it hides; turned on, it finds them', () => {
-    const { el, rerender } = mount({ ...DEFAULT_SETTINGS }, undefined, DEFAULT_REVIEW_SETTINGS)
+    const { el, rerender } = mount({ ...DEFAULT_SETTINGS }, undefined, DEFAULT_UPKEEP_SETTINGS)
     type(searchInput(el), 'upkeep')
     expect(rowIds(el)).toEqual(['enabled'])
     type(searchInput(el), 'longest wait')
@@ -1473,7 +1473,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
 
   it('a draft the rules refuse is marked while it stands, is not saved, and gives way to the last good value', () => {
     const { el, save } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
-    // Each is one of `sanitizeReviewSettings`' rules: whole days from 1, growth from 1, the longest wait never under the first.
+    // Each is one of `sanitizeUpkeepSettings`' rules: whole days from 1, growth from 1, the longest wait never under the first.
     for (const [id, draft, stored] of [['baseDays', '0', '30'], ['baseDays', '7.5', '30'], ['growth', '0.5', '2'], ['maxDays', '10', '365'], ['maxDays', 'soon', '365'], ['growth', '', '2']] as const) {
       const input = number(el, id)
       expect(input.getAttribute('aria-invalid')).toBe('false')

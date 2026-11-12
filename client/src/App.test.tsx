@@ -205,6 +205,7 @@ vi.mock('./sidebar/Sidebar', () => ({
 import { App, preloadTabBoard, replayNotice } from './App'
 import { dropAllNoteWindows, keepNoteWindow, noteWindowKey, noteWindowMemory, openNoteWindow } from './views/view/NoteWindow'
 import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
+import type { UpkeepRecord } from './review/upkeepLegacy'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -5132,7 +5133,7 @@ describe('opening a vault creates no file (YAZ-2290)', () => {
  */
 describe('App upkeep review (YAZ-2322)', () => {
   /** A note last changed in 1970: in review by default, and long overdue. */
-  const due = (name: string, folder = ''): IndexRecord => ({
+  const due = (name: string, folder = ''): UpkeepRecord => ({
     path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`, name: `${name}.md`, basename: name, title: name, folder, ext: 'md', size: 1, ctime: 1, mtime: 1,
     properties: {}, aliases: [], tags: [], links: [], embeds: [], text: 'x',
   })
@@ -5762,7 +5763,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     return { path, name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
   }
   /** A note last changed in 1970: in review by default, and long overdue. */
-  const due = (path: string, folder = ''): IndexRecord => note(path, { folder, text: 'x' })
+  const due = (path: string, folder = ''): IndexRecord => ({ ...note(path, { folder }), text: 'x' }) as UpkeepRecord
   /** Vault `/v` first, `/w` second, one tab in each; the `/v` tab is the active one. */
   const TWO: IdentityFixture = { id: 'w1', root: '/v', roots: ['/v', '/w'], file: '/v/a.md', tabs: ['/v/a.md', '/w/b.md'] }
   /** Each vault's own index answer. */

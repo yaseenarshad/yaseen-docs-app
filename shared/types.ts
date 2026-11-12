@@ -7,7 +7,7 @@
  */
 
 import type { IconRule } from './vaultIcons'
-import type { ReviewEntry } from './reviews'
+import type { NoteCardRecord } from './cardLine'
 import type { HotkeyOverrides } from './hotkeyBindings'
 import { DEFAULT_DAILY_NOTE_FORMAT } from './dailyNote'
 import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
@@ -237,10 +237,12 @@ export interface IndexRecord {
   links: string[]
   /** `![[target]]` targets, kept as `links` keeps them. */
   embeds: string[]
-  /** The note's review log (`shared/reviews.ts`, YAZ-2322), `at` ascending; absent when never reviewed. When it is next due is computed, never stored. */
-  reviews?: ReviewEntry[]
-  /** `textFingerprint` of the body: a review records the one it saw, so the body counts as changed when they differ. Absent when the file was not read. */
-  text?: string
+  /**
+   * The page's note cards (`shared/cardLine.ts`, YAZ-4960 D4), in page order: each card's ID (null before the sweep
+   * gives one), whether review is off, and its reviews as its card line holds them. No card text: it is read when a
+   * card shows. Absent when the page has no card, or was not read. When a card is due is computed (`cardSchedule.ts`).
+   */
+  cards?: NoteCardRecord[]
 }
 
 export interface IndexResponse {

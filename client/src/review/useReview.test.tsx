@@ -7,13 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { DEFAULT_REVIEW_SETTINGS, REVIEWS_KEY, addReview, reviewEntries, reviewsOf, textFingerprint, type ReviewSettings } from '@shared/reviews'
-import type { IndexRecord } from '@shared/types'
+import { DEFAULT_UPKEEP_SETTINGS, REVIEWS_KEY, addReview, reviewEntries, reviewsOf, textFingerprint, type UpkeepSettings } from './upkeepLegacy'
+import type { UpkeepRecord as IndexRecord } from './upkeepLegacy'
 import { useReview, type ReviewApi } from './useReview'
 
 /** Upkeep turned on, the rest as a new vault has it; `OFF` is the same vault with it turned off. */
-const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
-const OFF: ReviewSettings = { ...S, enabled: false }
+const S: UpkeepSettings = { ...DEFAULT_UPKEEP_SETTINGS, enabled: true }
+const OFF: UpkeepSettings = { ...S, enabled: false }
 const DAY = 86_400_000
 const NOW = new Date(2026, 5, 15, 9, 0).getTime()
 const ROOT = '/vault'
@@ -74,12 +74,12 @@ let review: ReviewApi
 const notices: string[] = []
 const onNotice = (text: string): void => void notices.push(text)
 
-function Probe({ settings }: { settings: ReviewSettings }) {
+function Probe({ settings }: { settings: UpkeepSettings }) {
   review = useReview(ROOT, source, settings, onNotice)
   return null
 }
 
-async function mount(settings: ReviewSettings = S): Promise<void> {
+async function mount(settings: UpkeepSettings = S): Promise<void> {
   reindex()
   root = createRoot(document.createElement('div'))
   await act(async () => root?.render(<Probe settings={settings} />))
@@ -286,7 +286,7 @@ describe('turning review on or off', () => {
 })
 
 describe('upkeep off', () => {
-  const turn = (settings: ReviewSettings): Promise<void> => act(async () => root?.render(<Probe settings={settings} />))
+  const turn = (settings: UpkeepSettings): Promise<void> => act(async () => root?.render(<Probe settings={settings} />))
   /** Every file's bytes and modified time. */
   const bytes = (): unknown => [...vault].map(([path, file]) => [path, file.content, file.mtime])
 
@@ -295,7 +295,7 @@ describe('upkeep off', () => {
     expect(review.dueCount).toBe(0)
     expect(review.inReview(`${ROOT}/old.md`)).toBeNull()
     expect(review.inReview(`${ROOT}/off.md`)).toBeNull()
-    await turn(DEFAULT_REVIEW_SETTINGS) // a vault with no review.json
+    await turn(DEFAULT_UPKEEP_SETTINGS) // a vault with no review.json
     expect(review.dueCount).toBe(0)
     expect(review.inReview(`${ROOT}/old.md`)).toBeNull()
   })

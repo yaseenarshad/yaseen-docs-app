@@ -2,12 +2,12 @@
  * One number of the vault's review settings (YAZ-2322) — the dialog's only number field, on the
  * folder input's draft + commit pattern (NewNoteLocationControl): Enter or blur saves a valid
  * draft; one the rules refuse is marked while it stands and gives way to the stored value on
- * commit. The rules are `sanitizeReviewSettings`' alone — a draft is valid when the sanitiser
+ * commit. The rules are `sanitizeUpkeepSettings`' alone — a draft is valid when the sanitiser
  * keeps it — so "whole days", "growth from 1" and "the longest wait is never under the first" are
  * said in one place. A change from elsewhere (another window, a sync) resets the draft.
  */
 import { useEffect, useState } from 'react'
-import { sanitizeReviewSettings } from '@shared/reviews'
+import { sanitizeUpkeepSettings } from '../review/upkeepLegacy'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 
 export type ReviewNumberField = 'baseDays' | 'growth' | 'maxDays'
@@ -26,7 +26,7 @@ export function ReviewNumberControl({ field, label, unit, review }: ReviewNumber
 
   const value = Number(draft)
   const next = { ...review.settings, [field]: value }
-  const invalid = sanitizeReviewSettings(next)[field] !== value
+  const invalid = sanitizeUpkeepSettings(next)[field] !== value
 
   const commit = (): void => {
     if (invalid) setDraft(String(stored))

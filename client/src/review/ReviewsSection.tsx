@@ -13,8 +13,8 @@
  */
 import { useEffect, useState } from 'react'
 import { useUnit } from '../vault/unitWord'
-import { deleteReview, resetReviews, reviewsOf, type ReviewSettings } from '@shared/reviews'
-import { dayCount, dueAfter, dueAt, isDue, isInReview } from '@shared/schedule'
+import { deleteReview, resetReviews, reviewsOf, type UpkeepSettings, type UpkeepRecord } from './upkeepLegacy'
+import { dayCount, dueAfter, dueAt, isDue, isInReview } from './upkeepLegacy'
 import type { FileResponse } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -29,7 +29,7 @@ export interface ReviewsSectionProps {
   /** The window's index feed: the note's own record is found in it by path. Absent → nothing renders. */
   source?: WikilinkResolveSource
   /** The vault's review settings. Absent → nothing renders. */
-  settings?: ReviewSettings
+  settings?: UpkeepSettings
 }
 
 const DAY = 86_400_000
@@ -86,7 +86,7 @@ export function ReviewsSection({ file, source, settings }: ReviewsSectionProps) 
                       <td>{i > 0 && `${dayCount(Math.round((Date.parse(review.at) - Date.parse(reviews[i - 1].at)) / DAY))} later`}</td>
                       <td>next check {day(dueAfter(reviews, i, settings))}</td>
                       {/* The page changed after this review, so it no longer counts toward the wait. */}
-                      <td>{review.text !== record.text && 'edited since'}</td>
+                      <td>{review.text !== (record as UpkeepRecord).text && 'edited since'}</td>
                       <td>
                         <button type="button" className="comments__action comments__action--danger" aria-label={`Delete review of ${day(review.at)}`} onClick={() => write((fresh) => deleteReview(fresh, review.at))}>
                           Delete

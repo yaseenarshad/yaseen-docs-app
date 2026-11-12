@@ -25,7 +25,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { HeaderStyleControl } from '../views/view/StylePanel'
 import { plainHeaderRow } from '../views/view/TableLookSettings'
 import { isIdLetters } from '@shared/noteId'
-import { scheduleInWords } from '@shared/schedule'
+import { scheduleInWords } from '../review/upkeepLegacy'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
@@ -485,7 +485,7 @@ const REVIEW_KEYWORDS = ['upkeep', 'inbox']
 /** Every Review row but the switch is there only while upkeep is on (🔒 D7). */
 const upkeepOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled === true
 
-/** One number row of the Review section; the row's id is the `ReviewSettings` field it edits. */
+/** One number row of the Review section; the row's id is the `UpkeepSettings` field it edits. */
 const reviewNumber = (field: ReviewNumberField, label: string, unit: string): SettingDef => ({
   id: field,
   label,

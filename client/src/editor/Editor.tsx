@@ -1,6 +1,6 @@
 import { useUnit } from '../vault/unitWord'
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
-import type { ReviewSettings } from '@shared/reviews'
+import type { UpkeepSettings } from '../review/upkeepLegacy'
 import { DEFAULT_SETTINGS, folderSettingsPath, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type FindFolds, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -228,7 +228,7 @@ interface EditorProps {
   /** Its − and +, and ⌘+ / ⌘− / ⌘0 over it, write the SETTING through this. */
   onChangeTocZoom?: (percent: number) => void
   /** The vault's review settings (YAZ-2322): App owns the one `useReviewSettings`; the Reviews section computes its dates from them. */
-  reviewSettings?: ReviewSettings
+  reviewSettings?: UpkeepSettings
   /**
    * The user changed this note's text (YAZ-2648 D2): App keeps the preview tab that shows it. Said
    * when the note turns unsaved, so never for a change made outside the app. A main tab's editor
@@ -521,7 +521,7 @@ function CrepeHost({
   onChangeTableOfContentsWidth?: (width: number) => void
   tocZoom?: number
   onChangeTocZoom?: (percent: number) => void
-  reviewSettings?: ReviewSettings
+  reviewSettings?: UpkeepSettings
   onUserEdit?: (path: string) => void
   startView?: PageView
   tabId?: string

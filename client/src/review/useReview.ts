@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { nowIso } from '@shared/comments'
-import { addReview, deleteReview, setInReview as withReview, type ReviewSettings } from '@shared/reviews'
-import { isInReview, reviewQueue } from '@shared/schedule'
+import { addReview, deleteReview, setInReview as withReview, type UpkeepSettings } from './upkeepLegacy'
+import { isInReview, reviewQueue } from './upkeepLegacy'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeKind } from '../lib/notice'
 import { folderTitle } from '../links/shortcuts'
@@ -61,7 +61,7 @@ interface IndexSource {
 
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-export function useReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind) => void): ReviewApi {
+export function useReview(root: string | null, source: IndexSource, settings: UpkeepSettings, onNotice: (text: string, icon?: NoticeKind) => void): ReviewApi {
   const records = useSyncExternalStore(source.subscribe, () => source.records)
   const [session, setSession] = useState<Session | null>(null)
   // "Due now" runs to local midnight, so the count moves at midnight with no file changing.

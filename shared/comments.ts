@@ -1,5 +1,18 @@
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
-import { textFingerprint } from './reviews'
+
+/**
+ * Eight hex characters standing for a note's body (🔒 C): a review records the one it saw, and
+ * the body counts as changed when it no longer matches. FNV-1a over UTF-16 units, so the renderer
+ * and the main process agree without a crypto dependency; line-ending style and blank space around
+ * the text do not count.
+ */
+export function textFingerprint(body: string): string {
+  const text = body.replace(/\r\n/g, '\n').trim()
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193)
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
 
 /**
  * Comments per page (YAZ-1472): a note's comment stream lives ON the note, under the reserved

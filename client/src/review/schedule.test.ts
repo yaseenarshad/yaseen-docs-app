@@ -3,13 +3,14 @@
  * of the decision record. Lives under client/src so vitest collects it; the module is shared.
  */
 import { describe, expect, it } from 'vitest'
-import type { ReviewEntry } from '@shared/reviews'
-import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
-import { dueAfter, dueAt, isInReview, reviewQueue, scheduleInWords } from '@shared/schedule'
-import { type IndexRecord, inFolder } from '@shared/types'
+import type { ReviewEntry } from './upkeepLegacy'
+import { DEFAULT_UPKEEP_SETTINGS } from './upkeepLegacy'
+import { dueAfter, dueAt, isInReview, reviewQueue, scheduleInWords } from './upkeepLegacy'
+import { inFolder } from '@shared/types'
+import type { UpkeepRecord as IndexRecord } from './upkeepLegacy'
 
 /** Upkeep turned on, the rest as a new vault has it. */
-const S = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
+const S = { ...DEFAULT_UPKEEP_SETTINGS, enabled: true }
 const DAY = 86_400_000
 const CHANGED = Date.parse('2026-01-10T12:00:00Z')
 const days = (from: number, to: number): number => (to - from) / DAY
@@ -115,7 +116,7 @@ describe('isInReview', () => {
   })
 
   it('upkeep off: no note is in review, whatever the vault default and its own `review` say', () => {
-    expect(isInReview(record({ path: '/v/a.md' }), DEFAULT_REVIEW_SETTINGS)).toBe(false)
+    expect(isInReview(record({ path: '/v/a.md' }), DEFAULT_UPKEEP_SETTINGS)).toBe(false)
     expect(isInReview(record({ path: '/v/a.md', properties: { review: true } }), { ...S, enabled: false })).toBe(false)
   })
 })

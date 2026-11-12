@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { cardRecords } from '@shared/cardLine'
 import { COMMENTS_KEY } from '@shared/comments'
 import { isDrawing } from '@shared/fileKind'
 import { folderBlocks } from '@shared/folderValues'
@@ -7,7 +8,6 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { indexTarget, splitLink } from '@shared/linkParts'
 import { IDS_FILE, NOTE_ID_KEY, canonicalNoteId, idsAnswer, isNoteId } from '@shared/noteId'
 import { titleOf } from '@shared/noteName'
-import { REVIEWS_KEY, reviewEntries, textFingerprint } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
 
@@ -247,8 +247,6 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   const { frontmatter, body } = splitFrontmatter(content)
   const { properties, error } = parseFrontmatter(frontmatter)
   delete properties[COMMENTS_KEY] // the note's own comment stream (YAZ-1472), never a property
-  const reviews = reviewEntries(properties[REVIEWS_KEY])
-  delete properties[REVIEWS_KEY] // the note's own review log (YAZ-2322), never a property
   record.properties = properties
   if (error !== undefined) record.frontmatterError = error
   // The id as the file holds it, in the form the app writes (YAZ-2677 R2, S18): `yaz-12` is held as
@@ -258,5 +256,7 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   const id = properties[NOTE_ID_KEY]
   if (isNoteId(id)) record.id = canonicalNoteId(id)
   record.title = titleOf(properties, record.title)
-  return { ...record, ...extractBody(properties, body), ...(reviews.length > 0 && { reviews }), text: textFingerprint(body) }
+  // The page's note cards (YAZ-4960 D4): ID, off and reviews off each card line, no card text.
+  const cards = cardRecords(body)
+  return { ...record, ...extractBody(properties, body), ...(cards.length > 0 && { cards }) }
 }

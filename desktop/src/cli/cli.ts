@@ -37,8 +37,10 @@ import { newestFile } from '@shared/settingsSync'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
-import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
-import { dueAt, isInReview, reviewQueue } from '@shared/schedule'
+import { findCards } from '@shared/cardLine'
+import { cardQueue, cardState } from '@shared/cardSchedule'
+import { cardTitle } from '@shared/cardText'
+import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { AGENT_HANDLE, VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type IndexRecord, type SettingsState } from '@shared/types'
 import { makeResolver } from '@shared/linkResolver'
 import { mentionsOf } from '@shared/mentions'
@@ -311,36 +313,62 @@ const str = (flags: Map<string, string | true>, name: string): string | undefine
   return typeof v === 'string' ? v : undefined
 }
 
-/** The review settings of the vault `dir` is in, or the defaults when it is in none. */
-async function reviewSettings(dir: string): Promise<ReviewSettings> {
-  const root = await vaultRoot(dir)
-  if (root === null) return DEFAULT_REVIEW_SETTINGS
+/** The note card settings of the vault at `root` (`.yaseendocs/review.json`), or the defaults. */
+async function reviewSettings(root: string): Promise<ReviewSettings> {
   return sanitizeReviewSettings(await readRaw(join(root, VAULT_CONFIG_DIR, REVIEW_SETTINGS_FILE), 'utf8').then(JSON.parse).catch(() => null))
 }
 
+/** The ID vault of `dir` (YAZ-4946 D8: only a vault that gives IDs has note cards), or the refusal. */
+async function cardVault(dir: string, what: string): Promise<string> {
+  const root = await idVault(dir)
+  if (root === null) throw new Error(`${what}'s vault does not give its notes IDs, so it has no note cards (turn on "Give this vault's notes IDs" in the app's Settings)`)
+  return root
+}
+
+/** The title of each card of a page (idea 3), in page order: its text is read here, the index does not hold it (D4). */
+async function cardTitles(page: string): Promise<string[]> {
+  return findCards(splitFrontmatter((await readPage(page)).content).body).map((card) => cardTitle(card.text))
+}
+
 /**
- * `due` (YAZ-2322 🔒 D2): a page's next review day, or the pages due now under a folder. The date
- * is computed by the same `shared/schedule.ts` the app uses, from the same scan, so the two agree.
+ * `due` (YAZ-4963, idea 12): the note cards due now, or every card of one page with the day it is next due. The date
+ * is computed by the same `shared/cardSchedule.ts` the Inbox uses, from the same scan, so the two agree.
  */
 async function due(target: string, json: boolean, io: Io): Promise<void> {
   const day = (ms: number): string => new Date(ms).toLocaleDateString('en-CA') // the LOCAL day, as YYYY-MM-DD
   const iso = (ms: number): string => new Date(ms).toISOString()
+  const now = Date.now()
   if (!(await fsCall(target, () => stat(target))).isDirectory()) {
     requireMarkdownFile(target)
-    const settings = await reviewSettings(dirname(target))
-    const record = await scanFile(dirname(target), target)
-    const at = isInReview(record, settings) ? dueAt(record, settings) : null
-    const page = `${record.title}  ${target}`
-    io.stdout(json ? `${JSON.stringify({ title: record.title, path: target, inReview: at !== null, due: at === null ? null : iso(at) }, null, 2)}\n` : at === null ? `${page} is not in review\n` : `${day(at)}  ${page}\n`)
+    const root = await cardVault(dirname(target), target)
+    const settings = await reviewSettings(root)
+    const titles = await cardTitles(target)
+    const rows = ((await scanFile(root, target)).cards ?? []).map((card, i) => {
+      const state = cardState(card.reviews, settings)
+      return { id: card.id, page: target, title: titles[i] ?? '', due: card.off || !settings.enabled ? null : state.isNew ? iso(now) : iso(state.due!), isNew: state.isNew, off: card.off }
+    })
+    if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
+    else
+      io.stdout(
+        rows.length === 0
+          ? `no note cards on ${target}\n`
+          : rows.map((r) => `${r.due === null ? 'off       ' : r.isNew ? 'new       ' : day(Date.parse(r.due))}  ${r.id ?? '(no id yet)'}  ${r.title}\n`).join(''),
+      )
     return
   }
-  const settings = await reviewSettings(target)
+  const root = await cardVault(target, target)
+  const settings = await reviewSettings(root)
   const files: string[] = []
-  await walk(target, files)
-  const notes = files.filter((file) => !isFolderSettingsPath(file))
-  const queue = reviewQueue([...(await scanAll(target, notes)).values()], settings, Date.now()).map((r) => ({ title: r.title, path: r.path, due: dueAt(r, settings) }))
-  if (json) io.stdout(`${JSON.stringify(queue.map((q) => ({ ...q, due: iso(q.due) })), null, 2)}\n`)
-  else io.stdout(queue.length === 0 ? `nothing is due under ${target}\n` : queue.map((q) => `${day(q.due)}  ${q.title}  ${q.path}\n`).join(''))
+  await walk(root, files)
+  const records = [...(await scanAll(root, files.filter((file) => !isFolderSettingsPath(file)))).values()]
+  // The whole vault is read, so the new cards begun today count wherever they are; the folder then keeps its own.
+  const folder = target === root ? '' : target.slice(root.length + 1).split(/[\\/]/).join('/')
+  const queue = cardQueue(records, settings, now, folder)
+  const titles = new Map<string, string[]>()
+  for (const { path } of queue) if (!titles.has(path)) titles.set(path, await cardTitles(path))
+  const rows = queue.map((q) => ({ id: q.id, page: q.path, title: titles.get(q.path)?.[q.index] ?? '', due: iso(q.due), isNew: q.isNew }))
+  if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
+  else io.stdout(rows.length === 0 ? `nothing is due under ${target}\n` : rows.map((r) => `${r.isNew ? 'new       ' : day(Date.parse(r.due))}  ${r.id}  ${r.title}  ${r.page}\n`).join(''))
 }
 
 /** The app's state file as the store itself reads it (`parseState`); only READ. No file yet is the default state; a damaged one is refused and left for the app to move aside. */
