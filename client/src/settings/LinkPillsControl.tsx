@@ -6,8 +6,9 @@
  *     no `{name}`, too long) keeps the STORED format, marks the box red and says why. The token chips insert at the
  *     caret and keep at once. A dropdown of ready formats beside it. The vault rule (other vaults only · always ·
  *     never) shows only while the format has `{vault}`.
- *  2. **Preview:** a sentence with four pills (a note, a board, a pill into another vault, a missing note), drawn by
- *     the folder page's pill (`PillEnds`, the same pieces the note's widgets draw) under the look's variables.
+ *  2. **Preview:** a muted "Preview" label and ONE sample pill, "Roadmap" (round 4: the sentence of four read as real
+ *     text), drawn by the folder page's pill (`PillEnds`, the same pieces the note's widgets draw) under the look's
+ *     variables. The sample note has every part (an ID, a folder, a path, a vault), so each token of the format shows.
  *  3. **Click to style:** a click on a part of a pill (the name, the ID, the vault, the folder, your own text) opens the
  *     style panel under the preview, titled "Styling: the name" (the title is a quiet dropdown: the second way to pick a
  *     part), with three labelled rows — Text (B I U), Colour (ONE row: Accent · Text · Muted, then the ten palette
@@ -17,7 +18,6 @@
  * Reset brings today's look back. Every default is today's look.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import { useUnit } from '../vault/unitWord'
 import {
   DEFAULT_LINK_PILL_FORMAT,
   LINK_PILL_COLORS,
@@ -166,15 +166,10 @@ function BoxRows({ look }: { look: LinkPillsState }) {
   )
 }
 
-/** One pill of the preview, as a folder page's cell draws one: the editor's classes, the pieces the format adds. */
-function PreviewPill({ text, path, otherVault = null, info, missing = false }: { text: string; path?: string; otherVault?: string | null; info?: { id?: string; folder: string }; missing?: boolean }) {
-  const unit = useUnit()
-  return (
-    <span className={`wikilink view-link-pill${missing || path === undefined ? ' wikilink--unresolved' : ''}`} title={missing ? unit('A link to a note that does not exist yet') : text}>
-      <PillEnds text={text} info={info} otherVault={otherVault} icon={!missing && path !== undefined ? <FileIcon path={path} /> : undefined} />
-    </span>
-  )
-}
+/** The sample note: every part a format can show, so each token has text on it. */
+const SAMPLE = { text: 'Roadmap', path: '/preview/Roadmap.md', info: { id: 'YAS-12', folder: 'Projects/Plans' } }
+/** The sample's vault name where the app has none for this vault. */
+const SAMPLE_VAULT = 'Wiki'
 
 /** The part a click in the preview lands on, or null: a piece's class names its part; the pill's own span is the name; the icon is the box. */
 function targetAt(el: Element): Target | null {
@@ -254,12 +249,8 @@ function FormatBox({ look }: { look: LinkPillsState }) {
   )
 }
 
-/**
- * The row. `vault`: what the app calls this vault, for "Always"; `ids`: whether the vault gives its notes IDs, so the
- * note pill can show one.
- */
-export function LinkPillsControl({ look, vault, ids }: { look: LinkPillsState; vault: string | null; ids: boolean }) {
-  const unit = useUnit()
+/** The row. `vault`: what the app calls this vault, the sample's vault name. */
+export function LinkPillsControl({ look, vault }: { look: LinkPillsState; vault: string | null }) {
   const { pills, save } = look
   const [target, setTarget] = useState<Target | null>(null)
   const format = pills.format ?? DEFAULT_LINK_PILL_FORMAT
@@ -281,8 +272,12 @@ export function LinkPillsControl({ look, vault, ids }: { look: LinkPillsState; v
       <PillLook.Provider value={{ pills, vault }}>
         {/* The toolbar's own picker is the keyboard's way to a part; the click is the mouse's. */}
         <p className="link-pills-preview" aria-label="Link pills preview" title="Click a part of a pill to style it" style={linkPillVars(pills)} onClick={pick}>
-          Read the <PreviewPill text="Roadmap" path="/preview/Roadmap.md" info={ids ? { id: 'YAS-12', folder: 'Projects/Plans' } : { folder: 'Projects/Plans' }} /> {unit('note, the')} <PreviewPill text="Q3 plan" path="/preview/Q3 plan.excalidraw" info={{ folder: 'Boards' }} /> board, and{' '}
-          <PreviewPill text="Budget" path="/preview/Budget.md" otherVault="Wiki" info={{ folder: '' }} /> in another vault. <PreviewPill text="Old plan" missing /> {unit('has no note yet.')}
+          <span className="link-pills-preview__label">Preview</span>
+          {/* The vault's name goes in as the pill's "other vault": `{vault}` then shows it under "other vaults only"
+              and "always" alike; "never" still hides it. */}
+          <span className="wikilink view-link-pill">
+            <PillEnds text={SAMPLE.text} info={SAMPLE.info} otherVault={vault ?? SAMPLE_VAULT} icon={<FileIcon path={SAMPLE.path} />} />
+          </span>
         </p>
       </PillLook.Provider>
       {live !== null && (

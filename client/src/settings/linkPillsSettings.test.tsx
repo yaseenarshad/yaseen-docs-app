@@ -1,7 +1,7 @@
 /**
  * Settings › Link pills (YAZ-4924, the redo): one row in Files & Links with a vault open — the format box (draft +
- * commit, the chips, the ready formats), the vault rule only with `{vault}`, the live preview drawn by the cell's pill,
- * and the style panel a click on a part or the icon opens (round 3: titled "Styling: the …", three labelled rows), each
+ * commit, the chips, the ready formats), the vault rule only with `{vault}`, the live preview (round 4: a "Preview"
+ * label and ONE sample pill with every part, drawn by the cell's pill), and the style panel a click on a part or the icon opens (round 3: titled "Styling: the …", three labelled rows), each
  * button writing one field through the vault's `save`. Nothing of it without a vault.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -62,15 +62,19 @@ afterEach(() => {
 })
 
 describe('Settings › Link pills (YAZ-4924)', () => {
-  it("is one row with a vault open, on today's look: the default format, the vault rule, four pills as today, no toolbar, no Reset; nothing without a vault", () => {
+  it("is one row with a vault open, on today's look: the default format, the vault rule, ONE sample pill with its vault's name, no toolbar, no Reset; nothing without a vault", () => {
     const { el, row } = mount(NO_LINK_PILLS)
     expect(el.querySelectorAll('[data-setting^="linkPill"]')).toHaveLength(1)
     expect(formatBox(row).value).toBe(DEFAULT_LINK_PILL_FORMAT)
     expect(formatBox(row).maxLength).toBe(60)
     expect(select(row, 'Vault name on a link pill')?.selectedOptions[0]?.textContent).toBe('Vault name: other vaults only')
     expect([...row.querySelectorAll<HTMLButtonElement>('.link-pills-chip')].map((b) => b.textContent)).toEqual(['{icon}', '{name}', '{id}', '{vault}', '{folder}', '{path}'])
-    // The preview: four pills, the one into another vault named in brackets, the missing one dim, the icon on each found name.
-    expect([...preview(row).querySelectorAll('.wikilink')].map((p) => [p.textContent, p.classList.contains('wikilink--unresolved'), p.querySelector('.file-icon') !== null])).toEqual([['Roadmap', false, true], ['Q3 plan', false, true], ['Budget (Wiki)', false, true], ['Old plan', true, false]])
+    // The preview (round 4): a muted "Preview" label and ONE sample pill, found, with its icon; the format has {vault},
+    // so the sample shows its vault's name even under "other vaults only". No sentence around it.
+    expect(preview(row).querySelector('.link-pills-preview__label')?.textContent).toBe('Preview')
+    expect([...preview(row).querySelectorAll('.wikilink')].map((p) => [p.textContent, p.classList.contains('wikilink--unresolved'), p.querySelector('.file-icon') !== null])).toEqual([['Roadmap (Mine)', false, true]])
+    expect(preview(row).textContent).toBe('PreviewRoadmap (Mine)')
+    expect(preview(row).title).toBe('Click a part of a pill to style it')
     expect(toolbar(row)).toBeNull()
     expect(button(row, 'Reset')).toBeUndefined()
     expect(mount(undefined).row).toBeNull()
@@ -221,21 +225,40 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(coloured.save).toHaveBeenLastCalledWith({})
   })
 
-  it('the preview wears the look: the variables on it, the pieces of the format on each pill, the ID in an ID vault; Reset saves today', () => {
+  it('the preview wears the look: the variables on it, the pieces of the format on the sample pill; Reset saves today', () => {
     const { row, save } = mount({ format: '[{vault} › {name} {id} {folder}]', vault: 'always', box: { fill: 'none' }, parts: { name: { bold: true } } }, true)
     expect(preview(row).style.getPropertyValue('--pill-bg')).toBe('transparent')
     expect(preview(row).style.getPropertyValue('--pill-name-weight')).toBe('bold')
-    expect(pillTexts(row)).toEqual(['[Mine › Roadmap YAS-12 Plans]', '[Mine › Q3 plan Boards]', '[Wiki › Budget]', '[Mine › Old plan]'])
+    expect(pillTexts(row)).toEqual(['[Mine › Roadmap YAS-12 Plans]'])
     expect(preview(row).querySelector('.file-icon')).toBeNull()
     click(button(row, 'Reset'))
     expect(save).toHaveBeenLastCalledWith({})
-    // No ID vault: the ID piece and its space go.
-    expect(pillTexts(mount({ format: '[{vault} › {name} {id} {folder}]', vault: 'always' }).row)).toEqual(['[Mine › Roadmap Plans]', '[Mine › Q3 plan Boards]', '[Wiki › Budget]', '[Mine › Old plan]'])
+  })
+
+  it('the sample note has every part: each token of the format shows on it, in a vault without IDs too; "never" hides the vault name', () => {
+    const format = '{icon}{name} · {id} · {vault} · {folder} · {path} ·'
+    const { row } = mount({ format })
+    expect(pillTexts(row)).toEqual(['Roadmap · YAS-12 · Mine · Plans · Projects › Plans ·'])
+    expect(['.file-icon', '.link-pill__id', '.link-pill__vault', '.link-pill__folder', '.link-pill__path', '.link-pill__text'].map((c) => preview(row).querySelector(c) !== null)).toEqual([true, true, true, true, true, true])
+    expect(pillTexts(mount({ format, vault: 'always' }).row)).toEqual(['Roadmap · YAS-12 · Mine · Plans · Projects › Plans ·'])
+    expect(pillTexts(mount({ format, vault: 'never' }).row)).toEqual(['Roadmap · YAS-12 · Plans · Projects › Plans ·'])
+  })
+
+  it('a click on each part of the sample pill opens its panel: the name, the ID, the vault, the folder, the path, your text, the box', () => {
+    const { row } = mount({ format: '[{icon}{name} {id} {vault} {folder} {path}]' })
+    const at = (sel: string) => {
+      click(preview(row).querySelector(sel) as Element)
+      return title(toolbar(row) as HTMLElement)
+    }
+    expect(['.wikilink', '.link-pill__id', '.link-pill__vault', '.link-pill__folder', '.link-pill__path', '.link-pill__text', '.file-icon'].map(at)).toEqual(['Styling: the name', 'Styling: the ID', 'Styling: the vault', 'Styling: the folder', 'Styling: the path', 'Styling: your text', 'Styling: the box'])
+    // The label is no part: a click on it changes nothing.
+    click(preview(row).querySelector('.link-pills-preview__label') as Element)
+    expect(title(toolbar(row) as HTMLElement)).toBe('Styling: the box')
   })
 
   it('an old look reaches the row converted: the format box shows version 1 as a format', () => {
     const { row } = mount({ format: '({icon}{name} ({vault}))', parts: { text: { color: 'accent', size: 'normal' } } })
     expect(formatBox(row).value).toBe('({icon}{name} ({vault}))')
-    expect(pillTexts(row)).toEqual(['(Roadmap)', '(Q3 plan)', '(Budget (Wiki))', '(Old plan)'])
+    expect(pillTexts(row)).toEqual(['(Roadmap (Mine))'])
   })
 })
