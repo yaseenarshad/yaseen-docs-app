@@ -21,6 +21,7 @@ import { imageSchema, linkSchema } from '@milkdown/kit/preset/commonmark'
 import { Plugin, PluginKey, TextSelection, type EditorState, type PluginView } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { newEmbedAlt } from '@shared/embedOptions'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
@@ -235,7 +236,7 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
     ...(found === null ? {} : placeRows(found, nav, nav.onNotice, nav.copy)),
     // A drawing's or a diagram's link (YAZ-4829 D8): the image node of the same address, `![name](href)` — a window (2B).
     // Not in a table cell: embeds there are out of scope (the checker's round 1).
-    showAsEmbed: view.editable && path !== null && isBoardSrc(hit.href) && !inCellOrNote(view.state.doc.resolve(hit.from)) ? () => view.dispatch(view.state.tr.replaceWith(hit.from, hit.to, imageSchema.type(ctx).create({ src: hit.href, alt: name ?? '', title: '' }))) : undefined,
+    showAsEmbed: view.editable && path !== null && isBoardSrc(hit.href) && !inCellOrNote(view.state.doc.resolve(hit.from)) ? () => view.dispatch(view.state.tr.replaceWith(hit.from, hit.to, imageSchema.type(ctx).create({ src: hit.href, alt: newEmbedAlt(name ?? ''), title: '' }))) : undefined,
     edit: view.editable ? () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to) : undefined,
     remove: view.editable ? () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to) : undefined,
   }

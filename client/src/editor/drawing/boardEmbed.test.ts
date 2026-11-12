@@ -373,9 +373,11 @@ describe('open and the menu (2C)', () => {
     }
     expect(rowsAfter('Plan').map((b) => b.textContent)).not.toContain('Show as embed')
     rowsAfter('Net').find((b) => b.textContent === 'Show as embed')!.click()
-    expect(md(crepe)).toBe('![[CloudFront.drawio]] and [[Plan]]\n')
+    expect(md(crepe)).toBe('![[CloudFront.drawio|locked]] and [[Plan]]\n')
     void view
     await windows(1)
+    // A new embed starts with its view locked (YAZ-2571 round 7): no size, the window's own.
+    expect(fakes.list[0]!.host.options).toEqual({ width: null, height: null, view: null, locked: true, page: null, rest: [] })
   })
 
   it('⌥Enter in the `[[` picker puts a board in as its embed; Enter as a link (item 8)', async () => {
@@ -384,10 +386,14 @@ describe('open and the menu (2C)', () => {
     const { crepe, view } = await mount('x\n', { wikilinkCandidates: candidates })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)).insertText('[[Cloud'))
     expect(key(view, { key: 'Enter', altKey: true })).toBe(true)
-    expect(md(crepe)).toBe('x![[CloudFront.drawio]]\n')
+    expect(md(crepe)).toBe('x![[CloudFront.drawio|locked]]\n')
     view.dispatch(view.state.tr.insertText(' [[Cloud'))
     expect(key(view, { key: 'Enter' })).toBe(true)
-    expect(md(crepe)).toBe('x![[CloudFront.drawio]] [[CloudFront.drawio]]\n')
+    expect(md(crepe)).toBe('x![[CloudFront.drawio|locked]] [[CloudFront.drawio]]\n')
+    // A typed `![[` and Enter make an embed too: locked.
+    view.dispatch(view.state.tr.insertText(' ![[Cloud'))
+    expect(key(view, { key: 'Enter' })).toBe(true)
+    expect(md(crepe)).toBe('x![[CloudFront.drawio|locked]] [[CloudFront.drawio]] ![[CloudFront.drawio|locked]]\n')
   })
 })
 
@@ -482,7 +488,7 @@ describe('the flow (2C → 2A)', () => {
     const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.path-paste-chip button'))
     expect(buttons.map((b) => b.textContent)).toEqual(['Keep as path', 'Embed'])
     buttons[1]!.click()
-    expect(md(crepe)).toBe('Next:![[CloudFront.drawio]]\n')
+    expect(md(crepe)).toBe('Next:![[CloudFront.drawio|locked]]\n')
     // One undo gives the pill back.
     undo(view.state, view.dispatch)
     expect(md(crepe)).toBe('Next:[[CloudFront.drawio]]\n')
@@ -605,7 +611,7 @@ describe('YAZ-4920: an id link to a board embeds (D1 on YAZ-4821: id links keep 
     const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.path-paste-chip button'))
     expect(buttons.map((b) => b.textContent)).toEqual(['Keep as path', 'Embed'])
     buttons[1]!.click()
-    expect(md(crepe)).toBe('Next:![[EMB-40]]\n')
+    expect(md(crepe)).toBe('Next:![[EMB-40|locked]]\n')
     await windows(1)
     expect(fakes.list[0]!.host.ref.path).toBe('/v/Boards/Slides with frames.excalidraw')
   })
@@ -645,7 +651,7 @@ describe('YAZ-4920: an id link to a board embeds (D1 on YAZ-4821: id links keep 
     document.querySelectorAll('.ctx-menu').forEach((el) => el.remove())
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)).insertText('[[Slid'))
     expect(key(view, { key: 'Enter', altKey: true })).toBe(true)
-    expect(md(crepe)).toBe('x![[EMB-40]] [[EMB-40]]\n')
+    expect(md(crepe)).toBe('x![[EMB-40|locked]] [[EMB-40]]\n')
     await windows(1)
     expect(fakes.list[0]!.host.ref.path).toBe('/v/Boards/Slides with frames.excalidraw')
   })

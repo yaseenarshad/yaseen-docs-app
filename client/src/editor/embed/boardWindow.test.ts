@@ -325,10 +325,12 @@ describe('the window', () => {
     const { win, onOptions } = mount({ editable: false })
     await settle()
     expect(win.dom.classList.contains('board-window--readonly')).toBe(true)
+    // Locked first (YAZ-2571 round 7); a click unlocks it for this view.
+    expect(wheel(win, { deltaY: 30 }).defaultPrevented).toBe(false)
+    win.dom.querySelector<HTMLButtonElement>('.board-window__lock')!.click()
+    expect(win.dom.classList.contains('board-window--locked')).toBe(false)
     expect(wheel(win, { deltaY: 30 }).defaultPrevented).toBe(true)
     wheel(win, { deltaY: -10, metaKey: true })
-    win.dom.querySelector<HTMLButtonElement>('.board-window__lock')!.click()
-    expect(win.dom.classList.contains('board-window--locked')).toBe(true)
     win.setSelected(true)
     mouse(win.dom.querySelector('[data-handle="se"]')!, 'mousedown', 0, 0)
     mouse(document, 'mousemove', 50, 50)
@@ -336,6 +338,76 @@ describe('the window', () => {
     vi.advanceTimersByTime(2000)
     expect(onOptions).not.toHaveBeenCalled()
     expect(win.dom.style.width).toBe('400px')
+  })
+
+  it('a new embed (`|locked`, no size, YAZ-2571 round 7) starts locked at the column`s width; one click unlocks and writes', async () => {
+    const { win, onOptions } = mount({ options: { width: null, height: null, view: null, locked: true, page: null, rest: [] } })
+    await settle()
+    expect(win.dom.classList.contains('board-window--locked')).toBe(true)
+    expect(win.dom.style.width).toBe('700px')
+    expect(wheel(win, { deltaY: 30 }).defaultPrevented).toBe(false)
+    vi.advanceTimersByTime(2000)
+    expect(onOptions).not.toHaveBeenCalled()
+    win.dom.querySelector<HTMLButtonElement>('.board-window__lock')!.click()
+    expect(win.dom.classList.contains('board-window--locked')).toBe(false)
+    expect(onOptions).toHaveBeenLastCalledWith(expect.objectContaining({ width: 700, locked: false }))
+  })
+
+  it('an old embed with no options stays unlocked (YAZ-2571 round 7), and showing it writes nothing', async () => {
+    const { win, onOptions } = mount({ options: null })
+    await settle()
+    expect(win.dom.classList.contains('board-window--locked')).toBe(false)
+    expect(wheel(win, { deltaY: 30 }).defaultPrevented).toBe(true)
+    const saved = mount({ options: opts() }).win
+    await settle()
+    expect(saved.dom.classList.contains('board-window--locked')).toBe(false)
+    vi.advanceTimersByTime(2000)
+    expect(onOptions).toHaveBeenCalledTimes(1) // the wheel's own view write, nothing for the mount
+  })
+
+  it('read only and Explore (YAZ-2571 round 7): every embed shows locked, whatever the note saved; an unlock is this view`s only, never written', async () => {
+    const { win, onOptions } = mount({ editable: false, options: opts({ locked: false }) })
+    await settle()
+    const lock = win.dom.querySelector<HTMLButtonElement>('.board-window__lock')!
+    expect(win.dom.classList.contains('board-window--locked')).toBe(true)
+    expect(lock.getAttribute('aria-label')).toBe('Unlock view')
+    lock.click()
+    expect(win.dom.classList.contains('board-window--locked')).toBe(false)
+    expect(wheel(win, { deltaY: 30 }).defaultPrevented).toBe(true)
+    // The note's text changes meanwhile (an outside edit): the view keeps its own lock.
+    win.update({ options: opts({ width: 500, locked: true }) })
+    vi.advanceTimersByTime(2000)
+    expect(win.dom.style.width).toBe('500px')
+    expect(win.dom.classList.contains('board-window--locked')).toBe(false)
+    expect(onOptions).not.toHaveBeenCalled()
+  })
+
+  it('a note that turns read only locks its windows; editable again, the saved lock comes back and nothing is written', async () => {
+    const open = mount({ options: opts({ locked: false }) })
+    const shut = mount({ options: opts({ locked: true }) })
+    await settle()
+    for (const { win } of [open, shut]) {
+      win.update({ editable: false })
+      expect(win.dom.classList.contains('board-window--locked')).toBe(true)
+      win.dom.querySelector<HTMLButtonElement>('.board-window__lock')!.click()
+      expect(win.dom.classList.contains('board-window--locked')).toBe(false)
+      win.update({ editable: true })
+    }
+    expect(open.win.dom.classList.contains('board-window--locked')).toBe(false)
+    expect(shut.win.dom.classList.contains('board-window--locked')).toBe(true)
+    vi.advanceTimersByTime(2000)
+    expect(open.onOptions).not.toHaveBeenCalled()
+    expect(shut.onOptions).not.toHaveBeenCalled()
+  })
+
+  it('View full size of a read-only embed is not locked: it is there to look around in', async () => {
+    const { win } = mount({ editable: false })
+    await settle()
+    win.menuRows().find((r) => r.label === 'View full size')!.run()
+    await settle()
+    const inner = document.querySelector<HTMLElement>('.board-window-overlay .board-window--full')!
+    expect(inner.classList.contains('board-window--locked')).toBe(false)
+    inner.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
   })
 
   it('keys while selected: ⌘+ ⌘− ⌘0 Shift+1 act and stop; not selected, ⌘+ stays the note`s; the host owns Escape (item 20)', async () => {

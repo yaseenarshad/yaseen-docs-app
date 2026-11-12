@@ -354,6 +354,13 @@ describe('right-click menu', () => {
     expect(openPath.mock.calls).toEqual([['/Other/Plan.md', 'backgroundTab'], ['/Other/Plan.md', 'thisTab']])
   })
 
+  it('"Show as embed" on a board in another vault: a NEW embed, so its view starts locked (YAZ-2571 round 7)', async () => {
+    const { crepe, root, view } = await mount('[CloudFront](../Other/CloudFront.drawio)\n', { inApp: () => '/Other/CloudFront.drawio', vaultPath: () => '/Other/CloudFront.drawio' })
+    mouse(anchorOf(root), 'contextmenu', { button: 2 })
+    rowNamed(view, 'Show as embed').click()
+    expect(getMarkdownForSave(crepe)).toBe('![CloudFront|locked](../Other/CloudFront.drawio)\n')
+  })
+
   it('a read-only note (YAZ-3076 D2) offers no Edit and no Remove: they would change the note', async () => {
     const { crepe, root, view } = await mount()
     crepe.setReadonly(true)

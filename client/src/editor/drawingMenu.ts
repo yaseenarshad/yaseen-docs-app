@@ -21,6 +21,7 @@
 import type { Ctx } from '@milkdown/kit/ctx'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { clearTextInCurrentBlockCommand } from '@milkdown/kit/preset/commonmark'
+import { newEmbed } from '@shared/embedOptions'
 
 /** How the menu items reach the host's file layer (App/Editor own the root and the notice). */
 export interface DrawingCreator {
@@ -41,8 +42,8 @@ export interface SlashMenuBuilder {
   }
 }
 
-/** The embed a new board leaves in the note (Obsidian's embed syntax): its window (YAZ-4827). */
-export const drawingEmbed = (name: string) => `![[${name}]]`
+/** The embed a new board leaves in the note (Obsidian's embed syntax): its window (YAZ-4827), its view locked (YAZ-2571 round 7). */
+export const drawingEmbed = (name: string) => newEmbed(name)
 
 /** Pencil-on-a-square, drawn to match the stock 24px items (Crepe renders the string as-is). */
 const drawingIcon = `

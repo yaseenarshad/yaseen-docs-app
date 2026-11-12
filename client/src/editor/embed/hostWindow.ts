@@ -30,7 +30,7 @@ export function newWindowSize(bounds: BoardBounds | null, columnWidth: number): 
 
 /** The window's first size: the stored one; a stored width alone (`|300`, A7) or none takes its height from `bounds`. */
 export function firstWindowSize(options: EmbedOptions | null, bounds: BoardBounds | null, columnWidth: number): { width: number; height: number } {
-  if (options !== null && options.height !== null) return { width: options.width, height: options.height }
+  if (options !== null && options.width !== null && options.height !== null) return { width: options.width, height: options.height }
   return newWindowSize(bounds, options?.width ?? columnWidth)
 }
 

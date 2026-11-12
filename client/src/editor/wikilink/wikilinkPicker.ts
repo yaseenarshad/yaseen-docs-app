@@ -56,7 +56,7 @@ import { Plugin, PluginKey, TextSelection, type Command } from '@milkdown/kit/pr
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { SlashProvider } from '@milkdown/kit/plugin/slash'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { isBoardTarget } from '@shared/embedOptions'
+import { isBoardTarget, newEmbed } from '@shared/embedOptions'
 import { boardBaseName, fileKind, isViewOnly } from '@shared/fileKind'
 import { splitLink } from '@shared/linkParts'
 import { basename } from '@shared/types'
@@ -296,8 +296,11 @@ function placeId(view: EditorView | undefined, key: number, page: string, id: st
 function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, session: PickerSession, row: PickerRow, links: WikilinkResolveSource, nav?: WikilinkNav, view?: EditorView, embed = false): boolean {
   if (dispatch) {
     // ⌥Enter on a drawing or a diagram (YAZ-4829 item 8): its embed, a window into it. Typed `![[` is one already.
-    const bang = embed && !row.create && isBoardTarget(row.path ?? row.insert) && state.doc.textBetween(Math.max(0, session.from - 1), session.from) !== '!' ? '!' : ''
-    const text = `${bang}[[${row.insert}]]`
+    // A new embed's view starts locked (YAZ-2571 round 7): ⌥Enter's, and a typed `![[`'s.
+    const board = !row.create && isBoardTarget(row.path ?? row.insert)
+    const typedBang = state.doc.textBetween(Math.max(0, session.from - 1), session.from) === '!'
+    const bang = embed && board && !typedBang ? '!' : ''
+    const text = `${bang}${board && (embed || typedBang) ? newEmbed(row.insert).slice(1) : `[[${row.insert}]]`}`
     const tr = state.tr.insertText(text, session.from, session.to)
     tr.setSelection(TextSelection.create(tr.doc, session.from + text.length))
     const born = row.create && nav !== undefined
