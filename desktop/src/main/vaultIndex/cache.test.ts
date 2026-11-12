@@ -231,6 +231,11 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
+  it('YAZ-4954: a snapshot of version 8 read `[[Covid notes|COVID-19]]` as COVID-19 only → version-mismatch, so the vault is scanned again', async () => {
+    await writeFile(file, JSON.stringify({ version: 8, root: '/vault', records: [record('/vault/a.md', { links: ['COVID-19'] })] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
     await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })
@@ -270,6 +275,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     '',
     'Inline #gamma and #tag/nested here, plus https://example.test/#not-a-tag',
     'Body [[Note One|alias]] then [[Note Two#heading]] then ![[img.png]]',
+    'Words that look like an ID: [[Covid notes|COVID-19]]',
     '`#code and [[in-code]]` stay out',
     '```',
     '#fenced-out and [[fenced-link]]',
@@ -278,7 +284,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 8,
+    cacheVersion: 9,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'links', 'mtime', 'name', 'path', 'properties', 'reviews', 'size', 'tags', 'text', 'title'],
@@ -301,10 +307,11 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       tags: ['alpha', 'beta', 'gamma', 'tag/nested'],
       // `[[Not A Link]]` sits under `aliases`, so it is a NAME, never an outgoing link (GRO-2214).
       // A whole-value link in a folder's block of `in` is a link (D19).
-      links: ['Ref', 'Folder Ref', 'Note One', 'Note Two'],
+      // Words that only LOOK like an ID keep both page sides (YAZ-4954): the resolver picks, where the notes are known.
+      links: ['Ref', 'Folder Ref', 'Note One', 'Note Two', 'Covid notes|COVID-19'],
       embeds: ['img.png'],
       reviews: [{ at: '2026-10-04T14:02:11Z', rating: 'keep', text: '9f3a1c2e' }],
-      text: '3f08025c',
+      text: '002ede68',
     },
   }
 

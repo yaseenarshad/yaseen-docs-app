@@ -4,7 +4,7 @@ import { COMMENTS_KEY } from '@shared/comments'
 import { isDrawing } from '@shared/fileKind'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { splitLink } from '@shared/linkParts'
+import { indexTarget, splitLink } from '@shared/linkParts'
 import { IDS_FILE, NOTE_ID_KEY, canonicalNoteId, idsAnswer, isNoteId } from '@shared/noteId'
 import { titleOf } from '@shared/noteName'
 import { REVIEWS_KEY, reviewEntries, textFingerprint } from '@shared/reviews'
@@ -165,11 +165,16 @@ export function linkTarget(inner: string): string {
   return splitLink(inner).page
 }
 
+/**
+ * What the index keeps of a link (`indexTarget`, YAZ-4954): `linkTarget`, except that words which only LOOK like an ID
+ * (`[[Covid notes|COVID-19]]`) keep both page sides, `Covid notes|COVID-19`. The scan knows no notes; the resolver
+ * picks the side when it reads the record (the left side when it is a page).
+ */
 function bodyWikilinks(body: string, embed: boolean): string[] {
   const out: string[] = []
   for (const m of stripCode(body).matchAll(WIKILINK_RE)) {
     if ((m[1] === '!') !== embed) continue
-    const target = linkTarget(m[2])
+    const target = indexTarget(m[2])
     if (target !== '') out.push(target)
   }
   return out
@@ -187,7 +192,7 @@ export function extractLinks(props: Record<string, unknown>, body: string): stri
     for (const item of Array.isArray(v) ? v : [v]) {
       const m = typeof item === 'string' ? EXACT_WIKILINK_RE.exec(item.trim()) : null
       if (m === null) continue
-      const target = linkTarget(m[1])
+      const target = indexTarget(m[1])
       if (target !== '') out.push(target)
     }
   }

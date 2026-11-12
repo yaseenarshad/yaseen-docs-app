@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { splitLink } from '@shared/linkParts'
+import { indexTarget, splitLink } from '@shared/linkParts'
+import { pickTarget } from '@shared/linkResolver'
 
 const OLD = 'k3m9x2pq7abc'
 
@@ -80,5 +81,42 @@ describe('splitLink: the page on either side of the | (YAZ-4935)', () => {
 
   it('a second | belongs to the words: only the first one splits', () => {
     expect(splitLink('A|B|C')).toMatchObject({ page: 'A', words: 'B|C', pageFirst: true })
+  })
+})
+
+describe('indexTarget: a reader with no list of notes keeps both sides when only the notes can pick (YAZ-4954)', () => {
+  it('the shape picks the right side and the left side is a plain name: both page sides, left|right, no #heading', () => {
+    expect(indexTarget('Covid notes|COVID-19')).toBe('Covid notes|COVID-19')
+    expect(indexTarget('staging|WIKI-116')).toBe('staging|WIKI-116')
+    expect(indexTarget(' Covid notes #Intro | COVID-19#^b ')).toBe('Covid notes|COVID-19')
+  })
+
+  it('every other link keeps the one page the shape gives', () => {
+    expect(indexTarget('COVID-19|Covid notes')).toBe('COVID-19')
+    expect(indexTarget('WIKI-116|staging')).toBe('WIKI-116')
+    expect(indexTarget('|WIKI-116')).toBe('WIKI-116')
+    expect(indexTarget('#Intro|WIKI-116')).toBe('WIKI-116')
+    expect(indexTarget('Postgres|database')).toBe('Postgres')
+    expect(indexTarget('WIKI-116|WIKI-117')).toBe('WIKI-116')
+    expect(indexTarget('Note#Heading')).toBe('Note')
+    expect(indexTarget('EMB-40|640x360 view=120,-40,0.8')).toBe('EMB-40')
+  })
+})
+
+describe('pickTarget: a reader WITH the notes picks the side (YAZ-4954)', () => {
+  const only = (...names: string[]) => (page: string) => names.includes(page)
+  it('both sides kept: the left side wins when it is a page; else the right side', () => {
+    expect(pickTarget('Covid notes|COVID-19', only('Covid notes', 'COVID-19'))).toBe('Covid notes')
+    expect(pickTarget('Covid notes|COVID-19', only('COVID-19'))).toBe('COVID-19')
+    expect(pickTarget('Covid notes|COVID-19', only())).toBe('COVID-19')
+    expect(pickTarget('[[Covid notes|COVID-19]]', only('Covid notes'))).toBe('Covid notes')
+    expect(pickTarget('[[Covid notes#Intro|COVID-19]]', only('Covid notes'))).toBe('Covid notes')
+  })
+
+  it('a target with no | is itself, and the check is not asked', () => {
+    const asked: string[] = []
+    expect(pickTarget('Covid notes', (p) => (asked.push(p), true))).toBe('Covid notes')
+    expect(pickTarget('Note#Heading', (p) => (asked.push(p), true))).toBe('Note#Heading')
+    expect(asked).toEqual([])
   })
 })

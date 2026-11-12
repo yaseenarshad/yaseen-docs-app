@@ -93,13 +93,20 @@ describe('extractLinks / extractEmbeds', () => {
   })
 
   it('YAZ-4935: the page is the one side that is an ID, in either order — so Linked mentions find both', () => {
-    expect(extractLinks({}, '[[WIKI-116|staging]] and [[staging|WIKI-116]]')).toEqual(['WIKI-116'])
-    expect(extractLinks({}, '[[staging|WIKI-116#Intro]] [[WIKI-116#Intro|staging]]')).toEqual(['WIKI-116'])
-    expect(extractLinks({}, '[[the plan|k3m9x2pq7abc]]')).toEqual(['k3m9x2pq7abc'])
+    // Words first keeps both sides (YAZ-4954): the resolver picks the right side when the left side is no page.
+    expect(extractLinks({}, '[[WIKI-116|staging]] and [[staging|WIKI-116]]')).toEqual(['WIKI-116', 'staging|WIKI-116'])
+    expect(extractLinks({}, '[[staging|WIKI-116#Intro]] [[WIKI-116#Intro|staging]]')).toEqual(['staging|WIKI-116', 'WIKI-116'])
+    expect(extractLinks({}, '[[the plan|k3m9x2pq7abc]]')).toEqual(['the plan|k3m9x2pq7abc'])
     expect(extractLinks({}, '[[|WIKI-116]]')).toEqual(['WIKI-116'])
     expect(extractLinks({}, '[[Postgres|database]] [[WIKI-116|WIKI-117]]')).toEqual(['Postgres', 'WIKI-116'])
-    expect(extractLinks({ related: '[[staging|WIKI-116]]' }, '')).toEqual(['WIKI-116'])
+    expect(extractLinks({ related: '[[staging|WIKI-116]]' }, '')).toEqual(['staging|WIKI-116'])
     expect(extractEmbeds('![[EMB-40|640x360 view=120,-40,0.8]]')).toEqual(['EMB-40'])
+  })
+
+  it('YAZ-4954: words that LOOK like an ID keep both sides, in the body, the frontmatter and embeds; the other order keeps one', () => {
+    expect(extractLinks({}, '[[Covid notes|COVID-19]] and [[COVID-19|Covid notes]]')).toEqual(['Covid notes|COVID-19', 'COVID-19'])
+    expect(extractLinks({ related: '[[Covid notes|COVID-19]]', list: ['[[Covid notes#Intro|COVID-19]]'] }, '')).toEqual(['Covid notes|COVID-19'])
+    expect(extractEmbeds('![[Covid notes|COVID-19]]')).toEqual(['Covid notes|COVID-19'])
   })
 
   it('embeds are not links and vice versa', () => {

@@ -4,7 +4,7 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import type { TreeNode } from '@shared/types'
 import { buildViewOnlyCatalog } from './viewOnlyCatalog'
 import { maskCode, rewriteBodyLinks, rewriteInner, rewriteNoteLinks } from '@shared/linkRewrite'
-import { countLinkReferences, renamedTarget, renameNotice, updateLinksAfterRename } from './renameLinks'
+import { countLinkReferences, linkedBasenames, renamedTarget, renameNotice, updateLinksAfterRename } from './renameLinks'
 
 const resolvesB = (t: string) => t.replace(/\.(md|markdown)$/i, '').replace(/^.*\//, '').toLowerCase() === 'b'
 const toC = (t: string) => renamedTarget(t, { newName: 'C.md', newRel: 'Sub/C.md' })
@@ -307,6 +307,17 @@ describe('updateLinksAfterRename', () => {
     const folders = [{ ...rec('/v/Team/.folder.md', { links: ['B'] }), folder: 'Team' }]
     expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records, folders })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/Team/.folder.md'].content).toBe(page.replace('[[B]]', '[[C]]'))
+  })
+
+  it('YAZ-4954: the index keeps both sides of `[[Covid notes|COVID-19]]`; renaming "Covid notes" finds and rewrites the link', async () => {
+    const files = { '/v/A.md': { content: 'See [[Covid notes|COVID-19]].\n', mtime: 10 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { links: ['Covid notes|COVID-19'] }), rec('/v/Covid notes.md'), rec('/v/COVID-19.md')]
+    expect([...linkedBasenames(records)].sort()).toEqual(['covid notes', 'covid-19'])
+    const move = { ids: true, root, oldPath: '/v/Covid notes.md', newPath: '/v/Covid 2020.md', records }
+    expect(await countLinkReferences(move)).toBe(1)
+    expect(await updateLinksAfterRename(move)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('See [[Covid 2020|COVID-19]].\n')
   })
 
   it('a CONFLICT re-reads once and retries; a second conflict skips the file', async () => {

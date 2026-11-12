@@ -229,9 +229,13 @@ export interface IndexRecord {
   aliases: string[]
   /** Frontmatter `tags`/`tag` + inline `#tags`; no leading '#'; nested 'a/b' kept; de-duplicated, order of first appearance. */
   tags: string[]
-  /** `[[target]]` targets (`|alias` and `#heading` stripped) from body + frontmatter string values; embeds excluded. */
+  /**
+   * `[[target]]` targets (`|alias` and `#heading` stripped) from body + frontmatter string values; embeds excluded.
+   * Words that only LOOK like an ID keep both page sides, `Covid notes|COVID-19` (`indexTarget`, YAZ-4954): the
+   * resolver picks (the left side when it is a page), so a reader passes each target to a resolver, never compares text.
+   */
   links: string[]
-  /** `![[target]]` targets. */
+  /** `![[target]]` targets, kept as `links` keeps them. */
   embeds: string[]
   /** The note's review log (`shared/reviews.ts`, YAZ-2322), `at` ascending; absent when never reviewed. When it is next due is computed, never stored. */
   reviews?: ReviewEntry[]

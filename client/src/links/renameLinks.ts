@@ -107,7 +107,14 @@ function makeReferences(resolves: ResolvesToOld): (record: IndexRecord) => boole
  */
 export function linkedBasenames(records: readonly IndexRecord[]): Set<string> {
   const named = new Set<string>()
-  for (const record of records) for (const target of referenceTargets(record)) named.add(targetBasename(target))
+  for (const record of records) {
+    for (const target of referenceTargets(record)) {
+      named.add(targetBasename(target))
+      // A target that keeps both sides (`Covid notes|COVID-19`, YAZ-4954) can name either note: both basenames count.
+      const pipe = target.indexOf('|')
+      if (pipe > 0) named.add(targetBasename(target.slice(0, pipe)))
+    }
+  }
   return named
 }
 

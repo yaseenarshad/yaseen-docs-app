@@ -10,10 +10,12 @@ describe('fromYaml', () => {
   it('detects wiki links', () => {
     expect(fromYaml('[[Foo]]')).toEqual(new LinkValue('Foo'))
     expect(fromYaml('[[Foo|Display]]')).toEqual(new LinkValue('Foo', 'Display'))
-    // YAZ-4935: the page on either side of the `|`; the one side that is an ID is the target. Written back page first.
-    expect(fromYaml('[[staging|WIKI-116]]')).toEqual(new LinkValue('WIKI-116', 'staging'))
-    expect(fromYaml('[[staging|WIKI-116#Intro]]')).toEqual(new LinkValue('WIKI-116#Intro', 'staging'))
-    expect(render(fromYaml('[[staging|WIKI-116]]'))).toBe('[[WIKI-116|staging]]')
+    // YAZ-4935: the page on either side of the `|`. Words first keeps the text whole (YAZ-4954): only the notes can
+    // tell whether "staging" is a page, so the resolver picks; written back, the link is its text as written.
+    expect(fromYaml('[[staging|WIKI-116]]')).toEqual(new LinkValue('staging|WIKI-116'))
+    expect(fromYaml('[[staging|WIKI-116#Intro]]')).toEqual(new LinkValue('staging|WIKI-116#Intro'))
+    expect(render(fromYaml('[[staging|WIKI-116]]'))).toBe('[[staging|WIKI-116]]')
+    expect(fromYaml('[[|WIKI-116]]')).toBe('[[|WIKI-116]]')
     expect(fromYaml('[[Foo')).toBe('[[Foo')
     expect(fromYaml('see [[Foo]]')).toBe('see [[Foo]]')
   })
@@ -120,5 +122,35 @@ describe('isTruthy', () => {
     for (const v of [true, 1, -1, 'a', [0], {}, new DateValue(0, false), new DurationValue(0), new LinkValue('x')]) {
       expect(isTruthy(v)).toBe(true)
     }
+  })
+})
+
+/**
+ * YAZ-4954: `fromYaml` knows no notes, so a link whose right side only LOOKS like an ID keeps both sides; the resolver
+ * picks where the notes are known (the left side when it is a page, YAZ-4935). The stored text stays as written.
+ */
+describe('fromYaml: words that only look like an ID (YAZ-4954)', () => {
+  const file = (title: string) => new FileValue({ ...rec, path: `/vault/${title}.md`, name: `${title}.md`, basename: title, title })
+  const over = (...titles: string[]) => (t: string) => {
+    const page = t.split('|')[0]
+    return titles.includes(page) ? file(page) : null
+  }
+
+  it('keeps both sides as written; the other order and two plain words split as before', () => {
+    expect(fromYaml('[[Covid notes|COVID-19]]')).toEqual(new LinkValue('Covid notes|COVID-19'))
+    expect(fromYaml('[[Covid notes#Intro|COVID-19]]')).toEqual(new LinkValue('Covid notes#Intro|COVID-19'))
+    expect(fromYaml('[[COVID-19|Covid notes]]')).toEqual(new LinkValue('COVID-19', 'Covid notes'))
+    expect(fromYaml('[[Postgres|database]]')).toEqual(new LinkValue('Postgres', 'database'))
+  })
+
+  it('the stored form is the text as written; a reader with the notes shows the words of the side it picks', () => {
+    const v = fromYaml('[[Covid notes|COVID-19]]') as LinkValue
+    expect(render(v)).toBe('[[Covid notes|COVID-19]]')
+    expect(linkText(v)).toBe('Covid notes|COVID-19')
+    // The left side is a page: it is the page, and the words are COVID-19.
+    expect(linkText(v, over('Covid notes', 'COVID-19'))).toBe('COVID-19')
+    // Only the ID side is a page: it is the page, and the words are "Covid notes".
+    expect(linkText(v, (t) => (t === 'COVID-19' ? file('COVID-19') : null))).toBe('Covid notes')
+    expect(render(v, over('Covid notes'))).toBe('[[Covid notes|COVID-19]]')
   })
 })

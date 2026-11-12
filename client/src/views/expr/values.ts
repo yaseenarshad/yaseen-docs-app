@@ -1,5 +1,5 @@
 import { isNoteId } from '@shared/noteId'
-import { splitLink } from '@shared/linkParts'
+import { splitLink, undecided } from '@shared/linkParts'
 import { LINK_VALUE_RE as WIKI_LINK, stripBrackets } from '@shared/linkResolver'
 import { parseIsoDate, renderDate, renderDuration } from './dates'
 
@@ -35,6 +35,8 @@ export class LinkValue {
  */
 export function linkText(link: LinkValue, resolve?: Resolver): string {
   if (link.display !== undefined || resolve === undefined) return link.display ?? link.target
+  // Both sides kept (YAZ-4954): the words are the side the resolver does not pick.
+  if (link.target.includes('|')) return splitLink(link.target, page => resolve(page) !== null).words ?? link.target
   // The id is the part before any `#heading`, which rides along as it does on a name.
   const id = link.target.split('#', 1)[0]
   const title = isNoteId(id) ? resolve(id)?.record.title : undefined
@@ -127,7 +129,11 @@ export function isEmpty(v: Value): boolean {
   return typeOf(v) === 'object' && Object.keys(v).length === 0
 }
 
-const normTarget = (t: string) => stripBrackets(t).replace(/\.md$/i, '').replace(/^\/+|\/+$/g, '').toLowerCase()
+/** A target as text; both sides kept (`Covid notes|COVID-19`, YAZ-4954) read as the shape reads them, the page no note answered. */
+const normTarget = (t: string) => {
+  const bare = stripBrackets(t)
+  return (bare.includes('|') ? splitLink(bare).page : bare).replace(/\.md$/i, '').replace(/^\/+|\/+$/g, '').toLowerCase()
+}
 const lastSegment = (t: string) => t.slice(t.lastIndexOf('/') + 1)
 
 /** Two link targets match when equal after normalisation, or one is the bare basename of the other. */
@@ -191,13 +197,19 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> => {
   return proto === Object.prototype || proto === null
 }
 
-/** Raw frontmatter → Value: `[[x|d]]` strings become links (the page on either side, `splitLink`, YAZ-4935), ISO-ish strings and JS Dates become dates. */
+/**
+ * Raw frontmatter → Value: `[[x|d]]` strings become links (the page on either side, `splitLink`, YAZ-4935), ISO-ish
+ * strings and JS Dates become dates. Words that only LOOK like an ID (`[[Covid notes|COVID-19]]`, `undecided`) keep the
+ * link's text whole as the target, with no words: this knows no notes, so the resolver picks the page (the left side
+ * when it is one) and `linkText` the words (YAZ-4954). Written back, such a link is its text as written.
+ */
 export function fromYaml(v: unknown): Value {
   if (v === null || v === undefined) return null
   if (typeof v === 'string') {
     if (WIKI_LINK.test(v)) {
-      const { head, words } = splitLink(v.slice(2, -2))
-      return new LinkValue(head, words ?? undefined)
+      const inner = v.slice(2, -2)
+      const parts = splitLink(inner)
+      return undecided(parts) ? new LinkValue(inner) : new LinkValue(parts.head, parts.words ?? undefined)
     }
     const d = parseIsoDate(v)
     return d ? new DateValue(d.ms, d.hasTime) : v
@@ -230,7 +242,8 @@ export function render(v: Value, resolve?: Resolver): string {
   if (Array.isArray(v)) return v.map(x => render(x, resolve)).join(', ')
   if (v instanceof DateValue) return renderDate(v.ms, v.hasTime)
   if (v instanceof DurationValue) return renderDuration(v.ms)
-  if (v instanceof LinkValue) return v.display === undefined ? `[[${linkText(v, resolve)}]]` : `[[${v.target}|${v.display}]]`
+  // Both sides kept (YAZ-4954): the link as written, whoever reads it.
+  if (v instanceof LinkValue) return v.display === undefined ? `[[${v.target.includes('|') ? v.target : linkText(v, resolve)}]]` : `[[${v.target}|${v.display}]]`
   if (v instanceof FileValue) return `[[${v.record.title}]]`
   if (v instanceof RegexValue) return String(v.re)
   if (v instanceof ErrorValue) return `#ERROR: ${v.message}`

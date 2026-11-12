@@ -911,6 +911,43 @@ describe('targetBasename (YAZ-2241)', () => {
   })
 })
 
+describe('views: words that only LOOK like an ID (YAZ-4954)', () => {
+  const rec = (name: string, properties: Record<string, unknown> = {}, links: string[] = []) =>
+    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, name: `${name}.md`, basename: name, title: name, folder: '', properties, links }) as IndexRecord
+  const COVID = rec('Covid notes')
+  const ID_NOTE = rec('COVID-19')
+  // As the index reads them (`scan.test.ts`): the words-first link keeps both sides, the ID-first one its ID.
+  const A = rec('A', { related: '[[Covid notes|COVID-19]]' }, ['Covid notes|COVID-19'])
+  const B = rec('B', { related: '[[COVID-19|Covid notes]]' }, ['COVID-19'])
+  const view = (records: IndexRecord[], filters?: string) =>
+    runView({ views: [], formulas: { page: 'related.asFile().name' } }, { type: 'table', name: 'T', order: ['formula.page'], sort: [{ property: 'file.basename', direction: 'ASC' }], ...(filters && { filters }) }, records, { resolve: resolverFor(records, '/vault') })
+
+  it('a frontmatter value: the left side is the page when it is a note; the other order names the ID', () => {
+    const r = view([A, B, COVID, ID_NOTE], 'file.basename == "A" || file.basename == "B"')
+    expect(r.rows.map(x => [x.record.basename, x.values['formula.page']])).toEqual([['A', 'Covid notes'], ['B', 'COVID-19']])
+  })
+
+  it('only one side is a note: that side', () => {
+    expect(view([A, ID_NOTE], 'file.basename == "A"').rows[0].values['formula.page']).toBe('COVID-19')
+    expect(view([A, COVID], 'file.basename == "A"').rows[0].values['formula.page']).toBe('Covid notes')
+  })
+
+  it('file.hasLink and a property compare pick the same page', () => {
+    const all = [A, B, COVID, ID_NOTE]
+    expect(view(all, 'file.hasLink("Covid notes")').rows.map(x => x.record.basename)).toEqual(['A'])
+    expect(view(all, 'file.hasLink("COVID-19")').rows.map(x => x.record.basename)).toEqual(['B'])
+    expect(view(all, 'related == link("Covid notes")').rows.map(x => x.record.basename)).toEqual(['A'])
+  })
+
+  it('the resolver reads a kept pair and a whole link by the same rule', () => {
+    const resolve = makeResolver([A, COVID, ID_NOTE].map(r => new FileValue(r)), '/vault')
+    expect(resolve('Covid notes|COVID-19')?.record.title).toBe('Covid notes')
+    expect(resolve('[[Covid notes|COVID-19]]')?.record.title).toBe('Covid notes')
+    expect(resolve('COVID-19|Covid notes')?.record.title).toBe('COVID-19')
+    expect(makeResolver([ID_NOTE].map(r => new FileValue(r)))('Covid notes|COVID-19')?.record.title).toBe('COVID-19')
+  })
+})
+
 describe('makeResolver (GRO-2132)', () => {
   const files = TEST_RECORDS.map(r => new FileValue(r))
   const resolve = makeResolver(files, '/vault')

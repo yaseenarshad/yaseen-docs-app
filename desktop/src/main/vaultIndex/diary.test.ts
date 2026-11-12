@@ -46,6 +46,10 @@ describe('namedIds: each ID a note names', () => {
     expect(namedIds(r).sort()).toEqual(['YAZ-12', 'YAZ-3', 'YAZ-4', 'YAZ-7', 'YAZ-9'])
     expect(namedIds(record('b.md', { links: ['Just a name'] }))).toEqual([])
   })
+
+  it('YAZ-4954: a link that keeps both sides (`staging|YAZ-12`) still names its ID, as before', () => {
+    expect(namedIds(record('c.md', { links: ['staging|YAZ-12'], embeds: ['Covid notes|yaz-19'] })).sort()).toEqual(['YAZ-12', 'YAZ-19'])
+  })
 })
 
 describe('the diary of links (R27)', () => {

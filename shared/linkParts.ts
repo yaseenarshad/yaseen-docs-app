@@ -10,6 +10,10 @@
  * the left side names a found page, the left side wins; the right side is the page only when the left does not resolve
  * (YAZ-4935, round 2). `isPage` is asked only when the shape alone would pick the right side. Without it, the shape decides.
  *
+ * A reader that knows NO notes (the index scan, the views' `fromYaml`) cannot pick for such a link, so it keeps both
+ * sides (`indexTarget`: `Covid notes|COVID-19`), and the resolver picks by the rule when it reads them (`pickTarget` in
+ * `linkResolver.ts`, YAZ-4954). Linked mentions, the views and the editor then agree.
+ *
  * Every reader of a `[[…]]` splits here: the index (`vaultIndex/scan.ts`), the rename rewrite (`linkRewrite.ts`), the
  * resolver's key (`linkResolver.ts`), and the editor's pill, menu, read-only links and picker (`client/src/editor/wikilink/`).
  * An embed's options (`embedOptions.ts`, `![[x.drawio|640x360 view=…]]`) never look like an ID, so an embed reads as before.
@@ -46,4 +50,21 @@ export function splitLink(inner: string, isPage?: (page: string) => boolean): Li
   const r = sideOf(right)
   const pageFirst = isNoteId(l.page) || !isNoteId(r.page) || (isPage !== undefined && l.page !== '' && isPage(l.page))
   return pageFirst ? { ...l, head: left, words: right, pipe, pageFirst } : { ...r, head: right, words: left, pipe, pageFirst }
+}
+
+/**
+ * Only the shape picked the right side, and the left side names a page too (`Covid notes|COVID-19`): which side is the
+ * page depends on the vault's notes (YAZ-4954). For parts split without `isPage`. False when the left side is empty or
+ * an ID, or the shape kept the left side.
+ */
+export const undecided = (parts: LinkParts): boolean => !parts.pageFirst && parts.words !== null && sideOf(parts.words).page !== ''
+
+/**
+ * The target the index keeps for the text inside `[[…]]` (YAZ-4954): the page, without its `#…`. When the link is
+ * `undecided`, BOTH page sides as `left|right` (`Covid notes|COVID-19`): the scan knows no notes, so the resolver picks
+ * when it reads the target. `splitLink` reads that pair as it reads the link, so every reader of the pair agrees.
+ */
+export function indexTarget(inner: string): string {
+  const parts = splitLink(inner)
+  return undecided(parts) ? `${sideOf(parts.words ?? '').page}|${parts.page}` : parts.page
 }
