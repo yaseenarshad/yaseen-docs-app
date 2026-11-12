@@ -236,6 +236,11 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
+  it('YAZ-4954 part 2: a snapshot of version 9 read `![[photo.png|FIG-1]]` as both sides → version-mismatch', async () => {
+    await writeFile(file, JSON.stringify({ version: 9, root: '/vault', records: [record('/vault/a.md', { embeds: ['photo.png|FIG-1'] })] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
     await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })
@@ -276,6 +281,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     'Inline #gamma and #tag/nested here, plus https://example.test/#not-a-tag',
     'Body [[Note One|alias]] then [[Note Two#heading]] then ![[img.png]]',
     'Words that look like an ID: [[Covid notes|COVID-19]]',
+    'A file is the page: ![[photo.png|FIG-1]] and [[FIG-2|chart.pdf]]',
     '`#code and [[in-code]]` stay out',
     '```',
     '#fenced-out and [[fenced-link]]',
@@ -284,7 +290,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 9,
+    cacheVersion: 10,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'links', 'mtime', 'name', 'path', 'properties', 'reviews', 'size', 'tags', 'text', 'title'],
@@ -308,10 +314,11 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       // `[[Not A Link]]` sits under `aliases`, so it is a NAME, never an outgoing link (GRO-2214).
       // A whole-value link in a folder's block of `in` is a link (D19).
       // Words that only LOOK like an ID keep both page sides (YAZ-4954): the resolver picks, where the notes are known.
-      links: ['Ref', 'Folder Ref', 'Note One', 'Note Two', 'Covid notes|COVID-19'],
-      embeds: ['img.png'],
+      // A file is always the page, whatever its words look like (YAZ-4954 part 2).
+      links: ['Ref', 'Folder Ref', 'Note One', 'Note Two', 'Covid notes|COVID-19', 'chart.pdf'],
+      embeds: ['img.png', 'photo.png'],
       reviews: [{ at: '2026-10-04T14:02:11Z', rating: 'keep', text: '9f3a1c2e' }],
-      text: '002ede68',
+      text: '426b3d31',
     },
   }
 

@@ -120,3 +120,46 @@ describe('pickTarget: a reader WITH the notes picks the side (YAZ-4954)', () => 
     expect(asked).toEqual([])
   })
 })
+
+describe('a file name is always the page; an ID shape never beats it (YAZ-4954 part 2)', () => {
+  it('a picture, a PDF or a board on the left: its words stay words, even when they look like an ID', () => {
+    expect(splitLink('photo.png|FIG-1')).toMatchObject({ page: 'photo.png', words: 'FIG-1', pageFirst: true })
+    for (const file of ['a.jpg', 'a.jpeg', 'a.gif', 'a.webp', 'a.svg', 'a.avif', 'a.bmp', 'a.pdf', 'a.excalidraw', 'a.drawio', 'assets/Shot.PNG']) {
+      expect(splitLink(`${file}|FIG-1`).page).toBe(file)
+    }
+    expect(splitLink('doc.pdf#page=3|FIG-1')).toMatchObject({ page: 'doc.pdf', hash: '#page=3', words: 'FIG-1', pageFirst: true })
+  })
+
+  it('a file on the right of an ID: the file is the page', () => {
+    expect(splitLink('FIG-1|photo.png')).toMatchObject({ page: 'photo.png', words: 'FIG-1', pageFirst: false })
+    expect(splitLink(`${OLD}|x.drawio`)).toMatchObject({ page: 'x.drawio', words: OLD, pageFirst: false })
+  })
+
+  it('the notes are not asked: a file needs no check', () => {
+    const asked: string[] = []
+    const all = (p: string) => (asked.push(p), true)
+    expect(splitLink('photo.png|FIG-1', all).page).toBe('photo.png')
+    expect(splitLink('FIG-1|photo.png', all).page).toBe('photo.png')
+    expect(asked).toEqual([])
+  })
+
+  it('every other link reads as before: a note name and a file, a .md name, a code file name, two files', () => {
+    expect(splitLink('Covid notes|photo.png')).toMatchObject({ page: 'Covid notes', pageFirst: true })
+    expect(splitLink('notes.md|FIG-1')).toMatchObject({ page: 'FIG-1', pageFirst: false })
+    expect(splitLink('notes.md|FIG-1', (p) => p === 'notes.md')).toMatchObject({ page: 'notes.md', pageFirst: true })
+    expect(splitLink('Node.js|FIG-1')).toMatchObject({ page: 'FIG-1', pageFirst: false })
+    expect(splitLink('a.png|b.png')).toMatchObject({ page: 'a.png', pageFirst: true })
+  })
+
+  it("a board embed's options stay options (YAZ-4942)", () => {
+    expect(splitLink('x.drawio|locked')).toMatchObject({ page: 'x.drawio', words: 'locked', pageFirst: true })
+    expect(splitLink('x.drawio|700x394 locked')).toMatchObject({ page: 'x.drawio', words: '700x394 locked', pageFirst: true })
+    expect(splitLink('x.excalidraw|My name|640x360 view=1,2,0.5')).toMatchObject({ page: 'x.excalidraw', words: 'My name|640x360 view=1,2,0.5' })
+  })
+
+  it('the index keeps the one file, never both sides', () => {
+    expect(indexTarget('photo.png|FIG-1')).toBe('photo.png')
+    expect(indexTarget('FIG-1|photo.png')).toBe('photo.png')
+    expect(indexTarget('assets/x.drawio#p|EMB-4')).toBe('assets/x.drawio')
+  })
+})

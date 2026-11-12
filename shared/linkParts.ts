@@ -17,8 +17,13 @@
  * Every reader of a `[[…]]` splits here: the index (`vaultIndex/scan.ts`), the rename rewrite (`linkRewrite.ts`), the
  * resolver's key (`linkResolver.ts`), and the editor's pill, menu, read-only links and picker (`client/src/editor/wikilink/`).
  * An embed's options (`embedOptions.ts`, `![[x.drawio|640x360 view=…]]`) never look like an ID, so an embed reads as before.
+ *
+ * A FILE is always the page (`isFileName`: a picture, a PDF, a board; YAZ-4954 part 2): an ID shape never beats it, on
+ * either side. `![[photo.png|FIG-1]]` and `[[FIG-1|photo.png]]` both name `photo.png`, and the notes are not asked.
+ * A plain name and a file (`[[Covid notes|photo.png]]`) read as any two plain names do: the left side.
  */
 import { isNoteId } from './noteId'
+import { DIAGRAM_EXTENSIONS, DRAWING_VIEW_EXTENSIONS, IMAGE_EXTENSIONS, PDF_EXTENSIONS } from './types'
 
 export interface LinkParts {
   /** The page the link names: its side without `#…`, trimmed. '' for the same-file `[[#h]]` and for `[[|x]]`. */
@@ -40,7 +45,16 @@ const sideOf = (text: string): { page: string; hash: string } => {
   return hash < 0 ? { page: text.trim(), hash: '' } : { page: text.slice(0, hash).trim(), hash: text.slice(hash) }
 }
 
-/** The parts of the text inside `[[…]]`. One `indexOf`, and the ID test on each side only when there is a `|`. */
+/** The extensions of the files the app embeds, without the dot: no `.md`, and no code or text kind ("Node.js" is a name). */
+const FILE_EXTENSIONS: ReadonlySet<string> = new Set([...IMAGE_EXTENSIONS, ...[...PDF_EXTENSIONS, ...DRAWING_VIEW_EXTENSIONS, ...DIAGRAM_EXTENSIONS].map((ext) => ext.slice(1))])
+
+/** A page side that names a file the app embeds by its extension, any case (`photo.png`, `assets/x.DRAWIO`): never words. */
+export function isFileName(page: string): boolean {
+  const dot = page.lastIndexOf('.')
+  return dot > page.lastIndexOf('/') + 1 && FILE_EXTENSIONS.has(page.slice(dot + 1).toLowerCase())
+}
+
+/** The parts of the text inside `[[…]]`. One `indexOf`, and the ID and file tests on each side only when there is a `|`. */
 export function splitLink(inner: string, isPage?: (page: string) => boolean): LinkParts {
   const pipe = inner.indexOf('|')
   if (pipe < 0) return { ...sideOf(inner), head: inner, words: null, pipe, pageFirst: true }
@@ -48,16 +62,19 @@ export function splitLink(inner: string, isPage?: (page: string) => boolean): Li
   const right = inner.slice(pipe + 1)
   const l = sideOf(left)
   const r = sideOf(right)
-  const pageFirst = isNoteId(l.page) || !isNoteId(r.page) || (isPage !== undefined && l.page !== '' && isPage(l.page))
+  // A file on the left is always the page; a file on the right is the page when the left is an ID (a name stays left).
+  const pageFirst = isFileName(r.page)
+    ? !isNoteId(l.page)
+    : isFileName(l.page) || isNoteId(l.page) || !isNoteId(r.page) || (isPage !== undefined && l.page !== '' && isPage(l.page))
   return pageFirst ? { ...l, head: left, words: right, pipe, pageFirst } : { ...r, head: right, words: left, pipe, pageFirst }
 }
 
 /**
  * Only the shape picked the right side, and the left side names a page too (`Covid notes|COVID-19`): which side is the
  * page depends on the vault's notes (YAZ-4954). For parts split without `isPage`. False when the left side is empty or
- * an ID, or the shape kept the left side.
+ * an ID, the shape kept the left side, or the right side is a file (`isFileName`), which is always the page.
  */
-export const undecided = (parts: LinkParts): boolean => !parts.pageFirst && parts.words !== null && sideOf(parts.words).page !== ''
+export const undecided = (parts: LinkParts): boolean => !parts.pageFirst && parts.words !== null && sideOf(parts.words).page !== '' && !isFileName(parts.page)
 
 /**
  * The target the index keeps for the text inside `[[…]]` (YAZ-4954): the page, without its `#…`. When the link is

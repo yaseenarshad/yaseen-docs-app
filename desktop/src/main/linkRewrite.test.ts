@@ -1,7 +1,7 @@
 // The ONE rewrite of an ID to a new ID in a file's text (YAZ-2677 D5, D6, D7): a clash fix, a change
 // of the vault's letters and the backfill of old IDs all go through `rewriteIds`.
 import { describe, expect, it } from 'vitest'
-import { rewriteIds } from '@shared/linkRewrite'
+import { exactLinkTarget, rewriteIds } from '@shared/linkRewrite'
 
 const ONE = new Map([['YAZ-1', 'YAZ-9']])
 
@@ -99,5 +99,34 @@ describe('rewriteIds: an ID becomes its new ID wherever a file names it', () => 
 
   it('an ID that maps to itself is no change', () => {
     expect(rewriteIds('[[YAZ-1]]\n', new Map([['YAZ-1', 'YAZ-1']]))).toEqual({ content: '[[YAZ-1]]\n', changed: 0 })
+  })
+})
+
+describe('exactLinkTarget: a settings link leaf follows the rule of YAZ-4935 (YAZ-4954 part 2)', () => {
+  const only = (...names: string[]) => (page: string) => names.includes(page)
+
+  it('with the notes known: the left side wins when it is a page, in both orders', () => {
+    expect(exactLinkTarget('[[Covid notes|COVID-19]]', only('Covid notes', 'COVID-19'))).toBe('Covid notes')
+    expect(exactLinkTarget('[[Covid notes|COVID-19]]', only('COVID-19'))).toBe('COVID-19')
+    expect(exactLinkTarget('[[COVID-19|Covid notes]]', only('Covid notes', 'COVID-19'))).toBe('COVID-19')
+    expect(exactLinkTarget(' [[Covid notes#Intro|COVID-19]] ', only('Covid notes'))).toBe('Covid notes')
+  })
+
+  it('with no notes: it keeps both sides when only the notes can pick, as the index does', () => {
+    expect(exactLinkTarget('[[Covid notes|COVID-19]]')).toBe('Covid notes|COVID-19')
+    expect(exactLinkTarget('[[COVID-19|Covid notes]]')).toBe('COVID-19')
+    expect(exactLinkTarget('[[staging|WIKI-116]]')).toBe('staging|WIKI-116')
+    expect(exactLinkTarget('[[Postgres|database]]')).toBe('Postgres')
+    expect(exactLinkTarget('[[|WIKI-116]]')).toBe('WIKI-116')
+  })
+
+  it('a file is the page in both orders, with or without the notes', () => {
+    expect(exactLinkTarget('[[photo.png|FIG-1]]')).toBe('photo.png')
+    expect(exactLinkTarget('[[FIG-1|photo.png]]', only('FIG-1'))).toBe('photo.png')
+  })
+
+  it('no exact link, or an empty page: null', () => {
+    expect(exactLinkTarget('Covid notes')).toBeNull()
+    expect(exactLinkTarget('[[#Intro]]')).toBeNull()
   })
 })

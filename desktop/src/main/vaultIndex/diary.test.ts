@@ -49,6 +49,9 @@ describe('namedIds: each ID a note names', () => {
 
   it('YAZ-4954: a link that keeps both sides (`staging|YAZ-12`) still names its ID, as before', () => {
     expect(namedIds(record('c.md', { links: ['staging|YAZ-12'], embeds: ['Covid notes|yaz-19'] })).sort()).toEqual(['YAZ-12', 'YAZ-19'])
+    // A link place of a folder's settings (part 2: `exactLinkTarget` keeps both sides too).
+    const settings = { folder_settings: { columns: { owner: { kind: 'link', target: '[[staging|YAZ-21]]' } }, views: [{ type: 'table', order: ['[[photo.png|YAZ-22]]'] }] } }
+    expect(namedIds(record('d.md', { properties: settings }))).toEqual(['YAZ-21'])
   })
 })
 

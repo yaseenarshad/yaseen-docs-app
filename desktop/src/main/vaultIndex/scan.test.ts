@@ -109,6 +109,11 @@ describe('extractLinks / extractEmbeds', () => {
     expect(extractEmbeds('![[Covid notes|COVID-19]]')).toEqual(['Covid notes|COVID-19'])
   })
 
+  it('YAZ-4954 part 2: an embed of a file keeps the file when its words look like an ID', () => {
+    expect(extractEmbeds('![[photo.png|FIG-1]] ![[FIG-2|chart.pdf]] ![[x.drawio|700x394 locked]]')).toEqual(['photo.png', 'chart.pdf', 'x.drawio'])
+    expect(extractLinks({ cover: '[[photo.png|FIG-1]]' }, '[[photo.png|FIG-1]] [[FIG-1|photo.png]]')).toEqual(['photo.png'])
+  })
+
   it('embeds are not links and vice versa', () => {
     const body = '![[img.png]] [[Note]] ![[Other#sec|x]]'
     expect(extractLinks({}, body)).toEqual(['Note'])

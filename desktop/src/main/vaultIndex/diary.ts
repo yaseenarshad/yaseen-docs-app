@@ -132,7 +132,10 @@ export function namedIds(record: IndexRecord): string[] {
   record.links.forEach(kept)
   record.embeds.forEach(kept)
   alsoIn(record.properties).forEach(take)
-  for (const link of folderSettingsLinks(record.properties)) take(exactLinkTarget(link))
+  for (const link of folderSettingsLinks(record.properties)) {
+    const target = exactLinkTarget(link)
+    if (target !== null) kept(target)
+  }
   return [...ids]
 }
 

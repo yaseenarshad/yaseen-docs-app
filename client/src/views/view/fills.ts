@@ -30,7 +30,7 @@ export type FillIndex = ReadonlyMap<string, ReadonlyMap<string, string>>
 
 /** The note a fill's link names, or null when the link resolves to none. */
 const noteOf = (note: string, resolveLink: ResolveLink): string | null => {
-  const target = exactLinkTarget(note)
+  const target = exactLinkTarget(note, (page) => resolveLink(page) !== null)
   return target === null ? null : resolveLink(target)
 }
 

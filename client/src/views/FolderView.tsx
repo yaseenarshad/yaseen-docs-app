@@ -344,7 +344,7 @@ export function FolderView({
     if (!trayOn || resolve === null || otherLinks === undefined) return out
     const here = new Set(rows.map((row) => row.path))
     for (const link of otherLinks) {
-      const target = exactLinkTarget(link)
+      const target = exactLinkTarget(link, (page) => resolve(page) !== null)
       const path = target === null ? null : resolve(target)
       if (path !== null && here.has(path) && !out.has(path)) out.set(path, link)
     }
@@ -386,7 +386,7 @@ export function FolderView({
     if (!trayOn || resolve === null || otherLinks === undefined) return out
     const names = new Map(subfolders.map((row) => [rowPage(row.path), row.title]))
     const pathOf = (link: string): string | null => {
-      const target = exactLinkTarget(link)
+      const target = exactLinkTarget(link, (page) => resolve(page) !== null)
       return target === null ? null : resolve(target)
     }
     const keep = new Set((keepLinks ?? []).map(pathOf))
@@ -1190,10 +1190,12 @@ export function FolderView({
     },
   }
 
+  /** Whether a link's side names a page: a link with two sides takes the left one when it does (YAZ-4954). */
+  const isPage = (page: string): boolean => resolveLink(page) !== null
   /** The folder a link names (a Relation's target, a tied column's `from.folder`, YAZ-4781), root-relative; null when it names none, or names a note. */
   const folderOfLink = (link: string | undefined): string | null => {
     if (link === undefined || link.trim() === '') return null
-    const hit = resolveLink(exactLinkTarget(link) ?? link.trim())
+    const hit = resolveLink(exactLinkTarget(link, isPage) ?? link.trim())
     return hit === null || feed.records.some((r) => r.path === hit) ? null : relTo(root, hit)
   }
   /** A folder's own declarations as this page knows them: its live ones here, else the index's. */
@@ -1214,7 +1216,7 @@ export function FolderView({
     if (row === undefined || tied === undefined) throw new Error(`Can't find ${note.slice(note.lastIndexOf('/') + 1)}`)
     const at = `${note}\n${key}`
     const sent = tiedSent.current.get(at)
-    const pageOf = (link: string) => resolveLink(exactLinkTarget(link) ?? link)
+    const pageOf = (link: string) => resolveLink(exactLinkTarget(link, isPage) ?? link)
     const recordOf = (page: string) => feed.records.find((r) => r.path === page) ?? folderMap.get(relTo(root, page))
     const result = await writeTiedCell({
       unit,
@@ -1231,7 +1233,7 @@ export function FolderView({
       ask: (text) => new Promise<boolean>((answer) => setPairAsk({ text, answer })),
       titleOf: (link) => {
         const page = pageOf(link)
-        return (page === null ? undefined : recordOf(page)?.title) ?? exactLinkTarget(link) ?? link
+        return (page === null ? undefined : recordOf(page)?.title) ?? exactLinkTarget(link, isPage) ?? link
       },
     })
     tiedSent.current.set(at, { resolve: resolveLink, value })

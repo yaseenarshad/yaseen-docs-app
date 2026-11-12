@@ -279,7 +279,7 @@ export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind
     // a link can spell it and it reaches the page; else the link goes by the page's id (YAZ-2478),
     // and by name, as below, only when it has none.
     if (title !== undefined && hit === oldPath && spellsTitle(target)) {
-      if (exactLinkTarget(`[[${title}]]`) === title && postLink(title) === moved) return title
+      if (exactLinkTarget(`[[${title}]]`, (page) => postLink(page) !== null) === title && postLink(title) === moved) return title
       if (id !== undefined) return id
     }
     const movedName = basename(moved)

@@ -60,7 +60,7 @@ export async function removeTiedColumn(path: string, key: string, decl: ColumnDe
 const listOf = (value: unknown): unknown[] => (Array.isArray(value) ? value : value == null || value === '' ? [] : [value])
 
 /** The page a stored link names (a `[[…]]` or bare text), or null. */
-const pageOf = (v: unknown, resolve: ResolveLink): string | null => (typeof v === 'string' && v.trim() !== '' ? resolve(exactLinkTarget(v) ?? v.trim()) : null)
+const pageOf = (v: unknown, resolve: ResolveLink): string | null => (typeof v === 'string' && v.trim() !== '' ? resolve(exactLinkTarget(v, (page) => resolve(page) !== null) ?? v.trim()) : null)
 
 /** R2: what a tied cell's write changes — the pages `next` holds and `before` does not (`add`), and the other way (`remove`). A link in `next` that names no page refuses the write. */
 export function pairPlan(before: unknown, next: unknown, resolve: ResolveLink): { add: string[]; remove: string[] } {

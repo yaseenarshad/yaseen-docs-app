@@ -18,7 +18,7 @@ import { ALSO_IN_KEY, alsoInEntries } from './alsoIn'
 import { mapFolderSettingsLinks } from './folderSettingsLinks'
 import { FOLDER_VALUES_KEY, folderBlocks, moveFolderValues } from './folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
-import { splitLink } from './linkParts'
+import { indexTarget, splitLink } from './linkParts'
 import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from './noteId'
 
 /** Does this raw link target point at what changed? */
@@ -113,11 +113,14 @@ function rewriteLinkValue(value: unknown, resolves: ResolvesToOld, newTarget: Ne
 /**
  * A frontmatter string's link TARGET (`|alias` / `#heading` stripped) when it is exactly `[[…]]`,
  * or null — what `rewriteInner` decides on, exposed for a probe that only needs to look.
+ * The side follows `splitLink` (YAZ-4954 part 2): a reader with the notes passes `isPage`, and the left side wins when
+ * it is a page. Without it, words that only look like an ID keep both sides (`Covid notes|COVID-19`, `indexTarget`),
+ * as the index keeps them, and the resolver picks when it reads them (`pickTarget`).
  */
-export function exactLinkTarget(value: string): string | null {
+export function exactLinkTarget(value: string, isPage?: (page: string) => boolean): string | null {
   const m = EXACT_WIKILINK_RE.exec(value.trim())
   if (m === null) return null
-  const target = splitLink(m[1]).page
+  const target = isPage === undefined ? indexTarget(m[1]) : splitLink(m[1], isPage).page
   return target === '' ? null : target
 }
 

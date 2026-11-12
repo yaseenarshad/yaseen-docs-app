@@ -158,7 +158,7 @@ const WIKILINK_RE = /(!?)\[\[([^[\]]*)\]\]/g
 const EXACT_WIKILINK_RE = /^\[\[([^[\]]*)\]\]$/
 
 /**
- * `target|words` and `words|target` → `target` (the one side that is an ID, else the left: `splitLink`, YAZ-4935),
+ * `target|words` and `words|target` → `target` (a file, else the one side that is an ID, else the left: `splitLink`, YAZ-4935, YAZ-4954),
  * `target#heading` / `target#^block` → `target`, trimmed. Shared with `fs/assets.ts` (readAsset refs).
  */
 export function linkTarget(inner: string): string {

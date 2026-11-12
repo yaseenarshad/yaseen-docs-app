@@ -411,6 +411,22 @@ describe('words that only LOOK like an ID (YAZ-4954): Linked mentions agree with
     expect(backlinksFor(COVID, nameOnly, window(nameOnly), []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 
+  it("a folder's settings link (a column's `target`, a view's `order`) picks as the body link does, in both orders (part 2)", () => {
+    const leaf = (target: string, order: string): IndexRecord => ({
+      ...rec('/vault/Team/.folder.md'),
+      properties: { folder_settings: { columns: { owner: { kind: 'link', target } }, views: [{ type: 'page', name: 'Page', order: [order] }] } },
+    })
+    // One map per resolver: a new resolver for each set of folders, as the app makes one when they change.
+    const listed = (page: string, records: IndexRecord[], folder: IndexRecord) =>
+      backlinksFor(page, records, window(records, ['/vault/Team']), [folder]).map((r) => r.path)
+    const both = [rec(COVID), rec(ID_NOTE)]
+    const wordsFirst = leaf('[[Covid notes|COVID-19]]', '[[Covid notes|COVID-19]]')
+    expect(listed(COVID, both, wordsFirst)).toEqual(['/vault/Team/.folder.md'])
+    expect(listed(ID_NOTE, both, wordsFirst)).toEqual([])
+    expect(listed(ID_NOTE, both, leaf('[[COVID-19|Covid notes]]', '[[COVID-19|Covid notes]]'))).toEqual(['/vault/Team/.folder.md'])
+    expect(listed(ID_NOTE, [rec(ID_NOTE)], leaf('[[Covid notes|COVID-19]]', '[[x]]'))).toEqual(['/vault/Team/.folder.md'])
+  })
+
   it('the left side is a FOLDER: the window picks it, as the editor\'s pill does', () => {
     const records = [words, rec(ID_NOTE)]
     const resolve = window(records, ['/vault/Covid notes'])
