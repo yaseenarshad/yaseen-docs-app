@@ -2,12 +2,15 @@
  * The note card block (YAZ-4961, `noteCardView.ts`): ideas from the Explore window (`explore/explore.css`: the 8px
  * radius, the border, a shadow, a head), calmer in a page — a soft shadow, the page's own colours. Light and dark come
  * from the app's tokens. The render's classes (`noteCardRender.ts`) are styled here too, for the Inbox to reuse.
+ *
+ * Crepe's reset `.milkdown * { margin: 0; padding: 0 }` has the weight of one class and loads after this file
+ * (YAZ-4973): each rule here that sets a margin or a padding has the weight of two classes at least, so it wins in the
+ * page as it does in the Inbox and the card window (`noteCard.css.test.ts`).
  */
 .note-card {
   position: relative;
   box-sizing: border-box;
   width: min(100%, calc(100% * var(--document-zoom, 1)));
-  margin: 8px 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
@@ -15,6 +18,10 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
   /* No overflow clip: the line number (`data-line`, drawn left of the block) stays visible. The head and the code
      editor round their own corners instead. */
+}
+/* In the page: room above and below, so two cards (or a card and a quote) never touch. */
+.milkdown .note-card {
+  margin: 12px 0;
 }
 .note-card.ProseMirror-selectednode {
   outline: 2px solid var(--accent);
@@ -24,7 +31,7 @@
   opacity: 0.75;
 }
 
-.note-card__head {
+.note-card .note-card__head {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -48,7 +55,7 @@
   background: var(--bg-hover);
   color: var(--fg);
 }
-.note-card__title {
+.note-card__head .note-card__title {
   flex: 0 1 auto;
   min-width: 0;
   margin-right: auto;
@@ -71,7 +78,7 @@
 .note-card__head .note-card__title:has(+ .note-card__id:not([hidden])) {
   margin-right: 0;
 }
-.note-card__id {
+:is(.note-card, .explore__head) .note-card__id {
   flex: none;
   margin: 0 auto 0 2px;
   padding: 0 4px;
@@ -101,8 +108,8 @@
 .note-card__state:empty {
   display: none;
 }
-.note-card__edit,
-.note-card__more {
+.note-card__head .note-card__edit,
+.note-card__head .note-card__more {
   flex: none;
   padding: 0 6px;
 }
@@ -115,7 +122,7 @@
   display: none;
 }
 
-.note-card__body {
+.note-card .note-card__body {
   padding: 10px 16px 12px;
   overflow-wrap: anywhere;
 }
@@ -150,12 +157,12 @@
 .note-card__body pre {
   overflow-x: auto;
 }
-.note-card__rule {
+.note-card .note-card__rule {
   height: 1px;
   margin: 10px -16px;
   background: var(--border);
 }
-.note-card__hidden {
+.note-card .note-card__hidden {
   border-radius: 3px;
   padding: 0 2px;
   background: var(--mark-bg);
