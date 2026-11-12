@@ -11,7 +11,9 @@
  * comment leaves the tree. A comment that is not ours stays an `html` node, bytes untouched.
  *
  * SAVE: the `code_block` schema gains `width` (px at 100% document zoom, or `null`) and `unknownParts` (the parts this
- * build keeps as text, or `null`); its `toMarkdown` writes the fence, then the comment as an `html` node. The `join`
+ * build keeps as text, or `null`); its `toMarkdown` writes the fence, then the comment as an `html` node. A NOTE CARD
+ * (YAZ-4961, `noteCard/noteCardLine.ts`) keeps its `<!-- card: … -->` line in a third attribute, `cardLine`, joined
+ * on load before the code comment and written right under the fence before it: one schema extension holds both. The `join`
  * rule `codeCommentJoin` puts the comment on the line right after the fence, with no blank line between, also at the
  * top level (a table's comment gets a blank line there): then the comment is always exactly ONE line of the file, and
  * `lineNumbers.ts` can still pair the block's code lines with the file's (D8). `toDOM` / `parseDOM` carry both
@@ -55,6 +57,7 @@ import { holdColResize } from '../../lib/colResize'
 import { cssZoom } from '../../lib/cssZoom'
 import { blockRightEdge } from '../blockRoom'
 import { joinNextComment } from '../joinComment'
+import { CARD_LINE_ATTR, cleanCardLine, isNoteCardCode, NOTE_CARD_LANGUAGE } from '../noteCard/noteCardLine'
 import { CODE_WIDTH_MAX, CODE_WIDTH_MIN, codeWidth, formatCodeComment, parseCodeComment, type CodeLook, type CodeUnknownPart } from './codeComment'
 
 export * from './codeComment'
@@ -124,16 +127,35 @@ const lookAttrs = (look: CodeLook) => ({ width: look.width, unknownParts: look.u
 
 interface CodeData {
   codeLook?: CodeLook
+  /** A note card's card line (YAZ-4961, `noteCard/noteCardLine.ts`), its text. */
+  cardLine?: string
 }
 
 export const codeWidthRemark = $remark('mdapp-code-width', () => () => (tree) => {
+  // A note card's line first: it is the line right under the fence; a code comment may come after it.
+  joinNextComment(
+    tree as Nodes,
+    'code',
+    cleanCardLine,
+    (node, cardLine) => {
+      node.data = { ...node.data, cardLine } as typeof node.data
+    },
+    isNoteCardCode,
+  )
   joinNextComment(tree as Nodes, 'code', parseCodeComment, (node, look) => {
     node.data = { ...node.data, codeLook: look } as typeof node.data
   })
 })
 
-/** The comment goes on the line right under the fence: no blank line between, wherever the block is. */
-const codeCommentJoin: Join = (left, right) => (left.type === 'code' && right.type === 'html' && parseCodeComment(right.value) !== null ? 0 : undefined)
+/**
+ * The comment goes on the line right under the fence: no blank line between, wherever the block is. A note card's line
+ * (YAZ-4961) goes there too, and a code comment of the card right under its line.
+ */
+const codeCommentJoin: Join = (left, right) => {
+  if (right.type !== 'html') return undefined
+  if (left.type === 'code' && (parseCodeComment(right.value) !== null || (isNoteCardCode(left) && cleanCardLine(right.value) !== null))) return 0
+  return left.type === 'html' && cleanCardLine(left.value) !== null && parseCodeComment(right.value) !== null ? 0 : undefined
+}
 
 /** Adds `codeCommentJoin`; call in a `crepe.editor.config` (read once, when Milkdown builds remark). */
 export function codeCommentStringify(ctx: Ctx): void {
@@ -144,7 +166,7 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
   const base = prev(ctx)
   return {
     ...base,
-    attrs: { ...base.attrs, width: { default: null }, unknownParts: { default: null } },
+    attrs: { ...base.attrs, width: { default: null }, unknownParts: { default: null }, cardLine: { default: null } },
     parseDOM: [
       {
         tag: 'pre',
@@ -157,16 +179,22 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
           } catch {
             // A broken attribute is no parts.
           }
-          return { language: pre.dataset.language, ...lookAttrs({ width: codeWidth(Number(pre.getAttribute(CODE_WIDTH_ATTR))), unknownParts: cleanParts(parts) }) }
+          return { language: pre.dataset.language, ...lookAttrs({ width: codeWidth(Number(pre.getAttribute(CODE_WIDTH_ATTR))), unknownParts: cleanParts(parts) }), cardLine: cleanCardLine(pre.getAttribute(CARD_LINE_ATTR)) }
         },
       },
     ],
     toDOM: (node) => {
       const [tag, attrs, ...content] = base.toDOM!(node) as [string, Record<string, string>, ...DOMOutputSpec[]]
       const { width, unknownParts } = codeLookOf(node)
+      const cardLine = cleanCardLine(node.attrs.cardLine)
       return [
         tag,
-        { ...attrs, ...(width !== null && { [CODE_WIDTH_ATTR]: String(width) }), ...(unknownParts.length > 0 && { [PARTS_ATTR]: JSON.stringify(unknownParts) }) },
+        {
+          ...attrs,
+          ...(width !== null && { [CODE_WIDTH_ATTR]: String(width) }),
+          ...(unknownParts.length > 0 && { [PARTS_ATTR]: JSON.stringify(unknownParts) }),
+          ...(cardLine !== null && { [CARD_LINE_ATTR]: cardLine }),
+        },
         ...content,
       ] as DOMOutputSpec
     },
@@ -175,7 +203,8 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
       runner: (state, node, type) => {
         const look = (node.data as CodeData | undefined)?.codeLook
         const value = node.value as string | null
-        state.openNode(type, { language: (node.lang as string | null | undefined) ?? '', ...(look && lookAttrs(look)) })
+        const cardLine = (node.data as CodeData | undefined)?.cardLine
+        state.openNode(type, { language: (node.lang as string | null | undefined) ?? '', ...(look && lookAttrs(look)), ...(cardLine !== undefined && { cardLine }) })
         if (value) state.addText(value)
         state.closeNode()
       },
@@ -184,6 +213,9 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
       match: base.toMarkdown.match,
       runner: (state, node) => {
         base.toMarkdown.runner(state, node)
+        // A note card's line (YAZ-4961): right under the fence, before a code comment. A block that is no card writes none.
+        const cardLine = node.attrs.language === NOTE_CARD_LANGUAGE ? cleanCardLine(node.attrs.cardLine) : null
+        if (cardLine !== null) state.addNode('html', undefined, cardLine)
         const comment = formatCodeComment(codeLookOf(node))
         if (comment !== null) state.addNode('html', undefined, comment)
       },

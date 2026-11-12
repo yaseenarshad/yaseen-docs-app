@@ -5,7 +5,9 @@
  * `type` is joined with its next sibling when that sibling is nothing but a comment `parse` reads —
  * a bare `html` node, or the paragraph Milkdown's `remarkHtmlTransformer` wraps a block `html` in.
  * `apply` gets the block and the value, and the comment leaves the tree. A `type` block's own
- * children are not walked. Any other comment stays an `html` node, bytes untouched.
+ * children are not walked. Any other comment stays an `html` node, bytes untouched. `accepts`
+ * narrows the blocks of `type` that take a comment (a note card is a `code` block of the
+ * language `card`, YAZ-4961).
  */
 import type { Nodes, Parent, RootContent } from 'mdast'
 
@@ -18,17 +20,18 @@ function commentValue<T>(node: RootContent | undefined, parse: (value: string) =
   return only.type === 'html' ? parse(only.value) : null
 }
 
-export function joinNextComment<T>(node: Nodes, type: RootContent['type'], parse: (value: string) => T | null, apply: (block: RootContent, value: T) => void): void {
+export function joinNextComment<T>(node: Nodes, type: RootContent['type'], parse: (value: string) => T | null, apply: (block: RootContent, value: T) => void, accepts: (block: RootContent) => boolean = () => true): void {
   if (!('children' in node)) return
   const parent = node as Parent
   for (let i = 0; i < parent.children.length; i++) {
     const child = parent.children[i]
     if (child.type === type) {
+      if (!accepts(child)) continue
       const value = commentValue(parent.children[i + 1], parse)
       if (value !== null) {
         apply(child, value)
         parent.children.splice(i + 1, 1)
       }
-    } else joinNextComment(child, type, parse, apply)
+    } else joinNextComment(child, type, parse, apply, accepts)
   }
 }
