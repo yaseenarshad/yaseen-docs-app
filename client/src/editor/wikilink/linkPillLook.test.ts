@@ -3,10 +3,12 @@
  * with none for today's look; the pieces a pill gains under its format, with the empty parts and their text dropped;
  * where the icon draws; the spans; and the index as `PathInfos`, built once per snapshot.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
-import { headSpan, linkPillVars, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, pillsShowVault, tailSpan, type PillEnd } from './linkPillLook'
+import { LINK_PILL_MARKS, LINK_PILL_PARTS, NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
+import { LINK_PILL_MARK_SVG, headSpan, linkPillVars, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, pillsShowVault, tailKey, tailSpan, type PillEnd } from './linkPillLook'
 
 const rec = (path: string, folder: string, id?: string): IndexRecord =>
   ({ path, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', title: 'x', folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...(id !== undefined && { id }) }) as IndexRecord
@@ -45,7 +47,7 @@ describe('linkPillVars (YAZ-4924)', () => {
 })
 
 /** The pieces of an end as `part:text`, the icon as `icon`. */
-const texts = (end: PillEnd | null) => (end === null ? null : end.pieces.map((p) => (p.part === 'icon' ? 'icon' : `${p.part}:${p.text}`)))
+const texts = (end: PillEnd | null) => (end === null ? null : end.pieces.map((p) => (p.part === 'icon' ? 'icon' : p.part === 'mark' ? `mark:${p.icon}` : `${p.part}:${p.text}`)))
 const ends = (pills: LinkPills, meta: Parameters<typeof pillParts>[1], own: string | null = 'Mine', icon = true) => {
   const { head, tail } = pillParts(pills, meta, own, icon)
   return [texts(head), texts(tail)]
@@ -132,6 +134,96 @@ describe('pillParts (YAZ-4924)', () => {
     const t = tailSpan('wikilink link-pill', tail!)
     expect(t.className).toBe('wikilink link-pill link-pill__tail')
     expect([...t.children].map((c) => `${c.className}:${c.textContent}`)).toEqual(['link-pill__text: ', 'link-pill__id:YAS-12', 'link-pill__text: (', 'link-pill__vault:Mine', 'link-pill__text:))'])
+  })
+})
+
+describe('the {number} and {mark} tokens on a pill (YAZ-4924 round 5)', () => {
+  it("{number} is the ID's number alone; an ID with no number shows in full; no ID is empty and takes its text with it", () => {
+    expect(ends({ format: '{name} #{number}' }, { info, otherVault: null })).toEqual([null, ['text: #', 'number:12']])
+    expect(ends({ format: '{name} #{number}' }, { info: { id: 'AB-CD-305', folder: '' }, otherVault: null })).toEqual([null, ['text: #', 'number:305']])
+    expect(ends({ format: '{name} #{number}' }, { info: { id: 'a1b2c3d4e5f6', folder: '' }, otherVault: null })).toEqual([null, ['text: #', 'number:a1b2c3d4e5f6']])
+    expect(ends({ format: '{name} #{number}' }, { info: { folder: '' }, otherVault: null })).toEqual([null, null])
+    expect(ends({ format: '{name} #{number}' }, { otherVault: null })).toEqual([null, null])
+    expect(ends({ format: '{name} (#{number}) · {folder}' }, { info: { folder: 'Boards' }, otherVault: null })).toEqual([null, ['text: · ', 'folder:Boards']])
+    expect(ends({ format: '{name} {id} #{number}' }, { info, otherVault: null })).toEqual([null, ['text: ', 'id:YAS-12', 'text: #', 'number:12']])
+  })
+
+  it('{mark} is always shown, a missing note too, with the icon the mark part names (the arrow up-right by default); it is no part for the empty-part rule: a run reaches across it', () => {
+    expect(ends({ format: '{name}{mark}' }, { otherVault: null })).toEqual([null, ['mark:arrow-up-right']])
+    expect(ends({ format: '{name}{mark}' }, { otherVault: null }, 'Mine', false)).toEqual([null, ['mark:arrow-up-right']])
+    expect(ends({ format: '{mark} {name}', parts: { mark: { icon: 'star' } } }, { otherVault: null })).toEqual([['mark:star', 'text: '], null])
+    expect(ends({ format: '{name} #{number} {mark}' }, { otherVault: null })).toEqual([null, ['mark:arrow-up-right']])
+    expect(ends({ format: '{name} #{number}{mark}' }, { otherVault: null })).toEqual([null, ['mark:arrow-up-right']])
+    expect(ends({ format: '{name} · {folder}{mark} · {id}' }, { info: { id: 'YAS-12', folder: '' }, otherVault: null })).toEqual([null, ['mark:arrow-up-right', 'text: · ', 'id:YAS-12']])
+    expect(ends({ format: '{name} #{number}{mark}' }, { info, otherVault: null })).toEqual([null, ['text: #', 'number:12', 'mark:arrow-up-right']])
+    expect(ends({ format: '{name} ({id}){mark}' }, { otherVault: null })).toEqual([null, ['mark:arrow-up-right']])
+    expect(ends({ format: '{icon}{name}{mark}' }, { otherVault: null })).toEqual([null, ['mark:arrow-up-right']])
+  })
+
+  it('the index is read with {number}; not for {mark} alone', () => {
+    expect([pillsNeedInfo({ format: '{name} #{number}' }), pillsNeedInfo({ format: '{name}{mark}' })]).toEqual([true, false])
+  })
+
+  it("the number and the mark have their own variables; the mark's icon is a piece, no variable", () => {
+    expect(linkPillVars({ parts: { number: { bold: true, color: 'accent', size: 'normal' }, mark: { icon: 'star', color: 'red', size: 'small' } } })).toEqual({
+      '--pill-number-weight': 'bold',
+      '--pill-number-fg': 'var(--accent)',
+      '--pill-number-size': '1em',
+      '--pill-mark-fg': 'var(--table-text-red)',
+      '--pill-mark-size': '0.85em',
+    })
+    expect(linkPillVars({ parts: { mark: { icon: 'star' } } })).toEqual({})
+  })
+
+  it('each of the eight marks draws a small static SVG icon: no text, the line\'s size (em), the pill\'s colour (currentColor), hidden from screen readers', () => {
+    expect(Object.keys(LINK_PILL_MARK_SVG)).toEqual([...LINK_PILL_MARKS])
+    expect(new Set(Object.values(LINK_PILL_MARK_SVG)).size).toBe(8)
+    for (const icon of LINK_PILL_MARKS) {
+      const { tail } = pillParts({ format: '{name}{mark}', parts: { mark: { icon } } }, { otherVault: null }, 'Mine')
+      const t = tailSpan('wikilink link-pill', tail!)
+      const mark = t.querySelector(':scope > .link-pill__mark') as HTMLElement
+      const svg = mark.querySelector('svg') as SVGSVGElement
+      expect([mark.textContent, mark.dataset.mark, svg.getAttribute('width'), svg.getAttribute('height'), svg.getAttribute('aria-hidden')]).toEqual(['', icon, '1em', '1em', 'true'])
+      expect(svg.querySelector('path, circle')).not.toBeNull()
+      const parsed = document.createElement('template')
+      parsed.innerHTML = LINK_PILL_MARK_SVG[icon]
+      expect(mark.innerHTML).toBe(parsed.innerHTML)
+      expect(LINK_PILL_MARK_SVG[icon]).not.toMatch(/\bpx\b|[0-9]px/)
+    }
+    // Two icons are two keys: a change of icon redraws the tail; the same icon redraws nothing.
+    const key = (icon: (typeof LINK_PILL_MARKS)[number]) => tailKey(pillParts({ format: '{name}{mark}', parts: { mark: { icon } } }, { otherVault: null }, 'Mine').tail!)
+    expect(key('star')).not.toBe(key('dot'))
+    expect(key('star')).toBe(key('star'))
+  })
+})
+
+describe("a pill's size follows its line: a pill in a heading is as big as the heading (YAZ-4924 round 5)", () => {
+  const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
+  const wikilinkCss = strip(readFileSync(join(__dirname, 'wikilink.css'), 'utf8'))
+  const viewsCss = strip(readFileSync(join(__dirname, '../../views/views.css'), 'utf8'))
+  /** Each rule of `css` whose selector names a pill: `[selector, body]`. */
+  const pillRules = (css: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => [m[1].trim(), m[2]] as const).filter(([sel]) => /link-pill|wikilink/.test(sel))
+
+  it('no pill rule sets a fixed font size: each part is the line\'s size (inherit) or a share of it (em)', () => {
+    const sizes = [...pillRules(wikilinkCss), ...pillRules(viewsCss)].flatMap(([sel, body]) => [...body.matchAll(/font-size:\s*([^;]+);/g)].map((m) => `${sel} → ${m[1].trim()}`))
+    expect(sizes.length).toBeGreaterThan(0)
+    for (const size of sizes) expect(size).not.toMatch(/\d(px|pt|rem)\b/)
+  })
+
+  it('each part, the number and the mark too, reads its own size variable with an em or inherit fallback', () => {
+    for (const part of LINK_PILL_PARTS) {
+      const rule = part === 'name' ? /--pill-name-size, inherit\)/ : new RegExp(`--pill-${part}-size, (0\\.85em|1em|inherit)\\)`)
+      expect(wikilinkCss, part).toMatch(rule)
+    }
+    // Normal is the line's size and Small 85 % of it, never pixels.
+    for (const part of LINK_PILL_PARTS) {
+      expect(linkPillVars({ parts: { [part]: { size: 'small' } } })[`--pill-${part}-size`]).toBe('0.85em')
+      expect(linkPillVars({ parts: { [part]: { size: 'normal' } } })[`--pill-${part}-size`]).toBe('1em')
+    }
+  })
+
+  it("the mark's icon is 1em square: the size of its line, in a paragraph or a heading", () => {
+    expect(wikilinkCss).toMatch(/\.link-pill__mark svg\s*\{[^}]*width:\s*1em;[^}]*height:\s*1em;/)
   })
 })
 

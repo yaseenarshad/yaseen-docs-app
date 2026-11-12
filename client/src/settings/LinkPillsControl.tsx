@@ -1,7 +1,8 @@
 /**
  * Settings › This vault › Link pills (YAZ-4924, the redo): ONE row, three parts, saved in the vault
  * (`.yaseendocs/link-pills.json`, `useLinkPills`, `shared/linkPills.ts`).
- *  1. **Format:** a text box with tokens in braces (`{icon}` `{name}` `{id}` `{vault}` `{folder}` `{path}`), draft +
+ *  1. **Format:** a text box with tokens in braces (`{icon}` `{name}` `{id}` `{number}` `{vault}` `{folder}` `{path}`
+ *     `{mark}`), draft +
  *     commit on Enter or blur (the pattern of `TimeFormatControl.tsx`): a format the app cannot read (an unknown token,
  *     no `{name}`, too long) keeps the STORED format, marks the box red and says why. The token chips insert at the
  *     caret and keep at once. A dropdown of ready formats beside it. The vault rule (other vaults only · always ·
@@ -9,10 +10,12 @@
  *  2. **Preview:** a muted "Preview" label and ONE sample pill, "Roadmap" (round 4: the sentence of four read as real
  *     text), drawn by the folder page's pill (`PillEnds`, the same pieces the note's widgets draw) under the look's
  *     variables. The sample note has every part (an ID, a folder, a path, a vault), so each token of the format shows.
- *  3. **Click to style:** a click on a part of a pill (the name, the ID, the vault, the folder, your own text) opens the
- *     style panel under the preview, titled "Styling: the name" (the title is a quiet dropdown: the second way to pick a
- *     part), with three labelled rows — Text (B I U), Colour (ONE row: Accent · Text · Muted, then the ten palette
- *     swatches), Size (Normal · Small) — and a click on the pill's icon the box's: Shape, Fill (Tint · None · the
+ *  3. **Click to style:** a click on a part of a pill (the name, the ID, the number, the vault, the folder, the path,
+ *     your own text) opens the style panel under the preview, titled "Styling: the name" (the title is a quiet dropdown:
+ *     the second way to pick a part), with three labelled rows — Text (B I U), Colour (ONE row: Accent · Text · Muted,
+ *     then the ten palette swatches), Size (Normal · Small). The mark (round 5) has Icon (its eight small icons), Colour
+ *     (the name's until it has its own) and Size: B I U mean nothing on an icon. A click on the pill's icon opens the
+ *     box's: Shape, Fill (Tint · None · the
  *     swatches), Strength (only with a palette fill). Each button writes one field through `withLinkPillPart` /
  *     `withLinkPillBox`, so the file holds only changes.
  * Reset brings today's look back. Every default is today's look.
@@ -20,8 +23,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import {
   DEFAULT_LINK_PILL_FORMAT,
+  DEFAULT_LINK_PILL_MARK,
   LINK_PILL_COLORS,
   LINK_PILL_FORMAT_MAX,
+  LINK_PILL_MARKS,
   LINK_PILL_PART_DEFAULTS,
   LINK_PILL_READY,
   LINK_PILL_TOKENS,
@@ -34,11 +39,12 @@ import {
   withLinkPillReady,
   withLinkPills,
   type LinkPillColor,
+  type LinkPillMark,
   type LinkPillPart,
   type LinkPillPartColor,
   type LinkPills,
 } from '@shared/linkPills'
-import { linkPillVars, pillsShowVault } from '../editor/wikilink/linkPillLook'
+import { LINK_PILL_MARK_SVG, linkPillVars, pillsShowVault } from '../editor/wikilink/linkPillLook'
 import { PillEnds, PillLook } from '../editor/wikilink/LinkPillParts'
 import { capital, fillSwatch, textSwatch } from '../editor/table/colours'
 import { FileIcon } from '../sidebar/FileIcon'
@@ -50,7 +56,9 @@ import type { LinkPillsState } from './useLinkPills'
 type Target = { kind: 'part'; part: LinkPillPart } | { kind: 'box' }
 
 /** What the panel's title names: "Styling: the name". */
-const PART_NAMES: Record<LinkPillPart, string> = { name: 'the name', id: 'the ID', vault: 'the vault', folder: 'the folder', path: 'the path', text: 'your text' }
+const PART_NAMES: Record<LinkPillPart, string> = { name: 'the name', id: 'the ID', number: 'the number', vault: 'the vault', folder: 'the folder', path: 'the path', mark: 'the mark', text: 'your text' }
+/** The mark's icons by name, as the Icon row says them. */
+const MARK_NAMES: Record<LinkPillMark, string> = { 'arrow-up-right': 'Arrow up-right', 'arrow-right': 'Arrow right', link: 'Link', return: 'Return arrow', dot: 'Dot', diamond: 'Diamond', star: 'Star', bookmark: 'Bookmark' }
 const BOX_NAME = 'the box'
 const VAULT_OPTIONS: readonly Option<'other' | 'always' | 'never'>[] = [
   { label: 'Vault name: other vaults only', value: 'other' },
@@ -107,24 +115,47 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** The rows of one part: Text (B I U), Colour (one row: the named colours, then the swatches), Size. */
+/** The rows of one part: Text (B I U), Colour (one row: the named colours, then the swatches), Size. The mark: Icon, Colour, Size. */
 function PartRows({ look, part }: { look: LinkPillsState; part: LinkPillPart }) {
   const { pills, save } = look
   const style = pills.parts?.[part] ?? {}
   const defaults = LINK_PILL_PART_DEFAULTS[part]
-  const color: LinkPillPartColor = style.color ?? defaults.color
-  const named = (c: LinkPillPartColor) => (c === defaults.color ? undefined : c)
+  // The mark's colour is the name's until it has its own.
+  const ownColor = part === 'mark' ? pills.parts?.name?.color ?? LINK_PILL_PART_DEFAULTS.name.color : defaults.color
+  const color: LinkPillPartColor = style.color ?? ownColor
+  const named = (c: LinkPillPartColor) => (c === ownColor ? undefined : c)
   const toggle = (field: 'bold' | 'italic' | 'underline') => save(withLinkPillPart(pills, part, { [field]: style[field] ? undefined : true }))
   const who = PART_NAMES[part]
+  const icon = style.icon ?? DEFAULT_LINK_PILL_MARK
   return (
     <>
-      <Row label="Text">
-        <span className="pill-toolbar__group" role="group" aria-label={`Text (${who})`}>
-          <Tool label="Bold" on={style.bold === true} mark="B" className=" pill-toolbar__b" onClick={() => toggle('bold')} />
-          <Tool label="Italic" on={style.italic === true} mark="I" className=" pill-toolbar__i" onClick={() => toggle('italic')} />
-          <Tool label="Underline" on={style.underline === true} mark="U" className=" pill-toolbar__u" onClick={() => toggle('underline')} />
-        </span>
-      </Row>
+      {part === 'mark' ? (
+        <Row label="Icon">
+          <span className="pill-toolbar__group pill-toolbar__marks" role="radiogroup" aria-label={`Icon (${who})`}>
+            {LINK_PILL_MARKS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={icon === m}
+                aria-label={MARK_NAMES[m]}
+                title={MARK_NAMES[m]}
+                className={`settings__option pill-toolbar__item pill-toolbar__mark${icon === m ? ' settings__option--active' : ''}`}
+                onClick={() => save(withLinkPillPart(pills, 'mark', { icon: m === DEFAULT_LINK_PILL_MARK ? undefined : m }))}
+                dangerouslySetInnerHTML={{ __html: LINK_PILL_MARK_SVG[m] }}
+              />
+            ))}
+          </span>
+        </Row>
+      ) : (
+        <Row label="Text">
+          <span className="pill-toolbar__group" role="group" aria-label={`Text (${who})`}>
+            <Tool label="Bold" on={style.bold === true} mark="B" className=" pill-toolbar__b" onClick={() => toggle('bold')} />
+            <Tool label="Italic" on={style.italic === true} mark="I" className=" pill-toolbar__i" onClick={() => toggle('italic')} />
+            <Tool label="Underline" on={style.underline === true} mark="U" className=" pill-toolbar__u" onClick={() => toggle('underline')} />
+          </span>
+        </Row>
+      )}
       <Row label="Colour">
         <span className="pill-toolbar__group" role="group" aria-label={`Colour (${who})`}>
           <Tool label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => save(withLinkPillPart(pills, part, { color: named('accent') }))} />
@@ -173,7 +204,7 @@ const SAMPLE_VAULT = 'Wiki'
 
 /** The part a click in the preview lands on, or null: a piece's class names its part; the pill's own span is the name; the icon is the box. */
 function targetAt(el: Element): Target | null {
-  const hit = el.closest('.link-pill__text, .link-pill__id, .link-pill__vault, .link-pill__folder, .link-pill__path, .file-icon, .link-pill__icon, .wikilink')
+  const hit = el.closest('.link-pill__text, .link-pill__id, .link-pill__number, .link-pill__vault, .link-pill__folder, .link-pill__path, .link-pill__mark, .file-icon, .link-pill__icon, .wikilink')
   if (hit === null) return null
   if (hit.classList.contains('file-icon') || hit.classList.contains('link-pill__icon')) return { kind: 'box' }
   if (hit.classList.contains('wikilink')) return { kind: 'part', part: 'name' }
@@ -256,7 +287,7 @@ export function LinkPillsControl({ look, vault }: { look: LinkPillsState; vault:
   const format = pills.format ?? DEFAULT_LINK_PILL_FORMAT
   const tokens = linkPillFormatTokens(format)
   // The parts the toolbar can switch to: the name, each token of the format, and your text when the format has some.
-  const parts: LinkPillPart[] = ['name', ...(['id', 'vault', 'folder', 'path'] as const).filter((t) => tokens.has(t)), ...(parseLinkPillFormat(format).segments.some((s) => 'text' in s) ? (['text'] as const) : [])]
+  const parts: LinkPillPart[] = ['name', ...(['id', 'number', 'vault', 'folder', 'path', 'mark'] as const).filter((t) => tokens.has(t)), ...(parseLinkPillFormat(format).segments.some((s) => 'text' in s) ? (['text'] as const) : [])]
   const pickOptions: readonly Option<string>[] = [...parts.map((p) => ({ label: PART_NAMES[p], value: p })), { label: BOX_NAME, value: 'box' }]
   const picked = target === null ? 'name' : target.kind === 'box' ? 'box' : target.part
   const pick = (e: MouseEvent<HTMLElement>) => {

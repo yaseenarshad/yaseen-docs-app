@@ -7,7 +7,7 @@
  */
 import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import { NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
-import { pillIconPlace, pillParts, type PathInfo, type PillEnd } from './linkPillLook'
+import { LINK_PILL_MARK_SVG, pillIconPlace, pillParts, type PathInfo, type PillEnd } from './linkPillLook'
 import type { WikilinkResolveSource } from './wikilinkPlugin'
 
 export interface PillLookValue {
@@ -27,7 +27,7 @@ export function usePillLook(source: WikilinkResolveSource | undefined): PillLook
   return useMemo(() => (pills === NO_LINK_PILLS && vault === null ? NO_PILL_LOOK : { pills, vault }), [pills, vault])
 }
 
-/** The pieces of one end, in order. `icon`: what an icon piece draws (a `FileIcon`); nothing when the pill has none. */
+/** The pieces of one end, in order. `icon`: what an icon piece draws (a `FileIcon`); nothing when the pill has none. The mark is its static SVG. */
 function Pieces({ end, icon }: { end: PillEnd; icon?: ReactNode }) {
   return (
     <>
@@ -36,6 +36,8 @@ function Pieces({ end, icon }: { end: PillEnd; icon?: ReactNode }) {
           <span key={i} className="link-pill__icon">
             {icon}
           </span>
+        ) : piece.part === 'mark' ? (
+          <span key={i} className="link-pill__mark" data-mark={piece.icon} dangerouslySetInnerHTML={{ __html: LINK_PILL_MARK_SVG[piece.icon] }} />
         ) : (
           <span key={i} className={`link-pill__${piece.part}`}>
             {piece.text}

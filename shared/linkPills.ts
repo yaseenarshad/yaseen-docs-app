@@ -7,9 +7,10 @@ import { isRecord } from './guards'
  * other Macs. Pure: no React, no fs.
  *
  * Version 2 (the redo): ONE format string with tokens in braces, as the New… box's `{YYYY}`, says what a pill shows
- * and in what order — `{icon}` `{name}` `{id}` `{vault}` `{folder}` (the parent folder) `{path}` (the whole path from
- * the vault); any other text shows as typed. The box (shape, fill, strength) and each PART (the name, the ID, the
- * vault, the folder, the path, your own text: bold / italic / underline, colour, size) have their own style. The file
+ * and in what order — `{icon}` `{name}` `{id}` `{number}` (the ID's number alone) `{vault}` `{folder}` (the parent
+ * folder) `{path}` (the whole path from the vault) `{mark}` (a small icon, round 5); any other text shows as typed. The
+ * box (shape, fill, strength) and each PART (the name, the ID, the number, the vault, the folder, the path, the mark,
+ * your own text: bold / italic / underline, colour, size; the mark's icon) have their own style. The file
  * holds only what differs from the default, beside the version:
  * `{ "version": 2, "format": "{icon}{name} ({id})", "box": { "fill": "none" }, "parts": { "name": { "bold": true } } }`.
  * A missing file, or `{}`, is the app's own look: the default format with every part at its own default draws exactly
@@ -31,11 +32,15 @@ export const LINK_PILL_STRENGTHS = ['light', 'medium', 'strong'] as const
 export type LinkPillStrength = (typeof LINK_PILL_STRENGTHS)[number]
 
 /** The tokens a format may hold, in the order the chips show them. */
-export const LINK_PILL_TOKENS = ['icon', 'name', 'id', 'vault', 'folder', 'path'] as const
+export const LINK_PILL_TOKENS = ['icon', 'name', 'id', 'number', 'vault', 'folder', 'path', 'mark'] as const
 export type LinkPillToken = (typeof LINK_PILL_TOKENS)[number]
-/** The parts a reader can style: each text token, and `text` for every piece of their own text. The icon has no style. */
-export const LINK_PILL_PARTS = ['name', 'id', 'vault', 'folder', 'path', 'text'] as const
+/** The parts a reader can style: each token but the icon, and `text` for every piece of their own text. The icon has no style. */
+export const LINK_PILL_PARTS = ['name', 'id', 'number', 'vault', 'folder', 'path', 'mark', 'text'] as const
 export type LinkPillPart = (typeof LINK_PILL_PARTS)[number]
+/** The icons `{mark}` can draw (round 5), in the order the style panel shows them; the first is the default. */
+export const LINK_PILL_MARKS = ['arrow-up-right', 'arrow-right', 'link', 'return', 'dot', 'diamond', 'star', 'bookmark'] as const
+export type LinkPillMark = (typeof LINK_PILL_MARKS)[number]
+export const DEFAULT_LINK_PILL_MARK: LinkPillMark = 'arrow-up-right'
 /** The longest format. */
 export const LINK_PILL_FORMAT_MAX = 60
 /** Today's pill: the icon on the name, then the other vault's name in brackets (empty, with its brackets, on a pill of this vault). */
@@ -51,6 +56,8 @@ export interface LinkPillPartStyle {
   underline?: true
   color?: LinkPillPartColor
   size?: LinkPillSize
+  /** The mark's icon (the mark only); `DEFAULT_LINK_PILL_MARK` when absent. */
+  icon?: LinkPillMark
 }
 /** The pill's box. Absent: today's rounded box with the accent's 10 % tint. */
 export interface LinkPillBox {
@@ -72,14 +79,20 @@ export interface LinkPills {
   vault?: 'always' | 'never'
 }
 
-/** Each part's own default colour and size: the name and your own text as today's pill text, the quiet parts small and muted. */
+/**
+ * Each part's own default colour and size: the name as today's pill text, the quiet parts and your own text small and
+ * muted. The mark is the line's size in the NAME's colour (the pill's colour): its colour here is the name's default,
+ * and a mark colour equal to the name's is no change (`sanitizeV2`).
+ */
 export const LINK_PILL_PART_DEFAULTS: Record<LinkPillPart, { color: LinkPillPartColor; size: LinkPillSize }> = {
   name: { color: 'accent', size: 'normal' },
   text: { color: 'muted', size: 'small' },
   id: { color: 'muted', size: 'small' },
+  number: { color: 'muted', size: 'small' },
   vault: { color: 'muted', size: 'small' },
   folder: { color: 'muted', size: 'small' },
   path: { color: 'muted', size: 'small' },
+  mark: { color: 'accent', size: 'normal' },
 }
 
 /** The look of a vault that changed nothing: the same object every time, so a layer's style can be cached on it. */
@@ -96,10 +109,12 @@ export interface LinkPillReady {
 export const LINK_PILL_READY: readonly LinkPillReady[] = [
   { label: 'Name', format: DEFAULT_LINK_PILL_FORMAT },
   { label: 'Name (ID)', format: '{icon}{name} ({id})' },
+  { label: 'Name #Number', format: '{icon}{name} #{number}' },
   { label: 'Name · Folder', format: '{icon}{name} · {folder}' },
   { label: 'Vault › Name', format: '{vault} › {icon}{name}' },
   { label: '(Name)', format: '({icon}{name})', parts: { text: { color: 'accent', size: 'normal' } } },
   { label: '→ Name', format: '→ {icon}{name}', parts: { text: { color: 'accent', size: 'normal' } } },
+  { label: 'Name ↗', format: '{name}{mark}' },
   { label: 'Plain', format: '{name}', box: { fill: 'none' }, parts: { name: { color: 'same' } } },
 ]
 
@@ -165,16 +180,21 @@ const oneOf =
     typeof v === 'string' && (choices as readonly string[]).includes(v)
 const isColor = oneOf(['accent', 'same', 'muted', ...LINK_PILL_COLORS])
 const isSize = oneOf(['normal', 'small'])
+const isMark = oneOf(LINK_PILL_MARKS)
 
-/** `raw` as a part's style with only its changes: a bad field falls back alone, a default is dropped. `undefined` when nothing is left. */
-function sanitizePart(part: LinkPillPart, raw: unknown): LinkPillPartStyle | undefined {
+/**
+ * `raw` as a part's style with only its changes: a bad field falls back alone, a default is dropped. `undefined` when
+ * nothing is left. `color`: the part's default colour (the mark's is the name's).
+ */
+function sanitizePart(part: LinkPillPart, raw: unknown, color: LinkPillPartColor = LINK_PILL_PART_DEFAULTS[part].color): LinkPillPartStyle | undefined {
   if (!isRecord(raw)) return undefined
   const out: LinkPillPartStyle = {}
   if (raw.bold === true) out.bold = true
   if (raw.italic === true) out.italic = true
   if (raw.underline === true) out.underline = true
-  if (isColor(raw.color) && raw.color !== LINK_PILL_PART_DEFAULTS[part].color) out.color = raw.color
+  if (isColor(raw.color) && raw.color !== color) out.color = raw.color
   if (isSize(raw.size) && raw.size !== LINK_PILL_PART_DEFAULTS[part].size) out.size = raw.size
+  if (part === 'mark' && isMark(raw.icon) && raw.icon !== DEFAULT_LINK_PILL_MARK) out.icon = raw.icon
   return Object.keys(out).length === 0 ? undefined : out
 }
 
@@ -196,7 +216,8 @@ function sanitizeV2(raw: Record<string, unknown>): LinkPills {
   if (isRecord(raw.parts)) {
     const parts: LinkPills['parts'] = {}
     for (const part of LINK_PILL_PARTS) {
-      const style = sanitizePart(part, raw.parts[part])
+      // The name comes first: the mark's default colour is the name's.
+      const style = sanitizePart(part, raw.parts[part], part === 'mark' ? parts.name?.color ?? LINK_PILL_PART_DEFAULTS.name.color : undefined)
       if (style !== undefined) parts[part] = style
     }
     if (Object.keys(parts).length > 0) out.parts = parts

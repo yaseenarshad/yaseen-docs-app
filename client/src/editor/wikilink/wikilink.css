@@ -13,7 +13,9 @@
  * fallback: a vault that changed nothing sets none, and a change costs one style update, never a redraw. The box:
  * `--pill-bg` and `--pill-pad`, `--pill-radius` (the shape), `--pill-decoration` (the underline shape). Each part:
  * `--pill-<part>-weight`, `-style`, `-decoration`, `-fg`, `-size`, for the name (the pill's own span), the ID, the
- * vault, the folder, the path and your own text (`link-pill__<part>` pieces inside the head and the tail). The pieces
+ * number, the vault, the folder, the path, the mark and your own text (`link-pill__<part>` pieces inside the head and
+ * the tail). Every size is a share of the line's (em) or the line's own (inherit): a pill in a heading is as big as
+ * the heading. The pieces
  * the format puts around the name are two widgets, `link-pill__head` and `link-pill__tail`.
  */
 
@@ -133,6 +135,13 @@
   font-size: var(--pill-id-size, 0.85em);
   text-decoration-line: var(--pill-id-decoration, none);
 }
+.link-pill__number {
+  color: var(--pill-number-fg, var(--fg-muted));
+  font-weight: var(--pill-number-weight, inherit);
+  font-style: var(--pill-number-style, inherit);
+  font-size: var(--pill-number-size, 0.85em);
+  text-decoration-line: var(--pill-number-decoration, none);
+}
 .link-pill__vault {
   color: var(--pill-vault-fg, var(--fg-muted));
   font-weight: var(--pill-vault-weight, inherit);
@@ -153,6 +162,20 @@
   font-style: var(--pill-path-style, inherit);
   font-size: var(--pill-path-size, 0.85em);
   text-decoration-line: var(--pill-path-decoration, none);
+}
+/* The mark (`{mark}`, round 5): a small static SVG icon, 1em square, so it is its line's size (a heading's in a
+   heading), in the name's colour (the pill's) until the mark has its own; a missing note's is muted as its name is. */
+.link-pill__mark {
+  color: var(--pill-mark-fg, var(--pill-name-fg, var(--accent)));
+  font-size: var(--pill-mark-size, inherit);
+}
+.wikilink--unresolved .link-pill__mark {
+  color: var(--fg-muted);
+}
+.link-pill__mark svg {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
 }
 /* An icon piece (`{icon}` away from `{name}`): the icon span alone, drawn as the name's `::before` is. */
 .link-pill__icon {

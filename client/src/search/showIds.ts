@@ -12,6 +12,7 @@
  * `id`; a title or a files-list row reads the index's cached path map, never the file.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { idNumber } from '@shared/noteId'
 import { api } from '../api'
 import { pathInfo } from '../editor/wikilink/linkPillLook'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -101,10 +102,10 @@ export function useNoteId(source: WikilinkResolveSource | undefined, path: strin
   return useSyncExternalStore(subscribe, () => (source === undefined ? undefined : pathInfo(source.records, source.folders).get(path)?.id))
 }
 
-/** The ID as Number shows it: "#" and the digits after its last "-" ("EMB-12" → "#12"); an ID with no such digits, in full. */
-export function idNumber(id: string): string {
-  const digits = /-(\d+)$/.exec(id)
-  return digits === null ? id : `#${digits[1]}`
+/** The ID as Number shows it: "#" and its number ("EMB-12" → "#12", `idNumber`); an ID with no number, in full. */
+const numberShown = (id: string): string => {
+  const number = idNumber(id)
+  return number === undefined ? id : `#${number}`
 }
 
 /** Every note's ID by its absolute path (YAZ-4940 "In the files list"), as its vault chose to show it ("#12" or "EMB-12"). */
@@ -147,7 +148,7 @@ export function useAllPathIds(sources: readonly PathIdsSource[]): PathIds | unde
     const built = new Map<string, string>()
     infos.forEach((info, i) => {
       const number = sources[i].form === 'number'
-      for (const [path, { id }] of info) if (id !== undefined) built.set(path, number ? idNumber(id) : id)
+      for (const [path, { id }] of info) if (id !== undefined) built.set(path, number ? numberShown(id) : id)
     })
     held.current = { infos, forms, ids: sameIds(last.ids, built) ? last.ids : built }
     return held.current.ids

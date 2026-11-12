@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { DEFAULT_SHOW_IDS, idNumber, sanitizeShowIds, shownId, useAllPathIds, useNoteId, type PathIds } from './showIds'
+import { idNumber } from '@shared/noteId'
+import { DEFAULT_SHOW_IDS, sanitizeShowIds, shownId, useAllPathIds, useNoteId, type PathIds } from './showIds'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { IndexRecord } from '@shared/types'
 
@@ -46,14 +47,14 @@ describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => 
     expect(sanitizeShowIds({ files: 'all' }).files).toBe('off')
   })
 
-  it('the number is "#" and the digits after the ID\'s last "-"; an ID with no such digits shows in full', () => {
-    expect(idNumber('EMB-12')).toBe('#12')
-    expect(idNumber('WIKI-7')).toBe('#7')
-    expect(idNumber('AB-CD-305')).toBe('#305')
-    expect(idNumber('EMB-012')).toBe('#012')
-    expect(idNumber('EMB12')).toBe('EMB12')
-    expect(idNumber('EMB-')).toBe('EMB-')
-    expect(idNumber('EMB-12a')).toBe('EMB-12a')
+  it('the number is the digits after the ID\'s last "-" (one rule for the files list\'s "#12" and a pill\'s {number}); an ID with no such digits has none', () => {
+    expect(idNumber('EMB-12')).toBe('12')
+    expect(idNumber('WIKI-7')).toBe('7')
+    expect(idNumber('AB-CD-305')).toBe('305')
+    expect(idNumber('EMB-012')).toBe('012')
+    expect(idNumber('EMB12')).toBeUndefined()
+    expect(idNumber('EMB-')).toBeUndefined()
+    expect(idNumber('EMB-12a')).toBeUndefined()
   })
 
   const record = (path: string, id?: string): IndexRecord => {
@@ -95,7 +96,7 @@ describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => 
 
   it('`useAllPathIds` is undefined with no source, else one Map over the vaults that chose it, each in its form, kept while no ID changed', () => {
     const one = createWikilinkResolveSource()
-    one.update(() => null, [record('/v/a.md', 'EMB-1'), record('/v/plain.md')], [], true)
+    one.update(() => null, [record('/v/a.md', 'EMB-1'), record('/v/plain.md'), record('/v/old.md', 'a1b2c3d4e5f6')], [], true)
     const two = createWikilinkResolveSource()
     two.update(() => null, [record('/w/x.md', 'WIKI-7')], [], true)
     const none = probe(() => useAllPathIds([]))
@@ -108,10 +109,11 @@ describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => 
     const first = both.seen.at(-1) as PathIds
     expect([...first]).toEqual([
       ['/v/a.md', '#1'],
+      ['/v/old.md', 'a1b2c3d4e5f6'],
       ['/w/x.md', 'WIKI-7'],
     ])
     // A snapshot that changed no ID (a title edit) keeps the Map: the memo tree re-renders nothing for it.
-    act(() => one.update(() => null, [{ ...record('/v/a.md', 'EMB-1'), title: 'Renamed' }, record('/v/plain.md')], [], true))
+    act(() => one.update(() => null, [{ ...record('/v/a.md', 'EMB-1'), title: 'Renamed' }, record('/v/plain.md'), record('/v/old.md', 'a1b2c3d4e5f6')], [], true))
     expect(both.seen.at(-1)).toBe(first)
     act(() => two.update(() => null, [record('/w/x.md', 'WIKI-8')], [], true))
     expect(both.seen.at(-1)).not.toBe(first)

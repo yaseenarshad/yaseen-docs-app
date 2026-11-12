@@ -856,6 +856,32 @@ describe("the vault's link pills look (YAZ-4924)", () => {
     expect(getMarkdownForSave(crepe)).toBe(md)
   })
 
+  it('{number} and {mark} (round 5): the number alone after "#", the mark an icon in the tail, a missing note keeps the mark; a keystroke redraws neither', async () => {
+    const md = 'A [[Roadmap]] B [[Nope]] C\n'
+    const { crepe, root, source, view } = await mountLook(md)
+    source.setLook({ format: '{icon}{name} #{number}{mark}' }, 'Mine')
+    const tails = () => Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail')).map((el) => [...el.children].map((c) => `${c.className}:${c.textContent}${c.querySelector('svg') !== null ? ':svg' : ''}`))
+    // The missing note has no ID: "#" and the number go; the mark stays.
+    expect(tails()).toEqual([['link-pill__text: #', 'link-pill__number:12', 'link-pill__mark::svg'], ['link-pill__mark::svg']])
+    const tail = root.querySelector('.link-pill__tail')
+    view.dispatch(view.state.tr.insertText('Z', 1, 1))
+    expect(root.querySelector('.link-pill__tail')).toBe(tail)
+    source.setLook({ format: '{icon}{name} #{number}{mark}', parts: { mark: { icon: 'star' } } }, 'Mine')
+    expect(Array.from(root.querySelectorAll<HTMLElement>('.link-pill__mark')).map((el) => el.dataset.mark)).toEqual(['star', 'star'])
+    expect(getMarkdownForSave(crepe)).toBe('ZA [[Roadmap]] B [[Nope]] C\n')
+    expect(view.state.doc.textContent).not.toContain('#')
+  })
+
+  it('a pill whose note goes missing draws its tail again with the missing class, so its mark turns grey with the name', async () => {
+    const { root, source } = await mountLook('A [[Roadmap]] B\n')
+    source.setLook({ format: '{name}{mark}' }, 'Mine')
+    expect(root.querySelector('.link-pill__tail')?.classList.contains('wikilink--unresolved')).toBe(false)
+    source.update(() => null, [record], [folder], true, ['YAZ'])
+    expect(root.querySelector('.link-pill__tail')?.classList.contains('wikilink--unresolved')).toBe(true)
+    source.update((target) => PATHS[target] ?? null, [record], [folder], true, ['YAZ'])
+    expect(root.querySelector('.link-pill__tail')?.classList.contains('wikilink--unresolved')).toBe(false)
+  })
+
   it('a keystroke elsewhere redraws nothing of a pill with pieces: the same widget DOM stays', async () => {
     const { root, source, view } = await mountLook('pad [[Roadmap]] tail\n')
     source.setLook({ format: '({icon}{name} {id})' }, 'Mine')

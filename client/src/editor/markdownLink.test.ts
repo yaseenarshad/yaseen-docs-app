@@ -472,5 +472,12 @@ describe("the vault's link pills look on a Markdown link pill (YAZ-4924)", () =>
     expect(root.querySelectorAll('.link-pill.probe-icon')).toHaveLength(0)
     source.setLook({ format: '{name}' }, 'Mine')
     expect(root.querySelectorAll('.probe-icon')).toHaveLength(0)
+    // Round 5: `{number}` is the ID's number alone (none on the other vault's note, so its "#" goes), `{mark}` an icon.
+    source.setLook({ format: '{name} #{number}{mark}' }, 'Mine')
+    expect(Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail')).map((el) => [el.textContent, el.querySelector('.link-pill__mark svg') !== null])).toEqual([
+      ['', true],
+      [' #7', true],
+    ])
+    expect(getMarkdownForSave(crepe)).toBe(md)
   })
 })
