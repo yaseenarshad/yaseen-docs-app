@@ -36,6 +36,8 @@ const SPANS: readonly (readonly [OperatorId, string])[] = [['dateIsToday', 'Toda
  * as Header row ›), Checked · Unchecked, a "Contains" box, a number box with = ≠ > <, Today · This week · This month and
  * a Before / After date box, each with Is empty. A box applies on Enter; Esc closes the flyout. The parent row wears ✓
  * while the column has a rule, and the flyout then ends with "Clear this column's filter"; the last row opens the panel.
+ * The checklist and the Contains box have a switch to their opposite (YAZ-4929): "Is none of" / "Has none of" over the
+ * checklist and "Does not contain" over the box, the panel's own rules (`columnFilterShape`).
  */
 export function ColumnFilterMenu({ flyout, property, type, values, filters, onRules, onClear, onOpenPanel }: ColumnFilterMenuProps) {
   const rules = columnRules(filters, property)
@@ -78,19 +80,23 @@ export function ColumnFilterMenu({ flyout, property, type, values, filters, onRu
   return (
     <FlyoutParent label="Filter" hint={has ? '✓' : undefined} open={flyout.open === 'filter'} onHover={() => flyout.hover('filter')} onOpen={() => flyout.openNow('filter')} onCloseFlyout={() => flyout.openNow(null)}>
       {shape.kind === 'options' ? (
-        <OptionRows property={property} op={shape.op} values={values} rules={rules} onRules={onRules} />
+        <OptionRows property={property} op={shape.op} not={shape.not} values={values} rules={rules} onRules={onRules} opSwitch={opSwitch} />
       ) : shape.kind === 'checkbox' ? (
         <div className="ctx-menu__group" role="group">
           {pickRow('Checked', 'checked')}
           {pickRow('Unchecked', 'unchecked')}
         </div>
       ) : shape.kind === 'text' ? (
-        <div className="ctx-menu__group" role="group">
-          <div className="ctx-menu__heading" role="presentation">
-            {shape.label}
+        shape.not === undefined ? (
+          <div className="ctx-menu__group" role="group">
+            <div className="ctx-menu__heading" role="presentation">
+              {shape.label}
+            </div>
+            {box(shape.op, 'text', under([shape.op]), shape.label)}
           </div>
-          {box(shape.op, 'text', under([shape.op]), shape.label)}
-        </div>
+        ) : (
+          <TextRows shape={shape} not={shape.not} box={box} opSwitch={opSwitch} under={under} />
+        )
       ) : shape.kind === 'number' ? (
         <NumberRows box={box} opSwitch={opSwitch} under={under} />
       ) : shape.kind === 'date' ? (
@@ -116,17 +122,33 @@ type Box = (op: OperatorId, kind: 'text' | 'number' | 'date', current: Rule | un
 type OpSwitch = (ops: readonly OperatorId[], pressed: OperatorId, setOp: (op: OperatorId) => void, label: string, word: (op: OperatorId) => string) => ReactNode
 type Under = (ops: readonly OperatorId[]) => Rule | undefined
 
+/** The panel's operator label as a switch word: "Is any of", "Has none of". */
+const word = (op: OperatorId): string => {
+  const label = operator(op).label
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
 /**
  * The checklist ("is any of" / "has any of"): the column's values, a ✓ box on each ticked one. The ticks are the
  * column's `isAnyOf` / `hasAnyOf` rule, and a single `is` / `contains` (the row menu's "Show only this value") counts
- * as one tick; a tick writes ONE rule with the ticked values, and the last untick takes it away.
+ * as one tick; a tick writes ONE rule with the ticked values, and the last untick takes it away. The switch above it
+ * (YAZ-4929) turns the ticks into the opposite rule ("is none of" / "has none of"; a single `is not` / `does not
+ * contain` is one tick under it): a press with ticks rewrites them under the other operator, one write, menu open.
  */
-function OptionRows({ property, op, values, rules, onRules }: { property: string; op: 'isAnyOf' | 'hasAnyOf'; values: () => string[]; rules: readonly Rule[]; onRules: ColumnFilterMenuProps['onRules'] }) {
+function OptionRows({ property, op, not, values, rules, onRules, opSwitch }: { property: string; op: 'isAnyOf' | 'hasAnyOf'; not: 'isNoneOf' | 'hasNoneOf'; values: () => string[]; rules: readonly Rule[]; onRules: ColumnFilterMenuProps['onRules']; opSwitch: OpSwitch }) {
   const ticked = new Set<string>()
+  let held: OperatorId | null = null
   for (const r of rules) {
-    if (r.op === op && Array.isArray(r.value)) for (const v of r.value) ticked.add(v)
-    else if ((r.op === 'is' || r.op === 'contains') && typeof r.value === 'string' && r.value !== '') ticked.add(r.value)
+    if ((r.op === op || r.op === not) && Array.isArray(r.value)) {
+      held = r.op
+      for (const v of r.value) ticked.add(v)
+    } else if ((r.op === 'is' || r.op === 'contains' || r.op === 'isNot' || r.op === 'notContains') && typeof r.value === 'string' && r.value !== '') {
+      held = r.op === 'is' || r.op === 'contains' ? op : not
+      ticked.add(r.value)
+    }
   }
+  const [chosen, setChosen] = useState<OperatorId>(held ?? op)
+  const pressed = held ?? chosen
   const known = values()
   // A tick the list lacks still shows (a hand-edited rule), as the panel's checklist (YAZ-1467).
   const listed = [...[...ticked].filter((v) => !known.includes(v)), ...known]
@@ -134,11 +156,16 @@ function OptionRows({ property, op, values, rules, onRules }: { property: string
     const next = new Set(ticked)
     if (next.has(value)) next.delete(value)
     else next.add(value)
-    onRules(next.size === 0 ? [] : [{ property, op, value: [...next] }], false)
+    onRules(next.size === 0 ? [] : [{ property, op: pressed, value: [...next] }], false)
+  }
+  const switchTo = (to: OperatorId) => {
+    setChosen(to)
+    if (to !== pressed && ticked.size > 0) onRules([{ property, op: to, value: [...ticked] }], false)
   }
   if (listed.length === 0) return null
   return (
     <div className="ctx-menu__group" role="group">
+      {opSwitch([op, not], pressed, switchTo, 'Checklist operator', word)}
       {listed.map((value) => {
         const on = ticked.has(value)
         return (
@@ -152,6 +179,19 @@ function OptionRows({ property, op, values, rules, onRules }: { property: string
           </button>
         )
       })}
+    </div>
+  )
+}
+
+/** Contains / Does not contain over one text box (YAZ-4929); the pressed operator starts at the column's rule. */
+function TextRows({ shape, not, box, opSwitch, under }: { shape: { op: OperatorId; label: string }; not: { op: OperatorId; label: string }; box: Box; opSwitch: OpSwitch; under: Under }) {
+  const current = under([shape.op, not.op])
+  const [op, setOp] = useState<OperatorId>(current?.op ?? shape.op)
+  const label = op === not.op ? not.label : shape.label
+  return (
+    <div className="ctx-menu__group" role="group">
+      {opSwitch([shape.op, not.op], op, setOp, 'Text operator', (o) => (o === not.op ? not.label : shape.label))}
+      {box(op, 'text', current, label)}
     </div>
   )
 }
