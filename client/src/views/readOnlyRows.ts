@@ -10,6 +10,7 @@
  */
 import type { IndexRecord, PropertyDecl } from '@shared/types'
 import { isReadOnlyProperties } from '@shared/readOnly'
+import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { reservedKeys } from '../links/reservedKeys'
 import { canonicalKey } from './view/keys'
 import type { PropertyWrite } from './writeProperty'
@@ -35,8 +36,8 @@ export function writableKey(key: string, columns: Readonly<Record<string, Proper
   return APP_KEYS.has(bare) || (Object.hasOwn(columns, bare) && columns[bare].kind === 'mentions' && columns[bare].pair !== true) ? null : bare
 }
 
-/** What a locked cell says when the human tries it, and what a refused write rejects with (S56). */
-export const READ_ONLY_TIP = 'This note is read only'
+/** What a locked cell says when the human tries it, and what a refused write rejects with (S56), in the vault's word for a note (YAZ-4938). */
+export const readOnlyTip = (unit: UnitText = SAME_WORD): string => unit('This note is read only')
 
 /**
  * The paths of the read-only notes among `records`, read off each note's OWN properties: a folder that
@@ -47,7 +48,7 @@ export function readOnlyPaths(records: readonly IndexRecord[]): ReadonlySet<stri
   return new Set(records.filter((r) => isReadOnlyProperties(r.properties)).map((r) => r.path))
 }
 
-/** `write`, refusing a path in `locked` (see the module doc). */
-export function guardReadOnly(locked: ReadonlySet<string>, write: (path: string, writes: readonly PropertyWrite[]) => Promise<unknown>): (path: string, writes: readonly PropertyWrite[]) => Promise<unknown> {
-  return (path, writes) => (locked.has(path) ? Promise.reject(new Error(READ_ONLY_TIP)) : write(path, writes))
+/** `write`, refusing a path in `locked` (see the module doc); the refusal says the vault's word (`unit`). */
+export function guardReadOnly(locked: ReadonlySet<string>, write: (path: string, writes: readonly PropertyWrite[]) => Promise<unknown>, unit: UnitText = SAME_WORD): (path: string, writes: readonly PropertyWrite[]) => Promise<unknown> {
+  return (path, writes) => (locked.has(path) ? Promise.reject(new Error(readOnlyTip(unit))) : write(path, writes))
 }

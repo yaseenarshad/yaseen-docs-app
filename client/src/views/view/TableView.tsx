@@ -54,7 +54,7 @@ import { partTransform } from '../../lib/liveGap'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import { allPropertyKeys } from './properties'
 import { setViewOrder } from './columnOrder'
-import { NO_READ_ONLY, READ_ONLY_TIP, writableKey } from '../readOnlyRows'
+import { NO_READ_ONLY, readOnlyTip, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 import type { FolderHost } from '../ViewsPane'
@@ -1937,7 +1937,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 onClick={c === nameCol ? (e) => (newWindowClick(e, rowPage(path)) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
                 // A read-only note's Name cell opens no title field: a title edit renames the note (YAZ-3076 D6).
                 // A clipped cell shows its full value on hover only when it is cut (YAZ-4582 D29, YAZ-4867): `cutCellCard`.
-                title={c === nameCol && locked ? READ_ONLY_TIP : undefined}
+                title={c === nameCol && locked ? readOnlyTip(unit) : undefined}
                 data-clip-title={c === nameCol && locked ? undefined : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
                 onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
                 {...(c !== nameCol && !locked && typings[c]?.assigned === 'image' ? imageDrop(line.r, c) : {})}

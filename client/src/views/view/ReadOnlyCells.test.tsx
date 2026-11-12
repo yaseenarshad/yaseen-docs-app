@@ -13,7 +13,7 @@ import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
-import { READ_ONLY_TIP, guardReadOnly, readOnlyPaths } from '../readOnlyRows'
+import { guardReadOnly, readOnlyPaths, readOnlyTip } from '../readOnlyRows'
 import { propertyKeys } from '../engine'
 import { allPropertyKeys } from './properties'
 
@@ -101,7 +101,7 @@ describe('a read-only note in a table (S52, S56)', () => {
     const [, priority] = cellsOf(rowOf(el, 'Agentic Agency'))
     expect(priority.textContent).toContain('2')
     expect(priority.querySelector('[data-edit]')).toBeNull()
-    expect(priority.querySelector(`[title="${READ_ONLY_TIP}"]`)).not.toBeNull()
+    expect(priority.querySelector(`[title="${readOnlyTip()}"]`)).not.toBeNull()
     doubleClick(priority)
     act(() => void priority.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
     expect(priority.querySelector('input')).toBeNull()
@@ -112,7 +112,7 @@ describe('a read-only note in a table (S52, S56)', () => {
     const { el, writeValues } = mount(TABLE)
     const box = cellsOf(rowOf(el, 'Agentic Agency'))[2].querySelector<HTMLInputElement>('input[type="checkbox"]')!
     expect(box.disabled).toBe(true)
-    expect(box.title).toBe(READ_ONLY_TIP)
+    expect(box.title).toBe(readOnlyTip())
     act(() => box.click())
     expect(writeValues).not.toHaveBeenCalled()
   })
@@ -122,7 +122,7 @@ describe('a read-only note in a table (S52, S56)', () => {
     const name = cellsOf(rowOf(el, 'Agentic Agency'))[0]
     doubleClick(name)
     expect(name.querySelector('input')).toBeNull()
-    expect(name.title).toBe(READ_ONLY_TIP)
+    expect(name.title).toBe(readOnlyTip())
     expect(retitle).not.toHaveBeenCalled()
   })
 
@@ -130,7 +130,7 @@ describe('a read-only note in a table (S52, S56)', () => {
     const { el } = mount(TABLE)
     const [, priority] = cellsOf(rowOf(el, 'The Levels of an Agency'))
     expect(priority.querySelector('[data-edit]')).not.toBeNull()
-    expect(priority.querySelector(`[title="${READ_ONLY_TIP}"]`)).toBeNull()
+    expect(priority.querySelector(`[title="${readOnlyTip()}"]`)).toBeNull()
   })
 
   it('S57: the switch going off on disk (a new index snapshot) gives the cells their editors back', () => {
@@ -158,7 +158,7 @@ describe('a read-only note in cards (S52)', () => {
     const { el } = mount(CARDS)
     const card = [...el.querySelectorAll<HTMLElement>('.view-card')].find((c) => c.textContent?.includes('Agentic Agency'))!
     expect(card.querySelector('[data-edit]')).toBeNull()
-    expect(card.querySelector(`[title="${READ_ONLY_TIP}"]`)).not.toBeNull()
+    expect(card.querySelector(`[title="${readOnlyTip()}"]`)).not.toBeNull()
   })
 })
 
@@ -166,7 +166,7 @@ describe('the one guard in the pane (S54)', () => {
   it('a write the pane is asked to make for a read-only note is refused with the tooltip’s words; another note’s goes through', async () => {
     const { writeValues } = mount(TABLE)
     const guarded = guardReadOnly(readOnlyPaths(lockedRecords()), writeValues)
-    await expect(guarded(LOCKED, [{ key: 'priority', value: 9 }])).rejects.toThrow(READ_ONLY_TIP)
+    await expect(guarded(LOCKED, [{ key: 'priority', value: 9 }])).rejects.toThrow(readOnlyTip())
     await guarded(OPEN, [{ key: 'priority', value: 9 }])
     expect(writeValues).toHaveBeenCalledExactlyOnceWith(OPEN, [{ key: 'priority', value: 9 }])
   })

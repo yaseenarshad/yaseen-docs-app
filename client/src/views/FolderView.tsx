@@ -1208,6 +1208,7 @@ export function FolderView({
     const pageOf = (link: string) => resolveLink(exactLinkTarget(link) ?? link)
     const recordOf = (page: string) => feed.records.find((r) => r.path === page) ?? folderMap.get(relTo(root, page))
     const result = await writeTiedCell({
+      unit,
       row,
       rowLink: noteLinkOf(row, resolveLink),
       column,
@@ -1350,7 +1351,7 @@ export function FolderView({
       const written = pairs.length > 0 && own.length === 0 ? undefined : await writeRouted(note, own, separate, own.some(({ key }) => separate.has(key)) ? id ?? (await folderId(path)) : undefined)
       // One Undo for the cell (R2): the table's ⌘Z step puts back exactly the notes this wrote.
       return pairs.length === 0 ? written : ({ undoPair: async () => { for (const undo of undos.reverse()) await undo.undoPair() } } satisfies PairWritten)
-    }),
+    }, unit),
     // ONE declaration through `writeDeclaration`. An option rename (YAZ-4591 S24) goes on to the notes once the
     // declaration has landed: a refused declaration touches none.
     setColumn: (key, next, base, rename) => {

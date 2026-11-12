@@ -12,7 +12,7 @@ import { resolverFor } from './engine'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { click, flush, q, rec } from './testFolderView'
 import { FolderView } from './FolderView'
-import { READ_ONLY_TIP } from './readOnlyRows'
+import { readOnlyTip } from './readOnlyRows'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 
 vi.mock('../api', async (importOriginal) => ({
@@ -108,7 +108,7 @@ const boxButton = (el: ParentNode, name: string) => [...el.querySelectorAll<HTML
 const lockedCell = (el: ParentNode, name: string): boolean => {
   const row = [...el.querySelectorAll<HTMLElement>('tbody tr')].find((tr) => tr.textContent?.includes(name))
   if (row === undefined) throw new Error(`no row ${name}`)
-  return row.querySelector(`[title="${READ_ONLY_TIP}"]`) !== null
+  return row.querySelector(`[title="${readOnlyTip()}"]`) !== null
 }
 const duplicateView = (el: ParentNode): void => {
   const tab = [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((x) => x.textContent === 'Pipeline')!

@@ -6,7 +6,7 @@
  * What counts as user-facing (the slots): a `label`, `title`, `placeholder`, `aria-label` / `ariaLabel`,
  * `confirmLabel`, `cancelLabel`, `menuLabel`, `triggerLabel`, `empty` or `name`; a toast or notice (`notify(…)`,
  * `onNotice(…)`, `notice(…)`); text between JSX tags; a count (`'note' : 'notes'`, `plural(n, 'note')`,
- * `${n} notes`); a label constant (a const named …LABEL, …PLACEHOLDER, …TITLE, …NAME or …OPTIONS); the sidebar
+ * `${n} notes`); a label constant (a const named …LABEL, …PLACEHOLDER, …TITLE, …NAME, …OPTIONS, …TIP or …MESSAGE); the sidebar
  * menu's `plain(label)` rows; a string inside a JSX expression that IS an element's text, `<strong>{a ? 'This note…' : …}</strong>`
  * (the literal stands between `>{` and `}<` on its line, with no tag in between; YAZ-4939's chip card was missed this way). The sidebar menu's `create(id, label)` and Settings › Folder pages' `row(id, label)` route
  * every label through the helper themselves. Help prose (a `hint`, an `about` line, a sheet's long text) keeps the plain
@@ -34,7 +34,7 @@ const ALLOWED: readonly { why: string; test: RegExp }[] = [
 const WORD = /\bnotes?\b/i
 const LITERAL = /(['"`])((?:\\.|(?!\1)[^\\\n])*)\1/g
 const SLOT =
-  /(?:\b(?:label|title|placeholder|aria-label|ariaLabel|confirmLabel|cancelLabel|menuLabel|triggerLabel|empty|name)\s*[:=]\s*\{?\s*|\b(?:notify|onNotice|notice|plain)\??\.?\(\s*|\b[A-Z_]*(?:LABEL|PLACEHOLDER|TITLE|NAME|OPTION)S?\b[^=]*=\s*[[{]?[^'"`]*)$/
+  /(?:\b(?:label|title|placeholder|aria-label|ariaLabel|confirmLabel|cancelLabel|menuLabel|triggerLabel|empty|name)\s*[:=]\s*\{?\s*|\b(?:notify|onNotice|notice|plain)\??\.?\(\s*|\b[A-Z_]*(?:LABEL|PLACEHOLDER|TITLE|NAME|OPTION|TIP|MESSAGE)S?\b[^=]*=\s*[[{]?[^'"`]*)$/
 const COUNT_CALL = /\b(?:plural|count)\(\s*[^,()]*,\s*$/
 const IDENTIFIER = /^[\w.\-:/*[\]"=]+$/
 const JSX_TEXT = /[>}]([^<>{}]*)[<{]/g
