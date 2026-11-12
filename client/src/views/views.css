@@ -1416,10 +1416,9 @@
 .view-link-pill:has(+ .view-link-pill) {
   margin-right: 4px;
 }
-/* Each pill wears its page's icon (YAZ-4544 4G). The editor hides the icon of a link's second piece
-   (`.wikilink + .wikilink`, wikilink.css, `!important`); a Multi-link cell's next pill is another link, so it keeps its own. */
-.wikilink.view-link-pill + .wikilink.view-link-pill.file-icon::before {
-  content: '' !important;
+/* Each pill wears its page's icon (YAZ-4544 4G): a `FileIcon` inside it, after the head piece, as the note's pill
+   draws it; the vault's look hides it (`--pill-icon-display`, YAZ-4924). */
+.view-link-pill > .file-icon::before {
   display: var(--pill-icon-display, inline-block) !important;
 }
 /* The pieces the vault's look adds (YAZ-4924, `LinkPillParts.tsx`) are inside the pill's span here: no sibling rules to join. */

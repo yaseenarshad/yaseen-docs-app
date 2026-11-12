@@ -5,12 +5,12 @@
  * through `withLinkPills`, so the file holds only changes; Plain strips the background, the colour and the icon in one
  * click, and Reset brings today's look back. Every default is today's look.
  */
-import { useContext, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { LINK_PILL_COLORS, LINK_PILL_QUICK_PICKS, LINK_PILL_TEXT_MAX, isDefaultLinkPills, isPlainLinkPills, plainLinkPills, withLinkPills, type LinkPillColor, type LinkPills } from '@shared/linkPills'
 import { linkPillVars, pillParts } from '../editor/wikilink/linkPillLook'
 import { PillHead, PillTail } from '../editor/wikilink/LinkPillParts'
 import { capital, fillSwatch, textSwatch } from '../editor/table/colours'
-import { IconsContext, fileIconAttrs } from '../sidebar/FileIcon'
+import { FileIcon } from '../sidebar/FileIcon'
 import { Segmented } from './controls'
 import type { Option } from './options'
 import type { LinkPillsState } from './useLinkPills'
@@ -200,27 +200,15 @@ export function PillShapeControl({ look }: RowProps) {
   return <Segmented options={SHAPE_OPTIONS} value={pills.shape ?? 'pill'} onChange={(shape) => save(withLinkPills(pills, { shape: shape === 'pill' ? undefined : shape === 'square' ? 'square' : 'underline' }))} ariaLabel="Link pill shape" />
 }
 
-/** One pill of the preview: the editor's classes and icon attributes, and the pieces the look adds. */
+/** One pill of the preview, as a folder page's cell draws one: the editor's classes, the icon after the head piece, the pieces the look adds. */
 function PreviewPill({ pills, vault, text, path, otherVault = null, info, missing = false }: { pills: LinkPills; vault: string | null; text: string; path?: string; otherVault?: string | null; info?: { id?: string; folder: string }; missing?: boolean }) {
-  const icons = useContext(IconsContext)
   const { head, tail } = pillParts(pills, { info, otherVault }, vault)
-  const ends = (
-    <>
+  return (
+    <span className={`wikilink view-link-pill${missing || path === undefined ? ' wikilink--unresolved' : ''}`} title={missing ? 'A link to a note that does not exist yet' : text}>
       {head !== null && <PillHead head={head} />}
+      {!missing && path !== undefined && <FileIcon path={path} />}
       {text}
       {tail !== null && <PillTail tail={tail} />}
-    </>
-  )
-  if (missing || path === undefined)
-    return (
-      <span className="wikilink wikilink--unresolved" title="A link to a note that does not exist yet">
-        {ends}
-      </span>
-    )
-  const { style, ...attrs } = fileIconAttrs(icons, path, false)
-  return (
-    <span {...attrs} style={style} className="wikilink file-icon file-icon--file">
-      {ends}
     </span>
   )
 }

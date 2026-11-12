@@ -566,11 +566,12 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
 const LINK_PILL_WORDS = ['link', 'links', 'pill', 'pills', 'wikilink', 'look', 'style', 'vault', 'preview', 'plain', 'reset']
 
 /** One row of Settings › Link pills (YAZ-4924): there with a vault open, its control on the vault's look. */
-function linkPillRow(id: string, label: string, hint: string, keywords: string[], render: (look: LinkPillsState) => ReactNode): SettingDef {
+function linkPillRow(id: string, label: string, hint: string, keywords: string[], render: (look: LinkPillsState) => ReactNode, wide = false): SettingDef {
   return {
     id,
     label,
     hint,
+    wide,
     keywords: [...LINK_PILL_WORDS, ...keywords],
     available: (ctx) => ctx.linkPills !== undefined,
     render: ({ linkPills }) => linkPills && render(linkPills),
@@ -1741,12 +1742,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: (ctx) => ctx.linkPills !== undefined,
             render: ({ linkPills, ids, textFormatting }) => linkPills && <LinkPillsPreview look={linkPills} vault={textFormatting?.vaults.find((v) => v.root === textFormatting.activeRoot)?.name ?? null} ids={ids?.enabled === true} />,
           },
-          linkPillRow('linkPillBackground', 'Background', 'The light tint of today, none, or a colour from the table palette at a strength.', ['colour', 'color', 'tint', 'fill', 'strength'], (look) => <PillBackgroundControl look={look} />),
-          linkPillRow('linkPillTextColour', 'Text colour', '"Same as text" takes the colour of the words around the link. A missing note keeps its own grey.', ['colour', 'color', 'text'], (look) => <PillTextControl look={look} />),
+          linkPillRow('linkPillBackground', 'Background', 'The light tint of today, none, or a colour from the table palette at a strength.', ['colour', 'color', 'tint', 'fill', 'strength'], (look) => <PillBackgroundControl look={look} />, true),
+          linkPillRow('linkPillTextColour', 'Text colour', '"Same as text" takes the colour of the words around the link. A missing note keeps its own grey.', ['colour', 'color', 'text'], (look) => <PillTextControl look={look} />, true),
           linkPillRow('linkPillIcon', 'Icon', "The page's file icon before the name.", ['icon', 'file icon'], (look) => <PillIconControl look={look} />),
           linkPillRow('linkPillStyle', 'Style', 'Bold, italic and underline on the name.', ['bold', 'italic', 'underline', 'style'], (look) => <PillStyleControl look={look} />),
-          { ...linkPillRow('linkPillBeforeAfter', 'Before and after', 'Up to 8 characters drawn before and after the name, like ( ) or an arrow. The note keeps [[Name]].', ['before', 'after', 'brackets', 'parentheses', 'arrow', 'text'], (look) => <PillBeforeAfterControl look={look} />), wide: true },
-          linkPillRow('linkPillVault', 'Vault name', 'Today a pill into another vault names that vault after its text. Always names this vault too; Before puts it first, "Wiki › Name".', ['vault', 'name', 'other vault'], (look) => <PillVaultControl look={look} />),
+          linkPillRow('linkPillBeforeAfter', 'Before and after', 'Up to 8 characters drawn before and after the name, like ( ) or an arrow. The note keeps [[Name]].', ['before', 'after', 'brackets', 'parentheses', 'arrow', 'text'], (look) => <PillBeforeAfterControl look={look} />, true),
+          linkPillRow('linkPillVault', 'Vault name', 'Today a pill into another vault names that vault after its text. Always names this vault too; Before puts it first, "Wiki › Name".', ['vault', 'name', 'other vault'], (look) => <PillVaultControl look={look} />, true),
           { ...linkPillRow('linkPillId', 'ID', "The note's ID, small and muted, after the name.", ['id', 'ids', 'number'], (look) => <PillIdControl look={look} />), available: (ctx) => ctx.linkPills !== undefined && ctx.ids?.enabled === true },
           linkPillRow('linkPillFolder', 'Folder', "The page's folder, small and muted, after the name: its parent folder, or the whole path from the vault.", ['folder', 'path', 'parent'], (look) => <PillFolderControl look={look} />),
           linkPillRow('linkPillShape', 'Shape', 'Pill is the rounded box of today. Underline only draws no box, a line under the name.', ['shape', 'square', 'rounded', 'underline', 'box'], (look) => <PillShapeControl look={look} />),
