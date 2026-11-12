@@ -77,3 +77,30 @@ it('the copy rule: a paste below is the copy too and takes a new ID from the doo
   applyExternalMarkdown(crepe, twice)
   expect(cardLines()).toEqual([line, line])
 })
+
+it('YAZ-4993 (the round 2 nit): a drag of the ORIGINAL while an agent`s changed, older copy sits unswept loses no review', async () => {
+  const source = createWikilinkResolveSource()
+  source.update(() => null, [], [], true, ['WIKI'])
+  const root = document.createElement('div')
+  document.body.appendChild(root)
+  // The agent wrote its copy with a line it read BEFORE the Nov 7 answer, and changed the text. The sweep has not run.
+  const stale = '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'
+  const full = '<!-- card: WIKI-9, 2026-11-01T09:00Z good, 2026-11-07T09:00Z good -->'
+  const md = `\`\`\`card\nQ, reworded\n---\nA\n\`\`\`\n${stale}\n\n\`\`\`card\nQ\n---\nA\n\`\`\`\n${full}\n\nOutro\n`
+  const crepe = createCrepe({ root, defaultValue: md, wikilinks: source, noteCards: { path: '/v/deck.md', mintId: () => Promise.resolve('WIKI-30') } })
+  await crepe.create()
+  mounted.push({ crepe, root })
+  const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+  let from = -1
+  view.state.doc.forEach((node, pos, i) => {
+    if (i === 1) from = pos
+  })
+  const original = view.state.doc.nodeAt(from)!
+  // A drag of the original to the end: it leaves its place and lands at the end in ONE transaction.
+  view.dispatch(view.state.tr.insert(view.state.doc.content.size, original).delete(from, from + original.nodeSize).setMeta('uiEvent', 'drop'))
+  await new Promise((r) => setTimeout(r, 0))
+  const saved = getMarkdownForSave(crepe)
+  // The Nov 7 review is only on the original. It must still be in the file; the move keeps the ID and the history.
+  expect(saved).toContain('2026-11-07T09:00Z good')
+  expect(saved.split('\n').filter((l) => l.startsWith('<!-- card'))).toEqual([stale, full])
+})

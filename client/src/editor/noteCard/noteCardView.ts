@@ -587,8 +587,10 @@ const copyLine = (line: CardLine): CardLine => ({ parts: withoutCardReviews(line
  * of the page holds its ID is the copy — it loses its ID and its history in the same transaction, and asks the vault's
  * door for a new ID (`host.mintId`, as `/card` does; no door: the sweep gives one). Which card is the copy is known
  * here, not by its place: the card the page already held keeps its ID and history, above or below. A move (cut and
- * paste, a drag) holds the ID once after the transaction, so it keeps it. An outside write and ⌘Z / ⇧⌘Z are not
- * user inserts: the sweep's rule settles an agent's copy.
+ * paste, a drag) adds no holder of the ID, so it keeps its ID and history — also when an agent's copy of the card, not
+ * yet swept, holds the ID too (YAZ-4993: that copy's line can be older, so emptying the moved card could drop a review).
+ * Only as many inserted cards are copies as the edit adds holders of the ID. An outside write and ⌘Z / ⇧⌘Z are not
+ * user inserts: the sweep's rule settles an agent's copy, and never drops a review.
  */
 function noteCardCopies(deps: NoteCardDeps) {
   /** Positions of copies that wait for a new ID from the door, set by `appendTransaction`, taken by the plugin view. */
@@ -597,7 +599,7 @@ function noteCardCopies(deps: NoteCardDeps) {
     () =>
       new Plugin({
         key: new PluginKey('mdapp-note-card-copies'),
-        appendTransaction: (trs, _old, state) => {
+        appendTransaction: (trs, old, state) => {
           const inserted: Array<{ from: number; to: number }> = []
           for (const tr of trs) {
             if (!tr.docChanged || tr.getMeta(EXTERNAL_EDIT_META) === true || tr.getMeta(NOTE_CARD_ID_META) === true || isHistoryTransaction(tr)) continue
@@ -625,6 +627,20 @@ function noteCardCopies(deps: NoteCardDeps) {
             }
             return !node.isTextblock
           })
+          // How many more cards hold each ID than before the edit: only that many inserted cards are copies. A move of a
+          // card while an unswept copy of it sits on the page (YAZ-4993) adds none, so the moved card keeps its history.
+          const more = new Map<string, number>()
+          const count = (doc: typeof state.doc, sign: number) =>
+            doc.descendants((node) => {
+              if (isNoteCardNode(node)) {
+                const id = cardIdOf(noteCardLineOf(node))
+                if (id !== null && fresh.some((f) => f.id === id)) more.set(id, (more.get(id) ?? 0) + sign)
+                return false
+              }
+              return !node.isTextblock
+            })
+          count(state.doc, 1)
+          count(old.doc, -1)
           const tr = state.tr
           const copies: number[] = []
           for (const { pos, id } of fresh) {
@@ -632,6 +648,8 @@ function noteCardCopies(deps: NoteCardDeps) {
               held.add(id)
               continue
             }
+            if ((more.get(id) ?? 0) <= 0) continue
+            more.set(id, more.get(id)! - 1)
             const node = state.doc.nodeAt(pos)!
             const line = noteCardLineOf(node)
             tr.step(new CardLineStep(pos, formatCardLine(line), formatCardLine(copyLine(line))))
