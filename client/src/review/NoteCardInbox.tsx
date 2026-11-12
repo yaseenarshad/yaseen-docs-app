@@ -24,6 +24,7 @@ import type { ExploreVault } from '../explore/ExploreNote'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardBody, NoteCardId, NoteCardReviews, noteCardWait } from './noteCardParts'
 import { noteCardInboxHints, noteCardInboxKey } from './noteCardInboxKeys'
+import { HoverTip } from '../components/HoverTip'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
@@ -179,11 +180,15 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
                   <div className="note-card-inbox__answers">
                     {session.answers.map((a, i) => {
                       const label = answerLabel(a.review.rating, review.settings)
+                      // The app's own hover box (a native title shows nothing in the app): when the card comes back.
+                      const comesBack = `${label} · ${noteCardWait(a.interval)}`
                       return (
-                        <button key={a.review.rating} type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} title={`${label} · ${noteCardWait(a.interval)}`} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.answer(a.review.rating)}>
-                          {label}
-                          <kbd>{i + 1}</kbd>
-                        </button>
+                        <HoverTip key={a.review.rating} text={comesBack}>
+                          <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.answer(a.review.rating)}>
+                            {label}
+                            <kbd>{i + 1}</kbd>
+                          </button>
+                        </HoverTip>
                       )
                     })}
                   </div>

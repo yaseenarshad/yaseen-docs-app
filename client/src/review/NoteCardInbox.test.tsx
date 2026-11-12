@@ -117,7 +117,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.showAnswers).toHaveBeenCalledOnce()
     await flush()
     // The hover is the truth (D13): each button says when the card comes back.
-    expect(buttons().map((b) => [b.textContent, b.title])).toEqual([
+    expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
       ['Forgot1', 'Forgot · today'],
       ['Remembered2', 'Remembered · 3 days'],
     ])
@@ -132,7 +132,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     mount('Just a fact', { ...DEFAULT_REVIEW_SETTINGS, buttons: 4 })
     expect(review.showAnswers).toHaveBeenCalledOnce()
     await flush()
-    expect(buttons().map((b) => b.title)).toEqual(['Again · today', 'Hard · 3 days', 'Good · 9 days', 'Easy · 20 days'])
+    expect(buttons().map((b) => b.getAttribute('aria-description'))).toEqual(['Again · today', 'Hard · 3 days', 'Good · 9 days', 'Easy · 20 days'])
     expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).toContain('1–4')
     press('3')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good')

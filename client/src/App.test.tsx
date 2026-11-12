@@ -5229,7 +5229,7 @@ describe('App: the note card flow (YAZ-4962)', () => {
     expect([sides(el), hidden(el)]).toEqual([2, ['France', 'Paris']])
     await vi.waitFor(() => expect(el.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2))
     const remembered = el.querySelectorAll<HTMLButtonElement>('.note-card-inbox__answer')[1]
-    expect(remembered.title).toMatch(/^Remembered · (\d+ days?|today)$/)
+    expect(remembered.getAttribute('aria-description')).toMatch(/^Remembered · (\d+ days?|today)$/)
     // Remembered (2): the review lands on the card line, written as the line holds reviews.
     await press(el, '2')
     await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good -->$/m))
