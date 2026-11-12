@@ -10,6 +10,7 @@
  * The box closes on Cancel, Esc, a press outside it (capture `pointerdown`, as the chip's) and the window's blur. The
  * hover text is the app's own box (`HoverTip`): a native `title` shows nothing in the app.
  */
+import { choiceKey } from '../components/choiceKeys'
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { HoverTip } from '../components/HoverTip'
 import { LockIcon } from '../views/view/icons'
@@ -65,6 +66,8 @@ export function VaultLock({ name, until, onAllow, onLock }: VaultLockProps) {
       ref={rootRef}
       className="read-only-chip vault-lock"
       onKeyDown={(event) => {
+        // ↓ ↑ Tab ⇧Tab move through the choices, Cancel included; Enter picks the focused one (YAZ-4989).
+        if (asking && choiceKey(event, rootRef.current?.querySelector('.read-only-chip__ask') ?? null)) return
         if (!asking || event.key !== 'Escape') return
         event.preventDefault()
         event.stopPropagation()

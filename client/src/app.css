@@ -3175,6 +3175,12 @@ body.drag-held iframe {
   background: var(--accent-soft);
 }
 
+/* The focused answer shows (YAZ-4989): ↓ ↑ and Tab move through a sheet's choices, and Enter picks that one. */
+.confirm__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* A third answer (YAZ-3818 D17's "Cells only"): on the buttons' row, at its left end; no button breaks its words. */
 .confirm__btn--other {
   margin-right: auto;

@@ -3816,13 +3816,15 @@ export function App() {
           onCancel={() => setPendingRename(null)}
         />
       )}
-      {/* A file action in a read-only vault (YAZ-4939, YAZ-4985): Enter is "Just this once", Esc is Cancel. */}
+      {/* A file action in a read-only vault (YAZ-4939, YAZ-4985): Enter is "Just this once" (or the choice ↓ ↑ moved to), Esc is Cancel. */}
       {readOnlyAsk !== null && (
         <ConfirmSheet
           labelId="confirm-read-only-vault-text"
           text={`This vault (${storage.vaultName(readOnlyAsk.root)}) is read only. Allow this file change?`}
           confirmLabel="Just this once"
           focusConfirm
+          // ↓ ↑ Tab move through Just this once · 1 minute · 10 minutes · Cancel; Enter picks the focused one (YAZ-4989).
+          choices
           onConfirm={() => answerReadOnly(null)}
           onCancel={() => answerReadOnly(false)}
           other={

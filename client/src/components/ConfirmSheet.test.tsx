@@ -113,3 +113,68 @@ describe('ConfirmSheet with confirmDisabled: the confirm button and Enter do not
     expect(calls()).toEqual([2, 0])
   })
 })
+
+describe('YAZ-4989: a sheet of choices (the "This vault is read only" ask)', () => {
+  const picked: string[] = []
+  function renderChoices(): HTMLElement {
+    picked.length = 0
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    root = createRoot(host)
+    act(() =>
+      root?.render(
+        <ConfirmSheet
+          labelId="t"
+          text="This vault is read only."
+          confirmLabel="Just this once"
+          focusConfirm
+          choices
+          onConfirm={() => picked.push('once')}
+          onCancel={() => picked.push('cancel')}
+          other={
+            <>
+              <button type="button" className="confirm__btn" onClick={() => picked.push('minute')}>1 minute</button>
+              <button type="button" className="confirm__btn" onClick={() => picked.push('ten')}>10 minutes</button>
+            </>
+          }
+        />,
+      ),
+    )
+    return host
+  }
+  const focused = () => document.activeElement?.textContent
+  const press = (k: string, init: KeyboardEventInit = {}) => act(() => void document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init })))
+
+  it('the focus starts on Just this once; ↓ / Tab go Just this once → 1 minute → 10 minutes → Cancel and round; ↑ / ⇧Tab back', () => {
+    renderChoices()
+    expect(focused()).toBe('Just this once')
+    const seen: (string | undefined)[] = []
+    for (let i = 0; i < 4; i++) {
+      press(i % 2 === 0 ? 'ArrowDown' : 'Tab')
+      seen.push(focused())
+    }
+    expect(seen).toEqual(['1 minute', '10 minutes', 'Cancel', 'Just this once'])
+    press('ArrowUp')
+    expect(focused()).toBe('Cancel')
+    press('Tab', { shiftKey: true })
+    expect(focused()).toBe('10 minutes')
+    expect(picked).toEqual([])
+  })
+
+  it('Enter picks the focused choice; Esc cancels', () => {
+    renderChoices()
+    press('ArrowDown')
+    press('ArrowDown')
+    press('Enter')
+    expect(picked).toEqual(['ten'])
+    press('Escape')
+    expect(picked).toEqual(['ten', 'cancel'])
+  })
+
+  it('a sheet without `choices` keeps its rule: Enter confirms wherever the focus is', () => {
+    const el = render()
+    act(() => buttons(el)[0].focus())
+    key('Enter')
+    expect(calls()).toEqual([1, 0])
+  })
+})

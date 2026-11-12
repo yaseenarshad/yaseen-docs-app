@@ -1974,6 +1974,27 @@ describe('YAZ-4939: a note layer in a Read only vault', () => {
     expect(chip()?.textContent).toBe('Read only')
   })
 
+  it('YAZ-4989: in the E box ↓ and Tab move through the choices (the stack\'s Tab does not take them), Enter picks the focused one', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(document.activeElement?.textContent).toBe('Allow edits for 1 minute')
+    key(document.activeElement as Element, { key: 'ArrowDown' })
+    expect(document.activeElement?.textContent).toBe('10 minutes')
+    key(document.activeElement as Element, { key: 'Tab' })
+    key(document.activeElement as Element, { key: 'Tab' })
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    key(document.activeElement as Element, { key: 'ArrowUp' })
+    key(document.activeElement as Element, { key: 'ArrowUp' })
+    expect(document.activeElement?.textContent).toBe('10 minutes')
+    key(document.activeElement as Element, { key: 'Enter' })
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).not.toBeNull()
+    expect(chip()?.textContent).toMatch(/^Editing · (9|10):\d\d$/)
+  })
+
   it('YAZ-4988: ⌘↵ in edit saves, locks again at once (as Lock now) and reads; a second ⌘↵ opens the tab', async () => {
     await mount()
     await typeQuery('alp')
