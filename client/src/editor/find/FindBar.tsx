@@ -20,6 +20,7 @@
  * Folds (YAZ-4787): a note's bar has a fold button beside the count. Its menu sets what find does with folded bullets
  * for this note (`find-folds` in the note); "Use the default" hands it back to Settings › Editor › Find.
  */
+import { useUnit } from '../../vault/unitWord'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent, type RefObject } from 'react'
 import type { FindFolds } from '@shared/types'
 import { storage } from '../../lib/storage'
@@ -62,6 +63,7 @@ const Chevron = () => (
 )
 
 export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
+  const unit = useUnit()
   const state = useSyncExternalStore(channel.subscribe, channel.getState)
   const inputRef = useRef<HTMLInputElement>(null)
   const [foldMenu, setFoldMenu] = useState(false)
@@ -209,7 +211,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
                   ))}
                   <div className="find-folds__rule" />
                   {folds.own === null ? (
-                    <div className="find-folds__foot">For this note. The default is in Settings › Editor › Find.</div>
+                    <div className="find-folds__foot">{unit('For this note. The default is in Settings › Editor › Find.')}</div>
                   ) : (
                     <button
                       type="button"

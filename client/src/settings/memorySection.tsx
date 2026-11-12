@@ -42,6 +42,7 @@ import { AsleepIcon } from '../views/view/icons'
 import { Segmented } from './controls'
 import { ON_OFF_OPTIONS, TAB_SLEEP_AFTER_OPTIONS } from './options'
 import type { SettingsSection } from './registry'
+import { unit } from './unitLabel'
 import { useMemoryReport } from './useMemoryReport'
 
 /** The ⓘ of each kind of row (YAZ-3932, round 2), as Yasin approved them. */
@@ -323,7 +324,7 @@ export const MEMORY_SECTION: SettingsSection = {
         },
         {
           id: 'embedPictures',
-          label: 'Drawing and diagram pictures in notes',
+          label: (ctx) => unit(ctx, 'Drawing and diagram pictures in notes'),
           hint: 'The pictures that embeds in this window show. The app keeps the last 24 that were shown, and frees the others by itself.',
           keywords: ['memory', 'embed', 'picture', 'cache', 'drawing', 'diagram'],
           render: () => <EmbedPictures />,

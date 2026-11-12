@@ -1,4 +1,5 @@
 import { PROPERTY_LABELS, PropertyTypeIcon } from './PropertyDefinitionEditor'
+import { useUnit } from '../../vault/unitWord'
 import { ColumnSearch, matchesColumn } from './ColumnSearch'
 import { useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
@@ -91,6 +92,7 @@ const NO_DATE_COLUMNS: readonly string[] = []
 const NO_ERRORS: readonly EngineError[] = []
 
 export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, properties = null, folder, tabId, startTab, dateColumns = NO_DATE_COLUMNS }: PropertiesMenuProps) {
+  const unit = useUnit()
   const [tab, setTab] = useState<PropertiesTab>(() => startTab ?? lastPropertiesTab(tabId))
   const [query, setQuery] = useState('')
   /** The DETAIL level (YAZ-1513): the open column's key, or null for the list. Its editor is `ColumnDetail` (YAZ-4533). */
@@ -175,7 +177,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const hiddenParts: { title: string; keys: string[]; parent?: boolean }[] = [
     { title: folderTitle, keys: hiddenMatches.filter((key) => ownerOf(key) === here) },
     ...owners.map((owner) => ({ title: `From ${folderName(folderMap, owner, folder.vaultName)}`, keys: hiddenMatches.filter((key) => ownerOf(key) === owner), parent: true })),
-    { title: 'Other properties in these notes', keys: hiddenMatches.filter((key) => ownerOf(key) === null) },
+    { title: unit('Other properties in these notes'), keys: hiddenMatches.filter((key) => ownerOf(key) === null) },
   ].filter((part) => part.keys.length > 0)
   /** Hide all / Show all: Table and Board may hide every column; Cards and List keep the name (as before). */
   const hideable = view.type === 'table' || view.type === 'board'
@@ -226,7 +228,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
     const c = canonicalKey(key)
     if (!c.startsWith('note.')) return null
     const bare = c.slice('note.'.length)
-    return columnMark(folder.sources, bare, folder.settings.columns[bare]?.separate === true)
+    return columnMark(folder.sources, bare, folder.settings.columns[bare]?.separate === true, unit)
   }
   /** One column row: the grip (shown rows, no search), the kind glyph, the label, its type, a › on hover, then the switch (an other property: its buttons). */
   const row = (key: string) => {

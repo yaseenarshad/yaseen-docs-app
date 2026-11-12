@@ -5691,10 +5691,10 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
-      // The vault's review settings and its text formatting (YAZ-3066), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'text-formatting.json'], ['/v', 'review.json'], ['/v', 'text-formatting.json']],
+      // The vault's review settings, its "Clicking a link" (YAZ-4936), its word for a note (YAZ-4938) and its text formatting (YAZ-3066), each read once for each mount effect.
+      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'unit-word.json'], ['/v', 'text-formatting.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'unit-word.json'], ['/v', 'text-formatting.json']],
       coldDiff: [['/v']],
-      subscriptions: [2, 2, 6],
+      subscriptions: [2, 2, 10],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -5808,7 +5808,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(4) // review.json and text-formatting.json (YAZ-3066)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(8) // review.json, link-click.json (YAZ-4936), unit-word.json (YAZ-4938) and text-formatting.json (YAZ-3066)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')

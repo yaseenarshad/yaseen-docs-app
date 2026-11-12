@@ -36,11 +36,14 @@ import { SHARING_SECTION } from '../share/SharingPage'
 import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import type { LinkClickState } from '../explore/linkClick'
+import { useUnit, type UnitWordState } from '../vault/unitWord'
+import { unit } from './unitLabel'
 import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
 import { FOLDER_PAGES_SECTION } from './folderPagesSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented, Stepper } from './controls'
+import { UnitWordControl } from './UnitWordControl'
 import { ProfileControl } from './ProfileControl'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
@@ -66,7 +69,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -311,6 +314,8 @@ export interface SettingsCtx {
   review?: ReviewSettingsState
   /** This vault's "Clicking a link" (YAZ-4936); absent with no vault open. */
   linkClick?: LinkClickState
+  /** What this vault calls a note (YAZ-4938); absent with no vault open, and the labels then say "note". */
+  unitWord?: UnitWordState
   /**
    * This vault's IDs (YAZ-2523 🔒 V4); absent until a vault's index has loaded. `enabled` is its
    * answer, and no answer reads as no. `held`: a note holds an ID. `ask`: what a yes would write,
@@ -365,7 +370,8 @@ export interface SettingsCtx {
 
 export interface SettingDef {
   id: string
-  label: string
+  /** A label written as a function reads live state: the vault's word for a note (YAZ-4938). */
+  label: string | ((ctx: SettingsCtx) => string)
   /** Shown under the label; a hint written as a function reads live state (the sync repo facts). */
   hint?: string | ((ctx: SettingsCtx) => string)
   keywords?: readonly string[]
@@ -387,7 +393,8 @@ export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifica
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
-  title?: string
+  /** A title written as a function reads the vault's word for a note (YAZ-4938). */
+  title?: string | ((ctx: SettingsCtx) => string)
   hint?: string
   /** Its rows are ONE vault's (YAZ-2602 R10): the group names that vault where the window has two or more. */
   vault?: true
@@ -432,15 +439,16 @@ function builtInIconColour(kind: SidebarIconKind): string {
 
 /** One kind's icon colour (YAZ-3440 D4): the picker of the thread colour's row, and Default, which drops the kind's colour. */
 function iconColourRow(kind: SidebarIconKind): SettingDef {
-  const name = SIDEBAR_ICON_KIND_LABELS[kind]
+  const name = (ctx: SettingsCtx) => sidebarIconKindLabel(kind, (text) => unit(ctx, text))
   return {
     id: `sidebarIconColors.${kind}`,
-    label: `${name} colour`,
+    label: (ctx) => `${name(ctx)} colour`,
     ...(kind === 'note' ? { hint: 'Used with All colour: Colour keeps notes grey.' } : {}),
     keywords: ['sidebar', 'tree', 'icon', 'color', 'colour', kind === 'note' ? 'markdown' : kind],
     // The Line set's alone: Material's icons keep their own colours.
     available: ({ settings }) => settings.sidebarIconSet === 'line' && (settings.sidebarFileIcons === 'quiet' || settings.sidebarFileIcons === 'color'),
-    render: ({ settings, onChange }) => {
+    render: (ctx) => {
+      const { settings, onChange } = ctx
       const own = settings.sidebarIconColors[kind]
       const drop = (): SettingsState['sidebarIconColors'] => Object.fromEntries(Object.entries(settings.sidebarIconColors).filter(([k]) => k !== kind))
       return (
@@ -448,7 +456,7 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
           <input
             type="color"
             className="settings__color"
-            aria-label={`${name} icon colour in the sidebar`}
+            aria-label={`${name(ctx)} icon colour in the sidebar`}
             value={own ?? builtInIconColour(kind)}
             onChange={(e) => onChange({ ...settings, sidebarIconColors: { ...settings.sidebarIconColors, [kind]: e.target.value } })}
           />
@@ -486,8 +494,9 @@ const NOTHING_TO_WRITE = { notes: 0, folders: 0, foreign: 0 }
  * "Give IDs" and Enter do nothing until then. The box is the one typed-confirm piece (`TypedConfirmSheet`).
  */
 function GiveIdsSheet({ ask, vault, letters, onConfirm, onCancel }: { ask: NonNullable<IndexResponse['ask']>; vault?: string; letters: string | undefined; onConfirm: (letters: string) => void; onCancel: () => void }) {
+  const unit = useUnit()
   const valid = (typed: string): boolean => (letters === undefined ? isIdLetters(typed) : typed.toUpperCase() === letters)
-  return <TypedConfirmSheet labelId="confirm-ids-on-text" text={idsAskMessage(ask, vault)} ask={idsLettersAsk(letters)} confirmLabel="Give IDs" valid={valid} onConfirm={onConfirm} onCancel={onCancel} />
+  return <TypedConfirmSheet labelId="confirm-ids-on-text" text={idsAskMessage(ask, vault, unit)} ask={idsLettersAsk(letters)} confirmLabel="Give IDs" valid={valid} onConfirm={onConfirm} onCancel={onCancel} />
 }
 
 /**
@@ -519,6 +528,7 @@ function DuplicatesControl({ check }: { check: () => Promise<string> }) {
  * whose notes hold IDs asks first (🔒 V13). Each sheet's keys stay inside it, so the dialog under it does not close.
  */
 function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string }) {
+  const unit = useUnit()
   const [asking, setAsking] = useState<'off' | 'on' | null>(null)
   return (
     <>
@@ -531,7 +541,7 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
           else if (ids.held) setAsking('off')
           else ids.set(false)
         }}
-        ariaLabel="Give this vault's notes IDs"
+        ariaLabel={unit("Give this vault's notes IDs")}
       />
       {asking === 'off' && (
         <ConfirmSheet
@@ -571,7 +581,7 @@ const menuKey = (id: HotkeyId, settings: SettingsState): string | null => {
   return key === null ? null : toDisplay(key)
 }
 
-const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string; hint?: string; keywords: string[] }[] = [
+const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string | ((ctx: SettingsCtx) => string); hint?: string; keywords: string[] }[] = [
   { place: 'sidebar', label: 'Sidebar', hint: 'Files, Focus, Favorites and Recents.', keywords: ['sidebar', 'files', 'tree', 'focus', 'favorites', 'recents'] },
   { place: 'search', label: 'Search results', keywords: ['search', 'results', 'find'] },
   { place: 'newTab', label: 'New tab page', keywords: ['new tab', 'start', 'page', 'recent'] },
@@ -579,7 +589,7 @@ const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string; hint?: stri
   { place: 'tabs', label: 'Tabs', hint: "A tab you're not on.", keywords: ['tabs', 'tab strip', 'tab bar'] },
   { place: 'backlinks', label: 'Linked mentions', hint: 'The list under a note.', keywords: ['backlinks', 'linked mentions', 'references'] },
   // Folder views' row lives in Settings › Folder pages since YAZ-4585 (D34), on the same key.
-  { place: 'links', label: 'Links in notes', hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
+  { place: 'links', label: (ctx) => unit(ctx, 'Links in notes'), hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
   // YAZ-3943 demo round 2: a board's link pills have their own row; YAZ-4748 D7: a diagram's too.
   { place: 'drawings', label: 'Links in drawings and diagrams', hint: 'Link pills on a board or a draw.io diagram.', keywords: ['links', 'pills', 'drawing', 'board', 'excalidraw', 'diagram', 'drawio'] },
 ]
@@ -643,8 +653,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: 'Open on',
             hint: 'A link to a note still opens that note.',
             keywords: ['vault', 'open', 'blank', 'last note', 'new tab', 'start'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={VAULT_OPENS_ON_OPTIONS} value={settings.vaultOpensOn} onChange={(vaultOpensOn) => onChange({ ...settings, vaultOpensOn })} ariaLabel="What a vault opens on" />
+            render: (ctx) => (
+              <Segmented options={vaultOpensOnOptions((text) => unit(ctx, text))} value={ctx.settings.vaultOpensOn} onChange={(vaultOpensOn) => ctx.onChange({ ...ctx.settings, vaultOpensOn })} ariaLabel="What a vault opens on" />
             ),
           },
         ],
@@ -737,11 +747,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             // YAZ-4615 D10: one line at the top of each new note, so an agent knows where comments go.
             id: 'commentsHint',
-            label: 'Add the comment hint to new notes',
+            label: (ctx) => unit(ctx, 'Add the comment hint to new notes'),
             hint: 'Each new note gets one hidden line that tells an agent how to add a comment.',
             keywords: ['comment hint', 'agent', 'ai', 'new note', 'yaml'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={ON_OFF_OPTIONS} value={settings.commentsHint} onChange={(commentsHint) => onChange({ ...settings, commentsHint })} ariaLabel="Add the comment hint to new notes" />
+            render: (ctx) => (
+              <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.commentsHint} onChange={(commentsHint) => ctx.onChange({ ...ctx.settings, commentsHint })} ariaLabel={unit(ctx, 'Add the comment hint to new notes')} />
             ),
           },
         ],
@@ -1108,11 +1118,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           // YAZ-3746 13AB: Enter at the end of a styled line, and the new line types in that style; notes off, boxes on.
           {
             id: 'enterKeepsStyleNotes',
-            label: 'Enter keeps the text style in notes',
+            label: (ctx) => unit(ctx, 'Enter keeps the text style in notes'),
             hint: 'Press Enter at the end of a bold, italic, underlined or coloured line, and the new line types in the same style. Off: the new line starts plain.',
             keywords: ['enter', 'return', 'new line', 'next line', 'keep', 'style', 'format', 'formatting', 'bold', 'italic', 'underline', 'color', 'colour', 'highlight', 'notes'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={ON_OFF_OPTIONS} value={settings.enterKeepsStyleNotes ?? false} onChange={(enterKeepsStyleNotes) => onChange({ ...settings, enterKeepsStyleNotes })} ariaLabel="Enter keeps the text style in notes" />
+            render: (ctx) => (
+              <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.enterKeepsStyleNotes ?? false} onChange={(enterKeepsStyleNotes) => ctx.onChange({ ...ctx.settings, enterKeepsStyleNotes })} ariaLabel={unit(ctx, 'Enter keeps the text style in notes')} />
             ),
           },
           {
@@ -1512,11 +1522,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     groups: [
       {
         // YAZ-4246: what ⌘N's New… box makes, at the top of Files & Links: "Default location for new notes" (unchanged) and the title.
-        title: 'New notes',
+        title: (ctx) => unit(ctx, 'New notes'),
         items: [
           {
             id: 'newNoteLocation',
-            label: 'Default location for new notes',
+            label: (ctx) => unit(ctx, 'Default location for new notes'),
             // YAZ-3556 D3: the New… box uses it too, for notes, drawings and diagrams.
             hint: ({ settings }) => {
               const key = menuKey('newItem', settings)
@@ -1676,6 +1686,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         title: 'This vault',
         vault: true,
         items: [
+          // YAZ-4938: one row of its own, saved in the vault (`.yaseendocs/unit-word.json`): what this vault calls a note.
+          {
+            id: 'unitWord',
+            label: 'Call a note a …',
+            hint: 'The word for the thing you make and open here: New card, Delete card…, 12 cards. Saved in this vault; another vault keeps its own word. Feature names like Cell note and Daily notes, and the .md files, do not change.',
+            keywords: ['note', 'card', 'doc', 'page', 'word', 'name', 'unit', 'call', 'rename', 'flavour', 'flavor'],
+            wide: (ctx) => ctx.unitWord?.settings.unit === 'own',
+            available: (ctx) => ctx.unitWord !== undefined,
+            render: ({ unitWord }) => unitWord && <UnitWordControl unitWord={unitWord} />,
+          },
           // YAZ-4936: one row of its own, saved in the vault (`.yaseendocs/link-click.json`).
           {
             id: 'linkClick',
@@ -1683,22 +1703,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: 'A plain click on a note pill. With Explore it opens the note as a reading layer, as ⌘⇧F does; ⌘-click and the other keys keep their doors, and a board or a folder pill keeps its click.',
             keywords: ['link', 'pill', 'click', 'explore', 'open', 'reading'],
             available: (ctx) => ctx.linkClick !== undefined,
-            render: ({ linkClick }) =>
-              linkClick && (
+            render: (ctx) =>
+              ctx.linkClick && (
                 <Segmented
                   options={[
-                    { label: 'Opens the note', value: 'open' as const },
+                    { label: unit(ctx, 'Opens the note'), value: 'open' as const },
                     { label: 'Opens it in Explore', value: 'explore' as const },
                   ]}
-                  value={linkClick.settings.click}
-                  onChange={(click) => linkClick.save({ click })}
+                  value={ctx.linkClick.settings.click}
+                  onChange={(click) => ctx.linkClick?.save({ click })}
                   ariaLabel="Clicking a link"
                 />
               ),
           },
           {
             id: 'ids',
-            label: "Give this vault's notes IDs",
+            label: (ctx) => unit(ctx, "Give this vault's notes IDs"),
             hint: 'Saved in this vault and synced with it. On: every note gets an ID and the app names its file. Off: the app leaves every file as it is.',
             available: (ctx) => ctx.ids !== undefined,
             render: ({ ids, vaultName }) => ids && <IdsControl ids={ids} vault={vaultName} />,
@@ -1757,11 +1777,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           { ...reviewNumber('maxDays', 'Longest wait', 'days'), hint: ({ review }) => (review === undefined ? '' : scheduleInWords(review.settings)) },
           {
             id: 'reviewByDefault',
-            label: 'New notes are in review',
+            label: (ctx) => unit(ctx, 'New notes are in review'),
             keywords: REVIEW_KEYWORDS,
             available: upkeepOn,
-            render: ({ review }) =>
-              review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.reviewByDefault} onChange={(reviewByDefault) => review.save({ ...review.settings, reviewByDefault })} ariaLabel="New notes are in review" />,
+            render: (ctx) =>
+              ctx.review && <Segmented options={ON_OFF_OPTIONS} value={ctx.review.settings.reviewByDefault} onChange={(reviewByDefault) => ctx.review?.save({ ...ctx.review.settings, reviewByDefault })} ariaLabel={unit(ctx, 'New notes are in review')} />,
           },
         ],
       },
@@ -1806,6 +1826,12 @@ export const availableSections = (ctx: SettingsCtx): SettingsSection[] => SETTIN
 
 /** Whether a row exists in this context; the page and a search both leave out one that does not. */
 export const isAvailable = (item: SettingDef, ctx: SettingsCtx): boolean => item.available?.(ctx) ?? true
+
+/** A label resolved against the context: plain text, or the live-state kind. */
+export const resolveLabel = (item: SettingDef, ctx: SettingsCtx): string => (typeof item.label === 'function' ? item.label(ctx) : item.label)
+
+/** A group's title, resolved the same way. */
+export const resolveGroupTitle = (group: SettingsGroup, ctx: SettingsCtx): string | undefined => (typeof group.title === 'function' ? group.title(ctx) : group.title)
 
 /** A hint resolved against the context: plain text, or the live-state kind. */
 export const resolveHint = (item: SettingDef, ctx: SettingsCtx): string | undefined => (typeof item.hint === 'function' ? item.hint(ctx) : item.hint)

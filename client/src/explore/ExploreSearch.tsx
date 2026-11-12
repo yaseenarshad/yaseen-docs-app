@@ -4,6 +4,7 @@
  * list scroll, so it reads the same when a child closes over it; the rows come from the stack's ONE candidate feed.
  * Each row: its file icon, its title with the matched part marked, its folder, and a text row's snippet.
  */
+import { useVaultUnit } from '../vault/unitWord'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { basename, rootOfPath } from '@shared/types'
 import { readNeedle } from '../links/completion'
@@ -31,6 +32,7 @@ interface ExploreSearchProps {
 }
 
 export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, onRowMenu, active }: ExploreSearchProps) {
+  const unit = useVaultUnit(roots[0] ?? null)
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const typed = query.trim() !== ''
@@ -81,7 +83,7 @@ export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, onRow
       <div className="explore__results">
         {!typed && rows.length > 0 && <div className="explore__group">Recent</div>}
         {rows.length === 0 ? (
-          <p className="explore__empty">{typed ? 'No matches found' : 'Type to search the vault. The notes you open show here.'}</p>
+          <p className="explore__empty">{typed ? 'No matches found' : unit('Type to search the vault. The notes you open show here.')}</p>
         ) : (
           <ul className="search-results" role="listbox" aria-label="Explore results">
             {rows.map((r, i) => (

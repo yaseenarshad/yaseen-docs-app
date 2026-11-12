@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, showsFolderRows, shownGroupLevels } from '../viewSchema'
 import { TextField } from './TextField'
 import { cardWidth } from './cardWidth'
@@ -50,6 +51,7 @@ const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large
  * page cog (D35).
  */
 export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns, crossOut }: ViewSettingsProps) {
+  const unit = useUnit()
   const defaults = useViewDefaults()
   const table = view.type === 'table'
   // A calendar's days are its groups (YAZ-4540 D4) and a Board does not indent its groups (YAZ-4544): Table, List
@@ -91,8 +93,8 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
           </label>
           {view.type !== 'calendar' && (
             <label className="view-settings-row">
-              <RowLabel icon="folderCounts">Notes inside count</RowLabel>
-              <input type="checkbox" role="switch" aria-label="Notes inside count" checked={view.folderCounts !== false} onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'folderCounts', e.target.checked, defaults))} />
+              <RowLabel icon="folderCounts">{unit('Notes inside count')}</RowLabel>
+              <input type="checkbox" role="switch" aria-label={unit('Notes inside count')} checked={view.folderCounts !== false} onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'folderCounts', e.target.checked, defaults))} />
               <FromSettings own={own} viewKey="folderCounts" viewIndex={viewIndex} onUpdate={onUpdate} />
             </label>
           )}

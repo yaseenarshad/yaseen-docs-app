@@ -38,6 +38,7 @@ import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
 import { buildMenuSections, SCOPE_TIPS } from './menuSections'
+import { UnitContext, useVaultUnit, vaultUnit } from '../vault/unitWord'
 import type { ListFold } from './listFold'
 import { createPortal } from 'react-dom'
 import { FocusFolderList } from './FocusFolderList'
@@ -1651,7 +1652,10 @@ export function Sidebar({
   // Blank space is one vault's root only in a window with one vault, and only on a tab that has a tree of it (YAZ-3247 D12).
   const blankDrop = !multi && !searching && lens !== 'sessions' && lens !== 'recents'
 
+  // The active vault's word for a note (YAZ-4938), for the panel's own words; a row's menu and its delete ask read the row's vault.
+  const unit = useVaultUnit(root)
   return (
+    <UnitContext.Provider value={unit}>
     <aside ref={setAside} className="sidebar" style={{ width }}>
       {/* The root header doubles as the "move to the vault root" drop target (E1b) — of a window
           with one vault. With two or more each vault's own row is that target (YAZ-2602 S14). It
@@ -1750,7 +1754,7 @@ export function Sidebar({
             type="text"
             placeholder="Search"
             title={titleWithKey('Search', 'search', settings.hotkeys)}
-            aria-label="Search notes"
+            aria-label={unit('Search notes')}
             spellCheck={false} // a search is names, not prose: no red line under `yaseen` (YAZ-3748 B2)
             value={query}
             onChange={changeQuery}
@@ -1888,7 +1892,7 @@ export function Sidebar({
           // The Search tab with an empty bar (YAZ-2638 D2): one line, the keys of the search below it
           // (YAZ-2662 D10), and no tree.
           <>
-            <p className="sidebar__msg">Type to search every note and folder.</p>
+            <p className="sidebar__msg">{unit('Type to search every note and folder.')}</p>
             <dl className="sidebar__keys">
               {SEARCH_KEYS.map(([keys, does]) => (
                 <Fragment key={does}>
@@ -2070,7 +2074,7 @@ export function Sidebar({
             {errorLines}
             {forest === null && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {forest !== null && forest.length === 0 && pending === null && (
-              <p className="sidebar__msg">No notes here.</p>
+              <p className="sidebar__msg">{unit('No notes here.')}</p>
             )}
             {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), and a vault row drags to reorder (YAZ-2631 D5). */}
             {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} sort={sort} />}
@@ -2177,7 +2181,7 @@ export function Sidebar({
           // Items as data (🔒 D8, YAZ-1674): every gating rule lives in `menuSections`. `clip` is read
           // at RENDER time, so "Paste N items" follows the app-wide clipboard while the menu stands.
           sections={buildMenuSections(
-            { ...menu, clip, hotkeys: settings.hotkeys },
+            { ...menu, clip, hotkeys: settings.hotkeys, unit: vaultUnit(rootOf(menu.targetDir ?? menu.copyPath ?? root)) },
             {
               onOpen: (path) => keepFromTree(path, menu.lens === 'focus' || menu.lens === 'favorites' ? (menu.top ?? undefined) : undefined),
               onOpenInNewTabs: openFilesInTabs,
@@ -2288,7 +2292,7 @@ export function Sidebar({
         </ContextMenuSurface>
       )}
       <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={hoverHere} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} float={previewFloat} onClose={closePreview} />
-      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
+      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} unit={vaultUnit(rootOf(confirmingDelete.path))} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {pickingShortcut !== null && (
         <ShortcutPicker
           folder={relTo(rootOf(pickingShortcut), pickingShortcut)}
@@ -2302,5 +2306,6 @@ export function Sidebar({
         />
       )}
     </aside>
+    </UnitContext.Provider>
   )
 }

@@ -22,6 +22,7 @@
  */
 import { Fragment, useMemo, useRef, useState, type CSSProperties, type ReactNode, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { BOARD_TYPE_NAME } from '@shared/fileKind'
+import { SAME_WORD, useUnit, type UnitText } from '../../vault/unitWord'
 import { folderSettingsPath, type DiagramDarkColors, type FileKind, type IndexRecord, type TreeNode } from '@shared/types'
 import { FileIcon } from '../../sidebar/FileIcon'
 import { useLatestTrees } from '../../lib/pageLabel'
@@ -42,7 +43,9 @@ export interface OtherFileLine {
   note: boolean
 }
 
-const TYPE_NAME: Record<FileKind, string> = { markdown: 'Note', text: 'Text', pdf: 'PDF', image: 'Image', drawing: BOARD_TYPE_NAME.drawing, diagram: BOARD_TYPE_NAME.diagram }
+const TYPE_NAME: Record<Exclude<FileKind, 'markdown'>, string> = { text: 'Text', pdf: 'PDF', image: 'Image', drawing: BOARD_TYPE_NAME.drawing, diagram: BOARD_TYPE_NAME.diagram }
+/** A note's type name is the vault's word (YAZ-4938). */
+const noteType = (unit: UnitText): string => unit('Note')
 
 /** The files in `nodes` that are not notes, in the tree's order. */
 const filesIn = (nodes: readonly TreeNode[]): OtherFileLine[] =>
@@ -63,13 +66,13 @@ export function folderNodes(tree: readonly TreeNode[], root: string, dir: string
 export const folderFiles = (tree: readonly TreeNode[], root: string, dir: string): OtherFileLine[] => filesIn(folderNodes(tree, root, dir))
 
 /** A line inside a moved folder (YAZ-4747 OF3): every file, a note too (named without `.md`, as the sidebar names it), typed as the tray types them. */
-const nodeLine = (node: Extract<TreeNode, { type: 'file' }>): OtherFileLine => ({ path: node.path, name: node.kind === 'markdown' ? node.name.replace(/\.md$/i, '') : node.name, type: node.kind === null ? 'File' : TYPE_NAME[node.kind], size: node.size, mtime: node.mtime, note: false })
+const nodeLine = (node: Extract<TreeNode, { type: 'file' }>, unit: UnitText): OtherFileLine => ({ path: node.path, name: node.kind === 'markdown' ? node.name.replace(/\.md$/i, '') : node.name, type: node.kind === null ? 'File' : node.kind === 'markdown' ? noteType(unit) : TYPE_NAME[node.kind], size: node.size, mtime: node.mtime, note: false })
 
 /** A folder's lines, subfolders first (OF3): each `dir` node, then each file, in the tree's order within each. */
 const byFoldersFirst = (nodes: readonly TreeNode[]): TreeNode[] => [...nodes.filter((n) => n.type === 'dir'), ...nodes.filter((n) => n.type === 'file')]
 
 /** A moved note as a line. */
-export const noteLine = (record: IndexRecord): OtherFileLine => ({ path: record.path, name: record.title, type: TYPE_NAME.markdown, size: record.size, mtime: record.mtime, note: true })
+export const noteLine = (record: IndexRecord, unit: UnitText = SAME_WORD): OtherFileLine => ({ path: record.path, name: record.title, type: noteType(unit), size: record.size, mtime: record.mtime, note: true })
 
 /** The tray's collapsed marker in the page's collapsed-groups entry. */
 const CLOSED = 'other-files'
@@ -131,13 +134,14 @@ export interface OtherFilesProps {
 const NO_FOLDERS: readonly { dir: string; name: string }[] = []
 
 export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onOpenBackground, onNotice, onMoveBack, onTakeRow, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: OtherFilesProps) {
+  const unit = useUnit()
   const roots = useMemo(() => [root], [root])
   const [tree] = useLatestTrees(roots)
   // The hover panel (demo 13C): the tray's own dwell and panel, beside the line under the pointer; a line is found again by its path.
   const listRef = useRef<HTMLUListElement>(null)
   const { store: hoverStore, hoverCard, leaveCard } = useCardPreview(hoverPreview, (path) => listRef.current?.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`) ?? null)
   const files = useMemo(() => (tree === null ? [] : folderFiles(tree.tree, root, dir)), [tree, root, dir])
-  const lines = useMemo(() => [...files, ...notes.map(noteLine)], [files, notes])
+  const lines = useMemo(() => [...files, ...notes.map((record) => noteLine(record, unit))], [files, notes, unit])
   const key = `${dir}::`
   // One stored entry: the tray's closed marker, and each open folder's (OF3).
   const [marks, setMarks] = useState(() => storage.getViewGroups(root, key))
@@ -211,7 +215,7 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
           <span className="other-files__size" />
           <span className="other-files__date" />
         </li>
-        {children.map((child) => (child.type === 'dir' ? folderLines({ path: child.path, name: child.name }, depth + 1, false) : fileLine(nodeLine(child), depth + 1)))}
+        {children.map((child) => (child.type === 'dir' ? folderLines({ path: child.path, name: child.name }, depth + 1, false) : fileLine(nodeLine(child, unit), depth + 1)))}
       </Fragment>
     )
   }
@@ -252,7 +256,7 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
       </div>
       {open &&
         (lines.length + folders.length === 0 ? (
-          <p className="other-files__empty">No other files. Drag a row here to move its note out of the views.</p>
+          <p className="other-files__empty">{unit('No other files. Drag a row here to move its note out of the views.')}</p>
         ) : (
           <ul className="other-files__list" ref={listRef}>
             {folders.map((f) => folderLines({ path: f.dir, name: f.name }, 0, true))}

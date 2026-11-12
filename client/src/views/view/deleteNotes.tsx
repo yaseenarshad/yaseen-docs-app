@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react'
+import { SAME_WORD, useUnit, type UnitText } from '../../vault/unitWord'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 
 /** The sheet's words (YAZ-4592 S26), as the sidebar's delete sheet says them: one note by its title, several counted. */
-export function deleteNotesMessage(titles: readonly string[]): string {
-  return titles.length === 1 ? `Delete "${titles[0]}"? It moves to the Trash.` : `Delete ${titles.length} notes? They move to the Trash.`
+export function deleteNotesMessage(titles: readonly string[], unit: UnitText = SAME_WORD): string {
+  return titles.length === 1 ? `Delete "${titles[0]}"? It moves to the Trash.` : unit(`Delete ${titles.length} notes? They move to the Trash.`)
 }
 
 /** A delete of more notes than this asks first whatever the setting says (YAZ-4612 S49). */
@@ -24,11 +25,12 @@ export function useDeleteNotes(
 ): { confirmDeleteNotes?: (paths: readonly string[]) => void; sheet: ReactNode } {
   /** The paths the open sheet asks about, and its words, taken once as it opens. */
   const [asking, setAsking] = useState<{ paths: readonly string[]; text: string } | null>(null)
+  const unit = useUnit()
   if (trash === undefined) return { sheet: null }
   const confirmDeleteNotes = (paths: readonly string[]): void => {
     if (paths.length === 0) return
     // More than 10 notes always ask (YAZ-4612 S49), also with the setting off.
-    if (ask || paths.length > ALWAYS_ASK_OVER) setAsking({ paths, text: deleteNotesMessage(paths.map(titleOf)) })
+    if (ask || paths.length > ALWAYS_ASK_OVER) setAsking({ paths, text: deleteNotesMessage(paths.map(titleOf), unit) })
     else void trash(paths)
   }
   const sheet =

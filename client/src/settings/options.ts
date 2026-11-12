@@ -4,6 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
+import type { UnitText } from '../vault/unitWord'
 import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyNoteOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 
 export interface Option<T> {
@@ -41,8 +42,8 @@ export const EMBED_REST_OPTIONS: readonly Option<EmbedRestSeconds>[] = [
 ]
 
 /** YAZ-4820 item 3: where "/drawing" and "/diagram" put a new board made from a note. */
-export const NEW_BOARD_FOLDER_OPTIONS: readonly Option<NewBoardFolder>[] = [
-  { label: "The note's folder", value: 'note' },
+export const newBoardFolderOptions = (unit: UnitText): readonly Option<NewBoardFolder>[] => [
+  { label: unit("The note's folder"), value: 'note' },
   { label: 'assets/drawings', value: 'assets' },
 ]
 
@@ -76,9 +77,9 @@ export const STARTUP_WINDOWS_OPTIONS: readonly Option<StartupWindows>[] = [
 ]
 
 /** Settings › General › When a vault opens › Open on (YAZ-3487 D15): every vault open reads it. */
-export const VAULT_OPENS_ON_OPTIONS: readonly Option<VaultOpensOn>[] = [
+export const vaultOpensOnOptions = (unit: UnitText): readonly Option<VaultOpensOn>[] => [
   { label: 'A blank tab', value: 'blank' },
-  { label: 'Its last note', value: 'last' },
+  { label: unit('Its last note'), value: 'last' },
 ]
 
 /** Settings › Memory › Sleep unseen tabs after (YAZ-3737 D10): 30 min is the default. */
@@ -246,7 +247,9 @@ export const SIDEBAR_ARROW_MOTION_OPTIONS: readonly Option<SidebarArrowMotion>[]
 export const SIDEBAR_ICON_SWATCHES: Record<SidebarIconKind, string> = { note: '#3d8fb8', text: '#3a7fc2', pdf: '#d64545', image: '#1d9e75', drawing: '#c08410', diagram: '#e0682c' }
 
 /** The name of each kind on its colour row (YAZ-3440 D4). */
-export const SIDEBAR_ICON_KIND_LABELS: Record<SidebarIconKind, string> = { note: 'Note', text: 'Text file', pdf: 'PDF', image: 'Image', drawing: 'Drawing', diagram: 'Diagram' }
+const SIDEBAR_ICON_KIND_LABELS: Record<Exclude<SidebarIconKind, 'note'>, string> = { text: 'Text file', pdf: 'PDF', image: 'Image', drawing: 'Drawing', diagram: 'Diagram' }
+/** A note's row is named by the vault's word (YAZ-4938). */
+export const sidebarIconKindLabel = (kind: SidebarIconKind, unit: UnitText): string => (kind === 'note' ? unit('Note') : SIDEBAR_ICON_KIND_LABELS[kind])
 
 /** The sidebar's icon set (YAZ-3440 D4): Material Icon Theme's, the default, or the app's own line glyphs. */
 export const SIDEBAR_ICON_SET_OPTIONS: readonly Option<SidebarIconSet>[] = [

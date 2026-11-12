@@ -32,6 +32,7 @@
  *
  * Feed: the window's ONE `WikilinkResolveSource`, so the view costs no fetch or watcher of its own.
  */
+import { useUnit } from '../vault/unitWord'
 import { memo, type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnDecl } from './folderSettings'
 import { withOrder } from './view/columnOrder'
@@ -291,6 +292,7 @@ export function FolderView({
   onSyncNow,
   folderPages,
 }: FolderViewProps) {
+  const unit = useUnit()
   const feed = useIndexFeed(source)
   const titles = usePathTitles(source)
   /** Does the vault use IDs (YAZ-2523 🔒 V5)? Everything ID-only below asks this, and nothing under the host does. */
@@ -1551,7 +1553,7 @@ export function FolderView({
                 {folderTrayMessage(folderAsk.count, folderAsk.inside)}
               </>
             }
-            confirmLabel="Move the folder and its notes"
+            confirmLabel={unit('Move the folder and its notes')}
             focusConfirm
             onConfirm={() => {
               setFolderAsk(null)

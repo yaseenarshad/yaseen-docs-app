@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useContext, useState, useSyncExternalStore } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { GroupLevelStepsContext } from '../groupLevelSteps'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
@@ -83,6 +84,7 @@ export const rowsLabel = (shown: number, total: number, folders?: { shown: numbe
 
 /** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
 export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS, tabId, notice, filterAsks = 0 }: ToolbarProps) {
+  const unit = useUnit()
   const [open, setOpen] = useState<Menu | null>(null)
   // A new ask from the column menu (YAZ-4919) opens the Filter popover: state set from a prop in render, no effect.
   const [seenFilterAsks, setSeenFilterAsks] = useState(filterAsks)
@@ -237,7 +239,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
           </ContextMenuSurface>
         )}
         {onNew !== undefined && (
-          <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label="New note" title="New note" onClick={onNew}>
+          <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label={unit('New note')} title={unit('New note')} onClick={onNew}>
             <PlusIcon />
             New
           </button>

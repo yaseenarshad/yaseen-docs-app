@@ -1,4 +1,5 @@
 import './propertyDefinitionEditor.css'
+import { useUnit } from '../../vault/unitWord'
 import { NotesFromPicker, useLinkFolders } from './NotesFromPicker'
 import { useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
@@ -140,6 +141,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
 export function PropertyDefinitionEditor({ value, onChange, observed = [], kinds = NOTE_PROPERTY_KINDS }: {
   value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]; kinds?: readonly PropertyKind[]
 }) {
+  const unit = useUnit()
   const linkFolders = useLinkFolders()
   const [choosing, setChoosing] = useState(false)
   const [query, setQuery] = useState('')
@@ -165,7 +167,7 @@ export function PropertyDefinitionEditor({ value, onChange, observed = [], kinds
         }}><PropertyTypeIcon kind={kind} /><span>{PROPERTY_LABELS[kind]}</span>{value.kind === kind && <span className="property-def__check" aria-hidden="true">✓</span>}</button>)}
         {types.length === 0 && <p className="property-def__empty">No matching types</p>}
       </div>
-      <p className="property-def__hint">Changing type keeps existing note values.</p>
+      <p className="property-def__hint">{unit('Changing type keeps existing note values.')}</p>
     </section> : <>
       <button ref={typeButton} type="button" className="property-def__type-row" aria-label={`Property type: ${PROPERTY_LABELS[value.kind]}`} aria-expanded={false} onClick={() => setChoosing(true)}>
         <span className="property-def__muted">Type</span><span className="property-def__current-type"><PropertyTypeIcon kind={value.kind} />{PROPERTY_LABELS[value.kind]}<span className="property-def__chevron" aria-hidden="true">›</span></span>
