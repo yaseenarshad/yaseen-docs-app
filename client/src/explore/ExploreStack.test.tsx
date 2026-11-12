@@ -1435,7 +1435,8 @@ describe('YAZ-4943: drawings and diagrams open as reading layers', () => {
       expect(top()).toBe(layer)
       expect(layer.dataset.kind).toBe(shown[n]!.endsWith('.md') ? 'note' : 'board')
       expect(layer.querySelector('.explore__title')?.textContent).toBe(props.nameOf(shown[n]!))
-      expect(layer.querySelector('.explore__count')?.textContent).toBe(`${all.indexOf(shown[n]!) + 1}/${all.length}`)
+      // The count is among the rows ‹ › step to (YAZ-2571 nit): the folder and the PDF are not counted.
+      expect(layer.querySelector('.explore__count')?.textContent).toBe(`${n + 1}/${shown.length}`)
     }
     // And back, through the boards, to the first.
     for (let n = shown.length - 2; n >= 0; n--) {

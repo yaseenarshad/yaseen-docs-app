@@ -35,7 +35,7 @@ import { recentSections } from './recentSections'
 import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
-import { frontOrder, layerKindOf, MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepPlace, stepResult, topNote, type ExploreLayer } from './layers'
+import { frontOrder, layerKindOf, MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topNote, type ExploreLayer } from './layers'
 import './explore.css'
 
 export interface ExploreStackProps {
@@ -608,7 +608,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
         const rows = layer.kind !== 'search' && layer.from !== undefined ? (links.current.get(layer.from.search)?.rows ?? []) : null
         const steps =
           layer.kind !== 'search' && layer.from !== undefined && rows !== null
-            ? { place: stepPlace(rows, layer.from.at, layer.path), count: rows.length, prev: stepResult(rows, layer.from.at, layer.path, -1) !== null, next: stepResult(rows, layer.from.at, layer.path, 1) !== null, onStep: (dir: -1 | 1) => void step(layer.id, dir) }
+            ? { place: stepPlace(rows, layer.from.at, layer.path), count: stepCount(rows), prev: stepResult(rows, layer.from.at, layer.path, -1) !== null, next: stepResult(rows, layer.from.at, layer.path, 1) !== null, onStep: (dir: -1 | 1) => void step(layer.id, dir) }
             : undefined
         return (
           <div

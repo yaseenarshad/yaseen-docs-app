@@ -1,7 +1,7 @@
 /** The explore stack's model (YAZ-2571): the layer list, its cap, the top note, and where each layer stands. */
 import { describe, expect, it } from 'vitest'
 import { exploreRecents, MAX_EXPLORE_RECENTS, moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
-import { EDGE_GAP, frontOrder, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, NOTE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, layerKindOf, stepPlace, stepResult, topNote, type ExploreLayer, type LayerBox } from './layers'
+import { EDGE_GAP, frontOrder, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, NOTE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, layerKindOf, stepCount, stepPlace, stepResult, topNote, type ExploreLayer, type LayerBox } from './layers'
 
 const search = (): ExploreLayer => ({ id: newLayerId(), kind: 'search' })
 const note = (path: string): ExploreLayer => ({ id: newLayerId(), kind: 'note', path, mode: 'read' })
@@ -91,12 +91,20 @@ describe('‹ › through the search (round 3)', () => {
     expect(stepResult(rows, 3, '/v/c.md', -1)).toEqual({ at: 2, path: '/v/b.md' })
     expect(stepResult(rows, 2, '/v/b.md', -1)).toEqual({ at: 0, path: '/v/a.md' })
     expect(stepResult(rows, 0, '/v/a.md', -1)).toBeNull()
-    expect(stepPlace(rows, 2, '/v/b.md')).toBe(3)
+    expect(stepPlace(rows, 2, '/v/b.md')).toBe(2)
+  })
+
+  it('n/m counts only the rows ‹ › step to (YAZ-2571 nit): a folder or another file is not counted', () => {
+    expect(stepCount(rows)).toBe(4)
+    expect(rows.filter((r) => layerKindOf(r.path) !== null).map((r) => stepPlace(rows, rows.indexOf(r), r.path))).toEqual([1, 2, 3, 4])
+    // A search whose first row is a folder: its first note is 1/m, not 2/m.
+    const folderFirst = [{ path: '/v/cloud' }, { path: '/v/cloud.md' }, { path: '/v/b.md' }]
+    expect(`${stepPlace(folderFirst, 1, '/v/cloud.md')}/${stepCount(folderFirst)}`).toBe('1/2')
   })
 
   it('a note no longer at its place is found again; one gone from the rows steps from its last place', () => {
     expect(stepResult(rows, 0, '/v/b.md', 1)).toEqual({ at: 3, path: '/v/c.md' })
-    expect(stepPlace(rows, 0, '/v/b.md')).toBe(3)
+    expect(stepPlace(rows, 0, '/v/b.md')).toBe(2)
     const without = rows.filter((r) => r.path !== '/v/b.md')
     expect(stepResult(without, 2, '/v/b.md', 1)).toEqual({ at: 2, path: '/v/c.md' })
     expect(stepResult(without, 2, '/v/b.md', -1)).toEqual({ at: 0, path: '/v/a.md' })

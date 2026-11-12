@@ -126,8 +126,20 @@ export function stepResult(rows: readonly { path: string }[], at: number, path: 
   return null
 }
 
-/** The place of the note among the rows, 1-based, for "n/m": its `at` while the row is still there, else found again; 0 when gone. */
-export const stepPlace = (rows: readonly { path: string }[], at: number, path: string): number => (rows[at]?.path === path ? at : rows.findIndex((r) => r.path === path)) + 1
+/**
+ * The place of the note among the rows ‹ › step to (notes and boards), 1-based, for "n/m": its `at` while the row is
+ * still there, else found again; 0 when gone. A folder or another file before it is not counted (YAZ-2571).
+ */
+export function stepPlace(rows: readonly { path: string }[], at: number, path: string): number {
+  const here = rows[at]?.path === path ? at : rows.findIndex((r) => r.path === path)
+  if (here === -1) return 0
+  let place = 0
+  for (let i = 0; i <= here; i++) if (layerKindOf(rows[i].path) !== null) place++
+  return place
+}
+
+/** The "m" of "n/m": the rows ‹ › step to (notes and boards), not the folders or other files (YAZ-2571). */
+export const stepCount = (rows: readonly { path: string }[]): number => rows.reduce((n, r) => (layerKindOf(r.path) !== null ? n + 1 : n), 0)
 
 /* ---------- layers that move like a cell note (round 3) ---------- */
 
