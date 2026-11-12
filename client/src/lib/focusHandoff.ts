@@ -19,7 +19,7 @@
  * goes into it. `within` is where to look: the new tab page asks for the tab stack alone
  * (YAZ-2663), so the caret does not go into a note of the right panel.
  */
-export function focusOpenDocument(within: ParentNode = document): boolean {
+export function focusOpenDocument(within: ParentNode = document, inPlace = false): boolean {
   const docs = Array.from(within.querySelectorAll<HTMLElement>('.editor-instance .ProseMirror')).filter(
     (el) => el.offsetParent !== null && el.closest('.quicklook, .board-preview') === null,
   )
@@ -27,10 +27,36 @@ export function focusOpenDocument(within: ParentNode = document): boolean {
   // see. It cannot take the focus, so the answer is what the focus did: the caller of the search
   // bar's Esc then goes to the new tab page and not to nothing.
   for (const doc of docs) {
-    doc.focus()
+    if (inPlace) focusInPlace(doc)
+    else doc.focus()
     if (doc.ownerDocument.activeElement === doc) return true
   }
   return false
+}
+
+/**
+ * Focus `el` and leave every scroller around it where it stands (YAZ-4971). A browser scrolls a focused editor to its
+ * caret: after Explore that took the page to the caret, not to where it was scrolled. `preventScroll` asks it not to;
+ * each ancestor's scroll is also put back, for a scroll the focus makes anyway (an engine that ignores the option).
+ */
+export function focusInPlace(el: HTMLElement): void {
+  const places: [Element, number, number][] = []
+  for (let at = el.parentElement; at !== null; at = at.parentElement) places.push([at, at.scrollTop, at.scrollLeft])
+  el.focus({ preventScroll: true })
+  for (const [at, top, left] of places) {
+    if (at.scrollTop !== top) at.scrollTop = top
+    if (at.scrollLeft !== left) at.scrollLeft = left
+  }
+}
+
+/**
+ * The keyboard goes back after a surface over the page closes (Explore: Esc, ×, ⇧Esc, a click outside, YAZ-4971): to
+ * `from`, the element that had it when the surface opened, else to the open page. Never with a scroll: the page stays
+ * where it was scrolled, not where its caret is.
+ */
+export function giveFocusBack(from: Element | null): void {
+  if (from instanceof HTMLElement && from.isConnected) focusInPlace(from)
+  else focusOpenDocument(document, true)
 }
 
 /**

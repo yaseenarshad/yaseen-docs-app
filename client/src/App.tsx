@@ -29,7 +29,7 @@ import { dropIndex } from './lib/dragSlot'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
-import { focusOpenDocument } from './lib/focusHandoff'
+import { focusOpenDocument, giveFocusBack } from './lib/focusHandoff'
 import { osVerbs } from './lib/osVerbs'
 import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unlessFailed, type DragOutAsk, type NamedItem, type Notice, type NoticeKind, type NoticeType } from './lib/notice'
 import { allDirs, otherFiles, treeHasPath } from './lib/treeState'
@@ -1422,8 +1422,8 @@ export function App() {
     setExploreRequest(0)
     const from = exploreFrom.current
     exploreFrom.current = null
-    if (from instanceof HTMLElement && from.isConnected) from.focus()
-    else focusOpenDocument()
+    // In place (YAZ-4971): the page stays where it was scrolled, not at its caret.
+    giveFocusBack(from)
   }, [])
   // The stack's search vaults: each vault's folders from the tree the window already holds, and its drawings and diagrams
   // (YAZ-4943: they open as reading layers); no other files.
