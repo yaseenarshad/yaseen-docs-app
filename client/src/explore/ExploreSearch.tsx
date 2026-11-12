@@ -57,6 +57,9 @@ interface ExploreSearchProps {
   active: boolean
 }
 
+/** A row's identity: its file, and its name (a text row of the same file is its own row). */
+const rowKey = (row: SearchCandidate): string => `${row.path}␟${row.name}`
+
 export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, roots, nameOf, onOpen, onOpenInTab, onRowMenu, idsInSearch, active }: ExploreSearchProps) {
   const unit = useVaultUnit(roots[0] ?? null)
   const [query, setQuery] = useState('')
@@ -104,7 +107,8 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
     }
     if (noteOver.current) link.changed?.()
   }, [rows, link])
-  const { sel, setSelected, onKeys } = useResultKeys(rows, (row) => onOpen(row, rows.indexOf(row)))
+  // The highlight follows its row's note (YAZ-4990): a page added or deleted above it does not move it to another note.
+  const { sel, setSelected, onKeys } = useResultKeys(rows, (row) => onOpen(row, rows.indexOf(row)), rowKey)
   const selectedRow = useRef<HTMLLIElement | null>(null)
   useEffect(() => {
     selectedRow.current?.scrollIntoView?.({ block: 'nearest' })

@@ -156,6 +156,15 @@ export function openRows(onOpenInTab: () => void, noteId: string | undefined, on
   ]
 }
 
+/** How long a page that left the index waits before it is read again and said gone (YAZ-4990): a save through a temporary file is back by then. */
+export const GONE_CHECK_MS = 300
+
+/** A read-only Crepe goes: out of the page at once, destroyed once it is up. */
+function retire({ crepe, el, up }: { crepe: ReturnType<typeof createCrepe>; el: HTMLElement; up: Promise<void> }): void {
+  el.remove()
+  void up.then(() => crepe.destroy())
+}
+
 /** The note editor's features minus the two that exist to edit blocks (the preview panel's set). */
 const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false }
 
@@ -184,11 +193,20 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
 
   /** The whole file as read, frontmatter included: the comment stream's truth. */
   const readRef = useRef('')
-  // Reading: the saved text, read once per mount (the preview panel's rule). Back from edit, it is read again: the editor saved.
+  /**
+   * Bumped when the index says this page changed (YAZ-4990, the small version): the layer reads it again in place, with
+   * no "loading" between. `rereading` says the next read is such a read again.
+   */
+  const [reread, setReread] = useState(0)
+  const rereading = useRef(false)
+  // Reading: the saved text, read once per mount (the preview panel's rule). Back from edit, it is read again: the editor
+  // saved. Again when the page changes on disk (YAZ-4990): the same text keeps the same Crepe.
   useEffect(() => {
     if (mode !== 'read') return
     let live = true
-    setContent({ kind: 'loading' })
+    const again = rereading.current
+    rereading.current = false
+    if (!again) setContent({ kind: 'loading' })
     // A save of this note still on its way (an editor's flush, YAZ-3685 F5) lands first: the read sees the typed text.
     Promise.resolve(savedFirst(path))
       .then(() => api.readFile(path))
@@ -197,24 +215,74 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
         if (!live) return
         readRef.current = file.content
         const body = splitFrontmatter(file.content).body
-        setContent(body.trim() === '' ? { kind: 'empty' } : { kind: 'body', body, switches: notePageSwitches(file.content) })
+        const switches = notePageSwitches(file.content)
+        setContent((prev) =>
+          body.trim() === '' ? { kind: 'empty' } : prev.kind === 'body' && prev.body === body && JSON.stringify(prev.switches) === JSON.stringify(switches) ? prev : { kind: 'body', body, switches },
+        )
       },
       () => live && setContent({ kind: 'gone' }),
     )
     return () => {
       live = false
     }
-  }, [path, mode, gone])
+  }, [path, mode, gone, reread])
+  // The page changes outside this layer while it reads (YAZ-4990): an agent, a sync, another tab, the Inbox. The index
+  // says so (the card layer's way, `ExploreCard`): a new mtime or size of this page reads it again; another page's
+  // change does nothing. A page that leaves the index is read again after a short wait: deleted, the layer says it is
+  // gone; a save through a temporary file (delete, then create) is back by then and reads as a change.
+  const { wikilinks: indexOfVault } = vault
+  useEffect(() => {
+    if (mode !== 'read') return
+    const recordOf = () => indexOfVault.records.find((r) => r.path === path)
+    let seen = recordOf()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const off = indexOfVault.subscribe(() => {
+      const now = recordOf()
+      const same = now === seen || (now !== undefined && seen !== undefined && now.mtime === seen.mtime && now.size === seen.size)
+      seen = now
+      if (same) return
+      clearTimeout(timer)
+      timer = setTimeout(
+        () => {
+          rereading.current = true
+          setReread((n) => n + 1)
+        },
+        now === undefined ? GONE_CHECK_MS : 0,
+      )
+    })
+    return () => {
+      off()
+      clearTimeout(timer)
+    }
+  }, [mode, path, indexOfVault])
 
   const body = mode === 'read' && content.kind === 'body' ? content.body : null
   const switches = content.kind === 'body' ? content.switches : undefined
   // The vault's three parts, not the object: App hands a new object each render, and the Crepe is built once per body.
   const { root, wikilinks, wikilinkCandidates, viewOnlyLinks } = vault
+  /**
+   * The folds of the page (YAZ-4990): kept here, so a Crepe built again for the new text of the SAME page opens with
+   * them (the fold plugins' seed, by their keys). A step to another page starts with none.
+   */
+  const folds = useRef({ path, outline: new Set<string>() as ReadonlySet<string>, heading: new Set<string>() as ReadonlySet<string> })
+  /** The Crepe on show while the next one for the same page is built (YAZ-4990): it goes in the same frame the new one shows. */
+  const shownCrepe = useRef<{ path: string; crepe: ReturnType<typeof createCrepe>; el: HTMLElement; up: Promise<void> } | null>(null)
   useEffect(() => {
     const parent = mountRef.current
+    const prev = shownCrepe.current
+    // Another page, or no text to show: the old Crepe goes now, as before.
+    if (prev !== null && (body === null || parent === null || prev.path !== path)) {
+      shownCrepe.current = null
+      retire(prev)
+      setReady(null)
+    }
     if (body === null || parent === null) return
+    if (folds.current.path !== path) folds.current = { path, outline: new Set(), heading: new Set() }
     const el = document.createElement('div')
     el.className = 'editor-instance'
+    // The same page read again (YAZ-4990): built out of sight, under the one on show, and swapped when it is up.
+    const swap = shownCrepe.current
+    if (swap !== null) el.style.cssText = 'position: absolute; inset: 0 0 auto 0; visibility: hidden; pointer-events: none'
     if (switches?.['guide-lines'] !== undefined) el.dataset.guideLines = switches['guide-lines'] ? 'on' : 'off'
     if (switches?.folding !== undefined) el.dataset.folding = switches.folding ? 'on' : 'off'
     if (switches?.['bullet-threading'] !== undefined) el.dataset.threading = switches['bullet-threading'] ? 'on' : 'off'
@@ -245,20 +313,42 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
       },
       // Pictures resolve against the note's folder, as in its page (YAZ-1656).
       image: { root, notePath: path },
+      // The folds, kept for a read again of this page (YAZ-4990).
+      folding: { seedCollapsedKeys: () => folds.current.outline, onCollapsedKeysChange: (keys) => (folds.current = { ...folds.current, outline: new Set(keys) }) },
+      headingFolding: { seedCollapsedKeys: () => folds.current.heading, onCollapsedKeysChange: (keys) => (folds.current = { ...folds.current, heading: new Set(keys) }) },
     })
     let live = true
-    const up = crepe.create().then(() => {
+    const mine = { path, crepe, el, up: Promise.resolve() }
+    mine.up = crepe.create().then(() => {
       crepe.setReadonly(true)
-      if (live) setReady(crepe)
+      if (!live) return
+      // The swap (YAZ-4990): the old Crepe out and the new one in, and the scroll place put back, in one task: no frame
+      // shows the page empty or at another place.
+      const scroller = bodyRef.current
+      const top = scroller?.scrollTop ?? 0
+      if (swap !== null && shownCrepe.current === swap) retire(swap)
+      el.style.cssText = ''
+      if (scroller !== null && scroller.scrollTop !== top) scroller.scrollTop = top
+      shownCrepe.current = mine
+      setReady(crepe)
     })
     return () => {
       live = false
-      setReady(null)
-      void up.then(() => crepe.destroy()).finally(() => el.remove())
+      // A Crepe on show stays until the next one is up (or the next run takes it away); one never shown goes now.
+      if (shownCrepe.current !== mine) retire(mine)
     }
     // `icons` is read at each link draw; a change of the icon rules redraws no preview (the preview panel's rule).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [body, switches, path, root, wikilinks, wikilinkCandidates, viewOnlyLinks, findChannel])
+
+  // The layer closes: the Crepe on show goes with it (declared after the Crepe's effect, so its cleanup runs last).
+  useEffect(
+    () => () => {
+      if (shownCrepe.current !== null) retire(shownCrepe.current)
+      shownCrepe.current = null
+    },
+    [],
+  )
 
   // The fold-all button (round 1, item 4): the note tab's own button and command on this layer's Crepe.
   const subscribeFolds = useCallback(

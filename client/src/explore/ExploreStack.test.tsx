@@ -2520,3 +2520,124 @@ describe('the card window (YAZ-4962)', () => {
     expect(top().querySelector('.editor-msg')?.textContent).toBe('This card is no longer there')
   })
 })
+
+/**
+ * YAZ-4990, the small version (Yaseen: "ok lets go with 1, the small version"): the search highlight stays on its note;
+ * a page deleted outside the app says it is gone in its read layer; a read layer reads its page again when the index
+ * says the page changed, with its scroll place and its folds.
+ */
+describe('YAZ-4990: Explore follows a page that changes', () => {
+  const listeners: Array<(ev: import('@shared/types').WatchEvent) => void> = []
+  const liveWatch: WatchSource = {
+    subscribe: (l) => {
+      listeners.push(l)
+      return () => void listeners.splice(listeners.indexOf(l), 1)
+    },
+  }
+  const emit = (ev: import('@shared/types').WatchEvent) => act(() => listeners.slice().forEach((l) => l(ev)))
+  beforeEach(() => {
+    listeners.length = 0
+  })
+
+  it('the highlight follows its NOTE: a row added above keeps it on that note; a note that leaves the rows leaves the highlight at its place', async () => {
+    props = { ...props, vaults: [{ ...vaults[0], watch: liveWatch }] }
+    await mount()
+    await typeQuery('e')
+    key(input(), { key: 'ArrowDown' })
+    const active = () => top().querySelector('.search-results__row--active .explore__name')?.textContent
+    const picked = active()
+    expect(picked).toBeDefined()
+    const at = rows().indexOf(picked!)
+    // A new page ranks first: the rows move down by one, the highlight stays on its note.
+    index.mockResolvedValue({ root: '/v', records: [rec('/v/e.md', 'e'), ...RECORDS], folders: [], generatedAt: 2, ids: false, size: 4 })
+    emit({ type: 'add', path: '/v/e.md', mtime: 2 })
+    await flush()
+    await flush()
+    expect(rows()[0]).toBe('e')
+    expect(rows().indexOf(picked!)).toBe(at + 1)
+    expect(active()).toBe(picked)
+    // That note is deleted: the highlight stays at its place in the list.
+    const place = rows().indexOf(picked!)
+    index.mockResolvedValue({ root: '/v', records: [rec('/v/e.md', 'e'), ...RECORDS.filter((r) => r.title !== picked)], folders: [], generatedAt: 3, ids: false, size: 3 })
+    // (`ready` reads at once: a second event this soon would wait for the burst's end.)
+    emit({ type: 'ready', root: '/v' })
+    await flush()
+    await flush()
+    expect(rows()).not.toContain(picked)
+    expect(top().querySelectorAll('.search-results__row')[Math.min(place, rows().length - 1)]?.classList.contains('search-results__row--active')).toBe(true)
+  })
+
+  describe('a read layer', () => {
+    let source: ReturnType<typeof createWikilinkResolveSource>
+    const files: Record<string, string> = {}
+    const feed = (records: IndexRecord[]) => act(() => source.update(() => null, records, [], true))
+    beforeEach(() => {
+      files['/v/alpha.md'] = '# Alpha\n\nfirst text\n'
+      readFile.mockImplementation(async (path) => (files[path] === undefined ? Promise.reject(new Error('gone')) : { path, content: files[path], mtime: 1, size: 1 }))
+      source = createWikilinkResolveSource()
+      source.update(() => null, [rec('/v/alpha.md', 'Alpha', { mtime: 1, size: 10 }), rec('/v/beta.md', 'Beta', { mtime: 1 })], [], true)
+      props = { ...props, vaultOf: () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly }), requestLayer: { kind: 'note', path: '/v/alpha.md' } }
+    })
+    const body = () => top().querySelector<HTMLElement>('.explore__body') as HTMLElement
+    const shown = () => [...top().querySelectorAll('.explore__mount .ProseMirror')].map((e) => e.textContent)
+
+    it('reads its page again when the index says it changed: the new text, the scroll place and the folds stay; another page\'s change reads nothing', async () => {
+      await mount()
+      expect(shown()).toEqual(['# Alpha\n\nfirst text\n'])
+      const first = crepes.at(-1)!
+      // The reader folded a heading and a bullet, and scrolled down.
+      act(() => {
+        ;(first.opts.folding as { onCollapsedKeysChange: (k: string[]) => void }).onCollapsedKeysChange(['b:one'])
+        ;(first.opts.headingFolding as { onCollapsedKeysChange: (k: string[]) => void }).onCollapsedKeysChange(['h:two'])
+      })
+      body().scrollTop = 420
+      const reads = readFile.mock.calls.length
+      // Another page changes: nothing is read.
+      feed([rec('/v/alpha.md', 'Alpha', { mtime: 1, size: 10 }), rec('/v/beta.md', 'Beta', { mtime: 2 })])
+      await flush()
+      expect(readFile.mock.calls.length).toBe(reads)
+      // This page changes (an agent, a sync, another tab): read again, shown in place.
+      files['/v/alpha.md'] = '# Alpha\n\nsecond text\n'
+      feed([rec('/v/alpha.md', 'Alpha', { mtime: 2, size: 11 }), rec('/v/beta.md', 'Beta', { mtime: 2 })])
+      await flush()
+      await flush()
+      await flush()
+      expect(readFile.mock.calls.length).toBe(reads + 1)
+      expect(shown()).toEqual(['# Alpha\n\nsecond text\n'])
+      expect(first.destroy).toHaveBeenCalled()
+      expect(body().scrollTop).toBe(420)
+      const next = crepes.at(-1)!
+      expect([...(next.opts.folding as { seedCollapsedKeys: () => Set<string> }).seedCollapsedKeys()]).toEqual(['b:one'])
+      expect([...(next.opts.headingFolding as { seedCollapsedKeys: () => Set<string> }).seedCollapsedKeys()]).toEqual(['h:two'])
+      // Never "loading" on the way: the head's fold-all button stayed.
+      expect(top().querySelector('.explore__head .fold-all__trigger')).not.toBeNull()
+    })
+
+    it('deleted outside the app: after a short wait it reads again, then says it is gone; a save through a temporary file does not', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      try {
+        await mount()
+        // A tool saves through a temporary file: the page leaves the index, and is back before the wait ends.
+        feed([rec('/v/beta.md', 'Beta')])
+        files['/v/alpha.md'] = '# Alpha\n\nsaved by a tool\n'
+        feed([rec('/v/alpha.md', 'Alpha', { mtime: 3, size: 12 }), rec('/v/beta.md', 'Beta')])
+        act(() => void vi.advanceTimersByTime(400))
+        await flush()
+        await flush()
+        expect(top().querySelector('.editor-msg')).toBeNull()
+        expect(shown()).toEqual(['# Alpha\n\nsaved by a tool\n'])
+        // Deleted for real: nothing yet, then after the wait the layer says so.
+        delete files['/v/alpha.md']
+        feed([rec('/v/beta.md', 'Beta')])
+        await flush()
+        expect(top().querySelector('.editor-msg')).toBeNull()
+        act(() => void vi.advanceTimersByTime(300))
+        await flush()
+        await flush()
+        expect(top().querySelector('.editor-msg')?.textContent).toMatch(/no longer there/)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+})
