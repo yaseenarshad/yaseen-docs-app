@@ -379,6 +379,20 @@ describe('storage', () => {
     expect(storage.folderIn('/v')).toBeNull()
   })
 
+  it('a list of places from main (YAZ-4922 D3: a take, a workspace) is taken as it is: an empty folder-of window that takes its vault shows the whole vault', async () => {
+    b = installBridge({ ...defaultAppState(), folders: { '/v/Wiki': { ...defaultFolderState(), in: '/v' } } }, { id: 'w1', root: '/v/Wiki', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    // Open folder… on the vault itself, from the empty folder window: main hands the window ['/v'] (the demo found it stuck on the folder).
+    storage.setPlaces(['/v'])
+    expect(storage.getPlaces()).toEqual(['/v'])
+    expect(storage.folderIn('/v')).toBeNull()
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ roots: ['/v'] })
+    // And back: a workspace of the folder's place.
+    storage.setPlaces(['/v/Wiki', '/w'])
+    expect(storage.getPlaces()).toEqual(['/v/Wiki', '/w'])
+    expect(storage.getRoots()).toEqual(['/v', '/w'])
+  })
+
   it('setWorkspace mirrors main and right identity in one call and keeps independent item arrays', () => {
     const rightPanel = { open: true, width: 600, items: ['/v/b.md'], expanded: '/v/b.md' }
     // Two copies of one page, one named and one active (YAZ-3057): `tabs` has the path once, the strip keeps both.

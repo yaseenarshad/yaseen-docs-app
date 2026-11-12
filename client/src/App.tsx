@@ -915,7 +915,8 @@ export function App() {
     if (found.length === 0) return false
     const gone = set.roots.filter((vault) => !found.includes(vault))
     if (gone.length > 0) notify(`Not found: ${gone.map(storage.vaultName).join(', ')}`)
-    storage.setRoots(found)
+    // A workspace names places (YAZ-4922 D3): the window takes them as they are.
+    storage.setPlaces(found)
     for (const vault of found) storage.pushRecentRoot(vault)
     setRoots(storage.getRoots())
     return true
@@ -1905,14 +1906,15 @@ export function App() {
     // A window with no vault (Welcome) opens the first in place, then takes the others: a workspace (YAZ-3886).
     if (live.current.roots.length === 0) {
       void openRoot(next[0]).then((opened) => {
-        if (!opened || next.length === 1 || storage.getRoot() !== next[0]) return
-        storage.setRoots(next)
+        if (!opened || next.length === 1 || storage.getPlaces()[0] !== next[0]) return
+        storage.setPlaces(next)
         for (const root of next.slice(1)) storage.pushRecentRoot(root)
         setRoots(storage.getRoots())
       })
       return
     }
-    storage.setRoots(next)
+    // Main names places (YAZ-4922 D3): an empty folder-of window that takes its vault shows the whole vault.
+    storage.setPlaces(next)
     for (const root of next) storage.pushRecentRoot(root)
     setRoots(storage.getRoots())
     // The vaults land on Files, as every vault open does (YAZ-1846 D2): a ⌘⇧N window boots on the search.

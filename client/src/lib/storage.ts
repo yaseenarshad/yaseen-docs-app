@@ -171,7 +171,13 @@ export const storage = {
    * stays that place (YAZ-4922 D3).
    */
   setRoots(roots: readonly string[]): void {
-    const places = roots.map((root) => identity.roots.find((place) => place === root || placeVault(state.folders, place) === root) ?? root)
+    storage.setPlaces(roots.map((root) => identity.roots.find((place) => place === root || placeVault(state.folders, place) === root) ?? root))
+  },
+  /**
+   * The window takes exactly these places (YAZ-4922 D3), as `setRoots` with no mapping: a list main hands the window
+   * (a take, a workspace) names places already. So an empty folder-of window that takes its vault shows the whole vault.
+   */
+  setPlaces(places: readonly string[]): void {
     const next = normalizeRoots(places, places[0] ?? null)
     identity = { ...identity, roots: next, root: next[0] ?? null }
     send('window.setIdentity', () => api.window.setIdentity({ roots: next }))
