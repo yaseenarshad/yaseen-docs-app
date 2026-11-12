@@ -4,6 +4,7 @@
  * the app agree on what a link names. Generic over what a file is wrapped in: the views pass their `FileValue`s, the
  * command plain `{ record }`s. Pure; no DOM, no Node.
  */
+import { splitLink } from './linkParts'
 import { vaultNoteId } from './noteId'
 import type { IndexRecord } from './types'
 
@@ -15,16 +16,15 @@ export interface Resolvable {
 /** A whole-value `[[target|alias]]` (the views' link value): its target and alias. */
 export const LINK_VALUE_RE = /^\[\[([^\]|]+)(?:\|([^\]]*))?\]\]$/
 
-/** `[[x|y]]` → `x`; anything else unchanged. */
+/** `[[x|y]]` → `x`, the page side (`splitLink`, YAZ-4935: `[[y|WIKI-1]]` → `WIKI-1`); anything else unchanged. */
 export function stripBrackets(s: string): string {
-  const m = LINK_VALUE_RE.exec(s)
-  return m ? m[1] : s
+  return LINK_VALUE_RE.test(s) ? splitLink(s.slice(2, -2)).head : s
 }
 
 const normalise = (s: string) => s.replace(/^\/+|\/+$/g, '').replace(/\.(md|markdown)$/, '').toLowerCase()
 
-/** A link target as the resolver reads it: brackets, `#heading` and `|alias` off, trimmed, lowercased. */
-export const targetKey = (target: string) => stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()
+/** A link target as the resolver reads it: brackets, `#heading` and the `|words` off (`splitLink`), trimmed, lowercased. */
+export const targetKey = (target: string) => splitLink(stripBrackets(target)).page.toLowerCase()
 
 /**
  * A basename as `targetBasename` spells it: lowercased, with the one context-dependent lowercase

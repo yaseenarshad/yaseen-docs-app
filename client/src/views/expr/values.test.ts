@@ -10,6 +10,10 @@ describe('fromYaml', () => {
   it('detects wiki links', () => {
     expect(fromYaml('[[Foo]]')).toEqual(new LinkValue('Foo'))
     expect(fromYaml('[[Foo|Display]]')).toEqual(new LinkValue('Foo', 'Display'))
+    // YAZ-4935: the page on either side of the `|`; the one side that is an ID is the target. Written back page first.
+    expect(fromYaml('[[staging|WIKI-116]]')).toEqual(new LinkValue('WIKI-116', 'staging'))
+    expect(fromYaml('[[staging|WIKI-116#Intro]]')).toEqual(new LinkValue('WIKI-116#Intro', 'staging'))
+    expect(render(fromYaml('[[staging|WIKI-116]]'))).toBe('[[WIKI-116|staging]]')
     expect(fromYaml('[[Foo')).toBe('[[Foo')
     expect(fromYaml('see [[Foo]]')).toBe('see [[Foo]]')
   })

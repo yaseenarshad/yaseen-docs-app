@@ -30,6 +30,19 @@ describe('rewriteInner / renamedTarget (form + suffix + alias preservation)', ()
     expect(rewriteInner('#same-file', resolvesB, toC)).toBeNull()
   })
 
+  it('YAZ-4935: a link written words-first keeps its order; the page is the one side that is an ID', () => {
+    const resolvesId = (t: string) => t === 'WIKI-116'
+    const toNext = (t: string) => (t === 'WIKI-116' ? 'WIKI-200' : t)
+    expect(rewriteInner('WIKI-116|staging', resolvesId, toNext)).toBe('WIKI-200|staging')
+    expect(rewriteInner('staging|WIKI-116', resolvesId, toNext)).toBe('staging|WIKI-200')
+    expect(rewriteInner('staging|WIKI-116#Intro', resolvesId, toNext)).toBe('staging|WIKI-200#Intro')
+    expect(rewriteInner('|WIKI-116', resolvesId, toNext)).toBe('|WIKI-200')
+    expect(rewriteInner('staging| WIKI-116 ', resolvesId, toNext)).toBe('staging|WIKI-200')
+    expect(rewriteInner('WIKI-116|WIKI-117', resolvesId, toNext)).toBe('WIKI-200|WIKI-117') // two IDs: the left is the page
+    expect(rewriteInner('Postgres|database', resolvesB, toC)).toBeNull() // two words: the left is the page, "Postgres"
+    expect(rewriteBodyLinks('See [[staging|WIKI-116]] and ![[EMB-40|640x360]]', resolvesId, toNext)).toBe('See [[staging|WIKI-200]] and ![[EMB-40|640x360]]')
+  })
+
   it('a match whose target text would not change is left untouched — byte-identical, padding included (E1b pin)', () => {
     expect(rewriteInner('B', () => true, (t) => t)).toBeNull()
     expect(rewriteInner(' B |Bee', () => true, (t) => t)).toBeNull() // padding survives because the match is never spliced

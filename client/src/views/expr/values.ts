@@ -1,4 +1,5 @@
 import { isNoteId } from '@shared/noteId'
+import { splitLink } from '@shared/linkParts'
 import { LINK_VALUE_RE as WIKI_LINK, stripBrackets } from '@shared/linkResolver'
 import { parseIsoDate, renderDate, renderDuration } from './dates'
 
@@ -190,12 +191,14 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> => {
   return proto === Object.prototype || proto === null
 }
 
-/** Raw frontmatter → Value: `[[x|d]]` strings become links, ISO-ish strings and JS Dates become dates. */
+/** Raw frontmatter → Value: `[[x|d]]` strings become links (the page on either side, `splitLink`, YAZ-4935), ISO-ish strings and JS Dates become dates. */
 export function fromYaml(v: unknown): Value {
   if (v === null || v === undefined) return null
   if (typeof v === 'string') {
-    const link = WIKI_LINK.exec(v)
-    if (link) return new LinkValue(link[1], link[2])
+    if (WIKI_LINK.test(v)) {
+      const { head, words } = splitLink(v.slice(2, -2))
+      return new LinkValue(head, words ?? undefined)
+    }
     const d = parseIsoDate(v)
     return d ? new DateValue(d.ms, d.hasTime) : v
   }

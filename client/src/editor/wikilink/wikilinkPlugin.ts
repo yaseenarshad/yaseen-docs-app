@@ -49,6 +49,7 @@ import { Plugin, PluginKey, type EditorState, type Selection, type Transaction }
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { isBoardTarget } from '@shared/embedOptions'
+import { splitLink } from '@shared/linkParts'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
 import { boardBaseName, fileKind } from '@shared/fileKind'
@@ -161,12 +162,13 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
 export { WIKILINK_RE }
 
 /**
- * The page-name half of a raw `[[inner]]` text: `|alias` and `#heading` / `#^block` stripped,
- * trimmed. '' for the same-file `[[#h]]` form. The ONE strip shared by the decorations below,
- * click navigation and create-on-click (`wikilinkClick.ts` / `createFromLink.ts`, Links C).
+ * The page-name half of a raw `[[inner]]` text: the `|words` (on either side, `splitLink`, YAZ-4935)
+ * and `#heading` / `#^block` stripped, trimmed. '' for the same-file `[[#h]]` form. The ONE strip
+ * shared by the decorations below, click navigation and create-on-click (`wikilinkClick.ts` /
+ * `createFromLink.ts`, Links C).
  */
 export function linkPageName(inner: string): string {
-  return inner.split('|')[0].split('#')[0].trim()
+  return splitLink(inner).page
 }
 
 /**
@@ -241,8 +243,9 @@ function pageTrim(page: string): [lead: number, trail: number] {
 }
 
 /**
- * The DISPLAY text the collapsed decorations show for a raw `[[inner]]` match: the alias after
- * the first `|` when piped, else the non-empty `#`-split parts joined with the ` > ` separator
+ * The DISPLAY text the collapsed decorations show for a raw `[[inner]]` match: the words on the
+ * other side of the `|` when piped (`splitLink`, YAZ-4935: `[[WIKI-1|words]]` and `[[words|WIKI-1]]`
+ * both show "words"), else the non-empty `#`-split parts joined with the ` > ` separator
  * the CSS draws between segments — the page part replaced by `titleOf`'s answer when it has one
  * (an id link's title, `idLinkTitle`), else, when `named` says the page is found, by its name
  * (`pageTrim`, YAZ-3778 D2, D3; a dead link keeps its text, S12). '' means NOTHING would be
@@ -251,8 +254,8 @@ function pageTrim(page: string): [lead: number, trail: number] {
  * the editor renders: one mapping, never a second regex.
  */
 export function linkDisplayText(inner: string, titleOf?: (target: string) => string | undefined, named?: (page: string) => boolean): string {
-  const pipe = inner.indexOf('|')
-  if (pipe >= 0) return inner.slice(pipe + 1)
+  const { words } = splitLink(inner)
+  if (words !== null) return words
   const parts = inner.split('#')
   const page = parts[0]
   const [lead, trail] = named?.(page.trim()) === true ? pageTrim(page) : [0, 0]
@@ -282,7 +285,7 @@ export function linksAsShown(text: string, source: WikilinkResolveSource, viewOn
   return text.replace(WIKILINK_RE, (raw, bang: string, inner: string) => {
     if (bang !== '!') return linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly)) || raw
     if (boardEmbedTarget(inner, isBoard) === null) return raw
-    const page = inner.split('|')[0]!.split('#')[0]!
+    const page = splitLink(inner).page
     return boardEmbedName(isIdTarget(page) ? linkPath(inner, source, viewOnly) ?? inner : inner)
   })
 }
@@ -390,10 +393,17 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
   hide(out, start, innerStart) // [[
-  const pipe = inner.indexOf('|')
+  const { pipe, pageFirst } = splitLink(inner)
   if (pipe >= 0) {
-    hide(out, innerStart, innerStart + pipe + 1) // target(#heading)?| — the alias is the display
-    shown(innerStart + pipe + 1, end - 2) // never empty: guarded above
+    // The words are the display, on either side of the `|` (YAZ-4935); the page side and the `|` hide. Never empty: guarded above.
+    const at = innerStart + pipe
+    if (pageFirst) {
+      hide(out, innerStart, at + 1) // target(#heading)?|
+      shown(at + 1, end - 2)
+    } else {
+      shown(innerStart, at)
+      hide(out, at, end - 2) // |target(#heading)?
+    }
   } else {
     // target, then ` > `-separated sub segments for each `#heading` / `#^block` part
     let at = innerStart

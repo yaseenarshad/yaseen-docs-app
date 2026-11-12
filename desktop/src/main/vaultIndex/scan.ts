@@ -4,6 +4,7 @@ import { COMMENTS_KEY } from '@shared/comments'
 import { isDrawing } from '@shared/fileKind'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { splitLink } from '@shared/linkParts'
 import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from '@shared/noteId'
 import { titleOf } from '@shared/noteName'
 import { REVIEWS_KEY, reviewEntries, textFingerprint } from '@shared/reviews'
@@ -104,9 +105,12 @@ export function extractTags(props: Record<string, unknown>, body: string): strin
 const WIKILINK_RE = /(!?)\[\[([^[\]]*)\]\]/g
 const EXACT_WIKILINK_RE = /^\[\[([^[\]]*)\]\]$/
 
-/** `target|alias` → `target`, `target#heading` / `target#^block` → `target`, trimmed. Shared with `fs/assets.ts` (readAsset refs). */
+/**
+ * `target|words` and `words|target` → `target` (the one side that is an ID, else the left: `splitLink`, YAZ-4935),
+ * `target#heading` / `target#^block` → `target`, trimmed. Shared with `fs/assets.ts` (readAsset refs).
+ */
 export function linkTarget(inner: string): string {
-  return inner.split('|')[0].split('#')[0].trim()
+  return splitLink(inner).page
 }
 
 function bodyWikilinks(body: string, embed: boolean): string[] {

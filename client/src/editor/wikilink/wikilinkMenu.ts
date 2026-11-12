@@ -18,6 +18,7 @@
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { splitLink } from '@shared/linkParts'
 import { pathTitles } from '../../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
 import { boardCheckOf } from '../drawing/boardEmbedScan'
@@ -50,11 +51,14 @@ function idOf(inner: string, source: WikilinkResolveSource): string | null {
 
 /** The one link menu of the `[[inner]]` at `from`..`to` (YAZ-3740, YAZ-3905). */
 function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined): LinkMenu {
+  // The page side of the link, on either side of the `|` (`splitLink`, YAZ-4935).
+  const { head: target, pipe, pageFirst } = splitLink(inner)
   // The caret inside the raw `[[…]]`, its target selected: the link shows as text to type over.
   const edit = view.editable
     ? () => {
         // The one way into an ID link (YAZ-3744 D1): the caret plugin lets this selection stay inside.
-        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from + 2, from + 2 + inner.split('|')[0].length)).setMeta(OPEN_ID_LINK, true))
+        const at = from + 2 + (pipe >= 0 && !pageFirst ? pipe + 1 : 0)
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at, at + target.length)).setMeta(OPEN_ID_LINK, true))
         view.focus()
       }
     : undefined
@@ -62,7 +66,6 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
   const remove = view.editable ? (text: string) => view.dispatch(view.state.tr.insertText(text, from, to)) : undefined
   const menu = linkMenuOf(inner, source, nav, follow, viewOnly, vaultsOf, edit, remove)
   // A drawing's or a diagram's link (YAZ-4829 D8): `!` before it, and an alias goes, as the embed shows the board's name.
-  const target = inner.split('|')[0]!
   // Not in a table cell: embeds there are out of scope (the checker's round 1).
   // An id link to a board (YAZ-4920) is one too: the host's check says so.
   if (view.editable && boardEmbedTarget(target, boardCheckOf(view.state)) !== null && !inCellOrNote(view.state.doc.resolve(from))) menu.showAsEmbed = () => view.dispatch(view.state.tr.insertText(`![[${target}]]`, from, to))
