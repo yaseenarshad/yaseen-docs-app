@@ -73,6 +73,12 @@ export const noteLine = (record: IndexRecord): OtherFileLine => ({ path: record.
 
 /** The tray's collapsed marker in the page's collapsed-groups entry. */
 const CLOSED = 'other-files'
+/**
+ * The most lines the tray mounts at once (YAZ-4921 check 27): a 3,000-file root built a 30,000-node list on one paint. The
+ * tray has no scroll box of its own to window in, so past this a "Show all N files" row mounts the rest on a click. The
+ * count above the list reads every line; a moved folder's lines are not counted against it.
+ */
+export const OTHER_FILES_LIMIT = 200
 /** An open folder's marker in the same entry (YAZ-4747 OF3): folders start closed. */
 const OPEN_DIR = 'other-files-open:'
 
@@ -138,6 +144,9 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
   const open = !marks.includes(CLOSED)
   const [over, setOver] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number; line: OtherFileLine; folder?: boolean } | null>(null)
+  // "Show all N files": for this folder; another folder's tray starts at the limit again.
+  const [allFor, setAllFor] = useState<string | null>(null)
+  const shown = allFor === dir || lines.length <= OTHER_FILES_LIMIT ? lines : lines.slice(0, OTHER_FILES_LIMIT)
 
   const flip = (mark: string): void => {
     const next = marks.includes(mark) ? marks.filter((m) => m !== mark) : [...marks, mark]
@@ -247,7 +256,7 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
         ) : (
           <ul className="other-files__list" ref={listRef}>
             {folders.map((f) => folderLines({ path: f.dir, name: f.name }, 0, true))}
-            {lines.map((line) => (
+            {shown.map((line) => (
               <li
                 key={line.path}
                 className="other-files__line"
@@ -281,6 +290,13 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
                 <span className="other-files__date">{formatDateTime(line.mtime)}</span>
               </li>
             ))}
+            {shown.length < lines.length && (
+              <li className="other-files__more-line">
+                <button type="button" className="other-files__more" onClick={() => setAllFor(dir)}>
+                  Show all {lines.length} files
+                </button>
+              </li>
+            )}
           </ul>
         ))}
       <CardPreviewHost store={hoverStore} cardOf={(_, path) => ({ root: null, name: lines.find((l) => l.path === path)?.name ?? basename(path) })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />

@@ -174,6 +174,24 @@ describe('what the tray lists (D44, D45)', () => {
   })
 })
 
+describe('a big folder: the tray mounts a limit, and "Show all" adds the rest (YAZ-4921 check 27)', () => {
+  it('3,000 files: the count reads them all, 200 lines are mounted, then "Show all" mounts every line', async () => {
+    const dir = TREE[0] as Extract<TreeNode, { type: 'dir' }>
+    const many = Array.from({ length: 3000 }, (_, i) => file(STAGES, `file-${String(i).padStart(4, '0')}.txt`, null, 10))
+    vi.mocked(api.tree).mockResolvedValue({ root: '/vault', tree: [{ ...dir, children: [...dir.children, ...many] }], generatedAt: 2 })
+    await fetchTree('/vault')
+    const el = await mount()
+    expect(q(el, '.other-files__count').textContent).toBe('3003')
+    expect(el.querySelectorAll('.other-files__line')).toHaveLength(200)
+    expect(trayLines(el)[0]).toEqual(['Deck.pdf', 'PDF', '2.0 KB'])
+    const more = q<HTMLButtonElement>(el, '.other-files__more')
+    expect(more.textContent).toBe('Show all 3003 files')
+    click(more)
+    expect(el.querySelectorAll('.other-files__line')).toHaveLength(3003)
+    expect(el.querySelector('.other-files__more')).toBeNull()
+  })
+})
+
 describe('moving a note (D44, D46)', () => {
   it('the row menu ends with the page group — Copy path, then "Move to Other files" — then Delete note… last (YAZ-4592; the C8 order of YAZ-4608; YAZ-3746 13AW)', async () => {
     const el = await mount({ onDeleteEntries: vi.fn() })
