@@ -978,3 +978,60 @@ describe('round 4: zoom in a note layer', () => {
     document.body.removeEventListener('yaseendocs:zoom', tab)
   })
 })
+
+describe('round 5: find a note by a short ID number (YAZ-2571)', () => {
+  const EMB = [
+    rec('/v/emb-5.md', '04 Resize04 Resize04 Resize04 Resize04 Resize04 Resize04', { id: 'EMB-5' }),
+    rec('/v/emb-6.md', '05 The view is remembered', { id: 'EMB-6' }),
+    rec('/v/emb-16.md', '15 Read-only note', { id: 'EMB-16' }),
+    rec('/v/emb-3.md', 'Three', { id: 'EMB-3' }),
+    rec('/v/emb-37.md', '25 Table subheader rows', { id: 'EMB-37' }),
+  ]
+  const chips = () => [...top().querySelectorAll('.search-results__row')].map((r) => r.querySelector('.explore__id')?.innerHTML ?? null)
+  beforeEach(() => {
+    index.mockResolvedValue({ root: '/v', records: EMB, folders: [], generatedAt: 1, ids: true, size: EMB.length })
+  })
+
+  it('`#5` shows EMB-5 alone, its chip with the 5 marked; `#3` shows EMB-3, then EMB-37', async () => {
+    await mount()
+    await typeQuery('#5')
+    expect(rows()).toEqual(['04 Resize04 Resize04 Resize04 Resize04 Resize04 Resize04'])
+    expect(chips()).toEqual(['EMB-<mark class="tree__mark">5</mark>'])
+    await typeQuery('#3')
+    expect(chips()).toEqual(['EMB-<mark class="tree__mark">3</mark>', 'EMB-<mark class="tree__mark">3</mark>7'])
+  })
+
+  it('a bare `5` shows EMB-5 first, its 5 marked; a row found by its title keeps a plain chip', async () => {
+    await mount()
+    await typeQuery('5')
+    expect(rows()[0]).toBe('04 Resize04 Resize04 Resize04 Resize04 Resize04 Resize04')
+    expect(chips()).toEqual(['EMB-<mark class="tree__mark">5</mark>', 'EMB-6', 'EMB-16', 'EMB-37'])
+    for (const typed of ['emb-5', 'EMB5', 'emb 5']) {
+      await typeQuery(typed)
+      expect(chips()[0]).toBe('EMB-<mark class="tree__mark">5</mark>')
+    }
+  })
+
+  it('with "Only when the search matches the ID" the chip of `#5` shows too', async () => {
+    props.vaults = [{ ...vaults[0], idsInSearch: () => 'match' }]
+    await mount()
+    await typeQuery('#5')
+    expect(chips()).toEqual(['EMB-<mark class="tree__mark">5</mark>'])
+  })
+
+  it('a long name is cut on its own: the chip stands outside the part that is cut', async () => {
+    await mount()
+    await typeQuery('#5')
+    const label = top().querySelector('.search-results__row .search-results__label') as HTMLElement
+    expect([...label.children].map((c) => c.className)).toEqual(['explore__name', 'explore__id'])
+    expect(label.querySelector('.explore__name .explore__id')).toBeNull()
+  })
+
+  it('a vault without IDs is unchanged: `#5` reads as text', async () => {
+    index.mockResolvedValue({ root: '/v', records: [rec('/v/release.md', 'Release #5'), rec('/v/plan.md', 'Plan 5')], folders: [], generatedAt: 1, ids: false, size: 2 })
+    await mount()
+    await typeQuery('#5')
+    expect(rows()).toEqual(['Release #5', 'Plan 5'])
+    expect(chips()).toEqual([null, null])
+  })
+})

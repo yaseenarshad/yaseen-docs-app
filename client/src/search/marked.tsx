@@ -4,7 +4,8 @@
  * `tree__mark`: one look in both lists (`app.css`).
  */
 import type { ReactNode } from 'react'
-import { matchRanges, type Needle } from '../links/completion'
+import { matchRanges, readNeedle, type Needle } from '../links/completion'
+import { idQuery } from './searchCandidates'
 
 /**
  * `label` with the typed text marked where the matcher found it: one mark per range of `matchRanges` — the whole text
@@ -22,4 +23,14 @@ export function marked(label: string, needle: Needle | undefined) {
   }
   parts.push(label.slice(from))
   return <>{parts}</>
+}
+
+/**
+ * The digits to mark in the ID of a row the search found by its ID (YAZ-2571 round 5; `searchRows` put `ID — ` in front
+ * of its label): the typed number of `#3` (the start of the ID's number), else the ID's whole number. Undefined for any
+ * other row, whose ID is drawn plain. `marked(id, idNeedle(row, query))` draws it.
+ */
+export function idNeedle(row: { id?: string; label: string }, query: string): Needle | undefined {
+  if (row.id === undefined || !row.label.startsWith(`${row.id} — `)) return undefined
+  return readNeedle(idQuery(query) ?? row.id.slice(row.id.indexOf('-') + 1))
 }

@@ -282,6 +282,20 @@
   font-weight: 400;
   color: var(--fg-muted);
 }
+/* A result row (YAZ-2571 round 5): the name is cut with "…" and the ID chip after it always shows. */
+.explore__results .search-results__label {
+  display: flex;
+  align-items: baseline;
+}
+.explore__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore__results .explore__id {
+  flex: none;
+}
 /* The fold-all button in the head (item 4): the note tab's own, at the head's size. */
 .explore__head .fold-all__trigger {
   flex: none;

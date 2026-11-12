@@ -229,6 +229,8 @@ export interface TreeMarks {
   needle: Needle
   /** The rows found by their ID, each with its full ID (YAZ-2677 S70): shown in front of the title, which tells note 12 of two vaults apart. */
   ids?: ReadonlyMap<string, string>
+  /** The digits to mark in the ID of each row found by its ID (YAZ-2571 round 5, `idNeedle`). */
+  idMarks?: ReadonlyMap<string, Needle>
 }
 
 interface TreeProps {
@@ -474,7 +476,10 @@ function TreeLevel({
     return { style: { paddingLeft, ...(iconVars(id) as CSSProperties) }, 'data-icon': id, ...(custom ? { 'data-icon-custom': '' as const } : {}) }
   }
   /** `YAZ-12 — ` in front of the row of an ID match (YAZ-2677 S70); nothing for any other row. */
-  const idFor = (path: string) => (marks?.ids?.has(path) ? `${marks.ids.get(path)} — ` : null)
+  const idFor = (path: string) => {
+    const id = marks?.ids?.get(path)
+    return id === undefined ? null : <>{marked(id, marks?.idMarks?.get(path))} — </>
+  }
   return (
     // The arrows, Home and End are the whole tree's, taken once at its top (YAZ-2662 D11, YAZ-3440 D12) — not a search tree's, whose keys are the search bar's.
     // A held Enter is stopped there too, in each tree.

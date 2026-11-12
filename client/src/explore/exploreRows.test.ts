@@ -111,3 +111,30 @@ describe('the keystroke guard: a 5,000-note index', () => {
     expect(textCandidates(big)).toHaveLength(10000)
   })
 })
+
+describe('`#5` in the explore search (YAZ-2571 round 5)', () => {
+  const emb = [
+    rec('/vault/emb-5.md', '04 Resize04 Resize04 Resize04', { id: 'EMB-5', tags: ['5'] }),
+    rec('/vault/emb-6.md', '05 The view', { id: 'EMB-6' }),
+    rec('/vault/emb-1234.md', 'Big', { id: 'EMB-1234' }),
+    rec('/vault/emb-12.md', 'Note #1235 draft', { id: 'EMB-12', properties: { ticket: '#1234' } }),
+  ]
+  const list = () => [...searchCandidates(emb, ['EMB']), ...textCandidates(emb)]
+
+  it('`#5` is EMB-5 alone: no title, tag or value row, and no typo pass', () => {
+    const stats: SearchStats = { fuzzy: 0 }
+    expect(exploreRows(list(), '#5', stats).map((c) => c.label)).toEqual(['EMB-5 — 04 Resize04 Resize04 Resize04'])
+    expect(exploreRows(list(), '#1234', stats).map((c) => c.id)).toEqual(['EMB-1234'])
+    expect(stats.fuzzy).toBe(0)
+  })
+
+  it('a bare `5` is EMB-5 first, then the other matches as before', () => {
+    expect(exploreRows(list(), '5').map((c) => c.path)).toEqual(['/vault/emb-5.md', '/vault/emb-6.md', '/vault/emb-12.md'])
+  })
+
+  it('a vault without IDs is unchanged: `#1234` reads as text, the typo pass too', () => {
+    const plain = emb.map(({ id: _id, ...r }) => r)
+    const rows = [...searchCandidates(plain), ...textCandidates(plain)]
+    expect(exploreRows(rows, '#1234').map((c) => c.path)).toEqual(['/vault/emb-12.md', '/vault/emb-1234.md'])
+  })
+})

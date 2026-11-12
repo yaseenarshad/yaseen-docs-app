@@ -14,6 +14,7 @@ import type { TreeNode } from '@shared/types'
 import { withoutPaths } from '../../lib/treeState'
 import { readNeedle } from '../../links/completion'
 import { bestScores, NO_SCORES } from '../../search/bestMatch'
+import { idNeedle } from '../../search/marked'
 import { filterOn, filterTest, NO_FILTER, NO_TIMES, timesByPath, timeStart, type SearchFilter } from '../../search/searchFilter'
 import { searchTree } from '../../search/searchTree'
 import { rootOfPath } from '@shared/types'
@@ -142,7 +143,12 @@ export function useSidebarSearch(
         return id === null ? [] : [[r.path, id] as const]
       }),
     )
-    return { hits, needle: readNeedle(query), ...(ids.size > 0 && { ids }) }
+    // The matched digits of each row found by its ID (YAZ-2571 round 5): marked in its ID.
+    const idMarks = new Map(results.flatMap((r) => {
+      const needle = idNeedle(r, query)
+      return needle === undefined ? [] : [[r.path, needle] as const]
+    }))
+    return { hits, needle: readNeedle(query), ...(ids.size > 0 && { ids }), ...(idMarks.size > 0 && { idMarks }) }
   }, [hits, query, results, vaults])
   // Best match's score of each row of the cut (D12), only while Best match sorts.
   const scores = useMemo(() => (bestMatch && found !== NO_FOUND ? bestScores(results, query, [...found.top, ...found.rest], found.open) : NO_SCORES), [bestMatch, results, query, found])

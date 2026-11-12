@@ -14,7 +14,7 @@
  */
 import type { IndexRecord } from '@shared/types'
 import { readNeedle } from '../links/completion'
-import { SEARCH_CAP, searchRows, type SearchCandidate } from '../search/searchCandidates'
+import { idQuery, numberRows, SEARCH_CAP, searchRows, type SearchCandidate } from '../search/searchCandidates'
 
 /** Frontmatter keys that are no text of the note: the app's own, and the ones other rows already match. */
 const NOT_TEXT = new Set(['id', 'title', 'aliases', 'alias', 'tags', 'tag', 'readonly', 'created', 'updated', 'date'])
@@ -97,6 +97,10 @@ export function fuzzyRows(candidates: readonly SearchCandidate[], query: string,
 
 /** What the explore search shows for `query`: the sidebar search's rows (a note's text row only when no named row found it), then the typo matches, capped at `SEARCH_CAP`. */
 export function exploreRows(candidates: readonly SearchCandidate[], query: string, stats?: SearchStats): SearchCandidate[] {
+  // `#5` searches by the ID number alone (YAZ-2571 round 5): no text row, no typo pass. In a vault without IDs it is text.
+  const digits = idQuery(query)
+  const byNumber = digits === null ? null : numberRows(candidates, digits)
+  if (byNumber !== null) return byNumber
   const ranked = searchRows(candidates, query)
   // A note found by its title, alias or file name shows that row alone: its text rows add nothing.
   const named = new Set(ranked.flatMap((c) => (c.snippet === undefined ? [c.path] : [])))

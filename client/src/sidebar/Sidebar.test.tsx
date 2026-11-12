@@ -2790,6 +2790,29 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(shape(el)).toEqual(['Plans', '  Zed'])
   })
 
+  it('YAZ-2571 round 5: `#12` finds by the ID number alone, the exact number first, and marks the typed digits in the ID; a bare `12` marks the ID\'s number; a title match leaves the ID plain', async () => {
+    const ids: Record<string, string> = { '/Plans/Zed.md': 'YAZ-12', '/Alpha.md': 'YAZ-120', '/plan.md': 'YAZ-3' }
+    const records = (root: string) => notePaths(VAULT(root)).map((path) => record(root, path, ids[path.slice(root.length)] !== undefined ? { id: ids[path.slice(root.length)] } : {}))
+    const { el, input, v } = await search('#12', { idsInSearch: () => 'match' } as Partial<SidebarProps>, { records })
+    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed', 'YAZ-120 — Alpha'])
+    expect(cursor(el)).toEqual(['YAZ-12 — Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-<mark class="tree__mark">12</mark> — Zed')
+    expect(row(el, `${v}/Alpha.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-<mark class="tree__mark">12</mark>0 — Alpha')
+    await type(input, '12')
+    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-<mark class="tree__mark">12</mark> — Zed')
+    await type(input, '#3')
+    expect(shape(el)).toEqual(['YAZ-3 — plan'])
+    act(() => root?.unmount())
+    const always = await search('zed', { idsInSearch: () => 'always' } as Partial<SidebarProps>, { records })
+    expect(row(always.el, `${always.v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-12 — <mark class="tree__mark">Zed</mark>')
+  })
+
+  it('YAZ-2571 round 5: in a vault without IDs `#5` reads as text, as before', async () => {
+    const { el } = await search('#5', {}, { nodes: (v) => [note(`${v}/Release #5.md`), note(`${v}/Plan 5.md`), note(`${v}/Other.md`)] })
+    expect(shape(el)).toEqual(['Plan 5', 'Release #5'])
+  })
+
   it('YAZ-4940: with the vault\'s "Show IDs in search" on Always, a note found by its title shows its ID in front too; with "Only when it matches", the title alone', async () => {
     const records = (root: string) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Zed.md') ? { id: 'YAZ-12' } : {}))
     const always = await search('zed', { idsInSearch: () => 'always' } as Partial<SidebarProps>, { records })

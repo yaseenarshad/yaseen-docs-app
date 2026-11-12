@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { basename, rootOfPath } from '@shared/types'
 import { readNeedle } from '../links/completion'
 import { relTo, dirname } from '../lib/paths'
-import { marked } from '../search/marked'
+import { idNeedle, marked } from '../search/marked'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { useResultKeys } from '../sidebar/hooks/useSidebarSearch'
@@ -134,12 +134,15 @@ export function ExploreSearch({ candidates, link, markedRow, recent, roots, name
                 }}
               >
                 <span className="search-results__label">
-                  <FileIcon path={r.path} folder={r.kind === 'dir'} />
-                  {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
-                  {marked(label, needle)}
-                  {r.kind === 'file' && <NameEnding path={r.path} />}
-                  {/* The note's or folder's id, in an ID vault (YAZ-2571 round 1): small and muted after the title; a vault without IDs has none. */}
-                  {id !== null && <span className="explore__id">{id}</span>}
+                  {/* The name is cut with "…" on its own, so a long one never hides the ID after it (round 5). */}
+                  <span className="explore__name">
+                    <FileIcon path={r.path} folder={r.kind === 'dir'} />
+                    {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
+                    {marked(label, needle)}
+                    {r.kind === 'file' && <NameEnding path={r.path} />}
+                  </span>
+                  {/* The note's or folder's id, in an ID vault (YAZ-2571 round 1): small and muted after the title; a vault without IDs has none. Found by its ID, the matched digits are marked (round 5). */}
+                  {id !== null && <span className="explore__id">{marked(id, idNeedle(r, query))}</span>}
                 </span>
                 {r.snippet !== undefined && <span className="explore__snippet">{marked(r.snippet, needle)}</span>}
                 {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}

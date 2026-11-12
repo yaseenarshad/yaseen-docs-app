@@ -162,8 +162,13 @@ export function searchTitles(candidates: readonly SearchCandidate[], query: stri
  *
  * The query is read ONE time (`holdsId`), and a text that can hold no id — almost every one a
  * person types — costs the candidates nothing more than `searchTitles` (S78).
+ *
+ * `#` and digits alone (`#5`) search by the ID number only (`numberRows`, YAZ-2571 round 5), unless no row has a number ID.
  */
 export function searchRows(candidates: readonly SearchCandidate[], query: string, first: ReadonlySet<string> = NO_PATHS): SearchCandidate[] {
+  const digits = idQuery(query)
+  const byNumber = digits === null ? null : numberRows(candidates, digits, first)
+  if (byNumber !== null) return byNumber
   const holds = holdsId(query)
   if (holds === null) return searchTitles(candidates, query, first)
   const held: SearchCandidate[] = []
@@ -171,4 +176,37 @@ export function searchRows(candidates: readonly SearchCandidate[], query: string
   if (held.length === 0) return searchTitles(candidates, query, first)
   const shown = new Set(held.map((c) => c.path))
   return [...firstRows(held, first), ...searchTitles(candidates, query, first).filter((c) => !shown.has(c.path))].slice(0, SEARCH_CAP)
+}
+
+/** The number a search by ID asks for (YAZ-2571 round 5): `#5` → `5`, `#` and digits alone; any other text → null. */
+export function idQuery(query: string): string | null {
+  const m = /^#(\d{1,15})$/.exec(query.trim())
+  return m === null ? null : m[1]
+}
+
+/**
+ * What `#<digits>` shows (YAZ-2571 round 5): the rows whose ID number is `digits`, then the rows whose ID number starts
+ * with it, in number order (`#3`: EMB-3, then EMB-30 … EMB-39, EMB-300), and nothing else; each row read `ID — label`, as
+ * a row `searchRows` found by its number is. The rows of `first` lead inside each of the two parts. Null when no row
+ * has a number ID (a vault without IDs): the text is then searched as text, as before. One scan, as `holdsId`'s is: the
+ * ID's number is read where it stands, after the hyphen, with no new string per row.
+ */
+export function numberRows(candidates: readonly SearchCandidate[], digits: string, first: ReadonlySet<string> = NO_PATHS): SearchCandidate[] | null {
+  const exact: SearchCandidate[] = []
+  const longer: { row: SearchCandidate; number: number }[] = []
+  let any = false
+  for (const c of candidates) {
+    const dash = c.id === undefined ? -1 : c.id.indexOf('-')
+    if (dash === -1) continue
+    any = true
+    const id = c.id as string
+    if (!id.startsWith(digits, dash + 1)) continue
+    const row = { ...c, label: `${id} — ${c.label}` }
+    if (id.length - dash - 1 === digits.length) exact.push(row)
+    else longer.push({ row, number: Number(id.slice(dash + 1)) })
+  }
+  if (!any) return null
+  // A stable sort: one number in two vaults keeps the order of the window's vaults.
+  const ordered = longer.sort((a, b) => a.number - b.number).map((held) => held.row)
+  return [...firstRows(exact, first), ...firstRows(ordered, first)].slice(0, SEARCH_CAP)
 }
