@@ -10,7 +10,9 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { afterEach, describe, expect, it } from 'vitest'
 import { budgetMs, median } from '../../test-perf'
-import { createCrepe } from '../createCrepe'
+import { createCrepe, noteCardLook } from '../createCrepe'
+import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
+import { renderNoteCard } from './noteCardRender'
 
 const CARD = (i: number) => `\`\`\`card\nWhat is the capital of {{Country ${i}}}? See [[Atlas]] and **the map**.\n---\nCity ${i}, on the river.\n\`\`\`\n<!-- card: WIKI-${100 + i}, 2026-11-01T09:00Z good, 2026-11-05T09:00Z good -->\n`
 const page = (block: (i: number) => string) => `# Cards\n\n${Array.from({ length: 50 }, (_, i) => `Paragraph ${i} before the card.\n\n${block(i)}`).join('\n')}\nThe end.\n`
@@ -39,11 +41,11 @@ class AllInView {
   }
 }
 
-async function mountTimed(markdown: string): Promise<{ ms: number; crepe: Crepe }> {
+async function mountTimed(markdown: string, wikilinks?: ReturnType<typeof createWikilinkResolveSource>): Promise<{ ms: number; crepe: Crepe }> {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const start = performance.now()
-  const crepe = createCrepe({ root, defaultValue: markdown, image: { root: '/v', notePath: '/v/Cards.md' } })
+  const crepe = createCrepe({ root, defaultValue: markdown, image: { root: '/v', notePath: '/v/Cards.md' }, ...(wikilinks !== undefined && { wikilinks }) })
   await crepe.create()
   const ms = performance.now() - start
   mounted.push({ crepe, root })
@@ -87,5 +89,35 @@ describe('a page with 50 note cards (idea 25)', () => {
     } finally {
       globalThis.IntersectionObserver = saved
     }
+  }, 120_000)
+
+  it('perf smoke: an index change (any save in the vault) redraws only the pills of the 50 cards, not their Markdown (audit 1)', async () => {
+    const source = createWikilinkResolveSource()
+    source.update((t) => (t === 'Atlas' ? '/v/Atlas.md' : null), [], [], true, ['WIKI'])
+    const { crepe } = await mountTimed(CARDS, source)
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const sides = [...view.dom.querySelectorAll('.note-card__sides')]
+    expect(sides).toHaveLength(50)
+    const changes: number[] = []
+    for (let i = 0; i < 25; i++) {
+      const start = performance.now()
+      source.update((t) => (t === 'Atlas' && i % 2 === 0 ? '/v/Atlas.md' : null), [], [], true, ['WIKI'])
+      if (i >= 5) changes.push(performance.now() - start)
+    }
+    // The sides are the same elements: no render ran; the pill follows the index.
+    source.update(() => null, [], [], true, ['WIKI'])
+    expect([...view.dom.querySelectorAll('.note-card__sides')]).toEqual(sides)
+    expect(view.dom.querySelector('[data-note-card-link]')?.classList.contains('wikilink--unresolved')).toBe(true)
+    // What it cost before (each card rendered again: marked + DOMPurify), for the log.
+    const look = noteCardLook(source, undefined)
+    const text = CARD(0).split('\n').slice(1, 4).join('\n')
+    const full: number[] = []
+    for (let i = 0; i < 10; i++) {
+      const start = performance.now()
+      for (let c = 0; c < 50; c++) renderNoteCard(text, {}, look)
+      full.push(performance.now() - start)
+    }
+    console.log(`note cards perf: an index change with 50 link cards: median ${median(changes).toFixed(2)} ms (pills only); a full render of the 50: median ${median(full).toFixed(2)} ms (before)`)
+    expect(median(changes)).toBeLessThan(budgetMs(15))
   }, 120_000)
 })
