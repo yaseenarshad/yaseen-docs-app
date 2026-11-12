@@ -1,4 +1,5 @@
 import { boardOptionGroups } from './boardOptionGroups'
+import { useUnit } from '../vault/unitWord'
 import { LinkFoldersContext } from './view/NotesFromPicker'
 import { columnTyping, optionOrderFor, optionParentFor } from './editorType'
 import { alsoIn } from '@shared/alsoIn'
@@ -11,8 +12,8 @@ import { pageResolver } from '../links/folderLinks'
 import { isMentionsColumn, mentionsColumns } from './mentionsColumn'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, hidesSubfolderNotes, parseViews, serializeViews, shownGroupLevels, showsFolderRows, updateViews } from './viewSchema'
-import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, levelSteps } from './groupLevelSteps'
+import { type FilterNode, type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, groupDepthOf, hidesSubfolderNotes, parseViews, rewriteViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
+import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, branchSteps, levelSteps } from './groupLevelSteps'
 import { type Group, type Row, propertyKeys, propertyLabel, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import { type ColumnDecl, type FolderSettings, pageColumnKeys, rebaseSettings } from './folderSettings'
@@ -22,23 +23,28 @@ import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CalendarView } from './view/CalendarView'
-import { type DayKey, calendarDateKey, dateColumns, dayLabel, hideWeekendsDefault, hidesWeekends, movedDate } from './calendar'
+import { type DayKey, calendarDateKey, calendarEndKey, dateColumns, dayLabel, dayOf, hideWeekendsDefault, hidesWeekends, movedDate, spanLabel } from './calendar'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
+import { allPropertyKeys } from './view/properties'
+import { declarationForKind } from './view/declarationForKind'
 import type { CardNoteDoors } from './view/rowMenuItems'
-import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, TOP_SPOT, applyMoves, chainLevels, childSpot, groupByKey, groupsByFolder, spotKey } from './view/groupDrag'
 import { ListView } from './view/ListView'
 import { TableView } from './view/TableView'
 import { NoteWindow, type NoteWindowMemory, dropNoteWindow, keepNoteWindow, noteWindowKey, noteWindowLink, noteWindowMemory, openNoteWindow, renameNoteWindowView, saveNoteWindowBox, savedNoteWindowBox } from './view/NoteWindow'
+import { onNoteWindowRequest } from './noteWindowRequest'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY, writableKey } from './readOnlyRows'
 import { type HistoryStep, noteRef, valueHistory } from './view/valueHistory'
+import type { CardStyleWrite } from './view/CardStyleMenu'
 import { columnReservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
 import { ColumnDecls, FolderPages, type FolderPagesValue, LinkPills } from './view/GroupHeader'
+import { PillLook, usePillLook } from '../editor/wikilink/LinkPillParts'
 import { ImageVault } from './view/imageCell'
 import { TextLinkPicker } from './view/EditableCell'
 import { openByGesture } from '../lib/openGesture'
@@ -294,6 +300,7 @@ const PILL_HOVER = '\u0000pill'
 const noHover = (): void => undefined
 
 export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, hoverLinks = false, confirmChanges = false, onConfirmChangesOff, showNewButtons = true, previewScope, diagramDarkColors = 'adapt', folderPages: defaults = DEFAULT_FOLDER_PAGES }: ViewsPaneProps) {
+  const unit = useUnit()
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -353,6 +360,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // The note window (YAZ-4547): `opens` mounts a new card per open and renders each open and close; the link to the
   // table; the place, size and pin of the last card closed here, for the next open while this folder page is mounted.
   const [opens, setOpens] = useState(0)
+  /** The header menu's "Open the filter panel…" (YAZ-4919): each ask opens the toolbar's Filter popover. */
+  const [filterAsks, setFilterAsks] = useState(0)
+  const openFilter = useCallback(() => setFilterAsks((n) => n + 1), [])
   const windowLink = useMemo(noteWindowLink, [])
   const lastWindow = useRef<NoteWindowMemory | null>(null)
   const itemProps = useCallback((path: string) => (rowPage(path) !== path || !hoverPreview ? { 'data-hover-item': path, onMouseEnter: noHover, onMouseLeave: noHover } : { 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard, hoverPreview])
@@ -420,6 +430,19 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     dropNoteWindow(windowKey)
     setOpens((n) => n + 1)
   }, [windowKey])
+  // "Open in mini window" from the explore stack (YAZ-2571 round 1): the page on screen takes the note into its card.
+  const openWindowRef = useRef(openWindow)
+  openWindowRef.current = openWindow
+  useEffect(
+    () =>
+      onNoteWindowRequest((path) => {
+        const open = openWindowRef.current
+        if (open === undefined || selectionChip.current?.closest('.tabstack__layer--hidden') !== null) return false
+        open(path)
+        return true
+      }),
+    [],
+  )
   // Re-parse after every edit: `doc.setIn` stores plain JS values, so a second edit inside a
   // collection a previous edit created would throw ("Expected YAML collection"). The round trip
   // through text keeps comments and rebuilds proper nodes.
@@ -428,7 +451,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   latest.current = { parsed, onChange, folder }
   const write = (mutate: (def: ViewSet) => void): ViewSet | null => {
     const now = latest.current
-    const next = parseViews(serializeViews(updateViews(now.parsed, mutate)))
+    const next = rewriteViews(now.parsed, mutate)
     return now.onChange(next) === false ? null : next.def
   }
   /**
@@ -569,8 +592,29 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // An Image column sorts by the picture's file name (YAZ-4802).
   const byFileName = useMemo(() => (key: string) => settings.columns[key.startsWith('note.') ? key.slice(5) : key]?.kind === 'image', [settings])
   const result = useMemo(
-    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName }),
-    [def, view, shown, resolve, page, optionOrder, optionParent, mentions, byFileName],
+    // The week's start for "is this week" (YAZ-4919); the clock is the run's own.
+    () => runView(def, view, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: defaults.weekStartsOn }),
+    [def, view, shown, resolve, page, optionOrder, optionParent, mentions, byFileName, defaults.weekStartsOn],
+  )
+
+  /**
+   * The rows that pass `filters` in this view's place (YAZ-4919 round 2): the header menu's Filter › Contains box counts
+   * and lists with it. The run's own options, so a live date rule on another column counts as the view does; no sort, no
+   * group, no limit, one column, so it costs the filters alone. Asked after a typing pause, never per keystroke.
+   */
+  const matchRows = useCallback(
+    (filters: FilterNode | undefined): readonly IndexRecord[] => {
+      const probe: ViewDef = { ...view, order: ['file.name'] }
+      delete probe.sort
+      delete probe.groupBy
+      delete probe.limit
+      delete probe.summaries
+      delete probe.crossOut
+      if (filters === undefined) delete probe.filters
+      else probe.filters = filters
+      return runView(def, probe, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: defaults.weekStartsOn }).rows.map((r) => r.record)
+    },
+    [def, view, shown, resolve, folder.settings, page, optionOrder, optionParent, mentions, byFileName, defaults.weekStartsOn],
   )
 
   const configuredGroups = boardOptionGroups(result.groups, view, key => columnTyping(key, shown, properties, folder.settings), optionParent)
@@ -600,9 +644,21 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // page's own card, so toggling can not touch autosave.
   const collapseKey = `${folderPath}::${view.name}`
   const collapsed = collapsedByKey[collapseKey] ?? storage.getViewGroups(root, collapseKey)
-  const writeCollapsed = (next: readonly string[]) => {
-    setCollapsedByKey((m) => ({ ...m, [collapseKey]: [...next] }))
-    storage.setViewGroups(root, collapseKey, next)
+  const writeCollapsedAt = (key: string, next: readonly string[]) => {
+    setCollapsedByKey((m) => ({ ...m, [key]: [...next] }))
+    storage.setViewGroups(root, key, next)
+  }
+  const writeCollapsed = (next: readonly string[]) => writeCollapsedAt(collapseKey, next)
+  /**
+   * "Expand all" / "Collapse all" (YAZ-4928): ONE step of the page's ⌘Z history. Undo writes back the collapsed keys as
+   * they were before, redo the ones after — the view's own store only, never the page (so read only too, YAZ-4939). A
+   * single group's fold and the level steps stay off the history, as before.
+   */
+  const foldBranch = (next: readonly string[]) => {
+    const key = collapseKey
+    const before = [...collapsed]
+    writeCollapsedAt(key, next)
+    history.push({ undo: () => writeCollapsedAt(key, before), redo: () => writeCollapsedAt(key, next) })
   }
   /**
    * The store is keyed by view NAME, and since YAZ-1471 a name changes in one gesture: a rename
@@ -635,14 +691,26 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
   // One level at a time (YAZ-3746 13AT, S8): offered while the view has two levels or more, and the store can hold its keys.
   const nodesOf = (list: readonly Group[], at: GroupSpot): LevelNode[] =>
-    list.map((g) => ({ key: spotKey(g, at), ...(g.children === undefined ? {} : { children: nodesOf(g.children, childSpot(g, at)) }) }))
-  const steps = configuredGroups !== null && allGroupKeys.length > 0 && shownGroupLevels(view).length >= 2 ? levelSteps(nodesOf(configuredGroups, TOP_SPOT), collapsed) : null
+    list.map((g) => ({ key: spotKey(g, at), ...(g.nested === true ? { nested: true as const } : {}), ...(g.children === undefined ? {} : { children: nodesOf(g.children, childSpot(g, at)) }) }))
+  // A nested Folder level is levels too (YAZ-4918, `groupDepthOf`).
+  const levelNodes = configuredGroups !== null && allGroupKeys.length > 0 && groupDepthOf(view) >= 2 ? nodesOf(configuredGroups, TOP_SPOT) : null
+  const steps = levelNodes === null ? null : levelSteps(levelNodes, collapsed)
   const levelActions: GroupLevelStepActions | null =
-    steps === null
+    steps === null || levelNodes === null
       ? null
       : {
           ...(steps.collapseOne === null ? {} : { collapseOne: () => writeCollapsed(steps.collapseOne!) }),
           ...(steps.expandOne === null ? {} : { expandOne: () => writeCollapsed(steps.expandOne!) }),
+          // A nested Folder group's "Expand all" / "Collapse all" (YAZ-4928): worked out when that header's menu opens.
+          branch: (key) => {
+            const b = branchSteps(levelNodes, key, collapsed)
+            if (b === null) return undefined
+            return {
+              ...(b.expandAll === null ? {} : { expandAll: () => foldBranch(b.expandAll!) }),
+              ...(b.collapseAll === null ? {} : { collapseAll: () => foldBranch(b.collapseAll!) }),
+            }
+          },
+          history,
         }
 
   // ⌘F (YAZ-4613, D64): the note's find bar over the view's rows as shown, the search box's narrowing included. Read at
@@ -708,7 +776,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   }
   const applyMove = (path: string, writes: PendingMove, to?: string) => {
     setMoveError(null)
-    setMoves((m) => ({ ...m, [path]: writes }))
+    // A second write to the note before the index echoed the first keeps the first's keys (YAZ-4906: Fill, then Bold in
+    // one visit of "Card style ›"); a write to the same key replaces it.
+    setMoves((m) => ({ ...m, [path]: [...(m[path] ?? []).filter((w) => !writes.some((n) => n.key === w.key)), ...writes] }))
     folder.writeValues(path, writes).then(
       () => {
         if (to === undefined) return
@@ -776,6 +846,54 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     const prevRaw = records.find((r) => r.path === path)?.properties[dateKey]
     moveValues(path, [{ key: dateKey, value: day === null ? undefined : movedDate(prevRaw, day), prevRaw }], day === null ? 'No date' : dayLabel(day))
   }
+  // The End date (YAZ-4858): a card's start and end in ONE move (`PendingMove` is a list), each keeping its time; a date
+  // left out stays, `null` clears it. The toast names the days the card is on after it.
+  const endKey = view.type === 'calendar' ? calendarEndKey(view, dateKey, folder.settings.columns) : null
+  const onMoveSpan = (path: string, next: { start?: DayKey | null; end?: DayKey | null }) => {
+    if (dateKey === null || readOnly.has(path)) return
+    const props = records.find((r) => r.path === path)?.properties
+    const writes: PendingMove = []
+    const add = (key: string | null, day: DayKey | null | undefined) => {
+      if (key === null || day === undefined) return
+      const prevRaw = props?.[key]
+      writes.push({ key, value: day === null ? undefined : movedDate(prevRaw, day), prevRaw })
+    }
+    add(dateKey, next.start)
+    add(endKey, next.end)
+    if (writes.length === 0) return
+    const start = next.start !== undefined ? next.start : dayOf(props?.[dateKey])
+    const end = next.end !== undefined ? next.end : endKey === null ? null : dayOf(props?.[endKey])
+    const on = start ?? end
+    moveValues(path, writes, on === null ? 'No date' : spanLabel(on, end !== null && end > on ? end : on))
+  }
+  /**
+   * A card's style (YAZ-4906): the note's `color`, `text_color` and `weight` (`CardStyleMenu.tsx`; an undefined value
+   * removes the key), the move's optimistic guarded write with no toast, and ONE step of the page's ⌘Z history (S41)
+   * per pick, whose undo writes the values the note SHOWS (`shown`, the pending moves laid on: a second pick before the
+   * index echoes the first undoes to the first, YAZ-4834 P3). A deliberate menu pick, as the table's Fill: it does not
+   * ask Confirm changes.
+   */
+  const onCardStyle = (path: string, picks: readonly CardStyleWrite[]) => {
+    if (readOnly.has(path) || picks.length === 0) return
+    const props = shown.find((r) => r.path === path)?.properties
+    const writes: PendingMove = picks.map(({ key, value }) => ({ key, value, prevRaw: props?.[key] }))
+    const back: PendingMove = writes.map((w) => ({ key: w.key, value: w.prevRaw, prevRaw: w.value }))
+    const ref = noteRef(path)
+    const put = (w: PendingMove) => void (ref.path !== null && applyMove(ref.path, w))
+    history.push({ undo: () => put(back), redo: () => put(writes), notes: [ref] })
+    applyMove(path, writes)
+  }
+  // "Add a date column" (YAZ-4858 item 4): a Date column named "End date" ("End date 2" when taken), chosen as this
+  // view's End date, in ONE settings write. Nothing is written into a note.
+  const addEndColumn = () => {
+    const taken = new Set(allPropertyKeys(def, view, records, folder.settings.columns).map((k) => canonicalKey(k).toLowerCase()))
+    let name = 'End date'
+    for (let n = 2; taken.has(`note.${name}`.toLowerCase()); n++) name = `End date ${n}`
+    folder.setColumns(
+      { ...folder.settings.columns, [name]: declarationForKind(undefined, 'date') },
+      def.views.map((v, i) => (i === index ? { ...v, endDateProperty: `note.${name}` } : v)),
+    )
+  }
 
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
   // view — filter-derived seed, plus the group's raw value when created inside a group. It is born
@@ -792,7 +910,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       // 🔒 YAZ-745: an INNER "+" seeds every ancestor too (YAZ-4531), so the note lands in the very
       // section clicked. The ancestors go FIRST, outer first (YAZ-2541): under Folder then Folder each
       // level sets `seed.folder`, and the folder clicked is where the note must be born — so it writes last.
-      at?.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level, folder.settings.columns))
+      // Each ancestor by its view level (YAZ-4918): a nested Folder level's groups share one.
+      if (at !== undefined) chainLevels(at.ancestors).forEach((level, i) => seedGroup(seed, at.ancestors[i], view, level, folder.settings.columns))
       seedGroup(seed, group, view, at?.level ?? 0, folder.settings.columns)
     }
     setCreateError(null)
@@ -817,7 +936,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       if (key !== null && value !== undefined) seed.properties[key] = value
     }
     if (group !== null && at !== null) {
-      at.ancestors.forEach((ancestor, level) => seedGroup(seed, ancestor, view, level, folder.settings.columns))
+      chainLevels(at.ancestors).forEach((level, i) => seedGroup(seed, at.ancestors[i], view, level, folder.settings.columns))
       seedGroup(seed, group, view, at.level, folder.settings.columns)
     }
     setCreateError(null)
@@ -834,7 +953,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
             const at = ref.path
             if (at === null) return
             const now = latest.current.folder.vaultRecords.find((r) => r.path === at)
-            if (now !== undefined && now.ctime > bornAt + NEWER_FILE_MS) return folder.onNotice?.("Can't undo: another note stands where the new row was")
+            if (now !== undefined && now.ctime > bornAt + NEWER_FILE_MS) return folder.onNotice?.(unit("Can't undo: another note stands where the new row was"))
             void trash([at]).catch((err: unknown) => folder.onNotice?.(`Can't undo: ${err instanceof Error ? err.message : String(err)}`))
           }
           // One step of the page's history too (S41); its undo trashes the note, so it has no redo. The toast's Undo is that step (T9e).
@@ -912,7 +1031,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     const all = showsFolderRows(v) && folderRows.length > 0 ? [...noteRecords, ...folderRows] : noteRecords
     const input = hidesSubfolderNotes(v) ? all.filter((r) => directlyIn(r, pageFolder)) : all
     const declared = pageColumnKeys(settings)
-    const out = runView(def, v, input, { resolve, declared, page, optionOrder, mentions, byFileName })
+    const out = runView(def, v, input, { resolve, declared, page, optionOrder, mentions, byFileName, weekStartsOn: defaults.weekStartsOn })
     const grouped = boardOptionGroups(out.groups, v, (key) => columnTyping(key, input, properties, settings))
     const list = shownRows(out.rows, grouped)
     const ctx = { resolve, decls: settings.columns, pageFolder, folderTitle: folderPages.title }
@@ -1007,6 +1126,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         dateColumns={calendarColumns}
         tabId={tabId}
         notice={pauseChip}
+        filterAsks={filterAsks}
       />
       {/* ⌘F (YAZ-4613): on the Page tab the note's own find answers. */}
       {!isPage && <FindBar channel={find.channel} scope="views" hostRef={paneRef} />}
@@ -1030,6 +1150,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         <div className="view-page">{folder.renderPage?.()}</div>
       ) : view.type === 'table' ? (
         <TableView
+          onOpenFilter={openFilter}
+          matchRows={matchRows}
           hover={viewHover}
           readOnly={readOnly}
           def={def}
@@ -1082,6 +1204,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           noteDoors={cardDoors('Added a card')}
           hover={viewHover}
           readOnly={readOnly}
+          onStyle={onCardStyle}
           settings={folder.settings}
           def={def}
           view={view}
@@ -1108,8 +1231,22 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           noteDoors={cardDoors()}
           hover={viewHover}
           readOnly={readOnly}
+          def={def}
+          view={view}
+          records={shown}
+          settings={folder.settings}
+          resolve={resolve}
           rows={rows}
           dateKey={dateKey}
+          endKey={endKey}
+          dateColumns={calendarColumns}
+          onMoveSpan={onMoveSpan}
+          onChooseEnd={(column) =>
+            update((d) => {
+              d.views[index].endDateProperty = column
+            })
+          }
+          onAddEndColumn={addEndColumn}
           onOpenFile={openRow}
           onOpenFileRight={openRowRight}
           onOpenFileBackground={openRowBackground}
@@ -1117,6 +1254,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           windowLink={windowLink}
           onNotice={folder.onNotice}
           onMoveToDay={onMoveToDay}
+          onStyle={onCardStyle}
+          history={history}
+          onHeaderRow={(mutate) => update((d) => mutate(d.views[index]))}
           moveError={moveError}
           onNewOnDay={(day) => {
             // The new note opens in the mini window (YAZ-3746 13G); in this tab where the host has no editor for one.
@@ -1244,17 +1384,21 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       )}
     </div>
   )
+  // The vault's link pills look (YAZ-4924): the pieces a cell's pill gains, from the vault's resolve source.
+  const pillLook = usePillLook(folder.wikilinks)
   // The Folder column's chips and the Folder group headers' ↗ read the page's folders (YAZ-4564); the cells show links as pills (YAZ-4601).
   return (
     <ViewDefaults.Provider value={defaults}>
       <LinkFoldersContext.Provider value={linkFolders}>
       <FolderPages.Provider value={folderPages}>
         <LinkPills.Provider value={true}>
+          <PillLook.Provider value={pillLook}>
           <TextLinkPicker.Provider value={true}>
             <GroupLevelStepsContext.Provider value={levelActions}>
               <OtherFilesFolderMove.Provider value={viewFolderTray}>{pane}</OtherFilesFolderMove.Provider>
             </GroupLevelStepsContext.Provider>
           </TextLinkPicker.Provider>
+          </PillLook.Provider>
         </LinkPills.Provider>
       </FolderPages.Provider>
       </LinkFoldersContext.Provider>

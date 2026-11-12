@@ -11,7 +11,11 @@ import type {
 import { restoreElements } from "../data/restore";
 import { Excalidraw } from "../index";
 import { setKeyBindings } from "../keyRemap";
-import { CARET_SCREEN_PX, getCaretWidth } from "../wysiwyg/hostTextWysiwyg";
+import {
+  CARET_SCREEN_PX,
+  getCaretWidth,
+  OVERLAY_NODE_PX,
+} from "../wysiwyg/hostTextWysiwyg";
 
 import { API } from "./helpers/api";
 import { Keyboard, Pointer } from "./helpers/ui";
@@ -94,7 +98,8 @@ const startEdit = async (text = "Our main Moat:\n• one") => {
 
 /**
  * YAZ-4396 (1F): the board-px rectangle an overlay node is placed on, read
- * back from its `transform: translate() scale()` (a 1 px node).
+ * back from its `transform: translate() scale()` over its base box
+ * (YAZ-4902: `OVERLAY_NODE_PX` square, no longer 1 px).
  */
 const overlayRect = (node: HTMLElement) => {
   const match =
@@ -104,8 +109,13 @@ const overlayRect = (node: HTMLElement) => {
   if (!match) {
     throw new Error(`not placed by a transform: "${node.style.transform}"`);
   }
-  const [left, top, width, height] = match.slice(1).map(Number);
-  return { left, top, width, height };
+  const [left, top, scaleX, scaleY] = match.slice(1).map(Number);
+  return {
+    left,
+    top,
+    width: scaleX * parseFloat(node.style.width),
+    height: scaleY * parseFloat(node.style.height),
+  };
 };
 
 /** The blur that ends the edit is armed a task after the edit starts, the click outside a frame after. */
@@ -263,9 +273,9 @@ describe("the host text editor (textEditor)", () => {
       const caret = last().root.parentElement!.querySelector<HTMLElement>(
         ".excalidraw-host-text-editor-overlay .excalidraw-wysiwyg-caret",
       )!;
-      // YAZ-4396 (1F): a 1 px node scaled by a transform: layout would snap
+      // YAZ-4396 (1F): a node scaled by a transform: layout would snap
       // a 0.05 px width to 0 or to 1 board px (30 px on screen at 3000%)
-      expect(caret.style.width).toBe("1px");
+      expect(caret.style.width).toBe(`${OVERLAY_NODE_PX}px`);
       expect(overlayRect(caret).width).toBeCloseTo(CARET_SCREEN_PX / zoom, 10);
       expect(getCaretWidth(zoom) * zoom).toBeCloseTo(1.5, 10);
     },
@@ -568,14 +578,109 @@ describe("the caret, the selection and the board at any zoom (YAZ-4396)", () => 
     const [span] = last().root.parentElement!.querySelectorAll<HTMLElement>(
       ".excalidraw-wysiwyg-selection",
     );
-    expect(span.style.width).toBe("1px");
-    expect(span.style.height).toBe("1px");
+    expect(span.style.width).toBe(`${OVERLAY_NODE_PX}px`);
+    expect(span.style.height).toBe(`${OVERLAY_NODE_PX}px`);
     expect(span.style.transformOrigin).toBe("0 0");
     // "bcd": from 10 to 40 board px, the whole line high
     const rect = overlayRect(span);
     expect(rect.left).toBeCloseTo(10, 6);
     expect(rect.width).toBeCloseTo(30, 6);
     expect(rect.height).toBeCloseTo(25, 6);
+  });
+
+  it("YAZ-4902: a highlight part and the caret are not 1 px nodes scaled up: a fractional pixel ratio paints 1 px as 2", async () => {
+    // At App size 150 % on a 1x screen (devicePixelRatio 1.5) Chromium paints
+    // a 1 CSS px node as 2 device px, and the transform scales that: the
+    // highlight came out 1.33 times too wide (0.8 at 125 %). A base box of
+    // OVERLAY_NODE_PX px is a whole number of device px at every App size.
+    API.setAppState({ zoom: { value: 1.5 as any } });
+    await startEdit("abcdef\nghij");
+    act(() => last().onSelectionChange({ anchor: 0, head: 11 }));
+    const overlay = last().root.parentElement!.querySelector(
+      ".excalidraw-host-text-editor-overlay",
+    )!;
+    const parts = overlay.querySelectorAll<HTMLElement>(
+      ".excalidraw-wysiwyg-selection",
+    );
+    expect(parts.length).toBe(2);
+    expect(OVERLAY_NODE_PX).toBeGreaterThanOrEqual(100);
+    for (const part of parts) {
+      expect(part.style.width).toBe(`${OVERLAY_NODE_PX}px`);
+      expect(part.style.height).toBe(`${OVERLAY_NODE_PX}px`);
+    }
+    // the geometry is unchanged: 6 letters of 10 px, the whole first line
+    expect(overlayRect(parts[0]).width).toBeCloseTo(60, 6);
+    expect(overlayRect(parts[0]).left).toBeCloseTo(0, 6);
+    act(() => last().onSelectionChange({ anchor: 2, head: 2 }));
+    const caret = overlay.querySelector<HTMLElement>(
+      ".excalidraw-wysiwyg-caret",
+    )!;
+    expect(caret.style.width).toBe(`${OVERLAY_NODE_PX}px`);
+    expect(caret.style.height).toBe(`${OVERLAY_NODE_PX}px`);
+    expect(overlayRect(caret).width).toBeCloseTo(CARET_SCREEN_PX / 1.5, 10);
+    expect(overlayRect(caret).left).toBeCloseTo(20, 6);
+  });
+
+  it("YAZ-4902: a colour-run line selected whole is one rect as wide as its drawn letters, at a zoom", async () => {
+    API.setAppState({ zoom: { value: 1.25 as any } });
+    // the real shape: a 24-letter first line under one colour run, a longer second line
+    const text = "(Harbor Lts Proj - #125)\n(Quiet Field Again - #131)";
+    const plain = API.createElement({
+      type: "text",
+      text,
+      x: 30,
+      y: 40,
+      fontSize: 12,
+      textAlign: "left",
+    });
+    const element = {
+      ...plain,
+      textRuns: [{ start: 0, end: 24, color: "#1971c2" }],
+    } as NonDeleted<ExcalidrawTextElement>;
+    API.setElements([element]);
+    API.setSelectedElements([element]);
+    Keyboard.keyPress(KEYS.ENTER);
+    await waitFor(() => expect(mounted.length).toBe(1));
+    const { x, y } = sceneCoordsToViewportCoords(
+      { sceneX: element.x, sceneY: element.y },
+      h.state,
+    );
+    // a drag from the first letter to past the line's end, and a triple
+    // click, both select the whole line from the canvas layout
+    fireEvent.pointerDown(last().root, {
+      button: 0,
+      clientX: x + 1,
+      clientY: y + 5,
+    });
+    fireEvent.pointerMove(window, { clientX: x + 500, clientY: y + 5 });
+    fireEvent.pointerUp(window, { clientX: x + 500, clientY: y + 5 });
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 0,
+      head: 24,
+    });
+    for (let press = 0; press < 3; press++) {
+      fireEvent.pointerDown(last().root, {
+        button: 0,
+        clientX: x + 40,
+        clientY: y + 5,
+        timeStamp: 1000 + press,
+      });
+      fireEvent.pointerUp(window, { clientX: x + 40, clientY: y + 5 });
+    }
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 0,
+      head: 24,
+    });
+    // the highlight: one rect over the first line, 24 letters of 10 px
+    act(() => last().onSelectionChange({ anchor: 0, head: 24 }));
+    const spans = last().root.parentElement!.querySelectorAll<HTMLElement>(
+      ".excalidraw-wysiwyg-selection",
+    );
+    expect(spans.length).toBe(1);
+    const rect = overlayRect(spans[0]);
+    expect(rect.left).toBeCloseTo(0, 6);
+    expect(rect.width).toBeCloseTo(240, 6);
+    expect(rect.top).toBeCloseTo(0, 1);
   });
 
   it("puts a board layer that scrolls during the edit back, and lets it go after", async () => {

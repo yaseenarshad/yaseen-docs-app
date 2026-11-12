@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX, IMAGE_SIZE_MIN, type ImageShape, type IndexRecord, type PropertiesResponse, type PropertyFormat, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { linkColumnKeys, type ColumnDecl, type FolderSettings } from '../folderSettings'
@@ -348,7 +349,7 @@ export interface ColumnDetailProps {
  * S24); Format for a Number or Date column (YAZ-4591 S21/S22); Relation (a declared link kind's target
  * inline, else "Make relation" seeding a link kind from a legacy vault declaration, YAZ-895); Align (TABLE views only,
  * YAZ-3746 13Y: Auto · Left · Center · Right, the view's `columnAlign` entry through `view/columnAlign.ts`); Card
- * styling (the four `cardStyle` toggles — BOARD views only, the one skin that reads `cardStyle`);
+ * styling (the four `cardStyle` toggles — BOARD and CALENDAR views, the skins that read `cardStyle`, YAZ-4857);
  * and the actions: Hide in this view and Delete column… (`views/deleteColumn.ts`, confirm-first;
  * built-in keys disabled with a tooltip).
  *
@@ -360,6 +361,7 @@ export interface ColumnDetailProps {
  * column starts with no error.
  */
 export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, onUpdate, properties, folder, shown: on, canHide, onHide, onBack, onLeave }: ColumnDetailProps) {
+  const unit = useUnit()
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
@@ -598,7 +600,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         {/* YAZ-4772: a ◌ field says so, as a parent's column does, and can become this folder's column (the C4A ask). */}
         {loose && (
           <div className="column-detail__source" role="note">
-            <span className="column-detail__source-text">◌ Only in the notes. {folderName} has no column for it.</span>
+            <span className="column-detail__source-text">{unit('◌ Only in the notes.')} {folderName} has no column for it.</span>
             {folder.addColumn !== undefined && (
               <button type="button" className="view-menu__action" onClick={() => setAdding(true)}>
                 Add to {folderName}
@@ -741,7 +743,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
               type="checkbox"
               className="view-switch"
               aria-label={`${label}: separate value for ${folderName}`}
-              title={`${folderName} keeps its own value for each note. Other pages show the note's one value.`}
+              title={unit(`${folderName} keeps its own value for each note. Other pages show the note's one value.`)}
               checked={decl?.separate === true}
               onChange={toggleSeparate}
             />
@@ -784,8 +786,8 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
             {error}
           </p>
         )}
-        {/* Card styling (YAZ-1206/YAZ-1217): BOARD views only — the one skin that reads `cardStyle` — and only a shown column; the title gets ⤴ alone. */}
-        {view.type === 'board' && on && (
+        {/* Card styling (YAZ-1206/YAZ-1217): BOARD and CALENDAR views (YAZ-4857) — the skins that read `cardStyle` — and only a shown column; the title gets ⤴ alone. */}
+        {(view.type === 'board' || view.type === 'calendar') && on && (
           <div className="column-detail__group">
             <p className="view-menu__label">Card styling</p>
             <div className="column-detail__toggles">
@@ -872,7 +874,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         <ConfirmSheet
           labelId="confirm-unshare-column-text"
           text={unshareMessage(unsharing, folderName)}
-          confirmLabel="Keep the notes' values"
+          confirmLabel={unit("Keep the notes' values")}
           keys="contained"
           focusConfirm
           onConfirm={() => answerUnshare('notes')}

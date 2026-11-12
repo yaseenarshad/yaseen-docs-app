@@ -5,7 +5,8 @@
  *  - what it shows: `linkDisplayText` with the ID link's title (YAZ-2293) and the found page's name (YAZ-3778 D2, D3);
  *    a missing page is dim, and a missing ID of this vault says "Missing note · YAS-466" (YAZ-3905 S10),
  *  - a click: the open gestures of Settings › Hotkeys › "Links in notes and drawings" (`linkClickAction`, the #230 keys). A plain
- *    click is the board's (it selects the box); a read-only board keeps "a click opens", as a read-only note does,
+ *    click is the board's (it selects the box); a read-only board keeps "a click opens", as a read-only note does, and
+ *    follows the vault's "Clicking a link" (Explore, YAZ-4939) as a note does,
  *  - opening: the editor's one follower (`wikilinkFollower`), which also makes a missing page,
  *  - hover: the page the pill opens, for the host's card (`useCardPreview`),
  *  - right-click: the host opens the one link menu (`linkMenuOf`), with Edit link and Remove link (D15),
@@ -60,7 +61,7 @@ export interface DrawingLinkHit {
 export function drawingLinkLook(inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): DrawingLink | null {
   const titles = pathTitles(source.records, source.folders)
   const resolved = linkIsResolved(inner, source, viewOnly)
-  const label = linkDisplayText(inner, (target) => idLinkTitle(target, source.resolve, titles), () => resolved)
+  const label = linkDisplayText(inner, (target) => idLinkTitle(target, source.resolve, titles), () => resolved, source)
   if (label === '') return null
   if (!resolved) {
     // A gone note of this vault says so, with its ID, where its title stood (S10).
@@ -251,7 +252,14 @@ export function drawingHostLinks(deps: () => DrawingLinkDeps) {
     },
     onPointerDown: (hit: DrawingLinkHit, event: PointerEvent) => {
       const now = deps()
-      const where = linkClickAction({ editable: !now.readOnly() }, event, now.nav.hotkeys?.())
+      // A plain click on an editable board is the board's (it selects the box). On a read-only board it follows the
+      // vault's "Clicking a link" (YAZ-4939): a note pill opens in Explore while the vault says so, as in a note.
+      const explore = (): boolean => {
+        if (!now.readOnly() || now.nav.exploreClick?.() !== true) return false
+        const vault = linkVault(hit.inner) ?? { source: now.source, viewOnly: now.viewOnly }
+        return fileKind(linkPath(hit.inner, vault.source, vault.viewOnly) ?? '') === 'markdown'
+      }
+      const where = linkClickAction({ editable: !now.readOnly() }, event, now.nav.hotkeys?.(), explore)
       if (where === null) return false
       now.follow(hit.inner, where)
       return true

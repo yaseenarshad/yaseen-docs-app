@@ -4,11 +4,10 @@ import { type ViewSet, type ViewDef, type FilterNode, type Mutate, showsFolderRo
 import { type ColumnTyping, columnTyping } from '../editorType'
 import type { FolderHost } from '../ViewsPane'
 import type { EngineError } from '../engine'
-import { stripBrackets } from '@shared/linkResolver'
 import { isMentionsColumn } from '../mentionsColumn'
 import {
-  type Conjunction, type FilterGroup, type OperatorId, type PropertyType, type Rule, exprToRule, fromGroup, inferType, operator,
-  operatorsFor, ruleToExpr, toGroup,
+  type Conjunction, type FilterGroup, type OperatorId, type PropertyType, type Rule, SUBSTRING_OPS, exprToRule, fromGroup, inferType, operator,
+  operatorsFor, propertyValues, ruleToExpr, toGroup, unquote,
 } from './filterRows'
 import { ColumnPicker } from './ColumnPicker'
 import { canonicalKey } from './keys'
@@ -27,6 +26,11 @@ export interface FilterMenuProps {
   /** The folder's own declarations — that ladder's TOP rung (🔒 Q8, YAZ-895). */
   folder: FolderHost
   onUpdate: Mutate
+  /**
+   * The view key the rows edit: `filters` (the Filter menu), or a calendar's `crossOut` (YAZ-4864, View › Calendar
+   * "Cross out when"): the same rows, a card crossed out where they match.
+   */
+  field?: 'filters' | 'crossOut'
 }
 
 const CONJUNCTIONS: { id: Conjunction; label: string }[] = [
@@ -40,6 +44,8 @@ const FILE_EXTRAS = ['file.tags', 'file.folder', 'file.links']
 
 /** A fresh rule matches every row, so adding one never blanks the view before it is filled in. */
 const NEW_RULE: Rule = { property: 'file.name', op: 'contains', value: '' }
+/** A fresh "Cross out when" rule (YAZ-4864) matches NO row, so adding one never crosses out every card before it is filled in. */
+const NEW_CROSS_OUT: Rule = { property: 'file.name', op: 'is', value: '' }
 
 /** A long DATALIST defeats its own purpose (YAZ-1232); the searchable checklist takes every value (YAZ-1469). */
 const SUGGESTION_LIMIT = 50
@@ -65,10 +71,10 @@ function groupNode(item: FilterNode): FilterGroup | null {
  * own conjunction, rows and Add rule, while anything deeper stays the read-only raw row — and a
  * text value offers the values the vault already holds for its property (YAZ-1232).
  */
-export function FilterMenu({ def, view, viewIndex, records, errors, properties, folder, onUpdate }: FilterMenuProps) {
+export function FilterMenu({ def, view, viewIndex, records, errors, properties, folder, onUpdate, field = 'filters' }: FilterMenuProps) {
   const [advanced, setAdvanced] = useState(false)
   const [pendingConj, setPendingConj] = useState<Conjunction>('and')
-  const group = toGroup(view.filters)
+  const group = toGroup(view[field] as FilterNode | undefined)
   const conj = group.items.length ? group.conj : pendingConj
   // Folder is a menu key too since YAZ-4564 D26: each extra once.
   const listed = allPropertyKeys(def, view, records, folder.settings.columns)
@@ -83,9 +89,15 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   const write = (next: FilterGroup) =>
     onUpdate((d) => {
       const node = fromGroup(next)
-      if (node === undefined) delete d.views[viewIndex].filters
-      else d.views[viewIndex].filters = node
+      if (node === undefined) delete d.views[viewIndex][field]
+      else d.views[viewIndex][field] = node
     })
+  /** A new row: a filter's matches every row; a cross-out's is "is checked" on the first checkbox column, else matches none (YAZ-4864). */
+  const newRule = (): string => {
+    if (field === 'filters') return ruleToExpr(NEW_RULE)
+    const checkbox = keys.find((k) => canonicalKey(k).startsWith('note.') && typeOf(k) === 'checkbox')
+    return ruleToExpr(checkbox === undefined ? NEW_CROSS_OUT : { property: canonicalKey(checkbox), op: 'checked', value: '' })
+  }
   const setItem = (i: number, item: FilterNode) => write({ conj, items: group.items.map((x, j) => (j === i ? item : x)) })
   const removeItem = (i: number) => write({ conj, items: group.items.filter((_, j) => j !== i) })
   const setConj = (c: Conjunction) => {
@@ -93,39 +105,21 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     if (group.items.length) write({ conj: c, items: group.items })
   }
 
-  /** Changes one field, re-validating the operator for the property's type and clearing a value of another kind. */
+  /**
+   * Changes one field, re-validating the operator for the property's type and clearing a value of another kind. The
+   * type goes with the write (YAZ-4919 round 2): a text column's contains / starts with / ends with ignore case.
+   */
   const setRule = (i: number, rule: Rule, patch: Partial<Rule>, setAt: (i: number, item: FilterNode) => void) => {
     const next = { ...rule, ...patch }
-    const ops = operatorsFor(next.property, typeOf(next.property))
+    const type = typeOf(next.property)
+    const ops = operatorsFor(next.property, type)
     if (patch.property !== undefined && !ops.some((o) => o.id === next.op)) next.op = ops[0]?.id ?? next.op
     if (operator(next.op).value !== operator(rule.op).value) next.value = operator(next.op).value === 'options' ? [] : ''
-    setAt(i, ruleToExpr(next))
+    setAt(i, ruleToExpr(next, type))
   }
 
   /** The values `records` already hold for one property, distinct and in first-seen order (YAZ-1232). */
-  const suggestionsFor = (property: string, limit = SUGGESTION_LIMIT): string[] => {
-    const out: string[] = []
-    const seen = new Set<string>()
-    const add = (s: string) => {
-      if (s === '' || seen.has(s) || out.length >= limit) return
-      seen.add(s)
-      out.push(s)
-    }
-    if (property === 'file.tags') for (const r of records) for (const tag of r.tags) add(tag)
-    else if (property === 'file.folder') for (const r of records) add(r.folder)
-    else if (property === 'file.links') for (const r of records) for (const link of r.links) add(link)
-    else if (property === 'file.kind') for (const kind of ['note', 'folder']) add(kind)
-    else if (!property.startsWith('file.') && !property.startsWith('formula.')) {
-      for (const option of typingOf(property)?.options ?? []) add(option)
-      const bare = property.startsWith('note.') ? property.slice(5) : property
-      for (const r of records) {
-        const raw = r.properties[bare]
-        if (typeof raw === 'string') add(stripBrackets(raw))
-        else if (Array.isArray(raw)) for (const v of raw) if (typeof v === 'string') add(stripBrackets(v))
-      }
-    }
-    return out
-  }
+  const suggestionsFor = (property: string, limit = SUGGESTION_LIMIT): string[] => propertyValues(property, records, typingOf(property), limit)
 
   /** The property's known values, plus any tick it lacks so a hand-edited one still shows (YAZ-1467). */
   const valueOptions = (property: string, picks: readonly string[]) => {
@@ -140,7 +134,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     const kind = operator(rule.op).value
     const picks = Array.isArray(rule.value) ? rule.value : []
     const suggestions = kind === 'text' ? suggestionsFor(rule.property) : []
-    const listId = `filter-sugg-${viewIndex}-${path}`
+    const listId = `${field}-sugg-${viewIndex}-${path}`
     return (
       <>
         <ColumnPicker
@@ -178,7 +172,8 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
             inputMode={kind === 'number' ? 'decimal' : undefined}
             list={suggestions.length > 0 ? listId : undefined}
             value={typeof rule.value === 'string' ? rule.value : ''}
-            onCommit={(value) => setRule(i, rule, { value }, setAt)}
+            // A substring rule drops one pair of wrapping quotes (YAZ-4919 round 2), as the column menu's Contains box.
+            onCommit={(value) => setRule(i, rule, { value: SUBSTRING_OPS.has(rule.op) ? unquote(value) : value }, setAt)}
           />
         )}
         {suggestions.length > 0 && (
@@ -248,7 +243,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
         <button
           type="button"
           className="view-menu__action"
-          onClick={() => writeGroup({ ...nested, items: [...nested.items, ruleToExpr(NEW_RULE)] })}
+          onClick={() => writeGroup({ ...nested, items: [...nested.items, newRule()] })}
         >
           Add rule
         </button>
@@ -269,7 +264,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
       )}
       <div className="view-menu__head">{seg('Match', conj, setConj)}</div>
       {group.items.length === 0 ? (
-        <p className="view-menu__empty">No filters</p>
+        <p className="view-menu__empty">{field === 'crossOut' ? 'No conditions. No card is crossed out.' : 'No filters'}</p>
       ) : (
         <ul className="view-menu__list">
           {group.items.map((item, i) => {
@@ -280,13 +275,13 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
       )}
       <div className="view-menu__foot">
         <div className="view-menu__actions">
-          <button type="button" className="view-menu__action" onClick={() => write({ conj, items: [...group.items, ruleToExpr(NEW_RULE)] })}>
+          <button type="button" className="view-menu__action" onClick={() => write({ conj, items: [...group.items, newRule()] })}>
             Add rule
           </button>
           <button
             type="button"
             className="view-menu__action"
-            onClick={() => write({ conj, items: [...group.items, { or: [ruleToExpr(NEW_RULE)] }] })}
+            onClick={() => write({ conj, items: [...group.items, { or: [newRule()] }] })}
           >
             Add group
           </button>

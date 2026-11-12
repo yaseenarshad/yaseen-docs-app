@@ -18,6 +18,7 @@ import type { Node } from '@milkdown/kit/prose/model'
 import type { MenuRow, MenuStrip, RowProvider } from '../blockHandleMenu'
 import { allLinesAre, listLines, toggleListKind, turnLinesIntoText, type LinePick, type ListKind } from '../listButtons'
 import { ownIcon, TOOLBAR_LABELS } from '../toolbarButtons'
+import { embedOnlyParagraph } from '../drawing/boardEmbedScan'
 import { addLineBeside } from './addLineBeside'
 import { getZoomedItemPos } from './zoom'
 
@@ -129,7 +130,28 @@ export const turnIntoRows: RowProvider = (view, target) => {
     group: 'kind',
     buttons: [...STRIP_KINDS.map((kind) => button(kind, toggleListKind(kind, pick))), button('text', turnLinesIntoText(pick))],
   }
-  return [strip]
+  // An embed's own line (YAZ-4907): a line beside it, as beside a code block or a table. Its keys, `addLineBeside.ts`.
+  const embed = embedParagraph(view.state, line)
+  return embed === null ? [strip] : [strip, ...addLineRows(view, embed)]
+}
+
+/** The paragraph at `line` when it is an embed's own line (YAZ-4907: "how do you add a bullet under it?", `embedOnlyParagraph`), else null. */
+function embedParagraph(state: EditorState, line: number): number | null {
+  const $line = state.doc.resolve(line)
+  if ($line.depth === 0) return null
+  const pos = $line.before()
+  return embedOnlyParagraph(state, pos) ? pos : null
+}
+
+/** "Add line above" / "Add line below" beside the block at `blockPos`, as Enter makes one on a bullet (YAZ-4800 demo). */
+function addLineRows(view: Parameters<RowProvider>[0], blockPos: number): MenuRow[] {
+  const addLine = (side: 'above' | 'below'): MenuRow => ({
+    label: side === 'above' ? 'Add line above' : 'Add line below',
+    hint: side === 'above' ? '⌘⇧↵' : '⌘↵',
+    group: 'addLine',
+    run: () => void addLineBeside(view, blockPos, side),
+  })
+  return [addLine('above'), addLine('below')]
 }
 
 /**
@@ -141,13 +163,6 @@ function blockItemStrip(view: Parameters<RowProvider>[0], inside: number): (Menu
   const block = blockItem(view.state.doc, inside)
   if (block === null) return []
   const pick: LinePick = () => [{ pos: block.pos, kind: block.kind, paragraph: false }]
-  // A new line beside the block, as Enter makes one on a bullet (YAZ-4800 demo); its keys, `addLineBeside.ts`.
-  const addLine = (side: 'above' | 'below'): MenuRow => ({
-    label: side === 'above' ? 'Add line above' : 'Add line below',
-    hint: side === 'above' ? '⌘⇧↵' : '⌘↵',
-    group: 'addLine',
-    run: () => void addLineBeside(view, block.pos, side),
-  })
   return [
     {
       kind: 'strip',
@@ -163,7 +178,7 @@ function blockItemStrip(view: Parameters<RowProvider>[0], inside: number): (Menu
         },
       })),
     },
-    addLine('above'),
-    addLine('below'),
+    // A new line beside the block, as Enter makes one on a bullet (YAZ-4800 demo); its keys, `addLineBeside.ts`.
+    ...addLineRows(view, block.pos),
   ]
 }

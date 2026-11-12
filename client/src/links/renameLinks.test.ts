@@ -4,7 +4,7 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import type { TreeNode } from '@shared/types'
 import { buildViewOnlyCatalog } from './viewOnlyCatalog'
 import { maskCode, rewriteBodyLinks, rewriteInner, rewriteNoteLinks } from '@shared/linkRewrite'
-import { countLinkReferences, renamedTarget, renameNotice, updateLinksAfterRename } from './renameLinks'
+import { countLinkReferences, linkedBasenames, renamedTarget, renameNotice, updateLinksAfterRename } from './renameLinks'
 
 const resolvesB = (t: string) => t.replace(/\.(md|markdown)$/i, '').replace(/^.*\//, '').toLowerCase() === 'b'
 const toC = (t: string) => renamedTarget(t, { newName: 'C.md', newRel: 'Sub/C.md' })
@@ -28,6 +28,26 @@ describe('rewriteInner / renamedTarget (form + suffix + alias preservation)', ()
     expect(rewriteInner(' B ', resolvesB, toC)).toBe('C')
     expect(rewriteInner('Other', resolvesB, toC)).toBeNull()
     expect(rewriteInner('#same-file', resolvesB, toC)).toBeNull()
+  })
+
+  it('YAZ-4935: a link written words-first keeps its order; the page is the one side that is an ID', () => {
+    const resolvesId = (t: string) => t === 'WIKI-116'
+    const toNext = (t: string) => (t === 'WIKI-116' ? 'WIKI-200' : t)
+    expect(rewriteInner('WIKI-116|staging', resolvesId, toNext)).toBe('WIKI-200|staging')
+    expect(rewriteInner('staging|WIKI-116', resolvesId, toNext)).toBe('staging|WIKI-200')
+    expect(rewriteInner('staging|WIKI-116#Intro', resolvesId, toNext)).toBe('staging|WIKI-200#Intro')
+    expect(rewriteInner('|WIKI-116', resolvesId, toNext)).toBe('|WIKI-200')
+    expect(rewriteInner('staging| WIKI-116 ', resolvesId, toNext)).toBe('staging|WIKI-200')
+    expect(rewriteInner('WIKI-116|WIKI-117', resolvesId, toNext)).toBe('WIKI-200|WIKI-117') // two IDs: the left is the page
+    expect(rewriteInner('Postgres|database', resolvesB, toC)).toBeNull() // two words: the left is the page, "Postgres"
+    expect(rewriteBodyLinks('See [[staging|WIKI-116]] and ![[EMB-40|640x360]]', resolvesId, toNext)).toBe('See [[staging|WIKI-200]] and ![[EMB-40|640x360]]')
+  })
+
+  it('YAZ-4935 round 2: words that only look like an ID — the left side is the renamed note, so the left side is rewritten', () => {
+    const resolvesCovid = (t: string) => t === 'Covid notes'
+    const toNext = (t: string) => (t === 'Covid notes' ? 'Covid 2020' : t)
+    expect(rewriteInner('Covid notes|COVID-19', resolvesCovid, toNext)).toBe('Covid 2020|COVID-19')
+    expect(rewriteBodyLinks('See [[Covid notes|COVID-19]].', resolvesCovid, toNext)).toBe('See [[Covid 2020|COVID-19]].')
   })
 
   it('a match whose target text would not change is left untouched — byte-identical, padding included (E1b pin)', () => {
@@ -287,6 +307,17 @@ describe('updateLinksAfterRename', () => {
     const folders = [{ ...rec('/v/Team/.folder.md', { links: ['B'] }), folder: 'Team' }]
     expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records, folders })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/Team/.folder.md'].content).toBe(page.replace('[[B]]', '[[C]]'))
+  })
+
+  it('YAZ-4954: the index keeps both sides of `[[Covid notes|COVID-19]]`; renaming "Covid notes" finds and rewrites the link', async () => {
+    const files = { '/v/A.md': { content: 'See [[Covid notes|COVID-19]].\n', mtime: 10 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { links: ['Covid notes|COVID-19'] }), rec('/v/Covid notes.md'), rec('/v/COVID-19.md')]
+    expect([...linkedBasenames(records)].sort()).toEqual(['covid notes', 'covid-19'])
+    const move = { ids: true, root, oldPath: '/v/Covid notes.md', newPath: '/v/Covid 2020.md', records }
+    expect(await countLinkReferences(move)).toBe(1)
+    expect(await updateLinksAfterRename(move)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('See [[Covid 2020|COVID-19]].\n')
   })
 
   it('a CONFLICT re-reads once and retries; a second conflict skips the file', async () => {

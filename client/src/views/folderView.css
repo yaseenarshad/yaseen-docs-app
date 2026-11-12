@@ -121,6 +121,27 @@
   padding-left: calc(2px + var(--other-files-depth, 0) * 18px);
 }
 
+/* "Show all N files" (YAZ-4921): one line, a text button in the name column. */
+.other-files__more-line {
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.other-files__more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.other-files__more:hover {
+  text-decoration: underline;
+}
+
 .other-files__chevron {
   flex: none;
   align-self: center;

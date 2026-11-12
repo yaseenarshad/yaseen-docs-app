@@ -25,7 +25,7 @@ import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown
 import { TableMap, cellAround, isInTable, selectedRect } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { cellPosAt, isMerged, rectHasMerge, rowFolded } from './cells'
+import { cellPosAt, isMerged, rectHasMerge, rowFolded, rowSubhead } from './cells'
 import { fillSeries } from './fillSeries'
 import { selectCells, textCell, writeCells, type Cell } from './tablePaste'
 
@@ -79,8 +79,8 @@ export function fillCells(state: EditorState, source: FillSource, axis: FillAxis
   const { tableStart, top, left, bottom, right } = source
   const table = state.doc.nodeAt(tableStart - 1)!
   const map = TableMap.get(table)
-  // The rows that are not folded (YAZ-4165): the source rows, and down, the rows passed.
-  const open = (from: number, to: number) => Array.from({ length: Math.max(to - from, 0) }, (_, i) => from + i).filter((r) => !rowFolded(table.child(r)))
+  // The rows that are not folded (YAZ-4165) and not subheader rows (YAZ-4899): the source rows, and down, the rows passed.
+  const open = (from: number, to: number) => Array.from({ length: Math.max(to - from, 0) }, (_, i) => from + i).filter((r) => !rowFolded(table.child(r)) && !rowSubhead(table.child(r)))
   const rows = open(top, bottom)
   const passed = axis === 'down' ? open(bottom, Math.min(bottom + count, map.height)) : []
   const n = axis === 'down' ? passed.length : Math.min(count, map.width - right)

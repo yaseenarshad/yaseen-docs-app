@@ -81,8 +81,10 @@ export function applyMoves(records: readonly IndexRecord[], moves: Record<string
 
 /**
  * Where a group sits in a nested view (YAZ-1101): its `groupBy` level and the groups it hangs
- * under, outer first — one per level above it (YAZ-4531). Omitted = a top-level group, which
- * single-level views pass nothing for and behave exactly as before.
+ * under, outer first (YAZ-4531). Omitted = a top-level group, which
+ * single-level views pass nothing for and behave exactly as before. A nested Folder level (YAZ-4918) puts its
+ * subfolders' groups on its OWN level, so `ancestors` can hold more groups than there are levels above: its length is
+ * the group's depth in the tree (the indent), `level` the view level (the property, the look, the "+").
  */
 export interface GroupSpot {
   level: number
@@ -92,12 +94,18 @@ export interface GroupSpot {
 /** A top-level group's spot. */
 export const TOP_SPOT: GroupSpot = { level: 0, ancestors: [] }
 
-/** The spot of a group's children, one level down. */
-export const childSpot = (parent: Group, at: GroupSpot): GroupSpot => ({ level: at.level + 1, ancestors: [...at.ancestors, parent] })
+/** The spot of a group's children: one level down, or, under a nested Folder group (YAZ-4918), on the same level. */
+export const childSpot = (parent: Group, at: GroupSpot): GroupSpot => ({ level: parent.nested === true ? at.level : at.level + 1, ancestors: [...at.ancestors, parent] })
 
-/** A group's persisted collapse key and drop identity at its spot (`groupPathKeyOf`). */
+/** The view level of each group of a chain from the top (an `ancestors` list), outer first (YAZ-4918): a nested Folder group's child stays on its level. */
+export const chainLevels = (chain: readonly Group[]): number[] => {
+  let level = 0
+  return chain.map((g, i) => (i === 0 ? 0 : (level += chain[i - 1].nested === true ? 0 : 1)))
+}
+
+/** A group's persisted collapse key and drop identity at its spot (`groupPathKeyOf`): a group under another is scoped by its parents, a nested Folder group's too (YAZ-4918). */
 export const spotKey = (group: Group, at: GroupSpot): string =>
-  at.level === 0 ? groupKeyOf(group.key) : groupPathKeyOf([...at.ancestors.map((a) => a.key), group.key])
+  at.ancestors.length === 0 ? groupKeyOf(group.key) : groupPathKeyOf([...at.ancestors.map((a) => a.key), group.key])
 
 /**
  * The level-aware half of a drop (YAZ-1101): the level the row landed on — which property the move
@@ -114,7 +122,7 @@ export interface GroupDrop {
 type DragState = { path: string; gk: string; key: Value | null; branch: readonly string[]; values: readonly (Value | null)[] }
 
 export interface GroupDrag {
-  /** The dragged card's path, its source group key, that group's VALUE (the element a swap removes) and, for each group on its branch, outer first, its `groupKeyOf` and its value. */
+  /** The dragged card's path, its source group key, that group's VALUE (the element a swap removes) and, for each LEVEL on its branch, outer first, its group's `groupKeyOf` and value (a nested Folder level's deepest group, YAZ-4918). */
   drag: DragState | null
   /** Group key of the hovered drop target (never the source group), inner groups scoped by their ancestors. */
   over: string | null
@@ -173,7 +181,14 @@ export function useGroupDrag(
             onDragStart: (e: ReactDragEvent) => {
               e.dataTransfer?.setData('text/plain', path)
               if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-              setDrag({ path, gk: spotKey(group, at), key: group.key, branch: [...at.ancestors, group].map((g) => groupKeyOf(g.key)), values: [...at.ancestors, group].map((g) => g.key) })
+              const chain = [...at.ancestors, group]
+              const branch: string[] = []
+              const values: (Value | null)[] = []
+              chainLevels(chain).forEach((level, i) => {
+                branch[level] = groupKeyOf(chain[i].key)
+                values[level] = chain[i].key
+              })
+              setDrag({ path, gk: spotKey(group, at), key: group.key, branch, values })
             },
             onDragEnd: clear,
           },
@@ -201,8 +216,11 @@ export function useGroupDrag(
           // differs from the row's own branch — read off that ancestor's first row, like the level's
           // own value — so the row LANDS where it was dropped. A level that matches writes nothing.
           const drop: GroupDrop = { level: at.level }
-          for (let level = at.level - 1; level >= 0; level--) {
-            const ancestor = at.ancestors[level]
+          // Each ancestor by its view level (YAZ-4918): under a nested Folder level the chain is longer than the levels, and a folder level writes nothing.
+          const levels = chainLevels(at.ancestors)
+          for (let i = at.ancestors.length - 1; i >= 0; i--) {
+            const ancestor = at.ancestors[i]
+            const level = levels[i]
             const ancestorKey = d.branch[level] === groupKeyOf(ancestor.key) ? null : keys[level] ?? null
             if (ancestorKey === null) continue
             // A fanned-out ancestor level (YAZ-4636 T2): the row is in several of its groups, so the level swaps the

@@ -28,6 +28,7 @@ import type { Row } from '../views/engine'
 import { readPageView } from '../lib/pageView'
 import { writeProperty } from '../views/writeProperty'
 import type { NoticeKind } from '../lib/notice'
+import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
 
 /**
  * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
@@ -204,7 +205,7 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean; vaultReadOnly?: boolean; onFileAction?: (root: string) => Promise<boolean> } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
@@ -213,7 +214,7 @@ async function mount(content: string, mtime = 1, extra: { path?: string; wikilin
   if (extra.behind === true) container.className = 'tabstack__layer tabstack__layer--hidden'
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} bulletThreadingOnByDefault={extra.bulletThreadingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} bulletThreadingOnByDefault={extra.bulletThreadingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} vaultReadOnly={extra.vaultReadOnly} onFileAction={extra.onFileAction} />))
   await settle()
   await settle()
   return container
@@ -1789,6 +1790,15 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     expect(createCrepeMock).not.toHaveBeenCalled()
   })
 
+  it('YAZ-4921: the vault ROOT itself renders the folder view, titled as the vault\'s folder, with no tree waited for and nothing read as a file', async () => {
+    tree.mockImplementation(() => new Promise(() => undefined)) // a tree that never answers: the root is no row of it
+    const el = await open('/wiki', '/wiki')
+    expect(el.querySelector('.folder-view')).not.toBeNull()
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('wiki')
+    expect(readFile).not.toHaveBeenCalled()
+    expect(createCrepeMock).not.toHaveBeenCalled()
+  })
+
   it('a markdown FILE beside it still gets the markdown editor', async () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/Notes.md`), file(`${r}/a.md`)], generatedAt: 1 }))
     readFile.mockResolvedValueOnce({ path: '/files/a.md', content: BODY, mtime: 1, size: BODY.length })
@@ -1835,12 +1845,12 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     expect(readFile).not.toHaveBeenCalled()
   })
 
-  it('The vault’s top level has no page: the root path, as a tab, is never opened as a folder page — whatever its folders — and nothing is read', async () => {
+  it('YAZ-4921 (replacing "the vault’s top level has no page"): the root path, as a tab, is the vault\'s own folder page — whatever its folders — and nothing is read as a file', async () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/Projects`, [file(`${r}/Projects/a.md`)]), file(`${r}/b.md`)], generatedAt: 1 }))
     const el = await open('/toplevel', '/toplevel')
-    expect(el.querySelector('.folder-view')).toBeNull()
-    expect(el.querySelector('.page-title__text')).toBeNull()
-    expect(el.querySelector('.editor-msg--error')?.textContent).toBe('Unsupported file type.') // what the pane says instead: the root is no folder of its own tree
+    expect(el.querySelector('.folder-view')).not.toBeNull()
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('toplevel')
+    expect(el.querySelector('.editor-msg--error')).toBeNull()
     expect(readFile).not.toHaveBeenCalled()
     expect(createCrepeMock).not.toHaveBeenCalled()
   })
@@ -2710,7 +2720,7 @@ describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a 
     expect(el.querySelector('.conflict-bar')).toBeNull()
   })
 
-  it('S45, S47, S48: the chip asks; the cog’s row while on opens the same box; "Allow edits" removes the key and the chip', async () => {
+  it('S45, S47, S48: the chip asks; the cog’s row while on opens the same box; "Turn Read only off" removes the key and the chip', async () => {
     writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
     const el = await mount(LOCKED_FM + BODY)
     expect(chipButton(el)?.textContent).toBe('Read only')
@@ -2726,7 +2736,7 @@ describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a 
     expect(writeFile).not.toHaveBeenCalled()
     diskHas(LOCKED_FM + BODY, 1)
     await act(async () => {
-      boxButton(el, 'Allow edits').click()
+      boxButton(el, 'Turn Read only off').click()
       await vi.advanceTimersByTimeAsync(0)
     })
     await settle()
@@ -2998,4 +3008,182 @@ describe('the folder Page tab (YAZ-4584 D38)', () => {
 
   const el = (): HTMLElement => container!
   const click = (target: HTMLElement): void => act(() => target.click())
+})
+
+/**
+ * Read only for the whole vault, with a timed "Allow edits" (YAZ-4939): `vaultReadOnly` reaches the note through the
+ * `Editor` wrapper's context. The note's own switch is never written for it.
+ */
+describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)', () => {
+  const LOCKED_FM = '---\nstatus: draft\nreadonly: true\n---\n'
+  const chipButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.read-only-chip__button')
+  const lockNow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.read-only-chip__lock')
+  const askBox = (el: HTMLElement) => el.querySelector<HTMLElement>('.read-only-chip__ask')
+  const boxLabels = (el: HTMLElement) => [...(askBox(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])].map((b) => b.textContent)
+  const boxButton = (el: HTMLElement, name: string) => [...(askBox(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === name)!
+  const readonlyOf = () => (crepe() as FakeCrepe & { readonly: boolean }).readonly
+  const allow = async (el: HTMLElement, name: string) => {
+    act(() => chipButton(el)!.click())
+    await act(async () => {
+      boxButton(el, name).click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+  }
+
+  it('the vault On: a note with no switch of its own opens read only, with the chip and the cog’s row On; the box offers the three times and Cancel, no "Turn Read only off"; nothing is written', async () => {
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    expect(readonlyOf()).toBe(true)
+    expect(chipButton(el)?.textContent).toBe('Read only')
+    expect(lockNow(el)).toBeNull()
+    act(() => chipButton(el)!.click())
+    expect(boxLabels(el)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
+    act(() => boxButton(el, 'Cancel').click())
+    clickCog(el)
+    expect(menuSwitch(el, 'Read only').getAttribute('aria-pressed')).toBe('true')
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('the vault Off: the note is editable, no chip', async () => {
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: false })
+    expect(readonlyOf()).toBe(false)
+    expect(chipButton(el)).toBeNull()
+  })
+
+  it('"Allow edits for 1 minute": the page edits and the chip reads "Editing · 1:00" with "Lock now"; at zero the page saves what was typed, then locks again, and the note is never written for the switch', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    await allow(el, 'Allow edits for 1 minute')
+    expect(readonlyOf()).toBe(false)
+    expect(chipButton(el)?.textContent).toBe('Editing · 1:00')
+    expect(chipButton(el)?.classList.contains('read-only-chip__button--editing')).toBe(true)
+    expect(lockNow(el)?.textContent).toBe('Lock now')
+    // The last keys land 100 ms before zero: the autosave's 500 ms is not up, so the write at zero is the unlock's own save.
+    await act(async () => void (await vi.advanceTimersByTimeAsync(60_000 - 100)))
+    expect(readonlyOf()).toBe(false)
+    type('# Hello\n\ntyped while allowed\n')
+    expect(writeFile).not.toHaveBeenCalled()
+    await act(async () => void (await vi.advanceTimersByTimeAsync(100)))
+    await settle()
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual([`${FM}# Hello\n\ntyped while allowed\n`])
+    expect(readonlyOf()).toBe(true)
+    expect(chipButton(el)?.textContent).toBe('Read only')
+    expect(lockNow(el)).toBeNull()
+  })
+
+  it('"Lock now" saves what was typed and locks at once', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    await allow(el, '10 minutes')
+    expect(chipButton(el)?.textContent).toBe('Editing · 10:00')
+    type('# Hello\n\nquick\n')
+    await act(async () => {
+      lockNow(el)!.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual([`${FM}# Hello\n\nquick\n`])
+    expect(readonlyOf()).toBe(true)
+    expect(chipButton(el)?.textContent).toBe('Read only')
+  })
+
+  it('"Until I close this tab" unlocks with no clock; the cog’s row still reads On, and a click on it then is "Lock now"', async () => {
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    await allow(el, 'Until I close this tab')
+    expect(readonlyOf()).toBe(false)
+    expect(chipButton(el)?.textContent).toBe('Editing · until close')
+    clickCog(el)
+    expect(menuSwitch(el, 'Read only').getAttribute('aria-pressed')).toBe('true')
+    await act(async () => {
+      menuSwitch(el, 'Read only').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(readonlyOf()).toBe(true)
+    expect(chipButton(el)?.textContent).toBe('Read only')
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('precedence: the vault On wins — a note with its own switch on has no "Turn Read only off"; with the vault Off it has, and the times too', async () => {
+    const el = await mount(LOCKED_FM + BODY, 1, { vaultReadOnly: true })
+    expect(readonlyOf()).toBe(true)
+    act(() => chipButton(el)!.click())
+    expect(boxLabels(el)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
+    act(() => boxButton(el, 'Cancel').click())
+    act(() => root?.unmount())
+    const open = await mount(LOCKED_FM + BODY, 1, { vaultReadOnly: false })
+    act(() => chipButton(open)!.click())
+    expect(boxLabels(open)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Turn Read only off', 'Cancel'])
+    // A time choice here too: the note's own switch stays in the file.
+    await act(async () => {
+      boxButton(open, 'Allow edits for 1 minute').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(readonlyOf()).toBe(false)
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('no work per keystroke: while an unlock runs, typing changes the lock not at all (no setReadonly call), and the host arms one timeout for the unlock', async () => {
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    await allow(el, '10 minutes')
+    const fake = crepe() as FakeCrepe & { setReadonly: (on: boolean) => void }
+    const spy = vi.spyOn(fake, 'setReadonly')
+    for (let i = 0; i < 20; i++) type(`# Hello\n\nkey ${i}\n`)
+    expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A table section collapsed in a read-only note (YAZ-4939): a view change. The editor tells the host (`VIEW_ONLY_CHANGE`
+ * on its DOM, `tableSubhead.ts`), and the host takes the live text as saved: nothing is written while the note is locked
+ * — not by the autosave, the unmount, the window's close nor a cog key — and an unlocked page's next save writes it.
+ */
+describe('a table collapse in a read-only note is a view change (YAZ-4939)', () => {
+  const LOCKED_FM = '---\nstatus: draft\nreadonly: true\n---\n'
+  const TABLE = '| A |\n| - |\n| s |\n| r |\n\n<!-- table: subhead 3 -->\n'
+  const FOLDED = '| A |\n| - |\n| s |\n| r |\n\n<!-- table: fold 4, subhead 3 -->\n'
+  let view: { state: null; dispatch: () => void; dom: HTMLElement }
+  beforeEach(() => {
+    view = { state: null, dispatch: () => undefined, dom: document.createElement('div') }
+    vi.mocked(editorViewOf).mockReturnValue(view as never)
+  })
+  afterEach(() => vi.mocked(editorViewOf).mockImplementation(emptyView as never))
+  /** The editor collapsed a section in a view that is not editable: the doc holds the fold, and the host is told. */
+  const collapse = () =>
+    act(() => {
+      crepe().md = FOLDED
+      view.dom.dispatchEvent(new Event(VIEW_ONLY_CHANGE))
+    })
+
+  it('a note’s own Read only: the collapse is never written — not by the autosave, the window’s close or the unmount', async () => {
+    const el = await mount(LOCKED_FM + TABLE)
+    collapse()
+    await pastDebounce()
+    expect(el.querySelector('.save-indicator--saved')).not.toBeNull()
+    await act(async () => void (await Promise.all(flushListeners.map((l) => l()))))
+    act(() => root?.unmount())
+    root = null
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('the vault’s Read only: a cog key after a collapse writes the key over the disk’s body; after "Allow edits" the next save writes the collapse with the text', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(FM + TABLE, 1, { vaultReadOnly: true })
+    collapse()
+    clickCog(el)
+    diskHas(FM + TABLE, 1)
+    await act(async () => {
+      menuSwitch(el, 'Guide lines').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual(['---\nstatus: draft\nguide-lines: false\n---\n' + TABLE])
+    clickCog(el)
+    act(() => el.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
+    await act(async () => {
+      [...el.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === '10 minutes')!.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    type(FOLDED.replace('| r |', '| x |'))
+    await pastDebounce()
+    expect(writeFile.mock.calls.at(-1)![0].content).toBe('---\nstatus: draft\nguide-lines: false\n---\n' + FOLDED.replace('| r |', '| x |'))
+  })
 })

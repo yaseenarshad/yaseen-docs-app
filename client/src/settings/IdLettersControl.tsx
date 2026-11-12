@@ -8,8 +8,9 @@ import { useEffect, useRef, useState } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import type { IdsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
-import { idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
+import { idsLettersAsk, KEEP_OTHER_ASK, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
 import type { SettingsCtx } from './registry'
+import { useUnit } from '../vault/unitWord'
 
 type Ids = NonNullable<SettingsCtx['ids']>
 
@@ -28,6 +29,57 @@ export function TypedConfirmSheet({ labelId, text, ask, confirmLabel, valid, onC
       <label className="confirm__letters">
         {ask}
         <input ref={field} className="confirm__input" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
+      </label>
+    </ConfirmSheet>
+  )
+}
+
+/**
+ * "Give IDs" where the notes already hold number IDs (YAZ-4922 🔒 D2): the box says the groups (`text`) and its first
+ * answer, with the focus, is "Keep <main>" — the biggest group's letters, so 0 notes change. The field takes other
+ * letters instead, and the button at the left end says them ("Use ABC"). Enter in the field: the typed letters, or
+ * Keep while it is empty; bad letters do nothing. Elsewhere Enter is Keep. Its keys stay inside it.
+ */
+export function KeepIdsSheet({ text, main, onConfirm, onCancel }: { text: string; main: string; onConfirm: (letters: string) => void; onCancel: () => void }) {
+  const [typed, setTyped] = useState('')
+  const valid = isIdLetters(typed)
+  const use = (): void => {
+    if (valid) onConfirm(typed.toUpperCase())
+  }
+  return (
+    <ConfirmSheet
+      labelId="confirm-ids-keep-text"
+      text={text}
+      confirmLabel={`Keep ${main}`}
+      keys="contained"
+      focusConfirm
+      onConfirm={() => onConfirm(main)}
+      onCancel={onCancel}
+      other={
+        <button type="button" className="confirm__btn confirm__btn--other" disabled={!valid} onClick={use}>
+          {valid ? `Use ${typed.toUpperCase()}` : 'Use other letters'}
+        </button>
+      }
+    >
+      <label className="confirm__letters">
+        {KEEP_OTHER_ASK}
+        <input
+          className="confirm__input"
+          type="text"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return
+            e.preventDefault()
+            e.stopPropagation()
+            if (e.repeat) return
+            if (typed === '') onConfirm(main)
+            else use()
+          }}
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellCheck={false}
+        />
       </label>
     </ConfirmSheet>
   )
@@ -66,6 +118,7 @@ export function useRun(): { busy: boolean; line: string | null; run: (working: s
  * the row says how many notes still have the old letters, and "Finish" runs the same change again.
  */
 export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
+  const unit = useUnit()
   const [state, setState] = useState<IdsState | null>(null)
   const [asking, setAsking] = useState(false)
   const { busy, line, run } = useRun()
@@ -103,12 +156,12 @@ export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
         )}
       </div>
       <p className="setting__hint" role="status">
-        {line ?? (state === null ? '' : lettersLine(state))}
+        {line ?? (state === null ? '' : lettersLine(state, unit))}
       </p>
       {asking && state !== null && (
         <TypedConfirmSheet
           labelId="confirm-ids-letters-text"
-          text={lettersAskMessage(state, vault)}
+          text={lettersAskMessage(state, vault, unit)}
           ask={NEW_LETTERS_ASK}
           confirmLabel="Change letters"
           valid={(typed) => isIdLetters(typed) && typed.toUpperCase() !== state.letters}
@@ -130,6 +183,7 @@ export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
  * some notes are left, or links of a run that stopped (`unfinished`), a second run finishes.
  */
 export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
+  const unit = useUnit()
   const [asking, setAsking] = useState<string | null>(null)
   const { busy, line, run } = useRun()
   return (
@@ -140,12 +194,12 @@ export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
         </button>
       </div>
       <p className="setting__hint" role="status">
-        {line ?? oldIdsLine(ids.old)}
+        {line ?? oldIdsLine(ids.old, unit)}
       </p>
       {asking !== null && (
         <TypedConfirmSheet
           labelId="confirm-ids-old-text"
-          text={oldIdsAskMessage(ids.old, vault)}
+          text={oldIdsAskMessage(ids.old, vault, unit)}
           ask={idsLettersAsk(asking)}
           confirmLabel="Give them numbers"
           valid={(typed) => typed.toUpperCase() === asking}
@@ -153,7 +207,7 @@ export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
             setAsking(null)
             run('Giving numbers…', () =>
               ids.backfill().then(
-                ({ old, unfinished }) => (old === 0 && !unfinished ? 'Each note has a number now.' : `${oldIdsLine(old)} Run it again to finish.`),
+                ({ old, unfinished }) => (old === 0 && !unfinished ? unit('Each note has a number now.') : `${oldIdsLine(old, unit)} Run it again to finish.`),
                 (err: unknown) => `Couldn't give the numbers: ${said(err)}`,
               ),
             )

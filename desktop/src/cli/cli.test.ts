@@ -594,6 +594,25 @@ describe('mentions (YAZ-4740)', () => {
     expect([path.join(root, 'A.md')]).toEqual(await appMap(root, page))
   })
 
+  it('YAZ-4954: words that only LOOK like an ID — the left side wins when it is a note, in the body and a property; the other order and a vault with only one side', async () => {
+    const root = await vault('covid', {
+      'Covid notes.md': '',
+      'COVID-19.md': '',
+      'A.md': 'See [[Covid notes|COVID-19]].\n',
+      'B.md': 'See [[COVID-19|Covid notes]].\n',
+      'C.md': '---\nrelated: "[[Covid notes|COVID-19]]"\n---\n',
+    }, false)
+    expect((await run(['mentions', path.join(root, 'Covid notes.md')])).out).toBe('A  A.md\nC  C.md\n')
+    expect((await run(['mentions', path.join(root, 'COVID-19.md')])).out).toBe('B  B.md\n')
+    expect(await appMap(root, path.join(root, 'Covid notes.md'))).toEqual([path.join(root, 'A.md'), path.join(root, 'C.md')])
+    // Only the ID side is a note: the right side is the page.
+    const lone = await vault('only-id', { 'COVID-19.md': '', 'A.md': 'See [[Covid notes|COVID-19]].\n' }, false)
+    expect((await run(['mentions', path.join(lone, 'COVID-19.md')])).out).toBe('A  A.md\n')
+    // Only the words side is a note: the left side is the page.
+    const named = await vault('only-name', { 'Covid notes.md': '', 'A.md': 'See [[Covid notes|COVID-19]].\n' }, false)
+    expect((await run(['mentions', path.join(named, 'Covid notes.md')])).out).toBe('A  A.md\n')
+  })
+
   it('a page in no vault is refused: exit 1', async () => {
     const lone = await page('lone.md', '# Lone\n')
     expect(await run(['mentions', lone])).toEqual({ code: 1, out: '', err: `${lone} is in no vault (no ${VAULT_CONFIG_DIR} folder above it)\n` })

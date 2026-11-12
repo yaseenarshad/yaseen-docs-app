@@ -739,7 +739,8 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expand(el)
     // Changed by YAZ-4544 (4G): the link is the note editor's pill here, so it is read off the pill's class.
     expect(rowOf(el, 'area').querySelector('.view-link-pill')?.textContent).toBe('Areas')
-    expect(rowOf(el, 'area').querySelector('.view-link-pill')?.classList.contains('file-icon--dir')).toBe(true)
+    // The icon is a `FileIcon` inside the pill (YAZ-4924).
+    expect(rowOf(el, 'area').querySelector('.view-link-pill > .file-icon')?.classList.contains('file-icon--dir')).toBe(true)
   })
 
   it('`also_in` is RESERVED too (YAZ-2290 D2): chipped, read-only — and it reads as the folders it names, an id no folder has as written', () => {
@@ -1243,8 +1244,9 @@ describe('FrontmatterPanel — a stored id link reads as the note title (YAZ-229
     const pill = rowOf(el, 'parent').querySelector<HTMLElement>('.view-link-pill')!
     expect(pill.classList.contains('wikilink')).toBe(true)
     expect(pill.dataset.linkPath).toBe('/vault/home-k3m9x2pq7abc.md')
-    expect(pill.classList.contains('file-icon--file')).toBe(true)
-    expect(pill.dataset.kind).toBe('markdown')
+    const icon = pill.querySelector<HTMLElement>(':scope > .file-icon') as HTMLElement
+    expect(icon.classList.contains('file-icon--file')).toBe(true)
+    expect(icon.dataset.kind).toBe('markdown')
     act(() => void pill.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
     expect(hover.onHover).toHaveBeenCalledWith('/vault/home-k3m9x2pq7abc.md', expect.any(Object), false)
     act(() => void pill.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: rowOf(el, 'parent') })))

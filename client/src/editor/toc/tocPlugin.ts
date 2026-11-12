@@ -53,6 +53,8 @@ import { Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { collapsedHeadingsHiding, headingLevel, isHeadingCollapsed, isWalkableContainer, setHeadingFoldSet } from '../outline/headingFolding'
+import { boardCheckOf } from '../drawing/boardEmbedScan'
+import type { BoardCheck } from '../drawing/boardEmbedText'
 import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES, UNTITLED_ITEM } from '../outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos, zoomOutFully } from '../outline/zoom'
@@ -124,27 +126,28 @@ export const scanHeadings = (doc: ProseNode): ScannedRow[] => {
 /**
  * The bullets of ONE list, appended in document order, each followed by its own (`contentStart`:
  * position of the list's first item). An unlabelled bullet is passed over and its children kept:
- * they are places to go, at the depth they are drawn at.
+ * they are places to go, at the depth they are drawn at. `isBoard` is the host's word on an id embed (`boardCheckOf`,
+ * YAZ-4920): its row then reads as the board's, `![[EMB-40]]`, which `linkText` shows as the board's name.
  */
-const collectBullets = (list: ProseNode, contentStart: number, level: TocLevel, found: ScannedRow[]): void => {
+const collectBullets = (list: ProseNode, contentStart: number, level: TocLevel, found: ScannedRow[], isBoard?: BoardCheck): void => {
   list.forEach((item, offset) => {
     if (!isListItem(item)) return
     const pos = contentStart + offset
-    const text = itemLabelText(item)
+    const text = itemLabelText(item, isBoard)
     // `UNTITLED_ITEM` is `itemLabelText`'s word for no label, and such a bullet is no row. One
     // that really reads "Untitled item" is a row like any other.
     if (text !== UNTITLED_ITEM || item.firstChild?.textContent.trim() === UNTITLED_ITEM) found.push({ level, text, pos })
     if (level === DEEPEST_BULLET_LEVEL) return
     // `pos + 1 + nested.offset` is the nested list; its first item starts one further in.
-    for (const nested of findNestedLists(item)) collectBullets(nested.list, pos + nested.offset + 2, (level + 1) as TocLevel, found)
+    for (const nested of findNestedLists(item)) collectBullets(nested.list, pos + nested.offset + 2, (level + 1) as TocLevel, found, isBoard)
   })
 }
 
 /** Every labelled bullet of the document's own lists, three levels deep, in document order. */
-export const scanBullets = (doc: ProseNode): ScannedRow[] => {
+export const scanBullets = (doc: ProseNode, isBoard?: BoardCheck): ScannedRow[] => {
   const found: ScannedRow[] = []
   doc.forEach((block, offset) => {
-    if (LIST_NODE_NAMES.has(block.type.name)) collectBullets(block, offset + 1, 1, found)
+    if (LIST_NODE_NAMES.has(block.type.name)) collectBullets(block, offset + 1, 1, found, isBoard)
   })
   return found
 }
@@ -197,13 +200,13 @@ export const scanAllHeadings = (doc: ProseNode): ScannedRow[] => {
  * however few that gives. Else (`null`, Auto) by its own structure: its headings outside lists
  * when it has enough of them, else its bullets, else the heading or none it has.
  */
-export const scanNote = (doc: ProseNode, source: TocSource | null = null): ScannedNote => {
+export const scanNote = (doc: ProseNode, source: TocSource | null = null, isBoard?: BoardCheck): ScannedNote => {
   if (source === 'headings') return { bullets: false, rows: scanAllHeadings(doc) }
-  if (source === 'bullets') return { bullets: true, rows: scanBullets(doc) }
+  if (source === 'bullets') return { bullets: true, rows: scanBullets(doc, isBoard) }
   const headings = scanHeadings(doc)
   // Enough headings outside lists make it a heading note: then the headings inside its bullets are rows too (YAZ-4094 4E).
   if (headings.length >= ENOUGH_ROWS) return { bullets: false, rows: scanAllHeadings(doc) }
-  const bullets = scanBullets(doc)
+  const bullets = scanBullets(doc, isBoard)
   return bullets.length >= ENOUGH_ROWS ? { bullets: true, rows: bullets } : { bullets: false, rows: headings }
 }
 
@@ -213,7 +216,7 @@ export const scanNote = (doc: ProseNode, source: TocSource | null = null): Scann
  * Null when that gives fewer than two rows: the note's own rows then stay, with the zoom's section
  * current (4C).
  */
-export const scanZoom = (doc: ProseNode, itemPos: number, source: TocSource | null = null): ScannedNote | null => {
+export const scanZoom = (doc: ProseNode, itemPos: number, source: TocSource | null = null, isBoard?: BoardCheck): ScannedNote | null => {
   const item = doc.nodeAt(itemPos)
   if (!isListItem(item)) return null
   const rows: ScannedRow[] = []
@@ -223,7 +226,7 @@ export const scanZoom = (doc: ProseNode, itemPos: number, source: TocSource | nu
     const top = Math.min(...inside.map(({ level }) => level))
     for (const row of inside) rows.push({ ...row, level: (row.level - top + 1) as TocLevel })
   } else {
-    for (const nested of findNestedLists(item)) collectBullets(nested.list, itemPos + nested.offset + 2, 1, rows)
+    for (const nested of findNestedLists(item)) collectBullets(nested.list, itemPos + nested.offset + 2, 1, rows, isBoard)
   }
   return rows.length >= ENOUGH_ROWS ? { bullets: source !== 'headings', rows } : null
 }
@@ -311,7 +314,8 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
             timer = null
             // In a bullet zoom, the zoom's own rows when it has enough (YAZ-4094 4D).
             const zoomed = getZoomedItemPos(view.state)
-            const note = (zoomed === null ? null : scanZoom(view.state.doc, zoomed, channel.getSource())) ?? scanNote(view.state.doc, channel.getSource())
+            const isBoard = boardCheckOf(view.state)
+            const note = (zoomed === null ? null : scanZoom(view.state.doc, zoomed, channel.getSource(), isBoard)) ?? scanNote(view.state.doc, channel.getSource(), isBoard)
             positions = note.rows.map(({ pos }) => pos)
             bullets = note.bullets
             // A row names its links as the note shows them (YAZ-3744 D6).

@@ -17,7 +17,7 @@
  *   ✗ `blob:app://yaseen/dead`  a dead blob URL    → schemed srcs pass through and honestly fail
  *   – a fenced code block holding an image line    → text, never a node: code is code
  *   – `![[wiki.png]]`                              → not an image node at all (only `.excalidraw`
- *                                                    embeds are special, `drawingPreview.ts`)
+ *                                                    and `.drawio` embeds are windows, `boardEmbed.ts`)
  *   ✓ `![alt|300](images/a.png)`                   → Obsidian's width syntax, on the `<img>` itself (as `--image-width`)
  *
  * Then the two gestures a rendered image has:

@@ -384,3 +384,53 @@ describe('the cell notes\' syntax reads as text (YAZ-3818, round 3 of the demo)'
     expect(snippets.map(shown)).toEqual([['B'], ['B'], ['B']])
   })
 })
+
+/**
+ * YAZ-4954: the index keeps both page sides of `[[Covid notes|COVID-19]]` (`Covid notes|COVID-19`, `scan.test.ts`), as
+ * only a reader that knows the notes can pick. Linked mentions pick as the editor does: the left side when it is a page.
+ */
+describe('words that only LOOK like an ID (YAZ-4954): Linked mentions agree with the editor', () => {
+  const COVID = '/vault/Covid notes.md'
+  const ID_NOTE = '/vault/COVID-19.md'
+  const words = rec('/vault/A.md', { links: ['Covid notes|COVID-19'] })
+  const idFirst = rec('/vault/B.md', { links: ['COVID-19'] })
+  const window = (records: IndexRecord[], dirs: string[] = []) => linkResolver(records, '/vault', dirs, [])
+
+  it('both notes exist: "Covid notes" lists the words-first link, COVID-19 lists the ID-first one', () => {
+    const records = [words, idFirst, rec(COVID), rec(ID_NOTE)]
+    for (const resolve of [window(records), resolverOver(records)]) {
+      expect(backlinksFor(COVID, records, resolve, []).map((r) => r.path)).toEqual(['/vault/A.md'])
+      expect(backlinksFor(ID_NOTE, records, resolve, []).map((r) => r.path)).toEqual(['/vault/B.md'])
+    }
+  })
+
+  it('only one side is a page: that side', () => {
+    const idOnly = [words, rec(ID_NOTE)]
+    expect(backlinksFor(ID_NOTE, idOnly, window(idOnly), []).map((r) => r.path)).toEqual(['/vault/A.md'])
+    const nameOnly = [words, rec(COVID)]
+    expect(backlinksFor(COVID, nameOnly, window(nameOnly), []).map((r) => r.path)).toEqual(['/vault/A.md'])
+  })
+
+  it("a folder's settings link (a column's `target`, a view's `order`) picks as the body link does, in both orders (part 2)", () => {
+    const leaf = (target: string, order: string): IndexRecord => ({
+      ...rec('/vault/Team/.folder.md'),
+      properties: { folder_settings: { columns: { owner: { kind: 'link', target } }, views: [{ type: 'page', name: 'Page', order: [order] }] } },
+    })
+    // One map per resolver: a new resolver for each set of folders, as the app makes one when they change.
+    const listed = (page: string, records: IndexRecord[], folder: IndexRecord) =>
+      backlinksFor(page, records, window(records, ['/vault/Team']), [folder]).map((r) => r.path)
+    const both = [rec(COVID), rec(ID_NOTE)]
+    const wordsFirst = leaf('[[Covid notes|COVID-19]]', '[[Covid notes|COVID-19]]')
+    expect(listed(COVID, both, wordsFirst)).toEqual(['/vault/Team/.folder.md'])
+    expect(listed(ID_NOTE, both, wordsFirst)).toEqual([])
+    expect(listed(ID_NOTE, both, leaf('[[COVID-19|Covid notes]]', '[[COVID-19|Covid notes]]'))).toEqual(['/vault/Team/.folder.md'])
+    expect(listed(ID_NOTE, [rec(ID_NOTE)], leaf('[[Covid notes|COVID-19]]', '[[x]]'))).toEqual(['/vault/Team/.folder.md'])
+  })
+
+  it('the left side is a FOLDER: the window picks it, as the editor\'s pill does', () => {
+    const records = [words, rec(ID_NOTE)]
+    const resolve = window(records, ['/vault/Covid notes'])
+    expect(resolve('Covid notes|COVID-19')).toBe('/vault/Covid notes')
+    expect(backlinksFor(ID_NOTE, records, resolve, [])).toEqual([])
+  })
+})

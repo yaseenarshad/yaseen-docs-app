@@ -20,6 +20,7 @@
  * Folds (YAZ-4787): a note's bar has a fold button beside the count. Its menu sets what find does with folded bullets
  * for this note (`find-folds` in the note); "Use the default" hands it back to Settings › Editor › Find.
  */
+import { useUnit } from '../../vault/unitWord'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent, type RefObject } from 'react'
 import type { FindFolds } from '@shared/types'
 import { storage } from '../../lib/storage'
@@ -62,6 +63,7 @@ const Chevron = () => (
 )
 
 export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
+  const unit = useUnit()
   const state = useSyncExternalStore(channel.subscribe, channel.getState)
   const inputRef = useRef<HTMLInputElement>(null)
   const [foldMenu, setFoldMenu] = useState(false)
@@ -105,6 +107,8 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
       const otherNote = (): boolean => [...document.querySelectorAll('.editor-mount .ProseMirror')].some((el) => !host?.contains(el) && shown(el))
       /** In a folder page's own find: its Page tab, or its views (`[data-find-host]`, YAZ-4613). */
       const inPage = active instanceof Element && active.closest('.folder-page-doc, [data-find-host]') !== null
+      /** In the explore stack (YAZ-2571): only the layer's own bar answers; the tab's behind the stack stays shut. */
+      const inExplore = active instanceof Element && active.closest('.explore') !== null && !(host?.contains(active) ?? false)
       const claims =
         scope === 'page'
           ? shown(host) && ((active !== null && host !== null && host.contains(active)) || (!inCode && !otherNote()))
@@ -115,7 +119,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
               (active !== null && host !== null && host.contains(active)
                 ? active.closest('.editor-mount') === null
                 : !inPage && !otherNote() && [...document.querySelectorAll('[data-find-host]')].find(shown) === host)
-            : shown(host) && !inCode && !inPage
+            : shown(host) && !inCode && !inPage && !inExplore
       if (!claims) return
       event.preventDefault()
       event.stopPropagation()
@@ -207,7 +211,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
                   ))}
                   <div className="find-folds__rule" />
                   {folds.own === null ? (
-                    <div className="find-folds__foot">For this note. The default is in Settings › Editor › Find.</div>
+                    <div className="find-folds__foot">{unit('For this note. The default is in Settings › Editor › Find.')}</div>
                   ) : (
                     <button
                       type="button"

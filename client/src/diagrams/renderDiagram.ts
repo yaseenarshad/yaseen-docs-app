@@ -6,8 +6,8 @@
  * The viewer runs where the editor runs: on the drawio ORIGIN, under its no-network CSP, in our
  * own small page (`app://drawio/yaseen-render.html`, written into the webapp by packDrawio — no
  * draw.io file is touched). ONE hidden iframe serves every request for the renderer's life;
- * each request is `{ id, xml, theme, adaptive, format, scale, padding, maxWidth?, maxHeight? }`,
- * each answer a data URL of the first page (`''` when the page is empty) or a failure, and both
+ * each request is `{ id, xml, theme, adaptive, format, scale, padding, maxWidth?, maxHeight?, page? }`,
+ * each answer a data URL of the page (an embed's: its SVG text; `''` when the page is empty) or a failure, and both
  * travel as JSON strings checked against that iframe's window and origin, exactly like the
  * editor's protocol.
  *
@@ -35,17 +35,45 @@ interface RenderRequest {
   xml: string
   theme: 'light' | 'dark'
   adaptive: 'auto' | 'none'
-  format: 'svg' | 'png'
+  /** `svgText`: the SVG text itself, not a data URL (an embed's blob, A20). */
+  format: 'svg' | 'png' | 'svgText'
   scale: number
   padding: number
   maxWidth?: number
   maxHeight?: number
   /** What the diagram's link pills show (YAZ-4748 D9); absent, they keep the raw text. */
   looks?: Record<string, WireLook | null>
+  /** The page id to draw (YAZ-4825, D6); absent or gone, the first page. */
+  page?: string | null
+}
+
+/** A diagram page as "Page ▸" lists it (YAZ-4825). */
+export interface DiagramPageRef {
+  id: string
+  name: string
+}
+
+/** The board rectangle a picture covers, in diagram units (YAZ-4825): left, top, width, height. */
+export interface BoardBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * The renderer's whole answer (YAZ-4825): the picture — a data URL, or for `svgText` the SVG text (`''` for an empty
+ * page) — and the page it drew, every page and the picture's bounds, which an embed's window reads.
+ */
+export interface DiagramPicture {
+  picture: string
+  page: string | null
+  pages: DiagramPageRef[]
+  bounds: BoardBounds | null
 }
 
 interface Pending {
-  resolve: (dataUrl: string) => void
+  resolve: (answer: DiagramPicture) => void
   reject: (err: Error) => void
   timer: ReturnType<typeof setTimeout>
 }
@@ -105,7 +133,7 @@ function renderFrame(): Promise<HTMLIFrameElement> {
 /** Every answer from the frame, matched to its request by id. */
 function onAnswer(ev: MessageEvent): void {
   if (frame === null || ev.source !== frame.contentWindow || ev.origin !== DRAWIO_ORIGIN || typeof ev.data !== 'string') return
-  let msg: { id?: unknown; ok?: unknown; dataUrl?: unknown; error?: unknown }
+  let msg: { id?: unknown; ok?: unknown; dataUrl?: unknown; svg?: unknown; error?: unknown; pages?: unknown; page?: unknown; bounds?: unknown }
   try {
     msg = JSON.parse(ev.data) as typeof msg
   } catch {
@@ -116,16 +144,28 @@ function onAnswer(ev: MessageEvent): void {
   if (job === undefined) return
   pending.delete(msg.id)
   clearTimeout(job.timer)
-  if (msg.ok === true && typeof msg.dataUrl === 'string') job.resolve(msg.dataUrl)
+  const picture = typeof msg.svg === 'string' ? msg.svg : msg.dataUrl
+  if (msg.ok === true && typeof picture === 'string')
+    job.resolve({
+      picture,
+      pages: Array.isArray(msg.pages) ? (msg.pages as DiagramPageRef[]).filter((p) => typeof p?.id === 'string').map((p) => ({ id: p.id, name: String(p.name ?? p.id) })) : [],
+      page: typeof msg.page === 'string' ? msg.page : null,
+      bounds: isBounds(msg.bounds) ? msg.bounds : null,
+    })
   else job.reject(new Error(typeof msg.error === 'string' ? msg.error : 'diagram picture failed'))
 }
 
-async function render(req: RenderRequest): Promise<string> {
+function isBounds(v: unknown): v is BoardBounds {
+  const b = v as BoardBounds | null
+  return typeof b === 'object' && b !== null && [b.x, b.y, b.width, b.height].every(Number.isFinite)
+}
+
+async function renderAnswer(req: RenderRequest): Promise<DiagramPicture> {
   clearTimeout(idle)
   try {
     const f = await renderFrame()
     const id = `r${++serial}`
-    return await new Promise<string>((resolve, reject) => {
+    return await new Promise<DiagramPicture>((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id)
         reject(new Error('diagram picture timed out'))
@@ -141,6 +181,9 @@ async function render(req: RenderRequest): Promise<string> {
     }
   }
 }
+
+/** The picture alone: what every caller before YAZ-4825 asks for. */
+const render = (req: RenderRequest): Promise<string> => renderAnswer(req).then((answer) => answer.picture)
 
 /**
  * The first page of `xml` as an SVG data URL fit inside `bounds`, in the app's `theme` and its
@@ -162,4 +205,13 @@ export function renderDiagramPreview(xml: string, theme: 'light' | 'dark', darkC
  */
 export function renderDiagramImage(xml: string, format: 'svg' | 'png'): Promise<string> {
   return render({ xml, theme: 'light', adaptive: 'none', format, scale: format === 'png' ? 2 : 1, padding: EXPORT_PADDING, looks: diagramLinkLooks(xml) })
+}
+
+/**
+ * A board embed's window (YAZ-4825, D6): the page `page` of `xml` (the first page when it is null or gone) at scale 1,
+ * with no size limit, in the app's theme and dark-mode colour setting, as the preview draws it, as SVG TEXT (A20);
+ * plus the page list for "Page ▸" and the board rectangle the picture covers, so the window can pan and zoom it.
+ */
+export function renderDiagramPage(xml: string, page: string | null, theme: 'light' | 'dark', darkColors: DiagramDarkColors): Promise<DiagramPicture> {
+  return renderAnswer({ xml, theme, adaptive: drawioAdaptiveColors(darkColors), format: 'svgText', scale: 1, padding: EXPORT_PADDING, looks: diagramLinkLooks(xml), page })
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet } from './viewSchema'
 import { budgetMs, timeMedian } from '../test-perf'
-import { runView } from './engine'
+import { type Group, runView } from './engine'
 import { optionOrderFor } from './editorType'
 import type { FolderSettings } from './folderSettings'
 describe('perf (GRO-2133)', () => {
@@ -111,6 +111,59 @@ describe('perf (GRO-2133)', () => {
     expect(second.every(c => c.children!.length === 1 && c.children![0].rows.length === c.rows.length)).toBe(true)
     // eslint-disable-next-line no-console
     console.log(`engine perf: 1000 records, three levels, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7 (${r.rows.length} kept)`)
+    expect(ms).toBeLessThan(budgetMs(50))
+  })
+
+  it('1000 notes in a 5-level folder tree × Folder (All) nested, then Status, under 50 ms, one group per folder (YAZ-4918)', () => {
+    // 1000 notes over 5 folder levels under the page `Library`: a fixed tree, 4 subfolders at each step, so the tree is
+    // built from the paths alone, and every folder has notes of its own and in its subfolders.
+    const dirs: string[] = []
+    const grow = (dir: string, level: number) => {
+      dirs.push(dir)
+      if (level < 5) for (let k = 0; k < 4; k++) grow(`${dir}/f${k}`, level + 1)
+    }
+    grow('Library', 1)
+    // 1 + 4 + 16 + 64 + 256 = 341 folders, the page's own among them.
+    expect(dirs).toHaveLength(341)
+    const records = Array.from({ length: 1000 }, (_, i) => {
+      const folder = dirs[i % dirs.length]
+      return { ...record(i), path: `/vault/${folder}/Note ${i}.md`, folder }
+    })
+    const folders: IndexRecord[] = dirs.map((folder, i) => ({ ...record(i), path: `/vault/${folder}/.folder.md`, name: '.folder.md', folder, title: `T ${folder}` }))
+    const page = { folder: 'Library', folders, vault: 'V' }
+    const def: ViewSet = {
+      views: [{ type: 'table', name: 'T', order: ['file.name', 'status'], sort: [{ property: 'file.name', direction: 'ASC' }], groupBy: [{ property: 'file.folder', depth: 'all' }, { property: 'status' }] }],
+    }
+    const go = () => runView(def, def.views[0], records, { root: '/vault', page })
+    go()
+    const { result: r, median: ms, worst } = timeMedian(7, go)
+    expect(r.errors).toEqual([])
+    // Count guards (no slack): one group per folder, the Status groups inside each DEEPEST folder (a folder's own notes
+    // above its subfolders sit unsplit, the merge rule; the page's own notes form a group with no subfolder under it,
+    // so it gets them too), and every row placed once.
+    const leaves = new Map<string, Set<string>>()
+    for (const r of records) if (r.folder === 'Library' || r.folder.split('/').length === 5) (leaves.get(r.folder) ?? leaves.set(r.folder, new Set()).get(r.folder)!).add(r.properties.status as string)
+    expect(leaves.size).toBe(257)
+    let folderGroups = 0
+    let statusGroups = 0
+    let placed = 0
+    const walk = (groups: readonly Group[], level: number) => {
+      for (const g of groups) {
+        if (level === 0) folderGroups++
+        else statusGroups++
+        if (g.children === undefined) placed += g.rows.length
+        else {
+          placed += g.direct!.length
+          walk(g.children, g.nested ? level : level + 1)
+        }
+      }
+    }
+    walk(r.groups!, 0)
+    expect(folderGroups).toBe(341)
+    expect(statusGroups).toBe([...leaves.values()].reduce((n, set) => n + set.size, 0))
+    expect(placed).toBe(1000)
+    // eslint-disable-next-line no-console
+    console.log(`engine perf: 1000 notes, Folder (All) then Status, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7`)
     expect(ms).toBeLessThan(budgetMs(50))
   })
 

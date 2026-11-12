@@ -5,6 +5,7 @@
  * shows are listed under "Other folders' values for this note", each with Clear (C9). Every edit goes where its row
  * lives. Value writes remain surgical and conflict-checked; raw YAML retains its own dirty draft.
  */
+import { useUnit } from '../vault/unitWord'
 import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, splitFrontmatter } from '@shared/frontmatter'
@@ -42,6 +43,7 @@ import { EditableCell } from '../views/view/EditableCell'
 import { ImageVault } from '../views/view/imageCell'
 import { ColumnSearch } from '../views/view/ColumnSearch'
 import { LinkPills, cellContent } from '../views/view/GroupHeader'
+import { PillLook, usePillLook } from './wikilink/LinkPillParts'
 import { openByGesture, type OpenHandlers } from '../lib/openGesture'
 import { PropertiesIcon } from '../views/view/icons'
 import { readForWrite, trackFileWrite, transformFile, type ContentTransform } from '../views/writeProperty'
@@ -188,14 +190,19 @@ export const PropertiesOpenMemory = createContext<{ current: boolean | null } | 
 
 /** A link value is the note editor's pill here too, as in a folder page's cells (YAZ-4544 4G): one look for links. */
 export function FrontmatterPanel(props: FrontmatterPanelProps) {
+  // The vault's link pills look (YAZ-4924): a link value's pill gains the same pieces a note's does.
+  const pillLook = usePillLook(props.wikilinks)
   return (
     <LinkPills.Provider value={true}>
-      <Panel {...props} />
+      <PillLook.Provider value={pillLook}>
+        <Panel {...props} />
+      </PillLook.Provider>
     </LinkPills.Provider>
   )
 }
 
 function Panel({ file, root, properties: decls = null, wikilinks, readOnly = false, links, inheritColumns = DEFAULT_FOLDER_PAGES.inheritColumns, onNotice }: FrontmatterPanelProps) {
+  const unit = useUnit()
   /** The definition popover: `file` is the `.folder.md` whose column it edits (a column's owner, or a separate column's page); none = the vault's `properties.json`. */
   /** Edit property's "Column on" (YAZ-4769), awaiting its confirm: the column's folder now (`from`) and the one picked (`to`); null is no folder. */
   const [moving, setMoving] = useState<{ key: string; from: string | null; to: string | null; decl: ColumnDecl } | null>(null)
@@ -712,7 +719,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
                     label: nameOf(folder),
                     about: folder === relDir ? "This note's folder: a column on its page" : 'Folder above: a column on it and every folder below',
                   })),
-                  { value: NO_COLUMN, icon: <FileIcon path="note.md" />, label: 'This note only', about: 'No folder page gets a column (◌ if you show it)' },
+                  { value: NO_COLUMN, icon: <FileIcon path="note.md" />, label: unit('This note only'), about: 'No folder page gets a column (◌ if you show it)' },
                 ]}
                 menuLabel={`Column on for ${propertyMenu.key}`}
                 triggerLabel={`Column on for ${propertyMenu.key}`}
@@ -831,7 +838,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
               {/* C9: what pages that do not show the note still keep for it, never deleted by a move — each with Clear. */}
               {keptValues.length > 0 && (
                 <div className="frontmatter-panel__kept">
-                  <p className="frontmatter-property-context">Other folders' values for this note</p>
+                  <p className="frontmatter-property-context">{unit("Other folders' values for this note")}</p>
                   <ul className="frontmatter-panel__rows">
                     {keptValues.map(({ id, key, raw, name }) => (
                       <li key={`${id}:${key}`} className="frontmatter-panel__row" data-key={key}>
@@ -881,7 +888,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
                               label: nameOf(folder),
                               about: folder === relDir ? "This note's folder: a column on its page" : 'Folder above: a column on it and every folder below',
                             })),
-                            { value: NO_COLUMN, icon: <FileIcon path="note.md" />, label: 'This note only', about: 'No folder page gets a column (◌ if you show it)' },
+                            { value: NO_COLUMN, icon: <FileIcon path="note.md" />, label: unit('This note only'), about: 'No folder page gets a column (◌ if you show it)' },
                           ]}
                           menuLabel="Column on"
                           triggerLabel="Column on"

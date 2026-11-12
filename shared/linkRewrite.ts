@@ -18,6 +18,7 @@ import { ALSO_IN_KEY, alsoInEntries } from './alsoIn'
 import { mapFolderSettingsLinks } from './folderSettingsLinks'
 import { FOLDER_VALUES_KEY, folderBlocks, moveFolderValues } from './folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
+import { indexTarget, splitLink } from './linkParts'
 import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from './noteId'
 
 /** Does this raw link target point at what changed? */
@@ -54,23 +55,21 @@ export function maskCode(body: string): string {
 
 /**
  * `[[inner]]` → the rewritten inner, or null when this match is not what changed.
- * The target part (before the first `#` or `|`) is replaced; `#heading`/`#^block` and
- * `|alias` ride along untouched. Surrounding whitespace inside the target is dropped
- * (`[[ B ]]` → `[[C]]`), matching how the resolver reads it anyway — EXCEPT when the
- * target text would not change at all (E1b: a bare link kept across a move), where the
- * match is left untouched so the link stays byte-identical, padding included.
+ * The target part (the page side of `splitLink`, YAZ-4935: either side of the `|`; the left side when it resolves) is replaced;
+ * `#heading`/`#^block` and the words ride along untouched, in the order they were written.
+ * Surrounding whitespace inside the target is dropped (`[[ B ]]` → `[[C]]`), matching how the
+ * resolver reads it anyway — EXCEPT when the target text would not change at all (E1b: a bare
+ * link kept across a move), where the match is left untouched so the link stays byte-identical,
+ * padding included.
  */
 export function rewriteInner(inner: string, resolves: ResolvesToOld, newTarget: NewTarget): string | null {
-  const pipe = inner.indexOf('|')
-  const head = pipe >= 0 ? inner.slice(0, pipe) : inner
-  const alias = pipe >= 0 ? inner.slice(pipe) : ''
-  const hash = head.indexOf('#')
-  const target = (hash >= 0 ? head.slice(0, hash) : head).trim()
-  const suffix = hash >= 0 ? head.slice(hash) : ''
+  // Words that only look like an ID (`[[Covid notes|COVID-19]]`): the left side is the page when it is the renamed note.
+  const { page: target, hash, words, pageFirst } = splitLink(inner, resolves)
   if (target === '' || !resolves(target)) return null
   const next = newTarget(target)
   if (next === target) return null
-  return next + suffix + alias
+  const side = next + hash
+  return words === null ? side : pageFirst ? `${side}|${words}` : `${words}|${side}`
 }
 
 /** Body `[[links]]` and `![[embeds]]` outside code, spliced in place; the input when nothing matched. */
@@ -114,11 +113,14 @@ function rewriteLinkValue(value: unknown, resolves: ResolvesToOld, newTarget: Ne
 /**
  * A frontmatter string's link TARGET (`|alias` / `#heading` stripped) when it is exactly `[[…]]`,
  * or null — what `rewriteInner` decides on, exposed for a probe that only needs to look.
+ * The side follows `splitLink` (YAZ-4954 part 2): a reader with the notes passes `isPage`, and the left side wins when
+ * it is a page. Without it, words that only look like an ID keep both sides (`Covid notes|COVID-19`, `indexTarget`),
+ * as the index keeps them, and the resolver picks when it reads them (`pickTarget`).
  */
-export function exactLinkTarget(value: string): string | null {
+export function exactLinkTarget(value: string, isPage?: (page: string) => boolean): string | null {
   const m = EXACT_WIKILINK_RE.exec(value.trim())
   if (m === null) return null
-  const target = m[1].split('|')[0].split('#')[0].trim()
+  const target = isPage === undefined ? indexTarget(m[1]) : splitLink(m[1], isPage).page
   return target === '' ? null : target
 }
 

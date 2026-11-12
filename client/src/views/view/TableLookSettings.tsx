@@ -1,6 +1,5 @@
-import { FOLDER_PAGE_CHOICES, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowLabel, type FolderPagesSettings, type HeaderRowOwn } from '@shared/types'
-import { capital, fillSwatch } from '../../editor/table/colours'
-import type { TableColor } from '../../editor/table/tableComment'
+import { FOLDER_PAGE_CHOICES, HEADER_ROW_PARTS, type FolderPagesSettings, type HeaderRowOwn } from '@shared/types'
+import { HeaderStyleControl } from './StylePanel'
 import { headerRowSetting } from '../../editor/table/timeFormatSetting'
 import { groupLineStyleOf, groupLinesOf, headerRowOfView, type Mutate, type ViewDef } from '../viewSchema'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
@@ -116,53 +115,28 @@ export function toggleHeaderRowPlain(view: ViewDef): void {
 }
 
 /**
- * A folder table's header row (YAZ-4774): Color, Strength and Text, each the view's own part (`headerRow`) or
- * Settings › Tables › Header row's. A pick that equals Settings removes the part, as `chooseOwn` does; the ↺ removes
- * them all. The first build's `shadedHeader` reads as Strength and goes at the next pick (`headerRowOfView`).
- * YAZ-4794: Fill colour, Strength, Weight, Text colour (Muted, Full, the eight colours) and Align (Follow column, Left,
- * Center, Right); a row too narrow for its choices drops them under its name.
+ * A folder table's or a calendar's header row (YAZ-4774, YAZ-4864 round 3): ONE row, "<label> [Aa ▾]" — a chip in the
+ * current fill, text colour and weight, and under it the table's "Header row ›" panel (`StylePanel.tsx`): Plain, like
+ * any row · Fill / Text / Style · Off / Light / Medium / Strong · the colours; Style holds Weight and Align. Each part
+ * is the view's own (`headerRow`) or Settings › Tables › Header row's; a pick that equals Settings removes the part, as
+ * `chooseOwn` does; the row's ↺ removes them all. The first build's `shadedHeader` reads as Strength and goes at the
+ * next pick (`headerRowOfView`). Yaseen: "is ther a better way we can represent the header row formatting options in
+ * a way that isnt as verbose?"
  */
-export function HeaderRowSettings({ own, viewIndex, onUpdate }: { own: ViewDef; viewIndex: number; onUpdate: Mutate }) {
+export function HeaderRowStyleRow({ label, own, viewIndex, onUpdate }: { label: string; own: ViewDef; viewIndex: number; onUpdate: Mutate }) {
   const shown = shownHeaderRow(own)
-  const pick = (part: keyof HeaderRowOwn, value: string) => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], part, value))
-  const swatches = (part: 'color' | 'text', colors: readonly string[], label: string) => (
-    <div className="view-header-colors" role="group" aria-label={label}>
-      {colors.map((c) => (
-        <button key={c} type="button" title={capital(c)} aria-label={capital(c)} aria-pressed={shown[part] === c} onClick={() => shown[part] !== c && pick(part, c)}>
-          <span className="table-menu-swatch" style={{ background: fillSwatch((c === 'gray' ? 'grey' : c) as TableColor) }} />
-        </button>
-      ))}
-    </div>
-  )
   return (
-    <>
-      <div className="view-settings-row">
-        <RowLabel icon="headerRow">Header row</RowLabel>
-        <FromSettings own={own} viewKey="headerRow" viewIndex={viewIndex} onUpdate={onUpdate} />
-      </div>
-      <div className="view-settings-row view-settings-row--sub">
-        <span>Fill colour</span>
-        {swatches('color', HEADER_ROW_CHOICES.color, 'Header row fill colour')}
-      </div>
-      <div className="view-settings-row view-settings-row--sub">
-        <span>Strength</span>
-        <ChoiceSeg<string> label="Header row strength" value={shown.strength} options={HEADER_ROW_CHOICES.strength.map((v) => [v, capital(v)] as const)} onChange={(next) => pick('strength', next)} />
-      </div>
-      <div className="view-settings-row view-settings-row--sub">
-        <span>Weight</span>
-        <ChoiceSeg<string> label="Header row text weight" value={shown.weight} options={HEADER_ROW_CHOICES.weight.map((v) => [v, capital(v)] as const)} onChange={(next) => pick('weight', next)} />
-      </div>
-      <div className="view-settings-row view-settings-row--sub view-settings-row--wrap">
-        <span>Text colour</span>
-        <span className="view-header-text">
-          <ChoiceSeg<string> label="Header row text colour" value={shown.text} options={(['muted', 'full'] as const).map((v) => [v, capital(v)] as const)} onChange={(next) => pick('text', next)} />
-          {swatches('text', HEADER_ROW_CHOICES.text.filter((v) => v !== 'muted' && v !== 'full'), 'Header row text colour')}
-        </span>
-      </div>
-      <div className="view-settings-row view-settings-row--sub view-settings-row--wrap">
-        <span>Align</span>
-        <ChoiceSeg<string> label="Header row align" value={shown.align} options={HEADER_ROW_CHOICES.align.map((v) => [v, headerRowLabel(v)] as const)} onChange={(next) => pick('align', next)} />
-      </div>
-    </>
+    <div className="view-settings-row">
+      <RowLabel icon="headerRow">{label}</RowLabel>
+      <HeaderStyleControl
+        label="Header row style"
+        shown={shown}
+        plainLabel="Plain, like any row"
+        plainOn={plainHeaderRow(shown)}
+        onPlain={() => onUpdate((d) => toggleHeaderRowPlain(d.views[viewIndex]))}
+        onPick={(part, value) => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], part, value))}
+      />
+      <FromSettings own={own} viewKey="headerRow" viewIndex={viewIndex} onUpdate={onUpdate} />
+    </div>
   )
 }

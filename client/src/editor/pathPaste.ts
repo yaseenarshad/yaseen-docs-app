@@ -17,6 +17,8 @@ import { AddMarkStep, ReplaceStep } from '@milkdown/kit/prose/transform'
 import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
+import { isBoardTarget, newEmbed, newEmbedAlt } from '@shared/embedOptions'
+import { inCellOrNote } from './table/cellBlocks'
 import { fileKind } from '@shared/fileKind'
 import { parseFileLink } from '@shared/links'
 import { fileLabel } from '../lib/pageLabel'
@@ -255,9 +257,46 @@ export function pastePathLinks(view: EditorView, ctx: Ctx, options: PathPasteOpt
   const to = view.state.selection.from
   const slice = Slice.maxOpen(ctx.get(parserCtx)(link).content)
   view.dispatch(closeHistory(view.state.tr).replace(to - raw.length, to, slice).scrollIntoView())
+  // A drawing or a diagram can be an embed too (YAZ-4829 D8): `!` before the link as it is written. A `[[link]]` stays
+  // text under the host's decorations; a Markdown link parses as the image node (another vault, 2B).
+  // Not in a table cell: embeds there are out of scope (the checker's round 1).
+  const path = pastedPath(raw)
+  // A new embed's view starts locked (YAZ-2571 round 7): `![[x|locked]]`, or `![name|locked](href)` into another vault.
+  const embedText = () => (link.startsWith('[[') ? newEmbed(link.slice(2, -2)) : `!${link.replace(/^\[((?:\\.|[^\]])*)\]/, (_, name: string) => `[${newEmbedAlt(name)}]`)}`)
+  const embed = path !== null && isBoardTarget(path) && !inCellOrNote(view.state.doc.resolve(to - raw.length)) ? Slice.maxOpen(ctx.get(parserCtx)(embedText()).content) : undefined
   // No chip after a paste over words (K5): ⌘Z gives the words back.
-  if (empty) offerKeepAsPath(view, to - raw.length, to - raw.length + slice.size, raw)
+  if (empty) offerKeepAsPath(view, to - raw.length, to - raw.length + slice.size, raw, embed)
   return true
+}
+
+/**
+ * Where the pasted pill ends on screen (YAZ-4904): the last drawn piece of the link between `from` and `to`. The
+ * link's syntax (`[[`, `]]`, a hidden folder or ending) is `display: none`, so `coordsAtPos(to)` measured a hidden
+ * node, got a zero rect, and put the chip at the window's top left corner. A DOM range over the link reads the boxes
+ * of its drawn pieces only: the text, a title widget. `coordsAtPos` stays the fallback when nothing is drawn.
+ */
+function pillEnd(view: EditorView, from: number, to: number): { left: number; bottom: number } {
+  const start = view.domAtPos(from, 1)
+  const end = view.domAtPos(to, 1)
+  const range = document.createRange()
+  range.setStart(start.node, start.offset)
+  range.setEnd(end.node, end.offset)
+  const rects = Array.from(range.getClientRects()).filter((rect) => rect.height > 0)
+  const last = rects[rects.length - 1]
+  if (last === undefined) {
+    const at = view.coordsAtPos(to)
+    return { left: at.left, bottom: at.bottom }
+  }
+  // A piece's box comes before its text in the list, and the text sits inside the box's padding: the chip goes
+  // after the furthest right box on the pill's last line.
+  let left = last.right
+  let bottom = last.bottom
+  for (const rect of rects) {
+    if (rect.bottom <= last.top || rect.top >= last.bottom) continue
+    left = Math.max(left, rect.right)
+    bottom = Math.max(bottom, rect.bottom)
+  }
+  return { left, bottom }
 }
 
 /** The one open chip's close, or null. A new chip or a closing editor closes it (`closePathChip`). */
@@ -266,8 +305,12 @@ let openChip: (() => void) | null = null
 /** Closes the "Keep as path" chip, if one is open: its editor is going away. */
 export const closePathChip = (): void => openChip?.()
 
-/** The small "Keep as path" chip under a pasted link (D2). The next key, click outside or scroll closes it. */
-function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string): void {
+/**
+ * The small "Keep as path" chip under a pasted link (D2), with "Embed" beside it for a drawing or a diagram (YAZ-4829
+ * D8): `embed` is the link with its `!`. Each button is one undo step of its own, so ⌘Z gives the pill back. The next
+ * key, click outside or scroll closes it.
+ */
+function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string, embed?: Slice): void {
   closePathChip()
   const pasted = view.state.doc
   const chip = document.createElement('div')
@@ -277,6 +320,18 @@ function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string
   keep.className = 'ctx-menu__item'
   keep.textContent = 'Keep as path'
   chip.appendChild(keep)
+  if (embed !== undefined) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'ctx-menu__item'
+    button.textContent = 'Embed'
+    button.addEventListener('mousedown', (event) => event.preventDefault())
+    button.addEventListener('click', () => {
+      if (view.state.doc === pasted) view.dispatch(closeHistory(view.state.tr).replace(from, to, embed).scrollIntoView())
+      close()
+    })
+    chip.appendChild(button)
+  }
   const close = () => {
     openChip = null
     chip.remove()
@@ -295,7 +350,7 @@ function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string
   })
   view.dom.parentElement?.appendChild(chip)
   // Kept inside the window, as the link menu is (`linkMenu.ts` `openMenuAt`).
-  const at = view.coordsAtPos(to)
+  const at = pillEnd(view, from, to)
   chip.style.left = `${Math.max(0, Math.min(at.left, window.innerWidth - chip.offsetWidth))}px`
   chip.style.top = `${Math.max(0, Math.min(at.bottom + 4, window.innerHeight - chip.offsetHeight))}px`
   openChip = close

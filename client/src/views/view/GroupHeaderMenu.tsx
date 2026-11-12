@@ -1,4 +1,5 @@
 import { type ReactNode, useContext } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { createPortal } from 'react-dom'
 import { GroupLevelStepsContext } from '../groupLevelSteps'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
@@ -13,6 +14,8 @@ interface GroupHeaderMenuProps {
   onNew?: () => void
   /** A Folder group of a subfolder directly under the page (YAZ-4747 OF1): "Move Desserts (folder) to Other files". */
   moveFolder?: { name: string; run: () => void }
+  /** A nested Folder group with folder groups below it (YAZ-4928): "Expand all" and "Collapse all" over them; an absent step is greyed. */
+  branch?: { expandAll?: () => void; collapseAll?: () => void }
   onClose: () => void
 }
 
@@ -22,7 +25,8 @@ interface GroupHeaderMenuProps {
  * `document.body`: a frozen table row is translated, and a `position: fixed` menu inside it would be placed by that
  * row, not by the window.
  */
-export function GroupHeaderMenu({ x, y, collapsed, onToggle, onNew, moveFolder, onClose }: GroupHeaderMenuProps) {
+export function GroupHeaderMenu({ x, y, collapsed, onToggle, onNew, moveFolder, branch, onClose }: GroupHeaderMenuProps) {
+  const unit = useUnit()
   // One level at a time (YAZ-3746 13AT): every group of a level, beside this one group; only with two levels or more.
   const levels = useContext(GroupLevelStepsContext)
   const step = (label: string, icon: ReactNode, run: (() => void) | undefined) => (
@@ -55,7 +59,7 @@ export function GroupHeaderMenu({ x, y, collapsed, onToggle, onNew, moveFolder, 
               onNew()
             }}
           >
-            <span className="ctx-menu__label"><PlusIcon />New note in this group</span>
+            <span className="ctx-menu__label"><PlusIcon />{unit('New note in this group')}</span>
           </button>
         )}
         <button
@@ -71,6 +75,13 @@ export function GroupHeaderMenu({ x, y, collapsed, onToggle, onNew, moveFolder, 
           <span className="ctx-menu__label">{collapsed ? <><ExpandAllIcon />Expand this group</> : <><CollapseAllIcon />Collapse this group</>}</span>
         </button>
       </div>
+      {/* The folder groups below a nested Folder header (YAZ-4928), before the view-wide level steps. */}
+      {branch !== undefined && (
+        <div className="ctx-menu__group" role="group">
+          {step('Expand all', <ExpandAllIcon />, branch.expandAll)}
+          {step('Collapse all', <CollapseAllIcon />, branch.collapseAll)}
+        </div>
+      )}
       {levels !== null && (
         <div className="ctx-menu__group" role="group">
           {step('Collapse one level', <CollapseAllIcon />, levels.collapseOne)}

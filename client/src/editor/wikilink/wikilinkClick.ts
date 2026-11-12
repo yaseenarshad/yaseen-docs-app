@@ -67,6 +67,10 @@ export interface WikilinkNav extends LinkActions {
   openNewTab?: (path: string) => void
   /** "Open in a background tab": append a background tab (already-open → no-op; focus never moves). */
   openBackground: (path: string) => void
+  /** "Open in Explore" (YAZ-4936): the note as a reading layer of the explore stack. Absent → no row, and a click opens as today. */
+  openExplore?: (path: string) => void
+  /** This vault's "Clicking a link" (YAZ-4936), read at each click: true when a plain click on a note pill opens it in Explore. */
+  exploreClick?: () => boolean
   /** The user's changes of Settings › Hotkeys (`settings.hotkeys`), read at each click: the gestures that open a link. Absent → the defaults. */
   hotkeys?: () => HotkeyOverrides | undefined
   /** Create failure: the passive in-window notice (App's link-notice style), never a dialog. */
@@ -109,12 +113,13 @@ export function wikilinkMatchAt(doc: ProseNode, pos: number): { from: number; to
   return found
 }
 
-/** How a link opens: in this tab, a new tab, or a background tab (YAZ-3936), or a new window (YAZ-4444). */
-export type LinkFollow = (inner: string, where: GestureAction) => void
+/** How a link opens: in this tab, a new tab, or a background tab (YAZ-3936), a new window (YAZ-4444), or Explore (YAZ-4936). */
+export type LinkWhere = GestureAction | 'explore'
+export type LinkFollow = (inner: string, where: LinkWhere) => void
 
-/** The door of `where` (YAZ-3936). A new window is the link menu's "Open in ▸ New window" (YAZ-4444); absent → this tab, as a new tab's. */
-export const openerOf = (nav: WikilinkNav, where: GestureAction): ((path: string) => void) =>
-  where === 'backgroundTab' ? nav.openBackground : where === 'newTab' ? (nav.openNewTab ?? nav.openCurrent) : where === 'newWindow' ? (nav.openNewWindow ?? nav.openCurrent) : nav.openCurrent
+/** The door of `where` (YAZ-3936). A new window is the link menu's "Open in ▸ New window" (YAZ-4444); Explore is a reading layer (YAZ-4936); absent → this tab, as a new tab's. */
+export const openerOf = (nav: WikilinkNav, where: LinkWhere): ((path: string) => void) =>
+  where === 'backgroundTab' ? nav.openBackground : where === 'newTab' ? (nav.openNewTab ?? nav.openCurrent) : where === 'newWindow' ? (nav.openNewWindow ?? nav.openCurrent) : where === 'explore' ? (nav.openExplore ?? nav.openCurrent) : nav.openCurrent
 
 /**
  * Follows the raw `[[inner]]` as an open gesture does: opens it `where` the gesture says; an unresolved link is
@@ -124,7 +129,7 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
   /** The dead links whose note is being made (null), or was made at that path and is not in the index yet (YAZ-2478): a click on one makes nothing more. */
   const making = new Map<string, string | null>()
   return (inner, where) => {
-    const page = linkPageName(inner)
+    const page = linkPageName(inner, source)
     if (page === '') return // same-file [[#h]] — the heading jump is GRO-2239, not this unit
     const background = where === 'backgroundTab'
     const open = openerOf(nav, where)
@@ -242,7 +247,11 @@ export function nearerEdge(view: EditorView, span: Element, from: number, to: nu
  * its raw text. Any other click (⇧, ⌥) is the editor's. The plugin also keeps the hand cursor in step with the held
  * modifiers (`trackLinkHand`).
  */
-export function createWikilinkClick(follow: LinkFollow, hotkeys: () => HotkeyOverrides | undefined = () => undefined) {
+/**
+ * `exploreClick(inner)` (YAZ-4936): true when this vault's "Clicking a link" is Explore and the link is a note that is
+ * there, so a plain click opens it as a reading layer; a board or a folder pill, and an unresolved link, keep today's click.
+ */
+export function createWikilinkClick(follow: LinkFollow, hotkeys: () => HotkeyOverrides | undefined = () => undefined, exploreClick: (inner: string) => boolean = () => false) {
   return $prose(
     () =>
       new Plugin({
@@ -258,7 +267,8 @@ export function createWikilinkClick(follow: LinkFollow, hotkeys: () => HotkeyOve
               if (span === null || !view.dom.contains(span)) return false
               const match = wikilinkMatchAt(view.state.doc, linkPosAtDOM(view, span))
               if (match === null) return false
-              const where = linkClickAction(view, event, hotkeys())
+              // A single plain click follows the vault's "Clicking a link" (YAZ-4936), on a read-only note too (YAZ-4939).
+              const where = linkClickAction(view, event, hotkeys(), () => event.detail === 1 && exploreClick(match.inner))
               if (where !== null) {
                 // From here the gesture is ours: no caret placement, no focus change, no reveal.
                 event.preventDefault()

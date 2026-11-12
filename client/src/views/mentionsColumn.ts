@@ -23,7 +23,7 @@ export function isMentionsColumn(columns: Readonly<Record<string, ColumnDecl>>, 
 function holdsLinkTo(value: unknown, target: string, resolve: ResolveLink): boolean {
   const values = Array.isArray(value) ? value : [value]
   return values.some((v) => {
-    const link = typeof v === 'string' ? exactLinkTarget(v) : null
+    const link = typeof v === 'string' ? exactLinkTarget(v, (page) => resolve(page) !== null) : null
     return link !== null && resolve(link) === target
   })
 }
@@ -41,7 +41,7 @@ interface Narrowing {
 }
 
 const narrowingOf = (from: MentionsFrom | undefined, resolve: ResolveLink): Narrowing => ({
-  ...(from?.folder !== undefined && { dir: resolve(exactLinkTarget(from.folder) ?? from.folder) }),
+  ...(from?.folder !== undefined && { dir: resolve(exactLinkTarget(from.folder, (page) => resolve(page) !== null) ?? from.folder) }),
   ...(from?.column !== undefined && { column: from.column }),
 })
 

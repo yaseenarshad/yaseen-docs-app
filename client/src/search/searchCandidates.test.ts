@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { SEARCH_CAP, fileCandidates, folderCandidates, searchCandidates, searchRows, searchTitles } from './searchCandidates'
+import { SEARCH_CAP, fileCandidates, folderCandidates, idQuery, numberRows, searchCandidates, searchRows, searchTitles } from './searchCandidates'
+import { idNeedle } from './marked'
 
 const rec = (path: string, aliases: string[] = [], title?: string): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -395,5 +396,90 @@ describe('searchRows: the search box finds a note by its number (YAZ-2677 D9)', 
     const shown = searchRows([...many, ...rows], '12')
     expect(shown).toHaveLength(SEARCH_CAP)
     expect(shown.slice(0, 2).map((c) => c.id)).toEqual(['YAZ-12', 'BUS-12'])
+  })
+})
+
+describe('`#5` finds a note by its ID number alone (YAZ-2571 round 5)', () => {
+  const note = (path: string, title: string, id: string): IndexRecord => ({ ...rec(path, [], title), id })
+  // The vault of the issue's pictures: many titles hold a 5, and EMB-5 has a long name. The records stand out of number order.
+  const emb = [
+    note('/emb/emb-37.md', '25 Table subheader rows', 'EMB-37'),
+    note('/emb/emb-6.md', '05 The view is remembered', 'EMB-6'),
+    note('/emb/emb-5.md', '04 Resize04 Resize04 Resize04 Resize04', 'EMB-5'),
+    note('/emb/emb-16.md', '15 Read-only note', 'EMB-16'),
+    note('/emb/emb-300.md', 'Three hundred', 'EMB-300'),
+    note('/emb/emb-31.md', 'Thirty-one', 'EMB-31'),
+    note('/emb/emb-3.md', 'Three', 'EMB-3'),
+    note('/emb/emb-30.md', 'Thirty', 'EMB-30'),
+    note('/emb/old-k3m9x2pq7ab5.md', 'Old 5', 'k3m9x2pq7ab5'),
+    rec('/emb/Release #5.md'),
+  ]
+  const rows = [...folderCandidates('/emb', ['/emb/area'], [{ ...rec('/emb/area/.folder.md', [], 'Area'), id: 'EMB-35' }], ['EMB']), ...searchCandidates(emb, ['EMB'])]
+  const found = (query: string, list = rows) => searchRows(list, query).map((c) => c.label)
+
+  it('idQuery reads `#` and digits alone; any other text is no ID search', () => {
+    expect(['#5', ' #37 ', '#05'].map(idQuery)).toEqual(['5', '37', '05'])
+    expect(['5', '#', '#5a', '# 5', '#tag', 'emb-5', '##5'].map(idQuery)).toEqual([null, null, null, null, null, null, null])
+  })
+
+  it('1. `#5` is EMB-5 alone, under its full ID, though many titles hold a 5', () => {
+    expect(found('#5')).toEqual(['EMB-5 — 04 Resize04 Resize04 Resize04 Resize04'])
+  })
+
+  it('1. `#3` is EMB-3 first, then each ID whose number starts with 3, in number order, a folder too; no title match, no old ID', () => {
+    expect(searchRows(rows, '#3').map((c) => c.id)).toEqual(['EMB-3', 'EMB-30', 'EMB-31', 'EMB-35', 'EMB-37', 'EMB-300'])
+    expect(found('#37')).toEqual(['EMB-37 — 25 Table subheader rows'])
+  })
+
+  it('1. two vaults: each note of that number comes first, in the window\'s order', () => {
+    const two = [...rows, ...searchCandidates([note('/bus/bus-3.md', 'Bus three', 'BUS-3'), note('/bus/bus-32.md', 'Bus 32', 'BUS-32')], ['BUS'])]
+    expect(searchRows(two, '#3').map((c) => c.id)).toEqual(['EMB-3', 'BUS-3', 'EMB-30', 'EMB-31', 'BUS-32', 'EMB-35', 'EMB-37', 'EMB-300'])
+  })
+
+  it('1. a number no ID starts with finds nothing in a vault with IDs: no text fallback', () => {
+    expect(found('#9')).toEqual([])
+    expect(found('#05')).toEqual([])
+  })
+
+  it('1. pinned rows lead inside each part, and the exact number stays first', () => {
+    expect(searchRows(rows, '#3', new Set(['/emb/emb-37.md', '/emb/emb-31.md'])).map((c) => c.id)).toEqual(['EMB-3', 'EMB-31', 'EMB-37', 'EMB-30', 'EMB-35', 'EMB-300'])
+  })
+
+  it('1. the rows are capped as the other searches are', () => {
+    const many = searchCandidates(Array.from({ length: 80 }, (_, i) => note(`/emb/n-${i}.md`, `N ${i}`, `EMB-${1000 + i}`)))
+    const shown = searchRows(many, '#1')
+    expect(shown).toHaveLength(SEARCH_CAP)
+    expect(shown[0].id).toBe('EMB-1000')
+  })
+
+  it('a vault without IDs is unchanged: `#5` reads as text, as before', () => {
+    const plain = searchCandidates([rec('/v/Release #5.md'), rec('/v/Plan 5.md'), rec('/v/Other.md')])
+    expect(numberRows(plain, '5')).toBeNull()
+    expect(searchRows(plain, '#5')).toEqual(searchTitles(plain, '#5'))
+    expect(searchRows(plain, '#5').map((c) => c.label)).toEqual(['Release #5', 'Plan 5'])
+  })
+
+  it('`#tag`, `#` and `#5a` are no ID search: the title search, row for row', () => {
+    for (const typed of ['#tag', '#', '#5a', '# 5']) expect(searchRows(rows, typed)).toEqual(searchTitles(rows, typed))
+  })
+
+  it('2. a bare `5` is EMB-5 first, then the title matches as before; `emb-5`, `EMB5` and `emb 5` are EMB-5 first', () => {
+    expect(found('5')).toEqual(['EMB-5 — 04 Resize04 Resize04 Resize04 Resize04', '25 Table subheader rows', '05 The view is remembered', '15 Read-only note', 'Old 5', 'Release #5'])
+    for (const typed of ['emb-5', 'EMB5', 'emb 5']) expect(found(typed)[0]).toBe('EMB-5 — 04 Resize04 Resize04 Resize04 Resize04')
+  })
+
+  it('3. idNeedle: the digits to mark in the chip of a row found by its ID, none for another row', () => {
+    const [byHash] = searchRows(rows, '#3')
+    expect(idNeedle(byHash, '#3')?.text).toBe('3')
+    const thirty = searchRows(rows, '#3')[1]
+    expect(idNeedle(thirty, '#3')?.text).toBe('3')
+    const [bare] = searchRows(rows, '37')
+    expect(idNeedle(bare, '37')?.text).toBe('37')
+    const [lettered] = searchRows(rows, 'emb 5')
+    expect(idNeedle(lettered, 'emb 5')?.text).toBe('5')
+    // EMB-16 is found by its title "15 Read-only note": its chip shows no mark.
+    const byTitle = searchRows(rows, '5').find((c) => c.id === 'EMB-16')
+    expect(byTitle).toBeDefined()
+    expect(idNeedle(byTitle!, '5')).toBeUndefined()
   })
 })

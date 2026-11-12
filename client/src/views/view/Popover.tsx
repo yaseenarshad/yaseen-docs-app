@@ -1,4 +1,5 @@
-import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cssZoom } from '../../lib/cssZoom'
 
 interface PopoverProps {
@@ -11,6 +12,13 @@ interface PopoverProps {
   anchor?: HTMLElement | null
   /** What takes the keyboard on open: the first control (default), or only a text field, else the popover itself. */
   focusOn?: 'control' | 'field'
+  /**
+   * On the body, not in the trigger's tree (YAZ-4878 demo, a dropdown inside the View tab): a popover that fits itself
+   * with a `translate` (`constrainToViewport`) is a containing block for a `position: fixed` child, which was placed
+   * off the window and cut by the tab's scroll. Needs `anchor`. A mousedown in it never reaches the outer popover's
+   * click-away, and its Escape closes it alone.
+   */
+  portal?: boolean
   children: ReactNode
 }
 
@@ -22,7 +30,10 @@ interface PopoverProps {
  * to the viewport like `ContextMenu`, so a clipping ancestor cannot cut it off — and
  * outside scrolling or window resizing closes it. Content resizing refits it in place.
  */
-export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false, focusOn = 'control' }: PopoverProps) {
+/** The least room an anchored popover keeps from the window's edges. */
+const EDGE = 8
+
+export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false, focusOn = 'control', portal = false }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<CSSProperties>()
 
@@ -44,8 +55,9 @@ export function Popover({ label, onClose, className, anchor, children, constrain
       // Measured on screen; written in the popover's own px (YAZ-3746 13AM): inside a zoomed folder page a fixed box's
       // `top` and `left` are scaled by the zoom, so the menu drifted right and down as the page zoomed in.
       const z = cssZoom(el)
-      const top = Math.max(0, Math.min(a.bottom + 6, window.innerHeight - r.height)) / z
-      const left = Math.max(0, Math.min(a.left, window.innerWidth - r.width)) / z
+      // Never against the window's edge: an 8 px margin on every side (the checker of YAZ-4820: the Style panel touched it).
+      const top = Math.max(EDGE, Math.min(a.bottom + 6, window.innerHeight - r.height - EDGE)) / z
+      const left = Math.max(EDGE, Math.min(a.left, window.innerWidth - r.width - EDGE)) / z
       setPos(previous => previous?.top === top && previous.left === left ? previous : { position: 'fixed', top, left })
     }
     fit()
@@ -129,7 +141,19 @@ export function Popover({ label, onClose, className, anchor, children, constrain
     }
   }, [anchor, onClose])
 
-  return (
+  // The outer popover's click-away and Escape listen on the window: a portal's events stop before them (React stops the
+  // native event at its root), so the outer stays while this one closes.
+  const keep = portal
+    ? {
+        onMouseDown: (e: ReactMouseEvent) => e.stopPropagation(),
+        onKeyDown: (e: ReactKeyboardEvent) => {
+          if (e.key !== 'Escape') return
+          e.stopPropagation()
+          onClose()
+        },
+      }
+    : {}
+  const node = (
     <div
       ref={ref}
       className={`view-popover${className ? ` ${className}` : ''}${anchor ? ' view-popover--fixed' : ''}`}
@@ -137,8 +161,10 @@ export function Popover({ label, onClose, className, anchor, children, constrain
       role="dialog"
       aria-label={label}
       tabIndex={-1}
+      {...keep}
     >
       {children}
     </div>
   )
+  return portal ? createPortal(node, document.body) : node
 }

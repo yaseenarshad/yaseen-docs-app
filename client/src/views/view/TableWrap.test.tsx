@@ -69,6 +69,7 @@ afterEach(() => {
   container = null
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 const q = <T extends Element>(el: ParentNode, sel: string): T => {
@@ -136,7 +137,7 @@ describe('"Wrap text" and "Clip text" in the column header menu (YAZ-4582, D29)'
     rightClick(th(el, 1))
     const parents = [...el.querySelectorAll('.ctx-menu [aria-haspopup="menu"]')].map((b) => b.textContent)
     // Then the column's fill flyout, in its own group (YAZ-3746 13AQ), and the header row's look (YAZ-4794).
-    expect(parents).toEqual(['Sort', 'Group', 'Text', 'Fill column', 'Header row'])
+    expect(parents).toEqual(['Sort', 'Group', 'Filter', 'Text', 'Fill column', 'Header row'])
   })
 })
 
@@ -158,12 +159,70 @@ describe('the ✓ and the cells read the kind from ONE source (YAZ-4544 4E)', ()
 })
 
 describe('the cells of a Wrap or a Clip column (YAZ-4582)', () => {
-  it('with no choice: the chip column wraps, with no clip class and no title; the text column clips, its full value in title', () => {
+  it('with no choice: the chip column wraps, with no clip class and no tooltip; the text column clips, its full value kept for the tooltip', () => {
     const { el } = mount(table())
-    expect(column(el, 1).some((td) => td.classList.contains(CLIP) || td.hasAttribute('title'))).toBe(false)
+    expect(column(el, 1).some((td) => td.classList.contains(CLIP) || td.hasAttribute('data-clip-title'))).toBe(false)
     const status = column(el, 2)
     expect(status.every((td) => td.classList.contains(CLIP))).toBe(true)
-    expect(status[0].title).toBe('idea')
+    expect(status[0].dataset.clipTitle).toBe('idea')
+  })
+
+  it('YAZ-4867, YAZ-4901: the full value shows on hover only when the text is really cut, as the app\'s card after 250 ms, never as a tooltip', () => {
+    vi.useFakeTimers()
+    const { el } = mount(table())
+    const cell = column(el, 2)[0]
+    const widths = (scroll: number, client: number) => {
+      Object.defineProperty(cell, 'scrollWidth', { configurable: true, value: scroll })
+      Object.defineProperty(cell, 'clientWidth', { configurable: true, value: client })
+    }
+    const card = () => document.querySelector<HTMLElement>('.cell-note-preview')
+    const hover = (target: Element = cell) => act(() => target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+    const leave = () => act(() => el.querySelector('.view-table')!.closest('div')!.dispatchEvent(new MouseEvent('mouseleave')))
+    widths(40, 120) // "idea" fits: no card
+    hover()
+    act(() => vi.advanceTimersByTime(250))
+    expect(card()).toBeNull()
+    expect(cell.hasAttribute('title')).toBe(false)
+    leave()
+    widths(300, 120) // the column got narrow: cut, so the full value shows
+    hover()
+    act(() => vi.advanceTimersByTime(249))
+    expect(card()).toBeNull()
+    act(() => vi.advanceTimersByTime(1))
+    expect([...card()!.querySelectorAll('.cell-note-preview__text-line')].map((line) => line.textContent)).toEqual(['idea'])
+    expect(cell.hasAttribute('title')).toBe(false)
+    // Off the table for 500 ms, wide again: the card goes and none comes.
+    leave()
+    expect(card()).toBeNull()
+    act(() => vi.advanceTimersByTime(500))
+    widths(40, 120)
+    hover()
+    act(() => vi.advanceTimersByTime(250))
+    expect(card()).toBeNull()
+  })
+
+  it('YAZ-4895: a cut cell gets no card once its column switches to Wrap', () => {
+    vi.useFakeTimers()
+    const { el } = mount(table())
+    const cell = column(el, 2)[0]
+    Object.defineProperty(cell, 'scrollWidth', { configurable: true, value: 300 })
+    Object.defineProperty(cell, 'clientWidth', { configurable: true, value: 120 })
+    act(() => cell.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+    act(() => vi.advanceTimersByTime(250))
+    expect(document.querySelector('.cell-note-preview')).not.toBeNull()
+    // A real click starts with a mousedown, which closes the card.
+    act(() => window.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(document.querySelector('.cell-note-preview')).toBeNull()
+    textMenu(th(el, 2))
+    act(() => item(el, 'Wrap text').click())
+    // The cell, wrapped now, has no value waiting: no card, however narrow.
+    const wrapped = column(el, 2)[0]
+    Object.defineProperty(wrapped, 'scrollWidth', { configurable: true, value: 300 })
+    Object.defineProperty(wrapped, 'clientWidth', { configurable: true, value: 120 })
+    act(() => wrapped.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+    act(() => vi.advanceTimersByTime(250))
+    expect(document.querySelector('.cell-note-preview')).toBeNull()
+    expect(wrapped.hasAttribute('title')).toBe(false)
   })
 
   it('a clipped chip column has its whole list in title', () => {
@@ -171,13 +230,13 @@ describe('the cells of a Wrap or a Clip column (YAZ-4582)', () => {
     const tags = column(el, 1)
     expect(tags.every((td) => td.classList.contains(CLIP))).toBe(true)
     // Agentic Agency's tags: the whole list, as text.
-    expect(tags[0].title).toBe('agentic, pillar')
+    expect(tags[0].dataset.clipTitle).toBe('agentic, pillar')
   })
 
   it('the Name column is one line with the title in title, unless the view wraps it', () => {
     const one = mount(table())
     expect(column(one.el, 0)[0].classList.contains(CLIP)).toBe(true)
-    expect(column(one.el, 0)[0].title).toBe('Agentic Agency')
+    expect(column(one.el, 0)[0].dataset.clipTitle).toBe('Agentic Agency')
     act(() => root?.unmount())
     container?.remove()
     const wrapped = mount(table('    columnWrap:\n      file.name: true\n'))

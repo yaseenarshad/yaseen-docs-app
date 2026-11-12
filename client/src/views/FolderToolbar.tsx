@@ -14,12 +14,14 @@
  * toolbar alone, never the views.
  */
 import { createContext, useSyncExternalStore, type ReactNode } from 'react'
+import { ViewTypeIcon } from './view/icons'
 import type { FolderPagesSettings, GithubSyncStatus } from '@shared/types'
 import { type Hint, PageSettings, type PageSettingsProps, type PageSwitch } from '../editor/PageSettings'
 import { MarkGlyph } from './view/ColumnMark'
 import { StatusChips } from '../editor/StatusChips'
 import type { SaveStatus } from '../lib/autosave'
 import type { Store } from '../lib/store'
+import type { AllowFor } from '../editor/useTimedUnlock'
 
 /**
  * THE HOOK FOR THE PAGE TAB (YAZ-3746 10D, D35): what the Page tab hands the folder page's toolbar while it shows.
@@ -57,17 +59,24 @@ export const FOLDER_READ_ONLY_TIP = 'This folder page is read only'
 const SAVE_RANK: Record<SaveStatus, number> = { saved: 0, unsaved: 1, saving: 2, error: 3 }
 const worse = (a: SaveStatus, b: SaveStatus): SaveStatus => (SAVE_RANK[a] >= SAVE_RANK[b] ? a : b)
 
-export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, showNewButtons, onChangeShowNewButtons, name, sync, onSyncNow }: {
+export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil = null, onLock, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, showNewButtons, onChangeShowNewButtons, views, defaultView, onChangeDefaultView, name, sync, onSyncNow }: {
   store: Store<FolderChipsState>
   zoom: number
   onZoom: (zoom: number) => void
+  /** The folder page is under Read only: its own switch, or the vault's (YAZ-4939). The chip shows while it is. */
   readOnly: boolean
-  /** Off → the host turns it on; on → the host opens the chip's "Allow edits?" box, as a note's cog does. */
+  /** Off → the host turns it on; on → the host opens the chip's "Allow edits?" box, as a note's cog does; on while a timed unlock runs → "Lock now". */
   onToggleReadOnly: () => void
   asking: boolean
   onAsk: () => void
-  onAllow: () => void
+  /** A time choice (YAZ-4939): the host unlocks this tab for that long. */
+  onAllow: (choice: AllowFor) => void
   onCancel: () => void
+  /** "Turn Read only off": the folder page's own switch, in `.folder.md`. Absent while the vault's lock would keep it locked anyway. */
+  onTurnOff?: () => void
+  /** A timed unlock runs: when it ends, or Infinity until the tab closes; null = locked. */
+  editingUntil?: number | null
+  onLock?: () => void
   /** The folder's own choice: `undefined` follows Settings. */
   showPageFile: boolean | undefined
   onChangeShowPageFile: (next: boolean | undefined) => void
@@ -94,6 +103,10 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
   /** The folder's own "Show where columns come from" (YAZ-4713 C11): `undefined` follows Settings. Absent: no row. */
   columnMarks?: FolderPagesSettings['columnMarks'] | undefined
   onChangeColumnMarks?: (next: FolderPagesSettings['columnMarks'] | undefined) => void
+  /** "Default view" (YAZ-4909, from the View tab since YAZ-1104): the page's views (name and type), the saved START (`defaultView`, a name, else the first view) and its ONE writer. Absent: no Views section. */
+  views?: readonly { name: string; type: string }[]
+  defaultView?: string
+  onChangeDefaultView?: (next: string | undefined) => void
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
 }) {
@@ -146,17 +159,33 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
       ],
       true,
     ),
+    // YAZ-4909 (Yaseen: "doesn't this option belong on the folder page level and not in an individual view?"): the folder's
+    // saved START, First view or a view by name, as ONE dropdown line whatever the number of views (Yaseen: "as the number
+    // of views increases this menu is just going to get wider and wider").
+    ...(views === undefined || onChangeDefaultView === undefined
+      ? []
+      : section('Views', [
+          {
+            label: 'Default view',
+            hint: 'The view this page opens on. A view renamed or deleted keeps or clears it.',
+            menu: {
+              value: defaultView !== undefined && views.some((v) => v.name === defaultView) ? defaultView : '',
+              options: [{ value: '', label: 'First view' }, ...views.map((v) => ({ value: v.name, label: v.name, icon: <ViewTypeIcon type={v.type} /> }))],
+              onPick: (value) => onChangeDefaultView(value === '' ? undefined : value),
+            },
+          },
+        ])),
     ...section('Preview on hover', [
       choiceRow('Rows', 'Rest the mouse on a row, a card or a line of Other files to see the file.', hoverRows, onChangeHoverRows),
       choiceRow('Links', 'Rest the mouse on a link pill in a cell to see the linked note.', hoverLinks, onChangeHoverLinks),
     ]),
     ...section('Safety', [
-      { label: 'Read only', readOnlySlot: true, inline: true, hint: "Locks this folder page: its title, its views and its settings. Each note keeps its own Read only." },
+      { label: 'Read only', readOnlySlot: true, inline: true, hint: "Locks this folder page: its title, its columns and its settings. Sort, filter and the other view changes still work. Each note keeps its own Read only." },
       ...(onChangeConfirmChanges === undefined ? [] : [choiceRow('Confirm changes', 'A change to a note from this page (a typed cell, Delete, Paste, a drag to another group or day, a rename) asks first.', confirmChanges, onChangeConfirmChanges)]),
     ]),
   ]
   return (
-    <StatusChips zoom={zoom} onZoom={onZoom} readOnly={readOnly ? { asking, onAsk, onAllow, onCancel } : null} sync={sync} onSyncNow={onSyncNow} save={page === null ? save : worse(save, page.save)}>
+    <StatusChips zoom={zoom} onZoom={onZoom} readOnly={readOnly ? { asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil, onLock } : null} sync={sync} onSyncNow={onSyncNow} save={page === null ? save : worse(save, page.save)}>
       {page?.foldAll}
       {/* The folder page's own settings only (YAZ-3746 13BM PS2): the Page tab's text settings are on its toolbar (`Toolbar`). */}
       <PageSettings readOnly={readOnly} onToggleReadOnly={onToggleReadOnly} switches={switches} switchesHeading={`${name} (folder page)`} />

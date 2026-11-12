@@ -20,10 +20,16 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pathTitles } from '../../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
+import { boardCheckOf } from '../drawing/boardEmbedScan'
+import { boardEmbedTarget } from '../drawing/boardEmbedText'
+import { inCellOrNote } from '../table/cellBlocks'
 import { OPEN_ID_LINK } from './idLinkCaret'
+import { fileKind } from '@shared/fileKind'
+import { newEmbed } from '@shared/embedOptions'
 import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from './wikilinkClick'
-import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
+import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, linkSplit, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
+import { pillStyleRow } from './pillStyle'
 
 const wikilinkMenuKey = new PluginKey('mdapp-wikilink-menu')
 
@@ -41,22 +47,32 @@ function linkAt(view: EditorView, target: EventTarget | null): { from: number; t
  * `[[GPT-4]]` is a name there (R6). As the app writes it, whatever the link's case.
  */
 function idOf(inner: string, source: WikilinkResolveSource): string | null {
-  return linkNoteId(linkPageName(inner), source) ?? null
+  return linkNoteId(linkPageName(inner, source), source) ?? null
 }
 
 /** The one link menu of the `[[inner]]` at `from`..`to` (YAZ-3740, YAZ-3905). */
-function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined): LinkMenu {
+function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, keep: (run: () => void) => () => void): LinkMenu {
+  // The page side of the link, on either side of the `|` (`splitLink`, YAZ-4935).
+  const { head: target, pipe, pageFirst } = linkSplit(inner, source)
   // The caret inside the raw `[[…]]`, its target selected: the link shows as text to type over.
   const edit = view.editable
     ? () => {
         // The one way into an ID link (YAZ-3744 D1): the caret plugin lets this selection stay inside.
-        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from + 2, from + 2 + inner.split('|')[0].length)).setMeta(OPEN_ID_LINK, true))
+        const at = from + 2 + (pipe >= 0 && !pageFirst ? pipe + 1 : 0)
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at, at + target.length)).setMeta(OPEN_ID_LINK, true))
         view.focus()
       }
     : undefined
   // The text the link shows stays, as plain text: the same rule as the pill's (YAZ-3778 D2, D3, S12).
   const remove = view.editable ? (text: string) => view.dispatch(view.state.tr.insertText(text, from, to)) : undefined
-  return linkMenuOf(inner, source, nav, follow, viewOnly, vaultsOf, edit, remove)
+  const menu = linkMenuOf(inner, source, nav, follow, viewOnly, vaultsOf, edit, remove)
+  // This link's own style (YAZ-4924 round 5): the toolbar's marks around the whole `[[…]]`.
+  menu.pillStyle = pillStyleRow(view, from, to, keep)
+  // A drawing's or a diagram's link (YAZ-4829 D8): `!` before it, and an alias goes, as the embed shows the board's name.
+  // Not in a table cell: embeds there are out of scope (the checker's round 1).
+  // An id link to a board (YAZ-4920) is one too: the host's check says so.
+  if (view.editable && boardEmbedTarget(target, boardCheckOf(view.state)) !== null && !inCellOrNote(view.state.doc.resolve(from))) menu.showAsEmbed = () => view.dispatch(view.state.tr.insertText(newEmbed(target), from, to))
+  return menu
 }
 
 /**
@@ -64,11 +80,11 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
  * `remove` are the place's own; absent (a read-only page), their rows are left out. `remove` gets the text to leave.
  */
 export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, edit: (() => void) | undefined, removeWith: ((text: string) => void) | undefined): LinkMenu {
-  const page = linkPageName(inner)
+  const page = linkPageName(inner, source)
   const titles = pathTitles(source.records, source.folders)
   const titleOf = (target: string) => idLinkTitle(target, source.resolve, titles)
   const named = () => linkIsResolved(inner, source, viewOnly)
-  const remove = removeWith === undefined ? undefined : () => removeWith(linkDisplayText(inner, titleOf, named))
+  const remove = removeWith === undefined ? undefined : () => removeWith(linkDisplayText(inner, titleOf, named, source))
   const copyIdRow = (id: string) => () => copyText(id, 'ID', nav.onNotice, undefined, true)
   // A note that is gone (S10) and an ID of another vault (S23): what can be said, the ID to copy, and the link's own rows.
   const missing = missingId(inner, source)
@@ -88,6 +104,8 @@ export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: Wi
     // `[[#heading]]` of this note: the heading jump is GRO-2239, so nothing to open.
     open: page === '' ? undefined : () => follow(inner, 'thisTab'),
     openNew: page === '' ? undefined : () => follow(inner, 'backgroundTab'),
+    // "Open in Explore" (YAZ-4936): a note that is there, where the host has the door.
+    openExplore: path !== null && fileKind(path) === 'markdown' && nav.openExplore !== undefined ? () => follow(inner, 'explore') : undefined,
     ...(id !== null && title !== undefined
       ? { copyNameAndId: () => copyText(nameAndId(title, id), 'name and ID', nav.onNotice, undefined, true) }
       : shown !== '' && found ? { copyName: () => copyText(shown, 'name', nav.onNotice, undefined, true) } : {}),
@@ -101,6 +119,16 @@ export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: Wi
 export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly?: ViewOnlyLinkSource, vaultsOf?: VaultsOfLetters) {
   return $prose(() => {
     let close = () => {}
+    // True while a "Pill style" pick runs: its own change to the note keeps the menu open (the flyout stays).
+    let holding = false
+    const keep = (run: () => void) => () => {
+      holding = true
+      try {
+        run()
+      } finally {
+        holding = false
+      }
+    }
     return new Plugin({
       key: wikilinkMenuKey,
       props: {
@@ -118,14 +146,15 @@ export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkN
             event.preventDefault()
             close()
             const { from, to, inner } = hit
-            close = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(menuOf(view, from, to, inner, source, nav, follow, viewOnly, vaultsOf)))
+            const rows = () => linkMenuRows(menuOf(view, from, to, inner, source, nav, follow, viewOnly, vaultsOf, keep))
+            close = openMenuAt(parent, event.clientX, event.clientY, rows(), rows)
             return true
           },
         },
       },
       view: () => ({
         update: (view, previousState) => {
-          if (view.state.doc !== previousState.doc) close()
+          if (view.state.doc !== previousState.doc && !holding) close()
         },
         destroy: () => close(),
       }),

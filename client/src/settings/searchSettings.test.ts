@@ -12,10 +12,12 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
+// Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
+const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and
 // their style (YAZ-4798) after Group indent.
-const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
+const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 const ids = (hits: readonly SettingHit[]) => hits.map((h) => h.item.id)
 /** The Hotkeys page's rows, in page order. */
 const hotkeyRows = () => ids(settingCandidates(ctx()).filter((h) => h.section.id === 'hotkeys'))
@@ -89,7 +91,14 @@ describe('settingCandidates', () => {
       // Settings › Tables, a page of its own after Editor (YAZ-4775); its "All tables" group (YAZ-4167 D16, YAZ-4162 D6,
       // D14) starts with Header row (YAZ-4774) and Width (YAZ-4783).
       'tableHeaderRow',
+      // Subheader row and Sticky subheaders (YAZ-4899) next to it.
+      'tableSubheaderRow',
+      'tableStickyHeader',
+      'tableStickySubheaders',
       'tableWidth',
+      // Text in cells (YAZ-4900).
+      'tableTextInCells',
+      'tableNewStyle',
       'tableRowBand',
       'tableBandColour',
       'tableBandStrength',
@@ -115,6 +124,9 @@ describe('settingCandidates', () => {
       'codeLanguageHelpers',
       // Settings › Drawings (YAZ-3037; "Excalidraw canvas" before the YAZ-3818 demo).
       ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
+      // Its embeds group (YAZ-4820 D9, item 3), before the draw.io group.
+      'embedRestSeconds',
+      'newBoardFolder',
       // Its last group, draw.io diagrams (YAZ-4748 D11: "Drawings and diagrams"; before, Appearance's last row).
       'diagramDarkColors',
       // Settings › Images (YAZ-3038).
@@ -146,15 +158,25 @@ describe('settingCandidates', () => {
       // Settings › Files & Links › Preview on hover (YAZ-3403): the master switch, then one row per place.
       'hoverPreview',
       ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`),
+      // This vault (YAZ-4938, YAZ-4940, YAZ-4936, YAZ-4939): the word for a note, the Show IDs block (search, title, files list), Clicking a link, Read only, then the IDs rows.
+      'unitWord',
+      'showIds',
+      'showIds.title',
+      'showIds.files',
+      'linkClick',
+      'readOnlyVault',
       'ids',
       'duplicates',
       'idLetters',
       'oldIds',
+      // Settings › Link pills (YAZ-4924), after This vault.
+      ...LINK_PILL_ROWS,
       // Settings › Folder pages (YAZ-4585): the folder views' hover row moved here from Files & Links.
       ...FOLDER_PAGES_ROWS,
       // Settings › Memory (YAZ-3737 D9, D10): the report, then the two settings that save memory.
       'memoryWindows',
       'tabSleepAfter',
+      'embedPictures',
       'memoryReload',
       // Settings › Hotkeys (YAZ-3397 D5): one candidate per KEY, so a search finds the row, not the table.
       ...hotkeyRows(),
@@ -180,7 +202,7 @@ describe('settingCandidates', () => {
 
   it('includes the Review section only with a vault open, between Files & Links and Sync (YAZ-2322)', () => {
     const all = ids(settingCandidates(ctx({ status: null, setEnabled: () => undefined }, REVIEW)))
-    expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', 'duplicates', 'idLetters', 'oldIds', ...FOLDER_PAGES_ROWS, ...REVIEW_ROWS, 'githubSync'])
+    expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS, ...FOLDER_PAGES_ROWS, ...REVIEW_ROWS, 'githubSync'])
     expect(ids(settingCandidates(ctx())).filter((id) => REVIEW_ROWS.includes(id))).toEqual([])
   })
 
@@ -241,7 +263,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'ids', 'duplicates', 'idLetters', 'oldIds'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'unitWord', 'showIds', 'showIds.title', 'showIds.files', 'linkClick', 'readOnlyVault', 'ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
@@ -276,7 +298,7 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines', 'folderPages.groupLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403). The Add panel's Hover zoom (YAZ-4447, D34)
     // leads: its label starts with the word, after the drawing's Hover outline (YAZ-4469 demo), which comes first in registry order.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['canvas.hoverOutline', 'mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'tableRowBand' /* its hint names Folder pages › Row band on hover (YAZ-4608 C5) */, 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.groupLines' /* On hover (YAZ-4798) */, 'hotkey-code-showHover'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['canvas.hoverOutline', 'mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'tableTextInCells' /* its hint says hover a cut cell (YAZ-4900) */, 'tableRowBand' /* its hint names Folder pages › Row band on hover (YAZ-4608 C5) */, 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.groupLines' /* On hover (YAZ-4798) */, 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
   })
@@ -345,7 +367,7 @@ describe('searchSettings', () => {
     // "underline" is also a word of Appearance › Text formatting (YAZ-3068); a note and a draw.io diagram both
     // underline with ⌘U (YAZ-3037): both rows answer, the note's first (its label is the word). The Selection toolbar
     // row has the word among its keywords (YAZ-3806 T7), and so do the two "Enter keeps the text style" rows (YAZ-3746 13AB).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar', 'enterKeepsStyleNotes', 'enterKeepsStyleBoxes'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar', 'enterKeepsStyleNotes', 'enterKeepsStyleBoxes', 'linkPills'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-app-menuExportExcalidrawDrawing', 'hotkey-drawing-saveAs'])
     // A changed key is searched by the key it has NOW.
     const moved = { ...ctx(), settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K' } } }

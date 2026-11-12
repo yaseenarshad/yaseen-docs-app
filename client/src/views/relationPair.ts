@@ -15,7 +15,8 @@ import { rowPage } from '../links/shortcuts'
 import { CHANGE_CANCELLED } from './confirmChanges'
 import { pruneStored } from './deleteColumn'
 import { type ColumnDecl, insertFolderColumn, rebaseSettings, removeFolderColumn, rewriteFolderViews, writeFolderColumn } from './folderSettings'
-import { READ_ONLY_TIP } from './readOnlyRows'
+import { readOnlyTip } from './readOnlyRows'
+import type { UnitText } from '../vault/unitWord'
 import { transformFile } from './writeProperty'
 
 /** R1: the tied column of link column `key` among `columns` — its `from` names `key` and a folder `owns` says is the link column's — or undefined. */
@@ -59,7 +60,7 @@ export async function removeTiedColumn(path: string, key: string, decl: ColumnDe
 const listOf = (value: unknown): unknown[] => (Array.isArray(value) ? value : value == null || value === '' ? [] : [value])
 
 /** The page a stored link names (a `[[…]]` or bare text), or null. */
-const pageOf = (v: unknown, resolve: ResolveLink): string | null => (typeof v === 'string' && v.trim() !== '' ? resolve(exactLinkTarget(v) ?? v.trim()) : null)
+const pageOf = (v: unknown, resolve: ResolveLink): string | null => (typeof v === 'string' && v.trim() !== '' ? resolve(exactLinkTarget(v, (page) => resolve(page) !== null) ?? v.trim()) : null)
 
 /** R2: what a tied cell's write changes — the pages `next` holds and `before` does not (`add`), and the other way (`remove`). A link in `next` that names no page refuses the write. */
 export function pairPlan(before: unknown, next: unknown, resolve: ResolveLink): { add: string[]; remove: string[] } {
@@ -121,6 +122,8 @@ export interface TiedCellWrite {
   ask: (text: string) => Promise<boolean>
   /** The record's title as the UI shows it. */
   titleOf: (link: string) => string
+  /** The vault's word for a note (YAZ-4938), for the refusal of a read-only note. */
+  unit?: UnitText
 }
 
 /**
@@ -152,7 +155,7 @@ export async function writeTiedCell(w: TiedCellWrite): Promise<PairWritten> {
       await transformFile(record.path, (content) => {
         const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
         if (parsed.error) throw new FrontmatterWriteError(parsed.error)
-        if (isReadOnlyProperties(parsed.properties)) throw new Error(READ_ONLY_TIP)
+        if (isReadOnlyProperties(parsed.properties)) throw new Error(readOnlyTip(w.unit))
         was = parsed.properties[w.column]
         const value = pairedValue(was, w.rowLink, page, on, w.multi, w.resolve)
         return value === was ? content : setFrontmatterProperty(content, w.column, value)

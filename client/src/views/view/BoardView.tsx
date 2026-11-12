@@ -1,4 +1,5 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { ViewFind } from './viewFind'
 import type { IndexRecord } from '@shared/types'
 import { type Modifiers, openByGesture, openByKey, openTarget } from '../../lib/openGesture'
@@ -6,11 +7,13 @@ import { newWindowClick } from '../../lib/newWindowClick'
 import { rowPage } from '../../links/shortcuts'
 import { pageColumnKeys, type FolderSettings } from '../folderSettings'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
-import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import { type Group, type Row, propertyKeys } from '../engine'
 import type { Resolver } from '../expr'
 import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
-import { GroupHeader, rowCell, rowTitle } from './GroupHeader'
+import { GroupHeader, rowTitle } from './GroupHeader'
+import { CardLine, CardProp, cardLines, cardStyleAttrs } from './cardLines'
+import { CardStyleFlyout, type CardStyleWrite } from './CardStyleMenu'
 import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
@@ -57,6 +60,8 @@ export interface BoardViewProps {
   onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
   /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
+  /** "Card style ›" in a card's right-click (YAZ-4906, YAZ-4834 P5): the note's `color`, `text_color` and `weight`, as the calendar card's. Absent: no item. */
+  onStyle?: (path: string, writes: CardStyleWrite[]) => void
   /** The last failed move, flagged inline on its card. */
   moveError: { path: string; message: string } | null
   /** Create a note seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
@@ -96,10 +101,6 @@ export interface BoardViewProps {
  * key starting one unless `join` continues the line being built — so position IS ordering and the
  * title is un-pinned: `file.name` sits at its order position, can be joined onto and can itself join.
  */
-/** The text flags a note row carries (YAZ-1206); the title takes part in the layout only (YAZ-1217). */
-const styleClasses = (style: NonNullable<ViewDef['cardStyle']>[string]) =>
-  `${style.bold === true ? ' view-board__prop--bold' : ''}${style.underline === true ? ' view-board__prop--underline' : ''}`
-
 export function BoardView({
   def,
   view,
@@ -123,8 +124,10 @@ export function BoardView({
   noteDoors,
   resolve,
   readOnly = NO_READ_ONLY,
+  onStyle,
   hover,
 }: BoardViewProps) {
+  const unit = useUnit()
   const levels = shownGroupLevels(view)
   const levelKeys = levels.map((_, level) => groupByKey(view, level, settings.columns))
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
@@ -202,6 +205,17 @@ export function BoardView({
   const [adding, setAdding] = useState<{ key: string; name: string } | null>(null)
   /** The exact rendered record targeted by the latest whole-card secondary click. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
+  /**
+   * The card menu's groups: the note items, then "Card style ›" (YAZ-4906, YAZ-4834 P5: the card shows the note's style,
+   * so it sets it here too) when the pane writes styles and the note is not read-only. The panel's ✓ marks are the
+   * card's style NOW (the rows, optimistic).
+   */
+  const cardMenu = (path: string) => {
+    const items = cardMenuItems(noteDoors, path, () => setMenu(null), noteDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => noteDoors.newBelow!(path) })
+    if (onStyle === undefined || readOnly.has(path)) return items
+    const properties = records.find((r) => r.path === path)?.properties ?? {}
+    return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(path, writes)} />] }
+  }
   /** Browser click tails after secondary-click and drag gestures must not become page opens. */
   const suppressClick = useRef(false)
   const suppressOnce = () => {
@@ -241,7 +255,7 @@ export function BoardView({
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
     return (
       <div className="view-board__hint">
-        <p>Board views group notes into columns. Pick a property to group by.</p>
+        <p>{unit('Board views group notes into columns. Pick a property to group by.')}</p>
         <button
           type="button"
           className="view-menu__action"
@@ -259,19 +273,9 @@ export function BoardView({
 
   const keys = propertyKeys(def, view, records, pageColumnKeys(settings))
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
-  const styleOf = (key: string) => view.cardStyle?.[canonicalKey(key)] ?? {}
-  /** The card's ROWS (YAZ-1217): each ordered key starts a line, `join` appends it to the one being built — so a join with no line yet is a harmless no-op. */
-  const lines = keys.reduce<string[][]>((acc, key) => {
-    if (styleOf(key).join === true && acc.length > 0) acc[acc.length - 1].push(key)
-    else acc.push([key])
-    return acc
-  }, [])
+  const lines = cardLines(keys, view)
   const width = cardWidth(view.cardSize)
-  /**
-   * One item on a line: the title button, or a label/value row. The dash between joined items is
-   * its OWN element — a pseudo on a flex row would become that row's first flex child and drag
-   * the row's internal 8px gap in after itself (the lopsided "App– Sam" bug).
-   */
+  /** One item on a line (`cardLines.tsx`): the title button, or a label/value row. */
   const cardItem = (key: string, row: Row) => {
     if (key === nameKey)
       return (
@@ -287,13 +291,7 @@ export function BoardView({
           {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
         </button>
       )
-    const style = styleOf(key)
-    return (
-      <div key={key} className={`view-board__prop${styleClasses(style)}`}>
-        {style.hideLabel !== true && <span className="view-board__prop-name">{propertyLabel(def, key)}</span>}
-        <span className="view-board__prop-value">{rowCell(row, key, resolve)}</span>
-      </div>
-    )
+    return <CardProp def={def} view={view} row={row} field={key} resolve={resolve} />
   }
   /** A failed move's inline chip (5C, GRO-2143), under the card's first line. */
   const moveChip = (row: Row) =>
@@ -330,6 +328,8 @@ export function BoardView({
           key={row.record.path}
           data-flip-key={row.record.path}
           className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}${currentItemClass(windowLink, row.record.path)}`}
+          // The note's `color`, `text_color` and `weight` dress the card here too (YAZ-4906, views.css), the calendar card's attributes.
+          {...cardStyleAttrs(row.record.properties)}
           {...dragSource(row, group, at)}
           {...hover.itemProps(row.record.path)}
           // Every card is a focusable "cell" (YAZ-1557 D2): a plain click SELECTS it, and only the
@@ -352,18 +352,7 @@ export function BoardView({
         >
           {lines.map((line, i) => (
             <Fragment key={line[0]}>
-              <div className="view-board__line">
-                {line.map((key, item) => (
-                  <Fragment key={key}>
-                    {item > 0 && (
-                      <span className="view-board__dash" aria-hidden>
-                        &ndash;
-                      </span>
-                    )}
-                    {cardItem(key, row)}
-                  </Fragment>
-                ))}
-              </div>
+              <CardLine line={line} item={(key) => cardItem(key, row)} />
               {i === 0 && moveChip(row)}
             </Fragment>
           ))}
@@ -448,6 +437,7 @@ export function BoardView({
               newButton={newCards}
               resolve={resolve}
               level={at.level}
+              gk={ck}
             />
           )
           return (
@@ -491,6 +481,7 @@ export function BoardView({
               newButton={newCards}
               resolve={resolve}
               level={0}
+              gk={gk}
             />
           )
           return (
@@ -534,7 +525,7 @@ export function BoardView({
           onOpenWindow={onOpenWindow}
           onNotice={onNotice}
           onClose={() => setMenu(null)}
-          {...cardMenuItems(noteDoors, menu.path, () => setMenu(null), noteDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => noteDoors.newBelow!(menu.path) })}
+          {...cardMenu(menu.path)}
         />
       )}
     </>

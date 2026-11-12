@@ -2,6 +2,7 @@ import { memo, type CSSProperties } from 'react'
 import type { TabSort, TreeNode } from '@shared/types'
 import type { Needle } from '../links/completion'
 import { marked } from '../search/marked'
+import type { PathIds } from '../search/showIds'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
@@ -228,6 +229,8 @@ export interface TreeMarks {
   needle: Needle
   /** The rows found by their ID, each with its full ID (YAZ-2677 S70): shown in front of the title, which tells note 12 of two vaults apart. */
   ids?: ReadonlyMap<string, string>
+  /** The digits to mark in the ID of each row found by its ID (YAZ-2571 round 5, `idNeedle`). */
+  idMarks?: ReadonlyMap<string, Needle>
 }
 
 interface TreeProps {
@@ -293,6 +296,8 @@ interface TreeProps {
   onOpenPage?: (dir: string, top?: string) => void
   /** What each row is labelled with (YAZ-2420 🔒 D15): its title; a row the index does not hold shows its file name. Name sorts by this label (YAZ-3227 D8). */
   titles: PathTitles
+  /** Each note row ends with its ID (YAZ-4940 "In the files list"), from the vaults that chose it; a folder row shows none. Absent: no row does. A stable Map. */
+  ids?: PathIds
   /** A tab whose top rows reorder (YAZ-2631 D3): they drag along the list instead of moving on disk. Without it no row reorders. The top level alone gets it, so a drag's line draws no level below again. */
   reorder?: TreeReorder
   /** The tab's sort (YAZ-3227); the Search tab's own since YAZ-3511 (`searchSort`). */
@@ -374,6 +379,7 @@ function TreeLevel({
   pageRows,
   onOpenPage,
   titles,
+  ids,
   reorder,
   sort,
   dates,
@@ -390,7 +396,7 @@ function TreeLevel({
   shift = 0,
 }: TreeProps) {
   const level = depth + shift
-  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
+  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
@@ -470,7 +476,10 @@ function TreeLevel({
     return { style: { paddingLeft, ...(iconVars(id) as CSSProperties) }, 'data-icon': id, ...(custom ? { 'data-icon-custom': '' as const } : {}) }
   }
   /** `YAZ-12 — ` in front of the row of an ID match (YAZ-2677 S70); nothing for any other row. */
-  const idFor = (path: string) => (marks?.ids?.has(path) ? `${marks.ids.get(path)} — ` : null)
+  const idFor = (path: string) => {
+    const id = marks?.ids?.get(path)
+    return id === undefined ? null : <>{marked(id, marks?.idMarks?.get(path))} — </>
+  }
   return (
     // The arrows, Home and End are the whole tree's, taken once at its top (YAZ-2662 D11, YAZ-3440 D12) — not a search tree's, whose keys are the search bar's.
     // A held Enter is stopped there too, in each tree.
@@ -487,8 +496,9 @@ function TreeLevel({
           />
         </li>
       )}
-      {pageRows?.has(dirPath) === true && onOpenPage !== undefined && (
-        // The folder's page file (YAZ-4587, D37), first under it. No `data-path` (it is no row on disk: the selection,
+      {pageRows?.has(dirPath) === true && onOpenPage !== undefined && !(copies && depth === 0) && (
+        // The folder's page file (YAZ-4587, D37), first under it — the vault root's first at the Files tree's top (YAZ-4921;
+        // the top of Focus and Favorites is no folder's). No `data-path` (it is no row on disk: the selection,
         // a reveal and the drops never find it); `data-walk` lets the arrows walk it. Right-click: the folder page menu.
         <li role="treeitem">
           <button
@@ -683,6 +693,7 @@ function TreeLevel({
               <ShareMark badge={shareBadges?.get(node.path)} />
               {isShortcutRow(node) && <ShortcutIcon />}
               {vaultTag(node.path)}
+              {ids?.get(node.path) !== undefined && <span className="tree__id">{ids.get(node.path)}</span>}
               {dates === true && <RowDate node={node} />}
             </button>
             {/* A New … picked on this pinned row (YAZ-4782): its name field right under it, where the item will stand. */}

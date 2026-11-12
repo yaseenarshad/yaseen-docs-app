@@ -35,6 +35,7 @@ import type { Store } from '../store'
 import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
+import { idsHome } from '../vaultIndex/scan'
 import { dailyNote } from '../notes/daily'
 import type { WindowManager } from '../windows'
 import { broadcastAll, loggedSave, rootsOf, senderRoots } from './broadcast'
@@ -80,7 +81,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   const doorFor = async (e: IpcMainInvokeEvent, req: unknown, key = 'path'): Promise<IdDoor | null> => {
     const p = typeof req === 'string' ? req : (req as Record<string, unknown> | null)?.[key]
     const root = typeof p === 'string' ? rootOfPath(rootsOfSender(e), p) : null
-    return root === null ? null : doorOf(root)
+    // A vault inside the window's vault gives the IDs of its own notes (YAZ-4922 🔒 D1): the nearest folder that answered.
+    return root === null ? null : doorOf(await idsHome(root, p as string))
   }
   handleWithEvent(CONTRACT.createDir, async (e, req) => createDir(req, await doorFor(e, req)))
   // YAZ-4615 D10: a note the app makes carries the comment hint while Settings › Comments says so.
@@ -180,10 +182,14 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // The switch in Settings (🔒 D2): the answer is saved here, in main, where one save waits for the
   // one before it. A yes is the user asking on THIS Mac, so the numbers come now (R32, S64) — not
   // awaited: a vault of many notes must not hold the switch. A Mac that sees the yes arrive waits (S65).
+  // A yes that keeps the notes' IDs (YAZ-4922 🔒 D2) and moves the biggest group to other letters moves its numbers,
+  // links and file names first, as "Change letters" does (`turnIdsOn`'s steps): the sweep then gives only notes with no ID.
   handleWithEvent(CONTRACT.ids.set, async (e, root: unknown, enabled: unknown, letters: unknown) => {
     const vault = ownVault(e, root)
-    await saveIdsAnswer(vault, enabled, letters)
-    if (enabled === true) void giveIdsNow(vault)
+    const moved = await saveIdsAnswer(vault, enabled, letters)
+    if (enabled !== true) return
+    const move = moved ? thenTell(vault, changeLetters(vault, letters, followed)).catch(() => undefined) : Promise.resolve()
+    void move.then(() => giveIdsNow(vault))
   })
   // "Check for duplicates" (🔒 D7, S55 to S57): one line for the row in Settings.
   handleWithEvent(CONTRACT.ids.check, async (e, root: unknown) => checkDuplicates(ownVault(e, root)))

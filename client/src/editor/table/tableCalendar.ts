@@ -498,6 +498,8 @@ export function setTimeSlots(view: EditorView, pos: number, slot: number): void 
   if (table?.type.name !== 'table' || table.attrs.calendar === slot) return
   // A merged cell (YAZ-4792): the rows cannot be built again; Off only takes the part away.
   if (slot !== 0 && tableHasMerge(table)) return
+  // A Super table is never a Time-slots table too (YAZ-4869 item 18).
+  if (slot !== 0 && table.attrs.superTable === true) return
   const tr = closeHistory(view.state.tr)
   if (slot === 0) tr.setNodeMarkup(pos, undefined, { ...table.attrs, calendar: 0 })
   else {

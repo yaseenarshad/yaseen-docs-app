@@ -38,12 +38,13 @@ export function NotesFromPicker({ target, label, source, onPick }: { target: str
         .sort((a, b) => a.dir.localeCompare(b.dir)),
     [folders, resolveLink],
   )
-  // The saved target's folder; undefined (the button shows the text) when it reaches none.
-  const value = target === undefined ? ANY_FOLDER : choices.find((f) => f.at === resolveLink(exactLinkTarget(target) ?? target))?.value
+  // The saved target's folder; undefined (the button shows the text) when it reaches none. Its side: the left when it is a page.
+  const isPage = (page: string) => resolveLink(page) !== null
+  const value = target === undefined ? ANY_FOLDER : choices.find((f) => f.at === resolveLink(exactLinkTarget(target, isPage) ?? target))?.value
   return (
     <MenuPicker
       value={value}
-      empty={target === undefined ? 'Any folder' : (exactLinkTarget(target) ?? target)}
+      empty={target === undefined ? 'Any folder' : (exactLinkTarget(target, isPage) ?? target)}
       options={[
         { value: ANY_FOLDER, icon: <FileIcon path="" folder />, label: 'Any folder', about: 'Link to any note in the vault' },
         ...choices.map((f) => ({ value: f.value, icon: <FileIcon path={f.dir} folder />, label: f.name, about: f.dir === '' ? 'The vault' : f.dir })),

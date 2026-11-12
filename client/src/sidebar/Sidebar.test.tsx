@@ -228,7 +228,8 @@ const inboxOf = ({ upkeep, dueCount, reviewing }: Inbox): Partial<Vault> => ({ .
  * says otherwise. Upkeep review (YAZ-2322) is off, as in a new vault, with nothing due and no review open.
  */
 const oneVault = ({ root = '/v', watch = { subscribe: () => () => undefined }, indexSource = indexFor(true), ...over }: Partial<SidebarProps>): Vault[] => [
-  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, upkeep: false, dueCount: 0, reviewing: false, ...inboxOf(over) },
+  // `idsInSearch` and `idsInFiles` (YAZ-4940) ride on the vault: a test hands them as if they were props.
+  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, upkeep: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}), ...('idsInFiles' in over ? { idsInFiles: (over as { idsInFiles?: Vault['idsInFiles'] }).idsInFiles } : {}) },
 ]
 
 async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => unknown) {
@@ -450,6 +451,30 @@ const asPerson = (type: string, target: EventTarget | null | undefined, dispatch
   if (type === 'drop') target?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, ...lastMove }))
   if (type === 'dragend') window.dispatchEvent(new MouseEvent('mousemove', { buttons: 0 }))
 }
+
+describe('a window that is "a folder of" the vault (YAZ-4922 D3): the sidebar is rooted at the folder', () => {
+  const VAULT_TREE: TreeNode[] = [
+    { type: 'dir', name: 'Projects', path: '/v/Projects', children: [{ type: 'file', name: 'plan.md', path: '/v/Projects/plan.md', size: 1, mtime: 1, kind: 'markdown' }] },
+    {
+      type: 'dir',
+      name: 'Wiki',
+      path: '/v/Wiki',
+      children: [
+        { type: 'dir', name: 'React', path: '/v/Wiki/React', children: [] },
+        { type: 'file', name: 'hooks.md', path: '/v/Wiki/hooks.md', size: 1, mtime: 1, kind: 'markdown' },
+      ],
+    },
+    { type: 'file', name: 'home.md', path: '/v/home.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+
+  it('the Files tab shows only the folder\'s own folders and notes, and the vault\'s tree is read', async () => {
+    const vaults = oneVault({}).map((vault) => ({ ...vault, folder: '/v/Wiki' }))
+    const { el, bridge } = await mount({ vaults }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: VAULT_TREE, generatedAt: 1 } as never))
+    const labels = () => [...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)
+    expect(bridge.tree).toHaveBeenCalledWith('/v')
+    expect(labels()).toEqual(['React', 'hooks'])
+  })
+})
 
 describe('drawing and diagram rows (YAZ-3028 D11)', () => {
   const BOARD_TREE: TreeNode[] = [
@@ -892,7 +917,7 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(props.onKeepFile).toHaveBeenCalledTimes(1)
   })
 
-  it('the folder row menu LEADS with "Open folder page", which opens the folder as a tab; a file row and blank space have no such item (YAZ-2290 D3, YAZ-3377 D2)', async () => {
+  it('the folder row menu LEADS with "Open folder page", which opens the folder as a tab; a file row has no such item (YAZ-2290 D3, YAZ-3377 D2)', async () => {
     const { props, el } = await mount()
     act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(menuItems(el)[0]?.textContent).toBe('Open folder page')
@@ -903,9 +928,16 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
     act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(itemByLabel(el, 'Open folder page')).toBeUndefined()
-    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  })
+
+  it('YAZ-4921: blank space LEADS with "Open folder page" too, which opens the vault ROOT\'s page as a kept tab — the same door as a folder row\'s', async () => {
+    const { props, el } = await mount()
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Open folder page')).toBeUndefined()
+    expect(menuItems(el)[0]?.textContent).toBe('Open folder page')
+    act(() => itemByLabel(el, 'Open folder page')?.click())
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
   it('Enter on a focused FOLDER row opens the folder as a tab and does not fold it; shift+Enter is left alone (YAZ-2290 D3)', async () => {
@@ -2756,6 +2788,41 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
     await type(input, 'zed')
     expect(shape(el)).toEqual(['Plans', '  Zed'])
+  })
+
+  it('YAZ-2571 round 5: `#12` finds by the ID number alone, the exact number first, and marks the typed digits in the ID; a bare `12` marks the ID\'s number; a title match leaves the ID plain', async () => {
+    const ids: Record<string, string> = { '/Plans/Zed.md': 'YAZ-12', '/Alpha.md': 'YAZ-120', '/plan.md': 'YAZ-3' }
+    const records = (root: string) => notePaths(VAULT(root)).map((path) => record(root, path, ids[path.slice(root.length)] !== undefined ? { id: ids[path.slice(root.length)] } : {}))
+    const { el, input, v } = await search('#12', { idsInSearch: () => 'match' } as Partial<SidebarProps>, { records })
+    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed', 'YAZ-120 — Alpha'])
+    expect(cursor(el)).toEqual(['YAZ-12 — Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-<mark class="tree__mark">12</mark> — Zed')
+    expect(row(el, `${v}/Alpha.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-<mark class="tree__mark">12</mark>0 — Alpha')
+    await type(input, '12')
+    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-<mark class="tree__mark">12</mark> — Zed')
+    await type(input, '#3')
+    expect(shape(el)).toEqual(['YAZ-3 — plan'])
+    act(() => root?.unmount())
+    const always = await search('zed', { idsInSearch: () => 'always' } as Partial<SidebarProps>, { records })
+    expect(row(always.el, `${always.v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-12 — <mark class="tree__mark">Zed</mark>')
+  })
+
+  it('YAZ-2571 round 5: in a vault without IDs `#5` reads as text, as before', async () => {
+    const { el } = await search('#5', {}, { nodes: (v) => [note(`${v}/Release #5.md`), note(`${v}/Plan 5.md`), note(`${v}/Other.md`)] })
+    expect(shape(el)).toEqual(['Plan 5', 'Release #5'])
+  })
+
+  it('YAZ-4940: with the vault\'s "Show IDs in search" on Always, a note found by its title shows its ID in front too; with "Only when it matches", the title alone', async () => {
+    const records = (root: string) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Zed.md') ? { id: 'YAZ-12' } : {}))
+    const always = await search('zed', { idsInSearch: () => 'always' } as Partial<SidebarProps>, { records })
+    expect(shape(always.el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    // The harness holds ONE root: the first sidebar goes before the second mounts, or its window listeners outlive the test.
+    act(() => root?.unmount())
+    const match = await search('zed', { idsInSearch: () => 'match' } as Partial<SidebarProps>, { records })
+    expect(shape(match.el)).toEqual(['Plans', '  Zed'])
+    await type(match.input, '12')
+    expect(shape(match.el)).toEqual(['Plans', '  YAZ-12 — Zed'])
   })
 
   it('YAZ-3748 D3: `yaseen workflow` finds `1-yaseen-engineering-workflow` by its words and marks each word; the parts between stay plain. B2: the bar draws no spelling line', async () => {
@@ -8716,8 +8783,8 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(itemByLabel(el, 'Cut')).toBeUndefined()
     expect(itemByLabel(el, 'Copy')).toBeUndefined()
     expect(itemByLabel(el, 'Paste')?.disabled).toBe(true)
-    // No row to rename or delete: clipboard, create, and the root's own "Open in" — three groups (YAZ-3085 D3).
-    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(3)
+    // No row to rename or delete: the root's "Open folder page" (YAZ-4921), clipboard, create, and the root's own "Open in" — four groups (YAZ-3085 D3).
+    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(4)
   })
 
   it('Cut on a single row clips that one path and SAYS SO (YAZ-1341); the menu closes', async () => {
@@ -9665,7 +9732,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     }
     rightClick(body(el))
-    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open in', 'Add vault to this window'])
+    // "Open folder page" leads (YAZ-4921): the one vault's root page.
+    expect(topItems(el)).toEqual(['Open folder page', 'Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open in', 'Add vault to this window'])
     const leaves = flyout(el, 'Add vault to this window')
     expect(leaves.map((b) => b.textContent)).toEqual(['Second', 'First', 'Open folder…'])
     act(() => leaves[1].click())
@@ -9711,18 +9779,32 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(rowByPath(el, b)?.draggable).toBe(true) // to reorder the vaults (YAZ-2631 D5)
   })
 
-  it('the vault row\'s menu: Paste, Copy path · the three create rows (YAZ-3085) · Open in (VS Code, Reveal in Finder) · Remove from this window — and nothing else: a vault is no item of the focus list (S13, A2)', async () => {
+  it('the vault row\'s menu: Open folder page (YAZ-4921) · Paste, Copy path · the three create rows (YAZ-3085) · Open in (VS Code, Reveal in Finder) · Remove from this window — and nothing else: a vault is no item of the focus list (S13, A2)', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const { el, b, props } = await two({ upkeep: true })
     rightClick(rowByPath(el, b))
-    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open by itself', 'Open in', 'Remove from this window'])
+    expect(topItems(el)).toEqual(['Open folder page', 'Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open by itself', 'Open in', 'Remove from this window'])
     expect(flyout(el, 'Open in').map((item) => item.textContent)).toEqual(['VS Code', 'Reveal in Finder'])
     await act(async () => itemByLabel(el, 'Copy path')?.click())
     expect(writeText).toHaveBeenCalledExactlyOnceWith(b)
     rightClick(rowByPath(el, b))
     act(() => itemByLabel(el, 'Remove from this window')?.click())
     expect(props.onRemoveVault).toHaveBeenCalledExactlyOnceWith(b)
+  })
+
+  it('YAZ-4921: with two vaults a vault row\'s "Open folder page" opens THAT vault\'s root page as a kept tab; the blank space below the tree is no one vault\'s, so it has none', async () => {
+    const { el, a, b, props } = await two()
+    rightClick(rowByPath(el, b))
+    act(() => itemByLabel(el, 'Open folder page')?.click())
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith(b)
+    rightClick(rowByPath(el, a))
+    act(() => itemByLabel(el, 'Open folder page')?.click())
+    expect(props.onKeepFile).toHaveBeenLastCalledWith(a)
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    rightClick(body(el))
+    expect(itemByLabel(el, 'Open folder page')).toBeUndefined()
+    expect(topItems(el)).toEqual(['Add vault to this window'])
   })
 
   it('"Open by itself" on a vault row (YAZ-2858 D4, S15) calls main\'s window.openAlone with that vault\'s root, and a failure is logged; a file row, a folder row and blank space have no such item (S16)', async () => {
@@ -10332,8 +10414,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
   it('the vault name\'s rule is its own: 10px, the muted colour at 60%, 40% of the row at most with an ellipsis (YAZ-2631 S41, S44, R10)', () => {
     const rule = appCss.match(/\n\.tree__vault \{([^}]*)\}/)?.[1]
     for (const declaration of ['font-size: 10px;', 'color: color-mix(in srgb, var(--fg-muted) 60%, transparent);', 'max-width: 40%;', 'text-overflow: ellipsis;']) expect(rule).toContain(declaration)
-    // No other rule names the vault name: none shares the number's, none follows a count. A search row's date after it gives up its own push to the right (YAZ-3511 D5).
-    expect(appCss.match(/\.tree__vault[^{]*\{/g)).toEqual(['.tree__vault {', '.tree__vault + .tree__date {'])
+    // No other rule names the vault name: none shares the number's, none follows a count. A search row's date after it gives up its own push to the right (YAZ-3511 D5), and so does a files-list row's ID (YAZ-4940).
+    expect(appCss.match(/\.tree__vault[^{]*\{/g)).toEqual(['.tree__vault {', '.tree__vault + .tree__date {', '.tree__vault + .tree__id,\n.tree__id + .tree__date {'])
   })
 
   it('a selection across two vaults goes in, in panel order; a remove on a row of the second vault keeps the tab; a mixed selection reads Add and puts in the missing row; all in reads "Remove 2 from focus" (A7)', async () => {
@@ -11062,7 +11144,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     const { el, b, input, props, rerender } = await searchTwo()
     await type(input, 'plan')
     rightClick(rowByPath(el, b))
-    expect(topItems(el)).toEqual(['Show in sidebar', 'Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open by itself', 'Open in', 'Remove from this window'])
+    expect(topItems(el)).toEqual(['Show in sidebar', 'Open folder page', 'Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open by itself', 'Open in', 'Remove from this window'])
     act(() => itemByLabel(el, 'New note')?.click())
     expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(b)
     await rerender({ lens: 'files', revealRequest: { id: 1, path: b } })
@@ -11648,6 +11730,25 @@ describe('the folder page file row (YAZ-4587, D37)', () => {
     expect(projects?.querySelector(':scope > ul.tree > li > .tree__row')?.textContent).toBe('📄 Projects (folder page)')
   })
 
+  it('YAZ-4921: the vault root\'s own page file is the first row of the Files tree, titled as the vault\'s folder; its click opens the root page on its Page tab, as its right-click\'s "Open folder page" does', async () => {
+    const asked = vi.fn()
+    const off = onPageTabAsk(asked)
+    const { el, props } = await mountPages([folder('/v', 'v'), ...ALL], ON)
+    expect(pageRows(el).map((r) => r.textContent)).toEqual(['📄 v (folder page)', '📄 Areas (folder page)', '📄 Projects (folder page)', '📄 Alpha (folder page)'])
+    expect(el.querySelector('ul.tree[role="tree"] > li > .tree__row')?.textContent).toBe('📄 v (folder page)')
+    act(() => pageRows(el)[0]!.click())
+    expect(asked).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v')
+    act(() => void pageRows(el)[0]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(menuItems(el)[0]?.textContent).toBe('Open folder page')
+    expect(itemByLabel(el, 'Rename')).toBeUndefined()
+    expect(itemByLabel(el, 'Delete')).toBeUndefined()
+    act(() => itemByLabel(el, 'Open folder page')?.click())
+    expect(props.onKeepFile).toHaveBeenLastCalledWith('/v')
+    off()
+    takePageTab('/v')
+  })
+
   it("a folder's override on covers it and its subfolders; a nested override off wins inside it", async () => {
     const { el } = await mountPages([folder('/v/Areas', 'Areas'), folder('/v/Projects', 'Projects', { show_page_file: true }), folder('/v/Projects/Alpha', 'Alpha')])
     expect(pageRows(el).map((r) => r.textContent)).toEqual(['📄 Projects (folder page)', '📄 Alpha (folder page)'])
@@ -11681,5 +11782,84 @@ describe('the folder page file row (YAZ-4587, D37)', () => {
     expect(labels).toEqual(['Open folder page', 'Open in new tab', 'Open in new window', 'Copy path', 'Open in'])
     act(() => itemByLabel(el, 'Open folder page')?.click())
     expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/Projects')
+  })
+})
+
+/** A New … in a read-only vault asks first (YAZ-4939): App's door, through `onFileAction`. */
+describe('the sidebar in a read-only vault (YAZ-4939)', () => {
+  it('"New note" asks the door before the name field opens: refused, no field; allowed, the field', async () => {
+    let allow = false
+    const onFileAction = vi.fn(async () => allow)
+    const { el } = await mount({ onFileAction })
+    const newNote = async () => {
+      act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+      act(() => itemByLabel(el, 'New note')?.click())
+      await act(async () => {})
+    }
+    await newNote()
+    expect(onFileAction).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(el.querySelector('.create-inline__input')).toBeNull()
+    allow = true
+    await newNote()
+    expect(onFileAction).toHaveBeenCalledTimes(2)
+    expect(el.querySelector('.create-inline__input')).not.toBeNull()
+  })
+
+  it('with no door (a vault with no Read only) the field opens at once', async () => {
+    const { el } = await mount()
+    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'New note')?.click())
+    await act(async () => {})
+    expect(el.querySelector('.create-inline__input')).not.toBeNull()
+  })
+})
+
+describe('Show IDs in the files list (YAZ-4940 part 2)', () => {
+  /** The `/v` vault's index: `a.md` holds an ID, and the folder `sub` holds one through its settings file. */
+  const withIds = (on: Vault['idsInFiles'], ids = true) => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), ...(ids && { id: 'EMB-46' }) }], [{ ...indexRecord('/v/sub/.folder.md'), ...(ids && { id: 'EMB-3' }) }], ids)
+    return mount({ indexSource, ...(on !== undefined && ({ idsInFiles: on } as Partial<SidebarProps>)) })
+  }
+  const idOf = (el: HTMLElement, path: string) => el.querySelector(`.tree__row[data-path="${path}"] .tree__id`)?.textContent ?? null
+
+  it('Number: a note row ends with "#" and its ID\'s number, after the label and as the row\'s last child; a folder row shows none; the label keeps the name alone', async () => {
+    const { el } = await withIds('number')
+    const row = fileRow(el)!
+    expect(idOf(el, '/v/a.md')).toBe('#46')
+    expect(row.lastElementChild?.className).toBe('tree__id')
+    expect(row.querySelector('.tree__label')?.textContent).toBe('a')
+    expect(idOf(el, '/v/sub')).toBeNull()
+  })
+
+  it('Full ID: the row ends with the whole ID', async () => {
+    const { el } = await withIds('full')
+    expect(idOf(el, '/v/a.md')).toBe('EMB-46')
+    expect(idOf(el, '/v/sub')).toBeNull()
+  })
+
+  it('Off, or not said (the default): no row shows an ID', async () => {
+    const off = await withIds('off')
+    expect(off.el.querySelector('.tree__id')).toBeNull()
+    act(() => root?.unmount())
+    const unsaid = await withIds(undefined)
+    expect(unsaid.el.querySelector('.tree__id')).toBeNull()
+  })
+
+  it('a vault without IDs shows none even with the choice Number or Full ID: its records hold no `id`', async () => {
+    const number = await withIds('number', false)
+    expect(number.el.querySelector('.tree__id')).toBeNull()
+    act(() => root?.unmount())
+    const full = await withIds('full', false)
+    expect(full.el.querySelector('.tree__id')).toBeNull()
+  })
+
+  it('a snapshot that gives the note a new ID redraws the row; one that changes a title alone does not change the map', async () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [indexRecord('/v/a.md')], [], true)
+    const { el } = await mount({ indexSource, idsInFiles: 'number' } as Partial<SidebarProps>)
+    expect(idOf(el, '/v/a.md')).toBeNull()
+    act(() => indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), id: 'EMB-46' }], [], true))
+    expect(idOf(el, '/v/a.md')).toBe('#46')
   })
 })

@@ -699,6 +699,27 @@ describe('wikilink click: the gestures of Settings › Hotkeys, read at the clic
     expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
     expect(mousedown(linkSpan(root, 'Known'), { altKey: true })).toBe(true) // a click no gesture has stays the editor's
   })
+
+  it('the vault\'s "Clicking a link: Explore" (YAZ-4936) holds on a read-only note too (YAZ-4939): a plain click opens Explore, ⌘-click still opens behind', async () => {
+    const { crepe, root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
+    const explore = { openExplore: vi.fn(), exploreClick: () => true }
+    Object.assign(nav, explore)
+    // A single click (`detail` 1), as the browser sends it; a double-click's second press is not a plain click.
+    expect(mousedown(linkSpan(root, 'Known'), { detail: 1 })).toBe(false)
+    expect(explore.openExplore).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
+    expect(nav.openCurrent).not.toHaveBeenCalled()
+    crepe.setReadonly(true)
+    expect(mousedown(linkSpan(root, 'Known'), { detail: 1 })).toBe(false)
+    expect(explore.openExplore).toHaveBeenCalledTimes(2)
+    expect(nav.openCurrent).not.toHaveBeenCalled()
+    openBehind(linkSpan(root, 'Known'))
+    expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
+    // Back to "Opens the note": the read-only rule again.
+    Object.assign(nav, { exploreClick: () => false })
+    mousedown(linkSpan(root, 'Known'), { detail: 1 })
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
+    expect(explore.openExplore).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('a click on a link works like text (YAZ-3935, C1 and C2 of YAZ-3879)', () => {

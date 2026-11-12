@@ -67,6 +67,7 @@ import { exactLinkTarget, rewriteNoteLinks, type NewTarget, type ResolvesToOld }
 import { titleOf } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
+import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { targetBasename, targetKey } from '@shared/linkResolver'
 import { resolverFor } from '../views/engine'
 import { flushRenamedPath } from '../lib/renameContinuity'
@@ -106,7 +107,14 @@ function makeReferences(resolves: ResolvesToOld): (record: IndexRecord) => boole
  */
 export function linkedBasenames(records: readonly IndexRecord[]): Set<string> {
   const named = new Set<string>()
-  for (const record of records) for (const target of referenceTargets(record)) named.add(targetBasename(target))
+  for (const record of records) {
+    for (const target of referenceTargets(record)) {
+      named.add(targetBasename(target))
+      // A target that keeps both sides (`Covid notes|COVID-19`, YAZ-4954) can name either note: both basenames count.
+      const pipe = target.indexOf('|')
+      if (pipe > 0) named.add(targetBasename(target.slice(0, pipe)))
+    }
+  }
   return named
 }
 
@@ -118,8 +126,8 @@ export interface RenameRewriteSummary {
 }
 
 /** The ONE passive summary notice — shown only when the rename touched (or spared) anything. */
-export function renameNotice({ updated, skipped }: RenameRewriteSummary): string {
-  const head = `Updated links in ${updated} note${updated === 1 ? '' : 's'}`
+export function renameNotice({ updated, skipped }: RenameRewriteSummary, unit: UnitText = SAME_WORD): string {
+  const head = unit(`Updated links in ${updated} note${updated === 1 ? '' : 's'}`)
   return skipped > 0 ? `${head}; ${skipped} skipped (unsaved changes)` : head
 }
 
@@ -271,7 +279,7 @@ export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind
     // a link can spell it and it reaches the page; else the link goes by the page's id (YAZ-2478),
     // and by name, as below, only when it has none.
     if (title !== undefined && hit === oldPath && spellsTitle(target)) {
-      if (exactLinkTarget(`[[${title}]]`) === title && postLink(title) === moved) return title
+      if (exactLinkTarget(`[[${title}]]`, (page) => postLink(page) !== null) === title && postLink(title) === moved) return title
       if (id !== undefined) return id
     }
     const movedName = basename(moved)

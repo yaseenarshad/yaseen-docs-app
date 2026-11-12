@@ -1,12 +1,12 @@
 /**
  * One row of the app's key list (YAZ-3564 K1): an action of one place and its default key(s). Every key the app
  * reacts to has a row, the ones you cannot change too (`changeable: false`, "Built in" on Settings › Hotkeys).
- * Each place's file (`app.ts`, `note.ts`, `drawing.ts`, `diagram.ts`, `code.ts`, `views.ts`) holds its rows, and a
+ * Each place's file (`app.ts`, `note.ts`, `drawing.ts`, `diagram.ts`, `code.ts`, `views.ts`, `explore.ts`) holds its rows, and a
  * drift test per place reads that editor's real keys and fails on one that has no row.
  */
 
 /** Where a key works. `app` keys are the menu's and the window's: on a Mac they fire before any page (K3). */
-export type KeyScope = 'app' | 'note' | 'drawing' | 'diagram' | 'code' | 'views'
+export type KeyScope = 'app' | 'note' | 'drawing' | 'diagram' | 'code' | 'views' | 'explore'
 
 /** The places an App key can let keep their own key on it (K9): the tabs that are a canvas or an editor of their own. */
 export type AsidePlace = Extract<KeyScope, 'drawing' | 'diagram' | 'code'>

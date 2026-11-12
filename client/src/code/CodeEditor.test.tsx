@@ -20,6 +20,7 @@ import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
 import { ExpandAllIcon } from '../views/view/icons'
 import { BROKEN_CODE_DOCUMENT, CodeEditor, appCommandOf, findersFor, stickyModelFor } from './CodeEditor'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { LARGE_CODE_CHARS } from './outline/symbolSource'
 import { keepBackView, MAX_BACK_VIEWS, openCodeAt, takeBackView } from './codeOpener'
 import { applyAppTheme, created, resetFakeMonaco } from './monacoTestKit'
@@ -425,13 +426,15 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     expect(created.editors.map((e) => e.options.readOnly)).toEqual([true, true])
   })
 
-  it('S2: "Allow edits" unlocks only that tab, the setting stays; a closed and reopened tab is locked again', async () => {
+  it('S2: "Allow edits for 1 minute" unlocks only that tab, the setting stays; a closed and reopened tab is locked again', async () => {
     await openTwo({ codeReadOnly: true })
     const [a, b] = created.editors
     act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
     act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__allow')!.click())
     expect(a.options.readOnly).toBe(false)
-    expect(chipIn('a')).toBeNull()
+    // The chip stays, as "Editing · mm:ss" (YAZ-4939), with "Lock now".
+    expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Editing · 1:00')
+    expect(chipIn('a')?.querySelector('.read-only-chip__lock')?.textContent).toBe('Lock now')
     expect(b.options.readOnly).toBe(true)
     expect(chipIn('b')).not.toBeNull()
     expect(changeCode).not.toHaveBeenCalled()
@@ -451,6 +454,33 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     await settle()
     expect(created.editors.map((e) => e.options.readOnly)).toEqual([true, true])
     expect(chipIn('a')).not.toBeNull()
+  })
+
+  it('YAZ-4939: the vault On locks every code tab as the setting does; a time choice unlocks that tab for that long, and the setting stays Off', async () => {
+    readFile.mockImplementation(async (path) => disk('a\n', 100, path))
+    act(() =>
+      root?.render(
+        <VaultReadOnly.Provider value={{ on: true, allowFileAction: () => Promise.resolve(true) }}>
+          <div data-tab="a"><CodeEditor root={ROOT} path={PATH} watch={watch} onChangeCodeSettings={changeCode} /></div>
+          <div data-tab="b"><CodeEditor root={ROOT} path={OTHER} watch={watch} onChangeCodeSettings={changeCode} /></div>
+        </VaultReadOnly.Provider>,
+      ),
+    )
+    await settle()
+    const [a, b] = created.editors
+    expect([a, b].map((e) => e.options.readOnly)).toEqual([true, true])
+    expect(chipIn('a')).not.toBeNull()
+    act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
+    expect([...chipIn('a')!.querySelectorAll('.read-only-chip__ask button')].map((x) => x.textContent)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
+    act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__allow')!.click())
+    expect(a.options.readOnly).toBe(false)
+    expect(b.options.readOnly).toBe(true)
+    expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Editing · 1:00')
+    await after(60_000)
+    await settle()
+    expect(a.options.readOnly).toBe(true)
+    expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Read only')
+    expect(changeCode).not.toHaveBeenCalled()
   })
 
   it('S4: ⌥Z flips one tab and saves nothing; a change of Wrap then sets every tab, the flipped one too', async () => {

@@ -14,8 +14,11 @@ import type { TreeNode } from '@shared/types'
 import { withoutPaths } from '../../lib/treeState'
 import { readNeedle } from '../../links/completion'
 import { bestScores, NO_SCORES } from '../../search/bestMatch'
+import { idNeedle } from '../../search/marked'
 import { filterOn, filterTest, NO_FILTER, NO_TIMES, timesByPath, timeStart, type SearchFilter } from '../../search/searchFilter'
 import { searchTree } from '../../search/searchTree'
+import { rootOfPath } from '@shared/types'
+import { shownId } from '../../search/showIds'
 import { useSearchResults, type SearchVault } from '../../search/useSearchResults'
 import type { ListFold } from '../listFold'
 import type { TreeMarks, TreeSelection } from '../Tree'
@@ -129,10 +132,24 @@ export function useSidebarSearch(
   }, [tree, pinned, hits, full])
   // What that tree marks (🔒 D5): the matches, and the typed text as the matcher reads it (S40).
   // And the full ID of each row found by its number (YAZ-2677 S70): `searchRows` puts it in front of that row's label.
+  // "Show IDs in search" (YAZ-4940): with Always, every row's ID; with "Only when it matches", the rows found by their ID.
   const marks: TreeMarks = useMemo(() => {
-    const ids = new Map(results.flatMap((r) => (r.id !== undefined && r.label.startsWith(`${r.id} — `) ? [[r.path, r.id] as const] : [])))
-    return { hits, needle: readNeedle(query), ...(ids.size > 0 && { ids }) }
-  }, [hits, query, results])
+    const roots = vaults.map((v) => v.root)
+    // A vault with no getter (a test's) keeps the sidebar's old rule; App hands every vault its setting (Always by default).
+    const ruleOf = (path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInSearch?.() ?? 'match'
+    const ids = new Map(
+      results.flatMap((r) => {
+        const id = shownId(r, ruleOf(r.path))
+        return id === null ? [] : [[r.path, id] as const]
+      }),
+    )
+    // The matched digits of each row found by its ID (YAZ-2571 round 5): marked in its ID.
+    const idMarks = new Map(results.flatMap((r) => {
+      const needle = idNeedle(r, query)
+      return needle === undefined ? [] : [[r.path, needle] as const]
+    }))
+    return { hits, needle: readNeedle(query), ...(ids.size > 0 && { ids }), ...(idMarks.size > 0 && { idMarks }) }
+  }, [hits, query, results, vaults])
   // Best match's score of each row of the cut (D12), only while Best match sorts.
   const scores = useMemo(() => (bestMatch && found !== NO_FOUND ? bestScores(results, query, [...found.top, ...found.rest], found.open) : NO_SCORES), [bestMatch, results, query, found])
   // A fold clicked during a search lasts as long as its query (S15, S16) and lives here alone (R4):

@@ -28,16 +28,17 @@ import { ContextMenu } from './ContextMenu'
 import type { EntryKind } from './createEntry'
 import { FileIcon } from './FileIcon'
 import { placeRel } from './goToPlace'
+import { useUnit, type UnitText } from '../vault/unitWord'
 import { PlacePicker, usePlaceTrees, type PlaceVault } from './PlacePicker'
 
 export type NewItemKind = EntryKind
 
 /** The tiles, in their order: the icon is the one the sidebar gives a file of that kind (a folder's for Folder). */
-export const NEW_ITEM_KINDS: readonly { kind: NewItemKind; label: string; sample: string }[] = [
-  { kind: 'file', label: 'Note', sample: 'a.md' },
-  { kind: 'drawing', label: 'Excalidraw drawing', sample: 'a.excalidraw' },
-  { kind: 'diagram', label: 'draw.io diagram', sample: 'a.drawio' },
-  { kind: 'dir', label: 'Folder', sample: 'a' },
+export const NEW_ITEM_KINDS: readonly { kind: NewItemKind; label: (unit: UnitText) => string; sample: string }[] = [
+  { kind: 'file', label: (unit) => unit('Note'), sample: 'a.md' },
+  { kind: 'drawing', label: () => 'Excalidraw drawing', sample: 'a.excalidraw' },
+  { kind: 'diagram', label: () => 'draw.io diagram', sample: 'a.drawio' },
+  { kind: 'dir', label: () => 'Folder', sample: 'a' },
 ]
 
 /** The last places used on this Mac (D4): newest first, at most `RECENT_PLACES`. Kept in this Mac's browser storage. */
@@ -99,6 +100,7 @@ interface NewItemBoxProps {
 type Picking = { for: 'choose' } | { for: 'slot'; slot: number } | null
 
 export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: NewItemBoxProps) {
+  const unit = useUnit()
   const [at, setAt] = useState(0)
   const [dir, setDir] = useState(startDir)
   /** The row the keys act on: 0 the kinds, 1 the places. */
@@ -285,7 +287,7 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
                   onDoubleClick={() => make(i)}
                 >
                   <FileIcon path={`${vault.root}/${k.sample}`} folder={k.kind === 'dir'} />
-                  <span className="new-item__label">{k.label}</span>
+                  <span className="new-item__label">{k.label(unit)}</span>
                 </button>
               ))}
             </div>

@@ -129,6 +129,14 @@ describe('renameOptionInFilters (YAZ-4637 M5): a filter on the column that compa
     expect(views[0].filters).toEqual({ and: ['note.stage == "Todo"', '["Todo", "Done"].contains(note.stage)', 'note.other == "Todo"'] }) // input untouched
   })
 
+  it('YAZ-4834 P2: a calendar\'s "Cross out when" tree follows the rename too, beside its filters', () => {
+    const calendar = [{ type: 'calendar', name: 'C', filters: 'note.stage == "Todo"', crossOut: { and: ['note.stage == "Todo"', 'note.done == true'] } }, { type: 'calendar', name: 'D', crossOut: 'note.stage == "Todo"' }]
+    const out = renameOptionInFilters(calendar, 'stage', 'Todo', 'Next') as typeof calendar
+    expect(out[0]).toEqual({ type: 'calendar', name: 'C', filters: 'note.stage == "Next"', crossOut: { and: ['note.stage == "Next"', 'note.done == true'] } })
+    expect(out[1]).toEqual({ type: 'calendar', name: 'D', crossOut: 'note.stage == "Next"' })
+    expect(renameOptionInFilters(calendar, 'other', 'Todo', 'Next')).toBe(calendar)
+  })
+
   it('comes back as the same list when nothing names the label, and quotes the new label as the builder does', () => {
     expect(renameOptionInFilters(views, 'stage', 'Later', 'Soon')).toBe(views)
     expect(renameOptionInFilters([{ type: 'table', name: 'T', filters: 'note.stage == "Todo"' }], 'stage', 'Todo', 'Say "hi"')).toEqual([{ type: 'table', name: 'T', filters: 'note.stage == "Say \\"hi\\""' }])

@@ -10,14 +10,17 @@
  * The bytes come back base64 (the asset pipe's shape for images and drawings alike), so a scene
  * is `atob` → UTF-8 → `JSON.parse`. Anything that is not a scene — a missing file, unreadable
  * bytes, invalid JSON, JSON without an `elements` ARRAY — throws, and every throw lands in the
- * preview's ONE broken state (never a crash, `editor/drawing/drawingPreview.ts`). No repair, no
+ * popup's ONE error line (never a crash). No repair, no
  * partial render: a half-parsed scene would be a lie about what the file holds.
  */
 import type { DrawingFileEntry, FoldArrowMode } from '@shared/types'
 import { BOARD_META_KEY, boardFoldArrowsOf, boardHoverOutlineOf, hoverLinksOff, picturesFolderOf, picturesOut, referencedFileIds } from '@shared/drawingAssets'
+import { isDrawing } from '@shared/fileKind'
 import { isRecord } from '@shared/guards'
 import { isDrawingReadOnly } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
+import { visibleElements } from '../lib/scenePreview'
+import { loadExcalidraw, type ExcalidrawModule } from './engine'
 
 /** The scene shape a preview needs; deliberately loose — the file is user data, not our type. */
 export interface DrawingScene {
@@ -50,14 +53,6 @@ const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; pictures
   ...(boardFoldArrowsOf(scene[BOARD_META_KEY]) === null ? {} : { foldArrows: boardFoldArrowsOf(scene[BOARD_META_KEY]) as FoldArrowMode }),
   ...(boardHoverOutlineOf(scene[BOARD_META_KEY]) === null ? {} : { hoverOutline: boardHoverOutlineOf(scene[BOARD_META_KEY]) as boolean }),
 })
-
-/** Embed targets that get a preview — everything else renders exactly as it always has. */
-export const DRAWING_EMBED_SUFFIX = '.excalidraw'
-
-/** True for `Sketch.excalidraw` / `assets/drawings/Sketch.excalidraw` (case-insensitive, like readAsset). */
-export function isDrawingTarget(target: string): boolean {
-  return target.toLowerCase().endsWith(DRAWING_EMBED_SUFFIX)
-}
 
 /** base64 → the UTF-8 text it carries (scene JSON is text, and text can hold non-ASCII). */
 function decodeBase64(data: string): string {
@@ -110,7 +105,7 @@ export async function openDrawing(root: string, target: string): Promise<LoadedD
   } catch (err) {
     // YAZ-3943 D5: a board keeps its pictures inside, so it can pass the asset pipe's 10 MiB cap. The
     // board's own loader reads it (to 200 MiB), at the path the pipe resolved and named in its refusal.
-    if (err instanceof BridgeRequestError && err.code === 'TOO_LARGE' && err.path !== undefined && isDrawingTarget(err.path)) return openLargeDrawing(root, err.path)
+    if (err instanceof BridgeRequestError && err.code === 'TOO_LARGE' && err.path !== undefined && isDrawing(err.path)) return openLargeDrawing(root, err.path)
     throw err
   }
   const parsed = parseScene(asset.data)
@@ -172,7 +167,24 @@ export function openViewport(scene: DrawingScene): { viewport: { target: readonl
   return target.length > 0 ? { viewport: { target, fit: 'scale-down' } } : undefined
 }
 
-/** Reads `target` under `root` and parses it; rejects for the preview's broken state. */
-export async function loadDrawingScene(root: string, target: string): Promise<DrawingScene> {
-  return (await openDrawing(root, target)).scene
+/** A drawing read for a PICTURE (YAZ-4834 A19): the sidebar's hover picture and an embed's window read it this way. */
+export interface DrawingForPicture {
+  engine: ExcalidrawModule
+  /** The file's own appState (its background colour). */
+  appState: Record<string, unknown>
+  /** Restored as the canvas would, the soft-deleted left out; none means nothing to draw. */
+  elements: unknown[]
+  /** The image map exactly as the editor builds it (`DrawingEditor`'s `toDocument`). */
+  files: Record<string, unknown>
+}
+
+/** Reads `path` through `drawing:load` (pictures in it at most `imageMaxPx`) and restores it for a picture. */
+export async function readDrawingForPicture(root: string, path: string, imageMaxPx: number): Promise<DrawingForPicture> {
+  const [res, engine] = await Promise.all([api.drawing.load({ root, path, imageMaxPx }), loadExcalidraw()])
+  const parsed = parseSceneText(res.json)
+  const elements = visibleElements(engine.restoreElements(parsed.elements as never, null) as unknown[])
+  const files: Record<string, unknown> = {}
+  const created = Date.now()
+  for (const [id, entry] of Object.entries(res.files)) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+  return { engine, appState: parsed.appState, elements, files }
 }

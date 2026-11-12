@@ -69,8 +69,8 @@ async function mount(markdown: string, withDoors = true, letters: VaultsOfLetter
 }
 
 /** A note with one Markdown link; `inApp` finds `/Other/Plan.md` for a relative href. */
-async function mountMarkdown(markdown: string) {
-  const nav: Partial<MarkdownLinkNav> = { open: vi.fn(), copy: vi.fn().mockResolvedValue(undefined), onNotice: vi.fn() }
+async function mountMarkdown(markdown: string, extra: Partial<MarkdownLinkNav> = {}) {
+  const nav: Partial<MarkdownLinkNav> = { open: vi.fn(), copy: vi.fn().mockResolvedValue(undefined), onNotice: vi.fn(), ...extra }
   const m = await mountWith(markdown, (acts) => {
     Object.assign(nav, acts, {
       inApp: (href: string) => (href.startsWith('../') ? '/Other/Plan.md' : null),
@@ -142,7 +142,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name and ID', 'Copy ID', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
-      'Edit link', 'Remove link',
+      'Pill style ▸', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
   })
@@ -154,9 +154,23 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
-      'Edit link', 'Remove link',
+      'Pill style ▸', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
+  })
+
+  it('YAZ-4936: "Open in Explore" after "Open in new tab" when the host has the door, for a note only; it opens the note\'s path there', async () => {
+    const source = createWikilinkResolveSource()
+    source.update(resolve, records, folders, true, ['YAS'])
+    const openExplore = vi.fn()
+    const note = await mountWith('pad [[YAS-466]] tail\n', () => ({ wikilinks: source, wikilinkNav: { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn(), openExplore }, vaultsOfLetters: vaultsOf }))
+    const menu = menuOf(note.root, note.view, 'AR v2 plan')
+    expect(shape(menu).slice(2, 6)).toEqual(['Open', 'Open in new tab', 'Open in Explore', '──'])
+    rowOf(menu, 'Open in Explore').click()
+    expect(openExplore).toHaveBeenCalledOnce()
+    expect(openExplore.mock.calls[0][0]).toMatch(/\.md$/)
+    const folder = await mountWith('pad [[Projects]] tail\n', () => ({ wikilinks: source, wikilinkNav: { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn(), openExplore }, vaultsOfLetters: vaultsOf }))
+    expect(shape(menuOf(folder.root, folder.view, 'Projects'))).not.toContain('Open in Explore')
   })
 
   it('a folder link: no top line, and Open in ▸ has no New window, as in the sidebar', async () => {
@@ -166,9 +180,17 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
-      'Edit link', 'Remove link',
+      'Pill style ▸', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(['VS Code', 'Default app', '──', 'Reveal in Finder'])
+  })
+
+  it('YAZ-4936: a Markdown pill to a note has "Open in Explore" too, and it opens the page through `openPath` with "explore"', async () => {
+    const { root, view, nav } = await mountMarkdown('[the plan](../Other/Plan.md)\n', { exploreClick: () => false })
+    const menu = menuOf(root, view, 'the plan')
+    expect(shape(menu).slice(0, 3)).toEqual(['Open', 'Open in new tab', 'Open in Explore'])
+    rowOf(menu, 'Open in Explore').click()
+    expect(nav.openPath).toHaveBeenCalledWith('/Other/Plan.md', 'explore')
   })
 
   it('a Markdown link into another vault of the window: no top line (the pill shows its vault), Copy name, and the place rows of its page', async () => {
@@ -179,7 +201,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
-      'Edit link', 'Remove link',
+      'Pill style ▸', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
   })
@@ -196,7 +218,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       '(ID: YAS-466)', '──', // only what the pill hides (YAZ-3747 demo)
       'Open', 'Open in new tab', '──',
       'Copy name and ID', 'Copy ID', 'Copy path', '──',
-      'Edit link', 'Remove link',
+      'Pill style ▸', 'Edit link', 'Remove link',
     ])
   })
 })
@@ -359,7 +381,7 @@ describe('the menus of a missing note and an ID of another vault (YAZ-3905; thei
   it('S10: its menu says what it can, and copies the ID', async () => {
     const { root, view, onNotice } = await mount('pad [[YAS-999]] tail\n')
     const menu = menuOf(root, view, 'Missing note · YAS-999')
-    expect(shape(menu)).toEqual(['(Missing note · YAS-999)', '──', 'Copy ID', '──', 'Edit link', 'Remove link'])
+    expect(shape(menu)).toEqual(['(Missing note · YAS-999)', '──', 'Copy ID', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
     rowOf(menu, 'Copy ID').click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith('YAS-999')
     await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Copied: YAS-999'))
@@ -367,16 +389,16 @@ describe('the menus of a missing note and an ID of another vault (YAZ-3905; thei
 
   it('S23: an ID with another open vault\'s letters: its menu says whose ID it is', async () => {
     const { root, view } = await mount('pad [[INL-4]] tail\n')
-    expect(shape(menuOf(root, view, 'INL-4'))).toEqual(['(INL-4 · ID from the In-harness-lab vault)', '──', 'Copy ID', '──', 'Edit link', 'Remove link'])
+    expect(shape(menuOf(root, view, 'INL-4'))).toEqual(['(INL-4 · ID from the In-harness-lab vault)', '──', 'Copy ID', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
   })
 
   it('S23: letters that two open vaults share name no vault: "another vault"', async () => {
     const { root, view } = await mount('pad [[TWO-3]] tail\n')
-    expect(shape(menuOf(root, view, 'TWO-3'))).toEqual(['(TWO-3 · ID from another vault)', '──', 'Copy ID', '──', 'Edit link', 'Remove link'])
+    expect(shape(menuOf(root, view, 'TWO-3'))).toEqual(['(TWO-3 · ID from another vault)', '──', 'Copy ID', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
   })
 
   it('S23: letters no open vault has stay a name link, with a name link\'s menu', async () => {
     const plain = await mount('pad [[GPT-4]] tail\n')
-    expect(shape(menuOf(plain.root, plain.view, 'GPT-4'))).toEqual(['Open', 'Open in new tab', '──', 'Copy name', '──', 'Edit link', 'Remove link'])
+    expect(shape(menuOf(plain.root, plain.view, 'GPT-4'))).toEqual(['Open', 'Open in new tab', '──', 'Copy name', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
   })
 })

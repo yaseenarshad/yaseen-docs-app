@@ -142,3 +142,15 @@ describe('setViewFill', () => {
     ])
   })
 })
+
+describe('a fill whose link has words that only LOOK like an ID (YAZ-4954 part 2)', () => {
+  const rec = (path: string): IndexRecord => ({ ...AGENCY, id: undefined, path, name: path.slice(7), basename: path.slice(7, -3), title: path.slice(7, -3), folder: '' })
+  const notes = [rec('/vault/Covid notes.md'), rec('/vault/COVID-19.md')]
+  const resolve = linkResolver(notes, '/vault', [])
+
+  it('paints the note the editor opens: the left side when it is a page, in both orders', () => {
+    const index = fillIndex([{ note: '[[Covid notes|COVID-19]]', fill: 'red' }, { note: '[[COVID-19|Covid notes]]', fill: 'blue' }], resolve)
+    expect(cellFillOf(index, '/vault/Covid notes.md', 'file.name')).toBe('red')
+    expect(cellFillOf(index, '/vault/COVID-19.md', 'file.name')).toBe('blue')
+  })
+})

@@ -1,5 +1,5 @@
 /**
- * The "Drawing" slash-menu item (YAZ-877) — a row on Crepe's OWN BlockEdit menu, never a
+ * The "Drawing" and "Diagram" slash-menu items (YAZ-877; "Diagram" since YAZ-4831 item 2) — rows on Crepe's OWN BlockEdit menu, never a
  * parallel slash plugin. Crepe builds its stock groups and then hands the builder to
  * `featureConfigs[CrepeFeature.BlockEdit].buildMenu`, so appending to the existing
  * `advanced` group (Image / Code / Table / Math) puts Drawing exactly where a block-level
@@ -21,11 +21,12 @@
 import type { Ctx } from '@milkdown/kit/ctx'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { clearTextInCurrentBlockCommand } from '@milkdown/kit/preset/commonmark'
+import { newEmbed } from '@shared/embedOptions'
 
-/** How the menu item reaches the host's file layer (App/Editor own the root and the notice). */
+/** How the menu items reach the host's file layer (App/Editor own the root and the notice). */
 export interface DrawingCreator {
-  /** Creates one empty scene and resolves its `<name>.excalidraw` basename (`drawings/createDrawing.ts`). */
-  create: () => Promise<string>
+  /** Creates one empty board of `kind` for the note and resolves the embed's target (`drawings/createDrawing.ts`). */
+  create: (kind: 'drawing' | 'diagram') => Promise<string>
   /** Create failure: the passive in-window notice, never a dialog. Absent → failures are silent. */
   onNotice?: (message: string) => void
 }
@@ -41,8 +42,8 @@ export interface SlashMenuBuilder {
   }
 }
 
-/** The embed a new drawing leaves in the note (Obsidian's embed syntax; basename resolution). */
-export const drawingEmbed = (name: string) => `![[${name}]]`
+/** The embed a new board leaves in the note (Obsidian's embed syntax): its window (YAZ-4827), its view locked (YAZ-2571 round 7). */
+export const drawingEmbed = (name: string) => newEmbed(name)
 
 /** Pencil-on-a-square, drawn to match the stock 24px items (Crepe renders the string as-is). */
 const drawingIcon = `
@@ -58,26 +59,39 @@ const drawingIcon = `
   </svg>
 `
 
+/** Three boxes joined by lines: a diagram, drawn to match the stock 24px items. */
+const diagramIcon = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="9" y="3" width="6" height="5" rx="1" />
+    <rect x="3" y="16" width="6" height="5" rx="1" />
+    <rect x="15" y="16" width="6" height="5" rx="1" />
+    <path d="M12 8v4M6 16v-2h12v2" />
+  </svg>
+`
+
 /**
  * The `buildMenu` callback for `featureConfigs[CrepeFeature.BlockEdit]`. Only ever built when
  * the host supplies a creator — a mount without one adds no row at all (decoration-only and
- * test mounts keep Crepe's stock menu exactly).
+ * test mounts keep Crepe's stock menu exactly). "Diagram" stands right after "Drawing".
  */
 export function drawingMenu(drawing: DrawingCreator): (builder: SlashMenuBuilder) => void {
+  const row = (kind: 'drawing' | 'diagram', label: string, icon: string) => ({
+    label,
+    icon,
+    onRun: (ctx: Ctx) => {
+      ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key)
+      void drawing
+        .create(kind)
+        .then((name) => {
+          const view = ctx.get(editorViewCtx)
+          view.dispatch(view.state.tr.insertText(drawingEmbed(name)))
+        })
+        .catch((err: unknown) => drawing.onNotice?.(`Can't create a ${kind}: ${err instanceof Error ? err.message : String(err)}`))
+    },
+  })
   return (builder) => {
-    builder.getGroup('advanced').addItem('drawing', {
-      label: 'Drawing',
-      icon: drawingIcon,
-      onRun: (ctx) => {
-        ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key)
-        void drawing
-          .create()
-          .then((name) => {
-            const view = ctx.get(editorViewCtx)
-            view.dispatch(view.state.tr.insertText(drawingEmbed(name)))
-          })
-          .catch((err: unknown) => drawing.onNotice?.(`Can't create a drawing: ${err instanceof Error ? err.message : String(err)}`))
-      },
-    })
+    const group = builder.getGroup('advanced')
+    group.addItem('drawing', row('drawing', 'Drawing', drawingIcon))
+    group.addItem('diagram', row('diagram', 'Diagram', diagramIcon))
   }
 }

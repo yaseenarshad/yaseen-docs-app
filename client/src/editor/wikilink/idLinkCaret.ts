@@ -3,6 +3,8 @@
  * pill, `isLinkUnit`): it stays a pill wherever the caret is (`wikilinkPlugin.ts` `opens`). The raw `[[…]]` opens only
  * from the link menu's "Edit link", and closes when the caret leaves it. A Markdown link pill is one unit too, by the
  * same rules (YAZ-4021, `markdownPillsAround`); its words change only by "Edit link" or by typing over the whole pill.
+ * A board embed (`![[x.drawio|…]]`, YAZ-4827 item 21) is one unit by the same rules: the caret steps over its window,
+ * Backspace and Delete remove it whole, and only its menu's "Edit link" opens its text.
  *  - A caret or a selection end that lands inside a closed link steps over it: after ← or → (with Shift or ⌥ too) from
  *    one edge to the other, after anything else (↑/↓, a drag, the browser's own nudge) to the nearer edge. A click on
  *    the pill itself is `wikilinkClick.ts`'s: it puts the caret at the edge the pointer is nearer, by the pill's middle.
@@ -21,6 +23,7 @@
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { boardCheckOf, boardEmbedAt, boardEmbedsIn } from '../drawing/boardEmbedScan'
 import { markdownPillsAround } from '../markdownLink'
 import { wikilinkMatchAt } from './wikilinkClick'
 import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, isLinkUnit } from './wikilinkPlugin'
@@ -28,10 +31,12 @@ import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, isLinkUnit } from './wikilin
 /** Set on "Edit link"'s selection (`wikilinkMenu.ts`): the one way into a link. */
 export const OPEN_ID_LINK = 'mdapp-open-id-link'
 
-/** The link that is a unit and holds `pos` strictly inside it, or null: a `[[link]]`, or a Markdown link pill (YAZ-4021). */
+/** The link that is a unit and holds `pos` strictly inside it, or null: a `[[link]]`, a board embed, or a Markdown link pill (YAZ-4021). */
 function linkAround(state: EditorState, pos: number): { from: number; to: number } | null {
   const match = wikilinkMatchAt(state.doc, pos)
   if (match !== null && pos > match.from && isLinkUnit(match.inner)) return match
+  const embed = boardEmbedAt(state.doc, pos, 'inside', boardCheckOf(state))
+  if (embed !== null) return embed
   return markdownPillsAround(state, pos).find((pill) => pill.from < pos && pos < pill.to) ?? null
 }
 
@@ -40,6 +45,9 @@ function linkBeside(state: EditorState, pos: number, back: boolean): { from: num
   const at = back ? pos - 1 : pos + 1
   const match = wikilinkMatchAt(state.doc, at)
   if (match !== null && at > match.from && isLinkUnit(match.inner)) return (back ? match.to : match.from) === pos ? match : null
+  const $pos = state.doc.resolve(pos)
+  const embed = $pos.parent.isTextblock ? boardEmbedsIn($pos.parent, $pos.before(), boardCheckOf(state)).find((m) => (back ? m.to : m.from) === pos) : undefined
+  if (embed !== undefined) return embed
   // One search of the pills: a one-letter pill has no position strictly inside it, so its edge is matched, not `at`.
   return markdownPillsAround(state, pos).find((pill) => (back ? pill.to : pill.from) === pos) ?? null
 }

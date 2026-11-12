@@ -105,6 +105,19 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     expect(pressed('folderPages.columnMarks')).toBe('Icon') // C11: the header's mark is an icon by default
   })
 
+  it('the calendar lines (YAZ-4878): 1 px and Gray by default; a pick in "Thickness ▾" writes weekLine, one in the colour dot writes dayLineColor', async () => {
+    await open('Folder pages')
+    for (const part of ['weekLine', 'dayLine']) expect(row(`folderPages.${part}`)?.querySelector('.cal-line__thickness')?.textContent).toBe('1 px')
+    // The dropdown is on the body (`Popover`'s `portal`, YAZ-4878 demo), not in the row.
+    const inPanel = (find: (b: HTMLButtonElement) => boolean) => [...document.body.querySelectorAll<HTMLButtonElement>('.cal-line__panel button')].find(find)!
+    act(() => row('folderPages.weekLine')!.querySelector<HTMLButtonElement>('.cal-line__thickness')!.click())
+    act(() => inPanel((b) => b.textContent === '3 px').click())
+    expect(written().folderPages).toEqual({ ...DEFAULT_SETTINGS.folderPages, weekLine: 3 })
+    act(() => row('folderPages.dayLine')!.querySelector<HTMLButtonElement>('.cal-line__colour')!.click())
+    act(() => inPanel((b) => b.textContent === 'Teal').click())
+    expect(written().folderPages).toEqual({ ...DEFAULT_SETTINGS.folderPages, dayLineColor: 'teal' })
+  })
+
   it('Row band and the window pin show the table block’s setting until they are set', async () => {
     await open('Folder pages', { ...DEFAULT_SETTINGS, tableRowBand: 'off', tableCellNotePinned: false })
     expect(pressed('folderPages.rowBand')).toBe('Off')

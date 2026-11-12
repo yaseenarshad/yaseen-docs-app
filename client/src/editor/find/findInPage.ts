@@ -46,6 +46,10 @@ import { collapsedItemsHiding, hasOutlineFoldMeta, setOutlineFoldSet } from '../
 import { getZoomedItemPos } from '../outline/zoom'
 import { closeCellNote, openCellNote, revealOpenCell, showInCard } from '../table/cellNoteCard'
 import { cellNoteAround, cellNoteCardKey, isCellNoteHidden, markPosOf } from '../table/cellNotes'
+import { closeHistory } from '@milkdown/kit/prose/history'
+import { rowFolded } from '../table/cells'
+import { unfoldRun } from '../table/tableFold'
+import { boardCheckOf, boardEmbedKey, boardEmbedsIn, embedRevealed } from '../drawing/boardEmbedScan'
 import { pillLinks, type PillLink, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { FindChannel, FindController, FindResult } from './findChannel'
@@ -179,10 +183,17 @@ const findMatches = (state: EditorState, query: string, zoom: Match | null, link
   const needle = query.toLowerCase()
   if (needle === '') return []
   const matches: Match[] = []
+  // What the board embeds hide, by the host's own scan and reveal rule; nothing in an editor without the host. Its
+  // plugin, not its state: find's state is built first, before the host's for the same transaction.
+  const host = boardEmbedKey.get(state) !== undefined
+  const isBoard = boardCheckOf(state)
   state.doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
     const pills = links === undefined || node.type.spec.code === true ? [] : pillLinks(node, pos, state.selection, links.wikilinks, links.viewOnly)
+    // A board embed's text is under its window (YAZ-4827 item 15): none of it is a match, unless "Edit link" opened it.
+    const embeds = host ? boardEmbedsIn(node, pos, isBoard).filter((embed) => !embedRevealed(state.selection, embed.from, embed.to)) : []
     for (const match of blockMatches(node, pos, needle, pills)) {
+      if (embeds.some((embed) => match.from < embed.to && match.to > embed.from)) continue
       if ((zoom === null || (match.from >= zoom.from && match.from < zoom.to)) && (!shownOnly || shows(state, match.from))) matches.push(match)
     }
     return false
@@ -303,7 +314,22 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
     foldHeadings([...revealedHeadings], false)
     if (differs(revealed, previous.revealed) || differs(revealedHeadings, previous.revealedHeadings))
       dispatchMeta({ type: 'revealed', revealed, revealedHeadings })
+    if (folds !== 'keep' && active !== null) openTableRun(active.from)
     followNotes()
+  }
+  /**
+   * A match in a folded table row (a collapsed subheader section, YAZ-4899 item 20, or a "Fold N rows" run) opens the
+   * run, so the match shows. A fold is in the file, so this is a document change (one ⌘Z), and it stays open.
+   */
+  const openTableRun = (pos: number): void => {
+    const $pos = view.state.doc.resolve(pos)
+    for (let depth = $pos.depth; depth > 0; depth--) {
+      if ($pos.node(depth).type.spec.tableRole !== 'row') continue
+      if (!rowFolded($pos.node(depth))) return
+      const tr = unfoldRun(closeHistory(view.state.tr), $pos.before(depth - 1), $pos.index(depth - 1))
+      if (tr.docChanged) view.dispatch(tr)
+      return
+    }
   }
   /**
    * D19: the card find opened closes when the active match is not in it; the hidden cell note that holds the active

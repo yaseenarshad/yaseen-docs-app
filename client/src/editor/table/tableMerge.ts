@@ -31,6 +31,8 @@ export function mergeRect(selection: Selection): TableRect | null {
   const map = TableMap.get(table)
   const rect: TableRect = { ...map.rectBetween(selection.$anchorCell.pos - tableStart, selection.$headCell.pos - tableStart), table, tableStart, map }
   if (rect.top === 0 && rect.bottom > 1) return null
+  // A Super table's rows move alone in its views (YAZ-4869 item 17): no cell may span rows there.
+  if (table.attrs.superTable === true && rect.bottom - rect.top > 1) return null
   if (mergeCrosses(rect)) return null
   if (map.cellsInRect(rect).some((pos) => table.nodeAt(pos)!.attrs.fold === true)) return null
   return rect

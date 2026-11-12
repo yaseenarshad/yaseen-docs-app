@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
 import { basenameKey, makeResolver, targetBasename, targetKey } from '@shared/linkResolver'
-import { type ViewResult, defaultLabel, folderAt, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
+import { type Group, type RunOptions, type ViewResult, defaultLabel, folderAt, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
 import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
 import { groupKeyOf } from './view/GroupHeader'
 import { DateValue, ErrorValue, FileValue } from './expr'
@@ -107,6 +107,17 @@ describe('runView: filters (GRO-2133)', () => {
     expect(r.rows).toHaveLength(count)
     expect(r.total).toBe(count)
     expect(r.errors).toEqual([])
+  })
+
+  it('crossOut (YAZ-4864) marks the matching rows `crossed` and filters none; a broken one marks none and reports', () => {
+    const r = run({ crossOut: { and: ['status == "idea"'] }, sort: [] })
+    expect(r.rows).toHaveLength(8)
+    expect(r.rows.filter((row) => row.crossed === true)).toHaveLength(2)
+    expect(r.rows.filter((row) => row.crossed === true).every((row) => row.record.properties.status === 'idea')).toBe(true)
+    const broken = run({ crossOut: 'status ==', sort: [] })
+    expect(broken.rows.some((row) => row.crossed === true)).toBe(false)
+    expect(broken.errors.map((e) => e.where)).toEqual(['views[0].crossOut'])
+    expect(run({ sort: [] }).rows.some((row) => 'crossed' in row)).toBe(false)
   })
 
   it('file.hasLink matches through the resolver: List of Topics and The Levels of an Agency', () => {
@@ -628,6 +639,113 @@ describe('runView: group by Folder under a page (YAZ-2541)', () => {
   })
 })
 
+describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
+  const at = (path: string, properties: Record<string, unknown> = {}) => {
+    const basename = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    return { ...TEST_RECORDS[0], path: `/vault/${path}`, basename, title: basename, folder, properties } as IndexRecord
+  }
+  /** The page `stages`: notes one, two, three and four folders down, and a shortcut living in `Sub`. */
+  const recs = [
+    at('stages/Lead Gen.md', { status: 'open' }),
+    at('stages/Sales.md', { status: 'done' }),
+    at('stages/archive/Old.md', { status: 'done' }),
+    at('stages/archive/2019/Older.md', { status: 'open' }),
+    at('stages/archive/2019/q1/Deep.md', { status: 'done' }),
+    at('stages/archive/2019/q1/Deeper.md', { status: 'open' }),
+    at('stages/active/Now.md', { status: 'open' }),
+    at('Sub/Outsider.md', { status: 'open' }),
+  ]
+  const folders = [
+    { ...at('stages/.folder.md'), title: 'Stages' },
+    { ...at('stages/archive/.folder.md'), title: 'Archive' },
+    { ...at('stages/archive/2019/q1/.folder.md'), title: 'Q1' },
+  ]
+  const page = { folder: 'stages', folders, vault: 'My Vault' }
+  const T = (groupBy: ViewDef['groupBy']) => runView({ views: [] }, { type: 'table', name: 'T', groupBy }, recs, { page })
+  const names = (rows: readonly { record: IndexRecord }[] | undefined) => (rows ?? []).map((x) => x.record.basename)
+  /** A group as `label [nested?] direct | rows`, its children indented under it. */
+  const tree = (groups: readonly Group[], indent = ''): string[] =>
+    groups.flatMap((g) => [
+      `${indent}${g.label}${g.nested ? ' *' : ''}${g.children === undefined ? ` = ${names(g.rows).join(',')}` : ` (${names(g.direct).join(',')})`}`,
+      ...tree(g.children ?? [], `${indent}  `),
+    ])
+
+  it('Top folder (no Depth) reads and groups as before, and saves nothing new', () => {
+    const r = T({ property: 'file.folder' })
+    expect(tree(r.groups!)).toEqual(['Stages = Lead Gen,Sales', 'active = Now', 'Archive = Old,Older,Deep,Deeper', 'Sub = Outsider'])
+    expect(r.groups!.some((g) => g.nested)).toBe(false)
+  })
+
+  it('Depth 2: the subfolders nest inside their folder\'s group on the SAME level; a folder\'s own notes sit first, above them; a folder with no subfolder is a leaf', () => {
+    const r = T({ property: 'file.folder', depth: 2 })
+    expect(tree(r.groups!)).toEqual(['Stages = Lead Gen,Sales', 'active = Now', 'Archive * (Old)', '  2019 = Older,Deep,Deeper', 'Sub = Outsider'])
+    // The outer group's rows stay the whole branch, so its count and summaries are unchanged.
+    expect(r.groups![2].rows).toHaveLength(4)
+  })
+
+  it('Depth 3 goes one step further; All goes to the bottom of the tree', () => {
+    expect(tree(T({ property: 'file.folder', depth: 3 }).groups!)).toEqual(['Stages = Lead Gen,Sales', 'active = Now', 'Archive * (Old)', '  2019 * (Older)', '    Q1 = Deep,Deeper', 'Sub = Outsider'])
+    expect(tree(T({ property: 'file.folder', depth: 'all' }).groups!)).toEqual(tree(T({ property: 'file.folder', depth: 3 }).groups!))
+  })
+
+  it('"Folder (All), then Status": the Status groups sit inside each deepest folder, and a folder\'s own notes above its subfolders are not split', () => {
+    const r = T([{ property: 'file.folder', depth: 'all' }, { property: 'status' }])
+    expect(tree(r.groups!)).toEqual([
+      'Stages ()', '  done = Sales', '  open = Lead Gen',
+      'active ()', '  open = Now',
+      'Archive * (Old)', '  2019 * (Older)', '    Q1 ()', '      done = Deep', '      open = Deeper',
+      'Sub ()', '  open = Outsider',
+    ])
+  })
+
+  it('"Status, then Folder (2)": the nested folder groups sit inside each Status group', () => {
+    const r = T([{ property: 'status' }, { property: 'file.folder', depth: 2 }])
+    expect(tree(r.groups!)).toEqual([
+      'done ()', '  Stages = Sales', '  Archive * (Old)', '    2019 = Deep',
+      'open ()', '  Stages = Lead Gen', '  active = Now', '  Archive * ()', '    2019 = Older,Deeper', '  Sub = Outsider',
+    ])
+  })
+
+  it('Full path: one flat header per folder at the Depth, named by its path from the page with " › " (titles as the sidebar names them)', () => {
+    const r = T({ property: 'file.folder', depth: 'all', layout: 'path' })
+    expect(r.groups!.map((g) => [g.key, g.label, names(g.rows).join(',')])).toEqual([
+      ['stages', 'Stages', 'Lead Gen,Sales'],
+      ['stages/active', 'active', 'Now'],
+      ['stages/archive', 'Archive', 'Old'],
+      ['stages/archive/2019', 'Archive › 2019', 'Older'],
+      ['stages/archive/2019/q1', 'Archive › 2019 › Q1', 'Deep,Deeper'],
+      ['Sub', 'Sub', 'Outsider'],
+    ])
+    expect(r.groups!.every((g) => g.children === undefined && g.nested === undefined)).toBe(true)
+    expect(T({ property: 'file.folder', depth: 2, layout: 'path' }).groups!.map((g) => [g.label, names(g.rows).join(',')])).toEqual([
+      ['Stages', 'Lead Gen,Sales'], ['active', 'Now'], ['Archive', 'Old'], ['Archive › 2019', 'Older,Deep,Deeper'], ['Sub', 'Outsider'],
+    ])
+  })
+
+  it('"Folder (All, Full path), then Status" keeps the flat headers and groups Status inside each', () => {
+    const r = T([{ property: 'file.folder', depth: 'all', layout: 'path' }, { property: 'status' }])
+    expect(tree(r.groups!)).toEqual([
+      'Stages ()', '  done = Sales', '  open = Lead Gen',
+      'active ()', '  open = Now',
+      'Archive ()', '  done = Old',
+      'Archive › 2019 ()', '  open = Older',
+      'Archive › 2019 › Q1 ()', '  done = Deep', '  open = Deeper',
+      'Sub ()', '  open = Outsider',
+    ])
+  })
+
+  it('a Depth the app does not know, and a Depth off a Folder level, read as Top folder', () => {
+    expect(tree(T({ property: 'file.folder', depth: 9 as unknown as 2 }).groups!)).toEqual(tree(T({ property: 'file.folder' }).groups!))
+    expect(tree(T({ property: 'status', depth: 'all' }).groups!)).toEqual(['done = Sales,Old,Deep', 'open = Lead Gen,Older,Deeper,Now,Outsider'])
+  })
+
+  it('"Folder (2), then Folder" as two view levels: the second level is the next folder down past the Depth', () => {
+    const r = T([{ property: 'file.folder', depth: 2 }, { property: 'file.folder' }])
+    expect(tree(r.groups!)).toEqual(['Stages (Lead Gen,Sales)', 'active (Now)', 'Archive * (Old)', '  2019 (Older)', '    Q1 = Deep,Deeper', 'Sub (Outsider)'])
+  })
+})
+
 describe('propertyKeys / propertyLabel (GRO-2133)', () => {
   it('propertyKeys: view.order when set, else file.name + sorted note keys', () => {
     expect(propertyKeys(yasin, yasin.views[0], TEST_RECORDS)).toEqual(['file.name'])
@@ -649,6 +767,13 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status']).filter((k) => k === 'note.status')).toHaveLength(1)
     // an explicit order still wins
     expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name'] }, TEST_RECORDS, ['status'])).toEqual(['file.name'])
+  })
+
+  it('propertyKeys: a calendar with no order shows the name alone (YAZ-4857 item 4); its order wins; the other types keep their default', () => {
+    const calendar = { type: 'calendar', name: 'C' }
+    expect(propertyKeys(yasin, calendar, TEST_RECORDS, ['status', 'owner'])).toEqual(['file.name'])
+    expect(propertyKeys(yasin, { ...calendar, order: ['file.name', 'note.status'] }, TEST_RECORDS)).toEqual(['file.name', 'note.status'])
+    for (const type of ['table', 'board', 'list', 'cards']) expect(propertyKeys(yasin, { type, name: 'X' }, [], ['status'])).toEqual(['file.name', 'note.status'])
   })
 
   it('propertyLabel: displayName (bare or note.-prefixed key) else the default label (YAZ-1513)', () => {
@@ -783,6 +908,43 @@ describe('targetBasename (YAZ-2241)', () => {
       }
     }
     expect(resolved).toBeGreaterThan(1000)
+  })
+})
+
+describe('views: words that only LOOK like an ID (YAZ-4954)', () => {
+  const rec = (name: string, properties: Record<string, unknown> = {}, links: string[] = []) =>
+    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, name: `${name}.md`, basename: name, title: name, folder: '', properties, links }) as IndexRecord
+  const COVID = rec('Covid notes')
+  const ID_NOTE = rec('COVID-19')
+  // As the index reads them (`scan.test.ts`): the words-first link keeps both sides, the ID-first one its ID.
+  const A = rec('A', { related: '[[Covid notes|COVID-19]]' }, ['Covid notes|COVID-19'])
+  const B = rec('B', { related: '[[COVID-19|Covid notes]]' }, ['COVID-19'])
+  const view = (records: IndexRecord[], filters?: string) =>
+    runView({ views: [], formulas: { page: 'related.asFile().name' } }, { type: 'table', name: 'T', order: ['formula.page'], sort: [{ property: 'file.basename', direction: 'ASC' }], ...(filters && { filters }) }, records, { resolve: resolverFor(records, '/vault') })
+
+  it('a frontmatter value: the left side is the page when it is a note; the other order names the ID', () => {
+    const r = view([A, B, COVID, ID_NOTE], 'file.basename == "A" || file.basename == "B"')
+    expect(r.rows.map(x => [x.record.basename, x.values['formula.page']])).toEqual([['A', 'Covid notes'], ['B', 'COVID-19']])
+  })
+
+  it('only one side is a note: that side', () => {
+    expect(view([A, ID_NOTE], 'file.basename == "A"').rows[0].values['formula.page']).toBe('COVID-19')
+    expect(view([A, COVID], 'file.basename == "A"').rows[0].values['formula.page']).toBe('Covid notes')
+  })
+
+  it('file.hasLink and a property compare pick the same page', () => {
+    const all = [A, B, COVID, ID_NOTE]
+    expect(view(all, 'file.hasLink("Covid notes")').rows.map(x => x.record.basename)).toEqual(['A'])
+    expect(view(all, 'file.hasLink("COVID-19")').rows.map(x => x.record.basename)).toEqual(['B'])
+    expect(view(all, 'related == link("Covid notes")').rows.map(x => x.record.basename)).toEqual(['A'])
+  })
+
+  it('the resolver reads a kept pair and a whole link by the same rule', () => {
+    const resolve = makeResolver([A, COVID, ID_NOTE].map(r => new FileValue(r)), '/vault')
+    expect(resolve('Covid notes|COVID-19')?.record.title).toBe('Covid notes')
+    expect(resolve('[[Covid notes|COVID-19]]')?.record.title).toBe('Covid notes')
+    expect(resolve('COVID-19|Covid notes')?.record.title).toBe('COVID-19')
+    expect(makeResolver([ID_NOTE].map(r => new FileValue(r)))('Covid notes|COVID-19')?.record.title).toBe('COVID-19')
   })
 })
 
@@ -1246,5 +1408,46 @@ describe('one key, capitals ignored (YAZ-4769)', () => {
     const view: ViewDef = { type: 'table', name: 'T', sort: [{ property: 'note.SCORE', direction: 'DESC' }] }
     const r = runView({ views: [] }, view, recs([{ score: 1 }, { score: 3 }, { score: 2 }]), { declared: ['score'] })
     expect(names(r)).toEqual(['n1', 'n2', 'n0'])
+  })
+})
+
+describe('runView: live relative dates (YAZ-4919)', () => {
+  // TEST_RECORDS: Agentic Agency is dated 2026-08-01 (a Saturday), Creator Economy 2026-07-15 (a Wednesday); the rest have no date.
+  const titles = (filters: string, opts: RunOptions) => {
+    const def = parseViews(`views:\n  - type: table\n    name: T\n    filters: '${filters}'\n`).def
+    const r = runView(def, def.views[0], TEST_RECORDS, opts)
+    expect(r.errors).toEqual([])
+    return r.rows.map((row) => row.record.title)
+  }
+  const at = (y: number, m: number, d: number, h = 10) => new Date(y, m - 1, d, h).getTime()
+
+  it('isToday / isThisWeek / isThisMonth read the run\'s clock, injected; an undated note is out, with no error', () => {
+    expect(titles('note.date.isToday()', { now: at(2026, 8, 1, 23) })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isToday()', { now: at(2026, 8, 2) })).toEqual([])
+    expect(titles('note.date.isThisMonth()', { now: at(2026, 7, 20) })).toEqual(['Creator Economy'])
+    expect(titles('note.date.isThisMonth()', { now: at(2026, 8, 31) })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isThisMonth()', { now: at(2026, 9, 1) })).toEqual([])
+  })
+
+  it('isThisWeek starts the week on Sunday, or on Monday by the option (Settings › Folder pages › Week starts on)', () => {
+    // Thursday 2026-07-30: Sunday's week runs 07-26 … 08-01, Monday's 07-27 … 08-02; both hold Saturday 08-01.
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 7, 30) })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 7, 30), weekStartsOn: 'monday' })).toEqual(['Agentic Agency'])
+    // Sunday 2026-08-02: Sunday's week is 08-02 … 08-08 (08-01 out); Monday's is 07-27 … 08-02 (08-01 in).
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 8, 2) })).toEqual([])
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 8, 2), weekStartsOn: 'monday' })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 7, 13) })).toEqual(['Creator Economy'])
+  })
+
+  it('a fixed-date rule reads as before, whatever the clock; the clock is read ONCE per run, not per row', () => {
+    expect(titles('note.date == date("2026-08-01")', { now: at(2030, 1, 1) })).toEqual(['Agentic Agency'])
+    expect(titles('!note.date.isEmpty() && note.date < date("2026-08-01")', { now: at(2030, 1, 1) })).toEqual(['Creator Economy'])
+    const spy = vi.spyOn(Date, 'now')
+    try {
+      titles('note.date.isToday() || note.date.isThisWeek()', {})
+      expect(spy).toHaveBeenCalledTimes(1)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

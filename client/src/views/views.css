@@ -510,6 +510,13 @@
 .view-settings .view-seg__opt { padding: 2px 7px; }
 .view-settings .property-board-setting { padding: 0; margin: 0; border: 0; }
 .view-settings .property-board-setting small { margin-top: 2px; }
+/* "Cross out when" (YAZ-4864): its label as a row, then the Filter menu's rows, all at the rows' inset (round 2 polish:
+   the label and the All · Any · None switch stood at the tab's edge, left of every other row). */
+.view-settings__cross-out { display: flex; flex-direction: column; gap: 6px; padding: 0 8px; font-size: 12px; color: var(--fg-muted); }
+.view-settings__cross-out > .view-settings-row__label { min-height: 32px; color: var(--fg); }
+.view-settings__cross-out .filter-menu { color: var(--fg); }
+.view-settings__cross-out .view-menu__head { margin-bottom: 4px; }
+.view-settings__cross-out .view-menu__foot { margin-top: 4px; }
 
 .view-prop {
   display: flex;
@@ -1152,6 +1159,51 @@
   box-sizing: border-box;
 }
 
+/* Filter › (YAZ-4919): a box in the flyout, as wide as its rows; the checklist's ✓ box, as the tab row panel's. */
+.column-filter__input {
+  display: block;
+  width: calc(100% - 20px);
+  min-width: 160px;
+  margin: 2px 10px 6px;
+  box-sizing: border-box;
+}
+
+.column-filter__box {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+[role='menuitemcheckbox'][aria-checked='true'] .column-filter__box {
+  border-color: var(--accent);
+}
+
+/* Under the Contains box (YAZ-4919 round 2): the live count as a heading, and the column's values each with its row count
+   at the right end, drawn from the attribute so the row's text stays the bare value; a ✓ (the hint) sits after it. */
+.column-filter__count {
+  padding-top: 0;
+}
+
+.column-filter__value::before {
+  content: attr(data-count);
+  order: 1;
+  margin-left: auto;
+  opacity: 0.5;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.column-filter__value[data-hint]::after {
+  order: 2;
+}
+
 .view-table tbody td {
   height: var(--view-table-row-h, 28px);
   overflow-wrap: anywhere;
@@ -1372,8 +1424,8 @@
   cursor: pointer;
 }
 .wikilink.view-link-pill:not(.wikilink--unresolved) {
-  padding: 0 4px;
-  border-radius: 4px;
+  padding: 0 var(--pill-pad, 4px);
+  border-radius: var(--pill-radius, 4px);
 }
 .wikilink--unresolved.view-link-pill {
   cursor: inherit;
@@ -1383,11 +1435,18 @@
 .view-link-pill:has(+ .view-link-pill) {
   margin-right: 4px;
 }
-/* Each pill wears its page's icon (YAZ-4544 4G). The editor hides the icon of a link's second piece
-   (`.wikilink + .wikilink`, wikilink.css, `!important`); a Multi-link cell's next pill is another link, so it keeps its own. */
-.wikilink.view-link-pill + .wikilink.view-link-pill.file-icon::before {
-  content: '' !important;
-  display: inline-block !important;
+/* Each pill wears its page's icon (YAZ-4544 4G): a `FileIcon` inside it, where the vault's format puts it (YAZ-4924:
+   on the name, or a piece of the head or the tail). The pieces the format adds (`LinkPillParts.tsx`) are inside the
+   pill's span here: no sibling rules to join; they take the words' own style and each part its own variables, as the
+   note's do (`wikilink.css`). */
+.view-link-pill .link-pill__head,
+.view-link-pill .link-pill__tail {
+  display: inline;
+  color: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+  font-size: inherit;
+  text-decoration-line: var(--pill-decoration, none);
 }
 /* The table cell owns the mouse (`pointer-events: none` on its editable value): a pill takes its own clicks and hovers. */
 .view-table tbody td .view-link-pill {
@@ -2113,35 +2172,64 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+/* The line under the day names: always 1 px. */
 .view-cal__week + .view-cal__week {
   border-top: 1px solid var(--border);
+}
+
+/* YAZ-4878: the view's own "Lines between weeks" (`--cal-week-line`, set on the grid), only between two day rows
+   (YAZ-4898). Week view has one day row, so it has no week line. */
+.view-cal__week--days + .view-cal__week--days {
+  border-top: var(--cal-week-line, 1px) solid var(--cal-week-line-color, var(--border));
 }
 
 .view-cal__weekday {
   padding: 6px 8px;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--fg-muted);
-  background: var(--bg-side);
+  /* The header row's look (YAZ-4864 round 3): the view's `headerRow` over Settings › Tables, as custom properties on
+     the row (`headerRowVars`), the folder table's formula (`.view-table thead th`). The day names keep their own size. */
+  font-weight: var(--table-header-weight, 600);
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 1) * 100%), var(--fg)));
+  text-align: var(--table-header-align, left);
+  background: color-mix(in srgb, var(--table-header-hue, var(--fg)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), var(--bg));
+}
+
+/* A week row of days (YAZ-4858): row 1 the day heads, then one row per lane of bars, then the one-day cards. Each day
+   spans every row (a subgrid, so its head and its cards sit in the rows); a bar is an item of the row over its days. */
+.view-cal__week--days {
+  row-gap: 3px;
+  min-height: 104px;
 }
 
 .view-cal__day {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-row: 1 / -1;
+  grid-template-rows: subgrid;
   min-width: 0;
-  min-height: 104px;
   padding: 4px;
   background: var(--bg);
 }
 
+.view-cal__day-head {
+  grid-row: 1;
+}
+
+.view-cal__day-body {
+  display: flex;
+  grid-row: -2;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .view-cal__day + .view-cal__day,
 .view-cal__weekday + .view-cal__weekday {
-  border-left: 1px solid var(--border);
+  /* YAZ-4878: the view's own "Lines between days" (`--cal-day-line`). */
+  border-left: var(--cal-day-line, 1px) solid var(--cal-day-line-color, var(--border));
 }
 
 /* Week (YAZ-4558 D22): 7 tall days, each with every card. */
-.view-cal__grid--week .view-cal__day {
+.view-cal__grid--week .view-cal__week--days {
   min-height: 360px;
 }
 
@@ -2218,9 +2306,11 @@
 }
 
 .view-cal__card {
+  /* A column of lines (YAZ-4857): the name's line, then the shown columns' lines, the board's `cardLines`. */
+  position: relative;
   display: flex;
-  gap: 4px;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
   padding: 2px 6px;
   font-size: 12px;
@@ -2248,6 +2338,107 @@
   opacity: 0.4;
 }
 
+/* A card over several days (YAZ-4858): one bar across its columns, in its lane, inside the days' padding. A cut end
+   (the week's edge, or a hidden weekend) runs to the day's edge, square, so the bar reads as going on. */
+.view-cal__bar {
+  z-index: 1;
+  align-self: start;
+  margin: 0 4px;
+}
+
+.view-cal__bar.view-cal__bar--cut-start {
+  margin-left: 0;
+  border-left-style: dashed;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.view-cal__bar.view-cal__bar--cut-end {
+  margin-right: 0;
+  border-right-style: dashed;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* The edges (YAZ-4858): a thin strip at each end that stretches the card a day per step, as a column's edge does. */
+.view-cal__edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.view-cal__edge--start {
+  left: -1px;
+}
+
+.view-cal__edge--end {
+  right: -1px;
+}
+
+.view-cal__edge::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--fg-muted);
+  opacity: 0;
+}
+
+.view-cal__card:hover .view-cal__edge::after,
+.view-cal__card--resize .view-cal__edge::after {
+  opacity: 0.6;
+}
+
+.view-cal__card--resize {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* While an edge drags, every part of the calendar keeps the resize cursor and no text gets selected. */
+.view-cal--resizing,
+.view-cal--resizing * {
+  cursor: ew-resize !important;
+  user-select: none;
+}
+
+/* The message an edge drag gives with no End date column (YAZ-4858 item 4). */
+.view-cal__end-ask {
+  width: 260px;
+}
+
+.view-cal__end-ask-text {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg);
+}
+
+/* The name's line: the time, the weekend mark and the title, as the card's one row was before YAZ-4857. */
+.view-cal__card-head {
+  gap: 4px;
+}
+
+/* The board's lines are spaced for a big card; a calendar card is small. */
+.view-cal__card .view-board__line + .view-board__line {
+  margin-top: 0;
+}
+
+.view-cal__card .view-board__prop {
+  gap: 4px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.view-cal__card .view-board__prop-name {
+  font-size: 10px;
+}
+
 .view-cal__card-title {
   min-width: 0;
   overflow: hidden;
@@ -2255,6 +2446,54 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* "Cross out when" (YAZ-4864): the whole card struck through and grey, its name and every column line, as a done task
+   in a note (Yaseen: "can we make the entire thing get crossed out including its columns?"). An icon is no text: it stays. */
+.view-cal__card--crossed,
+.view-cal__card--crossed .view-cal__card-name {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+
+/* A card's own colour (YAZ-4906, `cardStyleAttrs`): the note's `color` property on a calendar card and a board card.
+   The colours and the strengths are the header row's (`table.css`): Light 15 %, Medium 30 %, Strong 50 % of the
+   colour over the card's background, so the text stays readable in light and dark; a crossed-out card keeps it. */
+:is(.view-cal__card, .view-board__card)[data-color='gray'] { --card-hue: var(--table-fill-solid-grey); }
+:is(.view-cal__card, .view-board__card)[data-color='red'] { --card-hue: var(--table-fill-solid-red); }
+:is(.view-cal__card, .view-board__card)[data-color='orange'] { --card-hue: var(--table-fill-solid-orange); }
+:is(.view-cal__card, .view-board__card)[data-color='yellow'] { --card-hue: var(--table-fill-solid-yellow); }
+:is(.view-cal__card, .view-board__card)[data-color='green'] { --card-hue: var(--table-fill-solid-green); }
+:is(.view-cal__card, .view-board__card)[data-color='teal'] { --card-hue: var(--table-fill-solid-teal); }
+:is(.view-cal__card, .view-board__card)[data-color='blue'] { --card-hue: var(--table-fill-solid-blue); }
+:is(.view-cal__card, .view-board__card)[data-color='purple'] { --card-hue: var(--table-fill-solid-purple); }
+:is(.view-cal__card, .view-board__card)[data-color='pink'] { --card-hue: var(--table-fill-solid-pink); }
+:is(.view-cal__card, .view-board__card)[data-color='black'] { --card-hue: var(--table-fill-solid-black); }
+:is(.view-cal__card, .view-board__card)[data-color-strength='light'] { --card-wash: 15%; }
+:is(.view-cal__card, .view-board__card)[data-color-strength='medium'] { --card-wash: 30%; }
+:is(.view-cal__card, .view-board__card)[data-color-strength='strong'] { --card-wash: 50%; }
+/* Black at 5 times the strength, as the header row's black (`table.css`, YAZ-4794): Light 30 %, Medium 60 %, Strong
+   solid black (Yaseen: "how come i have black selected but its not black?"). */
+:is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='medium'] { --card-wash: 60%; }
+:is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='light'] { --card-wash: 30%; }
+:is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='strong'] { --card-wash: 100%; }
+:is(.view-cal__card, .view-board__card)[data-color] { background: color-mix(in srgb, var(--card-hue) var(--card-wash, 30%), var(--bg)); }
+
+/* A card's text colour and weight (YAZ-4906 round 2, `cardStyleAttrs`): the note's `text_color` (the header row's Text
+   choices: Muted, White, or a colour as its cell text colour, darker in light and lighter in dark, `table.css`) and
+   `weight: bold`. They win over the title's own colour and over a crossed-out card's grey, which keeps its line. */
+:is(.view-cal__card, .view-board__card)[data-text='muted'] { --card-ink: var(--fg-muted); }
+:is(.view-cal__card, .view-board__card)[data-text='white'] { --card-ink: #fff; }
+:is(.view-cal__card, .view-board__card)[data-text='red'] { --card-ink: var(--table-text-red); }
+:is(.view-cal__card, .view-board__card)[data-text='orange'] { --card-ink: var(--table-text-orange); }
+:is(.view-cal__card, .view-board__card)[data-text='yellow'] { --card-ink: var(--table-text-yellow); }
+:is(.view-cal__card, .view-board__card)[data-text='green'] { --card-ink: var(--table-text-green); }
+:is(.view-cal__card, .view-board__card)[data-text='teal'] { --card-ink: var(--table-text-teal); }
+:is(.view-cal__card, .view-board__card)[data-text='blue'] { --card-ink: var(--table-text-blue); }
+:is(.view-cal__card, .view-board__card)[data-text='purple'] { --card-ink: var(--table-text-purple); }
+:is(.view-cal__card, .view-board__card)[data-text='pink'] { --card-ink: var(--table-text-pink); }
+:is(.view-cal__card, .view-board__card)[data-text],
+:is(.view-cal__card, .view-board__card)[data-text] :is(.view-cal__card-title, .view-cal__card-name, .view-board__title) { color: var(--card-ink); }
+:is(.view-cal__card, .view-board__card)[data-weight='bold'] { font-weight: 600; }
 
 /* Wrap (YAZ-4558 D23): the full title on more lines, and the day grows with it. */
 .view-cal__card--wrap .view-cal__card-title,
@@ -2314,10 +2553,17 @@
   }
 
   .view-cal__card {
-    flex-wrap: wrap;
-    gap: 0;
     padding-right: 1px;
     padding-left: 1px;
+  }
+
+  .view-cal__bar {
+    margin: 0 1px;
+  }
+
+  .view-cal__card-head {
+    flex-wrap: wrap;
+    gap: 0;
   }
 
   .view-cal__time {
@@ -2477,6 +2723,11 @@
 /* A nested group level steps in by the view's group indent, as the table does (YAZ-4532 D10). */
 .view-list__group .view-list__group {
   margin-left: var(--view-group-indent, 28px);
+}
+/* The indent stops after four steps (YAZ-4918, `MAX_GROUP_INDENT_LEVELS`): a deep folder tree does not push the list right. */
+.view-list__group .view-list__group .view-list__group .view-list__group .view-list__group .view-list__group,
+.view-cards__group .view-cards__group .view-cards__group .view-cards__group .view-cards__group .view-cards__group {
+  margin-left: 0;
 }
 
 .view-list__item {
@@ -2827,6 +3078,11 @@
    its × stands under the group rows' × (YAZ-4643 S6). */
 .sort-menu .view-rule__main.sort-menu__level { grid-template-columns: 18px minmax(0, 1fr) 118px 30px 20px; }
 .sort-menu .sort-menu__level > .view-rule__remove { grid-column: 5; }
+/* A Folder level's second line (YAZ-4918): "Depth [Top folder ▾]  Layout [Nested ▾]", under the column, in from the grip. */
+.sort-menu__folder { display: flex; align-items: center; gap: 6px; padding-left: 26px; margin-top: 4px; font-size: 12px; color: var(--fg-muted); }
+.sort-menu__folder-label + .view-dropdown__wrap { margin-right: 6px; }
+.sort-menu__folder-panel .view-popover__item { padding: 4px 24px 4px 10px; font-size: 12px; white-space: nowrap; }
+.sort-menu__folder-panel .view-popover__item[aria-pressed='true'] { color: var(--accent); }
 .group-style { display: contents; }
 .group-style__trigger { display: flex; align-items: center; justify-content: center; width: 100%; height: 30px; padding: 0; color: var(--fg); }
 .group-style__sample { font-size: 12px; font-weight: 600; }
@@ -2935,10 +3191,12 @@
 }
 .view-menu--tabbed > .view-menu__action:hover:not(:disabled) { color: var(--accent); background: var(--bg-hover); }
 
-/* View tab: sections of 32px rows. */
+/* View tab: sections of 32px rows. A line between two sections (YAZ-4864 round 2, Yaseen: "a right click menu has
+   lines for sections ... that is what we also need in the view"): the context menu's separator (`.ctx-menu__group +
+   .ctx-menu__group`, app.css), the same colour and thickness, with even room above and below it. */
 .view-settings { gap: 0; padding: 0; }
-.view-settings > .view-menu__label { margin: 10px 0 2px; padding: 0 8px; font-weight: 500; }
-.view-settings > .view-menu__label:first-child { margin-top: 2px; }
+.view-settings > .view-menu__label { margin: 8px 0 2px; padding: 8px 8px 0; font-weight: 500; border-top: 1px solid var(--border); }
+.view-settings > .view-menu__label:first-child { margin-top: 2px; padding-top: 0; border-top: 0; }
 .view-settings .view-settings-row { min-height: 32px; padding: 0 2px 0 8px; border-radius: 6px; color: var(--fg); }
 .view-settings .view-settings-row:hover { background: var(--bg-hover); }
 .view-settings-row__label { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -2946,23 +3204,65 @@
 .view-settings .view-seg__opt { padding: 2px 8px; }
 /* Header row (YAZ-4774, `TableLookSettings.tsx`): Color, Strength and Text under it, their words where the icons end. */
 .view-settings .view-settings-row--sub > span:first-child { padding-left: 22px; color: var(--fg-muted); }
-.view-header-colors { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 1px; }
-.view-header-colors > button { padding: 2px; border: 1px solid transparent; border-radius: 4px; }
-.view-header-colors > button[aria-pressed='true'] { border-color: var(--accent); }
-.view-header-colors .table-menu-swatch { width: 12px; height: 12px; }
-.view-header-text { display: flex; gap: 4px; }
-/* YAZ-4794: Text colour (Muted / Full and eight swatches) and Align (four words) drop under their name when the tab is
-   too narrow for them, right-aligned, instead of pushing the tab wider. */
-.view-settings .view-settings-row--wrap { flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; padding-top: 3px; padding-bottom: 3px; }
-.view-settings .view-settings-row--wrap .view-header-text { flex-wrap: wrap; justify-content: flex-end; align-items: center; }
 .view-settings .property-board-setting small { display: block; margin: -6px 0 4px; padding-left: 30px; font-size: 11px; color: var(--fg-muted); }
 .view-from-settings { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: -4px; }
 .view-from-settings--reset { color: var(--accent); text-decoration: none; border-radius: 4px; }
 .view-from-settings--reset:hover { background: var(--accent-soft); }
 .view-settings__foot { margin: 8px -10px -10px; padding: 8px 18px 10px; font-size: 11px; color: var(--fg-muted); border-top: 1px solid var(--border); }
 
-/* Quiet selects: a soft fill and a drawn chevron, no box. */
-.view-settings .view-select {
+/* A calendar line's two controls (YAZ-4878, `CalendarLineControls.tsx`): "3 px ▾" and a colour dot ▾, each a quiet
+   select in the View tab and in Settings › Folder pages; the thickness rows are the context menu's (`ctx-menu__item`,
+   a ✓ at the width, YAZ-4834 P18), the colour dot opens the style panel's Fill tab. */
+.cal-line { display: flex; flex: none; gap: 4px; align-items: center; }
+.view-dropdown__wrap { position: relative; display: inline-flex; }
+/* The dropdown's trigger (`Dropdown.tsx`): the quiet select below (its fill and drawn chevron, `view-select`) as an
+   inline box with a gap, in the View tab, Settings and the folder ⚙. */
+.view-dropdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  border: 1px solid transparent;
+}
+.cal-line__colour { padding-left: 6px; }
+.cal-line__dot { width: 12px; height: 12px; }
+/* The panel, on the body (`Popover`'s `portal`), over whatever opened it: the View tab, the Settings dialog (scrim 70,
+   `settings.css`) and the folder ⚙ placed on the page (z 1000,
+   `app.css` `.page-settings__menu--placed`); at 80 the ⚙'s Default view list opened behind the ⚙ (YAZ-4909 demo). */
+.view-dropdown__panel.view-popover { z-index: 1001; min-width: 0; padding: 4px; }
+.cal-line__custom { padding: 4px 6px 2px; font-size: 12px; }
+.cal-line__custom .view-input { width: 56px; }
+
+/* The "Aa" chip (YAZ-4864 round 3, `StylePanel.tsx` `HeaderStyleControl`): the header row's look in small — the fill at
+   its strength over the page, the text colour and the weight — the folder table's header formula (`.view-table thead th`). */
+.view-style { padding-left: 6px; }
+.view-style__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: var(--table-header-weight, 600);
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 1) * 100%), var(--fg)));
+  background: color-mix(in srgb, var(--table-header-hue, var(--fg)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), var(--bg));
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 15%, transparent);
+}
+/* The style panel and the folder ⚙'s list in a dropdown: the context menu's rows (`ctx-menu__item`, `fill-target`) at
+   the menu's padding. */
+:is(.view-style__panel, .page-settings__drop-panel).view-popover { width: max-content; padding: 4px; font-size: 13px; }
+.view-style__panel.view-popover { min-width: 200px; }
+.page-settings__drop-panel.view-popover { min-width: 160px; }
+.page-settings__line .page-settings__drop { max-width: 180px; font-size: 12px; }
+
+/* Quiet selects: a soft fill and a drawn chevron, no box. The dropdown's trigger (`view-dropdown`, above) is one wherever it sits. */
+.view-settings .view-select,
+.view-dropdown {
   appearance: none;
   height: 24px;
   padding: 0 22px 0 8px;
@@ -2971,7 +3271,8 @@
   border-radius: 5px;
   cursor: pointer;
 }
-.view-settings .view-select:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
+.view-settings .view-select:hover,
+.view-dropdown:hover { background-color: color-mix(in srgb, var(--fg) 10%, transparent); }
 
 /* Sort menu: the same quiet fills; the grip and × show on the row's hover. */
 .sort-menu .column-picker__trigger.view-select,

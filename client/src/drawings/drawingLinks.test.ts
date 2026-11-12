@@ -83,6 +83,24 @@ describe('the gestures on a pill', () => {
     expect(follow).toHaveBeenLastCalledWith(ID, 'thisTab')
   })
 
+  it('a read-only board follows the vault\'s "Clicking a link: Explore" (YAZ-4939): a note pill opens in Explore, a folder pill and ⌘-click keep their doors', () => {
+    const { links, follow, nav } = setup(true)
+    Object.assign(nav, { openExplore: vi.fn(), exploreClick: () => true })
+    expect(links.onPointerDown(hit(ID), press())).toBe(true)
+    expect(follow).toHaveBeenLastCalledWith(ID, 'explore')
+    expect(links.onPointerDown(hit('Projects'), press())).toBe(true)
+    expect(follow).toHaveBeenLastCalledWith('Projects', 'thisTab')
+    expect(links.onPointerDown(hit(ID), press({ metaKey: true }))).toBe(true)
+    expect(follow).toHaveBeenLastCalledWith(ID, 'backgroundTab')
+  })
+
+  it('an editable board keeps a plain click as the board\'s own (it selects the box), whatever the vault\'s choice', () => {
+    const { links, follow, nav } = setup()
+    Object.assign(nav, { openExplore: vi.fn(), exploreClick: () => true })
+    expect(links.onPointerDown(hit(ID), press())).toBe(false)
+    expect(follow).not.toHaveBeenCalled()
+  })
+
   it('⌘-click calls the note follower, which opens the page', () => {
     const { source, nav, deps } = setup()
     const follow = wikilinkFollower(source, nav)

@@ -736,6 +736,44 @@
 }
 
 /* The change pop-up (D6): the key now → the key it will have, big enough to read at a glance. */
+/* The change pop-up never grows past the window (YAZ-4941): its "Show all" list scrolls inside it. */
+.hotkeys__box .confirm {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+}
+.hotkeys__clash-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40vh;
+  margin: 4px 0 8px;
+  padding: 6px 10px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.6;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+/* One line per row (YAZ-4941): the keys stay whole, a long action cuts with "…" and shows in full on hover. */
+.hotkeys__clash-list li {
+  display: flex;
+  gap: 0.5em;
+  white-space: nowrap;
+}
+.hotkeys__clash-key {
+  flex: none;
+  min-width: 6.5em;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-muted);
+}
+.hotkeys__clash-action {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .hotkeys__swap {
   display: flex;
   align-items: flex-end;
@@ -1875,4 +1913,147 @@
   margin: 0;
   font-size: 12px;
   color: var(--danger, #d14343);
+}
+
+/* Settings › Link pills (YAZ-4924, `LinkPillsControl.tsx`): one row — the format box with its chips and the ready
+   formats, the vault rule, the preview (a "Preview" label and ONE sample pill; it wears the vault's look as a note
+   does, in the note's text size) and, under it, the toolbar of the part clicked. */
+.link-pills-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.link-pills-format {
+  width: 100%;
+  max-width: 520px;
+}
+
+/* The format box in the code font: a brace reads as a brace. */
+.link-pills-format .settings__input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+/* The token chips: small, in the code font, as the tokens they put in. */
+.link-pills-chips {
+  flex-wrap: wrap;
+}
+.link-pills-chip {
+  padding: 3px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.link-pills-preview {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  max-width: 520px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--fg);
+  cursor: default;
+}
+/* The "Preview" label: small and muted, no part of the pill. */
+.link-pills-preview__label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+/* A part of a pill is a click target: the hand says so. */
+.link-pills-preview .wikilink,
+.link-pills-preview .wikilink * {
+  cursor: pointer;
+}
+
+/* The style panel: the cell toolbar's look (`table.css` `.cell-toolbar`: Crepe's surface and shadow), a title line
+   ("Styling: the name", the part a quiet dropdown) and three rows, each with its short label on the left (round 3:
+   the unnamed strip read as four ways to style one thing). */
+.pill-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  /* Wide enough for the Colour row on one line: Accent · Text · Muted and the ten swatches. */
+  max-width: 600px;
+  padding: 8px 10px 10px;
+  border-radius: 8px;
+  background: var(--crepe-color-surface, var(--bg));
+  box-shadow: var(--crepe-shadow-1, 0 2px 8px rgba(0, 0, 0, 0.12));
+}
+.pill-toolbar__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.pill-toolbar__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+/* The title's dropdown reads as the title's last words, not as a form control: no box, the title's weight, a chevron. */
+.pill-toolbar__title .settings__select {
+  padding: 2px 20px 2px 4px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pill-toolbar__title .settings__select:hover {
+  border-color: var(--border);
+}
+.pill-toolbar__title .settings__select-wrap::after {
+  right: 6px;
+}
+/* No wrap: the label keeps its controls beside it; a long group (the colours) wraps inside itself instead. */
+.pill-toolbar__row {
+  display: flex;
+  align-items: center;
+  gap: 4px 8px;
+}
+.pill-toolbar__label {
+  flex: 0 0 56px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.pill-toolbar__group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.pill-toolbar .pill-toolbar__item {
+  min-width: 32px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+/* The mark's Icon row (YAZ-4924 round 5): each button is the small icon itself, centred, a little bigger than the words. */
+.pill-toolbar .pill-toolbar__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+.pill-toolbar__b {
+  font-weight: 700;
+}
+.pill-toolbar__i {
+  font-style: italic;
+}
+.pill-toolbar__u {
+  text-decoration: underline;
+}
+.pill-toolbar .pill-toolbar__close {
+  margin-left: auto;
+  color: var(--fg-muted);
 }

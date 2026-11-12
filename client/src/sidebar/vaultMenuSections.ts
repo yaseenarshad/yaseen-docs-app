@@ -1,6 +1,6 @@
 import { createElement, type ReactNode } from 'react'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
-import { CopyIcon } from '../views/view/icons'
+import { CopyIcon, FolderIcon } from '../views/view/icons'
 import type { KeyedVault } from '@shared/types'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { errorText, type MenuAction, type MenuSection } from './menuSections'
@@ -10,9 +10,13 @@ import { errorText, type MenuAction, type MenuSection } from './menuSections'
  * what means something for a vault. Drawn by the sidebar's own `ContextMenu`, which skips empty
  * groups — so the CURRENT vault simply returns three or four of the five. Five groups, in this order:
  *
- *   Open by itself, Add to this window, Open in this window · Set display name, Reset to folder name,
+ *   Open folder page, Open by itself, Add to this window, Open in this window · Set display name, Reset to folder name,
  *   Set shortcut ▸ · Copy vault name, Copy path · Reveal in Finder, Open in VS Code ·
  *   Remove from recent vaults
+ *
+ * "Open folder page" (YAZ-4921) leads on a vault of THIS window (`isCurrent`), where the caller can open one
+ * (`onOpenFolderPage`): the vault root's own folder page, as a kept tab — the folder row's door. A vault that is not
+ * in the window has no tab to open it in, and the Welcome screen hands no such door.
  *
  * "Open in Files window" (YAZ-3357 D5), hint the New Files window key as it is now (⌘⇧W unless changed, YAZ-3410), follows "Open by itself" on every vault: a window that is only
  * the sidebar, on this vault, flush left of this window. Only where the caller can open one (`onOpenFilesWindow`).
@@ -50,6 +54,8 @@ export interface VaultMenuTarget {
 }
 
 export interface VaultMenuHandlers {
+  /** "Open folder page" (YAZ-4921): the vault root's folder page as a kept tab. Absent: no such item (the Welcome screen). */
+  onOpenFolderPage?: (path: string) => void
   /** "Open by itself" (YAZ-2858 D2): main's `window.openAlone` — the window with the vault alone, raised or new. */
   onOpenAlone: (path: string) => void
   /** "Open in Files window" (YAZ-3357 D5): main's `window.openFiles` on the vault. Absent: no such item. */
@@ -106,8 +112,10 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
     const vault = keyed.find((v) => v.key === n)
     return vault === undefined ? 'free' : vault.path === path ? `✓ ${vault.name}` : vault.name
   }
+  const openPage = h.onOpenFolderPage
   return [
     [
+      ...(isCurrent && openPage !== undefined ? [{ id: 'open-page', label: 'Open folder page', icon: createElement(FolderIcon, { size: 15 }), onSelect: () => openPage(path) }] : []),
       ...(isAloneHere ? [] : [{ id: 'open-alone', label: 'Open by itself', hint: '⌥⏎', onSelect: () => h.onOpenAlone(path) }]),
       ...(h.onOpenFilesWindow === undefined ? [] : [{ id: 'open-files-window', label: 'Open in Files window', hint: keyHint('newFilesWindow', hotkeys), onSelect: () => h.onOpenFilesWindow?.(path) }]),
       ...(isCurrent || h.onAddHere === undefined ? [] : [{ id: 'add-here', label: 'Add to this window', onSelect: () => h.onAddHere?.(path) }]),

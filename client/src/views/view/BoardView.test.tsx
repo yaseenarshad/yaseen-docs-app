@@ -14,6 +14,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
+import { writeProperty } from '../writeProperty'
 import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
@@ -26,6 +27,7 @@ import viewsCss from '../views.css?inline'
 /** YAZ-846: `folder` is required — the folder view is the only mount there is. */
 const HOST = testFolderHost()
 
+vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
 vi.mock('../../api', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../api')>()
   return {
@@ -240,6 +242,24 @@ const cardNamed = (el: ParentNode, title: string): HTMLElement => {
 }
 
 // ---------- tests ----------
+
+describe('YAZ-4834 P5: "Card style ›" on a Board card (the card shows the note\'s style, so it sets it here too)', () => {
+  it('a card\'s right-click has Card style; Fill › Blue writes `color: blue` and the card wears it at once; a read-only note has no item', () => {
+    vi.mocked(writeProperty).mockReset().mockResolvedValue({ mtime: 1 } as never)
+    const { el } = mount(BOARD_BASE, { readOnly: new Set([TEST_RECORDS[1]!.path]) })
+    const card = cardNamed(el, TEST_RECORDS[0]!.title)
+    rightClick(card, 10, 10)
+    const styleItem = [...document.body.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Card style')
+    expect(styleItem).toBeDefined()
+    click(styleItem!)
+    click([...document.body.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Blue')!)
+    expect(writeProperty).toHaveBeenLastCalledWith(TEST_RECORDS[0]!.path, 'color', 'blue')
+    expect(cardNamed(el, TEST_RECORDS[0]!.title).dataset.color).toBe('blue')
+    press(document.body, 'Escape')
+    rightClick(cardNamed(el, TEST_RECORDS[1]!.title), 10, 10)
+    expect([...document.body.querySelectorAll('.ctx-menu__item')].map((b) => b.textContent)).not.toContain('Card style')
+  })
+})
 
 describe('board columns', () => {
   it('renders one column per group — value, count, per-column summaries — with No value last', () => {
@@ -504,7 +524,8 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
     // YAZ-3746 13BO CM1, CM2: a card's menu is the table row's — Open first, then "New card below" before the page group.
-    expect(mainItems(el)).toEqual(['Open', 'Open in new tab', 'Open in', 'New card below', 'Copy path'])
+    // "Card style ›" is the card's own (YAZ-4906, YAZ-4834 P5).
+    expect(mainItems(el)).toEqual(['Open', 'Open in new tab', 'Open in', 'New card below', 'Card style', 'Copy path'])
     click(itemNamed(el, 'Open in')!)
     expect(menuItems(el).filter((item) => item.closest('.ctx-menu__sub') !== null).map((item) => item.textContent)).toEqual(['Right panel', 'Reveal in Finder'])
     expect(onOpenFile).not.toHaveBeenCalled()

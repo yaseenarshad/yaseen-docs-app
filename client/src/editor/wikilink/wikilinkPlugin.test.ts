@@ -24,6 +24,8 @@ import {
   WIKILINK_UNRESOLVED_CLASS,
   createWikilinkResolveSource,
   linkDisplayText,
+  linkPageName,
+  linkPath,
   type MutableWikilinkResolveSource,
   type VaultsOfLetters,
 } from './wikilinkPlugin'
@@ -109,6 +111,54 @@ describe('wikilink decorations: collapsed display (GRO-2190)', () => {
     const { root } = await mount('X [[a#h|alias]] y\n')
     expect(links(root)).toEqual(['alias'])
     expect(syntax(root)).toBe('[[a#h|]]')
+  })
+
+  it('YAZ-4935: the words can stand on either side of the | — the one side that is an ID is the page, and hides', async () => {
+    const { root } = await mount('A [[WIKI-116|staging]] b [[staging|WIKI-116]] c\n')
+    expect(links(root)).toEqual(['staging', 'staging'])
+    expect(syntax(root)).toBe('[[WIKI-116|]][[|WIKI-116]]')
+  })
+
+  it('YAZ-4935: a #heading goes with the page side, in both orders; an old ID is an ID too', async () => {
+    const { root } = await mount('A [[WIKI-116#Intro|staging]] b [[staging|WIKI-116#Intro]] c [[the plan|k3m9x2pq7abc]]\n')
+    expect(links(root)).toEqual(['staging', 'staging', 'the plan'])
+    expect(syntax(root)).toBe('[[WIKI-116#Intro|]][[|WIKI-116#Intro]][[|k3m9x2pq7abc]]')
+  })
+
+  it('YAZ-4935: two plain words and two IDs keep the left side as the page; an empty words side stays raw (FN12)', async () => {
+    const { crepe, root } = await mount('A [[Postgres|database]] b [[WIKI-116|WIKI-117]] c [[|WIKI-116]] d\n')
+    expect(links(root)).toEqual(['database', 'WIKI-117'])
+    expect(syntax(root)).toBe('[[Postgres|]][[WIKI-116|]]')
+    expect(viewOf(crepe).dom.textContent).toContain('[[|WIKI-116]]')
+    expect(linkDisplayText('Postgres|database')).toBe('database')
+    expect(linkDisplayText('staging|WIKI-116')).toBe('staging')
+    expect(linkDisplayText('|WIKI-116')).toBe('')
+  })
+
+  it('YAZ-4935: a words-first ID link resolves by its ID: the pill is found, not dimmed, and opens the note', async () => {
+    const source = createWikilinkResolveSource()
+    source.update((target) => (target === 'WIKI-116' ? '/vault/Staging vs Production.md' : null))
+    const { root } = await mount('A [[staging|WIKI-116]] b [[WIKI-116|staging]] c [[staging|WIKI-999]]\n', source)
+    expect(links(root)).toEqual(['staging', 'staging', 'staging'])
+    expect(Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => el.classList.contains(WIKILINK_UNRESOLVED_CLASS))).toEqual([false, false, true])
+    expect(linkPath('staging|WIKI-116', source, undefined)).toBe('/vault/Staging vs Production.md')
+  })
+
+  it('YAZ-4935 round 2: words that only look like an ID — when the left side is a note, it is the page; else the right side is', async () => {
+    const source = createWikilinkResolveSource()
+    source.update((target) => (target === 'Covid notes' ? '/vault/Covid notes.md' : target === 'COVID-19' ? '/vault/Covid 19 id.md' : target === 'WIKI-116' ? '/vault/Staging.md' : null))
+    const { root } = await mount('A [[Covid notes|COVID-19]] b [[staging|WIKI-116]] c [[WIKI-116|staging]]\n', source)
+    // The left side wins when it resolves: the pill shows the right side's words and hides the left.
+    expect(links(root)).toEqual(['COVID-19', 'staging', 'staging'])
+    expect(syntax(root)).toBe('[[Covid notes|]][[|WIKI-116]][[WIKI-116|]]')
+    expect(linkPath('Covid notes|COVID-19', source, undefined)).toBe('/vault/Covid notes.md')
+    expect(linkPageName('Covid notes|COVID-19', source)).toBe('Covid notes')
+    expect(linkDisplayText('Covid notes|COVID-19', undefined, undefined, source)).toBe('COVID-19')
+    // The left side names no note: the right side is the ID (Mochi's order), in both orders.
+    expect(linkPath('staging|WIKI-116', source, undefined)).toBe('/vault/Staging.md')
+    expect(linkPath('WIKI-116|staging', source, undefined)).toBe('/vault/Staging.md')
+    // Before the index loads, by shape.
+    expect(linkPageName('Covid notes|COVID-19')).toBe('COVID-19')
   })
 
   it('embeds (![[…]]) are never decorated', async () => {
@@ -675,5 +725,188 @@ describe('a missing note and an ID of another vault (YAZ-3905 S10, S23)', () => 
     expect(pills(root)).toEqual([['Missing note · YAS-999', true], ['GPT-4', true], [' (Elsewhere)', true]])
     const plain = await mountIds('pad [[GPT-4]] tail\n')
     expect(pills(plain.root)).toEqual([['GPT-4', true]])
+  })
+})
+
+describe("the vault's link pills look (YAZ-4924)", () => {
+  const PATHS: Record<string, string> = { Roadmap: '/v/Projects/Plans/roadmap.md', 'YAZ-12': '/v/Projects/Plans/roadmap.md', Research: '/v/Research' }
+  const look = { icon: (path: string, folder: boolean) => ({ class: 'wikilink__icon', 'data-path': path, 'data-folder': String(folder) }) }
+  const record = { path: '/v/Projects/Plans/roadmap.md', id: 'YAZ-12', name: 'roadmap.md', basename: 'roadmap', title: 'Roadmap', folder: 'Projects/Plans', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] } as unknown as IndexRecord
+  const folder = { path: '/v/Research/.folder.md', name: '.folder.md', basename: '.folder', title: 'Research', folder: 'Research', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] } as unknown as IndexRecord
+  const vaultsOf: VaultsOfLetters = (letters) => (letters === 'INL' ? ['In-harness-lab'] : [])
+  async function mountLook(markdown: string) {
+    const source = createWikilinkResolveSource()
+    source.update((target) => PATHS[target] ?? null, [record], [folder], true, ['YAZ'])
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, linkLook: look, vaultsOfLetters: vaultsOf })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    return { crepe, root, source, view: viewOf(crepe) }
+  }
+  /** Each pill's pieces: the widgets and the text spans, in DOM order, as `[class, text]`. */
+  const pieces = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>(`.${WIKILINK_CLASS}:not(.name-ending)`)).map((el) => [el.className.replace(' ProseMirror-widget', '').replace(' wikilink__icon', ''), el.textContent])
+  const widgets = (root: HTMLElement) => root.querySelectorAll('.ProseMirror-widget').length
+  const copyOf = (view: EditorView) => {
+    const { dom, text } = view.serializeForClipboard(view.state.doc.slice(0, view.state.doc.content.size))
+    return { html: dom.innerHTML, text }
+  }
+
+  it("today's look draws no extra piece: a vault that changed nothing costs nothing", async () => {
+    const { root } = await mountLook('Intro [[Roadmap]] and [[Nope]] outro\n')
+    expect(widgets(root)).toBe(0)
+    expect(pieces(root)).toEqual([['wikilink', 'Roadmap'], ['wikilink wikilink--unresolved', 'Nope']])
+  })
+
+  it('your text around {name} is a head and a tail piece of every pill, a missing note too; the file and a copy keep the link as written (check 29)', async () => {
+    const md = 'Intro [[Roadmap]] and [[Nope]] outro\n'
+    const plain = await mountLook(md)
+    const { crepe, root, source, view } = await mountLook(md)
+    source.setLook({ format: '({icon}{name})' }, 'Mine')
+    expect(pieces(root)).toEqual([
+      ['wikilink link-pill__head', '('],
+      ['wikilink', 'Roadmap'],
+      ['wikilink link-pill__tail', ')'],
+      ['wikilink wikilink--unresolved link-pill__head', '('],
+      ['wikilink wikilink--unresolved', 'Nope'],
+      ['wikilink wikilink--unresolved link-pill__tail', ')'],
+    ])
+    // The head and the tail stand against the shown text, inside the hidden brackets: pieces of one box.
+    expect(root.querySelector('.ProseMirror')?.textContent).toBe('Intro [[(Roadmap)]] and [[(Nope)]] outro')
+    // Look only: the saved note, the Markdown copy and the plain-text copy are what they were (check 29).
+    expect(getMarkdownForSave(crepe)).toBe(md)
+    expect(copyOf(view)).toEqual(copyOf(plain.view))
+    expect(copyOf(view).html).not.toContain('link-pill__')
+    expect(copyOf(view).text).not.toContain('(')
+  })
+
+  it('the ID and the folder come from the index, each in its own piece after the name; an ID link too; {path} is the whole path', async () => {
+    const { root, source } = await mountLook('A [[Roadmap]] B [[YAZ-12]] C [[Research]] D\n')
+    source.setLook({ format: '{icon}{name} {id} {folder}' }, 'Mine')
+    const tails = Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail')).map((el) => [...el.children].map((c) => `${c.className}:${c.textContent}`))
+    // A folder at the root has no folder to show and no ID: no tail.
+    expect(tails).toEqual([
+      ['link-pill__text: ', 'link-pill__id:YAZ-12', 'link-pill__text: ', 'link-pill__folder:Plans'],
+      ['link-pill__text: ', 'link-pill__id:YAZ-12', 'link-pill__text: ', 'link-pill__folder:Plans'],
+    ])
+    // The pill's order: name, then the tail; an ID link's title first, its tail after it.
+    expect(pieces(root).map(([, text]) => text)).toEqual(['Roadmap', ' YAZ-12 Plans', 'Roadmap', ' YAZ-12 Plans', 'Research'])
+    source.setLook({ format: '{icon}{name} {path}' }, 'Mine')
+    expect(Array.from(root.querySelectorAll<HTMLElement>('.link-pill__path')).map((el) => el.textContent)).toEqual(['Projects › Plans', 'Projects › Plans'])
+  })
+
+  it('the vault name: Always names this vault after the name, or before it with " › " in the format; Never hides the other vault\'s (S23)', async () => {
+    const { root, source } = await mountLook('A [[Roadmap]] B [[INL-4]] C\n')
+    expect(pieces(root)).toEqual([['wikilink', 'Roadmap'], ['wikilink wikilink--unresolved', 'INL-4'], ['wikilink wikilink--unresolved link-pill__tail', ' (In-harness-lab)']])
+    expect(root.querySelector('.link-pill__vault')?.textContent).toBe('In-harness-lab')
+    source.setLook({ vault: 'always' }, 'Mine')
+    expect(pieces(root).map(([, text]) => text)).toEqual(['Roadmap', ' (Mine)', 'INL-4', ' (In-harness-lab)'])
+    source.setLook({ format: '{vault} › {icon}{name}', vault: 'always' }, 'Mine')
+    expect(pieces(root).map(([, text]) => text)).toEqual(['Mine › ', 'Roadmap', 'In-harness-lab › ', 'INL-4'])
+    source.setLook({ vault: 'never' }, 'Mine')
+    expect(pieces(root).map(([, text]) => text)).toEqual(['Roadmap', 'INL-4'])
+    expect(widgets(root)).toBe(0)
+  })
+
+  it('the icon where the format puts it: on the name for {icon}{name}, a piece of an end elsewhere, none without {icon}', async () => {
+    const { root, source } = await mountLook('A [[Roadmap]] B [[Nope]] C\n')
+    const icons = () => Array.from(root.querySelectorAll<HTMLElement>('.wikilink__icon')).map((el) => `${el.className.replace(' ProseMirror-widget', '')}|${el.dataset.path}`)
+    expect(icons()).toEqual(['wikilink wikilink__icon|/v/Projects/Plans/roadmap.md'])
+    source.setLook({ format: '{name} {icon}' }, 'Mine')
+    expect(icons()).toEqual(['wikilink__icon link-pill__icon|/v/Projects/Plans/roadmap.md'])
+    expect(pieces(root).map(([cls, text]) => [cls, text])).toEqual([['wikilink', 'Roadmap'], ['wikilink link-pill__tail', ' '], ['wikilink wikilink--unresolved', 'Nope']])
+    // A missing note has no icon: `{icon}` and the blank beside it go, so the pill has no stray space.
+    source.setLook({ format: '{icon} {name}' }, 'Mine')
+    expect(pieces(root).map(([, text]) => text)).toEqual([' ', 'Roadmap', 'Nope'])
+    source.setLook({ format: '{name}' }, 'Mine')
+    expect(icons()).toEqual([])
+  })
+
+  it('a change of the look draws every pill again with no edit, and the same look draws nothing again', async () => {
+    const { crepe, root, source, view } = await mountLook('Intro [[Roadmap]] outro\n')
+    const docBefore = view.state.doc
+    source.setLook({ format: '{icon}{name} ↗' }, 'Mine')
+    expect(view.state.doc).toBe(docBefore)
+    const tail = root.querySelector('.link-pill__tail')
+    expect(tail?.textContent).toBe(' ↗')
+    // The same object: nothing. A new object with the same format: a rebuild whose widget keys match, so the DOM stays.
+    source.setLook(source.pills, 'Mine')
+    source.setLook({ format: '{icon}{name} ↗' }, 'Mine')
+    expect(root.querySelector('.link-pill__tail')).toBe(tail)
+    expect(root.querySelectorAll('.link-pill__tail')).toHaveLength(1)
+    expect(getMarkdownForSave(crepe)).toBe('Intro [[Roadmap]] outro\n')
+  })
+
+  it('a click on a head or a tail piece is a click on the pill: its position reads inside the link', async () => {
+    const { root, source, view } = await mountLook('Intro [[Roadmap]] outro\n')
+    source.setLook({ format: '({icon}{name})' }, 'Mine')
+    const { linkPosAtDOM, wikilinkMatchAt } = await import('./wikilinkClick')
+    for (const cls of ['.link-pill__head', '.link-pill__tail']) {
+      const el = root.querySelector(cls) as Element
+      const match = wikilinkMatchAt(view.state.doc, linkPosAtDOM(view, el))
+      expect(match?.inner).toBe('Roadmap')
+    }
+  })
+
+  it('the caret steps over the whole pill as before: a letter typed at its end lands after the tail, outside the link', async () => {
+    const { root, source, view } = await mountLook('pad [[Roadmap]] tail\n')
+    source.setLook({ format: '({icon}{name})' }, 'Mine')
+    const end = 1 + 'pad [[Roadmap]]'.length
+    view.dispatch(view.state.tr.insert(end, view.state.schema.text('X')))
+    expect(root.querySelector('.ProseMirror')?.textContent).toBe('pad [[(Roadmap)]]X tail')
+    expect(root.querySelector('.link-pill__tail')?.nextElementSibling?.textContent).toBe(']]')
+  })
+
+  it('a words-first link (YAZ-4935, `[[the index note|YAZ-12]]`) wears the pieces around its words, with the ID of the page side', async () => {
+    const md = 'A [[the index note|YAZ-12]] B [[YAZ-12|the plan]] C\n'
+    const { crepe, root, source } = await mountLook(md)
+    source.setLook({ format: '({icon}{name} {id})' }, 'Mine')
+    expect(pieces(root)).toEqual([
+      ['wikilink link-pill__head', '('],
+      ['wikilink', 'the index note'],
+      ['wikilink link-pill__tail', ' YAZ-12)'],
+      ['wikilink link-pill__head', '('],
+      ['wikilink', 'the plan'],
+      ['wikilink link-pill__tail', ' YAZ-12)'],
+    ])
+    // The head and the tail stand against the words on both orders; the page side and the `|` stay hidden between or beside them.
+    expect(root.querySelector('.ProseMirror')?.textContent).toBe('A [[(the index note YAZ-12)|YAZ-12]] B [[YAZ-12|(the plan YAZ-12)]] C')
+    expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
+  it('{number} and {mark} (round 5): the number alone after "#", the mark an icon in the tail, a missing note keeps the mark; a keystroke redraws neither', async () => {
+    const md = 'A [[Roadmap]] B [[Nope]] C\n'
+    const { crepe, root, source, view } = await mountLook(md)
+    source.setLook({ format: '{icon}{name} #{number}{mark}' }, 'Mine')
+    const tails = () => Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail')).map((el) => [...el.children].map((c) => `${c.className}:${c.textContent}${c.querySelector('svg') !== null ? ':svg' : ''}`))
+    // The missing note has no ID: "#" and the number go; the mark stays.
+    expect(tails()).toEqual([['link-pill__text: #', 'link-pill__number:12', 'link-pill__mark::svg'], ['link-pill__mark::svg']])
+    const tail = root.querySelector('.link-pill__tail')
+    view.dispatch(view.state.tr.insertText('Z', 1, 1))
+    expect(root.querySelector('.link-pill__tail')).toBe(tail)
+    source.setLook({ format: '{icon}{name} #{number}{mark}', parts: { mark: { icon: 'star' } } }, 'Mine')
+    expect(Array.from(root.querySelectorAll<HTMLElement>('.link-pill__mark')).map((el) => el.dataset.mark)).toEqual(['star', 'star'])
+    expect(getMarkdownForSave(crepe)).toBe('ZA [[Roadmap]] B [[Nope]] C\n')
+    expect(view.state.doc.textContent).not.toContain('#')
+  })
+
+  it('a pill whose note goes missing draws its tail again with the missing class, so its mark turns grey with the name', async () => {
+    const { root, source } = await mountLook('A [[Roadmap]] B\n')
+    source.setLook({ format: '{name}{mark}' }, 'Mine')
+    expect(root.querySelector('.link-pill__tail')?.classList.contains('wikilink--unresolved')).toBe(false)
+    source.update(() => null, [record], [folder], true, ['YAZ'])
+    expect(root.querySelector('.link-pill__tail')?.classList.contains('wikilink--unresolved')).toBe(true)
+    source.update((target) => PATHS[target] ?? null, [record], [folder], true, ['YAZ'])
+    expect(root.querySelector('.link-pill__tail')?.classList.contains('wikilink--unresolved')).toBe(false)
+  })
+
+  it('a keystroke elsewhere redraws nothing of a pill with pieces: the same widget DOM stays', async () => {
+    const { root, source, view } = await mountLook('pad [[Roadmap]] tail\n')
+    source.setLook({ format: '({icon}{name} {id})' }, 'Mine')
+    const head = root.querySelector('.link-pill__head')
+    const tail = root.querySelector('.link-pill__tail')
+    view.dispatch(view.state.tr.insertText('Z', 1, 1))
+    expect(root.querySelector('.link-pill__head')).toBe(head)
+    expect(root.querySelector('.link-pill__tail')).toBe(tail)
   })
 })

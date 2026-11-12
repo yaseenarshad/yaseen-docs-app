@@ -351,14 +351,12 @@ describe('registerFsIpc', () => {
       store.removeWindow('w-retitle')
     })
 
-    it("refuses the calling window's own vault root, and a refused edit answers a BridgeError envelope and broadcasts nothing", async () => {
+    it("the calling window's own vault root has a folder page (YAZ-4921): a title edit writes `title:` into its `.folder.md`, renames nothing and broadcasts nothing", async () => {
       windowOn('w-retitle')
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-      expect(await registered(CONTRACT.file.retitle.channel)({ sender: {} }, { path: root, title: 'Vault' })).toEqual({
-        ok: false,
-        error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be renamed', path: root },
-      })
+      expect(await registered(CONTRACT.file.retitle.channel)({ sender: {} }, { path: root, title: 'Vault' })).toEqual({ ok: true, value: { oldPath: root, newPath: root, kind: 'dir' } })
+      expect(await readFile(path.join(root, '.folder.md'), 'utf8')).toMatch(/^title: Vault$/m)
       expect(w.webContents.send).not.toHaveBeenCalled()
       store.removeWindow('w-retitle')
     })
@@ -515,6 +513,42 @@ describe('registerFsIpc', () => {
       }
     })
 
+    it('a note made inside a vault inside the window\'s vault takes the INNER vault\'s next ID (YAZ-4922 D1: the nearest folder that answered)', async () => {
+      const vault = await open(true)
+      const inner = path.join(vault, 'Plans')
+      try {
+        await mkdir(path.join(inner, '.yaseendocs'))
+        await writeFile(path.join(inner, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: true, letters: 'TECH' }))
+        expect(await call(CONTRACT.mintNoteId, path.join(inner, 'Deep'))).toEqual({ ok: true, value: 'TECH-1' })
+        expect(await call(CONTRACT.mintNoteId, vault)).toEqual({ ok: true, value: 'YAZ-1' })
+        // The inner vault's own sweep can give Plans/Name.md a number meanwhile: the next one is a TECH number either way.
+        expect(await call(CONTRACT.createFile, path.join(inner, 'Bare.md'))).toMatchObject({ ok: true, value: { id: expect.stringMatching(/^TECH-[2-9]$/) } })
+      } finally {
+        await close(vault)
+      }
+    })
+
+    it('a window that is "a folder of" the vault (YAZ-4922 D3): a note made there gets the vault\'s next ID, and nothing writes an `ids.json` or any `.yaseendocs` into the folder', async () => {
+      const vault = await open(true)
+      const folder = path.join(vault, 'Plans')
+      try {
+        const before = await readFile(path.join(vault, '.yaseendocs', 'ids.json'), 'utf8')
+        store.setFolder(folder, { in: vault })
+        store.upsertWindow({ id: 'w-kind', root: folder, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+        expect(await call(CONTRACT.mintNoteId, folder)).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.createFile, { path: path.join(folder, 'idea-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
+        expect(await call(CONTRACT.createFile, path.join(folder, 'Bare.md'))).toMatchObject({ ok: true, value: { id: expect.stringMatching(/^YAZ-[2-9]$/) } })
+        // The vault's own doors take the vault from this window too: its IDs are the vault's.
+        expect(await call(CONTRACT.ids.check, vault)).toMatchObject({ ok: true })
+        expect(await call(CONTRACT.ids.check, folder)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(Object.keys(await vaultFiles(folder)).filter((rel) => rel.startsWith('.yaseendocs'))).toEqual([])
+        expect(await readFile(path.join(vault, '.yaseendocs', 'ids.json'), 'utf8')).toBe(before)
+      } finally {
+        store.setFolder(folder, { in: null })
+        await close(vault)
+      }
+    })
+
     it('`fs:make-daily-note` finds or makes today\'s note of a vault of the calling window, by the app\'s settings, one note for many asks (YAZ-4269 D2)', async () => {
       const yes = await open(true)
       const before = store.get().settings
@@ -655,9 +689,9 @@ describe('registerFsIpc', () => {
         expect(await call(CONTRACT.createFile, { path: inYes('meeting-notes-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
         expect(await call(CONTRACT.createDir, { path: inYes('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: true })
         expect(await paste(inNo('Plans', 'Name.md'), inYes('Plans'))).toMatchObject({ ok: true, value: { pasted: [{ to: expect.stringMatching(/\/Plans\/name-copy-yaz-\d+\.md$/) }] } })
-        // The title edit gives the note the next number of its OWN vault, and refuses that vault's folder, wherever the vault sits in the window's list (S47).
+        // The title edit gives the note the next number of its OWN vault; that vault's folder takes a title and keeps its name (YAZ-4921), wherever the vault sits in the window's list (S47).
         expect(await call(CONTRACT.file.retitle, { path: inYes('Plans', 'Name.md'), title: 'Big Plan' })).toMatchObject({ ok: true, value: { newPath: expect.stringMatching(/\/Plans\/big-plan-yaz-\d+\.md$/) } })
-        expect(await call(CONTRACT.file.retitle, { path: yes, title: 'Vault' })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be renamed', path: yes } })
+        expect(await call(CONTRACT.file.retitle, { path: yes, title: 'Vault' })).toEqual({ ok: true, value: { oldPath: yes, newPath: yes, kind: 'dir' } })
         // In the vault that said no, from the SAME window: what Finder would make, and no title edit.
         expect(await call(CONTRACT.createFile, { path: inNo(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         expect(await call(CONTRACT.createDir, { path: inNo('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })

@@ -12,10 +12,13 @@
  * `GroupLevelStepsContext`, which `ViewsPane` gives while the view has two levels or more.
  */
 import { createContext } from 'react'
+import type { ValueHistory } from './view/valueHistory'
 
 export interface LevelNode {
   key: string
   children?: readonly LevelNode[]
+  /** A nested Folder group (YAZ-4918, `Group.nested`): its children are folder groups on the same view level. */
+  nested?: true
 }
 
 export interface LevelSteps {
@@ -52,10 +55,52 @@ export function levelSteps(nodes: readonly LevelNode[], collapsed: readonly stri
   return { collapseOne, expandOne }
 }
 
+export interface BranchSteps {
+  /** The collapsed keys after "Expand all": the header and every group below it open; null when they all are. */
+  expandAll: string[] | null
+  /** The collapsed keys after "Collapse all": every group below the header shut (the header stays open, so the shut ones show); null when they all are. */
+  collapseAll: string[] | null
+}
+
+/**
+ * "Expand all" and "Collapse all" on a nested Folder group's header (YAZ-4928): the folder groups below that header,
+ * however deep. Null when `key` is not a nested Folder group with children (a leaf, a plain group, the cap). Runs when
+ * the header's menu opens, never at render.
+ */
+export function branchSteps(nodes: readonly LevelNode[], key: string, collapsed: readonly string[]): BranchSteps | null {
+  const find = (list: readonly LevelNode[]): LevelNode | null => {
+    for (const node of list) {
+      if (node.key === key) return node
+      const hit = node.children === undefined ? null : find(node.children)
+      if (hit !== null) return hit
+    }
+    return null
+  }
+  const node = find(nodes)
+  if (node === null || node.nested !== true || node.children === undefined) return null
+  const below: string[] = []
+  const walk = (list: readonly LevelNode[]) => {
+    for (const n of list) {
+      below.push(n.key)
+      if (n.children !== undefined) walk(n.children)
+    }
+  }
+  walk(node.children)
+  const shut = new Set(collapsed)
+  const closing = below.filter((k) => !shut.has(k))
+  const opening = new Set([key, ...below])
+  const kept = collapsed.filter((k) => !opening.has(k))
+  return { expandAll: kept.length === collapsed.length ? null : kept, collapseAll: closing.length === 0 ? null : [...collapsed, ...closing] }
+}
+
 /** What the menus offer; an absent step is greyed. */
 export interface GroupLevelStepActions {
   collapseOne?: () => void
   expandOne?: () => void
+  /** A nested Folder group header's "Expand all" / "Collapse all" (YAZ-4928), by its collapse key; undefined for any other header. */
+  branch?: (key: string) => { expandAll?: () => void; collapseAll?: () => void } | undefined
+  /** The page's ⌘Z history (YAZ-4928): each "Expand all" / "Collapse all" is one step; ⌘Z / ⇧⌘Z on a group header run it. */
+  history?: Pick<ValueHistory, 'undo' | 'redo'>
 }
 
 export const GroupLevelStepsContext = createContext<GroupLevelStepActions | null>(null)

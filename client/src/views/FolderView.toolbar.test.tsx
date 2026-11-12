@@ -11,7 +11,7 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { resolverFor } from './engine'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { createStore } from '../lib/store'
-import { click, flush, q, rec, renderFolderView, unmountFolderView } from './testFolderView'
+import { click, flush, press, q, rec, renderFolderView, setValue, unmountFolderView } from './testFolderView'
 import { FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { FolderView, type FolderViewProps } from './FolderView'
 import { hoverPreviewOf } from '@shared/folderPage'
@@ -121,7 +121,7 @@ describe('the folder page toolbar (D35)', () => {
   // YAZ-3746 13BP: the group is named "<folder> (folder page)" (CL6), and its rows stand under three headings — Show,
   // Preview on hover, Safety — one line each with an (i), the heading saying the rest of the old label. "Read only"
   // moved under Safety as an On / Off line (CL7); "New buttons" (13BL) joined Show.
-  it('the cog holds the "<folder> (folder page)" group: Show (page file, Other files, New buttons, parent columns, column marks), Preview on hover (Rows, Links), Safety (Read only, Confirm changes), Settings chosen', async () => {
+  it('the cog holds the "<folder> (folder page)" group: Show (page file, Other files, New buttons, parent columns, column marks), Views (Default view, YAZ-4909), Preview on hover (Rows, Links), Safety (Read only, Confirm changes), Settings chosen', async () => {
     const el = await mount()
     openCog(el)
     const group = q(cogMenu(el), '[role="group"][aria-label="stages (folder page)"]')
@@ -135,6 +135,9 @@ describe('the folder page toolbar (D35)', () => {
       'Where columns come from',
       'SettingsIconIcon and folder nameOff',
       '',
+      'Views',
+      'Default viewFirst view',
+      '',
       'Preview on hover',
       'RowsSettingsOnOff',
       'LinksSettingsOnOff',
@@ -144,10 +147,57 @@ describe('the folder page toolbar (D35)', () => {
       'Confirm changesSettingsOnOff',
     ])
     // Each row's (i) is named for its row (13BP CL4).
-    expect([...group.querySelectorAll('.page-settings__info')].map((b) => b.getAttribute('aria-label'))).toEqual(['About Page file in the sidebar', 'About Other files', 'About New buttons', "About Parent folders' columns", 'About Where columns come from', 'About Rows', 'About Links', 'About Read only', 'About Confirm changes'])
+    expect([...group.querySelectorAll('.page-settings__info')].map((b) => b.getAttribute('aria-label'))).toEqual(['About Page file in the sidebar', 'About Other files', 'About New buttons', "About Parent folders' columns", 'About Where columns come from', 'About Default view', 'About Rows', 'About Links', 'About Read only', 'About Confirm changes'])
     expect(pill(el, 'Settings').getAttribute('aria-pressed')).toBe('true')
     // No word counts and no trailing rows: the folder ⚙ has only the folder page's own group (13BM PS2).
     expect(cogMenu(el).textContent).not.toContain('words')
+  })
+
+  // YAZ-4909 (Yaseen: "doesn't this option belong on the folder page level and not in an individual view?"): the View
+  // tab's "Default view" select is this row now, the same `defaultView` of the folder settings.
+  it('Views › Default view: a dropdown, "First view ▾" with no key; its list has each view with a ✓ at the choice; a pick writes defaultView, First view removes it; a saved name reads back', async () => {
+    const el = await mount()
+    openCog(el)
+    const trigger = () => q<HTMLButtonElement>(cogMenu(el), '[aria-label="Default view"].view-dropdown')
+    const list = () => [...document.body.querySelectorAll<HTMLButtonElement>('.page-settings__drop-panel button')]
+    expect(trigger().textContent).toBe('First view')
+    expect(trigger().closest('.page-settings__line')).not.toBeNull()
+    click(trigger())
+    // The list is on the body (the ⚙ menu cannot clip it), with a ✓ at the choice.
+    expect(list()[0]!.closest('.page-settings__menu')).toBeNull()
+    expect(list().map((b) => `${b.textContent}${b.getAttribute('aria-checked') === 'true' ? ' ✓' : ''}`)).toEqual(['First view ✓', 'Pipeline'])
+    click(list()[1]!)
+    await flush()
+    expect(disk.get(SETTINGS_FILE)?.content).toContain('defaultView: Pipeline')
+    // The pick closed the list and left the ⚙ open; the trigger says the choice.
+    expect(document.body.querySelector('.page-settings__drop-panel')).toBeNull()
+    expect(trigger().textContent).toBe('Pipeline')
+    feed()
+    await flush()
+    expect(trigger().textContent).toBe('Pipeline')
+    click(trigger())
+    click(list()[0]!)
+    await flush()
+    expect(disk.get(SETTINGS_FILE)?.content).not.toContain('defaultView')
+    // The View tab holds the view's own settings only.
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+    expect(el.querySelector('.view-popover--properties [aria-label="Default view"]')).toBeNull()
+    expect([...el.querySelectorAll('.view-popover--properties .view-menu__label')].map((p) => p.textContent)).not.toContain('Folder')
+  })
+
+  // Yaseen: "this is a terrible design, as the number of views increases this menu is just going to get wider and wider".
+  it('Default view with five views (YAZ-4909 polish): still ONE line, "First view ▾", the six choices in the list with their type icons; the ⚙ menu keeps its width', async () => {
+    disk.set(SETTINGS_FILE, { content: `---\nfolder_settings:\n  views:\n${['Pipeline', 'Board', 'Calendar', 'List', 'Table 2'].map((name, i) => `    - type: ${['table', 'board', 'calendar', 'list', 'table'][i]}\n      name: ${name}\n`).join('')}---\n`, mtime: 51 })
+    const el = await mount()
+    openCog(el)
+    const trigger = q<HTMLButtonElement>(cogMenu(el), '[aria-label="Default view"].view-dropdown')
+    expect(trigger.closest('.page-settings__line')).not.toBeNull()
+    expect(cogMenu(el).querySelector('[role="group"][aria-label="Default view"]')).toBeNull()
+    click(trigger)
+    const list = [...document.body.querySelectorAll<HTMLButtonElement>('.page-settings__drop-panel button')]
+    expect(list.map((b) => b.textContent)).toEqual(['First view', 'Pipeline', 'Board', 'Calendar', 'List', 'Table 2'])
+    expect(list.slice(1).every((b) => b.querySelector('svg') !== null)).toBe(true)
   })
 
   // YAZ-4810 5G on the folder ⚙ (merge of PR #257): its menu is on `document.body` too, so Tab crosses between the cog and it.
@@ -208,22 +258,105 @@ describe('Read only (D36)', () => {
     expect(chips(el)).toEqual(['page-settings', 'document-zoom', 'read-only-chip', 'save-indicator'])
   })
 
-  it('a folder whose `.folder.md` says `readonly: true` shows the chip and refuses a settings write with the notice', async () => {
-    disk.set(SETTINGS_FILE, { content: VIEWS.replace('---\n', '---\nreadonly: true\n'), mtime: 50 })
+  // YAZ-4939 round 3: a view change is how you look, not what is there — it saves while the page is read only.
+  const LOCKED_TWO = `---
+readonly: true
+folder_settings:
+  columns:
+    priority:
+      kind: text
+  views:
+    - type: table
+      name: Pipeline
+      order:
+        - file.name
+        - note.priority
+    - type: table
+      name: Spare
+---
+`
+  const rightClick = (el: Element): void => act(() => void el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 20 })))
+  const tab = (el: ParentNode, name: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((x) => x.textContent === name)!
+  const menuItem = (el: ParentNode, text: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) => b.textContent === text)!
+  const header = (el: ParentNode, label: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-table thead th')].find((t) => t.textContent === label)!
+  const menuAction = (el: ParentNode, text: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === text)!
+  const errorLine = (el: ParentNode): string | null => el.querySelector('.views-pane__error')?.textContent ?? null
+  const settingsOnDisk = (): Record<string, unknown> => parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties
+
+  it('a folder whose `.folder.md` says `readonly: true`: view changes save — sort, filter, freeze, hide a column, rename, duplicate and delete a view tab — and `readonly` stays', async () => {
+    disk.set(SETTINGS_FILE, { content: LOCKED_TWO, mtime: 50 })
     const el = await mount()
     expect(el.querySelector('.read-only-chip')).not.toBeNull()
-    duplicateView(el)
-    await flush()
-    expect(writeFile).not.toHaveBeenCalled()
-    expect(q(el, '.views-pane__error').textContent).toBe('Could not update the folder: This folder page is read only')
-    expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Pipeline'])
+    const step = async (act: () => void) => {
+      act()
+      await flush()
+      feed()
+      await flush()
+    }
+    await step(() => {
+      click(q(el, '[aria-label="Sort"]'))
+      click(menuAction(el, 'Add sort'))
+    })
+    await step(() => {
+      click(q(el, '[aria-label="Filter"]'))
+      click(menuAction(el, 'Add rule'))
+    })
+    await step(() => {
+      rightClick(header(el, 'Priority'))
+      click(menuItem(el, 'Freeze up to this column'))
+    })
+    await step(() => {
+      rightClick(header(el, 'Priority'))
+      click(menuItem(el, 'Hide column'))
+    })
+    await step(() => {
+      rightClick(tab(el, 'Spare'))
+      click(menuItem(el, 'Rename'))
+      const input = q<HTMLInputElement>(el, 'input[aria-label="View name"]')
+      setValue(input, 'Deals')
+      press(input, 'Enter')
+    })
+    await step(() => duplicateView(el))
+    await step(() => {
+      rightClick(tab(el, 'Deals'))
+      click(menuItem(el, 'Delete'))
+      click(q(el, '.confirm__btn--danger'))
+    })
+    expect(writeFile).toHaveBeenCalledTimes(7)
+    expect(errorLine(el)).toBeNull()
+    const props = settingsOnDisk()
+    expect(props.readonly).toBe(true)
+    const [pipeline, copy, ...rest] = (props.folder_settings as { views: Record<string, unknown>[] }).views
+    expect(rest).toEqual([])
+    expect(pipeline.name).toBe('Pipeline')
+    expect(pipeline.sort).toBeDefined()
+    expect(pipeline.filters).toBeDefined()
+    expect(pipeline.frozenColumns).toBeDefined()
+    expect(pipeline.order).toEqual(['file.name'])
+    expect(copy.name).toBe('Pipeline copy')
+    expect((props.folder_settings as { columns: unknown }).columns).toEqual({ priority: { kind: 'text' } })
+    expect(el.querySelector('.read-only-chip')).not.toBeNull()
   })
 
-  it('"Allow edits" in the chip removes the key, and the settings write goes through again', async () => {
+  it('a folder whose `.folder.md` says `readonly: true` refuses a content write — a column rename — with the notice, and writes nothing', async () => {
+    disk.set(SETTINGS_FILE, { content: LOCKED_TWO, mtime: 50 })
+    const el = await mount()
+    rightClick(header(el, 'Priority'))
+    click(menuItem(el, 'Rename column…'))
+    const field = q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Rename Priority"]')
+    setValue(field, 'Importance')
+    press(field, 'Enter')
+    await flush()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(errorLine(el)).toBe('Could not update the folder: This folder page is read only')
+    expect(header(el, 'Importance')).toBeUndefined()
+  })
+
+  it('"Turn Read only off" in the chip removes the key, and the settings write goes through again', async () => {
     disk.set(SETTINGS_FILE, { content: VIEWS.replace('---\n', '---\nreadonly: true\n'), mtime: 50 })
     const el = await mount()
     click(q(el, '.read-only-chip__button'))
-    click(q(el, '.read-only-chip__allow'))
+    click([...el.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Turn Read only off')!)
     await flush()
     expect(onDisk()).toBe(VIEWS)
     expect(el.querySelector('.read-only-chip')).toBeNull()

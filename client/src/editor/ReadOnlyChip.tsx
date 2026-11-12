@@ -1,13 +1,21 @@
 /**
  * THE "READ ONLY" CHIP and its "Allow edits?" box (YAZ-3076 D4, D4a option 1). It shows only while
- * the file is read only, in the status row of a note (cog, zoom, chip, sync, save) and of a board
- * (cog, chip, sync, save) — read only is never silent (S49). A stray key or click never unlocks
- * the file: a click on the chip opens a small box under it, and only "Allow edits" turns the
- * switch off. Turning read only ON never asks; that is the cog's row.
+ * the file is read only, in the status row of a note (cog, zoom, chip, sync, save) and of a
+ * board (cog, chip, sync, save) — read only is never silent (S49). A stray key or click never unlocks
+ * the file: a click on the chip opens a small box under it, and only a choice in it unlocks. Turning read only ON
+ * never asks; that is the cog's row.
+ *
+ * THE BOX'S CHOICES (YAZ-4939): "Allow edits for 1 minute" (first, so Enter takes it) · "10 minutes" · "Until I close
+ * this tab" — each a TIMED unlock of THIS page, in the host's own state (`useTimedUnlock`): the page's own switch, a
+ * board's and the vault's Read only all stay in their files. Where the page has its own switch on and the vault is not
+ * read only, a fourth button, "Turn Read only off", turns the switch off in the file (what "Allow edits" did before);
+ * in a read-only vault the vault wins, so that button is not there. While an unlock runs the chip reads "Editing ·
+ * mm:ss" in amber ("Editing · until close" for the third choice), with "Lock now" beside it; the clock ticks once a
+ * second, here alone, and only while a timed unlock runs. At zero the host saves, then locks.
  *
  * The HOST keeps `asking`, so there is one box in one place: the cog's "Read only" row, while on,
- * opens this same box (S47), and each tab has its own (D4). The box takes the focus on "Allow
- * edits", so Enter allows (S46); Esc cancels and hands the focus back to the chip; a press outside
+ * opens this same box (S47), and each tab has its own (D4). The box takes the focus on its first
+ * choice, so Enter allows (S46); Esc cancels and hands the focus back to the chip; a press outside
  * the chip and its box cancels, and so does the window losing focus. Outside is a `pointerdown` in
  * the capture phase (YAZ-3116 A1): never a `click`, because the click that opened the box — on the
  * chip, or on the cog's row that closes its menu — must not also close it, and never a `mousedown`,
@@ -22,27 +30,52 @@
  * edits?" box closes it. It is in the chip's own box, absolute, so nothing in the page moves. Its live region
  * (`role="status"`) is always there, so a screen reader reads the card when it comes.
  */
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { useEffect, useReducer, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { useUnit } from '../vault/unitWord'
 import { LockIcon } from '../views/view/icons'
 import { READ_ONLY_EDIT, READ_ONLY_MESSAGE_GAP_MS, READ_ONLY_MESSAGE_MS, READ_ONLY_PAGE, READ_ONLY_PANE, type ReadOnlyWhat } from './readOnlyEdit'
+import type { AllowFor } from './useTimedUnlock'
 
 export interface ReadOnlyChipProps {
   /** The "Allow edits?" box is open. */
   asking: boolean
   /** The chip's click while the box is closed. */
   onAsk: () => void
-  /** "Allow edits": the host turns read only off, in the file. */
-  onAllow: () => void
+  /** A time choice in the box (YAZ-4939): the host unlocks THIS page for that long. */
+  onAllow: (choice: AllowFor) => void
   /** Cancel, Esc, a press outside, or the chip's click while the box is open. */
   onCancel: () => void
+  /** "Turn Read only off": the page's own switch goes off in its file. Absent → no such button (a vault's lock alone, a code tab). */
+  onTurnOff?: () => void
+  /** A timed unlock runs (YAZ-4939): when it ends, or Infinity until the tab closes. Null or absent: the page is locked. */
+  editingUntil?: number | null
+  /** "Lock now", beside the chip while an unlock runs. */
+  onLock?: () => void
 }
 
-export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel }: ReadOnlyChipProps) {
+/** The chip's words while an unlock runs: "Editing · mm:ss", or "until close". */
+export function editingLabel(until: number, now: number): string {
+  if (until === Infinity) return 'Editing · until close'
+  const left = Math.max(0, Math.ceil((until - now) / 1000))
+  return `Editing · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
+}
+
+export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil = null, onLock }: ReadOnlyChipProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const chipRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef(onCancel)
   cancelRef.current = onCancel
   const message = useReadOnlyMessage(rootRef, chipRef, asking)
+  // The vault's word for a note (YAZ-4938): "This card is Read only." in a vault of cards.
+  const unit = useUnit()
+  const editing = editingUntil !== null
+  // The 1-second clock (YAZ-4939): here alone, only while a TIMED unlock runs, and gone with it.
+  const [, tick] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => {
+    if (editingUntil === null || editingUntil === Infinity) return
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [editingUntil])
 
   useEffect(() => {
     if (!asking) return
@@ -67,10 +100,13 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel }: ReadOnlyChipP
         onCancel()
         chipRef.current?.focus()
       }}>
-      <button ref={chipRef} type="button" className={`read-only-chip__button${message === null ? '' : ' read-only-chip__button--pulse'}`} title="Click to allow edits" aria-haspopup="dialog" aria-expanded={asking} onClick={asking ? onCancel : onAsk}>
-        <LockIcon size={12} />
-        <span>Read only</span>
+      <button ref={chipRef} type="button" className={`read-only-chip__button${editing ? ' read-only-chip__button--editing' : ''}${message === null ? '' : ' read-only-chip__button--pulse'}`} title={editing ? 'Edits are allowed for now. Click for another time.' : 'Click to allow edits'} aria-haspopup="dialog" aria-expanded={asking} onClick={asking ? onCancel : onAsk}>
+        {editing ? <EditingIcon /> : <LockIcon size={12} />}
+        <span>{editing ? editingLabel(editingUntil, Date.now()) : 'Read only'}</span>
       </button>
+      {editing && onLock !== undefined && (
+        <button type="button" className="read-only-chip__lock" title="Lock this page again now" onClick={onLock}>Lock now</button>
+      )}
       <div className="read-only-message" role="status">
         {message !== null && (
           <div className="read-only-message__card" style={{ '--read-only-message-arrow': `${message.arrow}px` } as CSSProperties}>
@@ -83,7 +119,7 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel }: ReadOnlyChipP
               <LockIcon size={13} />
             </span>
             <span className="read-only-message__text">
-              <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : 'This note is Read only.'}</strong>
+              <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : unit('This note is Read only.')}</strong>
               <span>Click Read only to allow edits.</span>
             </span>
           </div>
@@ -92,8 +128,13 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel }: ReadOnlyChipP
       {asking && (
         <div className="read-only-chip__ask" role="dialog" aria-label="Allow edits">
           <p>Allow edits?</p>
+          <div className="read-only-chip__times">
+            <button type="button" className="read-only-chip__allow" autoFocus onClick={() => onAllow('minute')}>Allow edits for 1 minute</button>
+            <button type="button" onClick={() => onAllow('ten')}>10 minutes</button>
+            <button type="button" onClick={() => onAllow('close')}>Until I close this tab</button>
+          </div>
           <div className="read-only-chip__actions">
-            <button type="button" className="read-only-chip__allow" autoFocus onClick={onAllow}>Allow edits</button>
+            {onTurnOff !== undefined && <button type="button" onClick={onTurnOff}>Turn Read only off</button>}
             <button type="button" onClick={onCancel}>Cancel</button>
           </div>
         </div>
@@ -101,6 +142,14 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel }: ReadOnlyChipP
     </div>
   )
 }
+
+/** A pencil, the lock's size and strokes (Tabler-style), for the chip while an unlock runs. */
+const EditingIcon = () => (
+  <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4" />
+    <path d="M13.5 6.5l4 4" />
+  </svg>
+)
 
 /** What the card says, and where its arrow points: the chip's middle, from the card's right edge. */
 interface ReadOnlyMessage {

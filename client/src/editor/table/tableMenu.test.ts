@@ -13,7 +13,8 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuItem, MenuSection } from '../../sidebar/menuSections'
 import { getMarkdownForSave } from '../createCrepe'
 import { noteMenuSections } from '../noteMenu'
-import { cellPos, mountNote as mount, unmountAll } from './tableTestKit'
+import { cellDOM, cellPos, mountNote as mount, unmountAll } from './tableTestKit'
+import { setStickyHeaderSetting } from './timeFormatSetting'
 
 afterEach(unmountAll)
 
@@ -55,8 +56,8 @@ describe('the Table part', () => {
       ['Add cell note', 'Move to cell note'],
       ['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column'],
       ['Delete row', 'Delete column', 'Clear cells', 'Merge cells'],
-      ['Align [Left, Center, Right | Top, Middle, Bottom]', `Fill [No fill | ${colours} | Custom colour…]`, `Text colour [Default colour | ${colours} | Custom colour…]`],
-      ['Sort A to Z', 'Sort Z to A'],
+      ['Align [Left, Center, Right | Top, Middle, Bottom]', `Fill [No fill | ${colours} | Custom colour…]`, `Text colour [Default colour | ${colours} | Custom colour…]`, "Text in this column [Table's choice, Wrap, Clip]"],
+      ['Sort A to Z', 'Sort Z to A', 'Make subheader row'],
       ['Freeze up to this row', 'Freeze up to this column', 'Unfreeze rows', 'Unfreeze columns'],
     ])
     expect(labels.at(-7)?.[0]).toBe('Paste')
@@ -295,6 +296,7 @@ describe('freeze (S3)', () => {
     row(view, 1, 0, 'table-unfreeze-rows').onSelect()
     expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: freeze 1 col -->\n`)
     row(view, 1, 0, 'table-unfreeze-cols').onSelect()
+    setStickyHeaderSetting(true)
     expect(getMarkdownForSave(crepe)).toBe(before)
     expect(row(view, 1, 0, 'table-unfreeze-rows').disabled).toBe(true)
     undo(view.state, view.dispatch)
@@ -302,6 +304,8 @@ describe('freeze (S3)', () => {
   })
 
   it('the page shows a freeze at once, and an unfreeze clears it at once (no edit needed)', async () => {
+    // Settings › Sticky header row Off (YAZ-4899 round 2): with it On, an unfreeze keeps the header row frozen.
+    setStickyHeaderSetting(false)
     const { view } = await mount(TABLE)
     const frozenRows = () => [...view.dom.querySelectorAll('tbody[data-content-dom] > tr')].map((tr) => tr.classList.contains('table-frozen-row'))
     const frozenCols = () => [...view.dom.querySelectorAll('tbody[data-content-dom] > tr:nth-child(3) > *')].map((cell) => cell.classList.contains('table-frozen-col'))
@@ -373,7 +377,7 @@ describe('whole rows and whole columns count what is selected, as any cells (the
   it('rows 2 to 3 of a 4-column table: 2 rows and 4 columns; Insert 4 columns right adds 4', async () => {
     const { view } = await mount(WIDE)
     selectRows(view, 1, 2)
-    expect(labelsOf(view, 1, 1)).toEqual(['Insert 2 rows above', 'Insert 2 rows below', 'Insert 4 columns left', 'Insert 4 columns right', 'Duplicate 2 rows', 'Duplicate 4 columns', 'Delete 2 rows', 'Delete 4 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows'])
+    expect(labelsOf(view, 1, 1)).toEqual(['Insert 2 rows above', 'Insert 2 rows below', 'Insert 4 columns left', 'Insert 4 columns right', 'Duplicate 2 rows', 'Duplicate 4 columns', 'Delete 2 rows', 'Delete 4 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Text in these columns', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows', 'Make 2 subheader rows'])
     row(view, 1, 1, 'table-insert-col-right').onSelect()
     expect(texts(view)[0]).toEqual(['h1', 'h2', 'h3', 'h4', '', '', '', ''])
   })
@@ -382,12 +386,12 @@ describe('whole rows and whole columns count what is selected, as any cells (the
 describe('the labels count the selection (YAZ-3801)', () => {
   it('one cell: the labels as before', async () => {
     const { view } = await mount(WIDE)
-    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column', 'Delete row', 'Delete column', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A'])
+    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column', 'Delete row', 'Delete column', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Text in this column', 'Sort A to Z', 'Sort Z to A', 'Make subheader row'])
   })
 
   it.each<[[number, number], [number, number], string[]]>([
-    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Duplicate 2 columns', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows']],
-    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Duplicate row', 'Duplicate 3 columns', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A']],
+    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Duplicate 2 columns', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Text in these columns', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows', 'Make 2 subheader rows']],
+    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Duplicate row', 'Duplicate 3 columns', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Text in these columns', 'Sort A to Z', 'Sort Z to A', 'Make subheader row']],
   ])('cells %j to %j', async (from, to, labels) => {
     const { view } = await mount(WIDE)
     selectCells(view, from, to)
@@ -450,5 +454,53 @@ describe('the labels count the selection (YAZ-3801)', () => {
     selectCells(view, [1, 0], [3, 0])
     expect(row(view, 1, 0, 'table-delete-row').label).toBe('Delete 3 rows')
     expect(row(view, 1, 0, 'table-delete-row').disabled).toBe(true)
+  })
+})
+
+describe('Text in this column › (YAZ-4900): the target columns\' own Wrap or Clip', () => {
+  it('Clip writes `text 2:clip` and puts it on every cell of the column, one undo step; ✓ at what the column shows; Table\'s choice clears it', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    expect(row(view, 1, 1, 'table-text-table').radio?.on).toBe(true)
+    row(view, 1, 1, 'table-text-clip').onSelect()
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: text 2:clip -->\n`)
+    expect([0, 1, 2].map((r) => view.state.doc.nodeAt(cellPos(view, r, 1))!.attrs.text)).toEqual(['clip', 'clip', 'clip'])
+    expect([0, 1, 2].map((r) => view.state.doc.nodeAt(cellPos(view, r, 0))!.attrs.text)).toEqual([null, null, null])
+    expect(cellDOM(view, 2, 1).getAttribute('data-cell-text')).toBe('clip')
+    expect(cellDOM(view, 2, 0).hasAttribute('data-cell-text')).toBe(false)
+    expect(row(view, 2, 1, 'table-text-clip').radio?.on).toBe(true)
+    expect(row(view, 2, 0, 'table-text-table').radio?.on).toBe(true)
+    // Mixed columns light no pick, and the label counts them.
+    selectCells(view, [1, 0], [1, 1])
+    expect(sectionsAt(view, 1, 0).flat().find((item) => item.id === 'table-text')?.label).toBe('Text in these columns')
+    expect([row(view, 1, 0, 'table-text-table'), row(view, 1, 0, 'table-text-clip')].map((r) => r.radio?.on)).toEqual([false, false])
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, inCell(view, 1, 1))))
+    row(view, 1, 1, 'table-text-table').onSelect()
+    expect(getMarkdownForSave(crepe)).toBe(before)
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: text 2:clip -->\n`)
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('stays on its column: a column inserted left moves it, a new row takes it in the same undo step, a duplicate keeps it, a delete takes it', async () => {
+    const { crepe, view } = await mount(`${TABLE}\n<!-- table: text 2:clip -->\n`)
+    expect(view.state.doc.nodeAt(cellPos(view, 2, 1))!.attrs.text).toBe('clip')
+    row(view, 1, 0, 'table-insert-col-left').onSelect()
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: text 3:clip -->')
+    row(view, 2, 2, 'table-insert-row-below').onSelect()
+    expect(texts(view)).toHaveLength(4)
+    expect(view.state.doc.nodeAt(cellPos(view, 3, 2))!.attrs.text).toBe('clip')
+    expect(view.state.doc.nodeAt(cellPos(view, 3, 1))!.attrs.text).toBeNull()
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: text 3:clip -->')
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(texts(view)).toHaveLength(3)
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: text 3:clip -->')
+    row(view, 1, 2, 'table-duplicate-cols').onSelect()
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: text 3:clip 4:clip -->')
+    row(view, 1, 3, 'table-delete-col').onSelect()
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: text 3:clip -->')
+    row(view, 1, 2, 'table-delete-col').onSelect()
+    expect(getMarkdownForSave(crepe)).not.toContain('<!-- table:')
   })
 })

@@ -1,7 +1,8 @@
 /**
  * A new line beside a code block or a table (YAZ-4800 demo): the block handle's "Add line above" / "Add line below"
  * (`turnIntoRows.ts`), ⌘↵ / ⌘⇧↵ in a code block (a CodeMirror keymap, `addLineCodeKeys`) and in a table cell
- * (`addLineKeymap`). One command for all three, so the menu and the keys always agree:
+ * (`addLineKeymap`). An embed too (YAZ-4907): its line's rows, and Enter, ⌘↵ and ⌘⇧↵ with the embed selected
+ * (`embedBlockAtSelection`). One command for all of them, so the menu and the keys always agree:
  *  - the block is a list item's first block: a new sibling item of the same list, above or below that item (after its
  *    children), with an empty paragraph; it takes the item's attrs, and a checklist line's new item starts unchecked,
  *    as Enter's new item does (`listCommands.ts`). A numbered list's numbers follow;
@@ -10,9 +11,10 @@
  */
 import { Prec } from '@codemirror/state'
 import { keymap, type EditorView as CodeMirrorView } from '@codemirror/view'
-import { Plugin, PluginKey, TextSelection, type Command, type EditorState } from '@milkdown/kit/prose/state'
+import { NodeSelection, Plugin, PluginKey, TextSelection, type Command, type EditorState } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { embedOnlyParagraph } from '../drawing/boardEmbedScan'
 import { getZoomedItemPos } from './zoom'
 
 export type LineSide = 'above' | 'below'
@@ -78,9 +80,36 @@ const inTable = (side: LineSide): Command => (state, dispatch, view) => {
   return true
 }
 
+/**
+ * The paragraph of a selected embed (YAZ-4907), or null: the paragraph is one board embed (`embedOnlyParagraph`) and
+ * the selection is it whole, as text (`boardEmbed.ts`: the window is selected) or as the image node (`imageView.ts`,
+ * a board of another vault). The embed's paragraph is the block the line goes beside, as a code block or a table is.
+ */
+function embedBlockAtSelection(state: EditorState): number | null {
+  const sel = state.selection
+  const $from = sel.$from
+  if ($from.depth === 0) return null
+  const whole = sel instanceof NodeSelection ? sel.node.type.name === 'image' : sel instanceof TextSelection && !sel.empty && sel.from === $from.start() && sel.to === $from.end()
+  if (!whole) return null
+  const pos = $from.before()
+  return embedOnlyParagraph(state, pos) ? pos : null
+}
+
+/** Enter, ⌘↵ and ⌘⇧↵ on a selected embed (YAZ-4907): above the list's Enter (100), which typed over the embed. */
+const onEmbed = (side: LineSide): Command => (state, dispatch, view) => {
+  const block = embedBlockAtSelection(state)
+  if (block === null || view === undefined || !view.editable) return false
+  if (!addLineBesideCommand(block, side)(state, dispatch)) return false
+  view.focus()
+  return true
+}
+
 export const addLineKeymap = $shortcut(() => ({
   AddLineBelowTable: { key: 'Mod-Enter', priority: 200, onRun: () => inTable('below') },
   AddLineAboveTable: { key: 'Mod-Shift-Enter', priority: 200, onRun: () => inTable('above') },
+  AddLineBelowEmbed: { key: 'Enter', priority: 210, onRun: () => onEmbed('below') },
+  AddLineBelowEmbedMod: { key: 'Mod-Enter', priority: 210, onRun: () => onEmbed('below') },
+  AddLineAboveEmbed: { key: 'Mod-Shift-Enter', priority: 210, onRun: () => onEmbed('above') },
 }))
 
 /**

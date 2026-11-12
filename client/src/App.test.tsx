@@ -218,6 +218,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuOpenFolder = new Set<() => void>()
   const menuSearch = new Set<() => void>()
+  const menuExplore = new Set<() => void>()
   const menuSwitchVault = new Set<() => void>()
   const menuSettings = new Set<() => void>()
   const menuToggleSidebar = new Set<() => void>()
@@ -396,6 +397,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         return () => menuOpenRoot.delete(l)
       }),
       onSearch: menuSub(menuSearch),
+      onExplore: menuSub(menuExplore),
       onSwitchVault: menuSub(menuSwitchVault),
       onSettings: menuSub(menuSettings),
       onToggleSidebar: menuSub(menuToggleSidebar),
@@ -572,6 +574,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitOpenFolder: () => menuOpenFolder.forEach((l) => l()),
     emitSearch: () => menuSearch.forEach((l) => l()),
+    emitExplore: () => menuExplore.forEach((l) => l()),
     emitSwitchVault: () => menuSwitchVault.forEach((l) => l()),
     emitSettings: () => menuSettings.forEach((l) => l()),
     emitToggleSidebar: () => menuToggleSidebar.forEach((l) => l()),
@@ -2589,6 +2592,47 @@ describe('App "What\'s new" sheet (YAZ-2976 D4, D5, D8)', () => {
   })
 })
 
+describe('App ⌘⇧F explore (YAZ-2571)', () => {
+  /** The stack is its own chunk, and a layer leaves after its 100 ms motion: wait for the DOM to say so, 3 s at most. */
+  const until = async (done: () => boolean) => {
+    for (let i = 0; i < 300 && !done(); i++) await act(async () => await new Promise((r) => setTimeout(r, 10)))
+    expect(done()).toBe(true)
+  }
+  const esc = () => act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  it('File › Explore Vault… mounts the stack (its own chunk) with the caret in its search; ⌘⇧F again adds a search; Esc closes one layer, then the stack', async () => {
+    const { el, emitExplore } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    expect(el.querySelector('.explore')).toBeNull()
+    act(() => emitExplore())
+    await until(() => el.querySelector('.explore') !== null)
+    const stack = el.querySelector<HTMLElement>('.explore') as HTMLElement
+    expect(stack.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(stack.querySelector('.explore__input'))
+    expect(stack.querySelectorAll('.explore__layer')).toHaveLength(1)
+    act(() => emitExplore())
+    expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
+    expect(document.activeElement).toBe(el.querySelectorAll('.explore__input')[1])
+    esc()
+    await until(() => el.querySelectorAll('.explore__layer').length === 1)
+    expect(document.activeElement).toBe(el.querySelector('.explore__input'))
+    esc()
+    expect(el.querySelector('.explore')).toBeNull()
+  })
+
+  it('⌘K with the stack open closes the whole stack first, then runs its sidebar search (Yaseen: "⌘K keeps its sidebar search"); the keyboard is not given back', async () => {
+    const { el, emitExplore, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitExplore())
+    await until(() => el.querySelector('.explore') !== null)
+    act(() => emitExplore())
+    expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
+    act(() => emitSearch())
+    expect(el.querySelector('.explore')).toBeNull()
+    expect(captured.sidebar?.lens).toBe('search')
+    expect(captured.sidebar?.pendingSearchFocus).toBe(true)
+    // Not back in the note: the sidebar's search bar is asked for the caret instead.
+    expect(document.activeElement?.closest('.milkdown')).toBeNull()
+  })
+})
+
 describe('App ⌘K search (D4, YAZ-804)', () => {
   it('from a collapsed sidebar it un-collapses through the global setting and mounts the sidebar with the focus flag already true', async () => {
     const { bridge, el, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
@@ -4356,6 +4400,50 @@ describe('App rename door (⚡ YAZ-888)', () => {
         trashing(b.bridge)
       })
 
+    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "Allow for 10 minutes" opens the vault’s file actions that long, then it asks again', async () => {
+      // "Ask before renaming" off: the rename sheet would otherwise stand between the vault's sheet and the rename.
+      const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        trashing(b.bridge)
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+      // Delete asks; Cancel deletes nothing.
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/B.md']))
+      await act(async () => {})
+      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow its file actions — rename, move, delete, new and paste — for 10 minutes?')
+      expect(bridge.file.delete).not.toHaveBeenCalled()
+      await act(async () => button('Cancel')?.click())
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete).not.toHaveBeenCalled()
+      // Rename asks too; "Allow for 10 minutes" lets it run.
+      act(() => void captured.sidebar?.onRenameFile('/v/B.md', '/v/C.md', 'file'))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      await act(async () => button('Allow for 10 minutes')?.click())
+      await act(async () => {})
+      expect(sheet()).toBeNull()
+      expect(renames(bridge)).toEqual([['/v/B.md', '/v/C.md']])
+      // Within the 10 minutes a Delete does not ask.
+      const now = Date.now()
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 9 * 60_000)
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md']))
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/A.md' }])
+      // After them it asks again.
+      clock.mockReturnValue(now + 10 * 60_000 + 1)
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('Cancel')?.click())
+      expect(bridge.file.delete.mock.calls.length).toBe(1)
+      clock.mockRestore()
+    })
+
     it('S66 (YAZ-3272, as D23 of YAZ-3293 words it): one row deleted says "Deleted 1 file (Todo.md)" with Undo, by its kind and its name on disk', async () => {
       const { el } = await mountVault()
       await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Todo.md']))
@@ -5647,10 +5735,12 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
-      // The vault's review settings and its text formatting (YAZ-3066), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'text-formatting.json'], ['/v', 'review.json'], ['/v', 'text-formatting.json']],
+      // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a note (YAZ-4938), its "Read only" (YAZ-4939), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
+      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json']],
       coldDiff: [['/v']],
-      subscriptions: [2, 2, 6],
+      // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a note (YAZ-4938), read only (YAZ-4939), text formatting and link pills (YAZ-4924), each subscribed
+      // once for each mount effect (7 × 2), plus the WikilinkIndexBridge's `useIndex`, which hears the vault's config too (2 since YAZ-2602: the count was [2, 2, 4] with review.json alone).
+      subscriptions: [2, 2, 16],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -5764,7 +5854,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(4) // review.json and text-formatting.json (YAZ-3066)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(14) // review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066) and link-pills.json (YAZ-4924)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
@@ -5935,11 +6025,12 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
           return [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: ')).map((text) => [title, text])
         })
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
+    // Files & Links names it twice: its "This vault" group and its "Link pills" group (YAZ-4924).
+    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {

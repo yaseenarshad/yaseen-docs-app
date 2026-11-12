@@ -14,6 +14,7 @@ function installBridge() {
   const openFolderListeners = new Set<() => void>()
   const openRootListeners = new Set<(path: string) => void>()
   const searchListeners = new Set<() => void>()
+  const exploreListeners = new Set<() => void>()
   const switchVaultListeners = new Set<() => void>()
   const settingsListeners = new Set<() => void>()
   const toggleSidebarListeners = new Set<() => void>()
@@ -51,6 +52,7 @@ function installBridge() {
       onOpenFolder: sub(openFolderListeners),
       onOpenRoot: sub(openRootListeners),
       onSearch: sub(searchListeners),
+      onExplore: sub(exploreListeners),
       onSwitchVault: sub(switchVaultListeners),
       onSettings: sub(settingsListeners),
       onToggleSidebar: sub(toggleSidebarListeners),
@@ -81,6 +83,7 @@ function installBridge() {
     emitOpenFolder: () => openFolderListeners.forEach((l) => l()),
     emitOpenRoot: (path: string) => openRootListeners.forEach((l) => l(path)),
     emitSearch: () => searchListeners.forEach((l) => l()),
+    emitExplore: () => exploreListeners.forEach((l) => l()),
     emitSwitchVault: () => switchVaultListeners.forEach((l) => l()),
     emitSettings: () => settingsListeners.forEach((l) => l()),
     emitToggleSidebar: () => toggleSidebarListeners.forEach((l) => l()),
@@ -108,6 +111,7 @@ function installBridge() {
       openFolderListeners.size +
       openRootListeners.size +
       searchListeners.size +
+      exploreListeners.size +
       switchVaultListeners.size +
       settingsListeners.size +
       toggleSidebarListeners.size +
@@ -138,6 +142,7 @@ interface ProbeProps {
   onOpenFolder: () => void
   onOpenRoot: (path: string) => void
   onSearch: () => void
+  onExplore: () => void
   onSwitchVault: () => void
   onSettings: () => void
   onToggleSidebar: () => void
@@ -178,7 +183,7 @@ afterEach(() => {
 describe('useMenuEvents', () => {
   it('routes menu gestures to the callbacks and unsubscribes on unmount', () => {
     const b = installBridge()
-    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onBack: vi.fn(), onForward: vi.fn(), onBackNewTab: vi.fn(), onForwardNewTab: vi.fn(), onNewTab: vi.fn(), onNewWindow: vi.fn(), onNewItem: vi.fn(), onGoTo: vi.fn(), onDailyNote: vi.fn(), onZoom: vi.fn(), onWhatsNew: vi.fn(), onKeySheet: vi.fn(), onExportImage: vi.fn(), onExportDrawing: vi.fn(), onShareLink: vi.fn(), onCanvasBackground: vi.fn() }
+    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onExplore: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onBack: vi.fn(), onForward: vi.fn(), onBackNewTab: vi.fn(), onForwardNewTab: vi.fn(), onNewTab: vi.fn(), onNewWindow: vi.fn(), onNewItem: vi.fn(), onGoTo: vi.fn(), onDailyNote: vi.fn(), onZoom: vi.fn(), onWhatsNew: vi.fn(), onKeySheet: vi.fn(), onExportImage: vi.fn(), onExportDrawing: vi.fn(), onShareLink: vi.fn(), onCanvasBackground: vi.fn() }
     root = createRoot(document.createElement('div'))
     act(() => root?.render(<Probe {...handlers} />))
 
@@ -188,6 +193,8 @@ describe('useMenuEvents', () => {
     expect(handlers.onOpenRoot).toHaveBeenCalledWith('/vaults/notes')
     act(() => b.emitSearch())
     expect(handlers.onSearch).toHaveBeenCalledTimes(1)
+    act(() => b.emitExplore())
+    expect(handlers.onExplore).toHaveBeenCalledTimes(1)
     act(() => b.emitSwitchVault())
     expect(handlers.onSwitchVault).toHaveBeenCalledTimes(1)
     act(() => b.emitSettings())

@@ -14,10 +14,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import type { ShowIdsSettings } from '../search/showIds'
 import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
-import { idsAskMessage, idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
+import { UNIT_WORDS, unitTextOf } from '../vault/unitWord'
+import { idsAskMessage, idsLettersAsk, KEEP_OTHER_ASK, keepIdsAskMessage, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
 import { HOTKEYS_SECTION } from './hotkeysSection'
 import { groupsOf, SETTINGS_SECTIONS, type SettingsCtx } from './registry'
 import { SettingsDialog } from './SettingsDialog'
@@ -27,8 +29,14 @@ import { SettingsDialog } from './SettingsDialog'
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string, readOnlyVault?: { on: boolean }, showIdsSettings?: ShowIdsSettings) {
   const onChange = vi.fn()
+  // The vault's "Show IDs" (YAZ-4940): no settings handed over is no vault open, so no rows.
+  const saveShowIds = vi.fn()
+  const showIds = showIdsSettings === undefined ? undefined : { settings: showIdsSettings, save: saveShowIds, inSearch: () => showIdsSettings.search, inTitle: () => showIdsSettings.title }
+  // The vault's Read only (YAZ-4939): no settings handed over is no vault open, so no row.
+  const saveReadOnly = vi.fn()
+  const readOnly = readOnlyVault === undefined ? undefined : { settings: readOnlyVault, save: saveReadOnly, fileActionsAllowed: () => true, allowFileActions: () => undefined }
   const onClose = vi.fn()
   const setEnabled = vi.fn()
   const save = vi.fn()
@@ -54,10 +62,10 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   document.body.appendChild(container)
   root = createRoot(container)
   // The active vault's name (YAZ-2602 R10): App hands it only with two or more vaults in the window.
-  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName }} onClose={onClose} />))
+  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName, readOnlyVault: readOnly, showIds }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
   const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, el: container }
+  return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, saveReadOnly, saveShowIds, el: container }
 }
 
 /** Upkeep turned on, the rest as a new vault has it. */
@@ -139,7 +147,7 @@ const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkne
  * Settings › Tables (YAZ-4775), after Editor: the note tables' rows, moved off the Editor page with their keys. "All tables"
  * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).
  */
-const TABLES_ROWS = ['tableHeaderRow', 'tableWidth', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -151,7 +159,7 @@ const TABLES_GROUPS = ['All tables', 'Cell notes', 'Calendar tables']
  * Settings › Drawings and diagrams (YAZ-3037; the name since YAZ-4748 D11): one row per `CanvasPrefs` key the page shows, in
  * its groups, then the draw.io diagrams group, whose one row moved here from Appearance.
  */
-const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'diagramDarkColors']
+const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'embedRestSeconds', 'newBoardFolder', 'diagramDarkColors']
 /** Settings › Images (YAZ-3038): the Pixabay key, the library folder and the favorites (YAZ-4363), then the icon packs (YAZ-4359). */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPacks', 'mediaHoverZoom', 'mediaHoverZoomSize']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
@@ -160,7 +168,7 @@ const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPa
 const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`)]
 /** Settings › Folder pages (YAZ-4585): its personal rows, with the folder views' hover row moved from Files & Links, the view defaults, the page default. */
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
-const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
+const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
@@ -344,7 +352,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Folder pages', 'settings-folderPages', FOLDER_PAGES_ROWS),
       page('Review', 'settings-review', REVIEW_ROWS),
       page('Sync', 'settings-sync', ['githubSync']),
-      page('Memory', 'settings-memory', ['memoryWindows', 'tabSleepAfter', 'memoryReload']),
+      page('Memory', 'settings-memory', ['memoryWindows', 'tabSleepAfter', 'embedPictures', 'memoryReload']),
       page('Hotkeys', 'settings-hotkeys', HOTKEY_ROWS),
     ])
   })
@@ -543,6 +551,19 @@ describe('Settings › Drawings (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)
     const { el, onChange } = mountCanvas()
     act(() => rowButtons(el, 'canvas.gridModeEnabled')[0].click()) // On
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true } })
+  })
+
+  it('YAZ-4820: the embeds group: "Embeds stop moving after" (30 s by default) and "New drawings and diagrams go to" (the note`s folder); a choice writes its field', () => {
+    const { el, onChange } = mountCanvas()
+    const rest = rowButtons(el, 'embedRestSeconds')
+    expect(rest.map((b) => b.textContent)).toEqual(['10 s', '30 s', '1 min', '5 min', 'Never'])
+    expect(rest[1].getAttribute('aria-pressed')).toBe('true')
+    act(() => rest[4].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, embedRestSeconds: 0 })
+    const folder = rowButtons(el, 'newBoardFolder')
+    expect(folder.map((b) => b.textContent)).toEqual(["The note's folder", 'assets/drawings'])
+    act(() => folder[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, newBoardFolder: 'assets' })
   })
 
   it('Select on, sloppiness and text alignment speak their own words; Default font is a select, Assistant first and current', () => {
@@ -854,9 +875,9 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     const { el, onChange } = mountOn('Tables')
     const group = row(el, 'tableRowBand')?.closest('.settings-group')
     // "All tables" since YAZ-4775 (on the Tables page a second "Tables" read as "Tables › Tables"); Header row (YAZ-4774)
-    // and Width (YAZ-4783) stand before Row band now.
+    // and Width (YAZ-4783) stand before Row band now, and New tables start as (YAZ-4869 item 22).
     expect(group?.querySelector('.settings-group__title')?.textContent).toBe('All tables')
-    expect([...group!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting).slice(0, 3)).toEqual(['tableHeaderRow', 'tableWidth', 'tableRowBand'])
+    expect([...group!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting).slice(0, 6)).toEqual(['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tableTextInCells'])
     expect(row(el, 'tableRowBand')?.querySelector('.setting__label')?.textContent).toBe('Row band')
     expect(rowButtons(el, 'tableRowBand').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'false'], ['Calendar tables', 'false'], ['All tables', 'true']])
     act(() => rowButtons(el, 'tableRowBand')[1].click())
@@ -1845,6 +1866,80 @@ describe('SettingsDialog: On opens the box with the typed ID letters (YAZ-2677 D
   })
 })
 
+/**
+ * A folder whose notes already hold number IDs (YAZ-4922 🔒 D2, gap 1): the box counts them by their letters and
+ * offers "Keep <letters>" of the biggest group first. Other letters can be typed instead. Nothing is written until
+ * one of the two is chosen.
+ */
+describe('SettingsDialog: the box offers to keep the IDs the notes already hold (YAZ-4922 D2)', () => {
+  const ASK = { notes: 29, folders: 0, foreign: 26, groups: [{ letters: 'YAS', count: 120 }, { letters: 'TECH', count: 26 }] }
+  const open = async (ask: IndexResponse['ask'] = ASK) => {
+    const mounted = mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: false, held: false, ask })
+    await act(async () => rowButtons(mounted.el, 'ids')[0].click())
+    return mounted
+  }
+  const buttons = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')]
+  const sheetBtn = (el: HTMLElement, label: string) => buttons(el).find((b) => b.textContent === label) as HTMLButtonElement
+  const field = (el: HTMLElement) => el.querySelector('.confirm__input') as HTMLInputElement
+
+  it('the box says how many notes hold IDs with which letters, and "Keep YAS" is its first answer, with the focus', async () => {
+    const { el, setIds } = await open()
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(keepIdsAskMessage(ASK))
+    expect(keepIdsAskMessage(ASK)).toContain('120 notes and folders have an ID with YAS, and 26 with TECH')
+    // The vault's word (YAZ-4938) reaches every "note" of the box.
+    expect(keepIdsAskMessage(ASK, undefined, unitTextOf(UNIT_WORDS.card))).toContain('120 cards and folders have an ID with YAS')
+    // What "Use <letters>" does (YAZ-4922, "Yes, leave them"): only this vault's own links follow; a link out keeps its ID.
+    expect(keepIdsAskMessage(ASK)).toContain('Or type other letters: each YAS ID takes them and keeps its number. Their file names follow, and so does each link to them. A link to a note outside this vault stays as it is.')
+    expect(keepIdsAskMessage(ASK)).not.toContain('each link and file name follows')
+    expect(el.querySelector('.confirm__letters')?.textContent).toBe(KEEP_OTHER_ASK)
+    expect(buttons(el).map((b) => b.textContent)).toEqual(['Use other letters', 'Cancel', 'Keep YAS'])
+    expect(document.activeElement).toBe(sheetBtn(el, 'Keep YAS'))
+    expect(sheetBtn(el, 'Use other letters').disabled).toBe(true)
+    expect(sheetBtn(el, 'Use other letters').classList.contains('confirm__btn--other')).toBe(true)
+    expect(setIds).not.toHaveBeenCalled()
+  })
+
+  it('"Keep YAS" and Enter save yes with YAS', async () => {
+    const { el, setIds } = await open()
+    act(() => sheetBtn(el, 'Keep YAS').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'YAS')
+    expect(el.querySelector('.confirm')).toBeNull()
+    unmount()
+    const again = await open()
+    pressEnter(field(again.el))
+    expect(again.setIds).toHaveBeenCalledExactlyOnceWith(true, 'YAS')
+  })
+
+  it('typed other letters: the left button says them and saves them, and so does Enter in the field', async () => {
+    const { el, setIds } = await open()
+    type(field(el), 'abc')
+    expect(sheetBtn(el, 'Use ABC').disabled).toBe(false)
+    act(() => sheetBtn(el, 'Use ABC').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'ABC')
+    unmount()
+    const again = await open()
+    type(field(again.el), 'abc')
+    pressEnter(field(again.el))
+    expect(again.setIds).toHaveBeenCalledExactlyOnceWith(true, 'ABC')
+  })
+
+  it('bad letters in the field: the left button and Enter in the field do nothing', async () => {
+    const { el, setIds } = await open()
+    type(field(el), 'A1')
+    expect(sheetBtn(el, 'Use other letters').disabled).toBe(true)
+    pressEnter(field(el))
+    expect(setIds).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm')).not.toBeNull()
+  })
+
+  it('Cancel writes nothing', async () => {
+    const { el, setIds } = await open()
+    act(() => sheetBtn(el, 'Cancel').click())
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(setIds).not.toHaveBeenCalled()
+  })
+})
+
 describe('SettingsDialog: Duplicate IDs (YAZ-2677 D7, S55 to S57)', () => {
   const withIds = (enabled: boolean) => mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled })
   const button = (el: HTMLElement) => rowButtons(el, 'duplicates')[0]
@@ -1919,6 +2014,8 @@ describe('SettingsDialog: ID letters (YAZ-2677 D5, S79, S80, S83, S85)', () => {
     const { el, idsState, reletter } = await withIds(true)
     expect(row(el, 'idLetters')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
     expect(row(el, 'idLetters')?.querySelector('.setting__label')?.textContent).toBe('ID letters')
+    // The hint says what a change reaches (YAZ-4922, "Yes, leave them"): this vault's IDs, their file names and the links to them; a link out stays.
+    expect(row(el, 'idLetters')?.querySelector('.setting__hint:not([role])')?.textContent).toBe('The letters in front of each number, like the YAZ in YAZ-12. A change reaches each ID in this vault, its file name and each link to it. A link to a note outside this vault stays as it is.')
     expect(idsState).toHaveBeenCalledTimes(1)
     expect(line(el)).toBe("This vault's ID letters are YAZ.")
     expect(buttons(el).map((b) => b.textContent)).toEqual(['Change letters'])
@@ -1930,6 +2027,8 @@ describe('SettingsDialog: ID letters (YAZ-2677 D5, S79, S80, S83, S85)', () => {
     act(() => buttons(el)[0].click())
     expect(el.querySelector('.confirm__text')?.textContent).toBe(lettersAskMessage({ letters: 'YAZ', notes: 745 }, 'Work'))
     expect(el.querySelector('.confirm__text')?.textContent).toContain('745 notes')
+    // The same pass as "Use <letters>" (YAZ-4922, "Yes, leave them"): a link to a note outside this vault keeps its letters.
+    expect(el.querySelector('.confirm__text')?.textContent).toContain('The app will change the ID of 745 notes, the file name of each, and each link to them. A link to a note outside this vault stays as it is.')
     expect(el.querySelector('.confirm__letters')?.textContent).toBe(NEW_LETTERS_ASK)
     expect(document.activeElement).toBe(field(el))
     expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Change letters'])
@@ -2055,5 +2154,76 @@ describe('SettingsDialog: Old IDs (YAZ-2677 D6, S88 to S91)', () => {
     await act(async () => sheetBtn(el, 'Give them numbers').click())
     expect(backfill).toHaveBeenCalledTimes(2)
     expect(line(el)).toBe('Each note has a number now.')
+  })
+})
+
+/** Settings › This vault › "Read only" (YAZ-4939): Off (default) · On, saved in the vault. */
+describe('This vault › Read only (YAZ-4939)', () => {
+  it('with no vault open the row is absent', () => {
+    const { el } = mount()
+    expect(row(el, 'readOnlyVault')).toBeNull()
+  })
+
+  it('a vault open: the row sits under "This vault" with its label, hint and On / Off; it shows the vault’s answer', () => {
+    const { el } = mountOn('Files & Links', undefined, undefined, undefined, undefined, undefined, { on: false })
+    expect(row(el, 'readOnlyVault')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
+    expect(row(el, 'readOnlyVault')?.querySelector('.setting__label')?.textContent).toBe('Read only')
+    expect(row(el, 'readOnlyVault')?.querySelector('.setting__hint')?.textContent).toContain('every note, drawing, diagram, code file and folder page in this vault opens read only')
+    expect(rowButtons(el, 'readOnlyVault').map((b) => b.textContent)).toEqual(['On', 'Off'])
+    expect(rowButtons(el, 'readOnlyVault').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+    expect(rowButtons(mountOn('Files & Links', undefined, undefined, undefined, undefined, undefined, { on: true }).el, 'readOnlyVault').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+  })
+
+  it('On and Off save the vault’s file', () => {
+    const { el, saveReadOnly } = mountOn('Files & Links', undefined, undefined, undefined, undefined, undefined, { on: false })
+    act(() => rowButtons(el, 'readOnlyVault')[0].click())
+    expect(saveReadOnly).toHaveBeenCalledExactlyOnceWith({ on: true })
+  })
+})
+
+describe('SettingsDialog: Show IDs (YAZ-4940), three rows in one block under "This vault"', () => {
+  const SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: 'off' }
+  const withShowIds = (idsOn: boolean, showIds: ShowIdsSettings = SHOW_IDS) => mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: idsOn, held: idsOn }, undefined, undefined, showIds)
+  const pressed = (el: HTMLElement, id: string) => rowButtons(el, id).map((b) => b.getAttribute('aria-pressed'))
+
+  it('in a vault with IDs: "in search", "in the title" and "in the files list", one after the other, under "This vault"; each shows the vault\'s choice', () => {
+    const { el } = withShowIds(true)
+    const ids = rowIds(el)
+    const at = ids.indexOf('showIds')
+    expect(ids.slice(at, at + 3)).toEqual(['showIds', 'showIds.title', 'showIds.files'])
+    expect(row(el, 'showIds.title')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
+    expect(row(el, 'showIds.title')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in the title')
+    expect(row(el, 'showIds.files')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in the files list')
+    expect(rowButtons(el, 'showIds.title').map((b) => b.textContent)).toEqual(['On', 'Off'])
+    expect(pressed(el, 'showIds.title')).toEqual(['true', 'false'])
+    expect(rowButtons(el, 'showIds.files').map((b) => b.textContent)).toEqual(['Off', 'Number (#12)', 'Full ID (EMB-12)'])
+    expect(pressed(el, 'showIds.files')).toEqual(['true', 'false', 'false'])
+  })
+
+  it('"in the files list" shows the vault\'s choice of three, and each saves its own', () => {
+    const { el, saveShowIds } = withShowIds(true, { ...SHOW_IDS, files: 'number' })
+    expect(pressed(el, 'showIds.files')).toEqual(['false', 'true', 'false'])
+    act(() => rowButtons(el, 'showIds.files')[2].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'full' })
+    act(() => rowButtons(el, 'showIds.files')[0].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'off' })
+  })
+
+  it('a click saves the one choice with the other two as they are', () => {
+    const { el, saveShowIds } = withShowIds(true)
+    act(() => rowButtons(el, 'showIds.title')[1].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: false, files: 'off' })
+    act(() => rowButtons(el, 'showIds.files')[1].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'number' })
+    act(() => rowButtons(el, 'showIds')[1].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'match', title: true, files: 'off' })
+  })
+
+  it('in a vault without IDs, or with no vault open, none of the three rows shows', () => {
+    const { el } = withShowIds(false)
+    expect(rowIds(el).filter((id) => id?.startsWith('showIds'))).toEqual([])
+    unmount()
+    const none = mountOn('Files & Links')
+    expect(rowIds(none.el).filter((id) => id?.startsWith('showIds'))).toEqual([])
   })
 })

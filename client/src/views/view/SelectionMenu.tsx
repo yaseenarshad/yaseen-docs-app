@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import type { EditorKind } from '../editorType'
 import { FillMenu, type FillTarget } from './FillMenu'
@@ -46,6 +47,7 @@ export function ClearFormattingItem({ onClear }: { onClear: () => void }) {
  * Each action closes the menu.
  */
 export function SelectionMenu({ x, y, rows, setValue, onCopy, onPaste, onClear, onFill, onSetValue, onClearFormatting, onNewRowBelow, onDuplicate, onDelete, extra, fillTargets, onClose }: SelectionMenuProps) {
+  const unit = useUnit()
   /** ONE open flyout: Fill's and Set value's (YAZ-3746 13AU). */
   const flyout = useFlyout<string>()
   const run = (action: () => void) => () => {
@@ -81,7 +83,7 @@ export function SelectionMenu({ x, y, rows, setValue, onCopy, onPaste, onClear, 
         {(onNewRowBelow !== undefined || rows) && (
           <div className="ctx-menu__group" role="group">
             {onNewRowBelow !== undefined && plain('New row below', onNewRowBelow)}
-            {rows && plain('Duplicate notes', onDuplicate)}
+            {rows && plain(unit('Duplicate notes'), onDuplicate)}
           </div>
         )}
         {extra !== undefined && (
@@ -91,7 +93,7 @@ export function SelectionMenu({ x, y, rows, setValue, onCopy, onPaste, onClear, 
         )}
         {rows && (
           <div className="ctx-menu__group" role="group">
-            {plain('Delete notes…', onDelete, undefined, true)}
+            {plain(unit('Delete notes…'), onDelete, undefined, true)}
           </div>
         )}
       </MenuFlyout.Provider>

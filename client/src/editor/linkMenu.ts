@@ -18,6 +18,7 @@
  *   Add to focus               "Remove from focus" likewise, with its eye (M2)
  *   Open in ▸                  New window (files) · VS Code · Default app ─ Reveal in Finder (S3, S4)
  *   ───────────
+ *   Show as embed              a link to a drawing or a diagram: a window into it (YAZ-4829 D8); not read-only
  *   Edit link                  not in a read-only note
  *   Remove link                keeps the text the link shows
  *
@@ -80,6 +81,8 @@ export interface LinkMenu {
   labels: string[]
   open?: () => void
   openNew?: () => void
+  /** "Open in Explore" (YAZ-4936): a note, as a reading layer of the explore stack. */
+  openExplore?: () => void
   showInSidebar?: () => void
   /** "Copy name and ID" of an ID link that is found (S8's text); else "Copy name". Never both. */
   copyNameAndId?: () => void
@@ -92,6 +95,10 @@ export interface LinkMenu {
   focus?: ListRow
   /** "Open in ▸": no child, no row. */
   openIn?: { newWindow?: () => void; vsCode?: () => void; defaultApp?: () => void; reveal?: () => void }
+  /** A drawing's or a diagram's link becomes its embed (YAZ-4829 D8). Left out in a read-only note. */
+  showAsEmbed?: () => void
+  /** "Pill style ›" (YAZ-4924 round 5, `pillStyle.ts`): a pill in a note; disabled in a read-only note. */
+  pillStyle?: MenuRow
   /** Left out in a read-only note, with `remove`. */
   edit?: () => void
   remove?: () => void
@@ -109,14 +116,14 @@ export function linkMenuRows(menu: LinkMenu): MenuRow[] {
     [row('New window', menu.openIn?.newWindow), row('VS Code', menu.openIn?.vsCode), row('Default app', menu.openIn?.defaultApp)],
     [row('Reveal in Finder', menu.openIn?.reveal)],
   ].map((list) => list.filter((child): child is MenuRow => child !== null))
-  group([row('Open', menu.open), row('Open in new tab', menu.openNew), row('Show in sidebar', menu.showInSidebar)])
+  group([row('Open', menu.open), row('Open in new tab', menu.openNew), row('Open in Explore', menu.openExplore), row('Show in sidebar', menu.showInSidebar)])
   group([row('Copy name and ID', menu.copyNameAndId), row('Copy name', menu.copyName), row('Copy ID', menu.copyId), row('Copy path', menu.copyPath, undefined, copyGlyph), row('Copy address', menu.copyAddress)])
   group([
     menu.favorite === undefined ? null : { label: menu.favorite.on ? 'Remove from favorites' : 'Add to favorites', run: menu.favorite.run, icon: heartGlyph },
     menu.focus === undefined ? null : { label: menu.focus.on ? 'Remove from focus' : 'Add to focus', run: menu.focus.run, icon: eyeGlyph },
     children.every((list) => list.length === 0) ? null : { label: 'Open in', run: () => {}, children },
   ])
-  group([row('Edit link', menu.edit), row('Remove link', menu.remove, true)])
+  group([menu.pillStyle ?? null, row('Show as embed', menu.showAsEmbed), row('Edit link', menu.edit), row('Remove link', menu.remove, true)])
   return rows
 }
 
@@ -141,9 +148,11 @@ export function placeRows(path: string, actions: LinkActions | undefined, onNoti
 /**
  * Opens `rows` in `parent` at the pointer, clamped to the viewport. Closes on a row click, an
  * outside mousedown, a scroll, Escape and window blur; returns the close for the caller's own reasons.
- * One at a time is the caller's to keep.
+ * One at a time is the caller's to keep. `rebuild` (YAZ-4924 round 5, "Pill style ›"): a `stay` flyout's pick runs,
+ * then the menu is drawn again in its place from `rebuild()`, the flyout that was open opened again, as the block
+ * menu's `refresh` does; without it a pick closes the menu.
  */
-export function openMenuAt(parent: HTMLElement, x: number, y: number, rows: MenuRow[]): () => void {
+export function openMenuAt(parent: HTMLElement, x: number, y: number, rows: MenuRow[], rebuild?: () => MenuRow[]): () => void {
   const close = () => {
     closeSubmenu(popup) // its wait for the pointer goes with it
     document.removeEventListener('mousedown', onMouseDown, true)
@@ -159,7 +168,20 @@ export function openMenuAt(parent: HTMLElement, x: number, y: number, rows: Menu
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape' && !closeSubmenu(popup)) close()
   }
-  const popup = renderMenu(parent, rows, close)
+  const refresh =
+    rebuild === undefined
+      ? undefined
+      : (run: () => void) => {
+          run()
+          const flyout = popup.querySelector('.ctx-menu__item--parent[aria-expanded="true"]')?.textContent ?? null
+          const { left, top } = popup.style
+          closeSubmenu(popup)
+          popup.remove()
+          popup = renderMenu(parent, rebuild(), close, refresh)
+          Object.assign(popup.style, { left, top })
+          if (flyout !== null) [...popup.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === flyout)?.click()
+        }
+  let popup = renderMenu(parent, rows, close, refresh)
   const rect = popup.getBoundingClientRect()
   popup.style.left = `${Math.max(0, Math.min(x, window.innerWidth - rect.width))}px`
   popup.style.top = `${Math.max(0, Math.min(y, window.innerHeight - rect.height))}px`

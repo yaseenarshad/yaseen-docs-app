@@ -1,6 +1,7 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { headerRowAttrs, IMAGE_SIZE_DEFAULT, type IndexRecord, type PropertiesResponse } from '@shared/types'
-import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupIndentOf, groupLineStyleOf, groupLinesOf, headerRowOfView, MAX_GROUP_LEVELS } from '../viewSchema'
+import { type FilterNode, type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupDepthOf, groupIndentOf, groupLineStyleOf, groupLinesOf, headerRowOfView, MAX_GROUP_INDENT_LEVELS, MAX_GROUP_LEVELS } from '../viewSchema'
 import { type GroupSpan, groupLinesHover, groupSpans, groupThread, holdersOf, measureGroupGuides, stuckDistance, windowedGuide, windowedLine } from './groupGuides'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -9,6 +10,7 @@ import { pageColumnKeys, type ColumnDecl, type FolderSettings } from '../folderS
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { fillSeries } from '../../editor/table/fillSeries'
+import { CUT_CARD_DWELL_MS, cardShell, cellHoverCards, textPart } from '../../editor/table/cellHoverCard'
 import { type HistoryStep, type ValueHistory, inBatches, noteRef } from './valueHistory'
 import { isPairWritten, type PairWritten } from '../relationPair'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
@@ -17,7 +19,7 @@ import { flushSync } from 'react-dom'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, ViewFolder, rowCell, rowTitle, summaryKindOf } from './GroupHeader'
-import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, chainLevels, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { cssZoom } from '../../lib/cssZoom'
@@ -52,7 +54,7 @@ import { partTransform } from '../../lib/liveGap'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import { allPropertyKeys } from './properties'
 import { setViewOrder } from './columnOrder'
-import { NO_READ_ONLY, READ_ONLY_TIP, writableKey } from '../readOnlyRows'
+import { NO_READ_ONLY, readOnlyTip, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 import type { FolderHost } from '../ViewsPane'
@@ -77,6 +79,10 @@ export interface TableViewProps {
   collapsed: readonly string[]
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
+  /** The header menu's Filter › "Open the filter panel…" (YAZ-4919): the toolbar's Filter popover opens. */
+  onOpenFilter?: () => void
+  /** The rows that pass `filters` in this view's place (YAZ-4919 round 2): the header menu's Filter › Contains box counts and lists with it. */
+  matchRows?: (filters: FilterNode | undefined) => readonly IndexRecord[]
   onOpenFile: (path: string) => void
   /** Open a row page in the window's right panel. */
   onOpenFileRight?: (path: string) => void
@@ -266,6 +272,28 @@ function contentWidth(cell: HTMLElement, zoom: number): number {
   return width
 }
 
+/** YAZ-4867: is this clipped cell's text really cut? The cell, its display span or its chip row is wider inside than out. */
+function cellIsCut(cell: HTMLElement): boolean {
+  const boxes = [cell, ...cell.querySelectorAll<HTMLElement>('.view-cell-edit__display, .property-choice-chips')]
+  return boxes.some((box) => box.scrollWidth > box.clientWidth + 1)
+}
+
+/**
+ * A clipped cell's full value shows on hover ONLY when its text is really cut (YAZ-4867, amends YAZ-4582 D29): the value
+ * waits in `data-clip-title`, and one check on the hover says whether the cell gets a card. Nothing is measured at
+ * render. The card is the note table's full-text card (YAZ-4901, `cellHoverCard.ts`: its look, place, 250 ms wait, warm
+ * run and closes), not the macOS tooltip; a Wrap column's cell has no value waiting (YAZ-4895), so no card.
+ */
+function cutCellCard(cell: HTMLElement): { box: HTMLElement; dwell: number; under: boolean } | null {
+  const full = cell.dataset.clipTitle
+  if (full === undefined || !cellIsCut(cell)) return null
+  const box = cardShell()
+  // YAZ-4903: the card's text is the cell's own size (a folder page cell's text is smaller than the card's 12.5px).
+  box.style.fontSize = getComputedStyle(cell.querySelector<HTMLElement>('.view-cell-edit__display') ?? cell).fontSize
+  box.appendChild(textPart([full]))
+  return { box, dwell: CUT_CARD_DWELL_MS, under: true }
+}
+
 /** A single click selects the cell without entering edit mode. */
 function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
   if (event.target !== event.currentTarget) return
@@ -287,7 +315,8 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, newRows = true, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFilter, matchRows, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, newRows = true, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
+  const unit = useUnit()
   /**
    * YAZ-4799: the deepest Folder group a row line is drawn in (its group and the groups above it), or null: a shortcut's
    * copy under its second folder wears ↗ there, its home copy none. The page folder otherwise (`ViewFolder`).
@@ -297,12 +326,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const folderGroupOf = (at: GroupSpot | null, g: Group | null): string | null => {
     if (at === null || g === null) return null
     let out: string | null = null
-    ;[...at.ancestors, g].forEach((group, i) => {
+    const chain = [...at.ancestors, g]
+    // By each group's view level (YAZ-4918): a nested Folder level's groups share one level.
+    chainLevels(chain).forEach((i, n) => {
       const level = folderLevels[i]
-      if (level !== undefined && canonicalKey(level.property) === 'file.folder' && typeof group.key === 'string') out = group.key
+      if (level !== undefined && canonicalKey(level.property) === 'file.folder' && typeof chain[n].key === 'string') out = chain[n].key as string
     })
     return out
   }
+  /**
+   * A line's indent step (YAZ-4918): its depth in the group tree, never past `MAX_GROUP_INDENT_LEVELS` (4), so a deep
+   * folder tree does not push the table right. A header's depth is the groups above it; a row's one more.
+   */
+  const indentDepth = (depth: number): number => Math.min(depth, MAX_GROUP_INDENT_LEVELS)
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   /**
    * The wrap's scroll width when a column resize starts, in px (YAZ-3746 13W), 0 when none is held. views.css draws a
@@ -392,9 +428,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       const c = canonicalKey(key)
       if (sources.marks === 'off' || !c.startsWith('note.')) return null
       const bare = c.slice('note.'.length)
-      return columnMark(sources, bare, settings.columns[bare]?.separate === true)
+      return columnMark(sources, bare, settings.columns[bare]?.separate === true, unit)
     }),
-    [keys, sources, settings],
+    [keys, sources, settings, unit],
   )
   const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
@@ -434,8 +470,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const defaults = useViewDefaults()
   /** Each shown column's fill (YAZ-3746 13AQ), under the rows' and the cells' own. */
   const columnFills = keys.map((key) => columnFillOf(view, key))
-  /** A grouped table's first column fits its deepest indent and a readable value (13AL); 0 when the view does not group. */
-  const groupLevelCount = shownGroupLevels(view).length
+  /** A grouped table's first column fits its deepest indent and a readable value (13AL); 0 when the view does not group. A nested Folder level counts its Depth (YAZ-4918). */
+  const groupLevelCount = groupDepthOf(view)
   /**
    * The column that steps in under its groups (YAZ-3746 13AG): the FIRST shown column, Name or not, so a row sits under
    * its group's name even with Name hidden or moved (YAZ-4532 D10 indented only Name). An Image column is passed over
@@ -478,12 +514,12 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * That cell's indent in px (YAZ-4532 D10): one group indent per level above the row, but never more than the
    * column's width less the title's room (YAZ-4544), so a deep row in a narrow column still shows its value.
    */
-  const nameIndent = (depth: number): number => Math.max(0, Math.min(groupIndentOf(view) * depth, widthOf(keys[indentCol]!) - NAME_TITLE_ROOM))
+  const nameIndent = (depth: number): number => Math.max(0, Math.min(groupIndentOf(view) * indentDepth(depth), widthOf(keys[indentCol]!) - NAME_TITLE_ROOM))
   /** A body cell's inline style: the frozen offset, a fill (YAZ-4536, painted by views.css) and the Name cell's group depth and indent (YAZ-4532 D10). */
   const cellStyle = (index: number, fill: string | undefined, depth: number | undefined): CSSProperties | undefined => {
     const base = frozenStyle(index)
     if (fill === undefined && depth === undefined) return base
-    return { ...base, ...(fill !== undefined && { '--view-cell-fill': fillPaint(fill) }), ...(depth !== undefined && { '--depth': depth, '--view-name-indent': `${nameIndent(depth)}px` }) } as CSSProperties
+    return { ...base, ...(fill !== undefined && { '--view-cell-fill': fillPaint(fill) }), ...(depth !== undefined && { '--depth': indentDepth(depth), '--view-name-indent': `${nameIndent(depth)}px` }) } as CSSProperties
   }
   /** The view's cell and row fills by note path (YAZ-4536): built once per fills write, two map reads per cell. */
   const fills = useMemo(() => fillIndex(view.fills, resolveLink), [view.fills, resolveLink])
@@ -505,7 +541,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const walk = (list: readonly Group[], at: GroupSpot) => {
       for (const g of list) {
         const gk = spotKey(g, at)
-        lines.push({ header: g, gk, depth: at.level, at })
+        // A header's depth is its place in the tree (YAZ-4918), not its view level: a nested Folder group's child is one deeper on the same level.
+        lines.push({ header: g, gk, depth: at.ancestors.length, at })
         n = 0
         if (collapsedSet.has(gk)) continue
         for (const row of g.children === undefined ? g.rows : g.direct ?? []) lines.push({ row, r: flat.push(row) - 1, n: ++n, g, gk, at })
@@ -665,6 +702,22 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const table = wrapRef.current?.querySelector<HTMLElement>('.view-table')
     return threaded && table != null ? groupThread(table, () => holderRef.current) : undefined
   }, [threaded])
+  // The cut cells' cards (YAZ-4867, YAZ-4901): one controller, fed by one delegated `mouseover` (a `closest` per cell
+  // change) and the wrap's `mouseleave`; nothing per cell, nothing on a key.
+  useEffect(() => {
+    const wrap = wrapRef.current
+    if (wrap === null) return
+    const cards = cellHoverCards(cutCellCard)
+    const over = (e: MouseEvent) => cards.enter(e.target instanceof Element ? e.target.closest<HTMLElement>('td') : null)
+    const leave = () => cards.enter(null)
+    wrap.addEventListener('mouseover', over)
+    wrap.addEventListener('mouseleave', leave)
+    return () => {
+      wrap.removeEventListener('mouseover', over)
+      wrap.removeEventListener('mouseleave', leave)
+      cards.destroy()
+    }
+  }, [])
   /** A click on a stuck group header (not on its toggle, its value or its "+"): back to the top of that group (YAZ-4798). */
   const backToGroupTop = (e: ReactMouseEvent<HTMLTableCellElement>): void => {
     const wrap = wrapRef.current
@@ -1125,7 +1178,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const failed = (error: unknown) => onNotice?.(`Can't write: ${error instanceof Error ? error.message : String(error)}`)
   /** Each note's writes, one write per note, at most 8 at a time (YAZ-4612 S48); more than 20 notes say so first. */
   const writeNotes = (writes: ReadonlyMap<string, PropertyWrite[]>): Promise<void> => {
-    if (writes.size > PROGRESS_AT) onNotice?.(`Writing ${writes.size} notes…`)
+    if (writes.size > PROGRESS_AT) onNotice?.(unit(`Writing ${writes.size} notes…`))
     for (const [path, w] of writes) noteWritten(path, w)
     return inBatches(
       [...writes].map(([path, w]) => () =>
@@ -1792,7 +1845,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       // The "+ New" row (YAZ-4539): the group header "+"'s path, so the note gets the filter seed and every group value above it.
       return (
         <tr key={`new:${line.gk}`} className={['view-table__new', ...(frozenRow ?? [])].filter(Boolean).join(' ')} style={frozenRowStyle} data-line={lineMark}>
-          <td className="view-table__new-cell" colSpan={span} style={{ '--depth': line.at === undefined ? 0 : line.at.level + 1 } as CSSProperties}>
+          <td className="view-table__new-cell" colSpan={span} style={{ '--depth': line.at === undefined ? 0 : indentDepth(line.at.ancestors.length + 1) } as CSSProperties}>
             <button type="button" className="view-table__new-btn" onClick={() => onNewInGroup?.(line.add, undefined, line.at)}>
               + New
             </button>
@@ -1811,7 +1864,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           <td
             className="view-table__group-cell"
             colSpan={span}
-            style={{ '--depth': line.depth } as CSSProperties}
+            style={{ '--depth': indentDepth(line.depth) } as CSSProperties}
             onClick={stickyGroups ? backToGroupTop : undefined}
             // The empty part of a group header row opens the header's own menu (YAZ-4604, 2F), never the system one: the
             // event goes on to the header, whose state holds the menu, so only that header re-renders.
@@ -1835,6 +1888,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               newButton={newRows}
               resolve={resolve}
               level={line.at.level}
+              gk={line.gk}
             />
           </td>
         </tr>
@@ -1877,15 +1931,16 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', c === indentCol && 'view-table__indent', frozenClass(c), fill !== undefined && 'view-table__cell--fill', clipped[c] && 'view-table__cell--clip', aligned[c]].filter(Boolean).join(' ') || undefined}
                 // A fill (YAZ-4536) is a custom property that views.css paints over the cell's base.
                 // The Name cell steps in by one group indent per level above the row (YAZ-4532 D10).
-                style={cellStyle(c, fill, c === indentCol && line.at !== null ? line.at.level + 1 : undefined)}
+                style={cellStyle(c, fill, c === indentCol && line.at !== null ? line.at.ancestors.length + 1 : undefined)}
                 tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
                 data-cell={`${line.r}:${c}`}
                 // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
                 // ⇧⌘ opens it in a new window (YAZ-4444 D32), asked first.
                 onClick={c === nameCol ? (e) => (newWindowClick(e, rowPage(path)) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
                 // A read-only note's Name cell opens no title field: a title edit renames the note (YAZ-3076 D6).
-                // A clipped cell shows its full value on hover (YAZ-4582 D29).
-                title={c === nameCol && locked ? READ_ONLY_TIP : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
+                // A clipped cell shows its full value on hover only when it is cut (YAZ-4582 D29, YAZ-4867): `cutCellCard`.
+                title={c === nameCol && locked ? readOnlyTip(unit) : undefined}
+                data-clip-title={c === nameCol && locked ? undefined : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
                 onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
                 {...(c !== nameCol && !locked && typings[c]?.assigned === 'image' ? imageDrop(line.r, c) : {})}
               >
@@ -1990,7 +2045,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 {guide.spans.map((s) => {
                   if (s.last <= s.at) return null
                   const counted = windowed ? windowedLine(s, rowH) : null
-                  const at = { '--depth': s.depth, ...(counted !== null && { '--view-line-top': `calc(var(--view-group-head, 0px) + ${counted.top}px)`, '--view-line-h': `${counted.height}px` }) } as CSSProperties
+                  const at = { '--depth': indentDepth(s.depth), ...(counted !== null && { '--view-line-top': `calc(var(--view-group-head, 0px) + ${counted.top}px)`, '--view-line-h': `${counted.height}px` }) } as CSSProperties
                   return <i key={s.at} data-seg={s.at} style={at} />
                 })}
               </div>
@@ -2278,6 +2333,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             takenKeys={() => allPropertyKeys(def, view, records, settings.columns)}
             reserved={reservedKeys}
             records={records}
+            matchRows={matchRows}
             wrapKind={headerMenu.key === null ? null : wrapKind(typings[keys.indexOf(headerMenu.key)])}
             properties={properties}
             folder={{ settings, setColumn, setColumns: declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onNotice, vaultFolders, resolveLink }}
@@ -2285,6 +2341,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             onUpdate={onUpdate}
             declareColumn={declareColumn}
             onDeleteColumn={deleteColumn && setConfirmDelete}
+            onOpenFilter={onOpenFilter}
             onClose={() => setHeaderMenu(null)}
           />
         )}

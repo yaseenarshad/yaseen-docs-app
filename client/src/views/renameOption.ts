@@ -150,18 +150,24 @@ function renameInFilter(node: FilterNode, key: string, from: string, to: string)
 
 /**
  * The views' filters that compare the column to the old label, renamed with it (YAZ-4637 M5): `status == "A"` reads
- * `"B"` once A is B, so the renamed notes stay in their filtered views. Runs over the raw `views` of the settings
- * block, in the declaration's own write; the same list comes back when nothing changed.
+ * `"B"` once A is B, so the renamed notes stay in their filtered views; a calendar's "Cross out when" (`crossOut`,
+ * YAZ-4864) is a filter tree too, so the renamed notes stay crossed out (YAZ-4834 P2). Runs over the raw `views` of the
+ * settings block, in the declaration's own write; the same list comes back when nothing changed.
  */
 export function renameOptionInFilters(views: unknown, key: string, from: string, to: string): unknown {
   if (!Array.isArray(views)) return views
   let changed = false
   const out = views.map((view: unknown) => {
-    if (!isRecord(view) || view.filters === undefined) return view
-    const filters = renameInFilter(view.filters as FilterNode, key, from, to)
-    if (filters === view.filters) return view
-    changed = true
-    return { ...view, filters }
+    if (!isRecord(view)) return view
+    let next = view
+    for (const tree of ['filters', 'crossOut'] as const) {
+      if (view[tree] === undefined) continue
+      const renamed = renameInFilter(view[tree] as FilterNode, key, from, to)
+      if (renamed === view[tree]) continue
+      changed = true
+      next = { ...next, [tree]: renamed }
+    }
+    return next
   })
   return changed ? out : views
 }

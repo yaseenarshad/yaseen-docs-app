@@ -11,10 +11,14 @@
  *
  * Every row writes one part of `settings.folderPages`. Every default is the look before the page existed.
  */
-import { folderRowBandOn, folderWindowPinned, type FolderPagesSettings } from '@shared/types'
+import { calLine, folderRowBandOn, folderWindowPinned, type FolderPagesSettings, writeColorStrength } from '@shared/types'
+import { calLineColor } from '../views/calendar'
+import { CalLineControls } from '../views/view/CalendarLineControls'
 import { Segmented } from './controls'
 import { ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsCtx, SettingsSection } from './registry'
+import { unit } from './unitLabel'
+import type { UnitText } from '../vault/unitWord'
 
 /** YAZ-4713 C11: the column header's mark. */
 const COLUMN_MARKS_OPTIONS: readonly Option<FolderPagesSettings['columnMarks']>[] = [
@@ -54,8 +58,8 @@ const GROUP_LINE_STYLE_OPTIONS: readonly Option<FolderPagesSettings['groupLineSt
   { label: 'Lines', value: 'plain' },
   { label: 'Thread', value: 'thread' },
 ]
-const SUBFOLDERS_OPTIONS: readonly Option<FolderPagesSettings['subfolders']>[] = [
-  { label: 'Their notes', value: 'notes' },
+const subfoldersOptions = (unit: UnitText): readonly Option<FolderPagesSettings['subfolders']>[] => [
+  { label: unit('Their notes'), value: 'notes' },
   { label: 'As rows', value: 'rows' },
   { label: 'Both', value: 'both' },
   { label: 'Hide', value: 'hide' },
@@ -75,19 +79,39 @@ const WORDS = ['folder', 'folder page', 'views', 'table', 'board', 'calendar', '
 function row<K extends keyof FolderPagesSettings>(
   part: K,
   label: string,
-  options: readonly Option<NonNullable<FolderPagesSettings[K]>>[],
+  options: readonly Option<NonNullable<FolderPagesSettings[K]>>[] | ((unit: UnitText) => readonly Option<NonNullable<FolderPagesSettings[K]>>[]),
   more: { hint?: string; keywords?: string[]; shown?: (ctx: SettingsCtx) => NonNullable<FolderPagesSettings[K]> } = {},
 ): SettingDef {
   return {
     id: `folderPages.${part}`,
-    label,
+    // Every row's label and options go through the vault's word (YAZ-4938): "Ask before deleting cards".
+    label: (ctx) => unit(ctx, label),
     hint: more.hint,
     keywords: [...WORDS, ...(more.keywords ?? [])],
     render: (ctx) => {
       const { settings, onChange } = ctx
       const value = more.shown?.(ctx) ?? (settings.folderPages[part] as NonNullable<FolderPagesSettings[K]>)
-      return <Segmented options={options} value={value} onChange={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [part]: next } })} ariaLabel={label} />
+      return <Segmented options={typeof options === 'function' ? options((text) => unit(ctx, text)) : options} value={value} onChange={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [part]: next } })} ariaLabel={unit(ctx, label)} />
     },
+  }
+}
+
+/** A calendar line's default (YAZ-4878): the View tab's two controls, writing the width and the colour parts. */
+function lineRow(widthPart: 'weekLine' | 'dayLine', colorPart: 'weekLineColor' | 'dayLineColor', label: string, hint: string): SettingDef {
+  return {
+    id: `folderPages.${widthPart}`,
+    label,
+    hint,
+    keywords: [...WORDS, 'calendar', 'lines', 'thickness', 'width', 'colour', 'color', 'px'],
+    render: ({ settings, onChange }) => (
+      <CalLineControls
+        label={label}
+        width={calLine(settings.folderPages[widthPart])}
+        color={calLineColor(settings.folderPages[colorPart])}
+        onWidth={(px) => onChange({ ...settings, folderPages: { ...settings.folderPages, [widthPart]: px } })}
+        onColor={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [colorPart]: writeColorStrength(next) } })}
+      />
+    ),
   }
 }
 
@@ -147,7 +171,7 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         // Two switches, not one (YAZ-4608 C2): a Table's empty groups and a Board's empty columns are separate things.
         row('showEmptyGroups', 'Show empty groups', ON_OFF_OPTIONS, { hint: 'In a table: the options of the grouping column that no note has yet.', keywords: ['empty', 'groups', 'table'] }),
         row('showEmptyColumns', 'Show empty columns', ON_OFF_OPTIONS, { hint: 'On a board: a column for each option that no note has yet.', keywords: ['empty', 'columns', 'board'] }),
-        row('subfolders', 'Subfolders', SUBFOLDERS_OPTIONS, { keywords: ['subfolders', 'rows', 'hide'] }),
+        row('subfolders', 'Subfolders', subfoldersOptions, { keywords: ['subfolders', 'rows', 'hide'] }),
         row('foldersFirst', 'Folders first', ON_OFF_OPTIONS, { hint: 'Subfolder rows before the notes.', keywords: ['folders', 'first', 'sort'] }),
         // YAZ-4848: what a subfolder's row shows beside its title, in every view.
         row('folderIcons', 'Folder icon', ON_OFF_OPTIONS, { hint: "A subfolder's row shows the folder icon before its title. A view's settings can say otherwise.", keywords: ['folder', 'icon', 'subfolder', 'row'] }),
@@ -155,6 +179,9 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week'] }),
         row('cardTitles', 'Calendar card titles', CARD_TITLES_OPTIONS, { keywords: ['calendar', 'card', 'titles', 'wrap', 'clip'] }),
         row('hideWeekends', 'Calendar hides weekends', ON_OFF_OPTIONS, { hint: 'Monday to Friday only. A weekend note shows on the Friday before.', keywords: ['calendar', 'weekends', 'saturday', 'sunday', 'hide'] }),
+        // YAZ-4878: the grid's lines, a thickness and a colour each; a calendar's View tab can say otherwise.
+        lineRow('weekLine', 'weekLineColor', 'Calendar line between weeks', 'Its thickness and colour. A calendar’s View tab can say otherwise.'),
+        lineRow('dayLine', 'dayLineColor', 'Calendar line between days', 'Its thickness and colour. A calendar’s View tab can say otherwise.'),
       ],
     },
     {

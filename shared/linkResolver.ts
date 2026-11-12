@@ -4,6 +4,7 @@
  * the app agree on what a link names. Generic over what a file is wrapped in: the views pass their `FileValue`s, the
  * command plain `{ record }`s. Pure; no DOM, no Node.
  */
+import { splitLink, undecided } from './linkParts'
 import { vaultNoteId } from './noteId'
 import type { IndexRecord } from './types'
 
@@ -15,16 +16,35 @@ export interface Resolvable {
 /** A whole-value `[[target|alias]]` (the views' link value): its target and alias. */
 export const LINK_VALUE_RE = /^\[\[([^\]|]+)(?:\|([^\]]*))?\]\]$/
 
-/** `[[x|y]]` → `x`; anything else unchanged. */
+/**
+ * `[[x|y]]` → `x`, the page side (`splitLink`, YAZ-4935: `[[y|WIKI-1]]` → `WIKI-1`); anything else unchanged. A link
+ * whose page only the notes can pick (`undecided`: `[[Covid notes|COVID-19]]`) keeps both sides, `Covid notes|COVID-19`:
+ * the resolver picks (`pickTarget`, YAZ-4954).
+ */
 export function stripBrackets(s: string): string {
-  const m = LINK_VALUE_RE.exec(s)
-  return m ? m[1] : s
+  if (!LINK_VALUE_RE.test(s)) return s
+  const inner = s.slice(2, -2)
+  const parts = splitLink(inner)
+  return undecided(parts) ? inner : parts.head
+}
+
+/**
+ * A target that holds both sides of a link (`Covid notes|COVID-19`, as the index keeps it, or `[[…|…]]`) → its page
+ * side with the notes known (YAZ-4954): the left side when `isPage` finds it, else the side the shape gives
+ * (`splitLink`). A target with no `|` is itself, and `isPage` is not asked.
+ */
+export function pickTarget(target: string, isPage: (page: string) => boolean): string {
+  if (!target.includes('|')) return target
+  return splitLink(LINK_VALUE_RE.test(target) ? target.slice(2, -2) : target, isPage).page
 }
 
 const normalise = (s: string) => s.replace(/^\/+|\/+$/g, '').replace(/\.(md|markdown)$/, '').toLowerCase()
 
-/** A link target as the resolver reads it: brackets, `#heading` and `|alias` off, trimmed, lowercased. */
-export const targetKey = (target: string) => stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()
+/**
+ * A link target as the resolver reads it: brackets, `#heading` and the `|words` off (`splitLink`), trimmed, lowercased.
+ * It knows no notes, so it splits by the shape; the resolvers first `pickTarget` with their notes (YAZ-4954).
+ */
+export const targetKey = (target: string) => splitLink(stripBrackets(target)).page.toLowerCase()
 
 /**
  * A basename as `targetBasename` spells it: lowercased, with the one context-dependent lowercase
@@ -151,21 +171,23 @@ export function makeResolver<F extends Resolvable>(files: readonly F[], root?: s
     for (const segment of segments) dir = typedFolder(dir, segment)?.toLowerCase() ?? (dir === '' ? segment : `${dir}/${segment}`)
     return byFolderTitle.get(`${dir}/${title}`) ?? null
   }
+  const find = (key: string): F | null => {
+    if (!key) return null
+    let found = byId.get(idKey(key, opts.letters)) ?? byPath.get(key) ?? null
+    if (!found) {
+      const rel = normalise(rootKey && key.startsWith(rootKey) ? key.slice(rootKey.length) : key)
+      found = byRel.get(rel) ?? byTitle.get(key)?.file ?? (rel.includes('/') ? titledPath(rel) : byBase.get(rel)?.file ?? null)
+    }
+    // Aliases last: a page named `CAC` always wins the target `CAC` over one merely aliased so.
+    return found ?? byAlias.get(key)?.file ?? null
+  }
+  const isPage = (page: string): boolean => find(targetKey(page)) !== null
   const cache = new Map<string, F | null>()
   return target => {
     const hit = cache.get(target)
     if (hit !== undefined) return hit
-    const key = targetKey(target)
-    let found: F | null = null
-    if (key) {
-      found = byId.get(idKey(key, opts.letters)) ?? byPath.get(key) ?? null
-      if (!found) {
-        const rel = normalise(rootKey && key.startsWith(rootKey) ? key.slice(rootKey.length) : key)
-        found = byRel.get(rel) ?? byTitle.get(key)?.file ?? (rel.includes('/') ? titledPath(rel) : byBase.get(rel)?.file ?? null)
-      }
-      // Aliases last: a page named `CAC` always wins the target `CAC` over one merely aliased so.
-      if (!found) found = byAlias.get(key)?.file ?? null
-    }
+    // Both sides of a link (YAZ-4954): the left side when it is a note, else the side the shape gives.
+    const found = find(targetKey(pickTarget(target, isPage)))
     cache.set(target, found)
     return found
   }

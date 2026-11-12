@@ -10,9 +10,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe } from '../createCrepe'
+import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { TABLE_HANDLE_MENU } from '../noteMenu'
 import { cellPos } from './tableTestKit'
+import { setStickyHeaderSetting } from './timeFormatSetting'
 
 const mounted: Array<{ crepe: Crepe; scroller: HTMLElement }> = []
 afterEach(async () => {
@@ -21,8 +22,10 @@ afterEach(async () => {
     m.scroller.remove()
   }
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   delete (HTMLElement.prototype as unknown as Record<string, unknown>).animate
   moved.clear()
+  setStickyHeaderSetting(true)
 })
 
 /** Web Animations, which jsdom lacks: the `translateY` that each row's animation holds now. */
@@ -43,7 +46,10 @@ const box = (top: number, height: number) => new DOMRect(0, top, 300, height)
  * A note in a vertical scroller; every frame is held until `flush`. Rows are 30 px, the table starts at `tableTop`.
  * `tableZoom` is the table's own zoom (YAZ-4091): the table and its rows are drawn at both zooms, the block at the page's.
  */
-async function mount(comment: string, { tableTop = -80, zoom = 1, tableZoom = 1 } = {}) {
+async function mount(comment: string, { tableTop = -80, zoom = 1, tableZoom = 1, stickyHeader = false } = {}) {
+  // The tests of the freeze itself run with Settings › Sticky header row Off (YAZ-4899 round 2): with it On, every
+  // table has a frozen header row. `stickyHeader` mounts with it On.
+  setStickyHeaderSetting(stickyHeader)
   Object.assign(HTMLElement.prototype, { animate: animateStub })
   const frames: FrameRequestCallback[] = []
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -78,6 +84,7 @@ async function mount(comment: string, { tableTop = -80, zoom = 1, tableZoom = 1 
   Object.defineProperty(block, 'currentCSSZoom', { value: zoom, configurable: true })
   return {
     view,
+    crepe,
     block,
     frames,
     scroller,
@@ -105,6 +112,44 @@ const setFreeze = (view: EditorView, rows: number, cols: number) => {
   const pos = tablePos(view)
   view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...view.state.doc.nodeAt(pos)!.attrs, freezeRows: rows, freezeCols: cols }))
 }
+
+describe('the sticky header row (YAZ-4899 round 2): the header row frozen by Settings, a table\'s own choice or freeze over it', () => {
+  const frozenRows = (view: EditorView) => rowsOf(view).map((row) => row.classList.contains('table-frozen-row'))
+  const blockOf = (view: EditorView) => view.dom.querySelector<HTMLElement>('.milkdown-table-block')!
+
+  it('Settings On freezes the header row of a plain table (the frozen-row classes, the block mark); Off at once clears it; On again brings it back', async () => {
+    const { view, crepe } = await mount('', { stickyHeader: true })
+    expect(frozenRows(view)).toEqual([true, false, false, false])
+    expect(rowsOf(view)[0].classList.contains('table-frozen-row-end')).toBe(true)
+    expect(blockOf(view).hasAttribute('data-table-frozen')).toBe(true)
+    setStickyHeaderSetting(false)
+    expect(frozenRows(view)).toEqual([false, false, false, false])
+    expect(blockOf(view).hasAttribute('data-table-frozen')).toBe(false)
+    setStickyHeaderSetting(true)
+    expect(frozenRows(view)).toEqual([true, false, false, false])
+    // No part in the file: the table follows Settings.
+    expect(getMarkdownForSave(crepe)).not.toContain('table:')
+  })
+
+  it('`nostickyheader` keeps the header row free with Settings On; `stickyheader` freezes it with Settings Off; both round-trip', async () => {
+    const off = await mount('<!-- table: nostickyheader -->', { stickyHeader: true })
+    expect(frozenRows(off.view)).toEqual([false, false, false, false])
+    expect(getMarkdownForSave(off.crepe)).toContain('<!-- table: nostickyheader -->')
+    const on = await mount('<!-- table: stickyheader -->')
+    expect(frozenRows(on.view)).toEqual([true, false, false, false])
+    expect(getMarkdownForSave(on.crepe)).toContain('<!-- table: stickyheader -->')
+  })
+
+  it('the table\'s own freeze wins and is kept: `freeze 2 rows` freezes two rows with Settings On, and the file keeps only `freeze`', async () => {
+    const { view, crepe } = await mount('<!-- table: freeze 2 rows -->', { stickyHeader: true })
+    expect(frozenRows(view)).toEqual([true, true, false, false])
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: freeze 2 rows -->')
+    // "Unfreeze rows" (the attribute back to 0): the header row stays frozen by Settings; the file says nothing.
+    setFreeze(view, 0, 0)
+    expect(frozenRows(view)).toEqual([true, false, false, false])
+    expect(getMarkdownForSave(crepe)).not.toContain('table:')
+  })
+})
 
 describe('the frozen cells', () => {
   it('frozen rows and the cells of frozen columns carry their classes, and lose them on unfreeze', async () => {
@@ -406,5 +451,109 @@ describe('the column handle under a pinned header (YAZ-4170)', () => {
     view.dom.addEventListener(TABLE_HANDLE_MENU, (e) => got.push((e as CustomEvent).detail))
     col.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 150, clientY: 0 }))
     expect(got.map((detail) => detail.pos)).toEqual([cellPos(view, 0, 1)])
+  })
+})
+
+describe('YAZ-4834 P4: the scroll work of a note with 30 tables, each with a sticky header row (Settings On by default)', () => {
+  /** An `IntersectionObserver` the test drives: `settle` reports each watched table block near or far by its table's box. */
+  class FakeObserver {
+    static instances: FakeObserver[] = []
+    targets = new Set<Element>()
+    constructor(
+      readonly callback: IntersectionObserverCallback,
+      readonly options: IntersectionObserverInit,
+    ) {
+      FakeObserver.instances.push(this)
+    }
+    observe = (target: Element) => void this.targets.add(target)
+    unobserve = (target: Element) => void this.targets.delete(target)
+    disconnect = () => this.targets.clear()
+    settle(near: (target: Element) => boolean) {
+      this.callback([...this.targets].map((target) => ({ target, isIntersecting: near(target) }) as IntersectionObserverEntry), this as unknown as IntersectionObserver)
+    }
+  }
+
+  it('a scroll frame measures only the tables within one scroller height of the note, and writes keyframes only when a table\'s offset changed (count guard)', async () => {
+    FakeObserver.instances = []
+    vi.stubGlobal('IntersectionObserver', FakeObserver)
+    setStickyHeaderSetting(true)
+    const counts = { reads: 0, writes: 0 }
+    const animate = function (this: HTMLElement, keyframes: Keyframe[]) {
+      counts.writes++
+      keep(this, keyframes)
+      return { effect: { setKeyframes: (next: Keyframe[]) => void (counts.writes++, keep(this, next)) }, cancel: () => moved.delete(this) }
+    }
+    Object.assign(HTMLElement.prototype, { animate })
+    const frames: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    const flush = () => {
+      for (const frame of frames.splice(0)) frame(0)
+    }
+    const scroller = document.createElement('div')
+    scroller.style.overflowY = 'auto'
+    const root = document.createElement('div')
+    scroller.appendChild(root)
+    document.body.appendChild(scroller)
+    scroller.getBoundingClientRect = () => (counts.reads++, box(0, 400))
+    // Table i starts at -80 + 200 i, less what the note scrolled: tables 0–4 are within one scroller height (400 px) of it.
+    let scrolled = 0
+    const blocks = () => [...document.querySelectorAll('.milkdown-table-block')]
+    const tableTop = (el: Element) => -80 + 200 * blocks().indexOf(el.closest('.milkdown-table-block')!) - scrolled
+    const realCreate = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const el = realCreate(tag, options)
+      if (tag === 'table') el.getBoundingClientRect = () => (counts.reads++, box(tableTop(el), 150))
+      if (tag === 'tr') el.getBoundingClientRect = () => (counts.reads++, box(tableTop(el) + 30 * (el as HTMLTableRowElement).rowIndex, 30))
+      if (tag === 'th' || tag === 'td') Object.defineProperty(el, 'offsetWidth', { value: 100 })
+      return el
+    })
+    const crepe = createCrepe({ root, defaultValue: Array.from({ length: 30 }, () => TABLE).join('\n') })
+    await crepe.create()
+    mounted.push({ crepe, scroller })
+    expect(blocks()).toHaveLength(30)
+    flush()
+    // One observer for the scroller, every table block in it.
+    expect(FakeObserver.instances).toHaveLength(1)
+    const observer = FakeObserver.instances[0]!
+    expect(observer.options.root).toBe(scroller)
+    expect(observer.targets.size).toBe(30)
+    const near = (target: Element) => {
+      const top = tableTop(target)
+      return top + 150 >= -400 && top <= 800
+    }
+    observer.settle(near)
+    flush()
+    // A scroll of 10 px: 5 tables near the note, 4 reads each (the frozen rows' box, the table's, the scroller's); only
+    // table 0, which the note's top edge cuts, gets a new offset (90 px).
+    scrolled = 10
+    counts.reads = 0
+    counts.writes = 0
+    scroller.dispatchEvent(new Event('scroll'))
+    flush()
+    console.log(`P4: 30 tables, 5 near · a scroll that moves one table's rows: ${counts.reads} rect reads, ${counts.writes} keyframe writes`)
+    expect(counts.reads).toBeLessThanOrEqual(20)
+    expect(counts.writes).toBe(1)
+    // The same scroll again (a scroll event with no new offset): the near tables measure, nothing writes.
+    counts.reads = 0
+    counts.writes = 0
+    scroller.dispatchEvent(new Event('scroll'))
+    flush()
+    console.log(`P4: a scroll that moves nothing: ${counts.reads} rect reads, ${counts.writes} keyframe writes`)
+    expect(counts.reads).toBeLessThanOrEqual(20)
+    expect(counts.writes).toBe(0)
+    // Table 5 comes near (the note scrolls 500 px): the observer says so, and its rows catch up in the next frame.
+    scrolled = 500
+    observer.settle(near)
+    counts.writes = 0
+    flush()
+    expect(counts.writes).toBeGreaterThanOrEqual(1)
+    // The editor's end drops every target.
+    await crepe.destroy()
+    mounted.pop()
+    scroller.remove()
+    expect(observer.targets.size).toBe(0)
   })
 })

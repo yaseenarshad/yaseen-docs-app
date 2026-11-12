@@ -18,6 +18,7 @@ import { noteFileName } from '@shared/noteName'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import type { CreateFileRequest, IndexRecord, TreeNode } from '@shared/types'
 import { declarationForKind } from './view/declarationForKind'
+import { valueHistory } from './view/valueHistory'
 import { fetchTree } from '../lib/treeFeed'
 import { linkResolver, vaultDirs } from '../links/folderLinks'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -206,6 +207,17 @@ const menuItem = (el: ParentNode, text: string): HTMLElement => {
   return b
 }
 const written = (): Record<string, unknown> => write.mock.calls[0][2] as Record<string, unknown>
+/** The folder ⚙'s "Default view" row (YAZ-4909): its menu is a portal under the cog; the row is a dropdown ("First view ▾") whose list is on the body. */
+const defaultViewTrigger = (el: ParentNode): HTMLButtonElement => {
+  if (el.querySelector('.page-settings > button[aria-expanded="true"]') === null) click(q(el, '.page-settings__trigger'))
+  const id = el.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
+  return q(document.getElementById(id ?? '') ?? document.body, '[aria-label="Default view"].view-dropdown')
+}
+const pickDefaultView = (el: ParentNode, text: string): void => {
+  click(defaultViewTrigger(el))
+  click([...document.body.querySelectorAll('.page-settings__drop-panel button')].find((b) => b.textContent === text)!)
+}
+const defaultViewPressed = (el: ParentNode): string => defaultViewTrigger(el).textContent ?? ''
 
 // ---------- the folder itself (D1/D4/E2) ----------
 
@@ -773,23 +785,33 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
     expect(write).not.toHaveBeenCalled()
   })
 
-  it('Page → Default view is ONE whole-key settings write carrying the name', async () => {
+  it("the folder ⚙'s Default view (YAZ-4909) is ONE whole-key settings write carrying the name", async () => {
     const el = await mount()
-    click(tab(el, 'Table')) // the Page offers no Properties menu; switching writes nothing
-    click(byLabel(el, 'Columns and view'))
-    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
-    setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
+    pickDefaultView(el, 'Table')
     await flush()
     expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, defaultView: 'Table' }, expect.any(Function))
   })
 
-  it('the dropdown shows the saved value, and First view clears the key', async () => {
+  it('YAZ-4834 P20: a Default view pick is ONE step of the page\'s ⌘Z history: the undo writes the key away, the redo puts it back', async () => {
+    const el = await mount()
+    pickDefaultView(el, 'Table')
+    await flush()
+    expect(written()).toEqual({ ...SETTINGS, defaultView: 'Table' })
+    const history = valueHistory(STAGES)
+    await act(async () => void history.undo())
+    await flush()
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(write.mock.calls[1]![2]).toEqual(SETTINGS)
+    await act(async () => void history.redo())
+    await flush()
+    expect(write).toHaveBeenCalledTimes(3)
+    expect(write.mock.calls[2]![2]).toEqual({ ...SETTINGS, defaultView: 'Table' })
+  })
+
+  it('the ⚙ row shows the saved value, and First view clears the key', async () => {
     const el = await mount({ ...SETTINGS, defaultView: 'Table' })
-    click(byLabel(el, 'Columns and view'))
-    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
-    const select = byLabel<HTMLSelectElement>(el, 'Default view')
-    expect(select.value).toBe('Table')
-    setSelect(select, '')
+    expect(defaultViewPressed(el)).toBe('Table')
+    pickDefaultView(el, 'First view')
     await flush()
     expect(write).toHaveBeenCalledTimes(1)
     expect(written()).toEqual(SETTINGS)
@@ -820,10 +842,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
   it('an EXTERNAL edit that changes ONLY defaultView rebuilds the def (D4: it rides in the stamp)', async () => {
     const el = await mount()
     feed({ ...SETTINGS, defaultView: 'Table' })
-    click(tab(el, 'Table')) // the Page has no Properties button of its own
-    click(byLabel(el, 'Columns and view'))
-    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
-    expect(byLabel<HTMLSelectElement>(el, 'Default view').value).toBe('Table')
+    expect(defaultViewPressed(el)).toBe('Table')
     expect(write).not.toHaveBeenCalled()
   })
 })
@@ -1176,10 +1195,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
    */
   it('carries an in-flight defaultView choice the index has not echoed back yet', async () => {
     const el = await mount()
-    click(tab(el, 'Table')) // the Page offers no Properties menu
-    click(byLabel(el, 'Columns and view'))
-    click(el.querySelector('.view-popover--properties .view-menu__tab[data-tab="view"]')!) // the View tab (YAZ-4607 D59)
-    setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
+    pickDefaultView(el, 'Table')
     await flush()
     expect(write).toHaveBeenCalledTimes(1)
 
@@ -2368,8 +2384,8 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(el.querySelector('[aria-label="Delete column Owner"]')).toBeNull()
       click(byLabel(el, 'Columns and view'))
       rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][5])
-      // "Header row ›" (YAZ-4794) after Fill column.
-      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Add column to the right…', 'Sort', 'Group', 'Text', 'Fill column', 'Header row', 'Hide column', 'Freeze up to this column', 'Unfreeze columns'])
+      // "Header row ›" (YAZ-4794) after Fill column; "Filter ›" (YAZ-4919) under Group.
+      expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Add column to the right…', 'Sort', 'Group', 'Filter', 'Text', 'Fill column', 'Header row', 'Hide column', 'Freeze up to this column', 'Unfreeze columns'])
       click(menuItem(el, 'Hide column'))
       await flush()
       expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Title'])

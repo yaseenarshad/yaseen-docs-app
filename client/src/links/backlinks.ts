@@ -162,6 +162,7 @@ function lineSnippet(
   isMention: (m: RegExpExecArray) => boolean,
   titleOf: (target: string) => string | undefined,
   named: (page: string) => boolean,
+  resolve?: ResolveLink,
 ): { snippet: MentionSnippet; lineEnd: number } {
   const endOfLine = (pos: number): number => {
     const nl = content.indexOf('\n', pos)
@@ -186,7 +187,7 @@ function lineSnippet(
     text += content.slice(cursor, m.index)
     // Embeds are undecorated in the editor and empty-display forms stay raw (FN12): both keep
     // their raw text here too — the snippet reads exactly like the document.
-    const display = m[1] === '!' ? '' : linkDisplayText(m[2], titleOf, named)
+    const display = m[1] === '!' ? '' : linkDisplayText(m[2], titleOf, named, resolve === undefined ? undefined : { resolve })
     const shown = display === '' ? m[0] : display
     if (isMention(m)) ranges.push({ from: text.length, to: text.length + shown.length })
     text += shown
@@ -238,7 +239,8 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
   const masked = maskCode(content)
   const matches = [...masked.matchAll(WIKILINK_RE)]
   const isMention = (m: RegExpExecArray): boolean => {
-    const page = linkPageName(m[2])
+    // The left side is the page when it resolves (YAZ-4935 round 2: `[[Covid notes|COVID-19]]`).
+    const page = linkPageName(m[2], { resolve })
     return page !== '' && resolve(page) === target // '' = the same-file `[[#heading]]` form
   }
   // A found page reads by its name (YAZ-3778 D2, D3). Not `linkIsResolved`: no view-only resolver reaches here, so a gone `[[x.drawio]]` reads "x".
@@ -246,7 +248,7 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
   const out: MentionSnippet[] = []
   for (let i = 0; i < matches.length && out.length < limit; i++) {
     if (!isMention(matches[i])) continue
-    const { snippet, lineEnd } = lineSnippet(content, matches, i, isMention, (page) => idLinkTitle(page, resolve, titles), named)
+    const { snippet, lineEnd } = lineSnippet(content, matches, i, isMention, (page) => idLinkTitle(page, resolve, titles), named, resolve)
     out.push(snippet)
     while (i + 1 < matches.length && matches[i + 1].index < lineEnd) i++ // this line is spoken for
   }

@@ -2,7 +2,7 @@ import type { IndexRecord } from '@shared/types'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import type { ViewSet, ViewDef } from '../viewSchema'
 import type { ColumnDecl } from '../folderSettings'
-import { propertyKeys, propertyLabel } from '../engine'
+import { defaultKeys, propertyKeys, propertyLabel } from '../engine'
 import { canonicalKey } from './keys'
 
 /**
@@ -29,7 +29,7 @@ export function allPropertyKeys(
   }
   const declared = Object.keys(columns)
   for (const k of propertyKeys(def, view, records, declared)) add(k)
-  for (const k of propertyKeys(def, { ...view, order: undefined }, records, declared)) add(k)
+  for (const k of defaultKeys(records, declared)) add(k)
   // The notes' other fields (C4): what a page with columns does not show by itself.
   const fields = new Set<string>()
   for (const r of records) for (const k of Object.keys(r.properties)) if (k !== READ_ONLY_KEY) fields.add(k)

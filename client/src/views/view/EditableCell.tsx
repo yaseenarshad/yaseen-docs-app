@@ -4,10 +4,10 @@ import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
 import { ColumnDecls, cellContent } from './GroupHeader'
 import { TextField } from './TextField'
-import { createPortal } from 'react-dom'
 import { Popover } from './Popover'
 import { SelectValueEditor } from './SelectValueEditor'
-import { READ_ONLY_TIP } from '../readOnlyRows'
+import { readOnlyTip } from '../readOnlyRows'
+import { useUnit } from '../../vault/unitWord'
 import { CHANGE_CANCELLED } from '../confirmChanges'
 import { ImageCellEditor } from './imageCell'
 
@@ -59,6 +59,7 @@ export interface EditableCellProps {
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
 export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], resolve, readOnly = false }: EditableCellProps) {
+  const unit = useUnit()
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
   const [pending, setPending] = useState<{ v: unknown } | null>(null)
@@ -121,10 +122,10 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
     if (editor === 'image') return <ImageCellEditor raw={raw} decl={decl} label={`Edit ${propKey}`} readOnly onCommit={() => {}} />
     return editor === 'checkbox' ? (
       <span className="view-cell-edit">
-        <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={READ_ONLY_TIP} />
+        <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={readOnlyTip(unit)} />
       </span>
     ) : (
-      <span className="view-cell-edit view-cell-edit--read-only" title={READ_ONLY_TIP}>
+      <span className="view-cell-edit view-cell-edit--read-only" title={readOnlyTip(unit)}>
         {cellContent(value, resolve, decl)}
       </span>
     )
@@ -237,9 +238,11 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
           onDone={close}
         />
       )}
-      {editing && isChoice && createPortal(<Popover label={label} anchor={wrapRef.current} onClose={close} className="property-value-popover">
-        <SelectValueEditor raw={current} options={options} multiple={editor === 'multi-select'} label={label} onCommit={commit} onDone={close} />
-      </Popover>, document.body)}
+      {editing && isChoice && (
+        <Popover label={label} anchor={wrapRef.current} portal onClose={close} className="property-value-popover">
+          <SelectValueEditor raw={current} options={options} multiple={editor === 'multi-select'} label={label} onCommit={commit} onDone={close} />
+        </Popover>
+      )}
     </span>
   )
 }

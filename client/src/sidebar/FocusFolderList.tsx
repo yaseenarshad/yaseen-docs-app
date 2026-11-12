@@ -1,4 +1,5 @@
 import { useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
+import { useUnit } from '../vault/unitWord'
 import { createPortal } from 'react-dom'
 import { MAX_VAULT_NAME, cleanVaultName, type FocusFolder } from '@shared/types'
 import { resolveItem, type FolderItem } from '../lists/focusFolders'
@@ -83,6 +84,7 @@ interface FocusFolderListProps {
  * The folds last the session (YAZ-4470, 9): a tab switch keeps them, a relaunch opens every folder again.
  */
 export function FocusFolderList({ kind, folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only, scopesOf, onSetScope, scope, openableOf, onOpenAll, onReorderFolders, onNew, pending = null }: FocusFolderListProps) {
+  const unit = useUnit()
   const [shut, setShutHere] = useState<ReadonlySet<string>>(() => SHUT[kind])
   const setShut = (next: (was: ReadonlySet<string>) => ReadonlySet<string>) =>
     setShutHere((was) => {
@@ -256,7 +258,7 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
               return paths.length === 0 ? [] : [{ id: 'focus-folder-open-all', label: 'Open all in tabs', tip: 'Open each item of this folder in a tab of its own. A folder opens as its folder page.', onSelect: () => onOpenAll(paths) }]
             })()], ...(onNew === undefined ? [] : [[
               // YAZ-4782: the tree menu's New rows, in its order; the item is made in a vault's root and joins this folder.
-              { id: 'focus-folder-new-note', label: 'New note', onSelect: () => newIn(menu.id, 'file') },
+              { id: 'focus-folder-new-note', label: unit('New note'), onSelect: () => newIn(menu.id, 'file') },
               { id: 'focus-folder-new-drawing', label: 'New drawing', onSelect: () => newIn(menu.id, 'drawing') },
               { id: 'focus-folder-new-folder', label: 'New folder', onSelect: () => newIn(menu.id, 'dir') },
             ]]), [{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], scopeGroup(kind, scopesOf(menu.id), (to, on) => onSetScope(menu.id, to, on), { scope, ask: () => leave(menu.id) }), [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}

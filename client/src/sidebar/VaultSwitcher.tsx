@@ -129,6 +129,8 @@ export interface VaultSwitcherProps {
   onOpenHere: (path: string) => Promise<boolean>
   /** The menu's "Add to this window" (YAZ-2602 S8): App's add; `false` = not added, and App has said why. */
   onAddHere: (path: string) => Promise<boolean>
+  /** The menu's "Open folder page" on a vault of this window (YAZ-4921): the Sidebar's kept-tab door for the vault root. Absent: no such item. */
+  onOpenFolderPage?: (path: string) => void
   /** The menu's OS verbs (D9): the Sidebar's own, stale-path notice included. */
   onReveal: (path: string) => void
   onOpenVsCode: (path: string) => void
@@ -206,7 +208,7 @@ export function defaultHighlight(matches: readonly { path: string }[], query: st
 /** The trigger's text (YAZ-2602 S15): one vault's name; two joined with " + "; more as the first two, then "+ N more". */
 export const vaultsLabel = (names: readonly string[]): string => (names.length <= 2 ? names.join(' + ') : `${names[0]} + ${names[1]} + ${names.length - 2} more`)
 
-export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onReveal, onOpenVsCode, onNotice, onOpenSetHere, hotkeys }: VaultSwitcherProps) {
+export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onOpenFolderPage, onReveal, onOpenVsCode, onNotice, onOpenSetHere, hotkeys }: VaultSwitcherProps) {
   // The first vault: the one a window with one vault has, and so the one the trigger's own menu and rename are about.
   const root = roots[0]
   const multi = roots.length > 1
@@ -715,6 +717,13 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
           sections={buildVaultMenuSections(
             menuTarget(vaultMenu.path),
             {
+              // YAZ-4921: the vault root's folder page; the panel closes, as for any page that opens from it.
+              ...(onOpenFolderPage === undefined ? {} : {
+                onOpenFolderPage: (path: string) => {
+                  closePanel()
+                  onOpenFolderPage(path)
+                },
+              }),
               // A Files window shows the vault alone itself, as its keys do (YAZ-3487 D6).
               onOpenAlone: onOpenSetHere === undefined ? chooseAlone : (path) => settle(path, onOpenHere(path), 'openHere'),
               // YAZ-3357 D5: a Files window on this vault, beside this window; the panel closes, as for any window that opens.

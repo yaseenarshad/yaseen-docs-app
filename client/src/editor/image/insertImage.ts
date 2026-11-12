@@ -4,10 +4,10 @@
  * the file is written and the HTML is ignored, so a screenshot never lands as a dead
  * `<img src="blob:…">`).
  *
- * The write goes through `api.writeAsset`, the same door `createDrawing` uses, into the images'
- * home under the vault (`IMAGES_DIR`, made on the way by writeAsset's own `mkdir -p`). The
- * constant lives HERE rather than beside `DRAWINGS_DIR` because each asset kind's directory sits
- * next to the one writer that uses it — `drawings/createDrawing.ts` owns drawings, this owns images.
+ * The write goes through `api.writeAsset` into the images' home under the vault (`IMAGES_DIR`, made
+ * on the way by writeAsset's own `mkdir -p`). The constant lives HERE rather than beside
+ * `DRAWINGS_DIR` because each asset kind's directory sits next to the one writer that uses it —
+ * `drawings/createDrawing.ts` owns drawings (through `fs:create-board`), this owns images.
  *
  * NEVER OVERWRITE (locked, same as drawings): every write is `create: true`; `ALREADY_EXISTS`
  * retries `-2`, `-3`, … (bounded by `MAX_ATTEMPTS`) and every OTHER failure — too large, an

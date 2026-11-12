@@ -348,3 +348,39 @@ describe('parts this build does not know (YAZ-4161)', () => {
     expect(copy.attrs.unknownParts).toEqual([])
   })
 })
+
+describe('Text in cells (YAZ-4900): the table\'s Wrap or Clip, each column\'s own, and the tooltip when cut', () => {
+  it('`nowrap` reads as the table\'s Clip and saves the same bytes; `wrap` and `text 2:clip` load into the attributes, show to CSS, and save the same bytes', async () => {
+    const { root, view } = await mount(`${SMALL}\n<!-- table: nowrap -->\n`)
+    expect(tables(view.state.doc)[0]!.attrs.wrap).toBe(false)
+    expect(root.querySelector('.milkdown-table-block')!.hasAttribute('data-table-nowrap')).toBe(true)
+    expect(await save(`${SMALL}\n<!-- table: nowrap -->\n`)).toBe(`${SMALL}\n<!-- table: nowrap -->\n`)
+    // No part: the table follows Settings (`wrap: null`), and a plain table still saves the bytes of before.
+    const plain = await mount(SMALL)
+    expect(tables(plain.view.state.doc)[0]!.attrs.wrap).toBeNull()
+    expect(plain.root.querySelector('.milkdown-table-block')).not.toBeNull()
+    expect(plain.root.querySelector('.milkdown-table-block')!.hasAttribute('data-table-wrap')).toBe(false)
+    expect(getMarkdownForSave(plain.crepe)).toBe(SMALL)
+    const own = await mount(`${SMALL}\n<!-- table: wrap, text 2:clip -->\n`)
+    const [table] = tables(own.view.state.doc)
+    expect(table!.attrs.wrap).toBe(true)
+    expect(cellAttr(table!, 'text')).toEqual([[null, 'clip'], [null, 'clip']])
+    expect(own.root.querySelector('.milkdown-table-block')!.hasAttribute('data-table-wrap')).toBe(true)
+    expect([...own.root.querySelectorAll('th, td')].map((cell) => cell.getAttribute('data-cell-text'))).toEqual([null, 'clip', null, 'clip'])
+    expect(await save(`${SMALL}\n<!-- table: wrap, text 2:clip -->\n`)).toBe(`${SMALL}\n<!-- table: wrap, text 2:clip -->\n`)
+  })
+
+  it('the clip rule in table.css: a column\'s own choice beats the table\'s, and the table\'s beats Settings\'; it cuts every line in the cell, bullets too (YAZ-4900)', async () => {
+    const css = (await import('./table.css?inline')).default as string
+    const rule = [...css.replace(/\/\*.*?\*\//gs, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.replace(/\s+/g, ' ').trim(), body })).find(({ body }) => /text-overflow:\s*ellipsis/.test(body))
+    expect(rule).toBeDefined()
+    expect(rule!.selector).toBe(
+      [
+        ".app[data-table-text='clip'] .milkdown .ProseMirror .milkdown-table-block:not([data-table-wrap]) :is(th, td):not([data-cell-text='wrap']) p",
+        ".milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td):not([data-cell-text='wrap']) p",
+        ".milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] p",
+      ].join(', '),
+    )
+    expect(rule!.body).toMatch(/white-space:\s*nowrap/)
+  })
+})

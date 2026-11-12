@@ -229,9 +229,13 @@ export interface IndexRecord {
   aliases: string[]
   /** Frontmatter `tags`/`tag` + inline `#tags`; no leading '#'; nested 'a/b' kept; de-duplicated, order of first appearance. */
   tags: string[]
-  /** `[[target]]` targets (`|alias` and `#heading` stripped) from body + frontmatter string values; embeds excluded. */
+  /**
+   * `[[target]]` targets (`|alias` and `#heading` stripped) from body + frontmatter string values; embeds excluded.
+   * Words that only LOOK like an ID keep both page sides, `Covid notes|COVID-19` (`indexTarget`, YAZ-4954): the
+   * resolver picks (the left side when it is a page), so a reader passes each target to a resolver, never compares text.
+   */
   links: string[]
-  /** `![[target]]` targets. */
+  /** `![[target]]` targets, kept as `links` keeps them. */
   embeds: string[]
   /** The note's review log (`shared/reviews.ts`, YAZ-2322), `at` ascending; absent when never reviewed. When it is next due is computed, never stored. */
   reviews?: ReviewEntry[]
@@ -263,7 +267,20 @@ export interface IndexResponse {
    * yes would write (🔒 V2). `notes` would be given an id, `foreign` of them over another tool's
    * `id`; `folders` would be given a `.folder.md`, or an `id` in the one they have.
    */
-  ask?: { notes: number; folders: number; foreign: number; /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */ letters?: string }
+  ask?: {
+    notes: number
+    folders: number
+    foreign: number
+    /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */
+    letters?: string
+    /**
+     * The number IDs the notes and folders already hold, by their letters, the biggest group first (YAZ-4922 🔒 D2).
+     * Only where some group is not an ID of the vault yet: the box then offers "Keep <letters>" of the first group.
+     */
+    groups?: IdGroup[]
+    /** With `groups`: how many of the `notes` hold no ID at all, the only ones a yes then gives a number (YAZ-4922 D2). */
+    bare?: number
+  }
   /** Only when `ids`: a run of "Give old IDs numbers" stopped with files left, and its plan is in the vault (YAZ-2677 🔒 D6, S90): a second run finishes it. */
   unfinished?: true
   /**
@@ -272,6 +289,12 @@ export interface IndexResponse {
    * `was`: the IDs it held before a two-Mac merge (YAZ-4071 7I, `formerIds`), with the current letters; a link to one still opens it.
    */
   boards?: { path: string; id: string; was?: string[] }[]
+}
+
+/** One group of number IDs with the same letters, and how many notes and folders hold one (YAZ-4922 D2). */
+export interface IdGroup {
+  letters: string
+  count: number
 }
 
 // ---------- coldDiff(root) (Links E1c, GRO-2242) ----------
@@ -1079,6 +1102,24 @@ export function sameVaults(a: readonly string[], b: readonly string[]): boolean 
   const left = new Set(a.map(stripSlash))
   const right = new Set(b.map(stripSlash))
   return left.size === right.size && [...left].every((vault) => right.has(vault))
+}
+
+/**
+ * THE PLACE OF A WINDOW (YAZ-4922 🔒 D3). A window's `roots` are its places: each is a vault, or "a folder of <vault>"
+ * (`FolderState.in`). The place is the window's identity — the recents, the vault switcher's rows, Open / Not open, ⌘1–9,
+ * the workspaces and the windows a reopen brings back all name it. What a place's notes are read and written AS is its
+ * vault: the index, the IDs, the links, the sync and `.yaseendocs`. `placeVault` is that vault; a vault is its own.
+ */
+export const placeVault = (folders: Readonly<Record<string, Pick<FolderState, 'in'> | undefined>> | undefined, place: string): string => folders?.[place]?.in ?? place
+
+/** Each place's vault (`placeVault`), in order: what the main process reads and writes a window's notes as. */
+export const placeVaults = (folders: Readonly<Record<string, Pick<FolderState, 'in'> | undefined>> | undefined, places: readonly string[]): string[] => places.map((place) => placeVault(folders, place))
+
+/** What the app calls a place (YAZ-4922 D3): its display name, else its folder name; "a folder of" reads "<folder> · in <vault>". */
+export function placeName(folders: Readonly<Record<string, Pick<FolderState, 'in' | 'name'> | undefined>>, place: string): string {
+  const own = folders[place]?.name ?? basename(place)
+  const vault = folders[place]?.in
+  return vault == null ? own : `${own} · in ${folders[vault]?.name ?? basename(vault)}`
 }
 
 /** Last path segment (trailing slashes ignored); the input itself for `/`. The client's `lib/paths` hands it on; it is here so `listVaults` and `keyedVaults` name a folder the same way (YAZ-2556). */
@@ -1941,6 +1982,11 @@ export interface FolderPagesSettings {
   cardTitles: (typeof FOLDER_PAGE_CHOICES.cardTitles)[number]
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. */
   hideWeekends: boolean
+  /** A calendar's lines (YAZ-4878): the width between weeks and between days, whole px 1–`MAX_CAL_LINE`, and each line's colour and strength (`readColorStrength`: `gray`, `blue light`). */
+  weekLine: number
+  dayLine: number
+  weekLineColor: string
+  dayLineColor: string
   showFolderPageFiles: boolean
   /** A folder page's "Delete note…" asks first (YAZ-4592 S26). Its own switch: Files › Confirm before deleting does not touch it. */
   askBeforeDelete: boolean
@@ -1982,6 +2028,11 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   calendarScale: 'month',
   cardTitles: 'clip',
   hideWeekends: false,
+  // YAZ-4878: 1 px lines in the app's line colour (Gray, Medium), the look before the setting existed.
+  weekLine: 1,
+  dayLine: 1,
+  weekLineColor: 'gray',
+  dayLineColor: 'gray',
   showFolderPageFiles: false,
   askBeforeDelete: true,
   confirmChanges: true,
@@ -2115,12 +2166,22 @@ export interface SettingsState {
   tableBandBold: boolean
   /** Settings › Tables › All tables › Header row (YAZ-4774): every table's header row, a note table's and a folder table's. A table's comment or a view can say otherwise. `data-table-header-*` on `.app`. */
   tableHeaderRow: HeaderRow
+  /** Settings › Tables › All tables › Subheader row (YAZ-4899): the look of every note table's subheader rows. A table's own `subheader` part can say otherwise. `data-table-subheader-*` on `.app`. */
+  tableSubheaderRow: HeaderRow
+  /** Settings › Tables › All tables › Sticky subheaders (YAZ-4899): a subheader row stays at the top of the note while its section scrolls by. On by default; a table's own `sticky` / `nosticky` wins. `data-table-sticky-subheaders` on `.app`. */
+  tableStickySubheaders: boolean
+  /** Settings › Tables › All tables › Sticky header row (YAZ-4899 round 2): the header row stays at the top of the note while the table scrolls by (frozen, as "Freeze up to this row"). On by default; a table's own `stickyheader` / `nostickyheader` wins, and its own freeze over that. */
+  tableStickyHeader: boolean
+  /** Settings › Tables › All tables › Text in cells (YAZ-4900): every note table's cells Wrap (default) or Clip (one line, cut with "…"). A table's own `wrap` / `nowrap` wins, and a column's own `text` over that. `data-table-text` on `.app`. */
+  tableTextInCells: TableTextInCells
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
   tableNowButton: boolean
   /** Settings › Tables › Cell notes › Add button (YAZ-4790): the "+" on the corner of a table cell that adds a cell note. Off by default (YAZ-4790 demo). A table's own `notebutton` / `nonotebutton` turns its button on or off alone. `data-cell-note-button` on `.app`. */
   tableCellNoteButton: boolean
+  /** Settings › Tables › All tables › New tables start as (YAZ-4869 item 22): the slash menu's "Table" makes a plain table (default) or a Super table. Read at the click. */
+  tableNewStyle: TableNewStyle
   /** Settings › Editor › Calendar tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
   tableDimPast: TableDimPast
   /** Settings › Editor › Calendar tables › Shade darkness (YAZ-4163 demo): the past rows' shade, a percent of the text colour, `TABLE_SHADE_MIN`–`MAX` in steps of `TABLE_SHADE_STEP`. `--table-past-shade` on the root. */
@@ -2196,6 +2257,16 @@ export interface SettingsState {
    * colours either way. The diagram tab and its pictures follow it, live. Its row is Settings › Appearance (YAZ-3037).
    */
   diagramDarkColors: DiagramDarkColors
+  /**
+   * Board embeds in notes (YAZ-4820 D9): after this many seconds with no use, a Live window RESTS — the wheel scrolls
+   * the page and one click wakes it. 0 = never. One of `EMBED_REST_SECONDS`. Its row is Settings › Drawings and diagrams.
+   */
+  embedRestSeconds: EmbedRestSeconds
+  /**
+   * Where "/drawing" and "/diagram" put a new board made from a note (YAZ-4820 item 3): `note` = the note's own folder,
+   * `assets` = the vault's `assets/drawings/`. The file is named after the note either way.
+   */
+  newBoardFolder: NewBoardFolder
   /**
    * The canvas panel's library folder (YAZ-3038; Draw's 🔒 YAZ-1775 D5): ONE folder every vault shares, for
    * saved components and media favorites. null = the default, `<userData>/library`, which only main
@@ -2359,6 +2430,12 @@ export const folderWindowPinned = (settings: Pick<SettingsState, 'folderPages' |
 
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
+/** YAZ-4820 D9: the resting times a board embed offers; 0 = never. */
+export type EmbedRestSeconds = 10 | 30 | 60 | 300 | 0
+export const EMBED_REST_SECONDS: readonly EmbedRestSeconds[] = [10, 30, 60, 300, 0]
+/** YAZ-4820 item 3: where a board made from a note goes. */
+export type NewBoardFolder = 'note' | 'assets'
+export const NEW_BOARD_FOLDERS: readonly NewBoardFolder[] = ['note', 'assets']
 
 /** How long a tab stays unseen before it sleeps (YAZ-3737 D10): 30 min is the default. */
 export type TabSleepAfter = '15m' | '30m' | '1h' | '2h' | 'never'
@@ -2409,6 +2486,12 @@ export const DAILY_NOTE_OPENS: readonly DailyNoteOpens[] = ['note', 'now']
 
 /** Tables (YAZ-4167 D16): where the row band shows. */
 export type TableRowBand = 'off' | 'calendar' | 'all'
+/** What a new table starts as (YAZ-4869 item 22). */
+export const TABLE_NEW_STYLES = ['plain', 'super'] as const
+export type TableNewStyle = (typeof TABLE_NEW_STYLES)[number]
+/** Text in a note table's cells (YAZ-4900): Wrap onto more lines, or Clip to one line cut with "…". */
+export const TABLE_TEXT_IN_CELLS = ['wrap', 'clip'] as const
+export type TableTextInCells = (typeof TABLE_TEXT_IN_CELLS)[number]
 export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
 
 /** Tables (the YAZ-3818 demo): the rows the band marks. */
@@ -2462,6 +2545,59 @@ export function headerRowOwn(raw: unknown): HeaderRowOwn {
 /** The `data-table-header-*` attributes of the set parts: on `.app` (Settings), a note table's block and a folder table (`table.css`). */
 export const headerRowAttrs = (parts: Partial<HeaderRow>): Record<string, string> =>
   Object.fromEntries(HEADER_ROW_PARTS.filter((part) => typeof parts[part] === 'string').map((part) => [`data-table-header-${part}`, parts[part] as string]))
+/**
+ * Subheader rows (YAZ-4899): a note table's body rows made subheaders share one look, the header row's parts, with
+ * their own default: stronger than the header row (Gray, Medium, Bold, Full, Follow column). Settings › Tables ›
+ * Subheader row is every table's default; a table's own `subheader` part says otherwise.
+ */
+export const DEFAULT_SUBHEADER_ROW: HeaderRow = { color: 'gray', strength: 'medium', weight: 'bold', text: 'full', align: 'follow' }
+/** The `data-table-subheader-*` attributes of the set parts: on `.app` (Settings) and a note table's block (`table.css`). */
+export const subheaderRowAttrs = (parts: Partial<HeaderRow>): Record<string, string> =>
+  Object.fromEntries(HEADER_ROW_PARTS.filter((part) => typeof parts[part] === 'string').map((part) => [`data-table-subheader-${part}`, parts[part] as string]))
+
+/**
+ * A colour with a strength (YAZ-4878, YAZ-4906): a calendar line's colour (`weekLineColor`) and a note's `color`
+ * property, one string a person can read: the colour name, then the strength when it is not Medium — `gray`,
+ * `blue light`, `black strong`. The colours are the header row's (`HEADER_ROW_CHOICES.color`). A card's Light, Medium and
+ * Strong are 15 %, 30 % and 50 % of the colour (`views.css`), Black 30 / 60 / 100 %; a calendar line's are 35 / 65 / 100 %
+ * (`calendar.ts` `calLineCss`).
+ */
+export const COLOR_STRENGTHS = ['light', 'medium', 'strong'] as const
+export type ColorStrength = (typeof COLOR_STRENGTHS)[number]
+export type ColorName = (typeof HEADER_ROW_CHOICES.color)[number]
+export interface ColorStrengthValue {
+  color: ColorName
+  strength: ColorStrength
+}
+/** The colour and strength `raw` names, or null: a word that is no colour, or a strength that is none. Case and spaces do not matter. */
+export function readColorStrength(raw: unknown): ColorStrengthValue | null {
+  if (typeof raw !== 'string') return null
+  const [color, strength = 'medium', more] = raw.trim().toLowerCase().split(/\s+/)
+  if (more !== undefined || !(HEADER_ROW_CHOICES.color as readonly string[]).includes(color) || !(COLOR_STRENGTHS as readonly string[]).includes(strength)) return null
+  return { color: color as ColorName, strength: strength as ColorStrength }
+}
+/** The string a colour and strength are written as: `blue` for Medium, else `blue light`. */
+export const writeColorStrength = ({ color, strength }: ColorStrengthValue): string => (strength === 'medium' ? color : `${color} ${strength}`)
+/**
+ * A card's style in its note (YAZ-4906): three properties, snake_case as the app's own keys are (`show_page_file`).
+ * `color` is the fill (`readColorStrength`); `text_color` one of the header row's Text choices (`readCardText`, no
+ * key = full); `weight` is `bold` (`readCardWeight`, no key = regular).
+ */
+export const CARD_STYLE_KEYS = { fill: 'color', text: 'text_color', weight: 'weight' } as const
+export type CardText = (typeof HEADER_ROW_CHOICES.text)[number]
+export type CardWeight = (typeof HEADER_ROW_CHOICES.weight)[number]
+export function readCardText(raw: unknown): CardText | null {
+  const word = typeof raw === 'string' ? raw.trim().toLowerCase() : null
+  return word !== null && (HEADER_ROW_CHOICES.text as readonly string[]).includes(word) ? (word as CardText) : null
+}
+export function readCardWeight(raw: unknown): CardWeight | null {
+  const word = typeof raw === 'string' ? raw.trim().toLowerCase() : null
+  return word !== null && (HEADER_ROW_CHOICES.weight as readonly string[]).includes(word) ? (word as CardWeight) : null
+}
+/** The widest a calendar grid line may be (YAZ-4878). */
+export const MAX_CAL_LINE = 12
+/** A calendar grid line's width (YAZ-4878): a stored whole number 1–`MAX_CAL_LINE`, else 1 (the line before the setting). */
+export const calLine = (value: unknown): number => (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_CAL_LINE ? value : 1)
 
 /** Calendar tables (YAZ-4162 D6): how the now row is marked. */
 export type TableNowMark = 'line' | 'tint' | 'both'
@@ -2719,9 +2855,14 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableBandRows: 'both',
   tableBandBold: true,
   tableHeaderRow: DEFAULT_HEADER_ROW,
+  tableSubheaderRow: DEFAULT_SUBHEADER_ROW,
+  tableStickySubheaders: true,
+  tableStickyHeader: true,
+  tableTextInCells: 'wrap',
   tableNowMark: 'line',
   tableNowButton: true,
   tableCellNoteButton: false,
+  tableNewStyle: 'plain',
   tableDimPast: 'shade',
   tableShadeDarkness: 6,
   tableCellBulletIndent: 20,
@@ -2751,6 +2892,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarIconRules: [],
   canvas: DEFAULT_CANVAS_PREFS,
   diagramDarkColors: 'adapt',
+  embedRestSeconds: 30,
+  newBoardFolder: 'note',
   libraryFolder: null,
   canvasPanel: DEFAULT_CANVAS_PANEL,
   mediaFilters: DEFAULT_MEDIA_FILTERS,
@@ -3024,10 +3167,16 @@ export interface FolderState {
   name: string | null
   /** The vault's number, 1–9 (YAZ-2555 D2): ⌘<key> goes to it; null = none. One vault per number. Persisted, per machine. */
   key: number | null
+  /**
+   * "A folder of <vault>" (YAZ-4922 🔒 D3): this bucket's path is a FOLDER of the vault `in`, opened in a window of its
+   * own (`placeVault`). Its windows show the folder, and their IDs, links, sync and `.yaseendocs` are the vault's.
+   * Absent (or null) for a vault. Persisted, per machine. Additive within version 1: an old build drops the key.
+   */
+  in?: string | null
 }
 
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
-export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key'>>
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in'>>
 
 /** Pure: `folders` with `key` taken from the vault that has it (YAZ-2555 D2: one vault per number) — shared by the client cache and the main store. */
 export function freeVaultKey(folders: Record<string, FolderState>, key: number): Record<string, FolderState> {
@@ -3294,7 +3443,7 @@ export function listVaults(state: { recents: Readonly<RecentRoots>; windows: rea
   const recents = new Map(state.recents.map((r) => [r.path, r.lastOpened]))
   return [...new Set([...recents.keys(), ...open, ...keyedVaults(state.folders).map((v) => v.path)])].map((path) => {
     const folder = state.folders[path]
-    return { path, name: folder?.name ?? basename(path), key: folder?.key ?? null, open: open.includes(path), lastUsed: recents.get(path) ?? null }
+    return { path, name: placeName(state.folders, path), key: folder?.key ?? null, open: open.includes(path), lastUsed: recents.get(path) ?? null }
   })
 }
 

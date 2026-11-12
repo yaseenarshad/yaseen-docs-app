@@ -35,12 +35,14 @@
  */
 import { useId, useState } from 'react'
 import type { MemoryReport, MemoryTabRow } from '@shared/types'
+import { embedPictureStats } from '../editor/embed/pictureStats'
 import { formatBytes } from '../lib/format'
 import { pageLabel } from '../lib/pageLabel'
 import { AsleepIcon } from '../views/view/icons'
 import { Segmented } from './controls'
 import { ON_OFF_OPTIONS, TAB_SLEEP_AFTER_OPTIONS } from './options'
 import type { SettingsSection } from './registry'
+import { unit } from './unitLabel'
 import { useMemoryReport } from './useMemoryReport'
 
 /** The ⓘ of each kind of row (YAZ-3932, round 2), as Yasin approved them. */
@@ -290,6 +292,16 @@ function MemoryRows() {
   )
 }
 
+/** YAZ-4825 item 27: this window's embed picture cache, read when the page draws (it draws again with each report). */
+function EmbedPictures() {
+  const { count, bytes } = embedPictureStats()
+  return (
+    <span className="storage__muted" data-embed-pictures="">
+      {count === 0 ? 'None now' : `${count} ${count === 1 ? 'picture' : 'pictures'} · about ${formatBytes(bytes)}`}
+    </span>
+  )
+}
+
 export const MEMORY_SECTION: SettingsSection = {
   id: 'memory',
   title: 'Memory',
@@ -309,6 +321,13 @@ export const MEMORY_SECTION: SettingsSection = {
           hint: 'A sleeping tab frees its memory. A click wakes it.',
           keywords: ['memory', 'sleep', 'tab', 'idle', 'unload', 'minutes'],
           render: ({ settings, onChange }) => <Segmented options={TAB_SLEEP_AFTER_OPTIONS} value={settings.tabSleepAfter} onChange={(tabSleepAfter) => onChange({ ...settings, tabSleepAfter })} ariaLabel="Sleep unseen tabs after" />,
+        },
+        {
+          id: 'embedPictures',
+          label: (ctx) => unit(ctx, 'Drawing and diagram pictures in notes'),
+          hint: 'The pictures that embeds in this window show. The app keeps the last 24 that were shown, and frees the others by itself.',
+          keywords: ['memory', 'embed', 'picture', 'cache', 'drawing', 'diagram'],
+          render: () => <EmbedPictures />,
         },
         {
           id: 'memoryReload',

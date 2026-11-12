@@ -97,6 +97,42 @@ describe.skipIf(!existsSync(`${WEBAPP}js/viewer-static.min.js`))(`yaseen-render.
     expect(svgOf(await render(mxfile(compressed)))).toContain('Packed page')
   })
 
+  it('YAZ-4825 (D6): draws the page a request names, the first page when that id is gone, and answers every page and the picture`s board bounds', async () => {
+    const { render } = await openRenderer()
+    const file = mxfile(model(cell('a', 'First page', 10)), model(cell('b', 'Second page', 300)))
+    const second = await render(file, { page: 'p1', padding: 10 })
+    expect(svgOf(second)).toContain('Second page')
+    expect(svgOf(second)).not.toContain('First page')
+    expect(second.page).toBe('p1')
+    expect(second.pages).toEqual([{ id: 'p0', name: 'Page-1' }, { id: 'p1', name: 'Page-2' }])
+    // The cell is at x 300, y 10, 140 × 60: the picture starts the padding before it, and is as wide as the SVG.
+    const width = Number(/<svg[^>]* width="([\d.]+)/.exec(svgOf(second))?.[1])
+    // draw.io's bounds take in the half pixel an odd stroke paints: half a unit at most.
+    expect(Math.abs(second.bounds.x - 290)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(second.bounds.y - 0)).toBeLessThanOrEqual(0.5)
+    expect(second.bounds.width).toBeCloseTo(width, 5)
+    const gone = await render(file, { page: 'deleted-page' })
+    expect(svgOf(gone)).toContain('First page')
+    expect(gone.page).toBe('p0')
+    // A request with no page draws the first, as before; an empty page has no bounds, and still its pages.
+    expect(svgOf(await render(file))).toContain('First page')
+    expect(await render(mxfile(model('')))).toMatchObject({ ok: true, dataUrl: '', pages: [{ id: 'p0', name: 'Page-1' }], bounds: null })
+  })
+
+  it('YAZ-4834 A20: `svgText` answers the SVG TEXT in `svg` (no data URL), the same SVG the data URL carries', async () => {
+    const { render } = await openRenderer()
+    const file = mxfile(model(cell('a', 'Text answer', 10)))
+    const asText = await render(file, { format: 'svgText', padding: 10 })
+    expect(asText.ok).toBe(true)
+    expect(asText.dataUrl).toBeUndefined()
+    expect(asText.svg.startsWith('<svg')).toBe(true)
+    // The same SVG but for draw.io's random `ge-svg-…` id, new per drawing.
+    const noId = (svg) => svg.replaceAll(/ge-svg-[\w-]+/g, 'ge-svg-ID')
+    expect(noId(asText.svg)).toBe(noId(svgOf(await render(file, { padding: 10 }))))
+    expect(asText.bounds).not.toBeNull()
+    expect(await render(mxfile(model('')), { format: 'svgText' })).toMatchObject({ ok: true, svg: '', bounds: null })
+  })
+
   it('carries the font faces the diagram uses — and only those — inside the SVG, as data', async () => {
     const { render } = await openRenderer()
     const svg = svgOf(await render(mxfile(model(cell('a', 'Title', 10, 'text;html=1;fontFamily=Assistant;')))))

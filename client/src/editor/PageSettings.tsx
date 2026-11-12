@@ -1,4 +1,5 @@
 import { type FocusEvent, Fragment, type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { Dropdown } from '../views/view/Dropdown'
 import { createPortal } from 'react-dom'
 import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, type OutsideChangeGlow, type TocSource } from '@shared/types'
 import { OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
@@ -37,6 +38,12 @@ export interface PageSwitch {
   hint?: Hint
   /** A choice row on ONE line: the label left, the choices right (13BP CL3). */
   inline?: boolean
+  /**
+   * A one-line DROPDOWN row (YAZ-4909; Yaseen: "as the number of views increases this menu is just going to get wider
+   * and wider"): the label left, "<current> ▾" right, the list on the body under it with a ✓ at `value`. The menu keeps
+   * its width whatever the number of options.
+   */
+  menu?: { value: string; options: readonly { value: string; label: string; icon?: ReactNode }[]; onPick: (value: string) => void }
   /**
    * The menu's own "Read only" row stands here, under this row's heading, with its hint (13BP: the folder ⚙'s "Safety";
    * YAZ-4748 demo: a drawing's and a diagram's cog). With `inline`, it is an On / Off choice on one line, as the rows
@@ -216,6 +223,8 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
     if (!open) return
     const onOutside = (event: Event) => {
       const target = event.target as Node
+      // A dropdown's list opened from a row (YAZ-4909, `Dropdown`) is on the body, not in the menu: a press in it is a press in the menu.
+      if (target instanceof Element && target.closest('.view-dropdown__panel') !== null) return
       if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
     }
     const onBlur = () => setOpen(false)
@@ -313,10 +322,27 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
       ))}
     </div>
   )
-  const rowOf = ({ label, on, onToggle, disabled, warn, divider, title, choices, heading, hint, inline, readOnlySlot }: PageSwitch) => <Fragment key={label}>
+  const rowOf = ({ label, on, onToggle, disabled, warn, divider, title, choices, heading, hint, inline, readOnlySlot, menu }: PageSwitch) => <Fragment key={label}>
     {divider === true && <div className="page-settings__divider" aria-hidden="true" />}
     {heading !== undefined && <p className="page-settings__label page-settings__heading">{heading}</p>}
     {readOnlySlot === true ? (inline === true ? readOnlyLine(hint) : readOnlyRow(hint))
+      : menu !== undefined ? <div className="page-settings__line">
+        <p className="page-settings__label">{label}{infoOf(label, hint)}</p>
+        <Dropdown label={label} className="page-settings__drop" panelClassName="page-settings__drop-panel ctx-menu--glyphs" trigger={menu.options.find((o) => o.value === menu.value)?.label ?? menu.options[0]?.label}>
+          {(close) => (
+            <div className="ctx-menu__group" role="group">
+              {menu.options.map((o) => (
+                <button key={o.value} type="button" role="menuitemradio" aria-checked={o.value === menu.value} className="ctx-menu__item" data-hint={o.value === menu.value ? '✓' : undefined} onClick={() => {
+                  close()
+                  if (o.value !== menu.value) menu.onPick(o.value)
+                }}>
+                  {o.icon === undefined ? o.label : <span className="ctx-menu__label">{o.icon}{o.label}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </Dropdown>
+      </div>
       : choices !== undefined && inline === true ? <div className="page-settings__line">
         <p className="page-settings__label">{label}{infoOf(label, hint)}</p>
         {choicesOf(label, choices, disabled)}

@@ -377,8 +377,8 @@ export function withPicturesOut(scene: Record<string, unknown>, out: boolean, bo
  * The scene JSON of a new board (YAZ-3943 demo 2), from Settings › Files & Links › "New boards keep pictures":
  * "Inside the board" keeps `json` (D5's default); "In the assets folder" is born "pictures out" (`withPicturesOut`,
  * with its 1E switch time at `now`); "In a folder you pick" (demo round 3) names that folder too, and is "assets"
- * while no valid folder is chosen yet. One rule for the client's `createDrawing` and main's `createBoard`
- * (YAZ-4074 6A item 33).
+ * while no valid folder is chosen yet. Main's `createBoard` uses it (YAZ-4074 6A item 33); the client's
+ * "/drawing" makes its boards through that door too (YAZ-4831).
  */
 export function newBoardScene(json: string, pictures: NewBoardPictures, folder: string, now: number): string {
   if (pictures === 'inside') return json

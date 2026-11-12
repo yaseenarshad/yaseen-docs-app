@@ -115,3 +115,18 @@ describe('only from a column, only from a folder (YAZ-4739 L2)', () => {
     expect(settings.problems).toEqual(['folder_settings.columns.used_by.from.folder must be text — ignoring it'])
   })
 })
+
+describe('words that only LOOK like an ID in a field (YAZ-4954 part 2): the column picks as the editor does', () => {
+  const COVID = rec('/vault/Covid notes.md')
+  const ID_NOTE = rec('/vault/COVID-19.md')
+  const WORDS = rec('/vault/Web/A.md', { links: ['Covid notes|COVID-19'], properties: { about: '[[Covid notes|COVID-19]]' } })
+  const ID_FIRST = rec('/vault/Web/B.md', { links: ['COVID-19'], properties: { about: '[[COVID-19|Covid notes]]' } })
+  const notes = [COVID, ID_NOTE, WORDS, ID_FIRST]
+  const titles = (row: IndexRecord) =>
+    [...mentionsColumns(column({ from: { column: 'about' } }), notes, FOLDERS, linkResolver(notes, '/vault', DIRS, FOLDERS))!.of(row, 'used_by')].map((link) => link.slice(2, -2))
+
+  it('"Covid notes" lists the words-first field; COVID-19 lists the ID-first one', () => {
+    expect(titles(COVID)).toEqual(['A'])
+    expect(titles(ID_NOTE)).toEqual(['B'])
+  })
+})

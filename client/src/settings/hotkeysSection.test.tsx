@@ -8,9 +8,12 @@
  * The bridge is mocked: this Mac's Spotlight is on ⌥Space, so ⌘Space is free.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MACOS_HOTKEYS } from '@shared/macosHotkeys'
+import { sameKey, toDisplay } from '@shared/hotkeyBindings'
 import { DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
 import { api } from '../api'
 import { SettingsDialog } from './SettingsDialog'
@@ -187,6 +190,56 @@ describe('a changeable key (D6, D7)', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+W', 'app.newFilesWindow': null, 'app.closeTab': null } })
   })
 
+  it('YAZ-4941: an App key that takes ⌘K groups the Code two-step keys into ONE line, with "Show all" for the list; they stay blocked, not stripped; the swap Search → ⌘⇧F, Explore → ⌘K works end to end', async () => {
+    const { ALL_KEYS, keysOf, clashesOf, keyRow } = await import('@shared/keys')
+    const codeOnK = ALL_KEYS.filter((r) => r.scope === 'code' && keysOf(r, {}).some((k) => sameKey(k.split(' ')[0], 'CmdOrCtrl+K')))
+    expect(codeOnK.length).toBeGreaterThan(20)
+    await mount()
+    // Step 1: Search takes ⌘⇧F from Explore. Explore moves; the diagram's To front stays blocked, not stripped.
+    click(keyButton('search'))
+    press('F', 'KeyF', { metaKey: true, shiftKey: true })
+    expect(says()).toEqual(['Change the key for Search the vault?', '⌘K → ⌘⇧F', '⌘⇧F is App › Explore the vault now. It will lose its key.', '⌘⇧F is Diagram › To front now. It stays blocked while ⌘⇧F is an app key.'])
+    click(button(popup() as HTMLElement, 'Move it here'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+F', 'app.explore': null } })
+    // Step 2: Explore takes ⌘K. Nobody moves; the Code keys are one line, the single-key places one each.
+    click(keyButton('explore'))
+    press('k', 'KeyK', { metaKey: true })
+    const said = says()
+    expect(said.slice(0, 2)).toEqual(['Change the key for Explore the vault?', 'No key → ⌘K'])
+    // One line per place, in the places' order; the Code line counts its keys and names the first two.
+    const [first, second] = codeOnK.map((r) => keysOf(r, {})[0].split(' ').map(toDisplay).join(' '))
+    expect(said.slice(2)).toEqual([
+      '⌘K is Drawing › Add a link now. It stays blocked while ⌘K is an app key.',
+      '⌘K is Diagram › Edit tags now. It stays blocked while ⌘K is an app key.',
+      `⌘K starts ${codeOnK.length} Code keys (${first}, ${second}, …). They stay blocked while ⌘K is an app key.`,
+    ])
+    expect(said).toHaveLength(5)
+    // "Show all" opens the full list in a box that scrolls; the list names every Code key.
+    click(button(popup() as HTMLElement, 'Show all'))
+    const list = popup()?.querySelector<HTMLElement>('.hotkeys__clash-list')
+    expect(list).not.toBeNull()
+    expect(list?.querySelectorAll('li')).toHaveLength(codeOnK.length)
+    expect(list?.textContent).toContain(first)
+    // Each row is one line (YAZ-4941 nit): its keys, then its action in its own part that cuts with "…", with the full text on hover.
+    for (const li of list?.querySelectorAll('li') ?? []) {
+      expect([...li.children].map((c) => c.className)).toEqual(['hotkeys__clash-key', 'hotkeys__clash-action'])
+      expect(li.querySelector('.hotkeys__clash-action')?.getAttribute('title')).toBe(li.querySelector('.hotkeys__clash-action')?.textContent)
+    }
+    const css = readFileSync(path.join(__dirname, 'settings.css'), 'utf8')
+    const ruleOf = (selector: string) => css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.*]/g, '\\$&')} \\{([^}]*)\\}`))?.[1] ?? ''
+    expect(ruleOf('.hotkeys__clash-list li')).toMatch(/display: flex;[\s\S]*white-space: nowrap;/)
+    expect(ruleOf('.hotkeys__clash-key')).toContain('flex: none;')
+    expect(ruleOf('.hotkeys__clash-action')).toMatch(/min-width: 0;[\s\S]*overflow: hidden;[\s\S]*text-overflow: ellipsis;/)
+    click(button(popup() as HTMLElement, 'Save'))
+    const written = onChange.mock.calls.at(-1)?.[0] as SettingsState
+    expect(written.hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Shift+F', 'app.explore': 'CmdOrCtrl+K' })
+    // Afterwards: ⌘K is Explore's and ⌘⇧F is Search's, and a Code two-step key is blocked on its card, as under Search before.
+    expect(keyButton('explore').textContent).toBe('⌘K')
+    expect(keyButton('search').textContent).toBe('⌘⇧F')
+    expect(lines('code-addCommentLine')[0]).toBe('No key here now: ⌘K is App › Explore the vault. Change it on ⌘K')
+    expect(clashesOf(keyRow('code.addCommentLine')!, 'CmdOrCtrl+K CmdOrCtrl+C', written.hotkeys, {}).map((o) => o.id)).toContain('app.explore')
+  })
+
   it('"Reset all hotkeys" is there only with a change, and asks in the confirm sheet with the list of changes', async () => {
     await mount({ search: 'CmdOrCtrl+Shift+K', closeTab: null })
     click(button(row('hotkeys-reset-all'), 'Reset all hotkeys'))
@@ -342,6 +395,21 @@ describe('one card per key (YAZ-3564)', () => {
     expect(asked()).toEqual(['⌘D in drawings: Duplicate?', 'App › Show in sidebar will not work in drawings.'])
     click(button(popup() as HTMLElement, 'Take it'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: {} })
+  })
+
+  it('YAZ-2571: the ⌘⇧F card holds Explore the vault and draw.io\'s To front; explore wins in diagrams by default, and the pick gives the key back', async () => {
+    await mount()
+    expect([...card('⌘⇧F').querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)).toEqual(['hotkey-explore', 'hotkey-diagram-toFront'])
+    expect(card('⌘⇧F').querySelector('.hotkeys__card-head .hotkeys__hint')?.textContent).toBe('Shared: each tab picks what it does.')
+    expect(picked('⌘⇧F', 'diagrams')).toBe('Explore the vault')
+    expect(lostLine('diagram-toFront')).toBe('To front has no key here now.')
+    expect(row('hotkey-explore').querySelector('.hotkeys__box-tab')?.textContent).toBe('Every tab')
+    choose('⌘⇧F', 'diagrams', 'To front')
+    expect(asked()).toEqual(['⌘⇧F in diagrams: To front?', 'App › Explore the vault will not work in diagrams.'])
+    click(button(popup() as HTMLElement, 'Take it'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.explore@diagram': true } })
+    expect(picked('⌘⇧F', 'diagrams')).toBe('To front')
+    expect(lostLine('diagram-toFront')).toBeUndefined()
   })
 
   it('a group chip shows one place; "Shared keys only" keeps the shared cards and the rows an App key took', async () => {

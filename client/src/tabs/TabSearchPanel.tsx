@@ -4,7 +4,8 @@
  * floating over the tab board beside one window's frame. It searches THAT window's vaults: a vault this window does
  * not show has its index read by the search itself (`api.index`), and its tree by the tree feed, only while the panel
  * is open; both go with it. A pick adds the file as a background tab of that window and keeps the panel open for more;
- * Esc closes it. Folders are not offered: a pick is a tab.
+ * Esc closes it. Folders are not offered: a pick is a tab. A "folder of <vault>" window (YAZ-4922 🔒 D3) finds only what
+ * is under its folder, as Explore does (`inPlace`).
  */
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import type { WatchSource } from '../hooks/useWatch'
@@ -14,6 +15,7 @@ import { otherFiles } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchResults, type SearchVault } from '../search/useSearchResults'
+import { inPlace } from '../vault/placeScope'
 import { useResultKeys } from '../sidebar/hooks/useSidebarSearch'
 import { SearchIcon } from '../views/view/icons'
 
@@ -21,9 +23,15 @@ import { SearchIcon } from '../views/view/icons'
 const NO_WATCH: WatchSource = { subscribe: () => () => undefined }
 const NO_PINS: ReadonlySet<string> = new Set()
 
+/** A vault of the target window, and the folder it shows of it where it is "a folder of" the vault (YAZ-4922 🔒 D3). */
+export interface SearchPlace {
+  root: string
+  folder?: string
+}
+
 export interface TabSearchPanelProps {
-  /** The target window's vaults. */
-  roots: readonly string[]
+  /** The target window's vaults, each with its folder where the window shows only one. The caller keeps the list while it stands. */
+  places: readonly SearchPlace[]
   /** The frame's label: the panel says which window its picks go to. */
   label: string
   /** Where the panel stands, in the board's px (beside the frame), kept inside the board. */
@@ -34,14 +42,23 @@ export interface TabSearchPanelProps {
   onClose: () => void
 }
 
-export function TabSearchPanel({ roots, label, at, watchOf, onPick, onClose }: TabSearchPanelProps) {
+export function TabSearchPanel({ places, label, at, watchOf, onPick, onClose }: TabSearchPanelProps) {
   const [query, setQuery] = useState('')
+  const roots = useMemo(() => places.map((place) => place.root), [places])
   // The trees of the target's vaults: the other files (drawings, PDFs) are the tree's, as in the search bar.
   const trees = useLatestTrees(roots)
   useEffect(() => {
     for (const root of roots) fetchTree(root).catch(() => undefined)
   }, [roots])
-  const vaults: SearchVault[] = useMemo(() => roots.map((root, i) => ({ root, watch: watchOf(root) ?? NO_WATCH, dirs: [], files: trees[i] === null || trees[i] === undefined ? [] : otherFiles(trees[i].tree) })), [roots, trees, watchOf])
+  // A folder of a vault: the search cuts the vault's notes to it (`folder`), and its other files are cut here.
+  const vaults: SearchVault[] = useMemo(
+    () =>
+      places.map(({ root, folder }, i) => {
+        const files = trees[i] === null || trees[i] === undefined ? [] : otherFiles(trees[i].tree)
+        return { root, watch: watchOf(root) ?? NO_WATCH, dirs: [], files: folder === undefined ? files : files.filter((path) => inPlace(folder, path)), ...(folder !== undefined && { folder }) }
+      }),
+    [places, trees, watchOf],
+  )
   const all = useSearchResults(vaults, query, NO_PINS)
   const results = useMemo(() => all.filter((row) => row.kind === 'file'), [all])
   const pick = (hit: SearchCandidate): void => onPick(hit.path)

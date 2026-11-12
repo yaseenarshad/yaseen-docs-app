@@ -42,9 +42,9 @@ describe('S6: a 500 × 10 table stays fast', () => {
     console.log(
       `S6: open ${median(opens).toFixed(0)} ms · type ms/key: note ${note.toFixed(2)}, table ${table.toFixed(2)}, frozen table ${frozen.toFixed(2)}, frozen styled table ${styled.toFixed(2)} (medians of 48 keys, typed in turn; ratios ${(frozen / table).toFixed(2)} / ${(styled / table).toFixed(2)}) · paste 50×4 ${paste.toFixed(1)} ms (median of 3, jsdom)`,
     )
-    // The note is for the log: Milkdown's own `keepTableAlignPlugin` walks every cell of the table on each key
-    // (main has it too), so the table types ~9× slower than a note of the same text at idle (~7 ms against ~0.8).
-    // 60 ms catches a rescan of our own on top of it.
+    // The note is for the log: a table types slower than a note of the same text (its cells are nodes, and the table
+    // plugins map their decorations on each key). Milkdown's `keepTableAlignPlugin`, which once walked every cell per
+    // key, is removed in `createCrepe.ts` (YAZ-4869 item 26). 60 ms catches a rescan of our own.
     expect(table).toBeLessThan(budgetMs(60))
     // The ratios only print (YAZ-3796): the round-1 freeze cost 1.17–1.24, and a loaded machine reached 1.21 with
     // the fix, so no time ceiling tells them apart. `tableSpeed.test.ts` holds "no change in typing speed" (YAZ-3790)

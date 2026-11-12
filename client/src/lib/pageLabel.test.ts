@@ -85,6 +85,13 @@ describe('isFolderPath', () => {
     expect(isFolderPath('/labels', '/labels/Plan.md')).toBe(false)
     expect(isFolderPath('/labels', '/labels/Gone')).toBe(false)
   })
+
+  it('the vault root itself is a folder (YAZ-4921), before any tree and with a trailing slash on the root', () => {
+    expect(isFolderPath('/roots', '/roots')).toBe(true)
+    expect(isFolderPath('/roots/', '/roots')).toBe(true)
+    expect(isFolderPath('/roots', '/roots/')).toBe(false)
+    expect(isFolderPath('/roots', '/rootsy')).toBe(false)
+  })
 })
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true

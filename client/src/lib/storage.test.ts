@@ -109,6 +109,18 @@ describe('listVaults (YAZ-2556 D2: the one vault list of ⌘O and `yaseendocs va
   it('a state with no vault is an empty list', () => {
     expect(listVaults({ ...defaultAppState(), windows: [win('w1', null)] })).toEqual([])
   })
+
+  it('a folder of a vault (YAZ-4922 D3) is its own row, "<folder> · in <vault>", open while a window shows it; its vault is open only where a window shows the vault', () => {
+    const vaults = listVaults({
+      recents: [{ path: '/v/a/Wiki', lastOpened: 30 }, { path: '/v/a', lastOpened: 20 }],
+      windows: [win('w1', '/v/a/Wiki')],
+      folders: { '/v/a/Wiki': { ...defaultFolderState(), in: '/v/a' }, '/v/a': { ...defaultFolderState(), name: 'Main' } },
+    })
+    expect(vaults).toEqual([
+      { path: '/v/a/Wiki', name: 'Wiki · in Main', key: null, open: true, lastUsed: 30 },
+      { path: '/v/a', name: 'Main', key: null, open: false, lastUsed: 20 },
+    ])
+  })
 })
 
 describe('storage.getVaultSets (YAZ-2602 D8)', () => {
@@ -343,6 +355,42 @@ describe('storage', () => {
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/z', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
     storage.setRoot(null)
     expect(storage.getRoots()).toEqual([])
+  })
+
+  it('a folder of a vault (YAZ-4922 D3): the window\'s place is the folder, and what it reads and writes is the vault', async () => {
+    b = installBridge({ ...defaultAppState(), folders: { '/v/Wiki': { ...defaultFolderState(), in: '/v' }, '/v': { ...defaultFolderState(), name: 'Main' } } }, { id: 'w1', root: '/v/Wiki', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    expect(storage.getPlaces()).toEqual(['/v/Wiki'])
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(storage.getRoot()).toBe('/v')
+    expect(storage.folderIn('/v')).toBe('/v/Wiki')
+    expect(storage.folderIn('/w')).toBeNull()
+    expect(storage.vaultName('/v')).toBe('Wiki · in Main')
+    // A vault added beside it keeps the place: the list of vaults goes back to main as places.
+    storage.setRoots([...storage.getRoots(), '/w'])
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ roots: ['/v/Wiki', '/w'] })
+    expect(storage.getRoots()).toEqual(['/v', '/w'])
+    // A vault folder renamed on disk: the folder of it follows, by segment.
+    storage.mirrorRoots(['/v2', '/w'])
+    expect(storage.getPlaces()).toEqual(['/v2/Wiki', '/w'])
+    // "Open in this window" on the vault's own row is the whole vault: an explicit switch.
+    storage.setRoot('/v')
+    expect(storage.getPlaces()).toEqual(['/v'])
+    expect(storage.folderIn('/v')).toBeNull()
+  })
+
+  it('a list of places from main (YAZ-4922 D3: a take, a workspace) is taken as it is: an empty folder-of window that takes its vault shows the whole vault', async () => {
+    b = installBridge({ ...defaultAppState(), folders: { '/v/Wiki': { ...defaultFolderState(), in: '/v' } } }, { id: 'w1', root: '/v/Wiki', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    // Open folder… on the vault itself, from the empty folder window: main hands the window ['/v'] (the demo found it stuck on the folder).
+    storage.setPlaces(['/v'])
+    expect(storage.getPlaces()).toEqual(['/v'])
+    expect(storage.folderIn('/v')).toBeNull()
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ roots: ['/v'] })
+    // And back: a workspace of the folder's place.
+    storage.setPlaces(['/v/Wiki', '/w'])
+    expect(storage.getPlaces()).toEqual(['/v/Wiki', '/w'])
+    expect(storage.getRoots()).toEqual(['/v', '/w'])
   })
 
   it('setWorkspace mirrors main and right identity in one call and keeps independent item arrays', () => {

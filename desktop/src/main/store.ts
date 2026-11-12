@@ -21,6 +21,8 @@ import {
   DEFAULT_FOLDER_PAGES,
   FOLDER_PAGE_CHOICES,
   type FolderPagesSettings,
+  calLine,
+  readColorStrength,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
   MAX_FOLD_KEYS_PER_FILE,
@@ -66,6 +68,10 @@ import {
   type TableDimPast,
   type TableNowMark,
   type TableRowBand,
+  TABLE_NEW_STYLES,
+  type TableNewStyle,
+  TABLE_TEXT_IN_CELLS,
+  type TableTextInCells,
   RIGHT_PANEL_DEFAULT_W,
   RIGHT_PANEL_MAX_W,
   RIGHT_PANEL_MIN_W,
@@ -115,6 +121,7 @@ import {
   mergeFavoritesOrder,
   normalizeRoots,
   rootOfPath,
+  placeVaults,
   stripSlash,
   type AppState,
   type CodeOutlineSort,
@@ -172,6 +179,10 @@ import {
   type WindowBounds,
   type WindowEntry,
   DIAGRAM_DARK_COLORS,
+  EMBED_REST_SECONDS,
+  NEW_BOARD_FOLDERS,
+  type EmbedRestSeconds,
+  type NewBoardFolder,
   NOTICE_LENGTHS,
   MEDIA_HOVER_ZOOM_SIZES,
   TAB_SLEEP_AFTER,
@@ -190,6 +201,7 @@ import {
   type TabRef,
   normalizeFilesZoom,
   DEFAULT_HEADER_ROW,
+  DEFAULT_SUBHEADER_ROW,
   HEADER_ROW_PARTS,
   headerRowOwn,
   type HeaderRow,
@@ -498,6 +510,11 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   calendarScale: oneOf(FOLDER_PAGE_CHOICES.calendarScale),
   cardTitles: oneOf(FOLDER_PAGE_CHOICES.cardTitles),
   hideWeekends: isBool,
+  // YAZ-4878: a width 1–12 and a colour the app reads; a file from before them reads 1 px, Gray.
+  weekLine: (v) => calLine(v) === v,
+  dayLine: (v) => calLine(v) === v,
+  weekLineColor: (v) => readColorStrength(v) !== null,
+  dayLineColor: (v) => readColorStrength(v) !== null,
   showFolderPageFiles: isBool,
   askBeforeDelete: isBool,
   confirmChanges: isBool,
@@ -519,6 +536,8 @@ export function sanitizeFolderPages(raw: unknown): FolderPagesSettings {
 
 /** Settings › Tables › Header row (YAZ-4774) on load: each valid part is kept, a missing or broken one is its default. */
 export const sanitizeHeaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_HEADER_ROW, ...headerRowOwn(raw) })
+/** Settings › Tables › Subheader row (YAZ-4899): the default's parts under what reads. */
+export const sanitizeSubheaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_SUBHEADER_ROW, ...headerRowOwn(raw) })
 
 /**
  * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
@@ -681,9 +700,14 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableBandRows: (v): v is TableBandRows => typeof v === 'string' && (TABLE_BAND_ROWS as readonly string[]).includes(v),
   tableBandBold: (v): v is boolean => typeof v === 'boolean',
   tableHeaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
+  tableSubheaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
+  tableStickySubheaders: (v): v is boolean => typeof v === 'boolean',
+  tableStickyHeader: (v): v is boolean => typeof v === 'boolean',
+  tableTextInCells: (v): v is TableTextInCells => typeof v === 'string' && (TABLE_TEXT_IN_CELLS as readonly string[]).includes(v),
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
   tableNowButton: (v): v is boolean => typeof v === 'boolean',
   tableCellNoteButton: (v): v is boolean => typeof v === 'boolean',
+  tableNewStyle: (v): v is TableNewStyle => typeof v === 'string' && (TABLE_NEW_STYLES as readonly string[]).includes(v),
   tableDimPast: (v): v is TableDimPast => typeof v === 'string' && (TABLE_DIM_PASTS as readonly string[]).includes(v),
   tableShadeDarkness: (v): v is number => isFiniteNumber(v) && v >= TABLE_SHADE_MIN && v <= TABLE_SHADE_MAX && v % TABLE_SHADE_STEP === 0,
   noteBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_INDENT_MIN && v <= NOTE_BULLET_INDENT_MAX,
@@ -714,6 +738,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.
   canvas: isCanvasPrefs,
   diagramDarkColors: (v): v is DiagramDarkColors => typeof v === 'string' && (DIAGRAM_DARK_COLORS as readonly string[]).includes(v),
+  embedRestSeconds: (v): v is EmbedRestSeconds => typeof v === 'number' && (EMBED_REST_SECONDS as readonly number[]).includes(v),
+  newBoardFolder: (v): v is NewBoardFolder => typeof v === 'string' && (NEW_BOARD_FOLDERS as readonly string[]).includes(v),
   // YAZ-3038 (Draw's 🔒 YAZ-1775 D5): an absolute path the user picked, or null for `<userData>/library`. Never
   // `''` — an empty string would resolve to the process cwd, which is not a place for a user's library.
   libraryFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
@@ -777,6 +803,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.folderPages = sanitizeFolderPages(src.folderPages)
   out.tableHeaderRow = sanitizeHeaderRow(src.tableHeaderRow)
+  out.tableSubheaderRow = sanitizeSubheaderRow(src.tableSubheaderRow)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)
   out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)
@@ -1017,6 +1044,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     tocSwitches: sanitizeSwitches(raw.tocSwitches),
     name: cleanVaultName(raw.name),
     key: cleanVaultKey(raw.key),
+    // "A folder of <vault>" (YAZ-4922 D3): kept only as an absolute path; whether it holds the bucket is `sanitizeFolders`'.
+    ...(typeof raw.in === 'string' && isAbsolute(raw.in) && { in: stripSlash(raw.in) }),
   }
 }
 
@@ -1032,6 +1061,8 @@ function sanitizeFolders(raw: unknown): Record<string, FolderState> {
       if (taken.has(clean.key)) clean.key = null
       else taken.add(clean.key)
     }
+    // A folder of a vault must sit inside that vault (YAZ-4922 D3): any other `in` is dropped.
+    if (clean.in != null && !root.startsWith(`${clean.in}/`)) delete clean.in
     out[root] = clean
   }
   return out
@@ -1365,6 +1396,8 @@ export function createStore(filePath: string): Store {
         ...(patch.lastFile !== undefined ? { lastFile: patch.lastFile } : {}),
         ...(patch.name !== undefined ? { name: cleanVaultName(patch.name) } : {}),
         ...(key !== undefined ? { key } : {}),
+        // "A folder of <vault>" (YAZ-4922 D3): an absolute folder strictly inside the vault, else nothing; null ends it.
+        ...(patch.in !== undefined ? { in: typeof patch.in === 'string' && isAbsolute(patch.in) && root.startsWith(`${stripSlash(patch.in)}/`) ? stripSlash(patch.in) : null } : {}),
       }
       // One vault per number (YAZ-2555 D2): the same commit takes it from the vault that had it.
       commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })
@@ -1423,7 +1456,8 @@ export function createStore(filePath: string): Store {
       const normalized = withTabStrip({ ...entry, roots: normalizeRoots(entry.roots ?? [], entry.root), tabs, rightPanel: normalizeRightPanel(entry.rightPanel, tabs) }, entry.tabStrip)
       const windows = state.windows.some((w) => w.id === entry.id) ? state.windows.map((w) => (w.id === entry.id ? normalized : w)) : [...state.windows, normalized]
       // The use goes in the commit of the window (YAZ-2663 R2): one write, one broadcast. Its vault is the one of the window that holds the page.
-      const vault = opened === null ? null : rootOfPath(normalized.roots, opened)
+      // A folder of a vault (YAZ-4922 D3) counts the use for its vault: its Recents are the vault's, under the folder.
+      const vault = opened === null ? null : rootOfPath(placeVaults(state.folders, normalized.roots), opened)
       const folders = opened === null || vault === null ? state.folders : { ...state.folders, [vault]: { ...folderOf(vault), opens: addOpen(folderOf(vault).opens, opened, now) } }
       // The board's places of tabs this window no longer has go in the same commit (D28): a stale card would take a cell.
       commit({ ...state, windows, folders, tabCanvas: pruneCanvas(state.tabCanvas, normalized) })
@@ -1544,6 +1578,8 @@ export function createStore(filePath: string): Store {
           remap(root),
           {
             ...folder,
+            // A folder of a vault (YAZ-4922 D3) follows its vault's folder, as its own path follows its own.
+            ...(folder.in != null && { in: remap(folder.in) }),
             expanded: folder.expanded.map(remapFold),
             lastFile: folder.lastFile === null ? null : remap(folder.lastFile),
             folds: remapKeys(folder.folds, remap),

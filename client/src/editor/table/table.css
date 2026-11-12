@@ -100,45 +100,47 @@
 }
 
 /* Header row (YAZ-4774): Settings › Tables › Header row on `.app`, a note table's own parts on its block, a folder
-   table's on its `.view-table` (`views.css`), each as `data-table-header-*`; the nearest one sets each variable. Gray
+   table's on its `.view-table` (`views.css`), a calendar's day names on its `.view-cal__week`, the "Aa" chip on its
+   `.view-style__chip` (YAZ-4834 P1) and a Super table view's on its `.super-view` (P21), each as `data-table-header-*`;
+   the nearest one sets each variable. Gray
    (and Bold) unset theirs, so each kind of table keeps its own text colour (and bold). A colour is its fill swatch at
    2.5 times the strength: Light is 6% of the text colour, the look of before, or 15% of the colour. Muted is 1. */
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='gray'] { --table-header-hue: initial; --table-header-scale: 1; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='red'] { --table-header-hue: var(--table-fill-solid-red); --table-header-scale: 2.5; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='orange'] { --table-header-hue: var(--table-fill-solid-orange); --table-header-scale: 2.5; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='yellow'] { --table-header-hue: var(--table-fill-solid-yellow); --table-header-scale: 2.5; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='green'] { --table-header-hue: var(--table-fill-solid-green); --table-header-scale: 2.5; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='teal'] { --table-header-hue: var(--table-fill-solid-teal); --table-header-scale: 2.5; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='blue'] { --table-header-hue: var(--table-fill-solid-blue); --table-header-scale: 2.5; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='purple'] { --table-header-hue: var(--table-fill-solid-purple); --table-header-scale: 2.5; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='pink'] { --table-header-hue: var(--table-fill-solid-pink); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='gray'] { --table-header-hue: initial; --table-header-scale: 1; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='red'] { --table-header-hue: var(--table-fill-solid-red); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='orange'] { --table-header-hue: var(--table-fill-solid-orange); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='yellow'] { --table-header-hue: var(--table-fill-solid-yellow); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='green'] { --table-header-hue: var(--table-fill-solid-green); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='teal'] { --table-header-hue: var(--table-fill-solid-teal); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='blue'] { --table-header-hue: var(--table-fill-solid-blue); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='purple'] { --table-header-hue: var(--table-fill-solid-purple); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='pink'] { --table-header-hue: var(--table-fill-solid-pink); --table-header-scale: 2.5; }
 /* Black (YAZ-4794 demo) at 5 times the strength: Light 30%, Medium 60%, Strong solid black. */
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-color='black'] { --table-header-hue: var(--table-fill-solid-black); --table-header-scale: 5; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-strength='off'] { --table-header-strength: 0; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-strength='light'] { --table-header-strength: 6; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-strength='medium'] { --table-header-strength: 12; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-strength='strong'] { --table-header-strength: 20; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-weight='bold'] { --table-header-weight: initial; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-weight='regular'] { --table-header-weight: 400; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='black'] { --table-header-hue: var(--table-fill-solid-black); --table-header-scale: 5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-strength='off'] { --table-header-strength: 0; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-strength='light'] { --table-header-strength: 6; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-strength='medium'] { --table-header-strength: 12; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-strength='strong'] { --table-header-strength: 20; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-weight='bold'] { --table-header-weight: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-weight='regular'] { --table-header-weight: 400; }
 /* Text colour (YAZ-4794): Muted and Full unset `--table-header-ink`, so a nearer Muted or Full beats a colour from
    further out; a colour is its cell text colour (above, darker in light and lighter in dark), which wins over the mute. */
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='muted'] { --table-header-mute: 1; --table-header-ink: initial; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='full'] { --table-header-mute: 0; --table-header-ink: initial; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='white'] { --table-header-ink: #fff; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='red'] { --table-header-ink: var(--table-text-red); }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='orange'] { --table-header-ink: var(--table-text-orange); }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='yellow'] { --table-header-ink: var(--table-text-yellow); }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='green'] { --table-header-ink: var(--table-text-green); }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='teal'] { --table-header-ink: var(--table-text-teal); }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='blue'] { --table-header-ink: var(--table-text-blue); }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='purple'] { --table-header-ink: var(--table-text-purple); }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-text='pink'] { --table-header-ink: var(--table-text-pink); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='muted'] { --table-header-mute: 1; --table-header-ink: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='full'] { --table-header-mute: 0; --table-header-ink: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='white'] { --table-header-ink: #fff; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='red'] { --table-header-ink: var(--table-text-red); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='orange'] { --table-header-ink: var(--table-text-orange); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='yellow'] { --table-header-ink: var(--table-text-yellow); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='green'] { --table-header-ink: var(--table-text-green); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='teal'] { --table-header-ink: var(--table-text-teal); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='blue'] { --table-header-ink: var(--table-text-blue); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='purple'] { --table-header-ink: var(--table-text-purple); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='pink'] { --table-header-ink: var(--table-text-pink); }
 /* Align (YAZ-4794): Follow column unsets it. The rules that use it (below, `views.css`) apply only where the nearest
    `data-table-header-align` is not `follow`, so a header cell keeps its column's own alignment until someone picks. */
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-align='follow'] { --table-header-align: initial; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-align='left'] { --table-header-align: left; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-align='center'] { --table-header-align: center; }
-:is(.app, .milkdown-table-block, .view-table, .header-row-preview)[data-table-header-align='right'] { --table-header-align: right; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-align='follow'] { --table-header-align: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-align='left'] { --table-header-align: left; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-align='center'] { --table-header-align: center; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-align='right'] { --table-header-align: right; }
 
 /* A note table's header row: bold in the text colour by default. A cell's own fill and text colour still win (below). */
 .milkdown .ProseMirror .milkdown-table-block th {
@@ -154,36 +156,139 @@
   text-align: var(--table-header-align) !important;
 }
 
-/* Stripes: every second body row. Row 1 of the tbody is the header row. */
-.milkdown .ProseMirror .milkdown-table-block[data-table-stripes] :where(tr:nth-child(2n + 3)) > td {
+/* Subheader rows (YAZ-4899, `tableSubhead.ts`): the header row's parts again, as `data-table-subheader-*` on `.app`
+   (Settings › Tables › Subheader row) and a note table's block (its own `subheader` part); each subheader cell carries
+   `data-subhead`. The same scale as the header's: Gray is the text colour, a colour the cell fill colour. */
+:is(.app, .milkdown-table-block)[data-table-subheader-color='gray'] { --table-subheader-hue: initial; --table-subheader-scale: 1; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='red'] { --table-subheader-hue: var(--table-fill-solid-red); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='orange'] { --table-subheader-hue: var(--table-fill-solid-orange); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='yellow'] { --table-subheader-hue: var(--table-fill-solid-yellow); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='green'] { --table-subheader-hue: var(--table-fill-solid-green); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='teal'] { --table-subheader-hue: var(--table-fill-solid-teal); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='blue'] { --table-subheader-hue: var(--table-fill-solid-blue); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='purple'] { --table-subheader-hue: var(--table-fill-solid-purple); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='pink'] { --table-subheader-hue: var(--table-fill-solid-pink); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='black'] { --table-subheader-hue: var(--table-fill-solid-black); --table-subheader-scale: 5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='off'] { --table-subheader-strength: 0; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='light'] { --table-subheader-strength: 6; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='medium'] { --table-subheader-strength: 12; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='strong'] { --table-subheader-strength: 20; }
+:is(.app, .milkdown-table-block)[data-table-subheader-weight='bold'] { --table-subheader-weight: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-weight='regular'] { --table-subheader-weight: 400; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='muted'] { --table-subheader-mute: 1; --table-subheader-ink: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='full'] { --table-subheader-mute: 0; --table-subheader-ink: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='white'] { --table-subheader-ink: #fff; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='red'] { --table-subheader-ink: var(--table-text-red); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='orange'] { --table-subheader-ink: var(--table-text-orange); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='yellow'] { --table-subheader-ink: var(--table-text-yellow); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='green'] { --table-subheader-ink: var(--table-text-green); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='teal'] { --table-subheader-ink: var(--table-text-teal); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='blue'] { --table-subheader-ink: var(--table-text-blue); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='purple'] { --table-subheader-ink: var(--table-text-purple); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='pink'] { --table-subheader-ink: var(--table-text-pink); }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='follow'] { --table-subheader-align: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='left'] { --table-subheader-align: left; }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='center'] { --table-subheader-align: center; }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='right'] { --table-subheader-align: right; }
+
+/* A subheader cell: the tint, weight and text colour of the parts above (Medium, Bold, Full by default). Before the
+   stripes and the fills (Order matters): a cell's own fill and text colour still win. */
+.milkdown .ProseMirror .milkdown-table-block td[data-subhead] {
+  --table-cell-tint: color-mix(in srgb, var(--table-subheader-hue, var(--crepe-color-on-background)) calc(var(--table-subheader-strength, 12) * var(--table-subheader-scale, 1) * 1%), transparent);
+  font-weight: var(--table-subheader-weight, bold);
+  color: var(--table-subheader-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-subheader-mute, 0) * 100%), currentColor));
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-subheader-align]:not([data-table-subheader-align='follow']) td[data-subhead],
+.app[data-table-subheader-align]:not([data-table-subheader-align='follow']) .milkdown .ProseMirror .milkdown-table-block:not([data-table-subheader-align]) td[data-subhead] {
+  text-align: var(--table-subheader-align) !important;
+}
+
+/* A sticky subheader row (Settings' default on `.app`, the table's own `data-table-sticky-subheaders` first) paints its
+   tint over the page colour, as a frozen row does, so the rows it moves over do not show through; under the frozen
+   rows (z-index 2). Its `translateY` is a Web Animation on the row (`tableSubhead.ts`). */
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-row {
+  position: relative;
+  z-index: 1;
+}
+
+.app[data-table-sticky-subheaders='on'] .milkdown .ProseMirror .milkdown-table-block:not([data-table-sticky-subheaders='off']) .table-subhead-row > td,
+.milkdown .ProseMirror .milkdown-table-block[data-table-sticky-subheaders='on'] .table-subhead-row > td {
+  background-color: var(--bg);
+  background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
+}
+
+/* THE CHEVRON'S PLACE (the YAZ-4899 demo approved it): inside the subheader row's first cell, before its text, floated so
+   the text flows after it. This one rule and `chevronWidget` in `tableSubhead.ts` place it. Down when open, right when
+   the section is collapsed. The widget sits in the cell BEFORE its first paragraph, whose own 4 px top padding puts the
+   text's first line 4 px under the cell's content edge: the same 4 px on top, then as tall as one line of the cell's
+   text (`1lh`) with the glyph centred in it, so it sits on the middle of the text at any font size or zoom (the
+   YAZ-4820 checker: it sat 6 px high; measured 0 px off in the built app after this). */
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron {
+  float: left;
+  display: flex;
+  align-items: center;
+  width: 16px;
+  height: 1lh;
+  margin: 4px 4px 0 -4px;
+  cursor: pointer;
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron > svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  transition: transform 120ms ease;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron[data-collapsed] > svg {
+  transform: rotate(-90deg);
+}
+
+/* "· 12 rows" after the collapsed subheader row's text: quiet, never selected, never edited. */
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-count {
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Stripes: every second body row. Row 1 of the tbody is the header row. A table with subheader rows (`data-table-subheads`)
+   starts them again after each subheader row (YAZ-4899): `table-stripe-row` from `tableSubhead.ts` in place of `nth-child`. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-stripes]:not([data-table-subheads]) :where(tr:nth-child(2n + 3)) > td,
+.milkdown .ProseMirror .milkdown-table-block[data-table-stripes][data-table-subheads] .table-stripe-row > td {
   --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background) 4%, transparent);
 }
 
 /* Fills and text colours: a name, or a custom `#rrggbb` from the cell's own `--table-fill-custom` /
-   `--table-text-custom` (YAZ-3817). A custom fill draws at `--table-fill-wash`, a custom text colour as picked. */
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='red'] { --table-cell-tint: var(--table-fill-red); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='orange'] { --table-cell-tint: var(--table-fill-orange); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='yellow'] { --table-cell-tint: var(--table-fill-yellow); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='green'] { --table-cell-tint: var(--table-fill-green); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='teal'] { --table-cell-tint: var(--table-fill-teal); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='blue'] { --table-cell-tint: var(--table-fill-blue); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='purple'] { --table-cell-tint: var(--table-fill-purple); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='pink'] { --table-cell-tint: var(--table-fill-pink); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='grey'] { --table-cell-tint: var(--table-fill-grey); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='brown'] { --table-cell-tint: var(--table-fill-brown); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill^='#'] { --table-cell-tint: color-mix(in srgb, var(--table-fill-custom) var(--table-fill-wash), transparent); }
+   `--table-text-custom` (YAZ-3817). A custom fill draws at `--table-fill-wash`, a custom text colour as picked. A Super
+   table view's cells (`.super-view`, `super/superTable.css`) wear the same rules (YAZ-4834 P17). */
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='red'] { --table-cell-tint: var(--table-fill-red); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='orange'] { --table-cell-tint: var(--table-fill-orange); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='yellow'] { --table-cell-tint: var(--table-fill-yellow); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='green'] { --table-cell-tint: var(--table-fill-green); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='teal'] { --table-cell-tint: var(--table-fill-teal); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='blue'] { --table-cell-tint: var(--table-fill-blue); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='purple'] { --table-cell-tint: var(--table-fill-purple); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='pink'] { --table-cell-tint: var(--table-fill-pink); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='grey'] { --table-cell-tint: var(--table-fill-grey); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='brown'] { --table-cell-tint: var(--table-fill-brown); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill^='#'] { --table-cell-tint: color-mix(in srgb, var(--table-fill-custom) var(--table-fill-wash), transparent); }
 
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='red'] { color: var(--table-text-red); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='yellow'] { color: var(--table-text-yellow); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='green'] { color: var(--table-text-green); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='teal'] { color: var(--table-text-teal); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='purple'] { color: var(--table-text-purple); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='pink'] { color: var(--table-text-pink); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='brown'] { color: var(--table-text-brown); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color^='#'] { color: var(--table-text-custom); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='red'] { color: var(--table-text-red); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='yellow'] { color: var(--table-text-yellow); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='green'] { color: var(--table-text-green); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='teal'] { color: var(--table-text-teal); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='purple'] { color: var(--table-text-purple); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='pink'] { color: var(--table-text-pink); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='brown'] { color: var(--table-text-brown); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color^='#'] { color: var(--table-text-custom); }
 
 /* A table on a bullet's marker line (YAZ-3805, `slashMenu.ts`): the item's first child, after the fold
    arrow when there is one. No top margin, so the header row is level with the marker. The zoom pill's
@@ -227,11 +332,27 @@
   vertical-align: bottom;
 }
 
-/* No wrap: one line per cell paragraph, cut with an ellipsis. */
-.milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td) > p {
+/* Clip (YAZ-4900): one line per cell paragraph, cut with an ellipsis: plain lines, and bullet, sub-bullet and to-do
+   lines too (every `p` in the cell). Settings' default is on `.app` (`data-table-text`),
+   the table's own `data-table-nowrap` (Clip) / `data-table-wrap` (Wrap) wins over it, and a column's own `data-cell-text`
+   on its cells wins over both. A caret in a clipped cell keeps the one line and scrolls it sideways. A cut cell shows its
+   full text on hover as a card (`cellNotePreview.ts`, YAZ-4901). */
+.app[data-table-text='clip'] .milkdown .ProseMirror .milkdown-table-block:not([data-table-wrap]) :is(th, td):not([data-cell-text='wrap']) p,
+.milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td):not([data-cell-text='wrap']) p,
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] p {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding-right: var(--table-clip-pad, 0);
+}
+
+/* A clipped cell with a note keeps 10 px free at its right (YAZ-4901 item 11), so the "…" ends before the corner
+   triangle and never runs under it; the same for the cell under the pointer while the cell note button shows over its
+   corner (`cellNoteButton.ts`, the editor's `.milkdown` box). A wrapped cell's line has no padding to lose (`0`). */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td).has-cell-note,
+.milkdown:has(> .cell-note-button[data-show='true']) .ProseMirror .milkdown-table-block :is(th, td):hover {
+  --table-clip-pad: 10px;
 }
 
 /* Fill down (YAZ-3765, S4): the handle sits inside the corner of the bottom-right selected cell
@@ -415,9 +536,35 @@
   transition-delay: 0s;
 }
 
-/* None in a read-only note, and none for a table that a folded bullet, a folded heading or the outline zoom hides. */
-.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor,
+/* None in a read-only note, and none for a table that a folded bullet, a folded heading or the outline zoom hides. A
+   Super table keeps its anchor in a read-only note, without the pill: its tabs switch the views, which change no
+   file, and a view is all you see of the table (YAZ-4869, YAZ-4897). */
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor:not([data-super]),
 .milkdown .ProseMirror .table-zoom-anchor:has(+ :is([data-outline-folded='true'], [data-heading-folded='true'], .outline-zoom-hidden)) {
+  display: none;
+}
+
+/* Super tables (YAZ-4869 S2, `super/superTables.ts`, `super/SuperTable.tsx`). While a view shows, a node decoration
+   hides the table block, and the anchor holds the view in the page's flow. The bar is the folder page's view bar
+   (`superTable.css`), in the flow above the table with room over it, the zoom pill at its right end, and it shows all
+   the time (the YAZ-4869 demo: "more margin at the top of the table … replicate the same line from folder pages"). */
+.milkdown .ProseMirror .milkdown-table-block.table-super-hidden {
+  display: none;
+}
+
+.milkdown .ProseMirror .table-zoom-anchor[data-super] {
+  height: auto;
+  margin-top: 12px;
+}
+
+.milkdown .ProseMirror .table-zoom-anchor > .table-super-bar {
+  position: relative;
+  /* Above the view's sticky column header (3) and group headers (2), which come later in the page (YAZ-4896). */
+  z-index: 4;
+  margin-bottom: 8px;
+}
+
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor[data-super] .document-zoom {
   display: none;
 }
 
@@ -705,7 +852,7 @@
 
 /* The open cell note: a card just under its cell, right-aligned to it (the YAZ-3818 demo, `cellNoteCard.ts`). The note
    block itself, taken out of the flow, so nothing on the page moves; `cellNoteCard.ts` sets its place on the editor's
-   `.milkdown` box. The link hover card's look (`.cell-note-preview` below). */
+   `.milkdown` box. The link hover card's look (`.cell-note-preview`, `cellHoverCard.css`). */
 .milkdown .ProseMirror .cell-note.cell-note--open {
   display: block;
   position: absolute;
@@ -1203,49 +1350,6 @@
   position: relative;
   width: 12px;
   height: 12px;
-}
-
-/* A cell note's preview (D14, `cellNotePreview.ts`): the link hover card's look (`boardPreview.css` `.board-preview`),
-   on the page's body. Read-only: the pointer goes through it. */
-.cell-note-preview {
-  position: fixed;
-  z-index: 40;
-  width: 260px;
-  overflow: hidden;
-  pointer-events: none;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
-  color: var(--fg);
-  font-size: 12.5px;
-}
-
-.cell-note-preview__header {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cell-note-preview__hint {
-  padding: 4px 12px 0;
-  color: var(--fg-muted);
-  font-size: 11px;
-}
-
-.cell-note-preview__body {
-  padding: 6px 12px 8px;
-}
-
-.cell-note-preview__line {
-  min-height: 1.4em;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: pre;
 }
 
 /* The row and column handles take a press 6px around them too (the YAZ-4163 demo): a drag along them selects rows or

@@ -1,4 +1,5 @@
-import { createContext, Fragment, useContext, useState, type CSSProperties, type ReactNode } from 'react'
+import { createContext, Fragment, useContext, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { ImageOf } from './imageCell'
 import { isFolderRow, isShortcut } from '../../links/shortcuts'
 import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
@@ -7,17 +8,20 @@ import { type Row, propertyLabel } from '../engine'
 import { isFolderSettingsPath, type PropertyDecl } from '@shared/types'
 import { basename, dirname } from '../../lib/paths'
 import { fileKind } from '@shared/fileKind'
-import { IconsContext, fileIconAttrs } from '../../sidebar/FileIcon'
+import { FileIcon } from '../../sidebar/FileIcon'
 import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value, fromYaml, linkText, render } from '../expr'
 import { formatDateValue, formatNumber } from '../columnFormat'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import '../../editor/wikilink/wikilink.css'
+import type { PathInfo } from '../../editor/wikilink/linkPillLook'
+import { PillEnds } from '../../editor/wikilink/LinkPillParts'
 import { summarize } from '../summaries'
 import { FolderIcon, ShortcutIcon } from './icons'
 import { HoverTip } from '../../components/HoverTip'
 import { canonicalKey } from './keys'
 import { GroupHeaderMenu } from './GroupHeaderMenu'
 import { OtherFilesFolderMove } from './otherFilesMove'
+import { GroupLevelStepsContext } from '../groupLevelSteps'
 
 /**
  * One group's header content (4C, GRO-2137), shared by Table today and Cards / List / Board
@@ -81,30 +85,29 @@ function LinkChip({ link, resolve }: { link: LinkValue | FileValue; resolve?: Re
         {text}
       </span>
     )
-  const path = link instanceof FileValue ? link.record.path : resolve?.(link.target)?.record.path
-  return path === undefined ? (
+  const record = link instanceof FileValue ? link.record : resolve?.(link.target)?.record
+  return record === undefined ? (
     <span className="wikilink wikilink--unresolved view-link-pill" title={text}>
-      {text}
+      <PillEnds text={text} />
     </span>
   ) : (
-    <PillWithIcon path={path} text={text} />
+    <PillWithIcon path={record.path} text={text} info={record.id === undefined ? { folder: record.folder } : { id: record.id, folder: record.folder }} />
   )
 }
 
 /**
  * A resolved pill with the icon its page has in the sidebar (YAZ-4544 4G), as the note editor's pill has (YAZ-3609
- * D13): the icon's attributes on the pill, drawn on its `::before`. Settings › File icons reach it through the app's
- * CSS (`data-sidebar-file-icons`) and `IconsContext`, as they reach the note's pills.
+ * D13): a `FileIcon` inside the pill, before the name and after the head piece (YAZ-4924), so the pill reads as the
+ * note's. Settings › File icons reach it through the app's CSS (`data-sidebar-file-icons`) and `IconsContext`, as
+ * they reach the note's pills.
  */
-function PillWithIcon({ path, text }: { path: string; text: string }) {
-  const icons = useContext(IconsContext)
+function PillWithIcon({ path, text, info }: { path: string; text: string; info?: PathInfo }) {
   // A folder resolves to its directory, the editor's rule (no file kind); a folder row's page is its `.folder.md`.
   const settings = isFolderSettingsPath(path)
   const folder = settings || fileKind(basename(path)) === null
-  const { style, ...attrs } = fileIconAttrs(icons, settings ? dirname(path) : path, folder)
   return (
-    <span {...attrs} style={style} className={`wikilink view-link-pill file-icon file-icon--${folder ? 'dir' : 'file'}`} data-link-path={path} title={text}>
-      {text}
+    <span className="wikilink view-link-pill" data-link-path={path} title={text}>
+      <PillEnds text={text} info={info} icon={<FileIcon path={settings ? dirname(path) : path} folder={folder} />} />
     </span>
   )
 }
@@ -197,8 +200,8 @@ function NoteCell({ value, name, resolve }: { value: Value; name: string; resolv
 
 /**
  * The chip of the folder the note lives in, by the title its Folder group shows (YAZ-4801 demo: "how come no folder
- * showing up here?" — a note directly in the page shows the page, never a blank). A click opens that folder's page;
- * the vault root has no page, so its chip opens nothing.
+ * showing up here?" — a note directly in the page shows the page, never a blank). A click opens that folder's page,
+ * the vault root's too (YAZ-4921: `absFrom(root, '')` is the root itself).
  */
 function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?: Resolver }) {
   const pages = useContext(FolderPages)
@@ -207,7 +210,7 @@ function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?:
   if (pages.folderColumn !== 'last') return <FolderPath dir={dir} pages={pages} />
   const title = pages.title(dir)
   const open = pages.open
-  if (open === undefined || dir === '') return <span className="view-table__chip" title={title}>{title}</span>
+  if (open === undefined) return <span className="view-table__chip" title={title}>{title}</span>
   return (
     <button
       type="button"
@@ -364,9 +367,12 @@ export interface GroupHeaderProps {
   resolve?: Resolver
   /** The group's `groupBy` level, outer = 0 (the default): its spec gives the header's style (YAZ-3742). */
   level?: number
+  /** The group's collapse key (`spotKey`): a nested Folder group's menu finds the groups below it by it (YAZ-4928). */
+  gk?: string
 }
 
-export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, newButton = true, resolve, level = 0 }: GroupHeaderProps) {
+export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, newButton = true, resolve, level = 0, gk }: GroupHeaderProps) {
+  const unit = useUnit()
   // `level` counts the levels that group (YAZ-4544): an entry with no property is none.
   const look = groupValueLook(shownGroupLevels(view)[level])
   // A Folder level's group (YAZ-4564 D27) opens that folder's page; the page's own folder and the vault root have none.
@@ -384,17 +390,37 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
   const folderTray = useContext(OtherFilesFolderMove)
   const subfolder = menu !== null && folderTray !== null && typeof groupKey === 'string' && shownGroupLevels(view)[level]?.property === 'file.folder' ? folderTray.folderAt(groupKey) : null
   const moveFolder = subfolder === null || folderTray === null ? undefined : { name: subfolder.name, run: () => folderTray.move(subfolder.dir) }
+  // "Expand all" / "Collapse all" over the folder groups below a nested Folder header (YAZ-4928): read when the menu opens.
+  const levels = useContext(GroupLevelStepsContext)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  /** After the pick the keyboard is on this header (the menu is gone), so the next ⌘Z reaches `onUndoKey`. */
+  const thenFocus = (run: (() => void) | undefined) =>
+    run === undefined
+      ? undefined
+      : () => {
+          run()
+          toggleRef.current?.focus({ preventScroll: true })
+        }
+  const steps = menu !== null && gk !== undefined ? levels?.branch?.(gk) : undefined
+  const branch = steps === undefined ? undefined : { expandAll: thenFocus(steps.expandAll), collapseAll: thenFocus(steps.collapseAll) }
+  /** ⌘Z / ⇧⌘Z on a group header (YAZ-4928): the page's history, as the table and a calendar card read it. */
+  const onUndoKey = (e: ReactKeyboardEvent) => {
+    const history = levels?.history
+    if (history === undefined || e.key.toLowerCase() !== 'z' || !e.metaKey || e.altKey || e.ctrlKey) return
+    if (e.shiftKey ? history.redo() : history.undo()) e.preventDefault()
+  }
   return (
     <div
       className="view-group"
+      onKeyDown={onUndoKey}
       onContextMenu={(e) => {
         e.preventDefault()
         e.stopPropagation()
         setMenu({ x: e.clientX, y: e.clientY })
       }}
     >
-      {menu !== null && <GroupHeaderMenu x={menu.x} y={menu.y} collapsed={collapsed} onToggle={onToggle} onNew={onNew} moveFolder={moveFolder} onClose={() => setMenu(null)} />}
-      <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
+      {menu !== null && <GroupHeaderMenu x={menu.x} y={menu.y} collapsed={collapsed} onToggle={onToggle} onNew={onNew} moveFolder={moveFolder} branch={branch} onClose={() => setMenu(null)} />}
+      <button ref={toggleRef} type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
         <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />
         </svg>
@@ -410,7 +436,7 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
         </button>
       )}
       {onNew !== undefined && newButton && (
-        <button type="button" className="view-group__new" aria-label={`New note in group ${label}`} title="New note" onClick={onNew}>
+        <button type="button" className="view-group__new" aria-label={unit(`New note in group ${label}`)} title={unit('New note')} onClick={onNew}>
           <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M8 3v10M3 8h10" />
           </svg>

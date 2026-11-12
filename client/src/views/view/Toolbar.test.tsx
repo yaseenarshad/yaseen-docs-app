@@ -860,6 +860,43 @@ describe('filter menu (YAZ-1227-1229)', () => {
     expect(yaml()).not.toContain('filters:')
   })
 
+  it('contains / does not contain / starts with / ends with on a text column ignore case (YAZ-4919 round 2): the panel writes `lower()` and the value lowercased, and drops one pair of quotes', () => {
+    const { el, onChange, def } = mount(RULE)
+    const pop = openMenu(el, 'Filter')
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'contains')
+    expect(def().views[0].filters).toEqual({ and: ['note.status.lower().contains("idea")'] })
+    type(byLabel(pop, 'Value'), '"Dr"')
+    expect(def().views[0].filters).toEqual({ and: ['note.status.lower().contains("dr")'] })
+    expect(byLabel<HTMLInputElement>(pop, 'Value').value).toBe('dr')
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'startsWith')
+    expect(def().views[0].filters).toEqual({ and: ['note.status.lower().startsWith("dr")'] })
+    // Is stays exact, as typed.
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'is')
+    type(byLabel(pop, 'Value'), '"Dr"')
+    expect(def().views[0].filters).toEqual({ and: ['note.status == "\\"Dr\\""'] })
+    expect(onChange).toHaveBeenCalledTimes(5)
+  })
+
+  it('an old exact `contains` rule reads as "contains" with its value as saved, is not rewritten on read, and takes the new form on its next edit', () => {
+    const { el, onChange, def, yaml } = mount(`views:
+  - type: table
+    name: T
+    filters:
+      and:
+        - note.status.contains("Dr")
+    order:
+      - file.name
+`)
+    const pop = openMenu(el, 'Filter')
+    expect(byLabel<HTMLSelectElement>(pop, 'Operator').value).toBe('contains')
+    expect(byLabel<HTMLInputElement>(pop, 'Value').value).toBe('Dr')
+    expect(byText(el, '.view-toolbar__badge', '1')).toBeDefined()
+    expect(onChange).not.toHaveBeenCalled()
+    expect(yaml()).toContain('note.status.contains("Dr")')
+    type(byLabel(pop, 'Value'), 'Dra')
+    expect(def().views[0].filters).toEqual({ and: ['note.status.lower().contains("dra")'] })
+  })
+
   it('Advanced shows each string rule raw, and commits what is typed there verbatim', () => {
     const { el, def } = mount(RULE)
     const pop = openMenu(el, 'Filter')
@@ -1980,31 +2017,7 @@ describe('the default view', () => {
     expect(selected(mount(started('Ghost')).el)).toBe('Table')
   })
 
-  it('the properties menu ends with Page → Default view, listing First view then every view', () => {
-    const { el } = mount()
-    const menu = openView(el)
-    const select = byLabel<HTMLSelectElement>(menu, 'Default view')
-    expect([...select.options].map((o) => o.text)).toEqual(['First view', 'Table', 'View', 'View 2'])
-    expect(select.value).toBe('')
-  })
-
-  it('picking a view writes the def’s defaultView — ONE update, never a second door', () => {
-    const { el, onChange, yaml } = mount()
-    setValue(byLabel<HTMLSelectElement>(openView(el), 'Default view'), 'View')
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(onChange.mock.calls[0][0].def.defaultView).toBe('View')
-    expect(yaml()).toContain('defaultView: View')
-  })
-
-  it('the dropdown reflects the def’s value, and First view DELETES the key', () => {
-    const { el, onChange, yaml } = mount(started('View'))
-    const select = byLabel<HTMLSelectElement>(openView(el), 'Default view')
-    expect(select.value).toBe('View')
-    setValue(select, '')
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(onChange.mock.calls[0][0].def).not.toHaveProperty('defaultView')
-    expect(yaml()).not.toContain('defaultView')
-  })
+  // The View tab's "Default view" select moved to the folder page's ⚙ (YAZ-4909): `FolderView.toolbar.test.tsx`.
 })
 
 describe('properties drag-to-reorder (YAZ-1207)', () => {
@@ -2566,3 +2579,24 @@ describe('option order in a table (YAZ-3940)', () => {
   })
 })
 
+
+describe('the Filter panel\'s live date operators (YAZ-4919)', () => {
+  it('is today · is this week · is this month sit in a Date column\'s operator list with no value box; a stored live rule reads back, and a pick writes the live expression', () => {
+    const { el, def, onChange } = mount(`views:\n  - type: table\n    name: T\n    order:\n      - file.name\n    filters:\n      and:\n        - 'note.date.isThisWeek()'\n`)
+    const pop = openMenu(el, 'Filter')
+    const op = byLabel<HTMLSelectElement>(pop, 'Operator')
+    expect(op.value).toBe('dateInThisWeek')
+    expect([...op.options].map((o) => o.value)).toEqual(['dateIs', 'dateBefore', 'dateAfter', 'dateIsToday', 'dateInThisWeek', 'dateInThisMonth', 'isEmpty', 'isNotEmpty'])
+    expect([...op.options].map((o) => o.textContent)).toContain('is this week')
+    expect(pop.querySelector('[aria-label="Value"]')).toBeNull()
+    setValue(op, 'dateIsToday')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].filters).toEqual({ and: ['note.date.isToday()'] })
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'dateInThisMonth')
+    expect(def().views[0].filters).toEqual({ and: ['note.date.isThisMonth()'] })
+    // Back to a fixed day: the date box comes back.
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'dateBefore')
+    expect(byLabel<HTMLInputElement>(pop, 'Value').type).toBe('date')
+    expect(byText(el, '.view-toolbar__badge', '1')).toBeDefined()
+  })
+})

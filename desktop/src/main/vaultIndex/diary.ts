@@ -4,6 +4,7 @@ import path from 'node:path'
 import { alsoIn } from '@shared/alsoIn'
 import { folderSettingsLinks } from '@shared/folderSettingsLinks'
 import { isRecord } from '@shared/guards'
+import { splitLink } from '@shared/linkParts'
 import { exactLinkTarget } from '@shared/linkRewrite'
 import { canonicalNoteId, isNumberId, noteIdNumber, vaultNoteId } from '@shared/noteId'
 import type { IndexRecord } from '@shared/types'
@@ -126,10 +127,15 @@ export function namedIds(record: IndexRecord): string[] {
   const take = (target: string | null): void => {
     if (target !== null && isNumberId(target)) ids.add(canonicalNoteId(target))
   }
-  record.links.forEach(take)
-  record.embeds.forEach(take)
+  // A target that keeps both sides (`staging|YAZ-12`, YAZ-4954) names the ID on its right side, as the shape reads it.
+  const kept = (target: string): void => take(target.includes('|') ? splitLink(target).page : target)
+  record.links.forEach(kept)
+  record.embeds.forEach(kept)
   alsoIn(record.properties).forEach(take)
-  for (const link of folderSettingsLinks(record.properties)) take(exactLinkTarget(link))
+  for (const link of folderSettingsLinks(record.properties)) {
+    const target = exactLinkTarget(link)
+    if (target !== null) kept(target)
+  }
   return [...ids]
 }
 
