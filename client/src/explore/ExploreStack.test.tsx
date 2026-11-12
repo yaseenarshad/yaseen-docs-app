@@ -2437,10 +2437,12 @@ describe('the card window (YAZ-4962)', () => {
     const facts = strip()
     expect(facts[0]).toBe('cards')
     // Each fact has a quiet label in the reader's words.
-    expect([...top().querySelectorAll('.note-card-strip__label')].map((l) => l.textContent)).toEqual(['Last answer', 'Interval', 'Due', 'Recall'])
+    // Overdue (the reviews are from January): no "Due" label, the table's own words (YAZ-4964 look by eye round 2, item 7).
+    expect([...top().querySelectorAll('.note-card-strip__label')].map((l) => l.textContent)).toEqual(['Last answer', 'Interval', 'Recall'])
     expect(facts[1]).toBe('Last answerRemembered, Jan 11')
     expect(factText(2).lastChild?.textContent).toMatch(/^\d+ days?$|^today$/)
-    expect(factText(3).textContent).toMatch(/^Due/)
+    expect(factText(3).textContent).toMatch(/^Overdue · /)
+    expect(tableRows().at(-1)?.[3]).toBe(factText(3).textContent)
     expect(factText(4).lastChild?.textContent).toMatch(/^\d+%$/)
     expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (3)')
     const rows = tableRows()

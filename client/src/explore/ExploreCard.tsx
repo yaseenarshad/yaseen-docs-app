@@ -22,7 +22,7 @@ import type { GestureAction } from '@shared/keys'
 import { withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
 import { changeCardLine, readCardAt, type CardAtPage } from '../review/cardFile'
 import { HoverTip } from '../components/HoverTip'
-import { NoteCardBody, NoteCardId, NoteCardReviews, noteCardDate, noteCardWait } from '../review/noteCardParts'
+import { NoteCardBody, NoteCardId, NoteCardReviews, noteCardDate, noteCardDue, noteCardOverdue, noteCardWait } from '../review/noteCardParts'
 import { copyText } from '../editor/linkMenu'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExploreNote'
@@ -194,7 +194,8 @@ function NoteCardStrip({ card, pageName, vault, onOpenPage }: { card: CardAtPage
       const chance = recallChance(card.reviews, settings, now)
       facts.push({ key: 'last', label: 'Last answer', text: `${answerLabel(last.rating, settings)}, ${noteCardDate(Date.parse(last.at), now)}` })
       facts.push({ key: 'wait', label: 'Interval', text: noteCardWait(state.interval) })
-      if (state.due !== null) facts.push({ key: 'due', label: 'Due', text: noteCardDate(state.due, now) })
+      // The table's words (YAZ-4964 look by eye round 2, item 7): "Overdue · Oct 17" says it alone; else "Due" and the date.
+      if (state.due !== null) facts.push(noteCardOverdue(state.due, now) ? { key: 'due', text: noteCardDue(state.due, now) } : { key: 'due', label: 'Due', text: noteCardDate(state.due, now) })
       if (chance !== null) facts.push({ key: 'recall', label: 'Recall', text: `${Math.round(chance * 100)}%` })
     }
   }
