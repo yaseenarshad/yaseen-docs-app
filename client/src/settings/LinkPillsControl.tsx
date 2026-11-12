@@ -48,6 +48,7 @@ import { LINK_PILL_MARK_SVG, linkPillVars, pillsShowVault } from '../editor/wiki
 import { PillEnds, PillLook } from '../editor/wikilink/LinkPillParts'
 import { capital, fillSwatch, textSwatch } from '../editor/table/colours'
 import { FileIcon } from '../sidebar/FileIcon'
+import { useUnit } from '../vault/unitWord'
 import { Segmented, Select } from './controls'
 import type { Option } from './options'
 import type { LinkPillsState } from './useLinkPills'
@@ -220,6 +221,7 @@ function FormatBox({ look }: { look: LinkPillsState }) {
   const [problem, setProblem] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const caret = useRef<number | null>(null)
+  const unit = useUnit()
   useEffect(() => {
     setDraft(format)
     setProblem(null)
@@ -275,7 +277,7 @@ function FormatBox({ look }: { look: LinkPillsState }) {
           </button>
         ))}
       </span>
-      {problem !== null ? <span className="settings__error settings__error--inline">{problem}</span> : <span className="settings__tokens">Other text shows as you type it. An empty part, like the ID of a note without one, takes its text with it.</span>}
+      {problem !== null ? <span className="settings__error settings__error--inline">{problem}</span> : <span className="settings__tokens">{unit('Other text shows as you type it. An empty part, like the ID of a note without one, takes its text with it.')}</span>}
     </>
   )
 }

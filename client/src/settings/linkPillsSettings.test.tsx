@@ -9,6 +9,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type IdsState } from '@shared/types'
 import { DEFAULT_LINK_PILL_FORMAT, NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
+import { UNIT_WORDS, unitTextOf } from '../vault/unitWord'
 import { SettingsDialog } from './SettingsDialog'
 import type { SettingsCtx } from './registry'
 
@@ -17,9 +18,9 @@ import type { SettingsCtx } from './registry'
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(pills: LinkPills | undefined, ids = false) {
+function mount(pills: LinkPills | undefined, ids = false, word = UNIT_WORDS.note) {
   const save = vi.fn()
-  const ctx: SettingsCtx = { settings: { ...DEFAULT_SETTINGS }, onChange: vi.fn(), linkPills: pills === undefined ? undefined : { pills, save }, textFormatting: { vaults: [{ root: '/v', name: 'Mine', state: { formatting: {}, save: vi.fn() } }], activeRoot: '/v' } }
+  const ctx: SettingsCtx = { unitWord: { settings: { unit: 'note', own: { one: '', many: '' } }, word, unit: unitTextOf(word), save: vi.fn() }, settings: { ...DEFAULT_SETTINGS }, onChange: vi.fn(), linkPills: pills === undefined ? undefined : { pills, save }, textFormatting: { vaults: [{ root: '/v', name: 'Mine', state: { formatting: {}, save: vi.fn() } }], activeRoot: '/v' } }
   if (ids) ctx.ids = { enabled: true, held: true, ask: undefined, set: vi.fn(), check: vi.fn(async () => ''), old: 0, unfinished: false, state: () => new Promise<IdsState>(() => undefined), reletter: vi.fn(), backfill: vi.fn() }
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -320,6 +321,13 @@ describe('Settings › Link pills (YAZ-4924)', () => {
   it("the row says it is the default, and where one link is styled (round 5): \"The default look of every link in this vault. Right-click a link to style that one.\"", () => {
     const { row } = mount(NO_LINK_PILLS)
     expect(row.textContent).toContain('The default look of every link in this vault. Right-click a link to style that one.')
+  })
+
+  it("the hint under the chips says the vault's word (YAZ-4950): a Card vault reads \"card\"", () => {
+    expect(mount(NO_LINK_PILLS).row.querySelector('.settings__tokens')?.textContent).toBe('Other text shows as you type it. An empty part, like the ID of a note without one, takes its text with it.')
+    act(() => root?.unmount())
+    container?.remove()
+    expect(mount(NO_LINK_PILLS, false, UNIT_WORDS.card).row.querySelector('.settings__tokens')?.textContent).toBe('Other text shows as you type it. An empty part, like the ID of a card without one, takes its text with it.')
   })
 
   it('an old look reaches the row converted: the format box shows version 1 as a format', () => {
