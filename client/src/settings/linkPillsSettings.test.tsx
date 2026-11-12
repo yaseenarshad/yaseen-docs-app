@@ -1,12 +1,14 @@
 /**
- * Settings › Link pills (YAZ-4924): the group in Files & Links with a vault open, its rows writing one field each
- * through the vault's `save`, the live preview, Plain and Reset. Nothing of it without a vault.
+ * Settings › Link pills (YAZ-4924, the redo): one row in Files & Links with a vault open — the format box (draft +
+ * commit, the chips, the ready formats), the vault rule only with `{vault}`, the live preview drawn by the cell's pill,
+ * and the toolbars a click on a part or the icon opens, each button writing one field through the vault's `save`.
+ * Nothing of it without a vault.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type IdsState } from '@shared/types'
-import { NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
+import { DEFAULT_LINK_PILL_FORMAT, NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
 import { SettingsDialog } from './SettingsDialog'
 import type { SettingsCtx } from './registry'
 
@@ -23,12 +25,29 @@ function mount(pills: LinkPills | undefined, ids = false) {
   document.body.appendChild(container)
   root = createRoot(container)
   act(() => root?.render(<SettingsDialog ctx={ctx} onClose={vi.fn()} initialPage="files" />))
-  return { el: container, save }
+  return { el: container, save, row: container.querySelector<HTMLElement>('[data-setting="linkPills"]') as HTMLElement }
 }
 
-const row = (el: HTMLElement, id: string) => el.querySelector<HTMLElement>(`[data-setting="${id}"]`)
 const button = (el: ParentNode, label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label || b.getAttribute('aria-label') === label) as HTMLButtonElement
-const click = (b: HTMLButtonElement) => act(() => b.click())
+const click = (el: Element) => act(() => (el as HTMLElement).click())
+const select = (el: ParentNode, label: string) => el.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)
+const pick = (sel: HTMLSelectElement, label: string) =>
+  act(() => {
+    const i = [...sel.options].findIndex((o) => o.textContent === label)
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set?.call(sel, String(i))
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+const type = (input: HTMLInputElement, value: string) =>
+  act(() => {
+    setter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+const enter = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+const formatBox = (row: HTMLElement) => row.querySelector<HTMLInputElement>('input[aria-label="Link pill format"]') as HTMLInputElement
+const preview = (row: HTMLElement) => row.querySelector('.link-pills-preview') as HTMLElement
+const pillTexts = (row: HTMLElement) => [...preview(row).querySelectorAll('.wikilink')].map((p) => p.textContent)
+const toolbar = (row: HTMLElement) => row.querySelector<HTMLElement>('.pill-toolbar')
 
 afterEach(() => {
   act(() => root?.unmount())
@@ -38,98 +57,164 @@ afterEach(() => {
 })
 
 describe('Settings › Link pills (YAZ-4924)', () => {
-  it('is there with a vault open, every row on today\'s choice; ID only in an ID vault; nothing without a vault', () => {
-    const { el } = mount(NO_LINK_PILLS)
-    for (const id of ['linkPills', 'linkPillBackground', 'linkPillTextColour', 'linkPillIcon', 'linkPillStyle', 'linkPillBeforeAfter', 'linkPillVault', 'linkPillFolder', 'linkPillShape']) expect(row(el, id), id).not.toBeNull()
-    expect(row(el, 'linkPillId')).toBeNull()
-    const pressed = [...el.querySelectorAll<HTMLButtonElement>('[data-setting^="linkPill"] .settings__option--active')].map((b) => b.textContent)
-    expect(pressed).toEqual(['Accent', 'Accent', 'Show', 'Other vaults only', 'After', 'Off', 'Pill'])
-    expect(row(el, 'linkPills')?.querySelector('button[aria-pressed="true"]')).toBeNull() // Plain is off
-    expect(button(row(el, 'linkPills') as HTMLElement, 'Reset')).toBeUndefined()
-    // The preview: four pills, the one into another vault named, the missing one dim.
-    const preview = el.querySelector('.link-pills-preview') as HTMLElement
-    expect([...preview.querySelectorAll('.wikilink')].map((p) => [p.textContent, p.classList.contains('wikilink--unresolved')])).toEqual([['Roadmap', false], ['Q3 plan', false], ['Budget (Wiki)', false], ['Old plan', true]])
-    expect(row(mount(NO_LINK_PILLS, true).el, 'linkPillId')).not.toBeNull()
-    expect(row(mount(undefined).el, 'linkPills')).toBeNull()
+  it("is one row with a vault open, on today's look: the default format, the vault rule, four pills as today, no toolbar, no Reset; nothing without a vault", () => {
+    const { el, row } = mount(NO_LINK_PILLS)
+    expect(el.querySelectorAll('[data-setting^="linkPill"]')).toHaveLength(1)
+    expect(formatBox(row).value).toBe(DEFAULT_LINK_PILL_FORMAT)
+    expect(formatBox(row).maxLength).toBe(60)
+    expect(select(row, 'Vault name on a link pill')?.selectedOptions[0]?.textContent).toBe('Vault name: other vaults only')
+    expect([...row.querySelectorAll<HTMLButtonElement>('.link-pills-chip')].map((b) => b.textContent)).toEqual(['{icon}', '{name}', '{id}', '{vault}', '{folder}', '{path}'])
+    // The preview: four pills, the one into another vault named in brackets, the missing one dim, the icon on each found name.
+    expect([...preview(row).querySelectorAll('.wikilink')].map((p) => [p.textContent, p.classList.contains('wikilink--unresolved'), p.querySelector('.file-icon') !== null])).toEqual([['Roadmap', false, true], ['Q3 plan', false, true], ['Budget (Wiki)', false, true], ['Old plan', true, false]])
+    expect(toolbar(row)).toBeNull()
+    expect(button(row, 'Reset')).toBeUndefined()
+    expect(mount(undefined).row).toBeNull()
   })
 
-  it('each row writes one field through save, a default field dropped; Colour starts on blue with the swatches and the strength', () => {
-    const { el, save } = mount(NO_LINK_PILLS, true)
-    click(button(row(el, 'linkPillBackground') as HTMLElement, 'None'))
-    expect(save).toHaveBeenLastCalledWith({ background: 'none' })
-    click(button(row(el, 'linkPillBackground') as HTMLElement, 'Colour'))
-    expect(save).toHaveBeenLastCalledWith({ background: 'blue' })
-    click(button(row(el, 'linkPillTextColour') as HTMLElement, 'Same as text'))
-    expect(save).toHaveBeenLastCalledWith({ text: 'same' })
-    click(button(row(el, 'linkPillIcon') as HTMLElement, 'Hide'))
-    expect(save).toHaveBeenLastCalledWith({ icon: 'hide' })
-    click(button(row(el, 'linkPillStyle') as HTMLElement, 'Bold'))
-    expect(save).toHaveBeenLastCalledWith({ bold: true })
-    click(button(row(el, 'linkPillBeforeAfter') as HTMLElement, 'Quick pick ( )'))
-    expect(save).toHaveBeenLastCalledWith({ before: '(', after: ')' })
-    click(button(row(el, 'linkPillVault') as HTMLElement, 'Always'))
+  it('the format keeps on Enter or blur; a format the app cannot read keeps the stored one, marks the box and says why', () => {
+    const { row, save } = mount(NO_LINK_PILLS)
+    const box = formatBox(row)
+    type(box, '{name} ({id})')
+    expect(save).not.toHaveBeenCalled()
+    enter(box)
+    expect(save).toHaveBeenLastCalledWith({ format: '{name} ({id})' })
+    type(box, '{Name} {id}')
+    enter(box)
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(box.classList.contains('settings__input--error')).toBe(true)
+    expect(row.querySelector('.settings__error')?.textContent).toBe('Not a token: {Name}')
+    type(box, '{icon}')
+    act(() => void box.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(row.querySelector('.settings__error')?.textContent).toBe('The format needs {name}')
+    type(box, DEFAULT_LINK_PILL_FORMAT)
+    enter(box)
+    expect(save).toHaveBeenCalledTimes(1) // the stored format: nothing to save
+    expect(row.querySelector('.settings__error')).toBeNull()
+  })
+
+  it('a token chip puts its token in at the caret and keeps at once', () => {
+    const { row, save } = mount({ format: '{name}' })
+    const box = formatBox(row)
+    act(() => box.setSelectionRange(0, 0))
+    click(button(row, 'Add {vault}'))
+    expect(box.value).toBe('{vault}{name}')
+    expect(save).toHaveBeenLastCalledWith({ format: '{vault}{name}' })
+    expect(box.selectionStart).toBe('{vault}'.length)
+  })
+
+  it('a ready format sets the format, with its text style where it has one; Plain is a look', () => {
+    const { row, save } = mount({ parts: { name: { bold: true } } })
+    const ready = select(row, 'Ready formats') as HTMLSelectElement
+    expect([...ready.options].map((o) => o.textContent)).toEqual(['Ready formats…', 'Name', 'Name (ID)', 'Name · Folder', 'Vault › Name', '(Name)', '→ Name', 'Plain'])
+    pick(ready, 'Name (ID)')
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { bold: true } }, format: '{icon}{name} ({id})' })
+    pick(ready, '(Name)')
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } }, format: '({icon}{name})' })
+    pick(ready, 'Plain')
+    expect(save).toHaveBeenLastCalledWith({ format: '{name}', parts: { name: { bold: true, color: 'same' } }, box: { fill: 'none' } })
+  })
+
+  it('the vault rule shows only while the format has {vault}, and writes the rule', () => {
+    expect(select(mount({ format: '{name}' }).row, 'Vault name on a link pill')).toBeNull()
+    const { row, save } = mount(NO_LINK_PILLS)
+    pick(select(row, 'Vault name on a link pill') as HTMLSelectElement, 'Vault name: always')
     expect(save).toHaveBeenLastCalledWith({ vault: 'always' })
-    click(button(row(el, 'linkPillVault') as HTMLElement, 'Before'))
-    expect(save).toHaveBeenLastCalledWith({ vaultPlace: 'before' })
-    click(button(row(el, 'linkPillId') as HTMLElement, 'Show'))
-    expect(save).toHaveBeenLastCalledWith({ id: 'show' })
-    click(button(row(el, 'linkPillFolder') as HTMLElement, 'Full path'))
-    expect(save).toHaveBeenLastCalledWith({ folder: 'full' })
-    click(button(row(el, 'linkPillShape') as HTMLElement, 'Underline only'))
-    expect(save).toHaveBeenLastCalledWith({ shape: 'underline' })
+    pick(select(row, 'Vault name on a link pill') as HTMLSelectElement, 'Vault name: never')
+    expect(save).toHaveBeenLastCalledWith({ vault: 'never' })
   })
 
-  it('a colour background shows its swatches and strength; a pick of a swatch or a strength keeps the colour; Medium drops the strength', () => {
-    const { el, save } = mount({ background: 'red', strength: 'light' })
-    const bg = row(el, 'linkPillBackground') as HTMLElement
-    expect(bg.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('title')).toBe('Red')
-    expect(bg.querySelector('.settings__option--active')?.textContent).toBe('Colour')
-    click(bg.querySelector('[role="radio"][title="Teal"]') as HTMLButtonElement)
-    expect(save).toHaveBeenLastCalledWith({ background: 'teal', strength: 'light' })
-    click(button(bg, 'Medium'))
-    expect(save).toHaveBeenLastCalledWith({ background: 'red' })
-    click(button(bg, 'Accent'))
+  it("a click on a pill's name opens the Name toolbar: B I U, the colour, the size, each one field; a default back is dropped", () => {
+    const { row, save } = mount(NO_LINK_PILLS)
+    click(preview(row).querySelector('.wikilink') as Element)
+    const bar = toolbar(row) as HTMLElement
+    expect(bar.getAttribute('aria-label')).toBe('Name toolbar')
+    expect(select(bar, 'What to style')?.selectedOptions[0]?.textContent).toBe('Name')
+    expect([...(select(bar, 'What to style') as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(['Name', 'Vault', 'Your text', 'Box'])
+    click(button(bar, 'Bold'))
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { bold: true } } })
+    click(button(bar, 'Italic'))
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { italic: true } } })
+    click(button(bar, 'Underline'))
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { underline: true } } })
+    expect(button(bar, 'Accent colour').getAttribute('aria-pressed')).toBe('true')
+    click(button(bar, 'Same as text'))
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { color: 'same' } } })
+    click(button(bar, 'Muted'))
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { color: 'muted' } } })
+    click(bar.querySelector('[role="radio"][title="Teal"]') as Element)
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { color: 'teal' } } })
+    click(button(bar, 'Small'))
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { size: 'small' } } })
+    click(button(bar, 'Accent colour'))
     expect(save).toHaveBeenLastCalledWith({})
+    click(button(bar, 'Close the toolbar'))
+    expect(toolbar(row)).toBeNull()
   })
 
-  it('Plain strips the background, the colour and the icon and keeps the rest; pressed again it brings those three back; Reset saves today', () => {
-    const { el, save } = mount({ bold: true, before: '(' })
-    const top = row(el, 'linkPills') as HTMLElement
-    click(button(top, 'Plain'))
-    expect(save).toHaveBeenLastCalledWith({ background: 'none', text: 'same', icon: 'hide', bold: true, before: '(' })
-    click(button(top, 'Reset'))
+  it("a part's toolbar shows the part's own state; a quiet part's defaults are muted and small; a click on the ID or your text opens theirs", () => {
+    const { row, save } = mount({ format: '[{icon}{name} {id}]', parts: { name: { bold: true, color: 'blue' } } }, true)
+    click(preview(row).querySelector('.wikilink') as Element)
+    let bar = toolbar(row) as HTMLElement
+    expect([button(bar, 'Bold').getAttribute('aria-pressed'), bar.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('title'), button(bar, 'Normal').getAttribute('aria-pressed')]).toEqual(['true', 'Blue', 'true'])
+    click(preview(row).querySelector('.link-pill__id') as Element)
+    bar = toolbar(row) as HTMLElement
+    expect(bar.getAttribute('aria-label')).toBe('ID toolbar')
+    expect([button(bar, 'Muted').getAttribute('aria-pressed'), button(bar, 'Small').getAttribute('aria-pressed')]).toEqual(['true', 'true'])
+    click(button(bar, 'Accent colour'))
+    expect(save).toHaveBeenLastCalledWith({ format: '[{icon}{name} {id}]', parts: { name: { bold: true, color: 'blue' }, id: { color: 'accent' } } })
+    click(button(bar, 'Normal'))
+    expect(save).toHaveBeenLastCalledWith({ format: '[{icon}{name} {id}]', parts: { name: { bold: true, color: 'blue' }, id: { size: 'normal' } } })
+    click(preview(row).querySelector('.link-pill__text') as Element)
+    expect(toolbar(row)?.getAttribute('aria-label')).toBe('Your text toolbar')
+    click(button(toolbar(row) as HTMLElement, 'Bold'))
+    expect(save).toHaveBeenLastCalledWith({ format: '[{icon}{name} {id}]', parts: { name: { bold: true, color: 'blue' }, text: { bold: true } } })
+    // The picker switches the part.
+    pick(select(toolbar(row) as HTMLElement, 'What to style') as HTMLSelectElement, 'Box')
+    expect(toolbar(row)?.getAttribute('aria-label')).toBe('Box toolbar')
+  })
+
+  it("a click on a pill's icon opens the Box toolbar: Shape, Fill, Strength with a colour fill", () => {
+    const { row, save } = mount(NO_LINK_PILLS)
+    click(preview(row).querySelector('.file-icon') as Element)
+    const bar = toolbar(row) as HTMLElement
+    expect(bar.getAttribute('aria-label')).toBe('Box toolbar')
+    expect([button(bar, 'Round').getAttribute('aria-pressed'), button(bar, 'Accent tint').getAttribute('aria-pressed'), button(bar, 'Strong')]).toEqual(['true', 'true', undefined])
+    click(button(bar, 'Square'))
+    expect(save).toHaveBeenLastCalledWith({ box: { shape: 'square' } })
+    click(button(bar, 'Underline'))
+    expect(save).toHaveBeenLastCalledWith({ box: { shape: 'underline' } })
+    click(button(bar, 'No fill'))
+    expect(save).toHaveBeenLastCalledWith({ box: { fill: 'none' } })
+    click(bar.querySelector('[role="radio"][title="Teal"]') as Element)
+    expect(save).toHaveBeenLastCalledWith({ box: { fill: 'teal' } })
+    const coloured = mount({ box: { fill: 'teal', strength: 'light' } })
+    click(preview(coloured.row).querySelector('.file-icon') as Element)
+    const bar2 = toolbar(coloured.row) as HTMLElement
+    expect([coloured.row.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('title'), button(bar2, 'Light').getAttribute('aria-pressed')]).toEqual(['Teal', 'true'])
+    click(button(bar2, 'Strong'))
+    expect(coloured.save).toHaveBeenLastCalledWith({ box: { fill: 'teal', strength: 'strong' } })
+    click(button(bar2, 'Medium'))
+    expect(coloured.save).toHaveBeenLastCalledWith({ box: { fill: 'teal' } })
+    click(button(bar2, 'Accent tint'))
+    expect(coloured.save).toHaveBeenLastCalledWith({})
+  })
+
+  it('the preview wears the look: the variables on it, the pieces of the format on each pill, the ID in an ID vault; Reset saves today', () => {
+    const { row, save } = mount({ format: '[{vault} › {name} {id} {folder}]', vault: 'always', box: { fill: 'none' }, parts: { name: { bold: true } } }, true)
+    expect(preview(row).style.getPropertyValue('--pill-bg')).toBe('transparent')
+    expect(preview(row).style.getPropertyValue('--pill-name-weight')).toBe('bold')
+    expect(pillTexts(row)).toEqual(['[Mine › Roadmap YAS-12 Plans]', '[Mine › Q3 plan Boards]', '[Wiki › Budget]', '[Mine › Old plan]'])
+    expect(preview(row).querySelector('.file-icon')).toBeNull()
+    click(button(row, 'Reset'))
     expect(save).toHaveBeenLastCalledWith({})
-    const plain = mount({ background: 'none', text: 'same', icon: 'hide', after: ')' })
-    const plainButton = button(row(plain.el, 'linkPills') as HTMLElement, 'Plain')
-    expect(plainButton.getAttribute('aria-pressed')).toBe('true')
-    click(plainButton)
-    expect(plain.save).toHaveBeenLastCalledWith({ after: ')' })
+    // No ID vault: the ID piece and its space go.
+    expect(pillTexts(mount({ format: '[{vault} › {name} {id} {folder}]', vault: 'always' }).row)).toEqual(['[Mine › Roadmap Plans]', '[Mine › Q3 plan Boards]', '[Wiki › Budget]', '[Mine › Old plan]'])
   })
 
-  it('the preview wears the look: the variables on it, the pieces on each pill, the ID in an ID vault', () => {
-    const { el } = mount({ background: 'none', before: '[', after: ']', vault: 'always', vaultPlace: 'before', id: 'show', folder: 'parent' }, true)
-    const preview = el.querySelector('.link-pills-preview') as HTMLElement
-    expect(preview.style.getPropertyValue('--pill-bg')).toBe('transparent')
-    expect([...preview.querySelectorAll('.wikilink')].map((p) => p.textContent)).toEqual(['[Mine › RoadmapYAS-12Plans]', '[Mine › Q3 planBoards]', '[Wiki › Budget]', '[Mine › Old plan]'])
-  })
-
-  it('Before and After take up to 8 characters, kept on Enter or blur; an empty field is today', async () => {
-    const { el, save } = mount({ after: ')' })
-    const before = row(el, 'linkPillBeforeAfter')?.querySelector<HTMLInputElement>('input[aria-label="Text before a link pill"]') as HTMLInputElement
-    expect(before.maxLength).toBe(8)
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-    act(() => {
-      setter?.call(before, '→ ')
-      before.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    act(() => void before.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
-    expect(save).toHaveBeenLastCalledWith({ before: '→ ', after: ')' })
-    const after = row(el, 'linkPillBeforeAfter')?.querySelector<HTMLInputElement>('input[aria-label="Text after a link pill"]') as HTMLInputElement
-    act(() => {
-      setter?.call(after, '')
-      after.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    act(() => void after.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
-    expect(save).toHaveBeenLastCalledWith({})
+  it('an old look reaches the row converted: the format box shows version 1 as a format', () => {
+    const { row } = mount({ format: '({icon}{name} ({vault}))', parts: { text: { color: 'accent', size: 'normal' } } })
+    expect(formatBox(row).value).toBe('({icon}{name} ({vault}))')
+    expect(pillTexts(row)).toEqual(['(Roadmap)', '(Q3 plan)', '(Budget (Wiki))', '(Old plan)'])
   })
 })

@@ -33,7 +33,7 @@ import { fileLabel } from '../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkActions, type LinkMenu } from './linkMenu'
 import { followDrag, nearerEdge } from './wikilink/wikilinkClick'
 import { NO_LINK_PILLS } from '@shared/linkPills'
-import { headKey, headSpan, pathInfo, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './wikilink/linkPillLook'
+import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './wikilink/linkPillLook'
 import { WIKILINK_CLASS, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
 /** The link menu's place rows (YAZ-3740: `showInSidebar`, Focus and Favorites, "Open in ▸") are App's `LinkActions`: absent, no row. */
@@ -166,28 +166,31 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
       const path = typeof href === 'string' && !href.startsWith('#') ? nav.vaultPath?.(href) ?? null : null
       if (run !== null && path !== null && nav.icon !== undefined) {
         const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
-        const icon = nav.icon(path, fileKind(name) === null && !name.includes('.'))
+        const pills = source?.pills ?? NO_LINK_PILLS
+        // The icon where the vault's format puts it (YAZ-4924): on the first piece (`{icon}{name}`, today's), as a
+        // piece of the head or the tail, or nowhere.
+        const iconPlace = pillIconPlace(pills)
+        const icon = iconPlace === 'none' ? undefined : nav.icon(path, fileKind(name) === null && !name.includes('.'))
         const last = run.pieces.length - 1
         const vault = nav.vaultTag?.(path) ?? null
-        // The pieces the vault's look adds at the pill's ends (YAZ-4924, `pillParts`): with today's look, only the
-        // vault's name of a pill into another vault (D22). The ID and the folder are this vault's index's: a pill into
-        // another vault shows none.
-        const pills = source?.pills ?? NO_LINK_PILLS
+        // The pieces the vault's format adds at the pill's ends (`pillParts`): with today's look, only the vault's
+        // name of a pill into another vault (D22). The ID and the folder are this vault's index's: a pill into another
+        // vault shows none.
         const meta: PillMeta = { info: source !== undefined && pillsNeedInfo(pills) ? pathInfo(source.records, source.folders).get(path) : undefined, otherVault: vault }
-        const { head, tail } = pillParts(pills, meta, source?.vault ?? null)
+        const { head, tail } = pillParts(pills, meta, source?.vault ?? null, icon !== undefined)
         // One object for the pill's pieces: `markdownPillsAround` finds the whole pill from any piece (YAZ-4021).
         const pill = {}
         run.pieces.forEach(([start, end], i) => {
           const edges = `${i === 0 && head === null ? ' link-pill--first' : ''}${i === last && tail === null ? ' link-pill--last' : ''}`
-          const attrs: Record<string, string> = i === 0 ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}`, spellcheck: 'false' } : { class: `wikilink link-pill${edges}`, spellcheck: 'false' }
+          const attrs: Record<string, string> = i === 0 && icon !== undefined && iconPlace === 'name' ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}`, spellcheck: 'false' } : { class: `wikilink link-pill${edges}`, spellcheck: 'false' }
           fresh.push(Decoration.inline(start, end, attrs, { pill }))
         })
         // The head and the tail are the pill's first and last pieces (YAZ-3738 D4): the tail is drawn before the caret
         // at the link's end, so the caret shows after the whole pill. Inside the link's anchor: a click on either opens
         // the link, as on the text.
         const mark = run.mark
-        if (head !== null) fresh.push(Decoration.widget(run.pieces[0]![0], () => headSpan('wikilink link-pill link-pill--first', head), { side: -1, marks: [mark], key: headKey(head) }))
-        if (tail !== null) fresh.push(Decoration.widget(run.pieces[last]![1], () => tailSpan('wikilink link-pill link-pill--last', tail), { side: -1, marks: [mark], key: tailKey(tail) }))
+        if (head !== null) fresh.push(Decoration.widget(run.pieces[0]![0], () => headSpan('wikilink link-pill link-pill--first', head, icon), { side: -1, marks: [mark], key: headKey(head) }))
+        if (tail !== null) fresh.push(Decoration.widget(run.pieces[last]![1], () => tailSpan('wikilink link-pill link-pill--last', tail, icon), { side: -1, marks: [mark], key: tailKey(tail) }))
       }
       run = null
     }

@@ -124,12 +124,17 @@ describe('D47: a link value is a pill', () => {
     const wikilinks = createWikilinkResolveSource()
     const { el } = mount(TABLE, { folder: testFolderHost({ vaultRecords: VAULT, wikilinks }) })
     expect(pills(cell(el, 1))[0].querySelector('.link-pill__head, .link-pill__tail')).toBeNull()
-    act(() => wikilinks.setLook({ before: '(', after: ')', vault: 'always', folder: 'parent' }, 'Mine'))
+    act(() => wikilinks.setLook({ format: '({icon}{name} {folder} ({vault}))', vault: 'always' }, 'Mine'))
     const pill = pills(cell(el, 1))[0]
-    expect(pill.textContent).toBe('(BobPeople (Mine))')
-    expect([...pill.querySelectorAll('span')].map((s) => `${s.className.replace(/file-icon.*/, 'file-icon')}:${s.textContent}`)).toEqual(['link-pill__head:(', 'file-icon:', 'link-pill__tail:People (Mine))', 'link-pill__folder:People', 'link-pill__vault: (Mine)'])
+    expect(pill.textContent).toBe('(Bob People (Mine))')
+    expect([...pill.querySelectorAll('span')].map((s) => `${s.className.replace(/file-icon.*/, 'file-icon')}:${s.textContent}`)).toEqual(['link-pill__head:(', 'link-pill__text:(', 'file-icon:', 'link-pill__tail: People (Mine))', 'link-pill__text: ', 'link-pill__folder:People', 'link-pill__text: (', 'link-pill__vault:Mine', 'link-pill__text:))'])
     // The text cell's inline [[link]] (D48) and the Multi-link cell's pills wear it too.
-    expect(pills(cell(el, 3)).map((p) => p.textContent)).toEqual(['(BobPeople (Mine))'])
+    expect(pills(cell(el, 3)).map((p) => p.textContent)).toEqual(['(Bob People (Mine))'])
+    // The icon where the format puts it: a piece of the tail with `{name} {icon}`; none without `{icon}`.
+    act(() => wikilinks.setLook({ format: '{name} {icon}' }, 'Mine'))
+    expect([...pills(cell(el, 1))[0].querySelectorAll('span')].map((s) => s.className.replace(/file-icon.*/, 'file-icon'))).toEqual(['link-pill__tail', 'link-pill__text', 'link-pill__icon', 'file-icon'])
+    act(() => wikilinks.setLook({ format: '{name}' }, 'Mine'))
+    expect(pills(cell(el, 1))[0].querySelector('.file-icon')).toBeNull()
     act(() => wikilinks.setLook({}, 'Mine'))
     expect(pills(cell(el, 1))[0].textContent).toBe('Bob')
   })

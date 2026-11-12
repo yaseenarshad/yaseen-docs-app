@@ -13,8 +13,8 @@ import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value,
 import { formatDateValue, formatNumber } from '../columnFormat'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import '../../editor/wikilink/wikilink.css'
-import { pillParts, type PathInfo } from '../../editor/wikilink/linkPillLook'
-import { PillHead, PillLook, PillTail } from '../../editor/wikilink/LinkPillParts'
+import type { PathInfo } from '../../editor/wikilink/linkPillLook'
+import { PillEnds } from '../../editor/wikilink/LinkPillParts'
 import { summarize } from '../summaries'
 import { FolderIcon, ShortcutIcon } from './icons'
 import { HoverTip } from '../../components/HoverTip'
@@ -92,24 +92,6 @@ function LinkChip({ link, resolve }: { link: LinkValue | FileValue; resolve?: Re
     </span>
   ) : (
     <PillWithIcon path={record.path} text={text} info={record.id === undefined ? { folder: record.folder } : { id: record.id, folder: record.folder }} />
-  )
-}
-
-/**
- * A pill's text with the pieces the vault's look adds at its ends (YAZ-4924, `pillParts`): the text before and after,
- * the vault's name, the ID and the folder, as the note editor's widgets draw them. A cell's pill is the vault's own, so
- * it is never a pill into another vault.
- */
-function PillEnds({ text, info, icon }: { text: string; info?: PathInfo; icon?: ReactNode }) {
-  const { pills, vault } = useContext(PillLook)
-  const { head, tail } = pillParts(pills, { info, otherVault: null }, vault)
-  return (
-    <>
-      {head !== null && <PillHead head={head} />}
-      {icon}
-      {text}
-      {tail !== null && <PillTail tail={tail} />}
-    </>
   )
 }
 

@@ -207,7 +207,7 @@ describe('a Markdown link into a vault of the window is a pill (YAZ-3609 D19)', 
     // The vault's name is the pill's own last piece, inside the link and after its text (YAZ-3738 D4).
     // Since YAZ-4924 the name is inside the pill's tail piece (`link-pill__tail`), which is the last piece.
     const tagged = Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail'))
-    expect(tagged.map((el) => [el.textContent, el.closest('a') !== null, el.previousElementSibling?.textContent, el.querySelector('.link-pill__vault')?.textContent])).toEqual([[' (Other Vault)', true, ' end', ' (Other Vault)']])
+    expect(tagged.map((el) => [el.textContent, el.closest('a') !== null, el.previousElementSibling?.textContent, el.querySelector('.link-pill__vault')?.textContent])).toEqual([[' (Other Vault)', true, ' end', 'Other Vault']])
     // A widget: the saved note does not change.
     expect(getMarkdownForSave(crepe)).toBe('[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n')
   })
@@ -435,7 +435,7 @@ describe("the vault's link pills look on a Markdown link pill (YAZ-4924)", () =>
     source.update(() => null, [record], [], true, ['YAZ'])
     const md = '[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n'
     const { crepe, root } = await mount(md, { vaultPath, icon, vaultTag }, source)
-    source.setLook({ before: '[', after: ']', vault: 'always', id: 'show', folder: 'parent' }, 'Mine')
+    source.setLook({ format: '[{icon}{name} {id} {folder} ({vault})]', vault: 'always' }, 'Mine')
     const pills = Array.from(root.querySelectorAll<HTMLElement>('.link-pill')).map((el) => [el.textContent, el.classList.contains('link-pill--first'), el.classList.contains('link-pill--last'), el.closest('a') !== null])
     expect(pills).toEqual([
       ['[', true, false, true],
@@ -445,11 +445,18 @@ describe("the vault's link pills look on a Markdown link pill (YAZ-4924)", () =>
       [' (Other Vault)]', false, true, true],
       ['[', true, false, true],
       ['Here', false, false, true],
-      ['YAZ-7Top (Mine)]', false, true, true],
+      [' YAZ-7 Top (Mine)]', false, true, true],
     ])
+    expect(root.querySelectorAll('.probe-icon')).toHaveLength(2)
     expect(getMarkdownForSave(crepe)).toBe(md)
     // Never: the other vault's name goes too, and a tail with nothing left is not drawn.
     source.setLook({ vault: 'never' }, 'Mine')
     expect(root.querySelectorAll('.link-pill__tail, .link-pill__head')).toHaveLength(0)
+    // The icon where the format puts it: a piece of the tail, with the icon's attributes; none without `{icon}`.
+    source.setLook({ format: '{name} {icon}' }, 'Mine')
+    expect(Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail .probe-icon')).map((el) => [el.className, el.dataset.path])).toEqual([['probe-icon link-pill__icon', '/v/other/plan.md'], ['probe-icon link-pill__icon', '/v/here.md']])
+    expect(root.querySelectorAll('.link-pill.probe-icon')).toHaveLength(0)
+    source.setLook({ format: '{name}' }, 'Mine')
+    expect(root.querySelectorAll('.probe-icon')).toHaveLength(0)
   })
 })

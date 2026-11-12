@@ -59,7 +59,7 @@ import { NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
 import { basename, type IndexRecord } from '@shared/types'
 import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
 import { boardEmbedName, boardEmbedTarget, isIdTarget } from '../drawing/boardEmbedText'
-import { headKey, headSpan, pathInfo, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './linkPillLook'
+import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './linkPillLook'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
 
@@ -397,12 +397,12 @@ export function linkIsResolved(inner: string, source: WikilinkResolveSource, vie
  * the caret at the link's end shows after the whole pill (YAZ-3738 D4). Today's look gives only the vault's name of
  * an ID of another vault (YAZ-3905 S23), at the tail, as `vaultSpan` drew it.
  */
-function pillEnds(inner: string, resolved: boolean, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, otherVault: string | null): ReturnType<typeof pillParts> {
+function pillEnds(inner: string, resolved: boolean, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, otherVault: string | null, icon: boolean): ReturnType<typeof pillParts> {
   const { pills } = source
   if (pills === NO_LINK_PILLS && otherVault === null) return { head: null, tail: null }
   const path = resolved && pillsNeedInfo(pills) ? linkPath(inner, source, viewOnly) : null
   const meta: PillMeta = { info: path === null ? undefined : pathInfo(source.records, source.folders).get(path), otherVault }
-  return pillParts(pills, meta, source.vault)
+  return pillParts(pills, meta, source.vault, icon)
 }
 
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
@@ -415,7 +415,11 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   if (linkDisplayText(inner, titleOf) === '') return
   const resolved = linkIsResolved(inner, source, viewOnly)
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`
-  const icon = resolved ? linkIcon(inner, source, viewOnly, look) : undefined
+  // The icon where the vault's format puts it (YAZ-4924): on the name's own span (`{icon}{name}`, today's), as a
+  // piece of the head or the tail, or nowhere (no `{icon}`: no lookup paid).
+  const iconPlace = pillIconPlace(source.pills)
+  const found = resolved && iconPlace !== 'none' ? linkIcon(inner, source, viewOnly, look) : undefined
+  const icon = iconPlace === 'name' ? found : undefined
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
   const { pipe, pageFirst } = splitLink(inner)
@@ -426,13 +430,13 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   // An ID of another vault says which vault (S23), after the ID.
   const other = pipe >= 0 || resolved || missing !== undefined ? null : otherVaultId(inner, source, vaultsOf)
   // The pieces the vault's look adds at the pill's ends (YAZ-4924): the head goes before the first shown piece, the tail after the last.
-  const ends = pillEnds(inner, resolved, source, viewOnly, other === null ? null : (other.vault ?? 'another vault'))
+  const ends = pillEnds(inner, resolved, source, viewOnly, other === null ? null : (other.vault ?? 'another vault'), found !== undefined)
   let lastShown = -1
   /** The first shown piece starts at `pos`: the head stands there, before it. */
   const first = (pos: number) => {
     if (lastShown >= 0) return
     const { head } = ends
-    if (head !== null) out.push(Decoration.widget(pos, () => headSpan(cls, head), { side: -1, key: headKey(head) }))
+    if (head !== null) out.push(Decoration.widget(pos, () => headSpan(cls, head, found?.attrs), { side: -1, key: headKey(head) }))
     lastShown = pos
   }
   /**
@@ -504,7 +508,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   }
   hide(out, end - 2, end) // ]]
   const { tail } = ends
-  if (tail !== null && lastShown >= 0) out.push(Decoration.widget(lastShown, () => tailSpan(cls, tail), { side: -1, key: tailKey(tail) }))
+  if (tail !== null && lastShown >= 0) out.push(Decoration.widget(lastShown, () => tailSpan(cls, tail, found?.attrs), { side: -1, key: tailKey(tail) }))
 }
 
 /** True when the selection touches [from, to] with inclusive boundaries — the reveal rule. */
