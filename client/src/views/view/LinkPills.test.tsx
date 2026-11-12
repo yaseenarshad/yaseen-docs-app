@@ -138,7 +138,7 @@ describe('D47: a link value is a pill', () => {
     // Round 5: a note without an ID loses `#{number}`; `{mark}` is the same small icon the note's pill draws.
     act(() => wikilinks.setLook({ format: '{name} #{number}{mark}', parts: { mark: { icon: 'link' } } }, 'Mine'))
     const marked = pills(cell(el, 1))[0]
-    expect([marked.textContent, (marked.querySelector('.link-pill__tail .link-pill__mark') as HTMLElement | null)?.dataset.mark, marked.querySelector('.link-pill__mark svg') !== null]).toEqual(['Bob', 'link', true])
+    expect([marked.textContent, (marked.querySelector('.link-pill__tail .link-pill__mark') as HTMLElement | null)?.dataset.mark, (marked.querySelector('.link-pill__mark') as HTMLElement | null)?.style.getPropertyValue('--pill-mark-icon').startsWith('url(') === true]).toEqual(['Bob', 'link', true])
     act(() => wikilinks.setLook({}, 'Mine'))
     expect(pills(cell(el, 1))[0].textContent).toBe('Bob')
   })

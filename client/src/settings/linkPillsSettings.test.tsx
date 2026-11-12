@@ -273,7 +273,7 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(pillTexts(row)).toEqual(['Roadmap #12'])
     expect(preview(row).querySelector('.link-pill__number')?.textContent).toBe('12')
     const mark = preview(row).querySelector('.link-pill__mark') as HTMLElement
-    expect(mark.querySelector('svg')).not.toBeNull()
+    expect(mark.style.getPropertyValue('--pill-mark-icon')).toMatch(/^url\("data:image\/svg\+xml,/)
     expect(mark.dataset.mark).toBe('arrow-up-right')
     expect((mount({ format: '{name}{mark}', parts: { mark: { icon: 'bookmark' } } }).row.querySelector('.link-pills-preview .link-pill__mark') as HTMLElement).dataset.mark).toBe('bookmark')
   })
@@ -286,8 +286,8 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(rows(bar)).toEqual(['Text', 'Colour', 'Size'])
     expect([button(bar, 'Muted').getAttribute('aria-pressed'), button(bar, 'Small').getAttribute('aria-pressed')]).toEqual(['true', 'true'])
     expect([...(select(bar, 'What to style') as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(['the name', 'the number', 'the mark', 'your text', 'the box'])
-    // A click on the mark's drawing (a path inside its svg) lands on the mark.
-    act(() => void (preview(row).querySelector('.link-pill__mark svg')?.firstElementChild as Element).dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    // A click on the mark's drawing (its mask) lands on the mark.
+    act(() => void (preview(row).querySelector('.link-pill__mark') as Element).dispatchEvent(new MouseEvent('click', { bubbles: true })))
     bar = toolbar(row) as HTMLElement
     expect(title(bar)).toBe('Styling: the mark')
     expect(rows(bar)).toEqual(['Icon', 'Colour', 'Size'])
