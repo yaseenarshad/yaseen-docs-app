@@ -8,11 +8,13 @@
  *   gridCentre   2 × 2 and one in the middle, on top   ⌥⌘5
  *   stack        back to the stack places              ⌥⌘0
  *
- * Even `TILE_GAP` gaps, inside the area under the top bar. The Tile button picks the layout by how many notes and
+ * Even `TILE_GAP` gaps, inside the area under the top bar. A narrow window takes fewer columns (YAZ-4944): a cell is
+ * never under a window's least width (`MIN_BOX_WIDTH`) where one column has it, so the windows never overlap; three
+ * become two on top and one under them, two and the grid one column. The Tile button picks the layout by how many notes and
  * boards are open (`layoutForCount`); more than 5: the 5 used last. A tiled window is still a window: a drag, a
  * resize, a raise and × work as before.
  */
-import type { LayerBox } from './layers'
+import { MIN_BOX_WIDTH, type LayerBox } from './layers'
 
 export type TileLayout = 'two' | 'three' | 'grid' | 'gridCentre'
 export type ArrangeLayout = TileLayout | 'stack'
@@ -36,15 +38,27 @@ export interface TileArea {
   height: number
 }
 
-/** The cells of `layout` in `area`, in reading order; the grid + centre's fifth cell is the middle one. */
+/**
+ * The cells of `layout` in `area`, in reading order; the grid + centre's fifth cell is the middle one. Where a cell
+ * would be under `MIN_BOX_WIDTH`, one column fewer (YAZ-4944); a short last row's cells share the whole width.
+ */
 export function tileCells(layout: TileLayout, area: TileArea, gap = TILE_GAP): LayerBox[] {
-  const cols = layout === 'two' ? 2 : layout === 'three' ? 3 : 2
-  const rows = layout === 'grid' || layout === 'gridCentre' ? 2 : 1
-  const width = (area.width - (cols + 1) * gap) / cols
+  const count = layout === 'two' ? 2 : layout === 'three' ? 3 : 4
+  const across = (n: number) => (area.width - (n + 1) * gap) / n
+  let cols = layout === 'three' ? 3 : 2
+  while (cols > 1 && across(cols) < MIN_BOX_WIDTH) cols--
+  const rows = Math.ceil(count / cols)
   const height = (area.height - (rows + 1) * gap) / rows
   const cells: LayerBox[] = []
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cells.push({ x: area.x + gap + c * (width + gap), y: area.y + gap + r * (height + gap), width, height })
-  if (layout === 'gridCentre') cells.push({ x: area.x + (area.width - width) / 2, y: area.y + (area.height - height) / 2, width, height })
+  for (let r = 0; r < rows; r++) {
+    const inRow = Math.min(cols, count - r * cols)
+    const width = across(inRow)
+    for (let c = 0; c < inRow; c++) cells.push({ x: area.x + gap + c * (width + gap), y: area.y + gap + r * (height + gap), width, height })
+  }
+  if (layout === 'gridCentre') {
+    const width = across(cols)
+    cells.push({ x: area.x + (area.width - width) / 2, y: area.y + (area.height - height) / 2, width, height })
+  }
   return cells
 }
 

@@ -1,6 +1,7 @@
 /** Tile (YAZ-4944): the layout by count, each layout's cells with even gaps, and which windows a layout takes. */
 import { describe, expect, it } from 'vitest'
 import { blockersOf, clashesOf, keyRow } from '@shared/keys'
+import { MIN_BOX_WIDTH } from './layers'
 import { layoutForCount, pickRecent, TILE_GAP, TILE_PLACES, tileBoxes, tileCells, tileOrder } from './tile'
 
 const area = { x: 0, y: 60, width: 1212, height: 812 }
@@ -39,6 +40,50 @@ describe('the cells: even 12 px gaps, inside the area', () => {
     const five = tileCells('gridCentre', area)
     expect(five.slice(0, 4)).toEqual(grid)
     expect(five[4]).toEqual({ x: (1212 - w) / 2, y: 60 + (812 - h) / 2, width: w, height: h })
+  })
+})
+
+describe('a narrow window (YAZ-4944 nit): fewer columns, never an overlap', () => {
+  const overlap = (a: { x: number; y: number; width: number; height: number | null }, b: typeof a) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + (b.height ?? 0) && b.y < a.y + (a.height ?? 0)
+  const noOverlap = (cells: ReturnType<typeof tileCells>) => cells.every((a, i) => cells.every((b, j) => i === j || !overlap(a, b)))
+
+  it('three across where a third would be under 240 px: two on top, one under them across the width', () => {
+    const narrow = { x: 0, y: 60, width: 700, height: 600 }
+    const three = tileCells('three', narrow)
+    const w = (700 - 3 * g) / 2
+    const h = (600 - 3 * g) / 2
+    expect(three).toEqual([
+      { x: g, y: 60 + g, width: w, height: h },
+      { x: 2 * g + w, y: 60 + g, width: w, height: h },
+      { x: g, y: 60 + 2 * g + h, width: 700 - 2 * g, height: h },
+    ])
+    expect(three.every((c) => c.width >= MIN_BOX_WIDTH)).toBe(true)
+    expect(noOverlap(three)).toBe(true)
+  })
+
+  it('two and the grid where a half would be under 240 px: one column, each window across the width', () => {
+    const tiny = { x: 0, y: 60, width: 480, height: 800 }
+    const two = tileCells('two', tiny)
+    expect(two.map((c) => [c.x, c.width])).toEqual([[g, 480 - 2 * g], [g, 480 - 2 * g]])
+    expect(noOverlap(two)).toBe(true)
+    const grid = tileCells('grid', tiny)
+    expect(grid).toHaveLength(4)
+    expect(grid.every((c) => c.width === 480 - 2 * g)).toBe(true)
+    expect(noOverlap(grid)).toBe(true)
+    // The grid + centre keeps its fifth in the middle, on top, by design.
+    expect(noOverlap(tileCells('gridCentre', tiny).slice(0, 4))).toBe(true)
+  })
+
+  it('at every width from 300 to 1400 px, no cell of any layout is under 240 px wide where one fits, and none overlap', () => {
+    for (let width = 300; width <= 1400; width += 10) {
+      const box = { x: 0, y: 60, width, height: 800 }
+      for (const layout of ['two', 'three', 'grid'] as const) {
+        const cells = tileCells(layout, box)
+        expect(cells).toHaveLength(TILE_PLACES[layout])
+        expect(noOverlap(cells)).toBe(true)
+        if (width - 2 * g >= MIN_BOX_WIDTH) expect(cells.every((c) => c.width >= MIN_BOX_WIDTH)).toBe(true)
+      }
+    }
   })
 })
 
