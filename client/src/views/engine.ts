@@ -1,3 +1,5 @@
+import { pageCardCounts } from '@shared/cardSchedule'
+import type { ReviewSettings } from '@shared/reviews'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { keyFold, spellings } from '@shared/propertyKeys'
 import { alsoIn } from '@shared/alsoIn'
@@ -117,6 +119,11 @@ export interface RunOptions {
   /** An Image column (YAZ-4802): its sort goes by the picture's file name, not the folder it is in. */
   byFileName?: (property: string) => boolean
   /**
+   * The vault's note card review settings (YAZ-4967, idea 2): the "Due" column (`file.due`) counts with them. Absent
+   * (a vault no scope has open), "Due" is blank; "Cards" (`file.cards`) needs none.
+   */
+  cardSettings?: ReviewSettings
+  /**
    * The page's Linked mentions columns (YAZ-4738 L1, L3): their keys, and each one's value for a record — the links to
    * the notes that mention it, worked out from the index. A row reads it under the key, as if the note held it (cells,
    * filters, search), but no note does. A sort on one sorts by how many there are.
@@ -223,7 +230,10 @@ const member = (object: string, name: string): Expr => ({ type: 'member', object
  * and the cell is an ErrorValue; an unknown formula is the evaluator's ErrorValue, no report),
  * anything else → note property (`note.` optional) through `fromYaml`.
  */
-function makeGetter(key: string, def: ViewSet, errors: EngineError[]): Getter {
+function makeGetter(key: string, def: ViewSet, errors: EngineError[], cardSettings?: ReviewSettings): Getter {
+  // The note card counts (YAZ-4967, idea 2): read off the index's `cards`, no file read. Blank, not 0, where there are none.
+  if (key === 'file.cards') return (scope) => cardCount(scope.file, null, 0)
+  if (key === 'file.due') return (scope) => (cardSettings === undefined ? null : cardCount(scope.file, cardSettings, scope.now ?? Date.now()))
   if (key.startsWith('file.')) {
     const expr = member('file', key.slice(5))
     return scope => evaluate(expr, scope)
@@ -240,6 +250,14 @@ function makeGetter(key: string, def: ViewSet, errors: EngineError[]): Getter {
   }
   const name = key.startsWith('note.') ? key.slice(5) : key
   return scope => fromYaml(Object.hasOwn(scope.note, name) ? scope.note[name] : undefined)
+}
+
+/** A page's card count, or with `s` its due count; null (a blank cell) for none. */
+function cardCount(file: FileValue | null, s: ReviewSettings | null, now: number): Value {
+  const cards = (file?.record as IndexRecord | undefined)?.cards
+  if (cards === undefined || cards.length === 0) return null
+  const n = s === null ? cards.length : pageCardCounts(file!.record as IndexRecord, s, now).due
+  return n === 0 ? null : n
 }
 
 // ---------- ordering ----------
@@ -421,6 +439,9 @@ const FILE_FIELD_LABELS: Readonly<Record<string, string>> = {
   'file.tags': 'Tags',
   'file.links': 'Links',
   'file.embeds': 'Embeds',
+  // The note card counts (YAZ-4967, idea 2).
+  'file.cards': 'Cards',
+  'file.due': 'Due',
 }
 
 /** `def.properties[key].displayName` (looked up as written, bare and `note.`-prefixed), else `defaultLabel(key)`. */
@@ -452,7 +473,7 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   const spelled = opts.declared === undefined || opts.declared.length === 0 ? undefined : spellings(opts.declared)
   const getter = (key: string): Getter => {
     let g = getters.get(key)
-    if (!g) getters.set(key, (g = makeGetter(columnKey(spelled, key), def, errors)))
+    if (!g) getters.set(key, (g = makeGetter(columnKey(spelled, key), def, errors, opts.cardSettings)))
     return g
   }
   const valueOf = (entry: Entry, key: string): Value => {
