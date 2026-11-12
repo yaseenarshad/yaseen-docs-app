@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MACOS_HOTKEYS } from '@shared/macosHotkeys'
+import { sameKey, toDisplay } from '@shared/hotkeyBindings'
 import { DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
 import { api } from '../api'
 import { SettingsDialog } from './SettingsDialog'
@@ -185,6 +186,46 @@ describe('a changeable key (D6, D7)', () => {
     expect(says()).toEqual(['Remove the key from Close tab?', '⌘W → No key', '⌘W is the Mac standard for Close tab. Most Mac apps use it.'])
     click(button(popup() as HTMLElement, 'Remove'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+W', 'app.newFilesWindow': null, 'app.closeTab': null } })
+  })
+
+  it('YAZ-4941: an App key that takes ⌘K groups the Code two-step keys into ONE line, with "Show all" for the list; they stay blocked, not stripped; the swap Search → ⌘⇧F, Explore → ⌘K works end to end', async () => {
+    const { ALL_KEYS, keysOf, clashesOf, keyRow } = await import('@shared/keys')
+    const codeOnK = ALL_KEYS.filter((r) => r.scope === 'code' && keysOf(r, {}).some((k) => sameKey(k.split(' ')[0], 'CmdOrCtrl+K')))
+    expect(codeOnK.length).toBeGreaterThan(20)
+    await mount()
+    // Step 1: Search takes ⌘⇧F from Explore. Explore moves; the diagram's To front stays blocked, not stripped.
+    click(keyButton('search'))
+    press('F', 'KeyF', { metaKey: true, shiftKey: true })
+    expect(says()).toEqual(['Change the key for Search the vault?', '⌘K → ⌘⇧F', '⌘⇧F is App › Explore the vault now. It will lose its key.', '⌘⇧F is Diagram › To front now. It stays blocked while ⌘⇧F is an app key.'])
+    click(button(popup() as HTMLElement, 'Move it here'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+F', 'app.explore': null } })
+    // Step 2: Explore takes ⌘K. Nobody moves; the Code keys are one line, the single-key places one each.
+    click(keyButton('explore'))
+    press('k', 'KeyK', { metaKey: true })
+    const said = says()
+    expect(said.slice(0, 2)).toEqual(['Change the key for Explore the vault?', 'No key → ⌘K'])
+    // One line per place, in the places' order; the Code line counts its keys and names the first two.
+    const [first, second] = codeOnK.map((r) => keysOf(r, {})[0].split(' ').map(toDisplay).join(' '))
+    expect(said.slice(2)).toEqual([
+      '⌘K is Drawing › Add a link now. It stays blocked while ⌘K is an app key.',
+      '⌘K is Diagram › Edit tags now. It stays blocked while ⌘K is an app key.',
+      `⌘K starts ${codeOnK.length} Code keys (${first}, ${second}, …). They stay blocked while ⌘K is an app key.`,
+    ])
+    expect(said).toHaveLength(5)
+    // "Show all" opens the full list in a box that scrolls; the list names every Code key.
+    click(button(popup() as HTMLElement, 'Show all'))
+    const list = popup()?.querySelector<HTMLElement>('.hotkeys__clash-list')
+    expect(list).not.toBeNull()
+    expect(list?.querySelectorAll('li')).toHaveLength(codeOnK.length)
+    expect(list?.textContent).toContain(first)
+    click(button(popup() as HTMLElement, 'Save'))
+    const written = onChange.mock.calls.at(-1)?.[0] as SettingsState
+    expect(written.hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Shift+F', 'app.explore': 'CmdOrCtrl+K' })
+    // Afterwards: ⌘K is Explore's and ⌘⇧F is Search's, and a Code two-step key is blocked on its card, as under Search before.
+    expect(keyButton('explore').textContent).toBe('⌘K')
+    expect(keyButton('search').textContent).toBe('⌘⇧F')
+    expect(lines('code-addCommentLine')[0]).toBe('No key here now: ⌘K is App › Explore the vault. Change it on ⌘K')
+    expect(clashesOf(keyRow('code.addCommentLine')!, 'CmdOrCtrl+K CmdOrCtrl+C', written.hotkeys, {}).map((o) => o.id)).toContain('app.explore')
   })
 
   it('"Reset all hotkeys" is there only with a change, and asks in the confirm sheet with the list of changes', async () => {

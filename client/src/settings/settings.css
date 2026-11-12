@@ -736,6 +736,33 @@
 }
 
 /* The change pop-up (D6): the key now → the key it will have, big enough to read at a glance. */
+/* The change pop-up never grows past the window (YAZ-4941): its "Show all" list scrolls inside it. */
+.hotkeys__box .confirm {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+}
+.hotkeys__clash-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40vh;
+  margin: 4px 0 8px;
+  padding: 6px 10px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.6;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.hotkeys__clash-key {
+  display: inline-block;
+  min-width: 6.5em;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-muted);
+}
+
 .hotkeys__swap {
   display: flex;
   align-items: flex-end;
