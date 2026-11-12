@@ -119,6 +119,26 @@ export function withoutCardReview(line: CardLine, at: string): CardLine {
   return i === -1 ? line : { parts: line.parts.filter((_, j) => j !== i) }
 }
 
+/**
+ * The line with each review of `add` that it does not hold yet (a review is its time and its rating; each one ONE time),
+ * and its reviews in time order (YAZ-4993: the card that keeps an ID takes the union of its copies' histories). The
+ * reviews fill the line's review places in time order, the new ones after the last of them (else at the end); the ID,
+ * `off` and unknown parts stay where they are. Nothing new to add: the same line.
+ */
+export function withCardReviews(line: CardLine, add: readonly CardReview[]): CardLine {
+  const held = cardReviewsOf(line)
+  const key = (r: CardReview) => `${r.at} ${r.rating}`
+  const seen = new Set(held.map(key))
+  const fresh = add.filter((r) => !seen.has(key(r)) && (seen.add(key(r)), true))
+  if (fresh.length === 0) return line
+  const all = [...held, ...fresh].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+  let n = 0
+  const parts: CardPart[] = line.parts.map((p) => (p.kind === 'review' ? { kind: 'review', review: all[n++] } : p))
+  const last = parts.map((p) => p.kind === 'review').lastIndexOf(true)
+  const at = last === -1 ? parts.length : last + 1
+  return { parts: [...parts.slice(0, at), ...all.slice(n).map((review): CardPart => ({ kind: 'review', review })), ...parts.slice(at)] }
+}
+
 /** No reviews: the ⋯ menu's "Reset history", and the history of a copy. Every other part stays. */
 export const withoutCardReviews = (line: CardLine): CardLine => ({ parts: line.parts.filter((p) => p.kind !== 'review') })
 

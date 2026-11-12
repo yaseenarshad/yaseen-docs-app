@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
-import { cardIdOf, pageCards, rewritePageCards, withCardId, withoutCardReviews } from '@shared/cardLine'
+import { cardIdOf, cardReviewsOf, pageCards, rewritePageCards, withCardId, withCardReviews, withoutCardReviews, type CardReview } from '@shared/cardLine'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, noteIdNumber, vaultNoteId } from '@shared/noteId'
@@ -58,15 +58,17 @@ export const CARD_MOVE_WAIT_MS = 60 * 1000
 
 /**
  * One note card the sweep gives a new number: its place among its page's cards, the ID it must still hold (null: none),
- * and whether its history stays. `copyOf`: the place of the card before it on the same page that holds its ID — the
- * history goes only when the two cards are the same text (YAZ-4972: then no history is lost; else the sweep cannot
- * tell the original, and keeps both histories).
+ * and whether its history stays. A COPY names the card that keeps its ID: `copyOf`, the first card of the page that
+ * holds it, or `keeper`, the page that keeps it (one ID on two pages after the wait). A copy with that card's text
+ * gives its reviews to it, then empties its own history; a copy with another text keeps its history (YAZ-4993: the
+ * sweep never drops a review).
  */
 export interface CardFix {
   index: number
   held: string | null
   history: boolean
   copyOf?: number
+  keeper?: string
 }
 
 /** What one sweep did about notes that share an ID. A note that only needed an ID is not reported. */
@@ -375,13 +377,15 @@ interface CardWork {
  * THE CARD RULES OF THE SWEEP (YAZ-4960 D2). For each card of the pages in `among`, in page order:
  * - no ID: the next number;
  * - an ID that is no ID of this vault (another vault's letters, `BUS-12` in a `WIKI` vault): a new number, history kept;
- * - an ID a card before it on the same page holds: a COPY — a new number; an empty history only when its text is the
- *   text of that card (the same card twice: the history stays on it), else its history stays too (YAZ-4972: the sweep
- *   cannot tell which one is the original, so it never empties one; the editor settles a user's paste at paste time);
+ * - an ID the first card before it on the same page holds: a COPY — a new number. With that card's text, it gives that
+ *   card the reviews it lacks and its own history empties; with another text its history stays (YAZ-4993: no review is
+ *   ever dropped; the sweep cannot tell the original of two texts, so both keep theirs. The editor settles a user's
+ *   paste at paste time, YAZ-4972);
  * - an ID a note holds: a new number, history kept (links point at the note);
  * - an ID a card on ANOTHER page holds on disk: a cut and paste, or a copy. The page that took it last — the one this
  *   pass sweeps, or of two it sweeps the second in path order — waits `CARD_MOVE_WAIT_MS` (`cardWaits`), so a cut
- *   from the other page lands first. Still on both after the wait: a copy, settled once per ID in a pass.
+ *   from the other page lands first. Still on both after the wait: a copy, settled once per ID in a pass, by the same
+ *   text rule as on one page (`giveCardIds`): the keeper page takes the union first.
  */
 async function cardsToFix(
   records: ReadonlyMap<string, IndexRecord>,
@@ -447,30 +451,66 @@ async function cardsToFix(
         cardWaits.delete(key)
       }
       settled.add(id)
-      fixes.push({ index, held: card.id, history: false })
+      // The page that keeps the card: of the pages this pass sweeps, the first in path order; else the first on disk.
+      const keeper = [...onDisk].sort().find((p) => swept.has(p) && p < record.path) ?? [...onDisk].sort()[0]
+      fixes.push({ index, held: card.id, history: false, keeper })
     }
     if (fixes.length > 0) work.push({ record, fixes })
   }
   return work
 }
 
+/** The reviews of `reviews` less those `held` holds (a review is its time and its rating). */
+const missing = (reviews: readonly CardReview[], held: readonly CardReview[]): CardReview[] =>
+  reviews.filter((r) => !held.some((h) => h.at === r.at && h.rating === r.rating))
+
 /**
  * The note cards of the page at `file` take the IDs `ids` (one for each of `fixes`, in order), but only while each
- * still holds what it held: a compare-and-set on the page's bytes and mtime, as `giveId`. A copy's card loses its
- * reviews (`history: false`); every other part of its line stays. False when nothing was written.
+ * still holds what it held: a compare-and-set on the page's bytes and mtime, as `giveId`. False when nothing was written.
+ *
+ * NO REVIEW IS DROPPED (YAZ-4993). A copy with the text of the card that keeps its ID (`copyOf`, `keeper`) gives that
+ * card each review it lacks (the union: each review one time, in time order), then loses its own (`history: false`).
+ * A copy with another text keeps its history (`history: true`): the sweep cannot tell which card is the original, and
+ * both histories stay. A copy's other parts (`off`, unknown parts) stay on it. The keeper on ANOTHER page is written
+ * FIRST, with its own compare-and-set; this page only after it. A write that fails between the two leaves a review on
+ * two cards, never on none, and the next pass settles it (the union of a review it holds adds nothing).
  */
 export async function giveCardIds(file: string, fixes: readonly CardFix[], ids: readonly string[]): Promise<CardFix[] | false> {
   const { content, mtime } = await readFile(file)
   const cards = pageCards(content)
   if (fixes.some((fix) => cards[fix.index] === undefined || cardIdOf(cards[fix.index].line) !== fix.held)) return false
-  // A copy whose text is not its original's keeps its history: the sweep cannot tell which of the two came first.
-  const settled = fixes.map((fix) => (fix.copyOf === undefined || cards[fix.copyOf]?.text === cards[fix.index].text ? fix : { ...fix, history: true }))
+  // The reviews each card of this page takes from its copies on the page.
+  const carried = new Map<number, CardReview[]>()
+  const settled = fixes.map((fix): CardFix => {
+    if (fix.copyOf === undefined) return fix
+    if (cards[fix.copyOf]?.text !== cards[fix.index].text) return { ...fix, history: true }
+    carried.set(fix.copyOf, [...(carried.get(fix.copyOf) ?? []), ...cardReviewsOf(cards[fix.index].line)])
+    return fix
+  })
+  /** Every review the card at `n` holds once this page is written: its own and those its copies give it. */
+  const reviewsAt = (n: number): CardReview[] => [...cardReviewsOf(cards[n].line), ...(carried.get(n) ?? [])]
+  for (const [i, fix] of settled.entries()) {
+    if (fix.keeper === undefined || fix.history) continue
+    const there = await readFile(fix.keeper)
+    const at = pageCards(there.content).findIndex((card) => cardIdOf(card.line) === fix.held)
+    // The keeper no longer holds the ID (it was cut): no copy now. Nothing is written; the next pass sees again.
+    if (at === -1) return false
+    const keeper = pageCards(there.content)[at]
+    if (keeper.text !== cards[fix.index].text) {
+      settled[i] = { ...fix, history: true }
+      continue
+    }
+    const add = missing(reviewsAt(fix.index), cardReviewsOf(keeper.line))
+    if (add.length > 0)
+      await writeFile({ path: fix.keeper, content: rewritePageCards(there.content, (card, n) => (n === at ? withCardReviews(card.line, add) : undefined)), expectedMtime: there.mtime })
+  }
   const given = new Map(settled.map((fix, i) => [fix.index, { fix, id: ids[i] }]))
   const next = rewritePageCards(content, (card, n) => {
     const give = given.get(n)
-    if (give === undefined) return undefined
+    const add = carried.get(n) ?? []
+    if (give === undefined) return add.length > 0 ? withCardReviews(card.line, add) : undefined
     const line = withCardId(card.line, give.id)
-    return give.fix.history ? line : withoutCardReviews(line)
+    return give.fix.history ? withCardReviews(line, add) : withoutCardReviews(line)
   })
   await writeFile({ path: file, content: next, expectedMtime: mtime })
   return settled
