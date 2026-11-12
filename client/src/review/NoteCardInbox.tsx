@@ -44,12 +44,19 @@ export interface NoteCardInboxProps {
 
 /** The keys of a dialog, a sheet or a menu that is open: theirs, never the Inbox's. */
 const KEY_OWNERS = '[role="dialog"], [role="menu"], [role="listbox"]'
+
+/**
+ * Whether a key owner SHOWS. Each editor keeps its `[[` picker (a listbox) and a table its colour menus in the DOM,
+ * hidden, also in the tab layers under the Inbox: only one that shows takes the keys.
+ */
+const ownerShows = (el: HTMLElement): boolean =>
+  typeof el.checkVisibility === 'function' ? el.checkVisibility({ visibilityProperty: true }) : el.closest('[hidden]') === null && el.dataset.show !== 'false'
 const FIELD = 'input, textarea, select, [contenteditable="true"], [contenteditable=""]'
 
 /** Whether a key press belongs to the Inbox: the keyboard is in it (or nowhere), not in a field, and nothing nearer took it. */
 export function isInboxKeyTarget(event: KeyboardEvent, inbox: HTMLElement | null): boolean {
   if (event.defaultPrevented || event.isComposing || inbox === null) return false
-  if (document.querySelector(KEY_OWNERS) !== null) return false
+  if ([...document.querySelectorAll<HTMLElement>(KEY_OWNERS)].some(ownerShows)) return false
   const target = event.target instanceof Element ? event.target : null
   if (target === null || target === document.body || target === document.documentElement) return true
   if (target.closest(FIELD) !== null) return false

@@ -162,8 +162,18 @@ describe('the Inbox screen (YAZ-4962)', () => {
     press('2', {}, elsewhere)
     expect(review.answer).not.toHaveBeenCalled()
     elsewhere.remove()
+    // An editor's `[[` picker and a table's colour menu stay in the DOM, hidden: they take no key.
+    const picker = document.createElement('div')
+    picker.setAttribute('role', 'listbox')
+    picker.dataset.show = 'false'
+    const palette = document.createElement('div')
+    palette.setAttribute('role', 'menu')
+    palette.hidden = true
+    document.body.append(picker, palette)
     press('2')
     expect(review.answer).toHaveBeenCalledOnce()
+    picker.remove()
+    palette.remove()
   })
 
   it('O and E open the page on top, landed on the card (E in edit); ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; Esc closes', () => {
