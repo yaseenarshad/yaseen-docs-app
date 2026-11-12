@@ -631,3 +631,28 @@
   font-family: inherit;
   opacity: 0.8;
 }
+
+/* The empty box (YAZ-4945): Opened and Edited, a heading each inside the one list; each row's time, muted, on the right. */
+.explore .search-results > .explore__group {
+  list-style: none;
+}
+.explore .search-results > .explore__group:not(:first-child) {
+  margin-top: 6px;
+}
+/* The row is a column (title, folder): the time stands at the right of the title's line, and the title leaves room for it. */
+.explore__results .explore__row--timed {
+  position: relative;
+}
+.explore__results .explore__row--timed > .search-results__label {
+  padding-right: 72px;
+}
+.explore__time {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

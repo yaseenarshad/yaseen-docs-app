@@ -158,18 +158,18 @@ describe('layers that move like a cell note (round 3)', () => {
 })
 
 describe('the recent notes', () => {
-  it('newest first, one entry per note, 20 at most; a rename moves one, a delete drops it', () => {
+  it('newest first, one entry per note, 100 at most (YAZ-4945: kept, across vaults); a rename moves one, a delete drops it', () => {
     resetExploreRecents()
-    for (let i = 0; i < 25; i++) rememberExploreRecent(`/v/n${i}.md`)
+    for (let i = 0; i < 105; i++) rememberExploreRecent(`/v/n${i}.md`)
     rememberExploreRecent('/v/n10.md')
-    const list = exploreRecents()
+    const list = exploreRecents().map((e) => e.path)
     expect(list).toHaveLength(MAX_EXPLORE_RECENTS)
     expect(list[0]).toBe('/v/n10.md')
     expect(list.filter((p) => p === '/v/n10.md')).toHaveLength(1)
     moveExploreRecent('/v/n10.md', '/v/sub/n10.md')
-    expect(exploreRecents()[0]).toBe('/v/sub/n10.md')
+    expect(exploreRecents()[0].path).toBe('/v/sub/n10.md')
     moveExploreRecent('/v/sub', null)
-    expect(exploreRecents()).not.toContain('/v/sub/n10.md')
+    expect(exploreRecents().map((e) => e.path)).not.toContain('/v/sub/n10.md')
     expect(exploreRecents()).toHaveLength(MAX_EXPLORE_RECENTS - 1)
     resetExploreRecents()
   })

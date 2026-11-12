@@ -16,13 +16,14 @@ import type { SearchVault } from '../search/useSearchResults'
 import { FindBar } from '../editor/find/FindBar'
 import { createFindChannel } from '../editor/find/findChannel'
 import { NO_FOLDER_PAGE_NOTICE } from './exploreMenu'
-import { exploreRecents as exploreRecentsNow, moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
+import { exploreRecents as exploreRecentsNow, moveExploreRecent, rememberExploreRecent, reloadExploreRecents, resetExploreRecents } from './exploreRecents'
 import { onNoteWindowRequest } from '../views/noteWindowRequest'
 import { registerRenameContinuity } from '../lib/renameContinuity'
 import { requestZoom } from '../editor/zoomRequest'
 import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStack'
 import { layerPlace, MAX_LAYERS } from './layers'
 import { tileCells } from './tile'
+import { ago } from './recentSections'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -367,8 +368,8 @@ describe('the explore stack', () => {
     await openResult()
     render(2)
     await flush()
-    expect(rows()).toEqual(['beta', 'alpha'])
-    expect(top().querySelector('.explore__group')?.textContent).toBe('Recent')
+    expect(rows()).toEqual(['Beta', 'Alpha'])
+    expect(top().querySelector('.explore__group')?.textContent).toBe('Opened')
     await openResult()
     expect(top().querySelector('.explore__title')?.textContent).toBe('beta')
   })
@@ -380,7 +381,7 @@ describe('the explore stack', () => {
     props = { ...props, vaults: [{ root: '/v', watch, dirs: ['/v/wiki'], files: [], folder: '/v/wiki' }] }
     await mount()
     // With no query: the recents under the folder only.
-    expect(rows()).toEqual(['wiki/react'])
+    expect(rows()).toEqual(['React hooks'])
     await typeQuery('hooks')
     expect(rows()).toEqual(['Hooks', 'React hooks'])
     // Alpha and Beta are notes of the vault, outside the folder: not found.
@@ -1478,7 +1479,7 @@ describe('YAZ-4943: drawings and diagrams open as reading layers', () => {
     // The recents now list the boards too.
     // A push from outside React's events is counted at once: no false "12 layers" notice (the gotcha of YAZ-4943).
     expect(props.onNotice).not.toHaveBeenCalledWith(FULL_NOTICE)
-    expect(exploreRecentsNow().slice(0, 3)).toEqual([FLOW, SKETCH, '/v/beta.md'])
+    expect(exploreRecentsNow().slice(0, 3).map((e) => e.path)).toEqual([FLOW, SKETCH, '/v/beta.md'])
   })
 
   it('a diagram`s page tabs: the pages the window tells, the page shown selected; a click shows that page', async () => {
@@ -1712,5 +1713,77 @@ describe('YAZ-4944: Tile arranges the Explore windows', () => {
     act(() => (notes()[1].querySelector('[aria-label="Close this layer"]') as HTMLElement).click())
     await flush()
     expect(notes()).toHaveLength(1)
+  })
+})
+
+describe('YAZ-4945: the empty box shows Opened and Edited', () => {
+  const groups = () => [...top().querySelectorAll('.explore__group')].map((g) => g.textContent)
+  const titles = () => [...top().querySelectorAll('.search-results__row')].map((r) => r.getAttribute('title'))
+  const times = () => [...top().querySelectorAll('.search-results__row .explore__time')].map((t) => t.textContent)
+  const NOW = Date.now()
+  const edits: Record<string, number> = { '/v/e1.md': NOW - 3 * 3_600_000, '/v/alpha.md': NOW - 60_000, '/v/e2.excalidraw': NOW - 5 * 3_600_000, '/v/p.pdf': NOW - 1 }
+  beforeEach(() => {
+    props = { ...props, opensOf: () => ({ '/v/t1.md': { score: 1, last: NOW - 2 * 60_000 } }), editsOf: () => edits }
+  })
+
+  it('two sections, newest first, each row with its muted time; a file under Opened is not repeated under Edited; PDFs are left out', async () => {
+    rememberExploreRecent('/v/alpha.md', NOW - 10 * 60_000)
+    rememberExploreRecent('/v/beta.md', NOW - 30_000)
+    await mount()
+    expect(groups()).toEqual(['Opened', 'Edited'])
+    expect(titles()).toEqual(['/v/beta.md', '/v/t1.md', '/v/alpha.md', '/v/e1.md', '/v/e2.excalidraw'])
+    expect(times()).toEqual(['now', '2 min', '10 min', ago(edits['/v/e1.md'], Date.now()), ago(edits['/v/e2.excalidraw'], Date.now())])
+    // The row reads as a result row: its title from the index.
+    expect(rows().slice(0, 1)).toEqual(['Beta'])
+  })
+
+  it('8 at most in each section', async () => {
+    for (let i = 0; i < 12; i++) rememberExploreRecent(`/v/o${i}.md`, NOW - i * 1000)
+    props = { ...props, editsOf: () => Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`/v/s${i}.md`, NOW - i * 1000])) }
+    await mount()
+    const all = titles()
+    expect(all.filter((p) => p?.includes('/o'))).toHaveLength(8)
+    expect(all.filter((p) => p?.includes('/s'))).toHaveLength(8)
+  })
+
+  it('↑ ↓ go through both sections as one list; ↵ opens an Edited row; typing shows results instead', async () => {
+    rememberExploreRecent('/v/beta.md', NOW)
+    await mount()
+    // Opened: beta, t1; Edited: alpha, e1, e2. Two ↓ from beta: the first Edited row.
+    for (let i = 0; i < 2; i++) key(input(), { key: 'ArrowDown' })
+    expect(top().querySelector('.search-results__row--active')?.getAttribute('title')).toBe('/v/alpha.md')
+    key(input(), { key: 'Enter' })
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__title')?.textContent).toBe('alpha')
+    await escape()
+    await typeQuery('alp')
+    expect(groups()).toEqual([])
+    expect(rows()).toEqual(['Alpha'])
+  })
+
+  it('kept after a restart; a rename and a delete follow', async () => {
+    rememberExploreRecent('/v/beta.md', NOW - 1000)
+    rememberExploreRecent('/v/gamma.md', NOW)
+    props = { ...props, opensOf: () => ({}), editsOf: () => ({}) }
+    reloadExploreRecents()
+    await mount()
+    expect(titles()).toEqual(['/v/gamma.md', '/v/beta.md'])
+    act(() => moveExploreRecent('/v/gamma.md', '/v/sub/gamma.md'))
+    act(() => moveExploreRecent('/v/beta.md', null))
+    expect(titles()).toEqual(['/v/sub/gamma.md'])
+    act(() => root?.unmount())
+    el.remove()
+    reloadExploreRecents()
+    await mount()
+    expect(titles()).toEqual(['/v/sub/gamma.md'])
+  })
+
+  it('a folder-of-a-vault window lists only files under its folder, in both sections', async () => {
+    rememberExploreRecent('/v/wiki/a.md', NOW)
+    rememberExploreRecent('/v/b.md', NOW)
+    props = { ...props, vaults: [{ root: '/v', watch, dirs: ['/v/wiki'], files: [], folder: '/v/wiki' }], opensOf: () => ({}), editsOf: () => ({ '/v/wiki/c.md': NOW, '/v/d.md': NOW }) }
+    await mount()
+    expect(titles()).toEqual(['/v/wiki/a.md', '/v/wiki/c.md'])
   })
 })

@@ -14,7 +14,7 @@
  * windows (round 6): a press on a layer behind brings it to the front (`frontOrder`); the keys and Esc go to the front one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { rootOfPath, type CommentsOrder, type ZoomStep } from '@shared/types'
+import { rootOfPath, type CommentsOrder, type OpenStat, type ZoomStep } from '@shared/types'
 import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { LinkActions } from '../editor/linkMenu'
 import { isNoteKey } from '../editor/noteKeys'
@@ -25,13 +25,13 @@ import { storage } from '../lib/storage'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchCandidates, type SearchVault } from '../search/useSearchResults'
 import { ContextMenu } from '../sidebar/ContextMenu'
-import { inPlace } from '../vault/placeScope'
 import { ExploreBoard } from './ExploreBoard'
 import { ExploreNote, type ExploreVault } from './ExploreNote'
 import { exploreNoteSections } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
 import { ExploreSearch, type SearchLink } from './ExploreSearch'
 import { textCandidates } from './exploreRows'
+import { recentSections } from './recentSections'
 import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
@@ -61,7 +61,12 @@ export interface ExploreStackProps {
   onChangeCommentsOrder: (order: CommentsOrder) => void
   /** The last Esc, ⌘↵ and the click outside: App unmounts the stack and the keyboard goes back where it was. */
   onClose: () => void
+  /** The empty box (YAZ-4945): a vault's open history (`storage.getOpens`) and its save log (`storage.getEdits`). */
+  opensOf?: (root: string) => Readonly<Record<string, OpenStat>>
+  editsOf?: (root: string) => Readonly<Record<string, number>>
 }
+
+const noLog = () => ({})
 
 /** The layer a note or a board opens as (YAZ-4943): a note for reading, a board (a drawing or a diagram) for reading. */
 const fileLayer = (path: string, from?: { search: number; at: number }): ExploreLayer =>
@@ -98,7 +103,7 @@ const inField = (target: EventTarget | null): boolean => target instanceof Eleme
 /** What Tab can reach: the trail's chips and the front layer (round 6). */
 const TABBABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), [contenteditable="true"]'
 
-export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose }: ExploreStackProps) {
+export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -169,9 +174,21 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
   /** The vault's "Show IDs in search" for a row (YAZ-4940); a path in no vault reads Always. */
   const idsInTitle = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInTitle?.() ?? true, [vaults, roots])
   const idsInSearch = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInSearch?.() ?? 'always', [vaults, roots])
-  // A folder of a vault (YAZ-4922 🔒 D3): the empty search's recents are the notes under the folder only (`inPlace`).
+  // The empty box (YAZ-4945): Opened and Edited, of this window's vaults (a folder of a vault: under it, `inPlace`).
+  // Read again at each open or step (a new list) and each ⌘⇧F (`request`), never per keystroke.
   const recentAll = exploreRecents()
-  const recent = useMemo(() => recentAll.filter((path) => inPlace(vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.folder, path)), [recentAll, vaults, roots])
+  const recent = useMemo(
+    () => recentSections({ vaults, explore: recentAll, opensOf: opensOf ?? noLog, editsOf: editsOf ?? noLog }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [recentAll, vaults, opensOf, editsOf, request],
+  )
+  /** Each file's own search row (its title and ID), for the empty box's rows: built once per index snapshot. */
+  const rowByPath = useMemo(() => {
+    const by = new Map<string, SearchCandidate>()
+    for (const c of candidates) if (c.kind === 'file' && c.snippet === undefined && !by.has(c.path)) by.set(c.path, c)
+    return by
+  }, [candidates])
+  const rowOf = useCallback((path: string) => rowByPath.get(path), [rowByPath])
 
   const doors = useRef({ onNotice, onClose, openInTab, onRenameFile, linkActions })
   doors.current = { onNotice, onClose, openInTab, onRenameFile, linkActions }
@@ -610,7 +627,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
               <>
                 {/* The search moves by its top edge (round 3): the input keeps its text selection. */}
                 <div className="explore__grab" title="Drag to move; double-click to put back" onMouseDown={(e) => gestures.onHeadDown(layer.id, e)} onDoubleClick={(e) => gestures.reset(layer.id, e)} />
-                <ExploreSearch candidates={candidates} link={linkOf(layer.id)} markedRow={marked} recent={recent} roots={roots} nameOf={nameOf} onOpen={(row, at) => openRow(layer.id, row, at)} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
+                <ExploreSearch candidates={candidates} link={linkOf(layer.id)} markedRow={marked} recent={recent} rowOf={rowOf} roots={roots} nameOf={nameOf} onOpen={(row, at) => openRow(layer.id, row, at)} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
               </>
             ) : layer.kind === 'board' ? (
               <ExploreBoard
