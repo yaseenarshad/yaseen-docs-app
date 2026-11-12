@@ -17,6 +17,8 @@ export type ExploreLayer =
       from?: { search: number; at: number }
       /** Bumped when the note was deleted under the layer: the layer reads again and says it is gone. */
       gone?: number
+      /** Bumped by E in a Read only vault (YAZ-4939): the layer asks with its timed "Allow edits", or edits while unlocked. */
+      editAsk?: number
     }
   | {
       id: number

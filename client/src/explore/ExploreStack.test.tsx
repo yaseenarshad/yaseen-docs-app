@@ -1788,3 +1788,108 @@ describe('YAZ-4945: the empty box shows Opened and Edited', () => {
     expect(titles()).toEqual(['/v/wiki/a.md', '/v/wiki/c.md'])
   })
 })
+
+describe('YAZ-4939: a note layer in a Read only vault', () => {
+  const unlockedArgs: boolean[] = []
+  beforeEach(() => {
+    unlockedArgs.length = 0
+    props = {
+      ...props,
+      vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }),
+      renderEditor: (path, _openLink, unlocked): ReactNode => {
+        editors.push(path)
+        unlockedArgs.push(unlocked)
+        return <div className="editor" data-editor={path} />
+      },
+    }
+  })
+  const head = () => top().querySelector('.explore__head') as HTMLElement
+  const chip = () => head().querySelector<HTMLButtonElement>('.read-only-chip__button')
+  const ask = () => head().querySelector<HTMLElement>('.read-only-chip__ask')
+  const choice = (label: string) => [...(ask()?.querySelectorAll('button') ?? [])].find((b) => b.textContent === label) as HTMLButtonElement
+
+  it('E asks with the timed "Allow edits" box, like the note tab\'s chip; the head never says Editing while the note is locked', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    // Reading: the head says Read only (read only is never silent), with the Edit button.
+    expect(chip()?.textContent).toBe('Read only')
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(editors).toEqual([])
+    expect(top().querySelector('.explore__mode')).toBeNull()
+    expect(ask()?.querySelector('p')?.textContent).toBe('Allow edits?')
+    expect([...(ask()?.querySelectorAll('.read-only-chip__times button') ?? [])].map((b) => b.textContent)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab'])
+    // Esc cancels the box only: the layer stays, still reading.
+    key(choice('10 minutes'), { key: 'Escape' })
+    await flush()
+    expect(ask()).toBeNull()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note'])
+    expect(editors).toEqual([])
+    // The Edit button asks too.
+    act(() => [...head().querySelectorAll<HTMLButtonElement>('.explore__button')].find((b) => b.textContent?.startsWith('Edit'))?.click())
+    expect(ask()).not.toBeNull()
+  })
+
+  it('a choice unlocks THIS layer and edits: the editor is told it may edit; the chip counts down with Lock now; Lock now goes back to reading', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    act(() => choice('Allow edits for 1 minute').click())
+    await flush()
+    expect(top().querySelector('.explore__body--edit [data-editor="/v/alpha.md"]')).not.toBeNull()
+    expect(new Set(unlockedArgs)).toEqual(new Set([true]))
+    expect(chip()?.textContent).toMatch(/^Editing · [01]:\d\d$/)
+    expect(head().querySelector('.read-only-chip__lock')?.textContent).toBe('Lock now')
+    // Done goes back to reading; E then edits again with no second ask while the unlock runs.
+    act(() => [...head().querySelectorAll<HTMLButtonElement>('.explore__button')].find((b) => b.textContent?.startsWith('Done'))?.click())
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(ask()).toBeNull()
+    expect(top().querySelector('.explore__body--edit')).not.toBeNull()
+    // Lock now: back to reading, locked again.
+    act(() => (head().querySelector('.read-only-chip__lock') as HTMLButtonElement).click())
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    expect(chip()?.textContent).toBe('Read only')
+  })
+
+  it('at the end of the minute the layer saves and reads again, locked', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+    try {
+      await mount()
+      await typeQuery('alp')
+      await openResult()
+      key(document.activeElement as Element, { key: 'e' })
+      await flush()
+      act(() => choice('Allow edits for 1 minute').click())
+      await flush()
+      expect(top().querySelector('.explore__body--edit')).not.toBeNull()
+      act(() => void vi.advanceTimersByTime(60_000))
+      await flush()
+      await flush()
+      expect(top().querySelector('.explore__body--edit')).toBeNull()
+      expect(chip()?.textContent).toBe('Read only')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a vault that is not Read only has no chip in the head, and E edits at once (unlocked is false)', async () => {
+    props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly }) }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    expect(chip()).toBeNull()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Editing')
+    expect(new Set(unlockedArgs)).toEqual(new Set([false]))
+  })
+})

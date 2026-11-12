@@ -5,6 +5,9 @@
  * PDF or the web goes where it always goes. **E** or the Edit button turns the SAME layer into the editor: the
  * folder pages' mini window editor (App's `renderNoteEditor`), so saving, renames and conflicts are the app's own.
  * In edit a link opens a layer on top too. The head's ↗ opens the note in a tab, as ⌘↵ does.
+ * In a Read only vault (YAZ-4939) the head shows the note tab's "Read only" chip: E and Edit open its timed "Allow
+ * edits" box, and only a choice in it edits. The unlock is THIS layer's (`useTimedUnlock`); the editor is told the
+ * vault's lock is off for it while the unlock runs. At zero, or on "Lock now", the layer saves and reads again.
  */
 import { UnitContext, useVaultUnit } from '../vault/unitWord'
 import { useNoteId } from '../search/showIds'
@@ -34,6 +37,8 @@ import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { BacklinksSection } from '../links/BacklinksSection'
 import { savedFirst } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
+import { ReadOnlyChip } from '../editor/ReadOnlyChip'
+import { useTimedUnlock } from '../editor/useTimedUnlock'
 
 /** The vault the note is in: what its links resolve against. */
 export interface ExploreVault {
@@ -42,6 +47,8 @@ export interface ExploreVault {
   wikilinkCandidates: WikilinkCandidateSource
   /** The vault's catalog of files that are no notes: a board embed and a link to a drawing resolve through it. */
   viewOnlyLinks?: ViewOnlyLinkSource
+  /** The vault's Read only (YAZ-4939): E asks with the timed "Allow edits" box before the layer edits. */
+  readOnly?: boolean
 }
 
 interface ExploreNoteProps {
@@ -57,14 +64,19 @@ interface ExploreNoteProps {
   style?: CSSProperties
   /** A link in the note to a page of the window's vaults: a note goes on top of the stack; another file opens in a tab. */
   onOpenLink: (path: string) => void
-  /** The editor of a note, with `openLink` as its link door (App's `renderNoteEditor` with the stack's door). */
-  renderEditor: (path: string, openLink: (path: string) => void) => ReactNode
+  /**
+   * The editor of a note, with `openLink` as its link door (App's `renderNoteEditor` with the stack's door).
+   * `unlocked`: a timed "Allow edits" of this layer runs, so the vault's Read only does not lock the editor (YAZ-4939).
+   */
+  renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean) => ReactNode
   /** Where a bare unresolved `[[link]]` makes its note (App's `newNoteFolderFor`), root-relative. */
   createFolder: (sourcePath: string) => string
   linkActions?: LinkActions
   onNotice: (message: string) => void
   /** Edit (reading) / Done (editing): the layer's mode flips; E and Esc reach it too (`ExploreStack`). */
   onToggleEdit: () => void
+  /** Bumped by the stack's E in a Read only vault (YAZ-4939): the layer asks first, or edits while its unlock runs. */
+  editAsk?: number
   /**
    * ‹ › (round 3): the note's place among the rows of the search under it ("2/3"), whether a step each way exists,
    * and the step. A note opened from a link has no search under it, so no ‹ ›.
@@ -120,7 +132,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, editAsk = 0, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   // The layer's vault's word for a note (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const noteId = useNoteId(idInTitle ? vault.wikilinks : undefined, path)
@@ -246,6 +258,40 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   }, [active, mode])
 
   const note = fileKind(path) === 'markdown'
+  // The vault's Read only (YAZ-4939): the layer edits only while its own timed unlock runs. At zero, or on Lock now,
+  // an editing layer goes back to reading (its editor's save first, as Done does).
+  const locked = vault.readOnly === true
+  const leave = useRef({ mode, onToggleEdit })
+  leave.current = { mode, onToggleEdit }
+  const unlock = useTimedUnlock(() => {
+    if (leave.current.mode === 'edit') leave.current.onToggleEdit()
+  })
+  const unlocked = locked && unlock.until !== null
+  const [asking, setAsking] = useState(false)
+  /** E and Edit: edit, or ask first while the vault locks the layer. */
+  const edit = () => (locked && !unlocked ? setAsking(true) : onToggleEdit())
+  const editRef = useRef(edit)
+  editRef.current = edit
+  useEffect(() => {
+    if (editAsk > 0) editRef.current()
+  }, [editAsk])
+  const chip = locked && (
+    // A press in the chip or its box is not the head's drag, and a double click is not its reset.
+    <span className="explore__lock" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+      <ReadOnlyChip
+        asking={asking}
+        onAsk={() => setAsking(true)}
+        onAllow={(choice) => {
+          setAsking(false)
+          unlock.allow(choice)
+          if (mode === 'read') onToggleEdit()
+        }}
+        onCancel={() => setAsking(false)}
+        editingUntil={unlock.until}
+        onLock={unlock.lock}
+      />
+    </span>
+  )
   /** The text formatting of the vault, and the zoom as the note tab's scroller carries it (`--document-zoom`, app.css): the same rules scale the note's content. */
   const bodyStyle = { ...style, '--document-zoom': zoom / 100 } as CSSProperties
   return (
@@ -270,15 +316,17 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
         {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit E" says what you can do. */}
         {mode === 'read' ? (
           <>
+            {note && chip}
             {note && (
-              <button type="button" className="explore__button" onClick={onToggleEdit} title={unit('Edit this note here (E)')}>
+              <button type="button" className="explore__button" onClick={edit} title={unit('Edit this note here (E)')}>
                 Edit<kbd>E</kbd>
               </button>
             )}
           </>
         ) : (
           <>
-            <span className="explore__mode">Editing</span>
+            {/* In a Read only vault the chip says it: "Editing · 0:58" with Lock now. */}
+            {chip || <span className="explore__mode">Editing</span>}
             {/* Done (item 5): back to reading, as Esc does; the note saved as you typed. */}
             <button type="button" className="explore__button" onClick={onToggleEdit} title="Back to reading (Esc)">
               Done<kbd>esc</kbd>
@@ -295,7 +343,7 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
       {mode === 'edit' ? (
         <div className="explore__body explore__body--edit" style={bodyStyle}>
           {/* Keyed by the path: a step while editing saves this note and mounts the editor on the next (the body div stays, with the keyboard). */}
-          <Fragment key={path}>{renderEditor(path, onOpenLink)}</Fragment>
+          <Fragment key={path}>{renderEditor(path, onOpenLink, unlocked)}</Fragment>
         </div>
       ) : (
         <div ref={bodyRef} className="explore__body" style={bodyStyle} tabIndex={-1} data-explore-read>

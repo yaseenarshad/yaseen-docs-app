@@ -310,9 +310,11 @@ const NoteWindowEditorProps = createContext<((path: string) => Omit<ComponentPro
  * The note window's editor: the editor a tab has, with all its parts (Properties, comments); memo, as a tab's is.
  * `openLink` (the explore stack, YAZ-2571): a link opened in this tab goes there instead; the other gestures keep their doors.
  */
-function NoteWindowEditor({ path, openLink }: { path: string; openLink?: (path: string) => void }) {
+function NoteWindowEditor({ path, openLink, unlocked = false }: { path: string; openLink?: (path: string) => void; unlocked?: boolean }) {
   const propsFor = useContext(NoteWindowEditorProps)
-  const base = propsFor?.(path)
+  // An Explore layer's timed "Allow edits" (YAZ-4939): the vault's Read only does not lock this editor while it runs.
+  const props = propsFor?.(path)
+  const base = props === undefined || !unlocked ? props : { ...props, vaultReadOnly: false }
   const baseOpenLink = base?.onOpenLink
   const onOpenLink = useCallback((to: string, where?: GestureAction | 'explore') => (where === undefined || where === 'thisTab' || where === 'explore' ? openLink?.(to) : baseOpenLink?.(to, where)), [openLink, baseOpenLink])
   if (base === undefined) return null
@@ -322,7 +324,7 @@ function NoteWindowEditor({ path, openLink }: { path: string; openLink?: (path: 
 /** `FolderHost.renderNoteEditor` (YAZ-4547): one function, so it never renders a folder page again. */
 const renderNoteEditor = (path: string) => <NoteWindowEditor path={path} />
 /** The explore stack's editor (YAZ-2571): the same, with the stack's link door. */
-const renderExploreEditor = (path: string, openLink: (path: string) => void) => <NoteWindowEditor path={path} openLink={openLink} />
+const renderExploreEditor = (path: string, openLink: (path: string) => void, unlocked: boolean) => <NoteWindowEditor path={path} openLink={openLink} unlocked={unlocked} />
 
 /**
  * A new window's boot tab starts with the page view main gave it (YAZ-2951 D5), when that tab shows
@@ -1388,7 +1390,7 @@ export function App() {
   )
   const exploreVaultOf = useCallback((path: string) => {
     const scope = scopeOf(path)
-    return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates, viewOnlyLinks: scope.viewOnlyLinks }
+    return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates, viewOnlyLinks: scope.viewOnlyLinks, readOnly: scope.readOnlyVault.settings.on }
   }, [scopeOf])
   // The notes opened most recently, for the stack's empty search: the active tab's note, drawing or diagram counts (YAZ-4943).
   useEffect(() => {

@@ -276,6 +276,11 @@
   font-size: 11px;
   color: var(--fg-muted);
 }
+/* The note tab's Read only chip in a Read only vault (YAZ-4939): its "Allow edits?" box hangs under it, over the body. */
+.explore__lock {
+  flex: none;
+  cursor: default;
+}
 /* The note's or folder's id after its title (round 1, item 1), in an ID vault. */
 .explore__id {
   margin-left: 6px;

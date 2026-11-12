@@ -48,7 +48,8 @@ export interface ExploreStackProps {
   vaultOf: (path: string) => ExploreVault
   nameOf: (path: string) => string
   textVarsFor: (path: string) => CSSProperties
-  renderEditor: (path: string, openLink: (path: string) => void) => ReactNode
+  /** `unlocked` (YAZ-4939): the layer's timed "Allow edits" runs, so the vault's Read only does not lock this editor. */
+  renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean) => ReactNode
   createFolder: (sourcePath: string) => string
   linkActions?: LinkActions
   /** A note in a normal tab (⌘↵, ↗), a folder's page or another file (a drawing, a PDF): the stack closes. */
@@ -524,7 +525,9 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     // Yaseen's own ⌘E goes to his emoji app ("i thought leaving edit was esc?").
     if ((event.key === 'e' || event.key === 'E') && !event.metaKey && !event.ctrlKey && !event.altKey && top.kind === 'note' && top.mode === 'read' && !inField(event.target)) {
       event.preventDefault()
-      toggleEdit(top.id)
+      // In a Read only vault (YAZ-4939) the layer decides: it asks with its timed "Allow edits", or edits while unlocked.
+      if (vaultOf(top.path).readOnly === true) setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'note' ? { ...l, editAsk: (l.editAsk ?? 0) + 1 } : l)))
+      else toggleEdit(top.id)
     }
   }
 
@@ -661,6 +664,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
                 linkActions={linkActions}
                 onNotice={onNotice}
                 onToggleEdit={() => toggleEdit(layer.id)}
+                editAsk={layer.editAsk}
                 steps={steps}
                 zoom={zoom}
                 onZoom={setZoom}
