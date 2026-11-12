@@ -558,6 +558,8 @@ export function useFileClipboard(
   onMoved: (gesture: MovedGesture, text: string, skipped: boolean) => void,
   /** ⌘⌫ (YAZ-3272 D20): the Sidebar's delete door — the question, then App's list delete door. */
   askDelete: (paths: string[]) => void,
+  /** A paste into a read-only vault asks first (YAZ-4939): App's sheet, true = go on. Absent: every paste goes. */
+  allowFileAction?: (root: string) => Promise<boolean>,
 ) {
   /**
    * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op, paths }` or null, pushed to every
@@ -677,6 +679,7 @@ export function useFileClipboard(
    */
   const pasteInto = useCallback(
     async (dir: string, top?: string) => {
+      if (allowFileAction !== undefined && !(await allowFileAction(vaultOf(dir).root))) return
       let now: FileClipState
       try {
         now = await readClip()
@@ -686,7 +689,7 @@ export function useFileClipboard(
       if (now === null) return onNotice('Nothing to paste', 'info')
       await runPaste(dir, now, top)
     },
-    [runPaste, readClip, onNotice],
+    [runPaste, readClip, onNotice, vaultOf, allowFileAction],
   )
 
   /**
@@ -751,6 +754,8 @@ export function useFileClipboard(
   const importFiles = useCallback(
     async (dir: string, paths: string[]) => {
       const { root: vault } = vaultOf(dir)
+      // Finder's drop is a paste from outside: a read-only vault asks first (YAZ-4939).
+      if (allowFileAction !== undefined && !(await allowFileAction(vault))) return
       try {
         const { moved, copied, failed } = await api.file.import({ paths, targetDir: dir })
         if (moved.length + copied.length > 0) {
@@ -802,6 +807,8 @@ export function useInlineEdits(
   openTo: (file: string, top?: string) => void,
   /** A placed create's item, made on disk (YAZ-4782): it joins the Focus or the Favorites list at `place`. */
   onPlace?: (place: CreatePlace, path: string) => void,
+  /** A New … in a read-only vault asks first (YAZ-4939), before the name field opens: App's sheet, true = go on. Absent: the field opens at once. */
+  allowFileAction?: (root: string) => Promise<boolean>,
 ) {
   const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null; place?: CreatePlace } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir'; top: string | null } | null>(null)
@@ -810,7 +817,7 @@ export function useInlineEdits(
    * The name field for a new `kind` in `targetDir`, as the right-click "New …" opens it: the menu's row, or the New… box
    * (⌘N, YAZ-3556 D4), which asks for it in Files with no menu open.
    */
-  const startCreateAt = useCallback(
+  const startCreateNow = useCallback(
     (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
       const menu = at
       // A New … on the Focus or the Favorites tab with a place in its list (YAZ-4782: a pinned file row, a focus folder,
@@ -841,6 +848,15 @@ export function useInlineEdits(
       setCreating({ kind, seed, parentDir: menu.targetDir, top: toFiles ? null : menu.top })
     },
     [root, favoriteNodes, focusNodes, onLensChange, openTo],
+  )
+
+  /** The door every New … takes (YAZ-4939): a read-only vault asks first, then the field opens. */
+  const startCreateAt = useCallback(
+    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
+      if (allowFileAction === undefined) startCreateNow(kind, seed, at)
+      else void allowFileAction(vaultOf(at.targetDir).root).then((ok) => ok && startCreateNow(kind, seed, at))
+    },
+    [allowFileAction, vaultOf, startCreateNow],
   )
 
   const startCreate = useCallback(

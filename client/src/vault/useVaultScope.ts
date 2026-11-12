@@ -14,6 +14,7 @@ import { useExternalRenames, type ExternalRenames } from '../links/useExternalRe
 import { useReview, type ReviewApi } from '../review/useReview'
 import { useReviewSettings, type ReviewSettingsState } from '../review/useReviewSettings'
 import { useLinkClick, type LinkClickState } from '../explore/linkClick'
+import { useReadOnlyVault, type ReadOnlyVaultState } from './readOnlyVault'
 import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
 import { useProperties } from '../views/useProperties'
 
@@ -42,6 +43,8 @@ export interface VaultScope {
   reviewSettings: ReviewSettingsState
   /** This vault's "Clicking a link" (YAZ-4936): `.yaseendocs/link-click.json`. */
   linkClick: LinkClickState
+  /** This vault's Read only (YAZ-4939): `.yaseendocs/read-only.json`, and its file-actions allowance. */
+  readOnlyVault: ReadOnlyVaultState
   /** How text looks in every note of this vault (YAZ-3066 D10): `.yaseendocs/text-formatting.json`. Each page layer of the vault reads it (D12). */
   textFormatting: TextFormattingState
   review: ReviewApi
@@ -115,6 +118,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const name = useVaultName(root)
   const reviewSettings = useReviewSettings(root, notify)
   const linkClick = useLinkClick(root)
+  const readOnlyVault = useReadOnlyVault(root)
   const textFormatting = useTextFormatting(root, notify)
   // Upkeep review (YAZ-2322): the Inbox count and the vault's review session, read off the SAME
   // index source the wikilinks use. The window shows one session at a time; `App` sees to that.
@@ -175,6 +179,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     name,
     reviewSettings,
     linkClick,
+    readOnlyVault,
     textFormatting,
     review,
     renames,

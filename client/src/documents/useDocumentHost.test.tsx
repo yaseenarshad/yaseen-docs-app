@@ -6,7 +6,7 @@
  * `DrawingEditor.test.tsx` and `DrawioEditor.test.tsx` pin only what their engine adds.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { GithubSyncStatus } from '@shared/types'
 
@@ -17,6 +17,7 @@ import { _resetRenameContinuity, flushRenamedPath, retireDeletedPath } from '../
 import { BOARD_COMMAND_EVENT, requestBoardCommand } from './boardCommand'
 import { fakeWatch, withRevealObserver } from './boardTestKit'
 import { DocumentChips, exportWithNotice, useDocumentHost } from './useDocumentHost'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 
 /**
  * The cog's open menu (YAZ-4776): a portal on the page, under its cog, so a test finds it by the open cog's
@@ -48,7 +49,7 @@ let root: Root | null = null
 let container: HTMLElement
 
 /** The engine's stand-in: the hook, its bar and its chips in a board section. */
-function Host({ path = PATH, sync, onSyncNow, readOnly = false, readOnlySwitch }: { path?: string; sync?: GithubSyncStatus | null; onSyncNow?: () => void; readOnly?: boolean; readOnlySwitch?: boolean }) {
+function Host({ path = PATH, sync, onSyncNow, readOnly = false, readOnlySwitch, vault = false }: { path?: string; sync?: GithubSyncStatus | null; onSyncNow?: () => void; readOnly?: boolean; readOnlySwitch?: boolean; vault?: boolean }) {
   board = useDocumentHost({ root: ROOT, path, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, readOnlySwitch, onNotice })
   return (
     <section className="editor editor--drawing">
@@ -60,8 +61,13 @@ function Host({ path = PATH, sync, onSyncNow, readOnly = false, readOnlySwitch }
   )
 }
 
+/** The vault's Read only (YAZ-4939) reaches the host as `Editor` hands it: through the context. */
+function Vault({ on, children }: { on: boolean; children: ReactNode }) {
+  return <VaultReadOnly.Provider value={{ on, allowFileAction: () => Promise.resolve(true) }}>{children}</VaultReadOnly.Provider>
+}
+
 function render(props: Parameters<typeof Host>[0] = {}): void {
-  act(() => root?.render(<Host {...props} />))
+  act(() => root?.render(<Vault on={props.vault === true}><Host {...props} /></Vault>))
 }
 
 async function settle(): Promise<void> {
@@ -357,7 +363,7 @@ describe('exportWithNotice', () => {
   })
 })
 
-/** The two user doors of the switch (YAZ-3076 D3, D4): the cog's row turns it on; the chip's "Allow edits" turns it off. */
+/** The two user doors of the switch (YAZ-3076 D3, D4): the cog's row turns it on; the chip's "Turn Read only off" turns it off. */
 async function turnReadOnlyOn(): Promise<void> {
   act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
   const row = [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((b) => b.textContent?.startsWith('Read only'))!
@@ -367,7 +373,7 @@ async function turnReadOnlyOn(): Promise<void> {
 
 async function allowEdits(): Promise<void> {
   act(() => container.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
-  const allow = [...container.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Allow edits')!
+  const allow = [...container.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Turn Read only off')!
   await act(async () => allow.click())
   await settle()
 }
@@ -458,7 +464,7 @@ describe('the cog, the "Read only" chip and the "Allow edits?" box on a board (Y
     expect(ask()).toBeNull()
   })
 
-  it('S45-S48: the chip asks; the row while on opens the same box; "Allow edits" writes the switch off and the chip goes', async () => {
+  it('S45-S48: the chip asks; the row while on opens the same box; "Turn Read only off" writes the switch off and the chip goes', async () => {
     opened({ readOnly: true })
     act(() => chip()!.click())
     expect(ask()?.textContent).toContain('Allow edits?')
@@ -469,8 +475,9 @@ describe('the cog, the "Read only" chip and the "Allow edits?" box on a board (Y
     expect(menuIn(container)).toBeNull()
     expect(ask()).not.toBeNull()
     expect(setBoardReadOnly).not.toHaveBeenCalled()
-    const allow = [...ask()!.querySelectorAll('button')].find((b) => b.textContent === 'Allow edits')!
-    expect(document.activeElement).toBe(allow)
+    // The focus is on the first time choice (YAZ-4939), so Enter unlocks for 15 minutes; the switch's off is the fourth button.
+    expect(document.activeElement?.textContent).toBe('Allow edits for 15 minutes')
+    const allow = [...ask()!.querySelectorAll('button')].find((b) => b.textContent === 'Turn Read only off')!
     await act(async () => allow.click())
     await settle()
     expect(setBoardReadOnly).toHaveBeenCalledExactlyOnceWith({ root: ROOT, path: PATH, on: false, expectedMtime: 100 })
@@ -517,5 +524,92 @@ describe('a file with no read-only switch (YAZ-3448: a code file)', () => {
     expect(reload).toHaveBeenCalledTimes(1)
     expect(board.readOnly).toBe(false)
     expect(container.querySelector('.read-only-chip')).toBeNull()
+  })
+})
+
+/** Read only for the whole vault on a board (YAZ-4939): the lock without the file's switch, and the timed unlock of this tab. */
+describe('Read only for the whole vault on a board (YAZ-4939)', () => {
+  const chip = () => container.querySelector<HTMLButtonElement>('.read-only-chip__button')
+  const lockNow = () => container.querySelector<HTMLButtonElement>('.read-only-chip__lock')
+  const ask = () => container.querySelector<HTMLElement>('.read-only-chip__ask')
+  const labels = () => [...(ask()?.querySelectorAll('button') ?? [])].map((b) => b.textContent)
+  const cogRow = () => {
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    return [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((b) => b.textContent?.startsWith('Read only'))!
+  }
+
+  it('the vault On: the board is read only with its own switch off, the chip shows, the box has no "Turn Read only off", and the switch is never written', () => {
+    opened({ vault: true })
+    expect(board.readOnly).toBe(true)
+    expect(board.switchOn).toBe(false)
+    expect(chip()?.textContent).toBe('Read only')
+    act(() => chip()!.click())
+    expect(labels()).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Cancel'])
+    act(() => button('Cancel').click())
+    expect(cogRow().getAttribute('aria-pressed')).toBe('true')
+    expect(setBoardReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('a time choice unlocks this tab, the chip reads "Editing"; at zero the board saves, then locks; the file keeps its switch', async () => {
+    opened({ vault: true })
+    act(() => chip()!.click())
+    act(() => button('1 hour').click())
+    expect(board.readOnly).toBe(false)
+    expect(chip()?.textContent).toBe('Editing · 60:00')
+    expect(lockNow()?.textContent).toBe('Lock now')
+    await after(60 * 60_000 - 100)
+    edit(1)
+    expect(write).not.toHaveBeenCalled()
+    await after(100)
+    await settle()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(board.readOnly).toBe(true)
+    expect(board.switchOn).toBe(false)
+    expect(chip()?.textContent).toBe('Read only')
+    expect(setBoardReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('"Lock now" saves and locks at once', async () => {
+    opened({ vault: true })
+    act(() => chip()!.click())
+    act(() => button('Allow edits for 15 minutes').click())
+    edit(1)
+    await act(async () => lockNow()!.click())
+    await settle()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(board.readOnly).toBe(true)
+    expect(chip()?.textContent).toBe('Read only')
+  })
+
+  it('the cog’s row reads On while an unlock runs, and a click on it then locks now', async () => {
+    opened({ vault: true })
+    act(() => chip()!.click())
+    act(() => button('Until I close this tab').click())
+    expect(board.readOnly).toBe(false)
+    const row = cogRow()
+    expect(row.getAttribute('aria-pressed')).toBe('true')
+    await act(async () => row.click())
+    await settle()
+    expect(board.readOnly).toBe(true)
+    expect(setBoardReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('precedence: the vault On wins — a board with its own switch on has no "Turn Read only off"; with the vault Off it has', () => {
+    opened({ vault: true, readOnly: true })
+    expect(board.readOnly).toBe(true)
+    expect(board.switchOn).toBe(true)
+    act(() => chip()!.click())
+    expect(labels()).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Cancel'])
+    act(() => root?.unmount())
+    root = createRoot(container)
+    opened({ vault: false, readOnly: true })
+    act(() => chip()!.click())
+    expect(labels()).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Turn Read only off', 'Cancel'])
+  })
+
+  it('a code file (no switch of its own) takes no chip from the host: the code tab draws its own', () => {
+    opened({ vault: true, readOnlySwitch: false })
+    expect(board.readOnly).toBe(false)
+    expect(chip()).toBeNull()
   })
 })

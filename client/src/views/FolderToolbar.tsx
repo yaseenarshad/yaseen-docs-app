@@ -21,6 +21,7 @@ import { MarkGlyph } from './view/ColumnMark'
 import { StatusChips } from '../editor/StatusChips'
 import type { SaveStatus } from '../lib/autosave'
 import type { Store } from '../lib/store'
+import type { AllowFor } from '../editor/useTimedUnlock'
 
 /**
  * THE HOOK FOR THE PAGE TAB (YAZ-3746 10D, D35): what the Page tab hands the folder page's toolbar while it shows.
@@ -58,17 +59,24 @@ export const FOLDER_READ_ONLY_TIP = 'This folder page is read only'
 const SAVE_RANK: Record<SaveStatus, number> = { saved: 0, unsaved: 1, saving: 2, error: 3 }
 const worse = (a: SaveStatus, b: SaveStatus): SaveStatus => (SAVE_RANK[a] >= SAVE_RANK[b] ? a : b)
 
-export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, showNewButtons, onChangeShowNewButtons, views, defaultView, onChangeDefaultView, name, sync, onSyncNow }: {
+export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil = null, onLock, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, showNewButtons, onChangeShowNewButtons, views, defaultView, onChangeDefaultView, name, sync, onSyncNow }: {
   store: Store<FolderChipsState>
   zoom: number
   onZoom: (zoom: number) => void
+  /** The folder page is under Read only: its own switch, or the vault's (YAZ-4939). The chip shows while it is. */
   readOnly: boolean
-  /** Off → the host turns it on; on → the host opens the chip's "Allow edits?" box, as a note's cog does. */
+  /** Off → the host turns it on; on → the host opens the chip's "Allow edits?" box, as a note's cog does; on while a timed unlock runs → "Lock now". */
   onToggleReadOnly: () => void
   asking: boolean
   onAsk: () => void
-  onAllow: () => void
+  /** A time choice (YAZ-4939): the host unlocks this tab for that long. */
+  onAllow: (choice: AllowFor) => void
   onCancel: () => void
+  /** "Turn Read only off": the folder page's own switch, in `.folder.md`. Absent while the vault's lock would keep it locked anyway. */
+  onTurnOff?: () => void
+  /** A timed unlock runs: when it ends, or Infinity until the tab closes; null = locked. */
+  editingUntil?: number | null
+  onLock?: () => void
   /** The folder's own choice: `undefined` follows Settings. */
   showPageFile: boolean | undefined
   onChangeShowPageFile: (next: boolean | undefined) => void
@@ -177,7 +185,7 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
     ]),
   ]
   return (
-    <StatusChips zoom={zoom} onZoom={onZoom} readOnly={readOnly ? { asking, onAsk, onAllow, onCancel } : null} sync={sync} onSyncNow={onSyncNow} save={page === null ? save : worse(save, page.save)}>
+    <StatusChips zoom={zoom} onZoom={onZoom} readOnly={readOnly ? { asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil, onLock } : null} sync={sync} onSyncNow={onSyncNow} save={page === null ? save : worse(save, page.save)}>
       {page?.foldAll}
       {/* The folder page's own settings only (YAZ-3746 13BM PS2): the Page tab's text settings are on its toolbar (`Toolbar`). */}
       <PageSettings readOnly={readOnly} onToggleReadOnly={onToggleReadOnly} switches={switches} switchesHeading={`${name} (folder page)`} />

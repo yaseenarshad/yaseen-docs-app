@@ -36,6 +36,7 @@ import { SHARING_SECTION } from '../share/SharingPage'
 import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import type { LinkClickState } from '../explore/linkClick'
+import type { ReadOnlyVaultState } from '../vault/readOnlyVault'
 import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
 import { FOLDER_PAGES_SECTION } from './folderPagesSection'
@@ -311,6 +312,8 @@ export interface SettingsCtx {
   review?: ReviewSettingsState
   /** This vault's "Clicking a link" (YAZ-4936); absent with no vault open. */
   linkClick?: LinkClickState
+  /** This vault's Read only (YAZ-4939); absent with no vault open. */
+  readOnlyVault?: ReadOnlyVaultState
   /**
    * This vault's IDs (YAZ-2523 🔒 V4); absent until a vault's index has loaded. `enabled` is its
    * answer, and no answer reads as no. `held`: a note holds an ID. `ask`: what a yes would write,
@@ -1695,6 +1698,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                   ariaLabel="Clicking a link"
                 />
               ),
+          },
+          // YAZ-4939: one row of its own, saved in the vault (`.yaseendocs/read-only.json`).
+          {
+            id: 'readOnlyVault',
+            label: 'Read only',
+            hint: 'On: every note, drawing, diagram, code file and folder page in this vault opens read only, and nothing is written to your notes for it. The Read only chip offers Allow edits for 15 minutes, 1 hour or until the tab closes. Rename, Move, Delete, New and Paste ask first.',
+            keywords: ['read only', 'readonly', 'lock', 'locked', 'protect', 'allow edits', 'timer', 'vault'],
+            available: (ctx) => ctx.readOnlyVault !== undefined,
+            render: ({ readOnlyVault }) => readOnlyVault && <Segmented options={ON_OFF_OPTIONS} value={readOnlyVault.settings.on} onChange={(on) => readOnlyVault.save({ on })} ariaLabel="Read only for this vault" />,
           },
           {
             id: 'ids',

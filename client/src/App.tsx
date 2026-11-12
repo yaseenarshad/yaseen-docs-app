@@ -483,6 +483,17 @@ export function App() {
   }, [])
   /** The `[[` picker rows of the window's vault that holds `path`, or null (YAZ-3609 D14): links across the workspace. */
   const candidatesOf = useCallback((path: string) => (rootOfPath(live.current.roots, path) === null ? null : scopeOf(path).wikilinkCandidates), [scopeOf])
+  /**
+   * A file action in a read-only vault (YAZ-4939): Rename, Move, Delete, the sidebar's New … and Paste, a folder page's
+   * New. The vault's own allowance answers at once; else ONE sheet asks, "Allow for 15 minutes" opens the vault's file
+   * actions that long, and Cancel refuses. The app's own writes never come here.
+   */
+  const [readOnlyAsk, setReadOnlyAsk] = useState<{ root: string; resolve: (ok: boolean) => void } | null>(null)
+  const allowFileAction = useCallback((root: string): Promise<boolean> => {
+    const scope = scopeOf(root)
+    if (scope.root !== root || scope.readOnlyVault.fileActionsAllowed()) return Promise.resolve(true)
+    return new Promise((resolve) => setReadOnlyAsk({ root, resolve }))
+  }, [scopeOf])
   /** A link to a page of a vault the app knows but this window does not show (YAZ-3609 D21): the sheet that asks to add it. */
   const [addAsk, setAddAsk] = useState<{ root: string; path: string; background: boolean } | null>(null)
   const askToAdd = useCallback((path: string, background: boolean): boolean => {
@@ -2722,15 +2733,19 @@ export function App() {
       const { root } = scopeOf(first.oldPath)
       if (root === null) return
       if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return notify(BETWEEN_VAULTS)
+      // A read-only vault asks first (YAZ-4939).
+      if (!(await allowFileAction(root))) return
       await runMoves(moves)
     },
-    [scopeOf, runMoves, notify],
+    [scopeOf, runMoves, notify, allowFileAction],
   )
 
   const requestRename = useCallback(
     async (oldPath: string, to: RenameTo, kind: TreeNode['type']): Promise<void> => {
       const { root, wikilinks } = scopeOf(oldPath)
       if (root === null) return
+      // A read-only vault asks first (YAZ-4939); a move's door below then finds the allowance.
+      if (!(await allowFileAction(root))) return
       // A MOVE keeps the name: it is the list door's, a list of one (YAZ-3250 D1).
       if (to.title === undefined && !isNameChange(oldPath, to.newPath)) return requestMoves([{ oldPath, newPath: to.newPath, kind }])
       const catalog = await catalogForRename(oldPath, kind)
@@ -2751,7 +2766,7 @@ export function App() {
         viewOnlyCatalog: catalog,
       })
     },
-    [scopeOf, catalogForRename, renameFile, requestMoves, settings.confirmRename],
+    [scopeOf, catalogForRename, renameFile, requestMoves, settings.confirmRename, allowFileAction],
   )
   // The door's two spellings, as the surfaces hold them: a path the gesture built, or a title typed.
   const requestPathRename = useCallback((oldPath: string, newPath: string, kind: TreeNode['type']) => requestRename(oldPath, { newPath }, kind), [requestRename])
@@ -2859,6 +2874,8 @@ export function App() {
     }
   }, [])
   const trashMany = useCallback(async (paths: readonly string[]): Promise<void> => {
+    // A read-only vault asks first (YAZ-4939), once for each vault of the list.
+    for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return
     // The names before the delete, while the index still has the pages.
     const names = new Map(paths.map((path) => [path, nameOf(path)]))
     const went: DeleteResponse[] = []
@@ -2884,7 +2901,7 @@ export function App() {
     if (items.length === 0) return notify(text, 'info', unlessFailed('undo', failed))
     moveHistory.current.push({ step: 'delete', items })
     stepToast(text, 'info', 'undo', failed.length > 0)
-  }, [nameOf, trashOne, notify, stepToast])
+  }, [nameOf, trashOne, notify, stepToast, scopeOf, allowFileAction])
 
   /** The items still in their vault's tree, read fresh (S31): one another window moved or deleted is gone. */
   const stillThere = useCallback(async (paths: readonly string[]): Promise<string[]> => {
@@ -3047,6 +3064,9 @@ export function App() {
       // "Open in Explore" on a pill, and the vault's "Clicking a link" (YAZ-4936).
       onOpenExplore: openExploreOn,
       exploreOnClick: exploreOnClickFor(path),
+      // The vault's Read only (YAZ-4939), and the door a file action asks through.
+      vaultReadOnly: scope.readOnlyVault.settings.on,
+      onFileAction: allowFileAction,
       properties: scope.properties,
       onOpenFileRight: openRight,
       // YAZ-4564: a folder page's Folder chips and ↗ open a subfolder's page as the sidebar's "Open folder page" does.
@@ -3320,7 +3340,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Note (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
@@ -3441,6 +3461,7 @@ export function App() {
           onMoved={recordMoves}
           onRetitle={requestRetitle}
           onDeleteEntries={trashMany}
+          onFileAction={allowFileAction}
           onDraggedOut={(paths) => void askAfterDragOut(paths)}
           onNotice={notify}
           // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.
@@ -3686,6 +3707,25 @@ export function App() {
           titles={titles}
           onConfirm={confirmRename}
           onCancel={() => setPendingRename(null)}
+        />
+      )}
+      {/* A file action in a read-only vault (YAZ-4939): the focus starts on Cancel, as on every sheet that guards something. */}
+      {readOnlyAsk !== null && (
+        <ConfirmSheet
+          labelId="confirm-read-only-vault-text"
+          text={`This vault (${storage.vaultName(readOnlyAsk.root)}) is read only. Allow its file actions — rename, move, delete, new and paste — for 15 minutes?`}
+          confirmLabel="Allow for 15 minutes"
+          onConfirm={() => {
+            const ask = readOnlyAsk
+            setReadOnlyAsk(null)
+            scopeOf(ask.root).readOnlyVault.allowFileActions()
+            ask.resolve(true)
+          }}
+          onCancel={() => {
+            const ask = readOnlyAsk
+            setReadOnlyAsk(null)
+            ask.resolve(false)
+          }}
         />
       )}
       {/* Another window's tab of a vault this window does not show (YAZ-3637 D6): add the vault, then the tab moves here. */}

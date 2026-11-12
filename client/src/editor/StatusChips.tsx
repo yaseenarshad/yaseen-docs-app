@@ -5,13 +5,20 @@ import { DocumentZoom } from './DocumentZoom'
 import { ReadOnlyChip } from './ReadOnlyChip'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
+import type { AllowFor } from './useTimedUnlock'
 
-/** The "Read only" chip's state and doors (YAZ-3076 D4): the chip shows while it is given. */
+/** The "Read only" chip's state and doors (YAZ-3076 D4): the chip shows while it is given — locked, or editing for a time (YAZ-4939). */
 export interface ReadOnlyChipState {
   asking: boolean
   onAsk: () => void
-  onAllow: () => void
+  /** A time choice: the host unlocks this page for that long (YAZ-4939). */
+  onAllow: (choice: AllowFor) => void
   onCancel: () => void
+  /** "Turn Read only off" in the box: the page's own switch, in its file. Absent: no such button. */
+  onTurnOff?: () => void
+  /** A timed unlock runs: when it ends, or Infinity until the tab closes; null = locked. */
+  editingUntil?: number | null
+  onLock?: () => void
 }
 
 /**
@@ -34,7 +41,7 @@ export function StatusChips({ children, zoom, onZoom, readOnly, sync, onSyncNow,
     <div className="status-chips">
       {children}
       <DocumentZoom value={zoom} onChange={onZoom} />
-      {readOnly !== null && <ReadOnlyChip asking={readOnly.asking} onAsk={readOnly.onAsk} onAllow={readOnly.onAllow} onCancel={readOnly.onCancel} />}
+      {readOnly !== null && <ReadOnlyChip asking={readOnly.asking} onAsk={readOnly.onAsk} onAllow={readOnly.onAllow} onCancel={readOnly.onCancel} onTurnOff={readOnly.onTurnOff} editingUntil={readOnly.editingUntil} onLock={readOnly.onLock} />}
       {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
       <SaveIndicator status={save} />
     </div>

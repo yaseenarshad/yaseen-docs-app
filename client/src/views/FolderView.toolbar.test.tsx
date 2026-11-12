@@ -269,11 +269,11 @@ describe('Read only (D36)', () => {
     expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Pipeline'])
   })
 
-  it('"Allow edits" in the chip removes the key, and the settings write goes through again', async () => {
+  it('"Turn Read only off" in the chip removes the key, and the settings write goes through again', async () => {
     disk.set(SETTINGS_FILE, { content: VIEWS.replace('---\n', '---\nreadonly: true\n'), mtime: 50 })
     const el = await mount()
     click(q(el, '.read-only-chip__button'))
-    click(q(el, '.read-only-chip__allow'))
+    click([...el.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Turn Read only off')!)
     await flush()
     expect(onDisk()).toBe(VIEWS)
     expect(el.querySelector('.read-only-chip')).toBeNull()

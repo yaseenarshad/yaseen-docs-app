@@ -32,7 +32,7 @@
  *
  * Feed: the window's ONE `WikilinkResolveSource`, so the view costs no fetch or watcher of its own.
  */
-import { memo, type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, type CSSProperties, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnDecl } from './folderSettings'
 import { withOrder } from './view/columnOrder'
 import { canonicalKey } from './view/keys'
@@ -76,6 +76,8 @@ import { writeProperties, writeProperty, writeRouted, type PropertyWrite } from 
 import { byFolder, declarationOf, folderName, foldersTaking, pageColumns, readOnlyRefusal, selfAndAncestors, takesFrom, withOwnerSwitch, type ColumnSources } from './columnInheritance'
 import { mergeSeparateValues, restoreSeparateValues, separateCounts, separateHolders, type SeparateKeep } from './separateValues'
 import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
+import { useTimedUnlock } from '../editor/useTimedUnlock'
+import { VAULT_READ_ONLY_TIP, VaultReadOnly } from '../vault/readOnlyVault'
 import { ViewFolder } from './view/GroupHeader'
 import { noteLinkOf } from './view/fills'
 import { OtherFiles, trayBackTarget } from './view/OtherFiles'
@@ -264,6 +266,9 @@ export function folderTrayMessage(count: number, inside: readonly string[]): str
 const stampOf = (s: Pick<FolderSettings, 'views' | 'formulas' | 'properties' | 'defaultView'>): string =>
   JSON.stringify([s.views, s.formulas ?? null, s.properties ?? null, s.defaultView ?? null])
 
+/** A folder page's writes land at once: nothing to save when its timed unlock ends (YAZ-4939). */
+const noFlush = (): void => undefined
+
 export function FolderView({
   path,
   root,
@@ -398,8 +403,15 @@ export function FolderView({
     return [...moved.keys()].filter((p) => !inGoneDir(p)).map((p) => byPath.get(p)!)
   }, [moved, rows, inGoneDir])
   const trayFolders = useMemo(() => [...movedFolders].map(([dir, f]) => ({ dir, name: f.name })), [movedFolders])
-  /** The read-only notes (YAZ-3076 D6), read off each note's OWN properties before `shown` swaps in the folder's values; a folder row's off its `.folder.md` (D32). */
-  const locked = useMemo(() => readOnlyPaths([...rows, ...subfolders]), [rows, subfolders])
+  /** The vault's Read only (YAZ-4939), and this tab's timed "Allow edits": one unlock for the page, its settings and its cells. */
+  const vault = useContext(VaultReadOnly)
+  const unlock = useTimedUnlock(noFlush)
+  const vaultLockedHere = vault.on && unlock.until === null
+  /**
+   * The read-only notes (YAZ-3076 D6), read off each note's OWN properties before `shown` swaps in the folder's values; a folder row's off its `.folder.md` (D32).
+   * In a read-only vault (YAZ-4939) every row's cell is locked until this tab's unlock; each note's own switch then still holds.
+   */
+  const locked = useMemo(() => (vaultLockedHere ? new Set([...rows, ...subfolders].map((r) => r.path)) : readOnlyPaths([...rows, ...subfolders])), [rows, subfolders, vaultLockedHere])
   /**
    * The shortcut doors of this page's rows (YAZ-4797 demo): where a shortcut lives, Go to it, Remove the shortcut, Add one
    * to another folder. Vaults with IDs only (a shortcut names its folder by id). Each write is the sidebar's own
@@ -452,8 +464,11 @@ export function FolderView({
   // ---------- The toolbar (YAZ-3746 D35) ----------
   /** The toolbar's store: the save state of the folder's own writes, the Page tab's part, and the lock for the Page tab. */
   const [chips] = useState(() => createStore<FolderChipsState>({ save: 'saved', page: null, readOnly: false }))
-  /** The folder page is read only (D36): `readonly: true` in its `.folder.md`. The notes inside keep their own rule. */
+  /** The folder page's own Read only (D36): `readonly: true` in its `.folder.md`. The notes inside keep their own rule. */
   const [pageLocked, setPageLocked] = useAheadKey(record !== undefined && isReadOnlyProperties(record.properties))
+  /** The page is under Read only — its own switch or the vault's (YAZ-4939): the chip shows. Locked for real until this tab's unlock. */
+  const pageBase = pageLocked || vault.on
+  const pageEffective = pageBase && unlock.until === null
   /** The folder's own "Show folder page file" (D37): `undefined` follows Settings. */
   const [showPageFile, setShowPageFile] = useAheadKey(record === undefined ? undefined : showPageFileOf(record.properties))
   /** The folder's own "Preview rows on hover" and "Preview links on hover" (YAZ-4601 D51, split by demo 13D): `undefined` follows Settings. Each reads the legacy `hover_preview` where its own key is absent. */
@@ -471,9 +486,9 @@ export function FolderView({
   const marks = ownMarks ?? (folderPages ?? DEFAULT_FOLDER_PAGES).columnMarks
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
-    chips.set({ readOnly: pageLocked })
-    if (!pageLocked) setAskingUnlock(false)
-  }, [chips, pageLocked])
+    chips.set({ readOnly: pageEffective })
+    if (!pageBase) setAskingUnlock(false)
+  }, [chips, pageEffective, pageBase])
   /** Per app tab and never stored, as a note's (D35). */
   const [zoom, setZoom] = useState(100)
   /** The folder's writes in flight, and whether one of them failed: the save chip says 'saving' until all settle. */
@@ -670,7 +685,7 @@ export function FolderView({
       // YAZ-4769: this folder and the ones above it — the vault root only for a root page, or when the root defines it.
       columnOn: (key) => {
         const column = columns[key]
-        if (column === undefined || column.over !== undefined || column.decl.kind === 'mentions' || pageLocked || !inheritOn) return null
+        if (column === undefined || column.over !== undefined || column.decl.kind === 'mentions' || pageEffective || !inheritOn) return null
         const stored = column.owner === folder ? column.decl : folderSettings(folderMap.get(column.owner), ids).columns[key]
         if (stored?.separate === true) return null
         const up = selfAndAncestors(folder).filter((dir) => dir !== '' || folder === '' || column.owner === '')
@@ -683,7 +698,7 @@ export function FolderView({
       },
       moveTo: (key, to) => sourceMoves.current.moveTo(key, to),
     }
-  }, [columns, belowColumns, folderMap, vaultName, folder, marks, pageLocked, inheritOn, ids])
+  }, [columns, belowColumns, folderMap, vaultName, folder, marks, pageEffective, inheritOn, ids])
   /**
    * The page's tied columns (YAZ-4781 R2): each row's value is the other side's links, off the snapshot's one mentions
    * map, put on the row as a field so its cells edit as a multi-link. Undefined when the page has none.
@@ -799,8 +814,8 @@ export function FolderView({
   }
   /** Read only refuses every settings write (D36): the banner says why. */
   const refuseLocked = (): boolean => {
-    if (pageLocked) setSettingsError(FOLDER_READ_ONLY_TIP)
-    return pageLocked
+    if (pageEffective) setSettingsError(FOLDER_READ_ONLY_TIP)
+    return pageEffective
   }
 
   /**
@@ -1118,7 +1133,7 @@ export function FolderView({
     },
   }
   /** The tray takes moves while it shows and the page is not read only (D36). */
-  const trayMoves = trayOn && !pageLocked
+  const trayMoves = trayOn && !pageEffective
 
   /**
    * Whose value a delete of this folder's column clears, and where it is (YAZ-4713 C7). A shared column: the note's own
@@ -1153,7 +1168,7 @@ export function FolderView({
       const decl = from === undefined ? undefined : columnsOf(from)[key]
       if (from === undefined || decl === undefined || from === to) return
       for (const dir of [to, from]) {
-        const refusal = readOnlyRefusal(folderMap, dir, vaultName) ?? (dir === folder && pageLocked ? FOLDER_READ_ONLY_TIP : null)
+        const refusal = readOnlyRefusal(folderMap, dir, vaultName) ?? (dir === folder && pageEffective ? FOLDER_READ_ONLY_TIP : null)
         if (refusal !== null) throw new Error(refusal)
       }
       const side = (dir: string) => ({ path: dir === folder ? file : folderSettingsPath(absFrom(root, dir)), columns: columnsOf(dir) })
@@ -1238,7 +1253,7 @@ export function FolderView({
       const owner = columns[key]?.owner
       const target = decl === undefined ? null : folderOfLink(decl.target)
       if (owner === undefined || target === null) throw new Error('Name a folder in Relation first')
-      const refusal = readOnlyRefusal(folderMap, target, vaultName) ?? (target === folder && pageLocked ? FOLDER_READ_ONLY_TIP : null)
+      const refusal = readOnlyRefusal(folderMap, target, vaultName) ?? (target === folder && pageEffective ? FOLDER_READ_ONLY_TIP : null)
       if (refusal !== null) throw new Error(refusal)
       const at = folderSettingsPath(absFrom(root, target))
       const report = (err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error')
@@ -1276,6 +1291,8 @@ export function FolderView({
     // add types one). In a vault that does not use IDs (YAZ-2523 🔒 V3) only the name keeps two notes apart, so an
     // untyped one is `Untitled`, then `Untitled 2`, `Untitled 3`, …
     create: async (seed, name) => {
+      // A new note in a read-only vault asks first (YAZ-4939); a refusal is the pane's one-line error.
+      if (!(await vault.allowFileAction(root))) throw new Error(VAULT_READ_ONLY_TIP)
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
       const dir = into === folder ? path : absFrom(root, into)
       const pageSeed = Object.fromEntries(Object.entries(seed.properties).filter(([key]) => separate.has(key)))
@@ -1443,15 +1460,22 @@ export function FolderView({
         store={chips}
         zoom={zoom}
         onZoom={setZoom}
-        readOnly={pageLocked}
-        // As a note's cog (YAZ-3076 D4): off turns it on at once; on opens the chip's "Allow edits?" box.
-        onToggleReadOnly={() => (pageLocked ? setAskingUnlock(true) : setPageLocked(true, writeOwnKey(READ_ONLY_KEY, true)))}
+        readOnly={pageBase}
+        // As a note's cog (YAZ-3076 D4): off turns it on at once; on opens the chip's "Allow edits?" box; on while a timed unlock runs locks now (YAZ-4939).
+        onToggleReadOnly={() => (pageBase ? (unlock.until !== null ? unlock.lock() : setAskingUnlock(true)) : setPageLocked(true, writeOwnKey(READ_ONLY_KEY, true)))}
         asking={askingUnlock}
         onAsk={() => setAskingUnlock(true)}
-        onAllow={() => {
+        // A time choice unlocks this tab (YAZ-4939); "Turn Read only off" writes the page's own switch, and is not there while the vault's lock would keep it locked anyway.
+        onAllow={(choice) => {
+          setAskingUnlock(false)
+          unlock.allow(choice)
+        }}
+        onTurnOff={pageLocked && !vault.on ? () => {
           setAskingUnlock(false)
           setPageLocked(false, writeOwnKey(READ_ONLY_KEY, undefined))
-        }}
+        } : undefined}
+        editingUntil={unlock.until}
+        onLock={unlock.lock}
         onCancel={() => setAskingUnlock(false)}
         showPageFile={showPageFile}
         onChangeShowPageFile={(next) => setShowPageFile(next, writeOwnKey(SHOW_PAGE_FILE_KEY, next))}
@@ -1479,8 +1503,8 @@ export function FolderView({
       <div ref={hostRef} className="editor-host" style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
         <div className="page-header">
           {/* Read only (D36) locks the title and the folder's own properties, as a note's does. */}
-          <PageTitle path={path} kind="dir" titles={titles} readOnly={pageLocked} onRetitle={(title) => onRetitle(path, title, 'dir')} />
-          {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} readOnly={pageLocked} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />}
+          <PageTitle path={path} kind="dir" titles={titles} readOnly={pageEffective} onRetitle={(title) => onRetitle(path, title, 'dir')} />
+          {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} readOnly={pageEffective} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />}
         </div>
         <section className="folder-view">
           {visibleError !== null && (

@@ -283,6 +283,8 @@ interface SidebarProps {
    * sheet just closes. No link rewriting happens downstream (LOCKED decision C).
    */
   onDeleteEntries: (paths: string[]) => Promise<void>
+  /** A file action in a read-only vault asks first (YAZ-4939): App's sheet, true = go on. The sidebar's New … and Paste ask through it. */
+  onFileAction?: (root: string) => Promise<boolean>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
   /**
@@ -685,6 +687,7 @@ export function Sidebar({
   onDraggedOut,
   onRetitle,
   onDeleteEntries,
+  onFileAction,
   onNotice,
   pendingSearchFocus,
   pendingSearchClear = false,
@@ -1444,7 +1447,7 @@ export function Sidebar({
     [confirmingDelete, onDeleteEntries, onChangeSettings, settings],
   )
 
-  const { clip, clipTo, pasteInto, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete)
+  const { clip, clipTo, pasteInto, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete, onFileAction)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -1486,7 +1489,7 @@ export function Sidebar({
   // A placed create's item joins the Focus or the Favorites list where its New … was picked (YAZ-4782).
   const addAt = lists.addAt
   const placeMade = useCallback((place: CreatePlace, path: string) => addAt(place.list, path, place.folder, place.after), [addAt])
-  const { setRenamingEntry, startCreate, startCreateAt, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo, placeMade)
+  const { setRenamingEntry, startCreate, startCreateAt, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo, placeMade, onFileAction)
   /** A New … on a focus or favorite folder's menu (YAZ-4782): the field first in that folder; the item in a vault's root (`vaultOfFolder`), then in the folder. */
   const newInFolder = (list: 'focus' | 'favorites') => (id: string, kind: EntryKind) => {
     const folder = (list === 'focus' ? lists.focusTab : lists.favoritesTab).folders.find((f) => f.id === id)

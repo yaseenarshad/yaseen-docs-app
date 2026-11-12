@@ -11724,3 +11724,32 @@ describe('the folder page file row (YAZ-4587, D37)', () => {
     expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/Projects')
   })
 })
+
+/** A New … in a read-only vault asks first (YAZ-4939): App's door, through `onFileAction`. */
+describe('the sidebar in a read-only vault (YAZ-4939)', () => {
+  it('"New note" asks the door before the name field opens: refused, no field; allowed, the field', async () => {
+    let allow = false
+    const onFileAction = vi.fn(async () => allow)
+    const { el } = await mount({ onFileAction })
+    const newNote = async () => {
+      act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+      act(() => itemByLabel(el, 'New note')?.click())
+      await act(async () => {})
+    }
+    await newNote()
+    expect(onFileAction).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(el.querySelector('.create-inline__input')).toBeNull()
+    allow = true
+    await newNote()
+    expect(onFileAction).toHaveBeenCalledTimes(2)
+    expect(el.querySelector('.create-inline__input')).not.toBeNull()
+  })
+
+  it('with no door (a vault with no Read only) the field opens at once', async () => {
+    const { el } = await mount()
+    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'New note')?.click())
+    await act(async () => {})
+    expect(el.querySelector('.create-inline__input')).not.toBeNull()
+  })
+})
