@@ -14,11 +14,19 @@ export function rememberExploreRecent(path: string): void {
 /** Newest first. The same list while nothing was remembered: a render that reads it twice reads one object. */
 export const exploreRecents = (): readonly string[] => recents
 
-/** A note that is gone (App's `file:deleted`) or moved (`file:renamed`, `to` its new path): the list follows. */
+/** The open stack hears each move too (check 21 of YAZ-2571): a layer on the note follows a rename, and says so after a delete. */
+const movers = new Set<(from: string, to: string | null) => void>()
+export function onExploreMove(listener: (from: string, to: string | null) => void): () => void {
+  movers.add(listener)
+  return () => void movers.delete(listener)
+}
+
+/** A note that is gone (App's `file:deleted`) or moved (`file:renamed`, `to` its new path): the list follows, and the stack. */
 export function moveExploreRecent(from: string, to: string | null): void {
   const at = (path: string) => path === from || path.startsWith(`${from}/`)
   if (to === null) recents = recents.filter((p) => !at(p))
   else recents = recents.map((p) => (at(p) ? to + p.slice(from.length) : p))
+  for (const tell of [...movers]) tell(from, to)
 }
 
 /** For tests. */

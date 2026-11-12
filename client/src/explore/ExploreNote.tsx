@@ -39,6 +39,8 @@ export interface ExploreVault {
 interface ExploreNoteProps {
   path: string
   mode: 'read' | 'edit'
+  /** Bumped by the stack when the note was deleted under the layer: read again, and say it is gone. */
+  gone?: number
   title: string
   vault: ExploreVault
   /** The text formatting of the note's vault (`--text-size` and the heading variables), as every page layer wears it. */
@@ -73,7 +75,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExploreNote({ path, mode, title, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, wide, onToggleWide, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, wide, onToggleWide, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   const bodyRef = useRef<HTMLDivElement>(null)
   /** Where the read-only Crepe mounts: its own box ABOVE the comment stream and the mentions, as the note tab stacks them. */
   const mountRef = useRef<HTMLDivElement>(null)
@@ -107,7 +109,7 @@ export function ExploreNote({ path, mode, title, vault, style, onOpenLink, rende
     return () => {
       live = false
     }
-  }, [path, mode])
+  }, [path, mode, gone])
 
   const body = mode === 'read' && content.kind === 'body' ? content.body : null
   const switches = content.kind === 'body' ? content.switches : undefined

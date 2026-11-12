@@ -14,7 +14,7 @@ import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import type { SearchVault } from '../search/useSearchResults'
 import { NO_FOLDER_PAGE_NOTICE } from './exploreMenu'
-import { resetExploreRecents } from './exploreRecents'
+import { moveExploreRecent, resetExploreRecents } from './exploreRecents'
 import { onNoteWindowRequest } from '../views/noteWindowRequest'
 import { registerRenameContinuity } from '../lib/renameContinuity'
 import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStack'
@@ -594,6 +594,32 @@ describe('the explore stack', () => {
     expect(layers()).toHaveLength(2)
     escape()
     expect(layers()).toHaveLength(1)
+  })
+
+  it('check 21: a note open in a layer renamed elsewhere follows (its title, chip and read at the new path); deleted, the layer says it is gone', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    render(2)
+    await flush()
+    expect(top().dataset.kind).toBe('search')
+    readFile.mockClear()
+    // App's `file:renamed` door (the one the recents follow too).
+    act(() => moveExploreRecent('/v/alpha.md', '/v/renamed.md'))
+    await flush()
+    await flush()
+    const note = layers()[1]
+    expect(note.querySelector('.explore__title')?.textContent).toBe('renamed')
+    expect([...el.querySelectorAll('.explore__chip')].map((c) => c.textContent)).toEqual(['Search', 'renamed', 'Search'])
+    expect(readFile).toHaveBeenCalledWith('/v/renamed.md')
+    // Deleted: the read fails, and the layer says so.
+    readFile.mockImplementation(async () => {
+      throw new Error('ENOENT')
+    })
+    act(() => moveExploreRecent('/v/renamed.md', null))
+    await flush()
+    await flush()
+    expect(note.querySelector('.editor-msg')?.textContent).toContain('no longer there')
   })
 
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {

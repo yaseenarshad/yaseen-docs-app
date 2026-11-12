@@ -21,7 +21,7 @@ import { useSearchCandidates, type SearchVault } from '../search/useSearchResult
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { ExploreNote, type ExploreVault } from './ExploreNote'
 import { exploreNoteSections } from './exploreMenu'
-import { exploreRecents, rememberExploreRecent } from './exploreRecents'
+import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
 import { ExploreSearch } from './ExploreSearch'
 import { textCandidates } from './exploreRows'
 import { layerPlace, MAX_LAYERS, NOTE_MS, newLayerId, preferWide, pushLayer, SEARCH_MS, setPreferWide, topNote, type ExploreLayer } from './layers'
@@ -122,6 +122,22 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
     if (!pushed) doors.current.onNotice(FULL_NOTICE)
     return pushed
   }, [])
+
+  // A note of a layer renamed elsewhere (App's `file:renamed`) moves the layer to the new path: its title, chip and
+  // read follow, and an editor mounts there (as the mini window's does). Deleted: the layer reads again and says so.
+  useEffect(
+    () =>
+      onExploreMove((from, to) => {
+        const at = (path: string) => path === from || path.startsWith(`${from}/`)
+        setLayers((prev) =>
+          prev.map((l) => {
+            if (l.kind !== 'note' || !at(l.path)) return l
+            return to === null ? { ...l, mode: 'read', gone: (l.gone ?? 0) + 1 } : { ...l, path: to + l.path.slice(from.length) }
+          }),
+        )
+      }),
+    [],
+  )
 
   // Each ⌘⇧F: a search layer on top (the first one opens the stack).
   const served = useRef(0)
@@ -322,6 +338,7 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
               <ExploreNote
                 path={layer.path}
                 mode={layer.mode}
+                gone={layer.gone ?? 0}
                 title={nameOf(layer.path)}
                 vault={vaultOf(layer.path)}
                 style={textVarsFor(layer.path)}

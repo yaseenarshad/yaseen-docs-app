@@ -5,7 +5,7 @@
  * keeps the list in state and the DOM keeps each layer's scroll.
  */
 
-export type ExploreLayer = { id: number; kind: 'search' } | { id: number; kind: 'note'; path: string; mode: 'read' | 'edit'; wide: boolean }
+export type ExploreLayer = { id: number; kind: 'search' } | { id: number; kind: 'note'; path: string; mode: 'read' | 'edit'; wide: boolean; /** Bumped when the note was deleted under the layer: the layer reads again and says it is gone. */ gone?: number }
 
 /** The most layers the stack holds (the recommendation on YAZ-2571): a 13th push is refused with a notice. */
 export const MAX_LAYERS = 12
