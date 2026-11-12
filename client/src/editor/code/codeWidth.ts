@@ -285,7 +285,8 @@ class CodeWidthGrip {
     const block = event.target instanceof Element ? event.target.closest<HTMLElement>(BLOCK) : null
     if (block === this.block) return
     this.leave()
-    if (block === null || !this.view.dom.contains(block)) return
+    // A note card's editor (YAZ-4961) has no grip: the card line, not a width, sits under a card's fence.
+    if (block === null || !this.view.dom.contains(block) || block.closest('.note-card') !== null) return
     this.block = block
     block.addEventListener('mousemove', this.onMove)
     block.addEventListener('mouseleave', this.onLeave)

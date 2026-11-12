@@ -13,7 +13,8 @@
   background: var(--bg);
   color: var(--fg);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
+  /* No overflow clip: the line number (`data-line`, drawn left of the block) stays visible. The head and the code
+     editor round their own corners instead. */
 }
 .note-card.ProseMirror-selectednode {
   outline: 2px solid var(--accent);
@@ -29,6 +30,7 @@
   gap: 6px;
   padding: 4px 6px 4px 12px;
   border-bottom: 1px solid var(--border);
+  border-radius: 7px 7px 0 0;
   background: var(--bg-side);
   font-size: 0.8125em;
   line-height: 1.6;
@@ -86,6 +88,7 @@
 
 .note-card__body {
   padding: 10px 16px 12px;
+  overflow-wrap: anywhere;
 }
 .note-card--editing .note-card__body {
   display: none;
@@ -97,7 +100,7 @@
 /* Crepe's code block, while the card is edited: flush inside the card. */
 .note-card .note-card__code {
   margin: 0;
-  border-radius: 0;
+  border-radius: 0 0 7px 7px;
   width: auto;
 }
 
@@ -114,6 +117,9 @@
 .note-card__side img {
   max-width: 100%;
   border-radius: 4px;
+}
+.note-card__body pre {
+  overflow-x: auto;
 }
 .note-card__rule {
   height: 1px;
