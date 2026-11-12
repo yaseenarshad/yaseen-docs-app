@@ -860,6 +860,43 @@ describe('filter menu (YAZ-1227-1229)', () => {
     expect(yaml()).not.toContain('filters:')
   })
 
+  it('contains / does not contain / starts with / ends with on a text column ignore case (YAZ-4919 round 2): the panel writes `lower()` and the value lowercased, and drops one pair of quotes', () => {
+    const { el, onChange, def } = mount(RULE)
+    const pop = openMenu(el, 'Filter')
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'contains')
+    expect(def().views[0].filters).toEqual({ and: ['note.status.lower().contains("idea")'] })
+    type(byLabel(pop, 'Value'), '"Dr"')
+    expect(def().views[0].filters).toEqual({ and: ['note.status.lower().contains("dr")'] })
+    expect(byLabel<HTMLInputElement>(pop, 'Value').value).toBe('dr')
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'startsWith')
+    expect(def().views[0].filters).toEqual({ and: ['note.status.lower().startsWith("dr")'] })
+    // Is stays exact, as typed.
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'is')
+    type(byLabel(pop, 'Value'), '"Dr"')
+    expect(def().views[0].filters).toEqual({ and: ['note.status == "\\"Dr\\""'] })
+    expect(onChange).toHaveBeenCalledTimes(5)
+  })
+
+  it('an old exact `contains` rule reads as "contains" with its value as saved, is not rewritten on read, and takes the new form on its next edit', () => {
+    const { el, onChange, def, yaml } = mount(`views:
+  - type: table
+    name: T
+    filters:
+      and:
+        - note.status.contains("Dr")
+    order:
+      - file.name
+`)
+    const pop = openMenu(el, 'Filter')
+    expect(byLabel<HTMLSelectElement>(pop, 'Operator').value).toBe('contains')
+    expect(byLabel<HTMLInputElement>(pop, 'Value').value).toBe('Dr')
+    expect(byText(el, '.view-toolbar__badge', '1')).toBeDefined()
+    expect(onChange).not.toHaveBeenCalled()
+    expect(yaml()).toContain('note.status.contains("Dr")')
+    type(byLabel(pop, 'Value'), 'Dra')
+    expect(def().views[0].filters).toEqual({ and: ['note.status.lower().contains("dra")'] })
+  })
+
   it('Advanced shows each string rule raw, and commits what is typed there verbatim', () => {
     const { el, def } = mount(RULE)
     const pop = openMenu(el, 'Filter')

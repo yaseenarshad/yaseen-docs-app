@@ -1,8 +1,9 @@
-import { Fragment, type ReactNode, useState } from 'react'
+import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
+import type { IndexRecord } from '@shared/types'
 import type { FilterNode } from '../viewSchema'
 import { type FlyoutControl, FlyoutItem, FlyoutParent } from '../../components/Flyout'
-import { type OperatorId, type Rule, type PropertyType, operator } from './filterRows'
-import { columnFilterShape, columnRules } from './columnFilter'
+import { type OperatorId, type Rule, type PropertyType, operator, unquote } from './filterRows'
+import { type ValueCount, columnFilterShape, columnRules, valueCounts } from './columnFilter'
 import { TextField } from './TextField'
 
 export interface ColumnFilterMenuProps {
@@ -16,6 +17,11 @@ export interface ColumnFilterMenuProps {
   values: () => string[]
   /** The view's filters, the ✓s' source. */
   filters: FilterNode | undefined
+  /**
+   * The rows that pass the view's filters with this column's rules replaced by `rules` (YAZ-4919 round 2): the live
+   * count and the value list under the Contains box. Absent → neither.
+   */
+  matches?: (rules: readonly Rule[]) => readonly IndexRecord[]
   /** Writes this column's rules (one ⌘Z); `close` ends the menu — a checklist tick keeps it open. */
   onRules: (rules: readonly Rule[], close: boolean) => void
   /** "Clear this column's filter": shown while the column has a rule. */
@@ -25,6 +31,10 @@ export interface ColumnFilterMenuProps {
 }
 
 const NUMBER_OPS: readonly OperatorId[] = ['eq', 'ne', 'gt', 'lt']
+/** The typing pause before the Contains box counts and lists (YAZ-4919 round 2): never per keystroke. */
+const PROBE_MS = 150
+/** How many of the column's values the Contains box lists. */
+const VALUE_LIMIT = 8
 const DATE_OPS: readonly OperatorId[] = ['dateBefore', 'dateAfter']
 /** Today · This week · This month: the LIVE operators (the engine reads the day at each run, YAZ-4919). */
 const SPANS: readonly (readonly [OperatorId, string])[] = [['dateIsToday', 'Today'], ['dateInThisWeek', 'This week'], ['dateInThisMonth', 'This month']]
@@ -37,9 +47,10 @@ const SPANS: readonly (readonly [OperatorId, string])[] = [['dateIsToday', 'Toda
  * a Before / After date box, each with Is empty. A box applies on Enter; Esc closes the flyout. The parent row wears ✓
  * while the column has a rule, and the flyout then ends with "Clear this column's filter"; the last row opens the panel.
  * The checklist and the Contains box have a switch to their opposite (YAZ-4929): "Is none of" / "Has none of" over the
- * checklist and "Does not contain" over the box, the panel's own rules (`columnFilterShape`).
+ * checklist and "Does not contain" over the box, the panel's own rules (`columnFilterShape`). A text column's box ignores
+ * case and drops one pair of quotes, and under it a live count and the column's own values (`TextRows`, YAZ-4919 round 2).
  */
-export function ColumnFilterMenu({ flyout, property, type, values, filters, onRules, onClear, onOpenPanel }: ColumnFilterMenuProps) {
+export function ColumnFilterMenu({ flyout, property, type, values, filters, matches, onRules, onClear, onOpenPanel }: ColumnFilterMenuProps) {
   const rules = columnRules(filters, property)
   const has = rules.length > 0
   const shape = columnFilterShape(property, type)
@@ -54,8 +65,11 @@ export function ColumnFilterMenu({ flyout, property, type, values, filters, onRu
       {notEmpty && pickRow('Is not empty', 'isNotEmpty')}
     </div>
   )
-  /** A box's value: an edit applies on Enter (or blur); emptied, it takes the column's rule away. */
-  const box = (op: OperatorId, kind: 'text' | 'number' | 'date', current: Rule | undefined, label: string) => (
+  /**
+   * A box's value: an edit applies on Enter (or blur); emptied, it takes the column's rule away. A text box drops one
+   * pair of wrapping quotes (YAZ-4919 round 2): `"start"` is `start`.
+   */
+  const box = (op: OperatorId, kind: 'text' | 'number' | 'date', current: Rule | undefined, label: string, onDraft?: (draft: string) => void) => (
     <TextField
       className="view-input column-filter__input"
       aria-label={label}
@@ -63,7 +77,11 @@ export function ColumnFilterMenu({ flyout, property, type, values, filters, onRu
       inputMode={kind === 'number' ? 'decimal' : undefined}
       commitOnEnter
       value={typeof current?.value === 'string' ? current.value : ''}
-      onCommit={(v) => onRules(v.trim() === '' ? [] : [rule(op, v)], true)}
+      onDraft={onDraft}
+      onCommit={(raw) => {
+        const v = kind === 'text' ? unquote(raw) : raw
+        onRules(v.trim() === '' ? [] : [rule(op, v)], true)
+      }}
     />
   )
   /** = ≠ > < or Before / After: a press keeps the keyboard in the box, so the box does not apply with the old operator. */
@@ -95,7 +113,7 @@ export function ColumnFilterMenu({ flyout, property, type, values, filters, onRu
             {box(shape.op, 'text', under([shape.op]), shape.label)}
           </div>
         ) : (
-          <TextRows shape={shape} not={shape.not} box={box} opSwitch={opSwitch} under={under} />
+          <TextRows property={property} shape={shape} not={shape.not} rules={rules} matches={matches} onRules={onRules} box={box} opSwitch={opSwitch} under={under} />
         )
       ) : shape.kind === 'number' ? (
         <NumberRows box={box} opSwitch={opSwitch} under={under} />
@@ -118,7 +136,7 @@ export function ColumnFilterMenu({ flyout, property, type, values, filters, onRu
   )
 }
 
-type Box = (op: OperatorId, kind: 'text' | 'number' | 'date', current: Rule | undefined, label: string) => ReactNode
+type Box = (op: OperatorId, kind: 'text' | 'number' | 'date', current: Rule | undefined, label: string, onDraft?: (draft: string) => void) => ReactNode
 type OpSwitch = (ops: readonly OperatorId[], pressed: OperatorId, setOp: (op: OperatorId) => void, label: string, word: (op: OperatorId) => string) => ReactNode
 type Under = (ops: readonly OperatorId[]) => Rule | undefined
 
@@ -183,15 +201,61 @@ function OptionRows({ property, op, not, values, rules, onRules, opSwitch }: { p
   )
 }
 
-/** Contains / Does not contain over one text box (YAZ-4929); the pressed operator starts at the column's rule. */
-function TextRows({ shape, not, box, opSwitch, under }: { shape: { op: OperatorId; label: string }; not: { op: OperatorId; label: string }; box: Box; opSwitch: OpSwitch; under: Under }) {
+/** What the Contains box shows under itself: the rows its rule would keep (null while the box is empty), and the values. */
+interface Probe {
+  count: number | null
+  values: ValueCount[]
+}
+
+const countWords = (n: number): string => (n === 0 ? 'No rows match' : n === 1 ? '1 row matches' : `${n} rows match`)
+
+/**
+ * Contains / Does not contain over one text box (YAZ-4929); the pressed operator starts at the column's rule. Under the
+ * box (YAZ-4919 round 2): a live count, "2 rows match" / "No rows match", of the rows the typed rule would keep with the
+ * other columns' rules applied (`matches`, the engine's own run), then up to eight of the column's own values that
+ * contain the text, case ignored, each with its row count, most rows first; empty text lists the most common. A click on
+ * a value writes ONE exact "is" rule, and that value wears the ✓ while the column holds it. The rows the OTHER rules keep
+ * are read once per open; the count and the list follow the typing after a pause (`PROBE_MS`), never per keystroke.
+ */
+function TextRows({ property, shape, not, rules, matches, onRules, box, opSwitch, under }: { property: string; shape: { op: OperatorId; label: string }; not: { op: OperatorId; label: string }; rules: readonly Rule[]; matches: ColumnFilterMenuProps['matches']; onRules: ColumnFilterMenuProps['onRules']; box: Box; opSwitch: OpSwitch; under: Under }) {
   const current = under([shape.op, not.op])
   const [op, setOp] = useState<OperatorId>(current?.op ?? shape.op)
   const label = op === not.op ? not.label : shape.label
+  const [draft, setDraft] = useState(typeof current?.value === 'string' ? current.value : '')
+  const [base] = useState<readonly IndexRecord[]>(() => matches?.([]) ?? [])
+  const probeOf = (text: string, under: OperatorId): Probe => {
+    const t = unquote(text)
+    return {
+      count: t.trim() === '' || matches === undefined ? null : matches([{ property, op: under, value: t }]).length,
+      values: valueCounts(property, base, t, VALUE_LIMIT),
+    }
+  }
+  // The first paint carries its probe; each edit's waits out the pause, and a newer edit cancels an older wait.
+  const [probe, setProbe] = useState<Probe>(() => probeOf(draft, op))
+  const mounted = useRef(false)
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true
+      return
+    }
+    const timer = window.setTimeout(() => setProbe(probeOf(draft, op)), PROBE_MS)
+    return () => window.clearTimeout(timer)
+  }, [draft, op])
+  const held = (value: string) => rules.some((r) => r.op === 'is' && r.value === value)
   return (
     <div className="ctx-menu__group" role="group">
       {opSwitch([shape.op, not.op], op, setOp, 'Text operator', (o) => (o === not.op ? not.label : shape.label))}
-      {box(op, 'text', current, label)}
+      {box(op, 'text', current, label, setDraft)}
+      {probe.count !== null && (
+        <div className="ctx-menu__heading column-filter__count" role="status">
+          {countWords(probe.count)}
+        </div>
+      )}
+      {probe.values.map(({ value, count }) => (
+        <button key={value} type="button" role="menuitem" className="ctx-menu__item column-filter__value" data-hint={held(value) ? '✓' : undefined} data-count={count} onClick={() => onRules([{ property, op: 'is', value }], true)}>
+          {value}
+        </button>
+      ))}
     </div>
   )
 }

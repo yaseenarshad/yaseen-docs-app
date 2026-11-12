@@ -193,19 +193,42 @@ function accessor(property: string): string {
 /** The ticked values of an `options` operator, each quoted and comma-separated (YAZ-1467). */
 const list = (value: Rule['value']): string => (Array.isArray(value) ? value : []).map(quote).join(', ')
 
-export function ruleToExpr(rule: Rule): string {
+/** The four substring operators: on a text column they ignore case (YAZ-4919 round 2). */
+export const SUBSTRING_OPS: ReadonlySet<OperatorId> = new Set<OperatorId>(['contains', 'notContains', 'startsWith', 'endsWith'])
+
+/** The closing quote for each opening one `unquote` drops. */
+const QUOTE_PAIRS: Record<string, string> = { '"': '"', "'": "'", '\u201c': '\u201d' }
+
+/** Typed text with ONE pair of wrapping quotes dropped (YAZ-4919 round 2): `"start"` is `start`. Anything else stays as typed. */
+export function unquote(text: string): string {
+  const t = text.trim()
+  const close = QUOTE_PAIRS[t.charAt(0)]
+  return close !== undefined && t.length >= 2 && t.endsWith(close) ? t.slice(1, -1) : text
+}
+
+/**
+ * The expression for a rule. With the property's `type`, a TEXT column's substring rules ignore case (YAZ-4919 round 2):
+ * `<a>.lower().contains("<value lowercased>")`, the form Bases reads too. A list column's `contains` is "has the item",
+ * a deep compare (`LIST.contains`), so it stays exact, as do Is / Is not; with no type (the row menu's "Filter by this
+ * value"), every rule is exact as before.
+ */
+export function ruleToExpr(rule: Rule, type?: PropertyType): string {
   const { op } = rule
   /** The string half of the value; an operator's kind decides which half it fills. */
   const value = typeof rule.value === 'string' ? rule.value : ''
   if (op === 'hasTag' || op === 'inFolder' || op === 'hasLink') return `file.${op}(${quote(value)})`
   const a = accessor(rule.property)
+  const folded = type === 'text' && SUBSTRING_OPS.has(op)
+  /** The receiver and the value of a substring rule: lowered on a text column. */
+  const s = folded ? `${a}.lower()` : a
+  const v = quote(folded ? value.toLowerCase() : value)
   switch (op) {
     case 'is': return `${a} == ${quote(value)}`
     case 'isNot': return `${a} != ${quote(value)}`
-    case 'contains': return `${a}.contains(${quote(value)})`
-    case 'notContains': return `!${a}.contains(${quote(value)})`
-    case 'startsWith': return `${a}.startsWith(${quote(value)})`
-    case 'endsWith': return `${a}.endsWith(${quote(value)})`
+    case 'contains': return `${s}.contains(${v})`
+    case 'notContains': return `!${s}.contains(${v})`
+    case 'startsWith': return `${s}.startsWith(${v})`
+    case 'endsWith': return `${s}.endsWith(${v})`
     case 'isEmpty': return `${a}.isEmpty()`
     case 'isNotEmpty': return `!${a}.isEmpty()`
     case 'eq': return `${a} == ${num(value)}`
@@ -271,8 +294,13 @@ function methodRule(e: Expr): Rule | null {
     const property = e.args.length === 1 ? propertyOf(e.args[0]) : null
     return value === null || property === null ? null : { property, op: 'isAnyOf', value }
   }
-  const property = propertyOf(e.object)
+  // Both forms of a substring rule read as ONE rule (YAZ-4919 round 2): the exact `p.contains("X")` and the
+  // case-ignoring `p.lower().contains("x")`, each with its value as saved; `lower()` wraps nothing else.
+  const lowered = e.object.type === 'method' && e.object.name === 'lower' && e.object.args.length === 0 ? e.object.object : null
+  const property = propertyOf(lowered ?? e.object)
   if (property === null) return null
+  const substring = e.name === 'contains' || e.name === 'startsWith' || e.name === 'endsWith'
+  if (lowered !== null && !substring) return null
   if (e.name === 'isEmpty') return e.args.length === 0 ? { property, op: 'isEmpty', value: '' } : null
   const relative = RELATIVE_DATE[e.name]
   if (relative !== undefined) return e.args.length === 0 ? { property, op: relative, value: '' } : null
@@ -280,9 +308,9 @@ function methodRule(e: Expr): Rule | null {
     const value = strList(e.args)
     return value === null ? null : { property, op: e.name === 'containsAny' ? 'hasAnyOf' : 'hasAllOf', value }
   }
-  if (e.name === 'contains' || e.name === 'startsWith' || e.name === 'endsWith') {
+  if (substring) {
     const value = strArg(e.args)
-    return value === null ? null : { property, op: e.name, value }
+    return value === null ? null : { property, op: e.name as 'contains' | 'startsWith' | 'endsWith', value }
   }
   return null
 }

@@ -1185,6 +1185,25 @@
   border-color: var(--accent);
 }
 
+/* Under the Contains box (YAZ-4919 round 2): the live count as a heading, and the column's values each with its row count
+   at the right end, drawn from the attribute so the row's text stays the bare value; a ✓ (the hint) sits after it. */
+.column-filter__count {
+  padding-top: 0;
+}
+
+.column-filter__value::before {
+  content: attr(data-count);
+  order: 1;
+  margin-left: auto;
+  opacity: 0.5;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.column-filter__value[data-hint]::after {
+  order: 2;
+}
+
 .view-table tbody td {
   height: var(--view-table-row-h, 28px);
   overflow-wrap: anywhere;

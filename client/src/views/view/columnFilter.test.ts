@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { TEST_RECORDS } from '../testRecords'
-import { columnFilterShape, columnRules, withColumnRules } from './columnFilter'
+import { columnFilterShape, columnRules, valueCounts, withColumnRules } from './columnFilter'
 import { propertyValues } from './filterRows'
 
 /** The column header's Filter › rules (YAZ-4919): pure, in the Filter panel's grammar. */
@@ -59,6 +59,42 @@ describe('a column\'s rules in the view\'s filters (YAZ-4919)', () => {
     expect(withColumnRules({ and: ['note.date.isThisWeek()', STATUS] }, 'note.date', [{ property: 'note.date', op: 'dateInThisMonth', value: '' }])).toEqual({
       and: [STATUS, 'note.date.isThisMonth()'],
     })
+  })
+
+  it('withColumnRules on a text column writes the case-ignoring form (YAZ-4919 round 2), and columnRules reads both forms as the column\'s', () => {
+    expect(withColumnRules(undefined, 'note.pillar', [{ property: 'note.pillar', op: 'contains', value: 'Agentic' }], 'text')).toEqual({ and: ['note.pillar.lower().contains("agentic")'] })
+    expect(withColumnRules(undefined, 'note.tags', [{ property: 'note.tags', op: 'contains', value: 'Agentic' }], 'tags')).toEqual({ and: ['note.tags.contains("Agentic")'] })
+    expect(columnRules({ and: ['note.pillar.contains("Agentic")', 'note.pillar.lower().contains("creator")'] }, 'pillar')).toEqual([
+      { property: 'note.pillar', op: 'contains', value: 'Agentic' },
+      { property: 'note.pillar', op: 'contains', value: 'creator' },
+    ])
+    // An old exact rule is this column's, so a pick replaces it.
+    expect(withColumnRules({ and: ['note.pillar.contains("Agentic")', STATUS] }, 'note.pillar', [{ property: 'note.pillar', op: 'is', value: 'Creator Economy' }], 'text')).toEqual({
+      and: [STATUS, 'note.pillar == "Creator Economy"'],
+    })
+  })
+
+  it('valueCounts: the column\'s values that contain the text, case ignored, each with its count, most rows first; empty text lists the most common; eight at most', () => {
+    // TEST_RECORDS: pillar is "Agentic Agency" twice, "Creator Economy" twice, null once, absent elsewhere.
+    expect(valueCounts('note.pillar', TEST_RECORDS, '')).toEqual([
+      { value: 'Agentic Agency', count: 2 },
+      { value: 'Creator Economy', count: 2 },
+    ])
+    expect(valueCounts('note.pillar', TEST_RECORDS, 'CREATOR')).toEqual([{ value: 'Creator Economy', count: 2 }])
+    expect(valueCounts('note.pillar', TEST_RECORDS, 'xyz')).toEqual([])
+    // Ties keep the rows' order; the count decides first.
+    expect(valueCounts('note.status', TEST_RECORDS, '').map((v) => v.value)).toEqual(['idea', 'published', 'drafting'])
+    expect(valueCounts('note.status', TEST_RECORDS, 'ed')).toEqual([{ value: 'published', count: 2 }])
+    expect(valueCounts('note.status', TEST_RECORDS, '', 1)).toEqual([{ value: 'idea', count: 2 }])
+    // A list cell counts each item; a link is its target, as the checklist's values.
+    expect(valueCounts('note.tags', TEST_RECORDS, 'agentic')).toEqual([
+      { value: 'agentic', count: 1 },
+      { value: 'agentic/levels', count: 1 },
+    ])
+    expect(valueCounts('note.related', TEST_RECORDS, '')).toEqual([{ value: 'Agentic Agency', count: 1 }])
+    // Only a note column lists values: a file field or a formula has none here.
+    expect(valueCounts('file.name', TEST_RECORDS, '')).toEqual([])
+    expect(valueCounts('formula.x', TEST_RECORDS, '')).toEqual([])
   })
 
   it('propertyValues: the declared options first, then the rows\' values, distinct; file.tags from the tags', () => {

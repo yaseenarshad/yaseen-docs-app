@@ -1,3 +1,5 @@
+import type { IndexRecord } from '@shared/types'
+import { stripBrackets } from '@shared/linkResolver'
 import type { FilterNode } from '../viewSchema'
 import { type OperatorId, type PropertyType, type Rule, exprToRule, fromGroup, ruleToExpr, toGroup } from './filterRows'
 import { canonicalKey } from './keys'
@@ -71,15 +73,47 @@ export function columnRules(node: FilterNode | undefined, property: string): Rul
 /**
  * The view's filters with this column's top-level rules replaced by `rules` (none: removed; the last rule takes the key
  * with it, as `fromGroup`). Into an All group as they stand; any other group goes under a new All beside the rules, as
- * the row menu's `withFilter`.
+ * the row menu's `withFilter`. With the column's `type`, a text column's Contains ignores case (`ruleToExpr`, YAZ-4919 round 2).
  */
-export function withColumnRules(node: FilterNode | undefined, property: string, rules: readonly Rule[]): FilterNode | undefined {
+export function withColumnRules(node: FilterNode | undefined, property: string, rules: readonly Rule[], type?: PropertyType): FilterNode | undefined {
   const c = canonicalKey(property)
   const group = toGroup(node)
   const rest = group.items.filter((item) => !onColumn(item, c))
-  const exprs = rules.map(ruleToExpr)
+  const exprs = rules.map((rule) => ruleToExpr(rule, type))
   if (exprs.length === 0) return fromGroup({ conj: group.conj, items: rest })
   if (group.conj === 'and') return { and: [...rest, ...exprs] }
   const base = fromGroup({ conj: group.conj, items: rest })
   return { and: base === undefined ? exprs : [base, ...exprs] }
+}
+
+/** One of the column's values and how many of the rows hold it. */
+export interface ValueCount {
+  value: string
+  count: number
+}
+
+/**
+ * The column's own values among `rows` that contain `text` (case ignored), each with its row count, most rows first
+ * (ties in the rows' order), `limit` at most: the value list under the Contains box (YAZ-4919 round 2). Read as the
+ * checklist's values (`propertyValues`): a list cell counts each item, a link is its target. A note column only: a file
+ * field or a formula lists none.
+ */
+export function valueCounts(property: string, rows: readonly IndexRecord[], text: string, limit = 8): ValueCount[] {
+  const c = canonicalKey(property)
+  if (!c.startsWith('note.')) return []
+  const bare = c.slice(5)
+  const want = text.toLowerCase()
+  const counts = new Map<string, number>()
+  const add = (s: string) => {
+    if (s !== '' && s.toLowerCase().includes(want)) counts.set(s, (counts.get(s) ?? 0) + 1)
+  }
+  for (const r of rows) {
+    const raw = r.properties[bare]
+    if (typeof raw === 'string') add(stripBrackets(raw))
+    else if (Array.isArray(raw)) for (const v of raw) if (typeof v === 'string') add(stripBrackets(v))
+  }
+  return [...counts]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit)
 }

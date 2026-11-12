@@ -6,8 +6,8 @@ import type { FolderHost } from '../ViewsPane'
 import type { EngineError } from '../engine'
 import { isMentionsColumn } from '../mentionsColumn'
 import {
-  type Conjunction, type FilterGroup, type OperatorId, type PropertyType, type Rule, exprToRule, fromGroup, inferType, operator,
-  operatorsFor, propertyValues, ruleToExpr, toGroup,
+  type Conjunction, type FilterGroup, type OperatorId, type PropertyType, type Rule, SUBSTRING_OPS, exprToRule, fromGroup, inferType, operator,
+  operatorsFor, propertyValues, ruleToExpr, toGroup, unquote,
 } from './filterRows'
 import { ColumnPicker } from './ColumnPicker'
 import { canonicalKey } from './keys'
@@ -105,13 +105,17 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     if (group.items.length) write({ conj: c, items: group.items })
   }
 
-  /** Changes one field, re-validating the operator for the property's type and clearing a value of another kind. */
+  /**
+   * Changes one field, re-validating the operator for the property's type and clearing a value of another kind. The
+   * type goes with the write (YAZ-4919 round 2): a text column's contains / starts with / ends with ignore case.
+   */
   const setRule = (i: number, rule: Rule, patch: Partial<Rule>, setAt: (i: number, item: FilterNode) => void) => {
     const next = { ...rule, ...patch }
-    const ops = operatorsFor(next.property, typeOf(next.property))
+    const type = typeOf(next.property)
+    const ops = operatorsFor(next.property, type)
     if (patch.property !== undefined && !ops.some((o) => o.id === next.op)) next.op = ops[0]?.id ?? next.op
     if (operator(next.op).value !== operator(rule.op).value) next.value = operator(next.op).value === 'options' ? [] : ''
-    setAt(i, ruleToExpr(next))
+    setAt(i, ruleToExpr(next, type))
   }
 
   /** The values `records` already hold for one property, distinct and in first-seen order (YAZ-1232). */
@@ -168,7 +172,8 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
             inputMode={kind === 'number' ? 'decimal' : undefined}
             list={suggestions.length > 0 ? listId : undefined}
             value={typeof rule.value === 'string' ? rule.value : ''}
-            onCommit={(value) => setRule(i, rule, { value }, setAt)}
+            // A substring rule drops one pair of wrapping quotes (YAZ-4919 round 2), as the column menu's Contains box.
+            onCommit={(value) => setRule(i, rule, { value: SUBSTRING_OPS.has(rule.op) ? unquote(value) : value }, setAt)}
           />
         )}
         {suggestions.length > 0 && (
