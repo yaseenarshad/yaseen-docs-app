@@ -19,6 +19,7 @@ import { flushRenamedPath } from '../lib/renameContinuity'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchCandidates, type SearchVault } from '../search/useSearchResults'
 import { ContextMenu } from '../sidebar/ContextMenu'
+import { inPlace } from '../vault/placeScope'
 import { ExploreNote, type ExploreVault } from './ExploreNote'
 import { exploreNoteSections } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
@@ -95,6 +96,9 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
   const roots = useMemo(() => vaults.map((v) => v.root), [vaults])
   /** The vault's "Show IDs in search" for a row (YAZ-4940); a path in no vault reads Always. */
   const idsInSearch = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInSearch?.() ?? 'always', [vaults, roots])
+  // A folder of a vault (YAZ-4922 🔒 D3): the empty search's recents are the notes under the folder only (`inPlace`).
+  const recentAll = exploreRecents()
+  const recent = useMemo(() => recentAll.filter((path) => inPlace(vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.folder, path)), [recentAll, vaults, roots])
 
   const doors = useRef({ onNotice, onClose, openInTab, onRenameFile, linkActions })
   doors.current = { onNotice, onClose, openInTab, onRenameFile, linkActions }
@@ -338,7 +342,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
             aria-hidden={covered}
           >
             {layer.kind === 'search' ? (
-              <ExploreSearch candidates={candidates} recent={exploreRecents()} roots={roots} nameOf={nameOf} onOpen={openRow} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
+              <ExploreSearch candidates={candidates} recent={recent} roots={roots} nameOf={nameOf} onOpen={openRow} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
             ) : (
               <ExploreNote
                 path={layer.path}

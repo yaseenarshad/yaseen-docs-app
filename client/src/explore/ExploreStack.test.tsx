@@ -16,7 +16,7 @@ import type { SearchVault } from '../search/useSearchResults'
 import { FindBar } from '../editor/find/FindBar'
 import { createFindChannel } from '../editor/find/findChannel'
 import { NO_FOLDER_PAGE_NOTICE } from './exploreMenu'
-import { moveExploreRecent, resetExploreRecents } from './exploreRecents'
+import { moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
 import { onNoteWindowRequest } from '../views/noteWindowRequest'
 import { registerRenameContinuity } from '../lib/renameContinuity'
 import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStack'
@@ -351,6 +351,23 @@ describe('the explore stack', () => {
     expect(top().querySelector('.explore__group')?.textContent).toBe('Recent')
     await openResult()
     expect(top().querySelector('.explore__title')?.textContent).toBe('beta')
+  })
+
+  it('a folder of a vault (YAZ-4922 D3): the search finds only the notes under the folder, and its recents list only them', async () => {
+    index.mockResolvedValue({ root: '/v', records: [...RECORDS, rec('/v/wiki/hooks.md', 'Hooks'), rec('/v/wiki/react.md', 'React hooks')], folders: [], generatedAt: 1, ids: false, size: 5 })
+    rememberExploreRecent('/v/beta.md')
+    rememberExploreRecent('/v/wiki/react.md')
+    props = { ...props, vaults: [{ root: '/v', watch, dirs: ['/v/wiki'], files: [], folder: '/v/wiki' }] }
+    await mount()
+    // With no query: the recents under the folder only.
+    expect(rows()).toEqual(['wiki/react'])
+    await typeQuery('hooks')
+    expect(rows()).toEqual(['Hooks', 'React hooks'])
+    // Alpha and Beta are notes of the vault, outside the folder: not found.
+    await typeQuery('alp')
+    expect(rows()).toEqual([])
+    await typeQuery('beta')
+    expect(rows()).toEqual([])
   })
 
   it('round 1: the id of a note in an ID vault shows after its title, small and muted; a note without one shows none', async () => {

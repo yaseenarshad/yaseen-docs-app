@@ -100,6 +100,7 @@ import { RightPanel } from './right-panel/RightPanel'
 import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots, vaultRefusal } from './vault/slots'
 import { SAME_WORD, UnitContext, vaultUnit, type UnitText } from './vault/unitWord'
 import { folderHome } from './vault/FolderHomeSheet'
+import { inPlace } from './vault/placeScope'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
@@ -1365,7 +1366,19 @@ export function App() {
   // Built when the stack opens and when a tree lands, not per render: a watcher is one object for a vault's life (`live`).
   const exploreTrees = useLatestTrees(roots)
   const exploreOpen = exploreRequest > 0
-  const exploreVaults = useMemo<readonly SearchVault[]>(() => (!exploreOpen ? [] : roots.map((vault, i) => ({ root: vault, watch: live.current.vaults[i].watch, dirs: allDirs(exploreTrees[i]?.tree ?? []), files: [], idsInSearch: live.current.vaults[i].showIds.inSearch }))), [exploreOpen, roots, exploreTrees])
+  // A folder of a vault (YAZ-4922 🔒 D3): the stack reads the vault's index and finds only the notes and folders under
+  // the folder (`useSearchCandidates` cuts each snapshot to `folder`; its folders are cut here, `inPlace`).
+  const exploreVaults = useMemo<readonly SearchVault[]>(
+    () =>
+      !exploreOpen
+        ? []
+        : roots.map((vault, i) => {
+            const folder = storage.folderIn(vault)
+            const dirs = allDirs(exploreTrees[i]?.tree ?? [])
+            return { root: vault, watch: live.current.vaults[i].watch, dirs: folder === null ? dirs : dirs.filter((dir) => inPlace(folder, dir)), files: [], idsInSearch: live.current.vaults[i].showIds.inSearch, ...(folder !== null && { folder }) }
+          }),
+    [exploreOpen, roots, exploreTrees],
+  )
   const exploreVaultOf = useCallback((path: string) => {
     const scope = scopeOf(path)
     return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates, viewOnlyLinks: scope.viewOnlyLinks }
