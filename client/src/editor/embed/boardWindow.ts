@@ -23,7 +23,8 @@
  * View full size is never locked so: it is there to look around in.
  *
  * WRITES (D4, item 18): 800 ms after the last wheel or drag, the rounded view goes to `onOptions` — only when it moved
- * enough (`movedEnough`) and the host is editable. A resize, a lock, a page and a fit write at once. While a gesture
+ * enough (`movedEnough`) and the host is editable. A view moved in a read-only host is never written, not even when the
+ * note turns editable before that write (YAZ-4942). A resize, a lock, a page and a fit write at once. While a gesture
  * runs or a write waits, `update({ options })` is kept, not applied (item 17); it applies once nothing was written,
  * and a write supersedes it (the host's echo of that write follows).
  *
@@ -264,6 +265,8 @@ class BoardWindow implements BoardWindowHandle {
   /** An `update({ options })` that came while a gesture ran or a write waited (item 17). */
   private pendingOptions: { value: EmbedOptions | null } | null = null
   private gesture = false
+  /** The view was last moved in a read-only host (YAZ-4942): it is this view's only and is never written, also when the note turns editable before its write. */
+  private viewReadOnly = false
 
   private restTimer: ReturnType<typeof setTimeout> | undefined
   private writeTimer: ReturnType<typeof setTimeout> | undefined
@@ -553,6 +556,7 @@ class BoardWindow implements BoardWindowHandle {
   private moved(next: EmbedView): void {
     this.view = next
     this.fitted = false
+    this.viewReadOnly = !this.host.editable
     this.paint()
   }
 
@@ -570,6 +574,7 @@ class BoardWindow implements BoardWindowHandle {
     if (view === null) return
     this.view = view
     this.fitted = true
+    this.viewReadOnly = !this.host.editable
     this.paint()
     this.writeNow()
   }
@@ -639,25 +644,30 @@ class BoardWindow implements BoardWindowHandle {
 
   private nextOptions(): EmbedOptions {
     const base = this.lastWritten ?? this.host.options
-    return { width: this.width, height: this.height, view: this.fitted || this.view === null ? null : roundView(this.view), locked: this.locked, page: this.page, rest: base?.rest ?? [] }
+    // A view moved in a read-only host stays out of the text (YAZ-4942): a later write (a lock, a resize) keeps the saved one.
+    const view = this.viewReadOnly ? (base?.view ?? null) : this.fitted || this.view === null ? null : roundView(this.view)
+    return { width: this.width, height: this.height, view, locked: this.locked, page: this.page, rest: base?.rest ?? [] }
   }
 
   private scheduleWrite(): void {
     clearTimeout(this.writeTimer)
     this.writeTimer = setTimeout(() => {
       this.writeTimer = undefined
-      this.writeNow()
+      this.writeNow(true)
     }, WRITE_DELAY_MS)
   }
 
-  /** The write (D4): only an editable host, only a change worth it; then any update kept meanwhile settles. */
-  private writeNow(): void {
+  /**
+   * The write (D4): only an editable host, only a change worth it; then any update kept meanwhile settles. `waited`: the
+   * write of a view move (after its 800 ms, or flushed), which a move made in a read-only host never makes (YAZ-4942).
+   */
+  private writeNow(waited = false): void {
     clearTimeout(this.writeTimer)
     this.writeTimer = undefined
     this.gesture = false
     const next = this.nextOptions()
     let wrote = false
-    if (this.host.editable && this.host.onOptions !== undefined && movedEnough(this.lastWritten, next)) {
+    if (this.host.editable && !(waited && this.viewReadOnly) && this.host.onOptions !== undefined && movedEnough(this.lastWritten, next)) {
       this.lastWritten = next
       this.host.onOptions(next)
       wrote = true
@@ -692,6 +702,7 @@ class BoardWindow implements BoardWindowHandle {
       this.fitted = true
       this.view = this.fitNow()
     }
+    this.viewReadOnly = false
     if (page !== this.page) {
       this.page = page
       this.picture = null
@@ -1091,7 +1102,7 @@ class BoardWindow implements BoardWindowHandle {
 
   /** A8: a view still waiting for its 800 ms write is written now (the note is about to save, or to go). */
   flush(): void {
-    if (this.writeTimer !== undefined) this.writeNow()
+    if (this.writeTimer !== undefined) this.writeNow(true)
   }
 
   destroy(): void {

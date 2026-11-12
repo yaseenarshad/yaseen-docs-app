@@ -27,7 +27,7 @@ vi.mock('./boardPictures', () => ({
 }))
 
 import { currentKey, dropPicturesExcept, loadPicture, peekPicture } from './boardPictures'
-import { clampZoom, fitView, mountBoardWindow, panBy, resizeBy, sharedCounts, sweepPictures, zoomAt } from './boardWindow'
+import { clampZoom, fitView, mountBoardWindow, panBy, resizeBy, sharedCounts, sweepPictures, WRITE_DELAY_MS, zoomAt } from './boardWindow'
 
 /** One fake IntersectionObserver per mount round: the test says which window is near. */
 const observers: FakeObserver[] = []
@@ -398,6 +398,31 @@ describe('the window', () => {
     vi.advanceTimersByTime(2000)
     expect(open.onOptions).not.toHaveBeenCalled()
     expect(shut.onOptions).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4942: a pan in a read-only note is never written, also when the note turns editable before its 800 ms write; a later write keeps the saved view', async () => {
+    const saved = { x: 0, y: 0, zoom: 1 }
+    const { win, onOptions } = mount({ editable: false, options: opts({ view: saved }) })
+    await settle()
+    const lock = () => win.dom.querySelector<HTMLButtonElement>('.board-window__lock')!
+    lock().click() // this view's own unlock: never written
+    expect(wheel(win, { deltaX: 120, deltaY: 300 }).defaultPrevented).toBe(true)
+    // The note turns editable while the pan's write still waits.
+    vi.advanceTimersByTime(WRITE_DELAY_MS - 100)
+    win.update({ editable: true })
+    vi.advanceTimersByTime(WRITE_DELAY_MS * 3)
+    win.flush()
+    expect(onOptions).not.toHaveBeenCalled()
+    // A write the editable note makes later (the lock) carries the saved view, not the read-only pan.
+    lock().click()
+    expect(onOptions).toHaveBeenCalledTimes(1)
+    expect(onOptions).toHaveBeenLastCalledWith(expect.objectContaining({ locked: true, view: saved }))
+    // A pan made while editable is written, as before.
+    lock().click()
+    wheel(win, { deltaY: 300 })
+    vi.advanceTimersByTime(WRITE_DELAY_MS)
+    expect(onOptions).toHaveBeenCalledTimes(3)
+    expect(onOptions.mock.calls[2][0].view).not.toEqual(saved)
   })
 
   it('View full size of a read-only embed is not locked: it is there to look around in', async () => {
