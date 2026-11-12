@@ -42,31 +42,29 @@ export interface CardHistoryRow {
   due: number
 }
 
-/** Replays `reviews` through FSRS: one row per review, in time order. */
-export function cardHistory(reviews: readonly CardReview[], s: ReviewSettings): CardHistoryRow[] {
+/** The FSRS card after each review of `reviews`, in time order, with its review: the ONE replay loop. */
+function steps(reviews: readonly CardReview[], s: ReviewSettings): { review: CardReview; card: Card }[] {
   const f = schedulerOf(s)
-  const rows: CardHistoryRow[] = []
-  let card: Card | null = null
-  let last = 0
+  const out: { review: CardReview; card: Card }[] = []
   for (const review of inOrder(reviews)) {
     const at = Date.parse(review.at)
-    card = f.next(card ?? createEmptyCard(at), at, GRADES[review.rating]).card
-    rows.push({ review, elapsed: rows.length === 0 ? 0 : Math.max(0, Math.round((at - last) / DAY)), interval: card.scheduled_days, due: card.due.getTime() })
-    last = at
+    out.push({ review, card: f.next(out.at(-1)?.card ?? createEmptyCard(at), at, GRADES[review.rating]).card })
   }
-  return rows
+  return out
 }
 
-/** The FSRS card after `reviews`; null for a card never reviewed. */
-function replay(reviews: readonly CardReview[], s: ReviewSettings): Card | null {
-  const f = schedulerOf(s)
-  let card: Card | null = null
-  for (const review of inOrder(reviews)) {
-    const at = Date.parse(review.at)
-    card = f.next(card ?? createEmptyCard(at), at, GRADES[review.rating]).card
-  }
-  return card
+/** Replays `reviews` through FSRS: one row per review, in time order. */
+export function cardHistory(reviews: readonly CardReview[], s: ReviewSettings): CardHistoryRow[] {
+  return steps(reviews, s).map(({ review, card }, i, all) => ({
+    review,
+    elapsed: i === 0 ? 0 : Math.max(0, Math.round((Date.parse(review.at) - Date.parse(all[i - 1].review.at)) / DAY)),
+    interval: card.scheduled_days,
+    due: card.due.getTime(),
+  }))
 }
+
+/** The FSRS card after `reviews`, and the last review; null for a card never reviewed. */
+const replay = (reviews: readonly CardReview[], s: ReviewSettings): { review: CardReview; card: Card } | null => steps(reviews, s).at(-1) ?? null
 
 /** Where a card stands after its reviews. */
 export interface CardState {
@@ -83,15 +81,16 @@ export interface CardState {
 }
 
 export function cardState(reviews: readonly CardReview[], s: ReviewSettings): CardState {
-  const card = replay(reviews, s)
-  if (card === null) return { isNew: true, due: null, interval: 0, lastReview: null, lapses: 0 }
-  return { isNew: false, due: card.due.getTime(), interval: card.scheduled_days, lastReview: inOrder(reviews).at(-1)?.at ?? null, lapses: card.lapses }
+  const last = replay(reviews, s)
+  if (last === null) return { isNew: true, due: null, interval: 0, lastReview: null, lapses: 0 }
+  const { card, review } = last
+  return { isNew: false, due: card.due.getTime(), interval: card.scheduled_days, lastReview: review.at, lapses: card.lapses }
 }
 
 /** The chance to remember the card now (idea 11, Mochi's "83%"), 0 to 1; null for a new card. */
 export function recallChance(reviews: readonly CardReview[], s: ReviewSettings, now: number): number | null {
-  const card = replay(reviews, s)
-  return card === null ? null : schedulerOf(s).get_retrievability(card, now, false)
+  const last = replay(reviews, s)
+  return last === null ? null : schedulerOf(s).get_retrievability(last.card, now, false)
 }
 
 /** The ratings the review buttons write, left to right (D5): two buttons by default, four by the setting. */
@@ -145,8 +144,8 @@ export interface DueCard {
  * a lookup, no FSRS step.
  */
 const dueCache = new WeakMap<ReviewSettings, Map<string, number>>()
-/** A cap so a long session cannot grow a map without end: past it, the map starts again. */
-const CACHE_MAX = 200_000
+/** A cap so a long session cannot grow the log map without end: past it, the map starts again. Each answer adds a log. */
+const CACHE_MAX = 20_000
 
 export function cardDueAt(reviews: readonly CardReview[], s: ReviewSettings): number {
   if (reviews.length === 0) return Number.NaN
@@ -157,7 +156,7 @@ export function cardDueAt(reviews: readonly CardReview[], s: ReviewSettings): nu
   let due = map.get(key)
   if (due === undefined) {
     if (map.size >= CACHE_MAX) map.clear()
-    map.set(key, (due = replay(reviews, s)?.due.getTime() ?? Number.NaN))
+    map.set(key, (due = replay(reviews, s)?.card.due.getTime() ?? Number.NaN))
   }
   return due
 }
@@ -171,36 +170,37 @@ interface CardFacts {
 /** A page as the index hands it: `mtime` and `size` say its bytes did not change. */
 type CardPage = { path: string; folder: string; mtime?: number; size?: number; cards?: readonly NoteCardRecord[] }
 
-const pageCache = new WeakMap<ReviewSettings, Map<string, readonly CardFacts[]>>()
+/** Each page's facts by its PATH, with the mtime and size they are for: one entry per page, never per save. */
+const pageCache = new WeakMap<ReviewSettings, Map<string, { mtime: number; size: number; facts: readonly CardFacts[] }>>()
 
 /**
  * The facts of each card of `r`. The Inbox count runs on every index change, and a snapshot is new objects each
- * time (IPC), so a page whose path, mtime and size are the same as last time takes its facts from the cache: a
- * lookup per PAGE. A page without mtime (a test, the command) is worked out card by card through `cardDueAt`.
+ * time (IPC), so a page whose mtime and size are the same as last time takes its facts from the cache: a lookup per
+ * PAGE. A page without mtime (a test, the command) is worked out card by card through `cardDueAt`.
  */
 function cardFacts(r: CardPage, s: ReviewSettings): readonly CardFacts[] {
   const cards = r.cards ?? []
-  const key = typeof r.mtime === 'number' && typeof r.size === 'number' ? `${r.path}\n${r.mtime}\n${r.size}` : null
-  let map = key === null ? undefined : pageCache.get(s)
-  if (key !== null && map === undefined) pageCache.set(s, (map = new Map()))
-  const hit = key === null ? undefined : map?.get(key)
-  if (hit !== undefined && hit.length === cards.length) return hit
+  const keyed = typeof r.mtime === 'number' && typeof r.size === 'number'
+  let map = keyed ? pageCache.get(s) : undefined
+  if (keyed && map === undefined) pageCache.set(s, (map = new Map()))
+  const hit = map?.get(r.path)
+  if (hit !== undefined && hit.mtime === r.mtime && hit.size === r.size && hit.facts.length === cards.length) return hit.facts
   const facts = cards.map((card) => ({
     due: cardDueAt(card.reviews, s),
     // The earliest review, without a sort.
     first: card.reviews.reduce<string | null>((a, x) => (a === null || x.at < a ? x.at : a), null),
   }))
-  if (key !== null && map !== undefined) {
-    if (map.size >= CACHE_MAX) map.clear()
-    map.set(key, facts)
-  }
+  if (map !== undefined) map.set(r.path, { mtime: r.mtime!, size: r.size!, facts })
   return facts
 }
 
 /** How many cards a page has, and how many of them are due now (idea 2, the folder columns "Cards" and "Due"). */
 export interface PageCardCounts {
   cards: number
-  /** Cards in review that are due now: a new card counts; `newPerDay` is the Inbox's limit, not the page's. 0 while review is off. */
+  /**
+   * Cards with reviews that are due now (in review: an ID, not `off`). A NEW card is not counted: the new cards a day
+   * (`newPerDay`) are the vault's limit, so no page can say how many of its own the Inbox takes. 0 while review is off.
+   */
   due: number
 }
 
@@ -210,12 +210,11 @@ export function pageCardCounts(r: CardPage, s: ReviewSettings, now: number): Pag
   if (s.enabled && cards.length > 0) {
     const facts = cardFacts(r, s)
     cards.forEach((card, i) => {
-      if (!card.off && card.id !== null && (card.reviews.length === 0 || isCardDue(facts[i].due, now))) due++
+      if (!card.off && card.id !== null && card.reviews.length > 0 && isCardDue(facts[i].due, now)) due++
     })
   }
   return { cards: cards.length, due }
 }
-
 
 /**
  * The cards due now (D11): each card that is in review — it has an ID, and is not `off` — and whose due date is
@@ -223,7 +222,8 @@ export function pageCardCounts(r: CardPage, s: ReviewSettings, now: number): Pag
  * today (a card counts as new on the day of its first review). None while the vault has review off.
  * `folder` (root-relative, '' = the vault) keeps the cards of that folder and its subfolders; `page` (a page's
  * absolute path, "Review this page", idea 4) keeps that page's cards alone. Either way the new cards begun today
- * are counted over the whole vault: the limit is the vault's.
+ * are counted over the whole vault: the limit is the vault's. A card whose ID a card before it on the same page holds
+ * (a copy the sweep has not settled yet) is left out until it has its own ID: the Inbox never shows one card twice.
  */
 export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string): DueCard[] {
   if (!s.enabled) return []
@@ -238,10 +238,12 @@ export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: 
   for (const r of sorted) {
     const mine = page === undefined ? inFolder(r.folder, folder) : r.path === page
     const facts = cardFacts(r, s)
+    const ids = new Set<string>()
     ;(r.cards ?? []).forEach((card, index) => {
       const { due: at, first } = facts[index]
       if (first !== null && first >= today && first < tomorrow) startedToday++
-      if (!mine || card.off || card.id === null) return
+      if (!mine || card.off || card.id === null || ids.has(card.id)) return
+      ids.add(card.id)
       if (first === null) fresh.push({ path: r.path, index, id: card.id, due: now, isNew: true })
       else if (isCardDue(at, now)) due.push({ path: r.path, index, id: card.id, due: at, isNew: false })
     })

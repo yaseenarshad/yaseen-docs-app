@@ -31,9 +31,9 @@ const cells = (opts: Parameters<typeof runView>[3]) =>
   runView({ views: [VIEW] }, VIEW, RECORDS, { now: NOW, ...opts }).rows.map((r) => [r.values['file.name'], r.values['file.cards'], r.values['file.due']])
 
 describe('Cards and Due columns (YAZ-4967, idea 2)', () => {
-  it('count each page\'s cards and its cards due now; a page with none, or none due, is blank', () => {
+  it('count each page\'s cards and its reviewed cards due now (a new card is not "due": the daily limit is the vault\'s); none: blank', () => {
     expect(cells({ cardSettings: DEFAULT_REVIEW_SETTINGS })).toEqual([
-      ['Mixed', 4, 2],
+      ['Mixed', 4, 1],
       ['Learned', 1, null],
       ['Plain', null, null],
     ])

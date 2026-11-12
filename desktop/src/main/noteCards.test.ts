@@ -190,6 +190,9 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     expect(cardQueue(records, s, now, 'sub').map((q) => q.id)).toEqual(['V-3'])
     expect(cardQueue(records, { ...s, newPerDay: 10 }, now, 'sub').map((q) => [q.id, q.index])).toEqual([['V-3', 0], ['V-5', 3]])
     expect(cardQueue(records, { ...s, enabled: false }, now)).toEqual([])
+    // Two cards with one ID on a page (a copy before the sweep settles it): the Inbox shows the first one once.
+    const twice = [{ path: '/v/d.md', folder: '', cards: [{ id: 'V-7', off: false, reviews: [] }, { id: 'V-7', off: false, reviews: [] }] }]
+    expect(cardQueue(twice, s, now).map((q) => [q.id, q.index])).toEqual([['V-7', 0]])
   })
 })
 

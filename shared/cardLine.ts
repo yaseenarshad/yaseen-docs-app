@@ -245,10 +245,12 @@ export class CardNotFoundError extends Error {
 /**
  * The page `content` with the card line of card `id` changed by `change` — for the Inbox, the card window and the ⋯
  * menu: `transformFile(path, (c) => changeCard(c, 'WIKI-512', (l) => withCardReview(l, { at: cardTime(Date.now()), rating: 'good' })))`.
- * Throws `CardNotFoundError` when no card holds `id`. Two cards with one ID (a copy the sweep has not met): the first.
+ * Throws `CardNotFoundError` when no card holds `id`. Two cards with one ID (a copy the sweep has not met): the one at
+ * `index` when it holds `id` (the card window of the second card), else the first.
  */
-export function changeCard(content: string, id: string, change: (line: CardLine) => CardLine): string {
-  const at = pageCards(content).findIndex((card) => cardIdOf(card.line) === id)
+export function changeCard(content: string, id: string, change: (line: CardLine) => CardLine, index?: number): string {
+  const cards = pageCards(content)
+  const at = index !== undefined && cards[index] !== undefined && cardIdOf(cards[index].line) === id ? index : cards.findIndex((card) => cardIdOf(card.line) === id)
   if (at === -1) throw new CardNotFoundError(id)
   return rewritePageCards(content, (card, n) => (n === at ? change(card.line) : undefined))
 }

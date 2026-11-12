@@ -20,19 +20,6 @@ export interface CardOnPage {
   off: boolean
 }
 
-/** Card `id` of page `path`, or null when the page or the card is gone (deleted, moved, or its ID changed). */
-export async function readCard(path: string, id: string): Promise<CardOnPage | null> {
-  let content: string
-  try {
-    content = (await api.readFile(path)).content
-  } catch (err) {
-    if (err instanceof BridgeRequestError && err.code === 'NOT_FOUND') return null
-    throw err
-  }
-  const card = pageCards(content).find((c) => cardIdOf(c.line) === id)
-  return card === undefined ? null : { path, id, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line) }
-}
-
 /** A card found by its ID or, before it has one, by its place (the card window, YAZ-4962). */
 export interface CardAtPage extends Omit<CardOnPage, 'id'> {
   id: string | null
@@ -41,8 +28,9 @@ export interface CardAtPage extends Omit<CardOnPage, 'id'> {
 }
 
 /**
- * The card window's read (YAZ-4962): card `id` of `path`, or with no ID the card at `index`. Null when the page or the
- * card is gone (an ID no card has; no card at `index`).
+ * Card `id` of `path` — the one at `index` when that one holds `id` (two cards with one ID before the sweep settles
+ * the copy: each card window shows its own card), else the first that holds it — or with no ID the card at `index`.
+ * Null when the page or the card is gone (an ID no card has; no card at `index`).
  */
 export async function readCardAt(path: string, id: string | null, index: number): Promise<CardAtPage | null> {
   let content: string
@@ -53,17 +41,25 @@ export async function readCardAt(path: string, id: string | null, index: number)
     throw err
   }
   const cards = pageCards(content)
-  const at = id === null ? index : cards.findIndex((c) => cardIdOf(c.line) === id)
+  const at = id === null || (cards[index] !== undefined && cardIdOf(cards[index].line) === id) ? index : cards.findIndex((c) => cardIdOf(c.line) === id)
   const card = cards[at]
   if (card === undefined) return null
   return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line) }
 }
 
+/** Card `id` of page `path` (the first that holds it), or null when the page or the card is gone (deleted, moved, or its ID changed). */
+export async function readCard(path: string, id: string): Promise<CardOnPage | null> {
+  const card = await readCardAt(path, id, -1)
+  return card === null || card.id === null ? null : { ...card, id: card.id }
+}
+
 /**
  * Card `id`'s line changed by `change`: ONE `transformFile`, as the app's own write (`announcedWrite`), so a page open
- * in a tab takes the new line quietly — no outside-change bar, no glow, out of its undo history. Throws `CardNotFoundError`.
+ * in a tab takes the new line quietly — no outside-change bar, no glow, out of its undo history. `index`: the card's
+ * place, when two cards hold `id` (`changeCard`). Throws `CardNotFoundError`.
  */
-export const changeCardLine = (path: string, id: string, change: (line: CardLine) => CardLine): Promise<unknown> => announcedWrite(path, () => transformFile(path, (c) => changeCard(c, id, change)))
+export const changeCardLine = (path: string, id: string, change: (line: CardLine) => CardLine, index?: number): Promise<unknown> =>
+  announcedWrite(path, () => transformFile(path, (c) => changeCard(c, id, change, index)))
 
 /** Writes `review` to card `id`'s line: the answer the hover showed, as it showed it (D13). Throws `CardNotFoundError`. */
 export const writeCardReview = (path: string, id: string, review: CardReview): Promise<unknown> => changeCardLine(path, id, (l) => withCardReview(l, review))
