@@ -644,9 +644,21 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // page's own card, so toggling can not touch autosave.
   const collapseKey = `${folderPath}::${view.name}`
   const collapsed = collapsedByKey[collapseKey] ?? storage.getViewGroups(root, collapseKey)
-  const writeCollapsed = (next: readonly string[]) => {
-    setCollapsedByKey((m) => ({ ...m, [collapseKey]: [...next] }))
-    storage.setViewGroups(root, collapseKey, next)
+  const writeCollapsedAt = (key: string, next: readonly string[]) => {
+    setCollapsedByKey((m) => ({ ...m, [key]: [...next] }))
+    storage.setViewGroups(root, key, next)
+  }
+  const writeCollapsed = (next: readonly string[]) => writeCollapsedAt(collapseKey, next)
+  /**
+   * "Expand all" / "Collapse all" (YAZ-4928): ONE step of the page's ⌘Z history. Undo writes back the collapsed keys as
+   * they were before, redo the ones after — the view's own store only, never the page (so read only too, YAZ-4939). A
+   * single group's fold and the level steps stay off the history, as before.
+   */
+  const foldBranch = (next: readonly string[]) => {
+    const key = collapseKey
+    const before = [...collapsed]
+    writeCollapsedAt(key, next)
+    history.push({ undo: () => writeCollapsedAt(key, before), redo: () => writeCollapsedAt(key, next) })
   }
   /**
    * The store is keyed by view NAME, and since YAZ-1471 a name changes in one gesture: a rename
@@ -694,10 +706,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
             const b = branchSteps(levelNodes, key, collapsed)
             if (b === null) return undefined
             return {
-              ...(b.expandAll === null ? {} : { expandAll: () => writeCollapsed(b.expandAll!) }),
-              ...(b.collapseAll === null ? {} : { collapseAll: () => writeCollapsed(b.collapseAll!) }),
+              ...(b.expandAll === null ? {} : { expandAll: () => foldBranch(b.expandAll!) }),
+              ...(b.collapseAll === null ? {} : { collapseAll: () => foldBranch(b.collapseAll!) }),
             }
           },
+          history,
         }
 
   // ⌘F (YAZ-4613, D64): the note's find bar over the view's rows as shown, the search box's narrowing included. Read at

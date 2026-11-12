@@ -1,4 +1,4 @@
-import { createContext, Fragment, useContext, useState, type CSSProperties, type ReactNode } from 'react'
+import { createContext, Fragment, useContext, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { useUnit } from '../../vault/unitWord'
 import { ImageOf } from './imageCell'
 import { isFolderRow, isShortcut } from '../../links/shortcuts'
@@ -392,10 +392,27 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
   const moveFolder = subfolder === null || folderTray === null ? undefined : { name: subfolder.name, run: () => folderTray.move(subfolder.dir) }
   // "Expand all" / "Collapse all" over the folder groups below a nested Folder header (YAZ-4928): read when the menu opens.
   const levels = useContext(GroupLevelStepsContext)
-  const branch = menu !== null && gk !== undefined ? levels?.branch?.(gk) : undefined
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  /** After the pick the keyboard is on this header (the menu is gone), so the next ⌘Z reaches `onUndoKey`. */
+  const thenFocus = (run: (() => void) | undefined) =>
+    run === undefined
+      ? undefined
+      : () => {
+          run()
+          toggleRef.current?.focus({ preventScroll: true })
+        }
+  const steps = menu !== null && gk !== undefined ? levels?.branch?.(gk) : undefined
+  const branch = steps === undefined ? undefined : { expandAll: thenFocus(steps.expandAll), collapseAll: thenFocus(steps.collapseAll) }
+  /** ⌘Z / ⇧⌘Z on a group header (YAZ-4928): the page's history, as the table and a calendar card read it. */
+  const onUndoKey = (e: ReactKeyboardEvent) => {
+    const history = levels?.history
+    if (history === undefined || e.key.toLowerCase() !== 'z' || !e.metaKey || e.altKey || e.ctrlKey) return
+    if (e.shiftKey ? history.redo() : history.undo()) e.preventDefault()
+  }
   return (
     <div
       className="view-group"
+      onKeyDown={onUndoKey}
       onContextMenu={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -403,7 +420,7 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
       }}
     >
       {menu !== null && <GroupHeaderMenu x={menu.x} y={menu.y} collapsed={collapsed} onToggle={onToggle} onNew={onNew} moveFolder={moveFolder} branch={branch} onClose={() => setMenu(null)} />}
-      <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
+      <button ref={toggleRef} type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
         <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />
         </svg>
