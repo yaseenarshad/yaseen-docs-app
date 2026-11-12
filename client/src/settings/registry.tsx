@@ -1841,11 +1841,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'linkPills',
             label: 'Link pills',
-            hint: "Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {vault} {folder} {path} and your own text. Click a part of a pill in the preview to style it; click its icon for the box. Every link to a page shows this way in this vault's notes, folder pages and the explore stack. The look changes no note: it keeps its [[Name]].",
+            hint: "Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {vault} {folder} {path} and your own text. Click a part of the sample pill in the preview to style it; click its icon for the box. Every link to a page shows this way in this vault's notes, folder pages and the explore stack. The look changes no note: it keeps its [[Name]].",
             keywords: LINK_PILL_WORDS,
             wide: true,
             available: (ctx) => ctx.linkPills !== undefined,
-            render: ({ linkPills, ids, textFormatting }) => linkPills && <LinkPillsControl look={linkPills} vault={textFormatting?.vaults.find((v) => v.root === textFormatting.activeRoot)?.name ?? null} ids={ids?.enabled === true} />,
+            render: ({ linkPills, textFormatting }) => linkPills && <LinkPillsControl look={linkPills} vault={textFormatting?.vaults.find((v) => v.root === textFormatting.activeRoot)?.name ?? null} />,
           },
         ],
       },

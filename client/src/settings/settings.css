@@ -1905,8 +1905,8 @@
 }
 
 /* Settings › Link pills (YAZ-4924, `LinkPillsControl.tsx`): one row — the format box with its chips and the ready
-   formats, the vault rule, the preview sentence (it wears the vault's look as a note does, in the note's text size)
-   and, under it, the toolbar of the part clicked. */
+   formats, the vault rule, the preview (a "Preview" label and ONE sample pill; it wears the vault's look as a note
+   does, in the note's text size) and, under it, the toolbar of the part clicked. */
 .link-pills-row {
   display: flex;
   flex-direction: column;
@@ -1936,6 +1936,9 @@
 }
 
 .link-pills-preview {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   max-width: 520px;
   margin: 0;
   padding: 8px 12px;
@@ -1945,6 +1948,11 @@
   line-height: 1.6;
   color: var(--fg);
   cursor: default;
+}
+/* The "Preview" label: small and muted, no part of the pill. */
+.link-pills-preview__label {
+  font-size: 12px;
+  color: var(--fg-muted);
 }
 /* A part of a pill is a click target: the hand says so. */
 .link-pills-preview .wikilink,
