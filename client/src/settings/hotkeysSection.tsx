@@ -346,7 +346,10 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
             <ul className="hotkeys__clash-list">
               {all.map((o) => (
                 <li key={o.id}>
-                  <span className="hotkeys__clash-key">{keysOf(o, overrides).map((k) => k.split(' ').map(toDisplay).join(' ')).join(' / ')}</span> {owned(o)}
+                  <span className="hotkeys__clash-key">{keysOf(o, overrides).map((k) => k.split(' ').map(toDisplay).join(' ')).join(' / ')}</span>
+                  <span className="hotkeys__clash-action" title={owned(o)}>
+                    {owned(o)}
+                  </span>
                 </li>
               ))}
             </ul>

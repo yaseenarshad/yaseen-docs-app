@@ -8,6 +8,8 @@
  * The bridge is mocked: this Mac's Spotlight is on ⌥Space, so ⌘Space is free.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MACOS_HOTKEYS } from '@shared/macosHotkeys'
@@ -218,6 +220,16 @@ describe('a changeable key (D6, D7)', () => {
     expect(list).not.toBeNull()
     expect(list?.querySelectorAll('li')).toHaveLength(codeOnK.length)
     expect(list?.textContent).toContain(first)
+    // Each row is one line (YAZ-4941 nit): its keys, then its action in its own part that cuts with "…", with the full text on hover.
+    for (const li of list?.querySelectorAll('li') ?? []) {
+      expect([...li.children].map((c) => c.className)).toEqual(['hotkeys__clash-key', 'hotkeys__clash-action'])
+      expect(li.querySelector('.hotkeys__clash-action')?.getAttribute('title')).toBe(li.querySelector('.hotkeys__clash-action')?.textContent)
+    }
+    const css = readFileSync(path.join(__dirname, 'settings.css'), 'utf8')
+    const ruleOf = (selector: string) => css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.*]/g, '\\$&')} \\{([^}]*)\\}`))?.[1] ?? ''
+    expect(ruleOf('.hotkeys__clash-list li')).toMatch(/display: flex;[\s\S]*white-space: nowrap;/)
+    expect(ruleOf('.hotkeys__clash-key')).toContain('flex: none;')
+    expect(ruleOf('.hotkeys__clash-action')).toMatch(/min-width: 0;[\s\S]*overflow: hidden;[\s\S]*text-overflow: ellipsis;/)
     click(button(popup() as HTMLElement, 'Save'))
     const written = onChange.mock.calls.at(-1)?.[0] as SettingsState
     expect(written.hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Shift+F', 'app.explore': 'CmdOrCtrl+K' })

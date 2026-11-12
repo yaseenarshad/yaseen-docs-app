@@ -756,11 +756,22 @@
   border: 1px solid var(--border);
   border-radius: 6px;
 }
+/* One line per row (YAZ-4941): the keys stay whole, a long action cuts with "…" and shows in full on hover. */
+.hotkeys__clash-list li {
+  display: flex;
+  gap: 0.5em;
+  white-space: nowrap;
+}
 .hotkeys__clash-key {
-  display: inline-block;
+  flex: none;
   min-width: 6.5em;
   font-family: var(--font-mono, ui-monospace, monospace);
   color: var(--fg-muted);
+}
+.hotkeys__clash-action {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hotkeys__swap {
