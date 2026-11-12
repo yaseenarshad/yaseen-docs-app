@@ -13,7 +13,7 @@ import { applyExternalMarkdown } from '../external/applyExternalMarkdown'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { CrepeFeature } from '../crepe'
 import { features } from '../featureConfig'
-import { NOTE_CARD_OPEN, noteCardViewAt, type NoteCardOpenRequest } from './noteCardView'
+import { NOTE_CARD_OPEN, noteCardLanguage, noteCardViewAt, type NoteCardOpenRequest } from './noteCardView'
 import { refreshNoteCardLook, renderNoteCard } from './noteCardRender'
 
 /** A read-only page's ⋯ writes the card line to the file (`changeCardLine`): here it is only heard. */
@@ -313,6 +313,19 @@ describe('the card in the page', () => {
     expect(getMarkdownForSave(crepe)).toBe(`# Page\n\nSome text above the card.\n\n${CARD}<!-- card: WIKI-9 -->\n\nMore text below.\n`)
     expect(view.state.doc.nodeAt(cardPos(view))?.attrs.cardLine).toBe('<!-- card: WIKI-9 -->')
     expect(view.dom.querySelector('.note-card__side')?.textContent).toContain('capital')
+  })
+})
+
+describe('the card editor`s language (idea 8)', () => {
+  it('is Markdown with no setext heading: the front line above --- is no heading; a # line still is', async () => {
+    const { language } = await noteCardLanguage.load()
+    const kinds = (text: string) => {
+      const names: string[] = []
+      language.parser.parse(text).iterate({ enter: (n) => void names.push(n.name) })
+      return names
+    }
+    expect(kinds('Front\n---\nBack').some((n) => n.startsWith('SetextHeading'))).toBe(false)
+    expect(kinds('# Front\n---\nBack')).toContain('ATXHeading1')
   })
 })
 

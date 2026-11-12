@@ -38,7 +38,6 @@ import { ReplaceAroundStep, ReplaceStep } from '@milkdown/kit/prose/transform'
 import type { Fragment } from '@milkdown/kit/prose/model'
 import { EditorView as CodeMirrorView, keymap } from '@codemirror/view'
 import { LanguageDescription, LanguageSupport } from '@codemirror/language'
-import { languages } from '@codemirror/language-data'
 import { commandsCtx, editorViewCtx, nodeViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -509,13 +508,15 @@ export const noteCardCodeKeys: Extension = Prec.highest(
 
 /**
  * The `card` language of the code editor (idea 8): Markdown highlighting, and the spell check a code block does not
- * have. Joins Crepe's language list (`createCrepe.ts`), so only a card's editor loads it.
+ * have. Joins Crepe's language list (`createCrepe.ts`), so only a card's editor loads it. No setext headings: in a card
+ * `---` splits the sides (D10), so the front line above it is no heading — only a `#` line is one.
  */
 export const noteCardLanguage = LanguageDescription.of({
   name: 'Note card',
   alias: [NOTE_CARD_LANGUAGE],
   load: async () => {
-    const md = await languages.find((l) => l.name === 'Markdown')!.load()
+    const { markdown } = await import('@codemirror/lang-markdown')
+    const md = markdown({ extensions: { remove: ['SetextHeading'] } })
     return new LanguageSupport(md.language, [md.support, CodeMirrorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'on' })])
   },
 })

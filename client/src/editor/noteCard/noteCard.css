@@ -120,6 +120,11 @@
   color: var(--fg-muted);
   font-style: italic;
 }
+/* Crepe's code block, while the card is edited: flush inside the card, with no tools row above line 1 (its language
+   is the card's, and its copy button is the page's ⌘C). */
+.milkdown .note-card .milkdown-code-block .tools {
+  display: none;
+}
 /* Crepe's code block, while the card is edited: flush inside the card. */
 .note-card .note-card__code {
   margin: 0;
