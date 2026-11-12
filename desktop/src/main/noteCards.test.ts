@@ -16,7 +16,7 @@ import {
   type CardReview,
 } from '@shared/cardLine'
 import { answerLabel, answerRatings, cardHistory, cardQueue, cardState, isCardDue, previewAnswers, recallChance } from '@shared/cardSchedule'
-import { cardPieces, cardSides, cardTitle, showHidden } from '@shared/cardText'
+import { cardPieces, cardSides, cardTitle, hiddenCount, markHidden } from '@shared/cardText'
 import { DEFAULT_CARD_WEIGHTS, DEFAULT_REVIEW_SETTINGS, sanitizeReviewSettings } from '@shared/reviews'
 
 /** Note cards' shared core (YAZ-4959): the card line, the card text, the FSRS schedule and the settings. */
@@ -111,10 +111,21 @@ describe('the card text (D10, D19, idea 3)', () => {
       { kind: 'text', text: ' c ' },
       { kind: 'hidden', text: 'd e' },
     ])
-    expect(showHidden('{{1::Paris}} and {{Rome}}')).toBe('Paris and Rome')
+    expect(markHidden('{{1::Paris}} and {{Rome}}', (word, n) => `${n}:${word}`)).toBe('0:Paris and 1:Rome')
     expect(cardTitle(text)).toBe('The capital of France')
     expect(cardTitle('- [x] *Read* `x` [the doc](http://a.b) and ![img](a.png)')).toBe('Read x the doc and img')
     expect(cardTitle('')).toBe('')
+  })
+})
+
+describe('code in a card is literal (the one fence walk, `shared/fences.ts`)', () => {
+  it('a {{word}} in a code span or a code block of the card hides nothing; a --- there splits nothing', () => {
+    const side = 'Run `echo {{a}}` or {{b}}\n```sh\necho "{{hello}}"\n---\n```\nthen {{c}}'
+    expect(cardSides(side)).toEqual([side])
+    expect(cardPieces(side).filter((p) => p.kind === 'hidden').map((p) => p.text)).toEqual(['b', 'c'])
+    expect(hiddenCount(side)).toBe(2)
+    expect(markHidden(side, (w) => `[${w}]`)).toBe(side.replace('{{b}}', '[b]').replace('{{c}}', '[c]'))
+    expect(cardTitle('`{{x}}` first')).toBe('{{x}} first')
   })
 })
 

@@ -1,8 +1,11 @@
 /**
  * A note card's text (YAZ-4959 D10, D19, idea 3), Mochi's notation: `---` alone on a line splits the sides, `{{word}}`
  * hides a word. `{{1::word}}` reads as `{{word}}`: there are no cloze groups, and all hidden words on a card are ONE
- * review. The text is the card's raw Markdown between its fences (`cardLine.ts` `findCards`). Pure: no DOM.
+ * review. The text is the card's raw Markdown between its fences (`cardLine.ts` `findCards`). Code in the card — a
+ * code block, a code span — is literal: a `---` there splits nothing and a `{{x}}` there hides nothing (the one fence
+ * walk, `fences.ts`). Pure: no DOM.
  */
+import { lineKinds, maskCode } from './fences'
 
 /** A side break: `---` alone on its line (spaces around it allowed). */
 const SIDE_BREAK_RE = /^[ \t]*---[ \t]*$/
@@ -12,15 +15,19 @@ const HIDDEN_RE = /\{\{(?:c?\d+::)?([\s\S]*?)\}\}/g
 /** The sides of a card, in order, each without the blank lines around it. A card with no break has one side. */
 export function cardSides(text: string): string[] {
   const sides: string[][] = [[]]
-  let fence: string | null = null
-  for (const line of text.split('\n')) {
-    // A `---` inside a code block of the card is the code's own text.
-    const m = /^[ \t]*(`{3,}|~{3,})/.exec(line)
-    if (m !== null) fence = fence === null ? m[1] : m[1][0] === fence[0] && m[1].length >= fence.length && line.trim() === m[1] ? null : fence
-    if (fence === null && m === null && SIDE_BREAK_RE.test(line)) sides.push([])
+  const lines = text.split('\n')
+  const kinds = lineKinds(lines)
+  lines.forEach((line, i) => {
+    if (kinds[i] === 'text' && SIDE_BREAK_RE.test(line)) sides.push([])
     else sides[sides.length - 1].push(line)
-  }
+  })
   return sides.map((side) => side.join('\n').replace(/^\s*\n/, '').replace(/\n\s*$/, ''))
+}
+
+/** The hidden words of `text` outside its code, in order: where each one stands, how long it is, and its word. */
+function hiddenWords(text: string): { index: number; length: number; word: string }[] {
+  if (!text.includes('{{')) return []
+  return [...maskCode(text).matchAll(HIDDEN_RE)].map((m) => ({ index: m.index, length: m[0].length, word: m[1] }))
 }
 
 /** A piece of a side: plain Markdown, or a hidden word. */
@@ -30,10 +37,10 @@ export type CardPiece = { kind: 'text'; text: string } | { kind: 'hidden'; text:
 export function cardPieces(side: string): CardPiece[] {
   const pieces: CardPiece[] = []
   let from = 0
-  for (const m of side.matchAll(HIDDEN_RE)) {
+  for (const m of hiddenWords(side)) {
     if (m.index > from) pieces.push({ kind: 'text', text: side.slice(from, m.index) })
-    pieces.push({ kind: 'hidden', text: m[1] })
-    from = m.index + m[0].length
+    pieces.push({ kind: 'hidden', text: m.word })
+    from = m.index + m.length
   }
   if (from < side.length) pieces.push({ kind: 'text', text: side.slice(from) })
   return pieces
@@ -45,14 +52,20 @@ export function cardPieces(side: string): CardPiece[] {
  */
 export function markHidden(text: string, mark: (word: string, n: number) => string, from = 0): string {
   let n = from
-  return text.replace(HIDDEN_RE, (_, word: string) => mark(word, n++))
+  let out = ''
+  let at = 0
+  for (const m of hiddenWords(text)) {
+    out += text.slice(at, m.index) + mark(m.word, n++)
+    at = m.index + m.length
+  }
+  return out + text.slice(at)
 }
 
 /** How many hidden words a side holds. */
 export const hiddenCount = (side: string): number => cardPieces(side).filter((p) => p.kind === 'hidden').length
 
 /** The text with every hidden word shown as the word: `{{1::Paris}}` → `Paris`. */
-export const showHidden = (text: string): string => text.replace(HIDDEN_RE, '$1')
+const showHidden = (text: string): string => markHidden(text, (word) => word)
 
 /**
  * The card's title (idea 3): the first line of the first side that has text, as plain text — Markdown marks, link

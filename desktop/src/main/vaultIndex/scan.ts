@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { cardRecords, isCardFence } from '@shared/cardLine'
+import { cardRecords } from '@shared/cardLine'
+import { maskCode } from '@shared/fences'
 import { COMMENTS_KEY } from '@shared/comments'
 import { isDrawing } from '@shared/fileKind'
 import { folderBlocks } from '@shared/folderValues'
@@ -120,37 +121,14 @@ export function extractAliases(props: Record<string, unknown>): string[] {
   return unique(out)
 }
 
-const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/
-const CODE_SPAN_RE = /(`+)[\s\S]*?\1/g
 const URL_RE = /https?:\/\/\S+/g
 
 /**
- * Body with fenced code blocks (``` / ~~~) and inline code spans blanked out — the one pre-pass
- * shared by the tag, link and embed extractors, since Obsidian's cache ignores all three there.
- * A note card's text is Markdown (YAZ-4960 D17): only its two fence lines are blanked, so its
- * links, embeds and tags count. `maskCode` in `shared/linkRewrite.ts` mirrors this.
+ * Body with fenced code blocks (``` / ~~~) and inline code spans blanked out — the one pre-pass shared by the tag,
+ * link and embed extractors, since Obsidian's cache ignores all three there. The walk is `shared/fences.ts`, the
+ * rename's too: a note card's text counts (D17), a code block inside a card does not.
  */
-function stripCode(body: string): string {
-  const lines = body.split('\n')
-  let fence: string | null = null
-  let card = false
-  for (let i = 0; i < lines.length; i++) {
-    const m = FENCE_RE.exec(lines[i])
-    let edge = false
-    if (fence === null) {
-      if (m) {
-        fence = m[1]
-        card = isCardFence(lines[i])
-        edge = true
-      }
-    } else if (m && m[1][0] === fence[0] && m[1].length >= fence.length && lines[i].trim() === m[1]) {
-      fence = null
-      edge = true
-    }
-    if (edge || (fence !== null && !card) || (m && !card)) lines[i] = ''
-  }
-  return lines.join('\n').replace(CODE_SPAN_RE, ' ')
-}
+const stripCode = maskCode
 
 const INLINE_TAG_RE = /(?:^|[\s([,;])#([A-Za-z0-9_/-]+)/g
 

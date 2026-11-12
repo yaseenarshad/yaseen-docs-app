@@ -1,4 +1,5 @@
 import { splitFrontmatter } from './frontmatter'
+import { closesFence, fenceOf } from './fences'
 import { canonicalNoteId, isNumberId } from './noteId'
 
 /**
@@ -125,12 +126,10 @@ export const withoutCardReviews = (line: CardLine): CardLine => ({ parts: line.p
 
 /** A fence that opens a note card: three or more backticks or tildes, then the language `card` and nothing else. */
 const CARD_FENCE_RE = /^([ \t]*)(`{3,}|~{3,})[ \t]*card[ \t]*$/
-/** Any fence line: what can open or close a code block. */
-const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/
 /** A cheap first look: no page without a card fence pays for the line walk. */
 const ANY_CARD_FENCE_RE = /^[ \t]*(?:`{3,}|~{3,})[ \t]*card[ \t]*$/m
 
-/** Is `line` the opening fence of a note card? (The index and `linkRewrite.ts` read its body as Markdown, D17.) */
+/** Is `line` the opening fence of a note card? (The line numbers read the card line as its block's comment.) */
 export const isCardFence = (line: string): boolean => CARD_FENCE_RE.test(line)
 
 /** One note card of a page, by line number (0-based, in the text it was found in). */
@@ -158,12 +157,11 @@ export function findCards(text: string): CardBlock[] {
   const lines = text.split('\n')
   const cards: CardBlock[] = []
   for (let i = 0; i < lines.length; i++) {
-    const open = mayFence(lines[i]) ? FENCE_RE.exec(lines[i]) : null
-    if (open === null) continue
-    const fence = open[1]
+    const fence = fenceOf(lines[i])
+    if (fence === null) continue
     const card = CARD_FENCE_RE.exec(lines[i])
     let close = i + 1
-    while (close < lines.length && !closes(lines[close], fence)) close++
+    while (close < lines.length && !closesFence(lines[close], fence)) close++
     // A card fence that is never closed is no card yet: its line would land inside the block.
     if (card !== null && close < lines.length) {
       const indent = card[1]
@@ -188,15 +186,6 @@ export function findCards(text: string): CardBlock[] {
     i = close
   }
   return cards
-}
-
-/** A cheap first test before the fence pattern: a fence line holds a backtick or a tilde. */
-const mayFence = (line: string): boolean => line.includes('`') || line.includes('~')
-
-/** Does `line` close a code block opened by `fence`? Same character, at least as long, nothing after it. */
-function closes(line: string, fence: string): boolean {
-  const m = mayFence(line) ? FENCE_RE.exec(line) : null
-  return m !== null && m[1][0] === fence[0] && m[1].length >= fence.length && line.trim() === m[1]
 }
 
 /** What the index keeps of a page's cards (D4): one entry per card, in page order. */

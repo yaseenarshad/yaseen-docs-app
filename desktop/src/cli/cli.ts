@@ -38,6 +38,7 @@ import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { cardBlock, pageCards } from '@shared/cardLine'
+import { lineKinds } from '@shared/fences'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
@@ -531,12 +532,11 @@ function cardPlace(body: string, after: string | undefined): number {
   const lines = body.split('\n')
   if (after === undefined) return lines.length
   const want = after.replace(/^#+\s*/, '').trim().toLowerCase()
-  let fence: string | null = null
+  const kinds = lineKinds(lines)
   const headings: { at: number; level: number; text: string }[] = []
   lines.forEach((line, at) => {
-    const m = /^[ \t]*(`{3,}|~{3,})/.exec(line)
-    if (m !== null) fence = fence === null ? m[1] : m[1][0] === fence[0] && m[1].length >= fence.length && line.trim() === m[1] ? null : fence
-    const h = fence === null && m === null ? /^(#{1,6})[ \t]+(.*?)[ \t#]*$/.exec(line) : null
+    // A heading in a code block (or a card) is the block's own text.
+    const h = kinds[at] === 'text' ? /^(#{1,6})[ \t]+(.*?)[ \t#]*$/.exec(line) : null
     if (h !== null) headings.push({ at, level: h[1].length, text: h[2].trim().toLowerCase() })
   })
   const i = headings.findIndex((h) => h.text === want)

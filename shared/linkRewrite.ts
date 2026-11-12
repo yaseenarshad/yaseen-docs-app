@@ -15,7 +15,7 @@
  * folder's settings come through their own module (`folderSettingsLinks.ts`, YAZ-864).
  */
 import { ALSO_IN_KEY, alsoInEntries } from './alsoIn'
-import { isCardFence } from './cardLine'
+import { maskCode } from './fences'
 import { mapFolderSettingsLinks } from './folderSettingsLinks'
 import { FOLDER_VALUES_KEY, folderBlocks, moveFolderValues } from './folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
@@ -31,36 +31,8 @@ export type NewTarget = (target: string) => string
 /** Wiki links and embeds; inner brackets are unrepresentable (same shape as the index's WIKILINK_RE). */
 export const WIKILINK_RE = /(!?)\[\[([^[\]]+)\]\]/g
 
-const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/
-const CODE_SPAN_RE = /(`+)[\s\S]*?\1/g
-
-/**
- * The index's `stripCode` (desktop/src/main/vaultIndex/scan.ts) mirrored LENGTH-PRESERVING:
- * every character inside a fenced block (``` / ~~~, fence lines included) or an inline code
- * span becomes a space, so match offsets over the mask address the original body directly.
- */
-export function maskCode(body: string): string {
-  const lines = body.split('\n')
-  let fence: string | null = null
-  // A note card's text is Markdown (YAZ-4960 D17): only its fence lines are masked, so a rename rewrites its links.
-  let card = false
-  for (let i = 0; i < lines.length; i++) {
-    const m = FENCE_RE.exec(lines[i])
-    let edge = false
-    if (fence === null) {
-      if (m) {
-        fence = m[1]
-        card = isCardFence(lines[i])
-        edge = true
-      }
-    } else if (m && m[1][0] === fence[0] && m[1].length >= fence.length && lines[i].trim() === m[1]) {
-      fence = null
-      edge = true
-    }
-    if (edge || (fence !== null && !card) || (m && !card)) lines[i] = ' '.repeat(lines[i].length)
-  }
-  return lines.join('\n').replace(CODE_SPAN_RE, (span) => ' '.repeat(span.length))
-}
+/** Code as spaces, offsets intact (`shared/fences.ts`, the index's walk too): a link in code is no link. */
+export { maskCode }
 
 /**
  * `[[inner]]` → the rewritten inner, or null when this match is not what changed.

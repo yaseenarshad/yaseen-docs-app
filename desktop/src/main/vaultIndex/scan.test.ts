@@ -330,6 +330,14 @@ describe('scanFile', () => {
     expect((await scanFile(root, file)).cards).toBeUndefined()
   })
 
+  it('a link in a card counts (D17); a link in a code block or a code span INSIDE the card does not (audit 7)', async () => {
+    const file = path.join(root, 'linked.md')
+    await writeFile(file, ['````card', 'See [[Paris]] #geo and `[[Span]]`', '```sh', 'echo [[Code]] #nope', '```', '````', '<!-- card: WIKI-3 -->', ''].join('\n'))
+    const r = await scanFile(root, file)
+    expect(r.links).toEqual(['Paris'])
+    expect(r.tags).toEqual(['geo'])
+  })
+
   it('files over MAX_FILE_BYTES → metadata only', async () => {
     const big = path.join(root, 'big.md')
     await writeFile(big, '---\na: 1\n---\n#tag [[x]]\n' + 'x'.repeat(MAX_FILE_BYTES))
