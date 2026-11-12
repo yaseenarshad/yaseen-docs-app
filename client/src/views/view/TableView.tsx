@@ -1,7 +1,7 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useUnit } from '../../vault/unitWord'
 import { headerRowAttrs, IMAGE_SIZE_DEFAULT, type IndexRecord, type PropertiesResponse } from '@shared/types'
-import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupDepthOf, groupIndentOf, groupLineStyleOf, groupLinesOf, headerRowOfView, MAX_GROUP_INDENT_LEVELS, MAX_GROUP_LEVELS } from '../viewSchema'
+import { type FilterNode, type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupDepthOf, groupIndentOf, groupLineStyleOf, groupLinesOf, headerRowOfView, MAX_GROUP_INDENT_LEVELS, MAX_GROUP_LEVELS } from '../viewSchema'
 import { type GroupSpan, groupLinesHover, groupSpans, groupThread, holdersOf, measureGroupGuides, stuckDistance, windowedGuide, windowedLine } from './groupGuides'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -81,6 +81,8 @@ export interface TableViewProps {
   onUpdate: Mutate
   /** The header menu's Filter › "Open the filter panel…" (YAZ-4919): the toolbar's Filter popover opens. */
   onOpenFilter?: () => void
+  /** The rows that pass `filters` in this view's place (YAZ-4919 round 2): the header menu's Filter › Contains box counts and lists with it. */
+  matchRows?: (filters: FilterNode | undefined) => readonly IndexRecord[]
   onOpenFile: (path: string) => void
   /** Open a row page in the window's right panel. */
   onOpenFileRight?: (path: string) => void
@@ -313,7 +315,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFilter, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, newRows = true, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFilter, matchRows, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, newRows = true, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
   const unit = useUnit()
   /**
    * YAZ-4799: the deepest Folder group a row line is drawn in (its group and the groups above it), or null: a shortcut's
@@ -2331,6 +2333,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             takenKeys={() => allPropertyKeys(def, view, records, settings.columns)}
             reserved={reservedKeys}
             records={records}
+            matchRows={matchRows}
             wrapKind={headerMenu.key === null ? null : wrapKind(typings[keys.indexOf(headerMenu.key)])}
             properties={properties}
             folder={{ settings, setColumn, setColumns: declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onNotice, vaultFolders, resolveLink }}

@@ -5,7 +5,7 @@ import { defaultLabel, propertyLabel } from '../engine'
 import { undeletableReason } from '../deleteColumn'
 import type { ColumnTyping } from '../editorType'
 import type { ColumnDecl } from '../folderSettings'
-import { type Mutate, type ViewDef, type ViewSet, MAX_GROUP_LEVELS } from '../viewSchema'
+import { type FilterNode, type Mutate, type ViewDef, type ViewSet, MAX_GROUP_LEVELS } from '../viewSchema'
 import { chooseOwn, useViewDefaults } from '../viewDefaults'
 import type { FolderHost } from '../ViewsPane'
 import { AddColumn } from './AddColumn'
@@ -49,6 +49,8 @@ export interface TableHeaderMenuProps {
   reserved: ReadonlySet<string>
   /** The folder's rows: the type line infers an undeclared column's kind from them (YAZ-4533). */
   records: readonly IndexRecord[]
+  /** The rows that pass `filters` in this view's place (YAZ-4919 round 2): the Filter › Contains box's live count and value list. */
+  matchRows?: (filters: FilterNode | undefined) => readonly IndexRecord[]
   /** The kind the table's cells wrap by (`wrapKind`), so the Text › ✓ and the cells read ONE source (YAZ-4544 4E). */
   wrapKind: string | null | undefined
   /** The vault's property declarations, the type line's and the editor's fallback. */
@@ -114,7 +116,7 @@ export function wrapsColumn(view: ViewDef, key: string, kind: string | null | un
 type HeaderTab = 'fill' | 'text' | 'style'
 const HEADER_TABS: readonly (readonly [HeaderTab, string])[] = [['fill', 'Fill'], ['text', 'Text'], ['style', 'Style']]
 
-export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewIndex, keys, takenKeys, reserved, records, wrapKind, properties, folder, onUpdate, declareColumn, onDeleteColumn, onOpenFilter, onClose }: TableHeaderMenuProps) {
+export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewIndex, keys, takenKeys, reserved, records, matchRows, wrapKind, properties, folder, onUpdate, declareColumn, onDeleteColumn, onOpenFilter, onClose }: TableHeaderMenuProps) {
   const [mode, setMode] = useState<'menu' | 'rename' | 'add' | 'edit'>('menu')
   /** "Header row ›"'s tab (YAZ-4794 demo: "holy shite thats a long flyout"), as Fill's Cell · Row · Column. */
   const [headerTab, setHeaderTab] = useState<HeaderTab>('fill')
@@ -200,16 +202,18 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
    * Filter › (YAZ-4919): this column's rules replace its own in the view's `filters`, one write (one ⌘Z) per pick;
    * Clear is a gesture that takes something away, so its toast offers Undo (S29).
    */
+  const filterType = isMentionsColumn(columns, key) ? 'mentions' : inferType(c, records, typing)
   const setColumnFilter = (rules: readonly Rule[], close: boolean, undo?: string) => {
     onUpdate((d) => {
       const v = d.views[viewIndex]
-      const next = withColumnRules(v.filters, c, rules)
+      const next = withColumnRules(v.filters, c, rules, filterType)
       if (next === undefined) delete v.filters
       else v.filters = next
     }, undo)
     if (close) onClose()
   }
-  const filterType = isMentionsColumn(columns, key) ? 'mentions' : inferType(c, records, typing)
+  /** The Contains box's live count (YAZ-4919 round 2): the view's rows under its rules, this column's swapped for `rules`. */
+  const matches = matchRows && ((rules: readonly Rule[]) => matchRows(withColumnRules(view.filters, c, rules, filterType)))
   /**
    * "Header row ›" (YAZ-4794): the View tab's Header row from the column header, ✓ at what the table shows. A pick is
    * one write of the view's own `headerRow` (`setHeaderRowPart`, the View tab's writer) and the menu stays open, so
@@ -368,6 +372,7 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
                 type={filterType}
                 values={() => propertyValues(c, records, typing)}
                 filters={view.filters}
+                matches={matches}
                 onRules={setColumnFilter}
                 onClear={() => setColumnFilter([], true, `Cleared the filter on ${label}`)}
                 onOpenPanel={

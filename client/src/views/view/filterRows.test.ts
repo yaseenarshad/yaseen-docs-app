@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { TEST_RECORDS } from '../testRecords'
 import {
   OPERATORS_BY_TYPE, type OperatorId, type PropertyType, type Rule, countRules, exprToRule, fromGroup, inferType,
-  operatorsFor, ruleToExpr, toGroup, valueFilter, withFilter,
+  operatorsFor, ruleToExpr, toGroup, unquote, valueFilter, withFilter,
 } from './filterRows'
 import { DateValue, DurationValue, LinkValue } from '../expr'
 import { canonicalKey } from './keys'
@@ -13,10 +13,11 @@ const CASES: { type: PropertyType; property: string; op: OperatorId; value: stri
   { type: 'text', property: 'note.status', op: 'isNot', value: 'idea', expr: 'note.status != "idea"' },
   { type: 'text', property: 'note.status', op: 'isAnyOf', value: ['idea', 'drafting'], expr: '["idea", "drafting"].contains(note.status)' },
   { type: 'text', property: 'note.status', op: 'isNoneOf', value: ['idea', 'drafting'], expr: '!["idea", "drafting"].contains(note.status)' },
-  { type: 'text', property: 'note.status', op: 'contains', value: 'id', expr: 'note.status.contains("id")' },
-  { type: 'text', property: 'note.status', op: 'notContains', value: 'id', expr: '!note.status.contains("id")' },
-  { type: 'text', property: 'note.status', op: 'startsWith', value: 'i', expr: 'note.status.startsWith("i")' },
-  { type: 'text', property: 'note.status', op: 'endsWith', value: 'a', expr: 'note.status.endsWith("a")' },
+  // A text column's substring rules ignore case (YAZ-4919 round 2): `lower()` on the column, the value lowercased.
+  { type: 'text', property: 'note.status', op: 'contains', value: 'id', expr: 'note.status.lower().contains("id")' },
+  { type: 'text', property: 'note.status', op: 'notContains', value: 'id', expr: '!note.status.lower().contains("id")' },
+  { type: 'text', property: 'note.status', op: 'startsWith', value: 'i', expr: 'note.status.lower().startsWith("i")' },
+  { type: 'text', property: 'note.status', op: 'endsWith', value: 'a', expr: 'note.status.lower().endsWith("a")' },
   { type: 'text', property: 'note.status', op: 'isEmpty', value: '', expr: 'note.status.isEmpty()' },
   { type: 'text', property: 'note.status', op: 'isNotEmpty', value: '', expr: '!note.status.isEmpty()' },
   { type: 'number', property: 'note.priority', op: 'eq', value: '3', expr: 'note.priority == 3' },
@@ -98,7 +99,7 @@ const CASES: { type: PropertyType; property: string; op: OperatorId; value: stri
 describe('ruleToExpr / exprToRule round trip (GRO-2135)', () => {
   it.each(CASES)('$type · $op → $expr → back', ({ type, property, op, value, expr }) => {
     const rule: Rule = { property, op, value }
-    expect(ruleToExpr(rule)).toBe(expr)
+    expect(ruleToExpr(rule, type)).toBe(expr)
     expect(exprToRule(expr)).toEqual(rule)
     expect(operatorsFor(property, type).map(o => o.id)).toContain(op)
   })
@@ -109,6 +110,47 @@ describe('ruleToExpr / exprToRule round trip (GRO-2135)', () => {
       if (type === 'file') continue
       for (const op of ops) expect(covered.has(`${type}:${op}`), `${type}:${op}`).toBe(true)
     }
+  })
+
+  it('a text column\'s contains / does not contain / starts with / ends with ignore case (YAZ-4919 round 2); a list column\'s contains stays "has the item", exact', () => {
+    // The value is lowercased too, so `Start` and `start` write one rule, and the engine's `lower()` meets it.
+    expect(ruleToExpr({ property: 'note.topic', op: 'contains', value: 'Start' }, 'text')).toBe('note.topic.lower().contains("start")')
+    expect(ruleToExpr({ property: 'note.topic', op: 'notContains', value: 'STaRT' }, 'text')).toBe('!note.topic.lower().contains("start")')
+    expect(ruleToExpr({ property: 'file.name', op: 'startsWith', value: 'Ab' }, 'text')).toBe('file.name.lower().startsWith("ab")')
+    // Is / Is not stay exact.
+    expect(ruleToExpr({ property: 'note.topic', op: 'is', value: 'Start' }, 'text')).toBe('note.topic == "Start"')
+    // A list, tags, multi-select, multi-link or Linked mentions column: `contains` is the list's "has the item", a deep compare, so no `lower()`.
+    for (const type of ['list', 'tags', 'multi-select', 'multi-link', 'mentions'] as const) {
+      expect(ruleToExpr({ property: 'note.people', op: 'contains', value: 'Ada' }, type)).toBe('note.people.contains("Ada")')
+    }
+    // With no type (the row menu's "Filter by this value"), the exact form as before.
+    expect(ruleToExpr({ property: 'note.people', op: 'contains', value: 'Ada' })).toBe('note.people.contains("Ada")')
+  })
+
+  it('the panel reads BOTH forms as one rule kind: the old exact `p.contains("X")` keeps its value as saved, and `lower()` wraps only the three substring methods', () => {
+    expect(exprToRule('note.topic.contains("Start")')).toEqual({ property: 'note.topic', op: 'contains', value: 'Start' })
+    expect(exprToRule('note.topic.lower().contains("start")')).toEqual({ property: 'note.topic', op: 'contains', value: 'start' })
+    expect(exprToRule('!note.topic.lower().contains("start")')).toEqual({ property: 'note.topic', op: 'notContains', value: 'start' })
+    expect(exprToRule('note.topic.lower().startsWith("s")')).toEqual({ property: 'note.topic', op: 'startsWith', value: 's' })
+    expect(exprToRule('note["my topic"].lower().endsWith("t")')).toEqual({ property: 'note.my topic', op: 'endsWith', value: 't' })
+    // Not rules: a lowered emptiness, a lowered compare, a `lower` with an argument, a lower of a lower.
+    expect(exprToRule('note.topic.lower().isEmpty()')).toBeNull()
+    expect(exprToRule('note.topic.lower() == "x"')).toBeNull()
+    expect(exprToRule('note.topic.lower("x").contains("x")')).toBeNull()
+    expect(exprToRule('note.topic.lower().lower().contains("x")')).toBeNull()
+  })
+
+  it('unquote drops ONE pair of wrapping quotes (YAZ-4919 round 2): straight, single or curly; anything else stays as typed', () => {
+    expect(unquote('"start"')).toBe('start')
+    expect(unquote("'start'")).toBe('start')
+    expect(unquote('\u201cstart\u201d')).toBe('start')
+    expect(unquote('  "start"  ')).toBe('start')
+    expect(unquote('""start""')).toBe('"start"')
+    expect(unquote('start')).toBe('start')
+    expect(unquote('"start')).toBe('"start')
+    expect(unquote('say "hi"')).toBe('say "hi"')
+    expect(unquote('"')).toBe('"')
+    expect(unquote('""')).toBe('')
   })
 
   it('escapes quotes and backslashes in values and reads them back', () => {

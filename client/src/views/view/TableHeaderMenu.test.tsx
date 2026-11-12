@@ -826,6 +826,10 @@ describe('the Filter flyout (YAZ-4919)', () => {
   }
   const pressed = (el: ParentNode): string[] => [...el.querySelectorAll<HTMLElement>('.ctx-menu__sub .fill-target__opt[aria-pressed="true"]')].map((b) => b.textContent ?? '')
   const badge = (el: ParentNode): string | null => el.querySelector('.view-toolbar__btn[aria-label="Filter"] .view-toolbar__badge')?.textContent ?? null
+  /** The live count under the Contains box (YAZ-4919 round 2), or null while the box is empty. */
+  const count = (el: ParentNode): string | null => el.querySelector('.ctx-menu__sub .column-filter__count')?.textContent ?? null
+  /** The value rows under the count: each value with its row count. */
+  const valueRows = (el: ParentNode): [string, string | null][] => [...el.querySelectorAll<HTMLElement>('.ctx-menu__sub .column-filter__value')].map((b) => [b.textContent ?? '', b.getAttribute('data-count')])
   /** Types into a flyout box and presses Enter: the one write, and the menu closes. */
   const enter = (el: ParentNode, label: string, value: string): void => {
     const input = box(el, label)
@@ -840,8 +844,10 @@ describe('the Filter flyout (YAZ-4919)', () => {
     expect(items.indexOf('Filter')).toBe(items.indexOf('Group') + 1)
     expect(item(el, 'Filter').getAttribute('data-hint')).toBeNull()
     click(item(el, 'Filter'))
-    expect(flyoutItems(el)).toEqual(['Is empty', 'Is not empty', 'Open the filter panel…'])
+    // The column's own values under the box (YAZ-4919 round 2), most rows first: pillar is two values, two rows each.
+    expect(flyoutItems(el)).toEqual(['Agentic Agency', 'Creator Economy', 'Is empty', 'Is not empty', 'Open the filter panel…'])
     expect(box(el, 'Contains').value).toBe('')
+    expect(count(el)).toBeNull()
     expect(onChange).not.toHaveBeenCalled()
   })
 
@@ -851,16 +857,18 @@ describe('the Filter flyout (YAZ-4919)', () => {
     rightClick(th(el, 5))
     click(item(el, 'Filter'))
     enter(el, 'Contains', 'Agentic')
-    expect(view(def).filters).toEqual({ and: ['note.pillar.contains("Agentic")'] })
+    // Case ignored (YAZ-4919 round 2): `lower()` on the column, the value lowercased.
+    expect(view(def).filters).toEqual({ and: ['note.pillar.lower().contains("agentic")'] })
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(badge(el)).toBe('1')
-    // Back in: ✓ on the parent, the box holds the text, and Clear is offered.
+    // Back in: ✓ on the parent, the box holds the text, the values are those that contain it, and Clear is offered.
     rightClick(th(el, 5))
     expect(item(el, 'Filter').getAttribute('data-hint')).toBe('✓')
     click(item(el, 'Filter'))
-    expect(box(el, 'Contains').value).toBe('Agentic')
-    expect(flyoutItems(el)).toEqual(['Is empty', 'Is not empty', "Clear this column's filter", 'Open the filter panel…'])
+    expect(box(el, 'Contains').value).toBe('agentic')
+    expect(count(el)).toBe('2 rows match')
+    expect(flyoutItems(el)).toEqual(['Agentic Agency', 'Is empty', 'Is not empty', "Clear this column's filter", 'Open the filter panel…'])
     // Is not empty replaces the column's rule: still one rule.
     click(item(el, 'Is not empty'))
     expect(view(def).filters).toEqual({ and: ['!note.pillar.isEmpty()'] })
@@ -1044,19 +1052,19 @@ describe('the Filter flyout (YAZ-4919)', () => {
     click(opButton(el, 'Does not contain'))
     expect(onChange).not.toHaveBeenCalled()
     enter(el, 'Does not contain', 'Agentic')
-    expect(view(def).filters).toEqual({ and: ['!note.pillar.contains("Agentic")'] })
+    expect(view(def).filters).toEqual({ and: ['!note.pillar.lower().contains("agentic")'] })
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(el.querySelector('.ctx-menu')).toBeNull()
     rightClick(th(el, 5))
     expect(item(el, 'Filter').getAttribute('data-hint')).toBe('✓')
     click(item(el, 'Filter'))
     expect(pressed(el)).toEqual(['Does not contain'])
-    expect(box(el, 'Does not contain').value).toBe('Agentic')
+    expect(box(el, 'Does not contain').value).toBe('agentic')
     // The switch back keeps the text: Contains + Enter rewrites it as the plain rule.
     click(opButton(el, 'Contains'))
-    expect(box(el, 'Contains').value).toBe('Agentic')
-    enter(el, 'Contains', 'Agentic')
-    expect(view(def).filters).toEqual({ and: ['note.pillar.contains("Agentic")'] })
+    expect(box(el, 'Contains').value).toBe('agentic')
+    enter(el, 'Contains', 'agentic')
+    expect(view(def).filters).toEqual({ and: ['note.pillar.lower().contains("agentic")'] })
     expect(onChange).toHaveBeenCalledTimes(2)
   })
 
@@ -1070,6 +1078,94 @@ describe('the Filter flyout (YAZ-4919)', () => {
     expect(button.getAttribute('aria-expanded')).toBe('true')
     expect(el.querySelector('.view-popover--filter .filter-menu')).not.toBeNull()
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('one pair of quotes around the typed text is dropped (YAZ-4919 round 2): "Agentic", \'Agentic\' and “Agentic” are Agentic; an emptied pair takes the rule away', () => {
+    const { el, def, onChange } = mount(ORDER, {}, HOST)
+    rightClick(th(el, 5))
+    click(item(el, 'Filter'))
+    enter(el, 'Contains', '"Agentic"')
+    expect(view(def).filters).toEqual({ and: ['note.pillar.lower().contains("agentic")'] })
+    rightClick(th(el, 5))
+    click(item(el, 'Filter'))
+    enter(el, 'Contains', '“Creator”')
+    expect(view(def).filters).toEqual({ and: ['note.pillar.lower().contains("creator")'] })
+    rightClick(th(el, 5))
+    click(item(el, 'Filter'))
+    enter(el, 'Contains', '""')
+    expect(view(def).filters).toBeUndefined()
+    expect(onChange).toHaveBeenCalledTimes(3)
+  })
+
+  it('a live count under the box (YAZ-4919 round 2): "2 rows match" / "No rows match" after the typing pause, under the pressed operator, with the other columns\' rules applied; nothing is written', () => {
+    vi.useFakeTimers()
+    try {
+      const { el, onChange } = mount(FILTERED, {}, HOST)
+      // FILTERED keeps one row (status idea, priority > 1): Agentic Agency.
+      rightClick(th(el, 5))
+      click(item(el, 'Filter'))
+      expect(valueRows(el)).toEqual([['Agentic Agency', '1']])
+      const input = box(el, 'Contains')
+      setValue(input, 'AGEN')
+      expect(count(el)).toBeNull() // not per keystroke
+      act(() => void vi.advanceTimersByTime(300))
+      draw()
+      expect(count(el)).toBe('1 row matches')
+      setValue(input, 'creator')
+      act(() => void vi.advanceTimersByTime(300))
+      draw()
+      expect(count(el)).toBe('No rows match')
+      expect(valueRows(el)).toEqual([])
+      // Does not contain: the one row does not contain "creator".
+      click(opButton(el, 'Does not contain'))
+      act(() => void vi.advanceTimersByTime(300))
+      draw()
+      expect(count(el)).toBe('1 row matches')
+      expect(onChange).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('the count and the values leave this column\'s own rule out, so an old exact rule still shows every value that contains the text', () => {
+    vi.useFakeTimers()
+    try {
+      const { el } = mount(`${ORDER}    filters:\n      and:\n        - 'note.pillar.contains("Creator")'\n`, {}, HOST)
+      rightClick(th(el, 5))
+      click(item(el, 'Filter'))
+      expect(box(el, 'Contains').value).toBe('Creator')
+      expect(count(el)).toBe('2 rows match')
+      expect(valueRows(el)).toEqual([['Creator Economy', '2']])
+      setValue(box(el, 'Contains'), '')
+      act(() => void vi.advanceTimersByTime(300))
+      draw()
+      expect(count(el)).toBeNull()
+      expect(valueRows(el)).toEqual([
+        ['Agentic Agency', '2'],
+        ['Creator Economy', '2'],
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a click on a value writes ONE exact "is" rule and closes the menu; back in, that value wears the ✓', () => {
+    const { el, def, onChange } = mount(ORDER, {}, HOST)
+    rightClick(th(el, 5))
+    click(item(el, 'Filter'))
+    click(flyout(el).find((b) => b.textContent === 'Creator Economy')!)
+    expect(view(def).filters).toEqual({ and: ['note.pillar == "Creator Economy"'] })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(badge(el)).toBe('1')
+    rightClick(th(el, 5))
+    expect(item(el, 'Filter').getAttribute('data-hint')).toBe('✓')
+    click(item(el, 'Filter'))
+    expect(checked(el)).toEqual(['Creator Economy'])
+    expect(valueRows(el)).toEqual([
+      ['Agentic Agency', '2'],
+      ['Creator Economy', '2'],
+    ])
   })
 
   it('Esc in a box closes the flyout alone and writes nothing; a tick keeps the menu, and Esc then closes the flyout', () => {

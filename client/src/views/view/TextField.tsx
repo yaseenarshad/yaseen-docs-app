@@ -8,6 +8,8 @@ interface TextFieldProps {
   normalize?: (draft: string) => string | null
   /** After Enter, blur or Escape, whether or not anything was committed. */
   onDone?: () => void
+  /** Each edit's text as typed, before any commit (YAZ-4919 round 2: the Contains box's live count). */
+  onDraft?: (draft: string) => void
   /** Enter commits the text also when it is still `value`: a suggested name that is right as it stands (YAZ-2602 S63). Blur still commits an edit only. */
   commitOnEnter?: boolean
   className?: string
@@ -27,7 +29,7 @@ interface TextFieldProps {
 }
 
 /** Text input that reports its value once per edit (GRO-2135), so every config change is one `onChange`. */
-export function TextField({ value, onCommit, normalize, onDone, commitOnEnter, selectOnMount, ...rest }: TextFieldProps) {
+export function TextField({ value, onCommit, normalize, onDone, onDraft, commitOnEnter, selectOnMount, ...rest }: TextFieldProps) {
   const [draft, setDraft] = useState(value)
   const done = useRef(false)
   const input = useRef<HTMLInputElement>(null)
@@ -58,6 +60,7 @@ export function TextField({ value, onCommit, normalize, onDone, commitOnEnter, s
       onChange={(e) => {
         done.current = false
         setDraft(e.target.value)
+        onDraft?.(e.target.value)
       }}
       onBlur={() => finish(true)}
       onKeyDown={(e) => {

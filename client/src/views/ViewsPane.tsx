@@ -12,7 +12,7 @@ import { pageResolver } from '../links/folderLinks'
 import { isMentionsColumn, mentionsColumns } from './mentionsColumn'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, groupDepthOf, hidesSubfolderNotes, parseViews, rewriteViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
+import { type FilterNode, type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, groupDepthOf, hidesSubfolderNotes, parseViews, rewriteViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
 import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, branchSteps, levelSteps } from './groupLevelSteps'
 import { type Group, type Row, propertyKeys, propertyLabel, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
@@ -597,6 +597,26 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     [def, view, shown, resolve, page, optionOrder, optionParent, mentions, byFileName, defaults.weekStartsOn],
   )
 
+  /**
+   * The rows that pass `filters` in this view's place (YAZ-4919 round 2): the header menu's Filter › Contains box counts
+   * and lists with it. The run's own options, so a live date rule on another column counts as the view does; no sort, no
+   * group, no limit, one column, so it costs the filters alone. Asked after a typing pause, never per keystroke.
+   */
+  const matchRows = useCallback(
+    (filters: FilterNode | undefined): readonly IndexRecord[] => {
+      const probe: ViewDef = { ...view, order: ['file.name'] }
+      delete probe.sort
+      delete probe.groupBy
+      delete probe.limit
+      delete probe.summaries
+      delete probe.crossOut
+      if (filters === undefined) delete probe.filters
+      else probe.filters = filters
+      return runView(def, probe, shown, { resolve, declared: pageColumnKeys(folder.settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: defaults.weekStartsOn }).rows.map((r) => r.record)
+    },
+    [def, view, shown, resolve, folder.settings, page, optionOrder, optionParent, mentions, byFileName, defaults.weekStartsOn],
+  )
+
   const configuredGroups = boardOptionGroups(result.groups, view, key => columnTyping(key, shown, properties, folder.settings), optionParent)
   // "Show empty groups" (YAZ-3940 S11): a Table keeps its empty option groups through a search, as the board does.
   const keepEmpty = (view.type === 'board' || view.type === 'table') && view.showEmptyColumns === true
@@ -1118,6 +1138,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       ) : view.type === 'table' ? (
         <TableView
           onOpenFilter={openFilter}
+          matchRows={matchRows}
           hover={viewHover}
           readOnly={readOnly}
           def={def}
