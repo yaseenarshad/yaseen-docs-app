@@ -222,3 +222,78 @@ describe('group header right-click (YAZ-4604, D55)', () => {
     expect(create.mock.calls[0][0].properties).toEqual({ dept: 'B' })
   })
 })
+
+describe('a nested Folder group header: Expand all and Collapse all (YAZ-4928)', () => {
+  /** The folder page `wiki`: Cloud › AWS › Lambda › Tuning, Cloud › Costs, and Habits, a leaf. */
+  const at = (path: string): IndexRecord => {
+    const basename = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
+    return { ...TEST_RECORDS[0], path: `/vault/${path}`, name: `${basename}.md`, basename, title: basename, folder: path.slice(0, path.lastIndexOf('/')), properties: {} }
+  }
+  const TREE = [at('wiki/cloud/Cloud note.md'), at('wiki/cloud/aws/S3.md'), at('wiki/cloud/aws/lambda/Cold starts.md'), at('wiki/cloud/aws/lambda/tuning/Memory.md'), at('wiki/cloud/costs/Reserved.md'), at('wiki/habits/Reading.md')]
+  const folderView = (depth: string) => `views:
+  - type: table
+    name: V
+    order:
+      - file.name
+    groupBy:
+      - property: file.folder
+        depth: ${depth}
+`
+  function mountFolder(text: string) {
+    let parsed = parseViews(text)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    draw = () => act(() => root?.render(<ViewsPane parsed={parsed} onChange={(next: ParsedViews) => { parsed = next }} root="/vault" folderPath="/vault/wiki" records={TREE} folder={testFolderHost({ create, vaultRecords: TREE })} onOpenFile={vi.fn()} />))
+    draw()
+    return container
+  }
+  const K = (...dirs: string[]) => dirs.map((d) => `v:${d}`).join(SEP)
+  const groupOf = (name: string): string[] => {
+    const own = [...document.querySelectorAll<HTMLElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === name)?.closest('.ctx-menu__group')
+    return own === null || own === undefined ? [] : [...own.querySelectorAll<HTMLElement>('[role="menuitem"]')].map((b) => `${b.textContent}${b.hasAttribute('disabled') ? ' (off)' : ''}`)
+  }
+
+  it('Depth All: the header of a folder with subfolders offers both, in their own group before the level steps; Collapse all shuts every folder group below it and the header stays open', async () => {
+    const { storage } = await import('../../lib/storage')
+    const pane = mountFolder(folderView('all'))
+    expect(headersOf(pane, 'aws')).toHaveLength(1)
+    rightClick(headersOf(pane, 'cloud')[0])
+    expect(items()).toEqual(['New note in this group', 'Collapse this group', 'Expand all', 'Collapse all', 'Collapse one level', 'Expand one level'])
+    expect(groupOf('Expand all')).toEqual(['Expand all (off)', 'Collapse all'])
+    pick('Collapse all')
+    expect(menu()).toBeNull()
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/wiki::V', [K('wiki/cloud', 'wiki/cloud/aws'), K('wiki/cloud', 'wiki/cloud/aws', 'wiki/cloud/aws/lambda'), K('wiki/cloud', 'wiki/cloud/aws', 'wiki/cloud/aws/lambda', 'wiki/cloud/aws/lambda/tuning'), K('wiki/cloud', 'wiki/cloud/costs')])
+    expect(expanded(headersOf(pane, 'cloud')[0])).toBe('true')
+    expect(expanded(headersOf(pane, 'aws')[0])).toBe('false')
+    expect(expanded(headersOf(pane, 'costs')[0])).toBe('false')
+    expect(headersOf(pane, 'lambda')).toHaveLength(0) // folded under aws
+    // Back in: Collapse all has nothing left to shut; Expand all opens every group below again.
+    rightClick(headersOf(pane, 'cloud')[0])
+    expect(groupOf('Expand all')).toEqual(['Expand all', 'Collapse all (off)'])
+    pick('Expand all')
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/wiki::V', [])
+    expect(headersOf(pane, 'tuning')).toHaveLength(1)
+  })
+
+  it('Expand all on a shut header opens the header too; a leaf folder and a Top-folder group offer neither', () => {
+    const pane = mountFolder(folderView('all'))
+    rightClick(headersOf(pane, 'aws')[0])
+    pick('Collapse this group')
+    expect(headersOf(pane, 'lambda')).toHaveLength(0)
+    rightClick(headersOf(pane, 'aws')[0])
+    expect(groupOf('Expand all')).toEqual(['Expand all', 'Collapse all'])
+    pick('Expand all')
+    expect(expanded(headersOf(pane, 'aws')[0])).toBe('true')
+    expect(headersOf(pane, 'tuning')).toHaveLength(1)
+    rightClick(headersOf(pane, 'habits')[0])
+    expect(items()).not.toContain('Expand all')
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    draw()
+    act(() => root?.unmount())
+    container?.remove()
+    const flat = mountFolder(folderView('1').replace('        depth: 1\n', ''))
+    rightClick(headersOf(flat, 'cloud')[0])
+    expect(items()).toEqual(['New note in this group', 'Collapse this group'])
+  })
+})

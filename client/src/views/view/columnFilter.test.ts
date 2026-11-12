@@ -36,17 +36,19 @@ describe('a column\'s rules in the view\'s filters (YAZ-4919)', () => {
   })
 
   it('the shape by type: a checklist for a Select, Link, Multi-select, List, Tags and Multi-link; Checked for a checkbox; a box for text, number and date; only Is empty for an image', () => {
-    expect(columnFilterShape('note.status', 'select')).toEqual({ kind: 'options', op: 'isAnyOf' })
-    expect(columnFilterShape('note.related', 'link')).toEqual({ kind: 'options', op: 'isAnyOf' })
-    for (const type of ['multi-select', 'list', 'tags', 'multi-link'] as const) expect(columnFilterShape('note.x', type)).toEqual({ kind: 'options', op: 'hasAnyOf' })
+    // Each checklist and the Contains box carry their opposite (YAZ-4929): the panel's "is none of", "has none of" and "does not contain".
+    expect(columnFilterShape('note.status', 'select')).toEqual({ kind: 'options', op: 'isAnyOf', not: 'isNoneOf' })
+    expect(columnFilterShape('note.related', 'link')).toEqual({ kind: 'options', op: 'isAnyOf', not: 'isNoneOf' })
+    for (const type of ['multi-select', 'list', 'tags', 'multi-link'] as const) expect(columnFilterShape('note.x', type)).toEqual({ kind: 'options', op: 'hasAnyOf', not: 'hasNoneOf' })
     expect(columnFilterShape('note.published', 'checkbox')).toEqual({ kind: 'checkbox' })
-    expect(columnFilterShape('note.pillar', 'text')).toEqual({ kind: 'text', op: 'contains', label: 'Contains' })
+    expect(columnFilterShape('note.pillar', 'text')).toEqual({ kind: 'text', op: 'contains', label: 'Contains', not: { op: 'notContains', label: 'Does not contain' } })
+    // The panel has no "does not contain" on a Linked mentions column, nor on the file links: no opposite there.
     expect(columnFilterShape('note.mentions', 'mentions')).toEqual({ kind: 'text', op: 'contains', label: 'Contains' })
     expect(columnFilterShape('note.priority', 'number')).toEqual({ kind: 'number' })
     expect(columnFilterShape('note.date', 'date')).toEqual({ kind: 'date' })
     expect(columnFilterShape('note.cover', 'image')).toEqual({ kind: 'empty' })
-    expect(columnFilterShape('file.tags', 'file')).toEqual({ kind: 'options', op: 'hasAnyOf' })
-    expect(columnFilterShape('file.folder', 'file')).toEqual({ kind: 'options', op: 'isAnyOf' })
+    expect(columnFilterShape('file.tags', 'file')).toEqual({ kind: 'options', op: 'hasAnyOf', not: 'hasNoneOf' })
+    expect(columnFilterShape('file.folder', 'file')).toEqual({ kind: 'options', op: 'isAnyOf', not: 'isNoneOf' })
     expect(columnFilterShape('file.links', 'file')).toEqual({ kind: 'text', op: 'hasLink', label: 'Links to' })
   })
 

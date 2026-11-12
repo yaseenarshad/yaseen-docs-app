@@ -435,6 +435,7 @@ export function BoardView({
               newButton={newCards}
               resolve={resolve}
               level={at.level}
+              gk={ck}
             />
           )
           return (
@@ -478,6 +479,7 @@ export function BoardView({
               newButton={newCards}
               resolve={resolve}
               level={0}
+              gk={gk}
             />
           )
           return (

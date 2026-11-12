@@ -1884,6 +1884,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               newButton={newRows}
               resolve={resolve}
               level={line.at.level}
+              gk={line.gk}
             />
           </td>
         </tr>

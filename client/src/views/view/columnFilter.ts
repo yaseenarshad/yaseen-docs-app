@@ -8,11 +8,15 @@ import { canonicalKey } from './keys'
  * inside a nested group is the panel's); a pick replaces them, and Clear removes them.
  */
 
-/** What the flyout offers for a column's type: a checklist of its values, Checked · Unchecked, a text box, a number box, dates, or only Is empty. */
+/**
+ * What the flyout offers for a column's type: a checklist of its values, Checked · Unchecked, a text box, a number box,
+ * dates, or only Is empty. A checklist and the Contains box carry their opposite (YAZ-4929): the panel's "is none of",
+ * "has none of" and "does not contain", where the panel has them (`OPERATORS_BY_TYPE`).
+ */
 export type ColumnFilterShape =
-  | { kind: 'options'; op: 'isAnyOf' | 'hasAnyOf' }
+  | { kind: 'options'; op: 'isAnyOf' | 'hasAnyOf'; not: 'isNoneOf' | 'hasNoneOf' }
   | { kind: 'checkbox' }
-  | { kind: 'text'; op: OperatorId; label: string }
+  | { kind: 'text'; op: OperatorId; label: string; not?: { op: OperatorId; label: string } }
   | { kind: 'number' }
   | { kind: 'date' }
   | { kind: 'empty' }
@@ -22,12 +26,12 @@ export function columnFilterShape(property: string, type: PropertyType): ColumnF
   switch (type) {
     case 'select':
     case 'link':
-      return { kind: 'options', op: 'isAnyOf' }
+      return { kind: 'options', op: 'isAnyOf', not: 'isNoneOf' }
     case 'multi-select':
     case 'list':
     case 'tags':
     case 'multi-link':
-      return { kind: 'options', op: 'hasAnyOf' }
+      return { kind: 'options', op: 'hasAnyOf', not: 'hasNoneOf' }
     case 'checkbox':
       return { kind: 'checkbox' }
     case 'number':
@@ -38,11 +42,14 @@ export function columnFilterShape(property: string, type: PropertyType): ColumnF
       return { kind: 'empty' }
     case 'file':
       // The three file pseudo-properties (`FILE_OPS`): tags and folders as a checklist, links as a box.
-      if (property === 'file.tags') return { kind: 'options', op: 'hasAnyOf' }
-      if (property === 'file.folder') return { kind: 'options', op: 'isAnyOf' }
+      if (property === 'file.tags') return { kind: 'options', op: 'hasAnyOf', not: 'hasNoneOf' }
+      if (property === 'file.folder') return { kind: 'options', op: 'isAnyOf', not: 'isNoneOf' }
       return { kind: 'text', op: 'hasLink', label: 'Links to' }
-    default:
+    case 'mentions':
+      // The panel has no "does not contain" on a Linked mentions column (YAZ-4738 L3).
       return { kind: 'text', op: 'contains', label: 'Contains' }
+    default:
+      return { kind: 'text', op: 'contains', label: 'Contains', not: { op: 'notContains', label: 'Does not contain' } }
   }
 }
 

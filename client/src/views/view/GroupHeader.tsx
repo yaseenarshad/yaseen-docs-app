@@ -18,6 +18,7 @@ import { HoverTip } from '../../components/HoverTip'
 import { canonicalKey } from './keys'
 import { GroupHeaderMenu } from './GroupHeaderMenu'
 import { OtherFilesFolderMove } from './otherFilesMove'
+import { GroupLevelStepsContext } from '../groupLevelSteps'
 
 /**
  * One group's header content (4C, GRO-2137), shared by Table today and Cards / List / Board
@@ -364,9 +365,11 @@ export interface GroupHeaderProps {
   resolve?: Resolver
   /** The group's `groupBy` level, outer = 0 (the default): its spec gives the header's style (YAZ-3742). */
   level?: number
+  /** The group's collapse key (`spotKey`): a nested Folder group's menu finds the groups below it by it (YAZ-4928). */
+  gk?: string
 }
 
-export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, newButton = true, resolve, level = 0 }: GroupHeaderProps) {
+export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, newButton = true, resolve, level = 0, gk }: GroupHeaderProps) {
   // `level` counts the levels that group (YAZ-4544): an entry with no property is none.
   const look = groupValueLook(shownGroupLevels(view)[level])
   // A Folder level's group (YAZ-4564 D27) opens that folder's page; the page's own folder and the vault root have none.
@@ -384,6 +387,9 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
   const folderTray = useContext(OtherFilesFolderMove)
   const subfolder = menu !== null && folderTray !== null && typeof groupKey === 'string' && shownGroupLevels(view)[level]?.property === 'file.folder' ? folderTray.folderAt(groupKey) : null
   const moveFolder = subfolder === null || folderTray === null ? undefined : { name: subfolder.name, run: () => folderTray.move(subfolder.dir) }
+  // "Expand all" / "Collapse all" over the folder groups below a nested Folder header (YAZ-4928): read when the menu opens.
+  const levels = useContext(GroupLevelStepsContext)
+  const branch = menu !== null && gk !== undefined ? levels?.branch?.(gk) : undefined
   return (
     <div
       className="view-group"
@@ -393,7 +399,7 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
         setMenu({ x: e.clientX, y: e.clientY })
       }}
     >
-      {menu !== null && <GroupHeaderMenu x={menu.x} y={menu.y} collapsed={collapsed} onToggle={onToggle} onNew={onNew} moveFolder={moveFolder} onClose={() => setMenu(null)} />}
+      {menu !== null && <GroupHeaderMenu x={menu.x} y={menu.y} collapsed={collapsed} onToggle={onToggle} onNew={onNew} moveFolder={moveFolder} branch={branch} onClose={() => setMenu(null)} />}
       <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
         <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />

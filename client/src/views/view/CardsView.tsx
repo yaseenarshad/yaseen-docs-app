@@ -265,6 +265,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
           onNew={onNewInGroup === undefined || !groupTakesNew(view, at.level, settings.columns) ? undefined : () => onNewInGroup(g, undefined, at)}
           resolve={resolve}
           level={at.level}
+          gk={gk}
         />
         {!isCollapsed && (g.children === undefined ? grid(g.rows) : (g.direct?.length ?? 0) > 0 && grid(g.direct ?? []))}
         {!isCollapsed && g.children?.map((child) => section(child, childSpot(g, at)))}
