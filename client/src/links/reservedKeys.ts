@@ -8,8 +8,15 @@ import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS, TAB
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 
+/**
+ * The old upkeep log key (YAZ-2322). Page upkeep is gone (YAZ-4967, D6), so it should be an ordinary property, but
+ * `client/src/editor/FrontmatterPanel.test.tsx` still expects it Reserved, and YAZ-4961 owns `client/src/editor/**`
+ * now. Drop it (and that test's case) with the rest of the upkeep shim after YAZ-4961 merges.
+ */
+const OLD_REVIEWS_KEY = 'reviews'
+
 // `show_page_file` (YAZ-3746 D37), `hover_preview` (YAZ-4601 D51; legacy), `hover_rows` and `hover_links` (demo 13D), `show_other_files` (YAZ-4597), `confirm_changes` (13AN), `inherit_columns` (YAZ-4713 C12), `column_marks` (C11) and `show_new_buttons` (13BL): a folder page's cog sets them, as a note's cog sets its page switches.
-const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, HOVER_LINKS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY, COLUMN_MARKS_KEY, SHOW_NEW_BUTTONS_KEY])
+const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, OLD_REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, HOVER_LINKS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY, COLUMN_MARKS_KEY, SHOW_NEW_BUTTONS_KEY])
 const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY])
 
 /**
