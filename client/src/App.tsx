@@ -78,6 +78,7 @@ import { DEFAULT_NEW_NOTE_TITLE, plainEntryName, renderTitleTemplate } from './s
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
 import { dailyNoteName } from '@shared/dailyNote'
+import { hasLetters } from '@shared/noteId'
 import { dailyNoteVault, todaysNote } from './sidebar/dailyNote'
 import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
@@ -98,6 +99,7 @@ import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
 import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots, vaultRefusal } from './vault/slots'
 import { SAME_WORD, UnitContext, vaultUnit, type UnitText } from './vault/unitWord'
+import { folderHome } from './vault/FolderHomeSheet'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
@@ -111,6 +113,8 @@ import { PageActions } from './lib/pageActions'
 const WhatsNewSheet = lazy(() => import('./update/WhatsNewSheet'))
 /** The Share dialog (YAZ-3040): lazy too. Settings › Sharing is the registry's, eager with the dialog. */
 const ShareDialog = lazy(() => import('./share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
+/** The box of a picked folder that sits inside a vault (YAZ-4922 D4): lazy, so a window that never asks loads none of it. */
+const FolderHomeSheet = lazy(() => import('./vault/FolderHomeSheet'))
 /** Version history (YAZ-1897 D4, YAZ-3039): lazy, so a window that never opens it loads none of it. */
 const VersionHistory = lazy(() => import('./history/VersionHistory').then((m) => ({ default: m.VersionHistory })))
 /** The explore stack (YAZ-2571): lazy, loaded on the first ⌘⇧F. */
@@ -156,6 +160,12 @@ function afterResize(then: () => void): void {
 }
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
+/** The folder this window shows of `vault`, for the sidebar (YAZ-4922 🔒 D3): `{ folder }`, or nothing where it shows the whole vault. */
+function folderShown(vault: string): { folder?: string } {
+  const folder = storage.folderIn(vault)
+  return folder === null ? {} : { folder }
+}
+
 function syncHash(path: string | null): void {
   history.replaceState(null, '', fileHash(path) || location.pathname + location.search)
 }
@@ -525,10 +535,10 @@ export function App() {
     return home === null ? null : (now.vaults[now.roots.indexOf(home)]?.name ?? storage.vaultName(home))
   }, [])
   const vaultNames = roots.map((vault, i) => vaults[i]?.name ?? storage.vaultName(vault)).join('\n')
-  /** The window's vaults that use the ID letters `letters`, now or before, by name (YAZ-3905 S23): an unresolved `[[INL-4]]` says whose ID it is. */
+  /** The window's vaults that use the ID letters `letters`, now, before or kept (YAZ-3905 S23, YAZ-4922 D2), by name: an unresolved `[[INL-4]]` says whose ID it is. */
   const vaultsOfLetters = useCallback((letters: string) => {
     const now = live.current
-    return now.roots.flatMap((vault, i) => (now.vaults[i]?.wikilinks.letters.includes(letters) === true ? [now.vaults[i]?.name ?? storage.vaultName(vault)] : []))
+    return now.roots.flatMap((vault, i) => (hasLetters(now.vaults[i]?.wikilinks.letters ?? [], letters) ? [now.vaults[i]?.name ?? storage.vaultName(vault)] : []))
   }, [])
   const idLetters = vaults.map((scope) => scope?.wikilinks.letters.join(' ') ?? '').join('\n')
   const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, names: vaultNames, vaultOf, vaultsOfLetters, letters: idLetters }), [candidatesOf, askToAdd, roots, vaultNames, vaultOf, vaultsOfLetters, idLetters])
@@ -935,7 +945,8 @@ export function App() {
     if (found.length === 0) return false
     const gone = set.roots.filter((vault) => !found.includes(vault))
     if (gone.length > 0) notify(`Not found: ${gone.map(storage.vaultName).join(', ')}`)
-    storage.setRoots(found)
+    // A workspace names places (YAZ-4922 D3): the window takes them as they are.
+    storage.setPlaces(found)
     for (const vault of found) storage.pushRecentRoot(vault)
     setRoots(storage.getRoots())
     return true
@@ -956,7 +967,18 @@ export function App() {
     }
   }, [notify])
 
-  const { pick, picking } = usePickFolder({ onPicked: openVault })
+  /**
+   * A folder picked with Open folder… (YAZ-4922 🔒 D3, D4): one inside a vault the app knows asks first — a folder of
+   * that vault, or its own vault (`FolderHomeSheet`) — and `go` opens it after the answer. Any other folder goes at once.
+   */
+  const [homeAsk, setHomeAsk] = useState<{ path: string; vault: string; go: (path: string) => unknown } | null>(null)
+  const askHome = useCallback((go: (path: string) => unknown) => (picked: string): void => {
+    const vault = folderHome(picked, storage.listVaults(), storage.getFolders())
+    if (vault === undefined) void go(picked)
+    else setHomeAsk({ path: stripSlash(picked), vault, go })
+  }, [])
+  const openPicked = useMemo(() => askHome(openVault), [askHome, openVault])
+  const { pick, picking } = usePickFolder({ onPicked: openPicked })
 
   /**
    * "Add vault to this window" (YAZ-2602 D2): `path` becomes the window's last vault, with its row
@@ -1007,7 +1029,8 @@ export function App() {
   }, [addVault, openStored, notify])
   // The flyout's "Open folder…" (S3): the system picker, and the picked folder is added. File ›
   // Open Folder… stays the picker above: its folder opens beside (S62).
-  const { pick: pickVault } = usePickFolder({ onPicked: addVault })
+  const addPicked = useMemo(() => askHome(addVault), [askHome, addVault])
+  const { pick: pickVault } = usePickFolder({ onPicked: addPicked })
 
   // ⌘W ladder (Tabs rule 7): close the active tab; with zero tabs open (incl. Welcome) close
   // the WINDOW through the real close path so the close/flush handshake runs.
@@ -1146,7 +1169,8 @@ export function App() {
     const { vault, page, settings: now } = placeInputs.current
     if (vault === null) return
     void treeOf(vault).then(
-      (tree) => setNewItem((open) => open ?? newItemFolder(now, vault, page, tree)),
+      // A folder of the vault (YAZ-4922 D3): its new notes go in the folder, the top of what the window shows.
+      (tree) => setNewItem((open) => open ?? newItemFolder(now, storage.folderIn(vault) ?? vault, page, tree)),
       (err: unknown) => notify(`Can't open New…: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     )
   }, [treeOf, notify])
@@ -1969,14 +1993,15 @@ export function App() {
     // A window with no vault (Welcome) opens the first in place, then takes the others: a workspace (YAZ-3886).
     if (live.current.roots.length === 0) {
       void openRoot(next[0]).then((opened) => {
-        if (!opened || next.length === 1 || storage.getRoot() !== next[0]) return
-        storage.setRoots(next)
+        if (!opened || next.length === 1 || storage.getPlaces()[0] !== next[0]) return
+        storage.setPlaces(next)
         for (const root of next.slice(1)) storage.pushRecentRoot(root)
         setRoots(storage.getRoots())
       })
       return
     }
-    storage.setRoots(next)
+    // Main names places (YAZ-4922 D3): an empty folder-of window that takes its vault shows the whole vault.
+    storage.setPlaces(next)
     for (const root of next) storage.pushRecentRoot(root)
     setRoots(storage.getRoots())
     // The vaults land on Files, as every vault open does (YAZ-1846 D2): a ⌘⇧N window boots on the search.
@@ -3407,7 +3432,7 @@ export function App() {
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
+          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
           lists={lists}
           icons={vaultIcons}
           recentVault={recentPick}
@@ -3811,6 +3836,22 @@ export function App() {
           }}
           onCancel={() => setAddAsk(null)}
         />
+      )}
+      {homeAsk !== null && (
+        <Suspense fallback={null}>
+          <FolderHomeSheet
+            folder={basename(homeAsk.path)}
+            vault={storage.listVaults().find((row) => row.path === homeAsk.vault)?.name ?? basename(homeAsk.vault)}
+            onAnswer={(answer) => {
+              const ask = homeAsk
+              setHomeAsk(null)
+              if (answer === null) return
+              // The place is saved before it opens: the window that opens on it reads its vault from the state (D3).
+              storage.setFolderIn(ask.path, answer === 'folder' ? ask.vault : null)
+              void ask.go(ask.path)
+            }}
+          />
+        </Suspense>
       )}
     </div>
     </CommentPrefsContext.Provider>

@@ -119,6 +119,24 @@ describe('cleanVaultKey (YAZ-2555 D2)', () => {
   })
 })
 
+describe('a folder of a vault (YAZ-4922 D3): `FolderState.in`', () => {
+  it('is kept only for a folder strictly inside its vault, null ends it, a reload keeps it, and a rename of the vault folder carries it', async () => {
+    const store = createStore(file)
+    store.setFolder('/v/Wiki', { in: '/v/' })
+    store.setFolder('/x/Elsewhere', { in: '/v' })
+    store.setFolder('/v', { in: '/v' })
+    expect(store.get().folders['/v/Wiki'].in).toBe('/v')
+    expect(store.get().folders['/x/Elsewhere'].in).toBeNull()
+    expect(store.get().folders['/v'].in).toBeNull()
+    await store.flush()
+    expect(createStore(file).get().folders['/v/Wiki'].in).toBe('/v')
+    store.renamePath('/v', '/v2')
+    expect(store.get().folders['/v2/Wiki'].in).toBe('/v2')
+    store.setFolder('/v2/Wiki', { in: null })
+    expect(store.get().folders['/v2/Wiki'].in).toBeNull()
+  })
+})
+
 describe('createStore: loading', () => {
   it('a missing file yields the defaults and creates nothing until the first change', () => {
     const store = createStore(file)

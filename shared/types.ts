@@ -263,7 +263,20 @@ export interface IndexResponse {
    * yes would write (🔒 V2). `notes` would be given an id, `foreign` of them over another tool's
    * `id`; `folders` would be given a `.folder.md`, or an `id` in the one they have.
    */
-  ask?: { notes: number; folders: number; foreign: number; /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */ letters?: string }
+  ask?: {
+    notes: number
+    folders: number
+    foreign: number
+    /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */
+    letters?: string
+    /**
+     * The number IDs the notes and folders already hold, by their letters, the biggest group first (YAZ-4922 🔒 D2).
+     * Only where some group is not an ID of the vault yet: the box then offers "Keep <letters>" of the first group.
+     */
+    groups?: IdGroup[]
+    /** With `groups`: how many of the `notes` hold no ID at all, the only ones a yes then gives a number (YAZ-4922 D2). */
+    bare?: number
+  }
   /** Only when `ids`: a run of "Give old IDs numbers" stopped with files left, and its plan is in the vault (YAZ-2677 🔒 D6, S90): a second run finishes it. */
   unfinished?: true
   /**
@@ -272,6 +285,12 @@ export interface IndexResponse {
    * `was`: the IDs it held before a two-Mac merge (YAZ-4071 7I, `formerIds`), with the current letters; a link to one still opens it.
    */
   boards?: { path: string; id: string; was?: string[] }[]
+}
+
+/** One group of number IDs with the same letters, and how many notes and folders hold one (YAZ-4922 D2). */
+export interface IdGroup {
+  letters: string
+  count: number
 }
 
 // ---------- coldDiff(root) (Links E1c, GRO-2242) ----------
@@ -1079,6 +1098,24 @@ export function sameVaults(a: readonly string[], b: readonly string[]): boolean 
   const left = new Set(a.map(stripSlash))
   const right = new Set(b.map(stripSlash))
   return left.size === right.size && [...left].every((vault) => right.has(vault))
+}
+
+/**
+ * THE PLACE OF A WINDOW (YAZ-4922 🔒 D3). A window's `roots` are its places: each is a vault, or "a folder of <vault>"
+ * (`FolderState.in`). The place is the window's identity — the recents, the vault switcher's rows, Open / Not open, ⌘1–9,
+ * the workspaces and the windows a reopen brings back all name it. What a place's notes are read and written AS is its
+ * vault: the index, the IDs, the links, the sync and `.yaseendocs`. `placeVault` is that vault; a vault is its own.
+ */
+export const placeVault = (folders: Readonly<Record<string, Pick<FolderState, 'in'> | undefined>> | undefined, place: string): string => folders?.[place]?.in ?? place
+
+/** Each place's vault (`placeVault`), in order: what the main process reads and writes a window's notes as. */
+export const placeVaults = (folders: Readonly<Record<string, Pick<FolderState, 'in'> | undefined>> | undefined, places: readonly string[]): string[] => places.map((place) => placeVault(folders, place))
+
+/** What the app calls a place (YAZ-4922 D3): its display name, else its folder name; "a folder of" reads "<folder> · in <vault>". */
+export function placeName(folders: Readonly<Record<string, Pick<FolderState, 'in' | 'name'> | undefined>>, place: string): string {
+  const own = folders[place]?.name ?? basename(place)
+  const vault = folders[place]?.in
+  return vault == null ? own : `${own} · in ${folders[vault]?.name ?? basename(vault)}`
 }
 
 /** Last path segment (trailing slashes ignored); the input itself for `/`. The client's `lib/paths` hands it on; it is here so `listVaults` and `keyedVaults` name a folder the same way (YAZ-2556). */
@@ -3126,10 +3163,16 @@ export interface FolderState {
   name: string | null
   /** The vault's number, 1–9 (YAZ-2555 D2): ⌘<key> goes to it; null = none. One vault per number. Persisted, per machine. */
   key: number | null
+  /**
+   * "A folder of <vault>" (YAZ-4922 🔒 D3): this bucket's path is a FOLDER of the vault `in`, opened in a window of its
+   * own (`placeVault`). Its windows show the folder, and their IDs, links, sync and `.yaseendocs` are the vault's.
+   * Absent (or null) for a vault. Persisted, per machine. Additive within version 1: an old build drops the key.
+   */
+  in?: string | null
 }
 
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
-export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key'>>
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in'>>
 
 /** Pure: `folders` with `key` taken from the vault that has it (YAZ-2555 D2: one vault per number) — shared by the client cache and the main store. */
 export function freeVaultKey(folders: Record<string, FolderState>, key: number): Record<string, FolderState> {
@@ -3396,7 +3439,7 @@ export function listVaults(state: { recents: Readonly<RecentRoots>; windows: rea
   const recents = new Map(state.recents.map((r) => [r.path, r.lastOpened]))
   return [...new Set([...recents.keys(), ...open, ...keyedVaults(state.folders).map((v) => v.path)])].map((path) => {
     const folder = state.folders[path]
-    return { path, name: folder?.name ?? basename(path), key: folder?.key ?? null, open: open.includes(path), lastUsed: recents.get(path) ?? null }
+    return { path, name: placeName(state.folders, path), key: folder?.key ?? null, open: open.includes(path), lastUsed: recents.get(path) ?? null }
   })
 }
 

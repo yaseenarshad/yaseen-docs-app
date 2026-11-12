@@ -70,6 +70,11 @@ const BoardInfo = lazy(() => import('./BoardInfo'))
 /** One vault of the window as the panel reads it (YAZ-2602 D1): its folder, what the app calls it, its watcher, its index snapshot and its review. */
 export interface SidebarVault {
   root: string
+  /**
+   * "A folder of" the vault (YAZ-4922 🔒 D3): this window shows that folder in the vault's place. Its tree, its
+   * Search and its Recents are the folder's; its index, IDs, links and lists are the vault's (`root`).
+   */
+  folder?: string
   /** Its display name, else its folder name (YAZ-1974 D4): the vault row's label. */
   name: string
   watch: WatchSource
@@ -721,9 +726,12 @@ export function Sidebar({
   // The file times stay live (D2) while something reads them: the tab's Last updated sort, any tab's dates (D10), or a
   // time filter (D14). Any tab's, not the shown one's: a tab change then reads no vault again (6 µs a save, not 42 ms a switch).
   const liveTimes = sort?.by === 'updated' || Object.values(settings.rowDates).some(Boolean) || searchFilter.time !== 'any'
-  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes)
+  const { roots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
+  const places = useSameList(roots.map((vault, i) => vaults[i]?.folder ?? vault))
+  /** The top of what a window with one vault shows: the vault, or the folder of it that the window is (YAZ-4922 D3). Blank space makes and drops there. */
+  const top = vaults[0]?.folder ?? root
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
   const multi = roots.length > 1
   // The vaults' own icons (YAZ-3440 D8, D9): `.yaseendocs/icons.json` of each vault of the window, for the tree's rows. App's (D11).
@@ -916,9 +924,11 @@ export function Sidebar({
   // it changed (YAZ-2194: a render that changes nothing for the search re-renders no row).
   const vaultsNow = useRef(vaults)
   vaultsNow.current = vaults
+  // A folder of a vault (YAZ-4922 D3): the search reads the vault's index and finds the folder's notes only.
+  const searchFolders = useSameList(vaults.map((vault) => vault.folder))
   const searchVaults = useMemo(
-    () => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i], idsInSearch: () => vaultsNow.current.find((v) => v.root === vault)?.idsInSearch?.() ?? 'match' })),
-    [roots, watches, dirsByVault, filesByVault],
+    () => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i], idsInSearch: () => vaultsNow.current.find((v) => v.root === vault)?.idsInSearch?.() ?? 'match', ...(searchFolders[i] !== undefined && { folder: searchFolders[i] }) })),
+    [roots, watches, dirsByVault, filesByVault, searchFolders],
   )
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
@@ -1300,7 +1310,7 @@ export function Sidebar({
         // Any row that is not the Files tree's own (YAZ-2638 D1, D3): Search, Focus, Favorites. One row, never a selection.
         showPath: (outside || lens !== 'files') && plural === null ? (node?.path ?? null) : null,
         // Blank space of a window with two or more vaults is a vault's root on Focus and Favorites alone (YAZ-4782).
-        targetDir: node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, root),
+        targetDir: node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top),
         place,
         rowKind: node?.type ?? null,
         top: asSearch ? null : (node?.top ?? null),
@@ -1684,17 +1694,18 @@ export function Sidebar({
           fileMove.hover(root, e.currentTarget)
         }}
         onDragLeave={(e) => {
-          if (!multi && leftTarget(e)) fileMove.leave(root)
+          if (!multi && leftTarget(e)) fileMove.leave(top)
         }}
         onDrop={(e) => {
           e.preventDefault()
-          if (!multi) dropOn(fileMove, e, root)
+          if (!multi) dropOn(fileMove, e, top)
         }}
       >
         {/* The vault switcher (YAZ-1767): the trigger is the header's top-left button (name + chevron,
             D6); its panel hangs off this header's rect (D5). "Open folder…" is its last row (D4). */}
         <VaultSwitcher
-          roots={roots}
+          // The window's places (YAZ-4922 D3): its row in the panel is the folder of a vault it shows, and that row is current.
+          roots={places}
           onPickFolder={onPickFolder}
           pickDisabled={pickDisabled}
           openRequest={switcherOpenRequest}
@@ -1824,12 +1835,12 @@ export function Sidebar({
           fileMove.hover(root, headerRef.current)
         }}
         onDragLeave={(e) => {
-          if (blankDrop && leftTarget(e)) fileMove.leave(root)
+          if (blankDrop && leftTarget(e)) fileMove.leave(top)
         }}
         onDrop={(e) => {
           if (!blankDrop || onRow(e)) return
           e.preventDefault()
-          dropOn(fileMove, e, root)
+          dropOn(fileMove, e, top)
         }}
         // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
         // selected the key still belongs to everyone else listening for it, so this must neither
@@ -1952,7 +1963,7 @@ export function Sidebar({
           <SessionList onFold={setListFold} titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
         ) : lens === 'recents' ? (
           // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
-          <RecentList onFold={setListFold} trees={trees} roots={roots} only={recentVault} type={recentType} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+          <RecentList onFold={setListFold} trees={shown} roots={roots} only={recentVault} type={recentType} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and

@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import type { IdsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
-import { idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
+import { idsLettersAsk, KEEP_OTHER_ASK, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
 import type { SettingsCtx } from './registry'
 import { useUnit } from '../vault/unitWord'
 
@@ -29,6 +29,57 @@ export function TypedConfirmSheet({ labelId, text, ask, confirmLabel, valid, onC
       <label className="confirm__letters">
         {ask}
         <input ref={field} className="confirm__input" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
+      </label>
+    </ConfirmSheet>
+  )
+}
+
+/**
+ * "Give IDs" where the notes already hold number IDs (YAZ-4922 🔒 D2): the box says the groups (`text`) and its first
+ * answer, with the focus, is "Keep <main>" — the biggest group's letters, so 0 notes change. The field takes other
+ * letters instead, and the button at the left end says them ("Use ABC"). Enter in the field: the typed letters, or
+ * Keep while it is empty; bad letters do nothing. Elsewhere Enter is Keep. Its keys stay inside it.
+ */
+export function KeepIdsSheet({ text, main, onConfirm, onCancel }: { text: string; main: string; onConfirm: (letters: string) => void; onCancel: () => void }) {
+  const [typed, setTyped] = useState('')
+  const valid = isIdLetters(typed)
+  const use = (): void => {
+    if (valid) onConfirm(typed.toUpperCase())
+  }
+  return (
+    <ConfirmSheet
+      labelId="confirm-ids-keep-text"
+      text={text}
+      confirmLabel={`Keep ${main}`}
+      keys="contained"
+      focusConfirm
+      onConfirm={() => onConfirm(main)}
+      onCancel={onCancel}
+      other={
+        <button type="button" className="confirm__btn confirm__btn--other" disabled={!valid} onClick={use}>
+          {valid ? `Use ${typed.toUpperCase()}` : 'Use other letters'}
+        </button>
+      }
+    >
+      <label className="confirm__letters">
+        {KEEP_OTHER_ASK}
+        <input
+          className="confirm__input"
+          type="text"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return
+            e.preventDefault()
+            e.stopPropagation()
+            if (e.repeat) return
+            if (typed === '') onConfirm(main)
+            else use()
+          }}
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellCheck={false}
+        />
       </label>
     </ConfirmSheet>
   )

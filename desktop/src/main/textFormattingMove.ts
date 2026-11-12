@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { TEXT_FORMATTING_FILE, textFormattingFile } from '@shared/textFormatting'
+import { placeVaults } from '@shared/types'
 import type { Store } from './store'
 import { readConfigDetailed, writeConfig } from './vaultConfig'
 
@@ -20,7 +21,8 @@ import { readConfigDetailed, writeConfig } from './vaultConfig'
 export async function moveLegacyHeadingStyles(store: Pick<Store, 'get' | 'takeLegacyHeadingStyles'>): Promise<void> {
   const legacy = store.takeLegacyHeadingStyles()
   if (Object.keys(legacy).length === 0) return
-  const roots = [...new Set(store.get().windows.flatMap((w) => w.roots))]
+  const state = store.get()
+  const roots = [...new Set(state.windows.flatMap((w) => placeVaults(state.folders, w.roots)))]
   await Promise.all(
     roots.map(async (root) => {
       try {
