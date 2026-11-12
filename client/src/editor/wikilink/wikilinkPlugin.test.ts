@@ -821,6 +821,23 @@ describe("the vault's link pills look (YAZ-4924)", () => {
     expect(root.querySelector('.link-pill__tail')?.nextElementSibling?.textContent).toBe(']]')
   })
 
+  it('a words-first link (YAZ-4935, `[[the index note|YAZ-12]]`) wears the pieces around its words, with the ID of the page side', async () => {
+    const md = 'A [[the index note|YAZ-12]] B [[YAZ-12|the plan]] C\n'
+    const { crepe, root, source } = await mountLook(md)
+    source.setLook({ before: '(', after: ')', id: 'show' }, 'Mine')
+    expect(pieces(root)).toEqual([
+      ['wikilink link-pill__head', '('],
+      ['wikilink', 'the index note'],
+      ['wikilink link-pill__tail', 'YAZ-12)'],
+      ['wikilink link-pill__head', '('],
+      ['wikilink', 'the plan'],
+      ['wikilink link-pill__tail', 'YAZ-12)'],
+    ])
+    // The head and the tail stand against the words on both orders; the page side and the `|` stay hidden between or beside them.
+    expect(root.querySelector('.ProseMirror')?.textContent).toBe('A [[(the index noteYAZ-12)|YAZ-12]] B [[YAZ-12|(the planYAZ-12)]] C')
+    expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
   it('a keystroke elsewhere redraws nothing of a pill with pieces: the same widget DOM stays', async () => {
     const { root, source, view } = await mountLook('pad [[Roadmap]] tail\n')
     source.setLook({ before: '(', after: ')', id: 'show' }, 'Mine')

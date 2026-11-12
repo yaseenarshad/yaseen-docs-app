@@ -1297,22 +1297,25 @@ export function App() {
   // `openSearch` (⌘K closes the stack). The keyboard goes back where it was when the stack closes.
   /** What the next ask opens: a search (⌘⇧F), or a note as a reading layer with no search under it ("Open in Explore", YAZ-4936). */
   const exploreNote = useRef<string | null>(null)
+  // Whether the window has a vault, not which: a renamed first vault changes `root`, and a door that hung on it would
+  // hand every editor of the window a new prop and render each of them again (the two-vault rename cases).
+  const hasVault = root !== null
   const openExplore = useCallback(() => {
-    if (root === null || filesWindow) return
+    if (!hasVault || filesWindow) return
     exploreNote.current = null
     setExploreRequest((n) => {
       if (n === 0) exploreFrom.current = document.activeElement
       return n + 1
     })
-  }, [root, filesWindow])
+  }, [hasVault, filesWindow])
   const openExploreOn = useCallback((path: string) => {
-    if (root === null || filesWindow) return
+    if (!hasVault || filesWindow) return
     exploreNote.current = path
     setExploreRequest((n) => {
       if (n === 0) exploreFrom.current = document.activeElement
       return n + 1
     })
-  }, [root, filesWindow])
+  }, [hasVault, filesWindow])
   /** This vault's "Clicking a link" (YAZ-4936), for the editors of `path`: read at each click. */
   const exploreOnClickFor = useCallback((path: string) => scopeOf(path).linkClick.isExplore, [scopeOf])
   const closeExplore = useCallback(() => {
