@@ -16,6 +16,7 @@ import type { CommentsOrder } from '@shared/types'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { createCrepe, editorViewOf } from '../editor/createCrepe'
+import { DocumentZoom } from '../editor/DocumentZoom'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
 import { FindBar } from '../editor/find/FindBar'
@@ -72,6 +73,9 @@ interface ExploreNoteProps {
   /** The head's drag (round 3): the layer moves with the pointer; a double click puts it back in its stack place. */
   onHeadDown?: (event: ReactMouseEvent) => void
   onHeadReset?: (event: ReactMouseEvent) => void
+  /** The zoom of every note layer (round 4): the page zoom's pill in the head, and `--document-zoom` on the body, as a note tab's scroller carries it. */
+  zoom: number
+  onZoom: (zoom: number) => void
   /** The comment stream's order (YAZ-1515), the setting, and its toggle: as every page layer has them. */
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
@@ -89,7 +93,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, steps, onHeadDown, onHeadReset, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   // The layer's vault's word for a note (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const noteId = useNoteId(idInTitle ? vault.wikilinks : undefined, path)
@@ -217,6 +221,8 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   const note = fileKind(path) === 'markdown'
   /** A press on a head button keeps the keyboard where it is (the reading body, the editor). */
   const keep = (event: ReactMouseEvent) => event.preventDefault()
+  /** The text formatting of the vault, and the zoom as the note tab's scroller carries it (`--document-zoom`, app.css): the same rules scale the note's content. */
+  const bodyStyle = { ...style, '--document-zoom': zoom / 100 } as CSSProperties
   return (
     <UnitContext.Provider value={unit}>
       <div
@@ -243,6 +249,8 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
             </button>
           </span>
         )}
+        {/* The page zoom's pill (round 4): one value for every note layer; a press on it is the pill's, not a drag. */}
+        <DocumentZoom value={zoom} onChange={onZoom} />
         {foldAll}
         {mode === 'read' ? (
           <>
@@ -270,12 +278,12 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
         </button>
       </div>
       {mode === 'edit' ? (
-        <div className="explore__body explore__body--edit" style={style}>
+        <div className="explore__body explore__body--edit" style={bodyStyle}>
           {/* Keyed by the path: a step while editing saves this note and mounts the editor on the next (the body div stays, with the keyboard). */}
           <Fragment key={path}>{renderEditor(path, onOpenLink)}</Fragment>
         </div>
       ) : (
-        <div ref={bodyRef} className="explore__body" style={style} tabIndex={-1} data-explore-read>
+        <div ref={bodyRef} className="explore__body" style={bodyStyle} tabIndex={-1} data-explore-read>
           <FindBar channel={findChannel} scope="note" hostRef={bodyRef} />
           <div ref={mountRef} className="explore__mount" />
           {content.kind === 'gone' && <p className="editor-msg">Can&apos;t read &quot;{title}&quot; — it is no longer there</p>}

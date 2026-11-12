@@ -342,3 +342,21 @@
   flex: 1;
   min-height: 0;
 }
+
+/* The zoom of a note layer (round 4): `--document-zoom` on the body, and app.css's own rule scales the reading Crepe's
+   `.ProseMirror`; the comment stream and the mentions under it scale as in a tab (`.editor-host > * > *`). */
+.explore__under > * {
+  zoom: var(--document-zoom, 1);
+}
+/* Editing: the editor inside the layer carries its own zoom on its scroller (always 100 here: the stack takes the keys
+   first). The layer's value wins, so the note zooms by the same rules as the tab; the editor's own pill is not shown. */
+.explore__body--edit .editor-host {
+  --document-zoom: inherit !important;
+}
+.explore__body--edit .status-chips .document-zoom {
+  display: none;
+}
+/* The pill in the head, at the head's size. */
+.explore__head .document-zoom {
+  flex: none;
+}

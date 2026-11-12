@@ -19,6 +19,7 @@ import { NO_FOLDER_PAGE_NOTICE } from './exploreMenu'
 import { moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
 import { onNoteWindowRequest } from '../views/noteWindowRequest'
 import { registerRenameContinuity } from '../lib/renameContinuity'
+import { requestZoom } from '../editor/zoomRequest'
 import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStack'
 import { layerPlace, MAX_LAYERS } from './layers'
 
@@ -888,5 +889,92 @@ describe('round 3: ‹ › through the search, and layers that move like a cell 
     act(() => void (top().querySelector('.explore__grab') as Element).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
     expect([top().style.left, top().style.top]).toEqual([`${start.left}px`, `${start.top}px`])
     expect(localStorage.getItem('explore:box:search')).toBeNull()
+  })
+})
+
+describe('round 4: zoom in a note layer', () => {
+  const pill = (layer: HTMLElement = top()) => layer.querySelector<HTMLElement>('.explore__head .document-zoom')
+  const value = () => pill()?.querySelector('.document-zoom__value')?.textContent
+  const bodyZoom = () => top().querySelector<HTMLElement>('.explore__body')?.style.getPropertyValue('--document-zoom')
+  const setInput = (field: HTMLInputElement, text: string) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(field, text)
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  beforeEach(() => localStorage.removeItem('explore:zoom'))
+
+  it('the page zoom\'s pill sits in a note head (not a search head): − steps the ladder, a typed value applies, and the body carries --document-zoom', async () => {
+    await mount()
+    expect(pill()).toBeNull()
+    await typeQuery('alp')
+    await openResult()
+    expect(pill()).not.toBeNull()
+    expect(value()).toBe('100%')
+    expect(bodyZoom()).toBe('1')
+    const buttons = () => [...(pill()?.querySelectorAll<HTMLButtonElement>('.document-zoom__step') ?? [])]
+    act(() => buttons()[0].click())
+    expect(value()).toBe('90%')
+    expect(bodyZoom()).toBe('0.9')
+    act(() => buttons()[1].click())
+    act(() => buttons()[1].click())
+    expect(value()).toBe('125%')
+    // The menu: a typed value.
+    act(() => pill()?.querySelector<HTMLButtonElement>('.document-zoom__trigger')?.click())
+    const field = pill()?.querySelector('input') as HTMLInputElement
+    act(() => setInput(field, '75%'))
+    key(field, { key: 'Enter' })
+    expect(value()).toBe('75%')
+    expect(bodyZoom()).toBe('0.75')
+    expect(localStorage.getItem('explore:zoom')).toBe('75')
+    // Editing: the edit body carries the same value.
+    key(top().querySelector('.explore__body') as HTMLElement, { key: 'e' })
+    await flush()
+    expect(top().querySelector<HTMLElement>('.explore__body--edit')?.style.getPropertyValue('--document-zoom')).toBe('0.75')
+    expect(value()).toBe('75%')
+  })
+
+  it('one zoom for every note layer, kept across stacks; ⌘+ / ⌘− / ⌘0 zoom the top note layer only and never reach the tab behind', async () => {
+    const tab = vi.fn()
+    document.body.addEventListener('yaseendocs:zoom', tab)
+    const unclaimed = vi.fn()
+    await mount()
+    // A search on top: the keys do nothing, to the stack or to the tab behind.
+    act(() => requestZoom(1, unclaimed))
+    expect(unclaimed).not.toHaveBeenCalled()
+    expect(localStorage.getItem('explore:zoom')).toBeNull()
+    await typeQuery('alp')
+    await openResult()
+    act(() => requestZoom(1, unclaimed))
+    expect(value()).toBe('125%')
+    act(() => requestZoom(1, unclaimed))
+    expect(value()).toBe('150%')
+    act(() => requestZoom(-1, unclaimed))
+    expect(value()).toBe('125%')
+    // A note over it, from a link, opens at the same zoom; a step there is the one value.
+    act(() => crepes[0].opts.wikilinkNav?.openCurrent('/v/beta.md'))
+    await flush()
+    await flush()
+    expect(value()).toBe('125%')
+    act(() => requestZoom(0, unclaimed))
+    expect(value()).toBe('100%')
+    await escape()
+    expect(value()).toBe('100%')
+    act(() => requestZoom(-1, unclaimed))
+    expect(value()).toBe('90%')
+    expect(unclaimed).not.toHaveBeenCalled()
+    expect(tab).not.toHaveBeenCalled()
+    expect(localStorage.getItem('explore:zoom')).toBe('90')
+    // The next stack of this window opens its notes at 90%; with the stack gone the keys are the page's again.
+    act(() => root?.unmount())
+    el.remove()
+    act(() => requestZoom(1, unclaimed))
+    expect(unclaimed).toHaveBeenCalledOnce()
+    expect(localStorage.getItem('explore:zoom')).toBe('90')
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    expect(value()).toBe('90%')
+    expect(bodyZoom()).toBe('0.9')
+    document.body.removeEventListener('yaseendocs:zoom', tab)
   })
 })

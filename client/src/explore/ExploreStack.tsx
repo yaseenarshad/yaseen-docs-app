@@ -14,9 +14,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
-import { rootOfPath, type CommentsOrder } from '@shared/types'
+import { rootOfPath, type CommentsOrder, type ZoomStep } from '@shared/types'
+import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { LinkActions } from '../editor/linkMenu'
 import { isNoteKey } from '../editor/noteKeys'
+import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
@@ -30,7 +32,7 @@ import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreR
 import { ExploreSearch, type SearchLink } from './ExploreSearch'
 import { textCandidates } from './exploreRows'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
-import { MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, SEARCH_MS, stepPlace, stepResult, topNote, type ExploreLayer } from './layers'
+import { MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepPlace, stepResult, topNote, type ExploreLayer } from './layers'
 import './explore.css'
 
 export interface ExploreStackProps {
@@ -98,6 +100,15 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
   const windowSize = useWindowSize()
   // Where each layer stands (round 3): written to the layers' style, never rendered; the head drags, the grips resize.
   const gestures = useLayerBoxes(rootRef, layers, windowSize.width, windowSize.height)
+  /** The one zoom of every note layer (round 4): the page zoom's pill and keys, kept in localStorage; a note tab's zoom is its own. */
+  const [zoom, setZoomState] = useState(savedExploreZoom)
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+  const setZoom = useCallback((next: number) => {
+    zoomRef.current = next
+    setZoomState(next)
+    saveExploreZoom(next)
+  }, [])
   /** Each search layer's rows (round 3), by layer id: what the note over it steps through. Dropped with the layer. */
   const links = useRef(new Map<number, SearchLink>())
   const linkOf = (id: number): SearchLink => {
@@ -246,6 +257,24 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
 
   const live = useMemo(() => layers.filter((l) => !leaving.has(l.id)), [layers, leaving])
   const top = live[live.length - 1]
+  const topRef = useRef(top)
+  topRef.current = top
+
+  // ⌘+ / ⌘− / ⌘0 while Explore is open (round 4): the menu's step (`requestZoom`, App) zooms the TOP note layer, on the
+  // page zoom's key ladder; on a search layer it does nothing. Caught on the document first, so neither the tab behind
+  // nor the editor inside a layer (its own `.editor` listener) takes it, and the sidebar's fallback never runs.
+  useEffect(() => {
+    const onZoom = (event: Event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const layer = topRef.current
+      if (layer === undefined || layer.kind !== 'note') return
+      const step = (event as CustomEvent<ZoomStep>).detail
+      setZoom(step === 0 ? 100 : (stepZoomByKey(zoomRef.current, step) ?? zoomRef.current))
+    }
+    document.addEventListener(ZOOM_EVENT, onZoom, true)
+    return () => document.removeEventListener(ZOOM_EVENT, onZoom, true)
+  }, [setZoom])
 
   /** The trail's click (YAZ-4925): back to `id`; the layers above it close at once, a note in edit among them saved first. */
   const backTo = useCallback(
@@ -425,6 +454,8 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
                 onNotice={onNotice}
                 onToggleEdit={() => toggleEdit(layer.id)}
                 steps={steps}
+                zoom={zoom}
+                onZoom={setZoom}
                 onHeadDown={(e) => gestures.onHeadDown(layer.id, e)}
                 onHeadReset={(e) => gestures.reset(layer.id, e)}
                 commentsOrder={commentsOrder}
