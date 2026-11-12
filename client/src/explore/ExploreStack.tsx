@@ -116,6 +116,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
   const candidates = useSearchCandidates(vaults, true, textCandidates)
   const roots = useMemo(() => vaults.map((v) => v.root), [vaults])
   /** The vault's "Show IDs in search" for a row (YAZ-4940); a path in no vault reads Always. */
+  const idsInTitle = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInTitle?.() ?? true, [vaults, roots])
   const idsInSearch = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInSearch?.() ?? 'always', [vaults, roots])
   // A folder of a vault (YAZ-4922 🔒 D3): the empty search's recents are the notes under the folder only (`inPlace`).
   const recentAll = exploreRecents()
@@ -414,6 +415,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
                 mode={layer.mode}
                 gone={layer.gone ?? 0}
                 title={nameOf(layer.path)}
+                idInTitle={idsInTitle(layer.path)}
                 vault={vaultOf(layer.path)}
                 style={textVarsFor(layer.path)}
                 onOpenLink={openPath}

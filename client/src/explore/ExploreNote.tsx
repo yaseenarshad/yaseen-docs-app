@@ -7,6 +7,7 @@
  * In edit a link opens a layer on top too. The head's ↗ opens the note in a tab, as ⌘↵ does.
  */
 import { UnitContext, useVaultUnit } from '../vault/unitWord'
+import { useNoteId } from '../search/showIds'
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
@@ -48,6 +49,8 @@ interface ExploreNoteProps {
   /** Bumped by the stack when the note was deleted under the layer: read again, and say it is gone. */
   gone?: number
   title: string
+  /** YAZ-4940: the vault's "Show IDs in the title"; On draws the note's ID after the title, small and muted. */
+  idInTitle?: boolean
   vault: ExploreVault
   /** The text formatting of the note's vault (`--text-size` and the heading variables), as every page layer wears it. */
   style?: CSSProperties
@@ -86,9 +89,10 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, steps, onHeadDown, onHeadReset, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, steps, onHeadDown, onHeadReset, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   // The layer's vault's word for a note (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
+  const noteId = useNoteId(idInTitle ? vault.wikilinks : undefined, path)
   const bodyRef = useRef<HTMLDivElement>(null)
   /** Where the read-only Crepe mounts: its own box ABOVE the comment stream and the mentions, as the note tab stacks them. */
   const mountRef = useRef<HTMLDivElement>(null)
@@ -227,7 +231,7 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
         <span className="explore__title" title={path}>
           {title}
         </span>
-        {/* YAZ-4940: the note's ID goes here, right after the title, when the vault shows IDs in titles. */}
+        {noteId !== undefined && <span className="explore__id">{noteId}</span>}
         {steps !== undefined && (
           <span className="explore__steps">
             <button type="button" className="explore__step" title="Previous search result (← or ⌘⌥↑)" aria-label="Previous search result" disabled={!steps.prev} onMouseDown={keep} onClick={() => steps.onStep(-1)}>

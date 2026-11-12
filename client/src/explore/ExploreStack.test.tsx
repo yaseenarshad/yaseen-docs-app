@@ -665,6 +665,20 @@ describe('the explore stack', () => {
     expect(rows()).toEqual(['Alpha'])
   })
 
+  it('YAZ-4940: "Show IDs in the title" On draws the note ID after the layer head title; Off draws none', async () => {
+    const withIds = createWikilinkResolveSource()
+    withIds.update(() => null, RECORDS, [], true)
+    props.vaultOf = () => ({ root: '/v', wikilinks: withIds, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly })
+    props.requestNote = '/v/alpha.md'
+    props.vaults = [{ ...vaults[0], idsInTitle: () => true }]
+    await mount()
+    expect(top().querySelector('.explore__head .explore__title + .explore__id')?.textContent).toBe('EMB-1')
+    props.vaults = [{ ...vaults[0], idsInTitle: () => false }]
+    render(1)
+    await flush()
+    expect(top().querySelector('.explore__head .explore__id')).toBeNull()
+  })
+
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {
     Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false }), configurable: true, writable: true })
     vi.useFakeTimers()
