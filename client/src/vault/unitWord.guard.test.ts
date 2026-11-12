@@ -7,7 +7,8 @@
  * `confirmLabel`, `cancelLabel`, `menuLabel`, `triggerLabel`, `empty` or `name`; a toast or notice (`notify(…)`,
  * `onNotice(…)`, `notice(…)`); text between JSX tags; a count (`'note' : 'notes'`, `plural(n, 'note')`,
  * `${n} notes`); a label constant (a const named …LABEL, …PLACEHOLDER, …TITLE, …NAME or …OPTIONS); the sidebar
- * menu's `plain(label)` rows. The sidebar menu's `create(id, label)` and Settings › Folder pages' `row(id, label)` route
+ * menu's `plain(label)` rows; a string inside a JSX expression that IS an element's text, `<strong>{a ? 'This note…' : …}</strong>`
+ * (the literal stands between `>{` and `}<` on its line, with no tag in between; YAZ-4939's chip card was missed this way). The sidebar menu's `create(id, label)` and Settings › Folder pages' `row(id, label)` route
  * every label through the helper themselves. Help prose (a `hint`, an `about` line, a sheet's long text) keeps the plain
  * word, as the help docs do, and is not scanned.
  */
@@ -69,7 +70,9 @@ export function unguardedNoteStrings(): string[] {
           const ternary = bare && ((/\?\s*$/.test(before) && /^\s*:\s*'notes?'/.test(after)) || (/'notes?'\s*\?\s*$/.test(before.trimEnd().replace(/:$/, '').trimEnd())))
           const count = (bare && COUNT_CALL.test(before)) || /\$\{[^}]*\}\s*notes?\b/i.test(text)
           const slot = !bare && SLOT.test(before) && !(IDENTIFIER.test(text) && !/^[A-Z]/.test(text))
-          if (slot || ternary || count) add(text)
+          // A literal that is an element's text through an expression: `<b>{cond ? 'This note…' : 'other'}</b>`.
+          const jsxExpr = !bare && file.endsWith('.tsx') && />\{[^<>]*$/.test(before) && /^[^<>]*\}\s*</.test(after) && !IDENTIFIER.test(text)
+          if (slot || ternary || count || jsxExpr) add(text)
         }
         if (!file.endsWith('.tsx') || line.includes('`')) return
         JSX_TEXT.lastIndex = 0

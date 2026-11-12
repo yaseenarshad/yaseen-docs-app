@@ -49,6 +49,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
   /** A rename that also rewrites the notes holding the option (YAZ-4591 S24): the folder's column editor. Absent: a rename is `onChange`, metadata only. */
   onRename?: (next: PropertyDecl, from: string, to: string) => void
 }) {
+  const unit = useUnit()
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
@@ -105,7 +106,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
         <div className="property-def__form-actions"><button type="button" onClick={closeDetail}>Cancel</button><button type="submit" className="property-def__save">Save</button></div>
       </form>
       <button type="button" className="property-def__delete" onClick={() => { setOptions(options.filter(option => option !== editing)); closeDetail() }}>Remove option</button>
-      <p className="property-def__hint">{onRename ? 'Renaming this option changes it in every note that holds it. Removing it keeps existing note values.' : 'Renaming or removing this option keeps existing note values.'}</p>
+      <p className="property-def__hint">{unit(onRename ? 'Renaming this option changes it in every note that holds it. Removing it keeps existing note values.' : 'Renaming or removing this option keeps existing note values.')}</p>
     </div> : <>
       <div className="property-def__option-list" {...live.listProps}
         onDragEnter={event => own(live.over(event), event)} onDragOver={event => own(live.over(event), event)} onDrop={event => own(live.drop(event), event)}>

@@ -31,6 +31,7 @@
  * (`role="status"`) is always there, so a screen reader reads the card when it comes.
  */
 import { useEffect, useReducer, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { useUnit } from '../vault/unitWord'
 import { LockIcon } from '../views/view/icons'
 import { READ_ONLY_EDIT, READ_ONLY_MESSAGE_GAP_MS, READ_ONLY_MESSAGE_MS, READ_ONLY_PAGE, READ_ONLY_PANE, type ReadOnlyWhat } from './readOnlyEdit'
 import type { AllowFor } from './useTimedUnlock'
@@ -65,6 +66,8 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
   const cancelRef = useRef(onCancel)
   cancelRef.current = onCancel
   const message = useReadOnlyMessage(rootRef, chipRef, asking)
+  // The vault's word for a note (YAZ-4938): "This card is Read only." in a vault of cards.
+  const unit = useUnit()
   const editing = editingUntil !== null
   // The 1-second clock (YAZ-4939): here alone, only while a TIMED unlock runs, and gone with it.
   const [, tick] = useReducer((n: number) => n + 1, 0)
@@ -116,7 +119,7 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
               <LockIcon size={13} />
             </span>
             <span className="read-only-message__text">
-              <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : 'This note is Read only.'}</strong>
+              <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : unit('This note is Read only.')}</strong>
               <span>Click Read only to allow edits.</span>
             </span>
           </div>

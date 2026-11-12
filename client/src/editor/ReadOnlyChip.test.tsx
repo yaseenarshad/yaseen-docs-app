@@ -9,6 +9,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { editingLabel, ReadOnlyChip } from './ReadOnlyChip'
 import { tellReadOnlyEdit } from './readOnlyEdit'
 import { ALLOW_MS, type AllowFor } from './useTimedUnlock'
+import { UnitContext, unitTextOf } from '../vault/unitWord'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -277,6 +278,23 @@ describe('the edit-attempt message (YAZ-4446)', () => {
     expect(paneChip('a').classList.contains('read-only-chip__button--pulse')).toBe(true)
     // It is the chip's own: the card sits in the chip's box, so nothing in the page moves.
     expect(pane('a').querySelector('.read-only-chip')?.contains(card('a'))).toBe(true)
+  })
+
+  it('the vault\'s word for a note (YAZ-4938): in a vault of cards the card says "This card is Read only."', () => {
+    vi.useFakeTimers()
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(
+      <UnitContext.Provider value={unitTextOf({ one: 'card', many: 'cards' })}>
+        <section className="editor" data-pane="a">
+          <ReadOnlyChip asking={false} onAsk={() => undefined} onAllow={() => undefined} onCancel={() => undefined} />
+          <div data-body="a" />
+        </section>
+      </UnitContext.Provider>,
+    ))
+    attempt('[data-body="a"]')
+    expect(card('a')?.querySelector('strong')?.textContent).toBe('This card is Read only.')
   })
 
   it('a drawing says "drawing"', () => {
