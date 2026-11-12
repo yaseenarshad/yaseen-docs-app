@@ -7,7 +7,7 @@ import {
   findCards,
   formatCardLine,
   parseCardLine,
-  rewriteCardLines,
+  rewritePageCards,
   withCardId,
   withCardOff,
   withCardReview,
@@ -89,9 +89,9 @@ describe('the card line (D3)', () => {
       { id: 'WIKI-1', off: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] },
       { id: null, off: false, reviews: [] },
     ])
-    const given = rewriteCardLines(page, (card, i) => (i === 1 ? withCardId(card.line, 'WIKI-2') : undefined))
+    const given = rewritePageCards(page, (card, i) => (i === 1 ? withCardId(card.line, 'WIKI-2') : undefined))
     expect(given).toBe(page.replace('  Back\n  ```\n', '  Back\n  ```\n  <!-- card: WIKI-2 -->\n'))
-    expect(rewriteCardLines(given, (card, i) => (i === 1 ? withCardId(card.line, 'WIKI-2') : undefined))).toBe(given)
+    expect(rewritePageCards(given, (card, i) => (i === 1 ? withCardId(card.line, 'WIKI-2') : undefined))).toBe(given)
     // The Inbox's write: one review on the card named by ID; an empty line goes.
     const at = '2026-11-20T09:00Z'
     expect(changeCard(given, 'WIKI-2', (l) => withCardReview(l, { at, rating: 'again' }))).toContain(`  <!-- card: WIKI-2, ${at} again -->`)

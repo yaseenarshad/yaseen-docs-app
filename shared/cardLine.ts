@@ -14,8 +14,9 @@ import { canonicalNoteId, isNumberId } from './noteId'
  *   <!-- card: WIKI-512, 2026-11-12T14:05Z good, 2026-11-20T09:00Z again -->
  *
  * The line holds the card's ID (the vault's counter, D2), then each review: a UTC time to the minute and the FSRS
- * rating (`again | hard | good | easy`, D5). `off` takes the card out of review. A card with no ID yet has no ID part:
- * the index's sweep gives it one (YAZ-4960). The due date is never written: `cardSchedule.ts` replays the reviews.
+ * rating (`again | hard | good | easy`, D5). `off` takes the card out of review. A card takes its ID when it is
+ * made (`/card` asks the vault's door, `yaseendocs card add` too); one that has none (an agent's text, a paste) gets
+ * it from the index's sweep (YAZ-4960). The due date is never written: `cardSchedule.ts` replays the reviews.
  *
  * The reader is tolerant, as `<!-- code: … -->` is (`client/src/editor/code/codeComment.ts`): a part it does not know
  * is KEPT as its text, in its place, and written back; an empty part is skipped. The ONE copy of these rules: the
@@ -24,7 +25,6 @@ import { canonicalNoteId, isNumberId } from './noteId'
  */
 
 export type CardRating = 'again' | 'hard' | 'good' | 'easy'
-export const CARD_RATINGS: readonly CardRating[] = ['again', 'hard', 'good', 'easy']
 
 /** One review on a card line. */
 export interface CardReview {
@@ -89,7 +89,7 @@ export const EMPTY_CARD_LINE: CardLine = { parts: [] }
 export const cardIdOf = (line: CardLine): string | null => line.parts.find((p) => p.kind === 'id')?.id ?? null
 export const isCardOff = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'off')
 export const cardReviewsOf = (line: CardLine): CardReview[] => line.parts.flatMap((p) => (p.kind === 'review' ? [p.review] : []))
-export const cardRecordOf = (line: CardLine): NoteCardRecord => ({ id: cardIdOf(line), off: isCardOff(line), reviews: cardReviewsOf(line) })
+const cardRecordOf = (line: CardLine): NoteCardRecord => ({ id: cardIdOf(line), off: isCardOff(line), reviews: cardReviewsOf(line) })
 
 /** The line with `id` as its ID: the ID part changes in place, or comes first. */
 export function withCardId(line: CardLine, id: string): CardLine {
@@ -196,7 +196,7 @@ export const cardRecords = (text: string): NoteCardRecord[] => findCards(text).m
  * the new line, or undefined to leave that card as it is. A card that had no line gets one right under its fence;
  * a line that empties is removed. The ONE writer of card lines in a page: the sweep, the command and the Inbox.
  */
-export function rewriteCardLines(text: string, change: (card: CardBlock, index: number) => CardLine | undefined): string {
+function rewriteCardLines(text: string, change: (card: CardBlock, index: number) => CardLine | undefined): string {
   const cards = findCards(text)
   if (cards.length === 0) return text
   const lines = text.split('\n')
