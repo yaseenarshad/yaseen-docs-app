@@ -9985,6 +9985,25 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
+  it('YAZ-4985: a Paste of a Cut made in a read-only vault asks THAT vault too: it would move the file out of it; refused, nothing is pasted', async () => {
+    let held: ReturnType<typeof clipboard> | undefined
+    const onFileAction = vi.fn(async (root: string) => !root.endsWith('/notes'))
+    const { el, a, b, bridge } = await two({ onFileAction }, (bridge) => void (held = clipboard(bridge)))
+    act(() => held?.push?.(clipOf('cut', `${a}/a.md`)))
+    rightClick(rowByPath(el, b))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(onFileAction.mock.calls).toEqual([[b], [a]])
+    expect(bridge.file.paste).not.toHaveBeenCalled()
+    // A Copy leaves the read-only vault as it is: only the vault it lands in asks.
+    onFileAction.mockClear()
+    act(() => held?.push?.(clipOf('copy', `${a}/a.md`)))
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: `${a}/a.md`, to: `${b}/a.md`, kind: 'file' }], failed: [] })
+    rightClick(rowByPath(el, b))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(onFileAction.mock.calls).toEqual([[b]])
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b, 'copy', `${a}/a.md`))
+  })
+
   /** App's list of closed vault rows, as it follows `onSetVaultOpen` (R9): a test hands `closed()` back down, as App does. */
   const vaultDoors = () => {
     let closed: string[] = []
@@ -11806,6 +11825,38 @@ describe('the sidebar in a read-only vault (YAZ-4939)', () => {
     await newNote()
     expect(onFileAction).toHaveBeenCalledTimes(2)
     expect(el.querySelector('.create-inline__input')).not.toBeNull()
+  })
+
+  it('YAZ-4985: Delete asks the read-only door BEFORE its delete sheet: refused, no sheet and no delete; allowed, the sheet, and its Delete tells App the door was asked', async () => {
+    let allow = false
+    const onFileAction = vi.fn(async () => allow)
+    const { el, props } = await mount({ onFileAction })
+    const del = async () => {
+      act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+      act(() => itemByLabel(el, 'Delete')?.click())
+      await act(async () => {})
+    }
+    await del()
+    expect(onFileAction).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(props.onDeleteEntries).not.toHaveBeenCalled()
+    allow = true
+    await del()
+    expect(el.querySelector('.confirm')?.textContent).toContain('It moves to the Trash.')
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.confirm button')].find((b) => b.textContent === 'Delete')?.click())
+    await act(async () => {})
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], true)
+  })
+
+  it('YAZ-4985: with "Ask before deleting" off, ⌘⌫ still asks the read-only door first, then deletes with no sheet', async () => {
+    const onFileAction = vi.fn(async () => true)
+    const clipboardRef = { current: null as SidebarClipboard | null }
+    const { el, props } = await mount({ onFileAction, clipboardRef, settings: { ...DEFAULT_SETTINGS, confirmDelete: false } })
+    act(() => fileRow(el)?.click())
+    await act(async () => void clipboardRef.current?.delete())
+    expect(onFileAction).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], true)
   })
 
   it('with no door (a vault with no Read only) the field opens at once', async () => {

@@ -18,7 +18,7 @@ import { VaultReadOnly } from '../vault/readOnlyVault'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn() },
+  api: { readFile: vi.fn(), writeFile: vi.fn(), file: { duplicate: vi.fn(async () => ({ path: '/vault/stages/Lead Gen 2.md' })) } },
 }))
 
 import { api, BridgeRequestError } from '../api'
@@ -150,6 +150,25 @@ const addColumnRight = (el: ParentNode, label: string, name: string): void => {
 }
 
 describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
+  it('YAZ-4985: a row\'s "Duplicate note" is a New note: it asks the vault\'s door first; refused, nothing is copied; allowed, the copy is made', async () => {
+    const duplicate = vi.mocked(api.file.duplicate)
+    let allow = false
+    const ask = vi.fn(async () => allow)
+    const el = await mount(true, ask)
+    const pick = async () => {
+      const row = [...el.querySelectorAll<HTMLElement>('tbody tr')].find((tr) => tr.textContent?.includes('Lead Gen'))!
+      act(() => void row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      click([...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((x) => x.textContent === 'Duplicate note')!)
+      await flush()
+    }
+    await pick()
+    expect(ask).toHaveBeenCalledExactlyOnceWith('/vault')
+    expect(duplicate).not.toHaveBeenCalled()
+    allow = true
+    await pick()
+    expect(duplicate).toHaveBeenCalledExactlyOnceWith({ path: LEAD })
+  })
+
   it('the vault On: the chip shows with no `readonly` in `.folder.md`; the title and every cell are locked; a content write (a column rename) is refused; nothing is written; the box has no "Turn Read only off"', async () => {
     const el = await mount(true)
     expect(chip(el)?.textContent).toBe('Read only')

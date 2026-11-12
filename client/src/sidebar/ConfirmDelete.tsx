@@ -7,6 +7,8 @@ import { ConfirmSheet } from '../components/ConfirmSheet'
 export interface DeleteTarget {
   path: string
   kind: 'file' | 'dir'
+  /** The read-only door asked already, before this sheet (YAZ-4985): App's delete does not ask again. */
+  asked?: boolean
   /** Notes and subfolders inside a folder target; ignored for a file. */
   children?: { notes: number; folders: number }
   /**

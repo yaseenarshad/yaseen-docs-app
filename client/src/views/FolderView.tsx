@@ -1455,8 +1455,11 @@ export function FolderView({
     openBackground: onOpenFileBackground,
     // "Delete note…" and "Duplicate note" (YAZ-4592 S26): the sidebar's delete, and a copy beside the note.
     trash: onDeleteEntries,
+    // A duplicate is a New note: a read-only vault asks first (YAZ-4985), as the page's New does.
     duplicate: (note) =>
-      void api.file.duplicate({ path: note }).catch((err: unknown) => onNotice?.(`Can't duplicate: ${err instanceof Error ? err.message : String(err)}`, 'error')),
+      void vault.allowFileAction(root).then((ok) => {
+        if (ok) return api.file.duplicate({ path: note })
+      }).catch((err: unknown) => onNotice?.(`Can't duplicate: ${err instanceof Error ? err.message : String(err)}`, 'error')),
     onNotice,
     relation,
     wikilinks: source,

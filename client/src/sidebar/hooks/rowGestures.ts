@@ -679,7 +679,8 @@ export function useFileClipboard(
    */
   const pasteInto = useCallback(
     async (dir: string, top?: string) => {
-      if (allowFileAction !== undefined && !(await allowFileAction(vaultOf(dir).root))) return
+      const target = vaultOf(dir).root
+      if (allowFileAction !== undefined && !(await allowFileAction(target))) return
       let now: FileClipState
       try {
         now = await readClip()
@@ -687,6 +688,14 @@ export function useFileClipboard(
         return onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
       if (now === null) return onNotice('Nothing to paste', 'info')
+      // A paste of a CUT moves the items out of their vault (YAZ-4985): each other vault of this window they leave asks too.
+      if (allowFileAction !== undefined && now.op === 'cut') {
+        const from = new Set(now.paths.flatMap((path) => {
+          const vault = vaultOf(path).root
+          return vault !== target && path.startsWith(`${vault}/`) ? [vault] : []
+        }))
+        for (const vault of from) if (!(await allowFileAction(vault))) return
+      }
       await runPaste(dir, now, top)
     },
     [runPaste, readClip, onNotice, vaultOf, allowFileAction],

@@ -36,7 +36,7 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   const showIds = showIdsSettings === undefined ? undefined : { settings: showIdsSettings, save: saveShowIds, inSearch: () => showIdsSettings.search, inTitle: () => showIdsSettings.title }
   // The vault's Read only (YAZ-4939): no settings handed over is no vault open, so no row.
   const saveReadOnly = vi.fn()
-  const readOnly = readOnlyVault === undefined ? undefined : { settings: readOnlyVault, save: saveReadOnly, fileActionsAllowed: () => true, allowFileActions: () => undefined }
+  const readOnly = readOnlyVault === undefined ? undefined : { settings: readOnlyVault, save: saveReadOnly, fileActionsAllowed: () => true, allowFileActions: () => undefined, lockFileActions: () => undefined, allowedUntil: null }
   const onClose = vi.fn()
   const setEnabled = vi.fn()
   const save = vi.fn()

@@ -104,6 +104,7 @@ import { SAME_WORD, UnitContext, vaultUnit, type UnitText } from './vault/unitWo
 import { folderHome } from './vault/folderHome'
 import { inPlace } from './vault/placeScope'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
+import type { FileActionsFor } from './vault/readOnlyVault'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { duplicateTabIds, nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
@@ -513,14 +514,27 @@ export function App() {
   const candidatesOf = useCallback((path: string) => (rootOfPath(live.current.roots, path) === null ? null : scopeOf(path).wikilinkCandidates), [scopeOf])
   /**
    * A file action in a read-only vault (YAZ-4939): Rename, Move, Delete, the sidebar's New … and Paste, a folder page's
-   * New. The vault's own allowance answers at once; else ONE sheet asks, "Allow for 10 minutes" opens the vault's file
-   * actions that long, and Cancel refuses. The app's own writes never come here.
+   * New and Duplicate, today's note, an undo or a redo of them (YAZ-4985). The vault's own allowance answers at once; else
+   * ONE sheet asks: "Just this once" (Enter) lets this one action through and starts no allowance, "1 minute" and
+   * "10 minutes" open the vault's file actions that long (the sidebar's lock shows it), and Cancel (Esc) refuses. An action
+   * on several files is one action: it asks once. The app's own writes never come here.
    */
   const [readOnlyAsk, setReadOnlyAsk] = useState<{ root: string; resolve: (ok: boolean) => void } | null>(null)
   const allowFileAction = useCallback((root: string): Promise<boolean> => {
     const scope = scopeOf(root)
     if (scope.root !== root || scope.readOnlyVault.fileActionsAllowed()) return Promise.resolve(true)
     return new Promise((resolve) => setReadOnlyAsk({ root, resolve }))
+  }, [scopeOf])
+  /** The sheet's answer: false = Cancel; null = Just this once (no allowance); a time = that allowance, then go on. */
+  const readOnlyAskNow = useRef(readOnlyAsk)
+  readOnlyAskNow.current = readOnlyAsk
+  const answerReadOnly = useCallback((choice: FileActionsFor | null | false) => {
+    const ask = readOnlyAskNow.current
+    if (ask === null) return
+    readOnlyAskNow.current = null
+    setReadOnlyAsk(null)
+    if (choice !== false && choice !== null) scopeOf(ask.root).readOnlyVault.allowFileActions(choice)
+    ask.resolve(choice !== false)
   }, [scopeOf])
   /** A link to a page of a vault the app knows but this window does not show (YAZ-3609 D21): the sheet that asks to add it. */
   const [addAsk, setAddAsk] = useState<{ root: string; path: string; background: boolean } | null>(null)
@@ -2816,7 +2830,8 @@ export function App() {
    * the item is already in is no move (S7). All moves stay in one vault (YAZ-2602 R11).
    */
   const requestMoves = useCallback(
-    async (list: readonly Move[]): Promise<void> => {
+    // `asked`: the rename door asked already (YAZ-4985), so "Just this once" covers its move too.
+    async (list: readonly Move[], asked = false): Promise<void> => {
       const moves = list.filter((move) => move.newPath !== move.oldPath)
       const first = moves[0]
       if (first === undefined) return
@@ -2824,7 +2839,7 @@ export function App() {
       if (root === null) return
       if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return notify(BETWEEN_VAULTS)
       // A read-only vault asks first (YAZ-4939).
-      if (!(await allowFileAction(root))) return
+      if (!asked && !(await allowFileAction(root))) return
       await runMoves(moves)
     },
     [scopeOf, runMoves, notify, allowFileAction],
@@ -2834,10 +2849,10 @@ export function App() {
     async (oldPath: string, to: RenameTo, kind: TreeNode['type']): Promise<void> => {
       const { root, wikilinks } = scopeOf(oldPath)
       if (root === null) return
-      // A read-only vault asks first (YAZ-4939); a move's door below then finds the allowance.
+      // A read-only vault asks first (YAZ-4939), once: the move door below does not ask again (YAZ-4985).
       if (!(await allowFileAction(root))) return
       // A MOVE keeps the name: it is the list door's, a list of one (YAZ-3250 D1).
-      if (to.title === undefined && !isNameChange(oldPath, to.newPath)) return requestMoves([{ oldPath, newPath: to.newPath, kind }])
+      if (to.title === undefined && !isNameChange(oldPath, to.newPath)) return requestMoves([{ oldPath, newPath: to.newPath, kind }], true)
       const catalog = await catalogForRename(oldPath, kind)
       if (catalog === undefined) return
       if (!settings.confirmRename) return renameFile(oldPath, to, catalog)
@@ -2963,9 +2978,10 @@ export function App() {
         : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`
     }
   }, [])
-  const trashMany = useCallback(async (paths: readonly string[]): Promise<void> => {
-    // A read-only vault asks first (YAZ-4939), once for each vault of the list.
-    for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return
+  const trashMany = useCallback(async (paths: readonly string[], asked = false): Promise<void> => {
+    // A read-only vault asks first (YAZ-4939), once for each vault of the list; not again when the sidebar asked before its
+    // delete sheet (YAZ-4985: the read-only ask comes first).
+    if (!asked) for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return
     // The names before the delete, while the index still has the pages.
     const names = new Map(paths.map((path) => [path, nameOf(path)]))
     const went: DeleteResponse[] = []
@@ -3778,23 +3794,21 @@ export function App() {
           onCancel={() => setPendingRename(null)}
         />
       )}
-      {/* A file action in a read-only vault (YAZ-4939): the focus starts on Cancel, as on every sheet that guards something. */}
+      {/* A file action in a read-only vault (YAZ-4939, YAZ-4985): Enter is "Just this once", Esc is Cancel. */}
       {readOnlyAsk !== null && (
         <ConfirmSheet
           labelId="confirm-read-only-vault-text"
-          text={`This vault (${storage.vaultName(readOnlyAsk.root)}) is read only. Allow its file actions — rename, move, delete, new and paste — for 10 minutes?`}
-          confirmLabel="Allow for 10 minutes"
-          onConfirm={() => {
-            const ask = readOnlyAsk
-            setReadOnlyAsk(null)
-            scopeOf(ask.root).readOnlyVault.allowFileActions()
-            ask.resolve(true)
-          }}
-          onCancel={() => {
-            const ask = readOnlyAsk
-            setReadOnlyAsk(null)
-            ask.resolve(false)
-          }}
+          text={`This vault (${storage.vaultName(readOnlyAsk.root)}) is read only. Allow this file change?`}
+          confirmLabel="Just this once"
+          focusConfirm
+          onConfirm={() => answerReadOnly(null)}
+          onCancel={() => answerReadOnly(false)}
+          other={
+            <>
+              <button type="button" className="confirm__btn" onClick={() => answerReadOnly('minute')}>1 minute</button>
+              <button type="button" className="confirm__btn" onClick={() => answerReadOnly('ten')}>10 minutes</button>
+            </>
+          }
         />
       )}
       {/* Another window's tab of a vault this window does not show (YAZ-3637 D6): add the vault, then the tab moves here. */}

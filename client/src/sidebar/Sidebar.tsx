@@ -296,7 +296,8 @@ interface SidebarProps {
    * sound (D21), and routes ANY failure to the passive notice — this promise never rejects, so the
    * sheet just closes. No link rewriting happens downstream (LOCKED decision C).
    */
-  onDeleteEntries: (paths: string[]) => Promise<void>
+  /** `asked`: the sidebar asked the read-only door already, before its delete sheet (YAZ-4985), so App does not ask again. */
+  onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
   /** A file action in a read-only vault asks first (YAZ-4939): App's sheet, true = go on. The sidebar's New … and Paste ask through it. */
   onFileAction?: (root: string) => Promise<boolean>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
@@ -1424,20 +1425,19 @@ export function Sidebar({
    * items the count is of the notes outside them whose links reach any of them, each note once
    * (`linkingNotes`, as the drag-out box counts, YAZ-3254 D9B).
    */
-  const askDelete = useCallback(
-    (picked: string[]) => {
-      const paths = outermost(picked)
+  const openDelete = useCallback(
+    (paths: string[], asked: boolean) => {
       const first = paths[0]
       if (first === undefined) return
       // The setting finally gates the sheet (YAZ-857 — it existed end-to-end but nothing read
       // it): off → delete directly, exactly what "Don't ask me again" promised (S71).
       if (!settings.confirmDelete) {
-        void onDeleteEntries(paths)
+        void onDeleteEntries(paths, asked)
         return
       }
       // The row's kind from the tree: ⌘⌫ has no menu to read it from.
       const kindOf = (path: string): 'file' | 'dir' => findNode(forest ?? [], path)?.type ?? (menu?.rowKind === 'file' ? 'file' : 'dir')
-      const target: DeleteTarget = paths.length === 1 ? { path: first, kind: kindOf(first) } : { path: first, kind: kindOf(first), paths }
+      const target: DeleteTarget = paths.length === 1 ? { path: first, kind: kindOf(first), asked } : { path: first, kind: kindOf(first), paths, asked }
       if (paths.length === 1 && target.kind === 'dir') target.children = countChildren(forest ?? [], first)
       setConfirmingDelete(target)
       // The index is only needed for the count, so it rides in asynchronously and the sheet
@@ -1462,6 +1462,25 @@ export function Sidebar({
     [menu, rootOf, forest, dirsOf, settings.confirmDelete, onDeleteEntries],
   )
 
+  const askDelete = useCallback(
+    (picked: string[]) => {
+      const paths = outermost(picked)
+      const first = paths[0]
+      if (first === undefined) return
+      // A read-only vault asks FIRST (YAZ-4985: Yaseen saw the plain delete sheet in one): once for each vault of the
+      // list, then the delete sheet, which App's door then does not ask again.
+      if (onFileAction !== undefined) {
+        void (async () => {
+          for (const vault of new Set(paths.map((path) => vaultOf(path).root))) if (!(await onFileAction(vault))) return
+          openDelete(paths, true)
+        })()
+        return
+      }
+      openDelete(paths, false)
+    },
+    [onFileAction, vaultOf, openDelete],
+  )
+
   const confirmDelete = useCallback(
     (dontAskAgain: boolean) => {
       const target = confirmingDelete
@@ -1469,7 +1488,7 @@ export function Sidebar({
       if (target === null) return
       if (dontAskAgain) onChangeSettings({ ...settings, confirmDelete: false })
       // Fire and forget: App owns the result and routes every failure to the passive notice.
-      void onDeleteEntries(target.paths ?? [target.path])
+      void onDeleteEntries(target.paths ?? [target.path], target.asked)
     },
     [confirmingDelete, onDeleteEntries, onChangeSettings, settings],
   )

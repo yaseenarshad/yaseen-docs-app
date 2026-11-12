@@ -2554,7 +2554,7 @@ describe('App ⌘-click on the daily note button (YAZ-3776)', () => {
     await act(async () => {})
     expect(bridge.makeDailyNote).not.toHaveBeenCalled()
     await press(false)
-    await act(async () => button('Allow for 10 minutes')?.click())
+    await act(async () => button('10 minutes')?.click())
     await act(async () => {})
     await act(async () => {})
     expect(Object.keys(files)).toEqual([`${v}/Daily/${today()}.md`])
@@ -4418,7 +4418,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         trashing(b.bridge)
       })
 
-    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "Allow for 10 minutes" opens the vault’s file actions that long, then it asks again', async () => {
+    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "10 minutes" opens the vault’s file actions that long, then it asks again', async () => {
       // "Ask before renaming" off: the rename sheet would otherwise stand between the vault's sheet and the rename.
       const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
         feed(b)
@@ -4432,7 +4432,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
       // Delete asks; Cancel deletes nothing.
       act(() => void captured.sidebar?.onDeleteEntries(['/v/B.md']))
       await act(async () => {})
-      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow its file actions — rename, move, delete, new and paste — for 10 minutes?')
+      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow this file change?')
+      expect([...el.querySelectorAll('.confirm__actions button')].map((b) => b.textContent)).toEqual(['1 minute', '10 minutes', 'Cancel', 'Just this once'])
       expect(bridge.file.delete).not.toHaveBeenCalled()
       await act(async () => button('Cancel')?.click())
       expect(sheet()).toBeNull()
@@ -4442,7 +4443,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => {})
       expect(sheet()).not.toBeNull()
       expect(bridge.file.rename).not.toHaveBeenCalled()
-      await act(async () => button('Allow for 10 minutes')?.click())
+      await act(async () => button('10 minutes')?.click())
       await act(async () => {})
       expect(sheet()).toBeNull()
       expect(renames(bridge)).toEqual([['/v/B.md', '/v/C.md']])
@@ -4460,6 +4461,43 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => button('Cancel')?.click())
       expect(bridge.file.delete.mock.calls.length).toBe(1)
       clock.mockRestore()
+    })
+
+    it('YAZ-4985: "Just this once" (Enter) lets one action through and leaves no allowance: the next action asks again; a pure move by rename asks once; a delete the sidebar asked already does not ask again', async () => {
+      const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        trashing(b.bridge)
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const enter = () => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+      // Two files in one Delete: one action, one ask.
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/A.md', '/v/B.md']))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      enter()
+      await settle()
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete.mock.calls.map(([req]) => req.path)).toEqual(['/v/A.md', '/v/B.md'])
+      // No allowance stayed: the next action asks again.
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')?.click())
+      expect(bridge.file.delete).toHaveBeenCalledTimes(2)
+      // A drag's move of one row comes to the rename door, which hands it to the move door: one ask, not two.
+      act(() => void captured.sidebar?.onRenameFile('/v/R.md', '/v/Docs/R.md', 'file'))
+      await act(async () => {})
+      enter()
+      await settle()
+      expect(sheet()).toBeNull()
+      expect(renames(bridge)).toEqual([['/v/R.md', '/v/Docs/R.md']])
+      // The sidebar asked before its delete sheet (`asked`): App does not ask again.
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Docs/R.md'], true))
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete).toHaveBeenCalledTimes(3)
     })
 
     it('YAZ-4985: an Undo or a Redo in a read-only vault asks first — a Delete made while the vault was not read only does not come back by ⌘Z, and ⌘⇧Z does not delete it again, until "Allow for 10 minutes"', async () => {
@@ -4489,7 +4527,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(putBacks(bridge)).toEqual([])
       await press()
       expect(sheet()).not.toBeNull()
-      await act(async () => button('Allow for 10 minutes')?.click())
+      await act(async () => button('10 minutes')?.click())
       await settle()
       expect(putBacks(bridge)).toEqual([[`${TRASH}/B.md 1`, '/v/B.md']])
       // The redo of the delete: allowed for 10 minutes now, so it runs; past them it asks.
