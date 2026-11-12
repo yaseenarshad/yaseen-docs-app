@@ -1444,7 +1444,7 @@ export function Sidebar({
       // The setting finally gates the sheet (YAZ-857 — it existed end-to-end but nothing read
       // it): off → delete directly, exactly what "Don't ask me again" promised (S71).
       if (!settings.confirmDelete) {
-        void onDeleteEntries(paths, asked)
+        void (asked ? onDeleteEntries(paths, true) : onDeleteEntries(paths))
         return
       }
       // The row's kind from the tree: ⌘⌫ has no menu to read it from.
@@ -1500,7 +1500,7 @@ export function Sidebar({
       if (target === null) return
       if (dontAskAgain) onChangeSettings({ ...settings, confirmDelete: false })
       // Fire and forget: App owns the result and routes every failure to the passive notice.
-      void onDeleteEntries(target.paths ?? [target.path], target.asked)
+      void (target.asked === true ? onDeleteEntries(target.paths ?? [target.path], true) : onDeleteEntries(target.paths ?? [target.path]))
     },
     [confirmingDelete, onDeleteEntries, onChangeSettings, settings],
   )
