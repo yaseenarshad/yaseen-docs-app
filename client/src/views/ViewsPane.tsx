@@ -1,4 +1,5 @@
 import { boardOptionGroups } from './boardOptionGroups'
+import { useUnit } from '../vault/unitWord'
 import { LinkFoldersContext } from './view/NotesFromPicker'
 import { columnTyping, optionOrderFor, optionParentFor } from './editorType'
 import { alsoIn } from '@shared/alsoIn'
@@ -299,6 +300,7 @@ const PILL_HOVER = '\u0000pill'
 const noHover = (): void => undefined
 
 export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: noteRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, hoverLinks = false, confirmChanges = false, onConfirmChangesOff, showNewButtons = true, previewScope, diagramDarkColors = 'adapt', folderPages: defaults = DEFAULT_FOLDER_PAGES }: ViewsPaneProps) {
+  const unit = useUnit()
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -918,7 +920,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
             const at = ref.path
             if (at === null) return
             const now = latest.current.folder.vaultRecords.find((r) => r.path === at)
-            if (now !== undefined && now.ctime > bornAt + NEWER_FILE_MS) return folder.onNotice?.("Can't undo: another note stands where the new row was")
+            if (now !== undefined && now.ctime > bornAt + NEWER_FILE_MS) return folder.onNotice?.(unit("Can't undo: another note stands where the new row was"))
             void trash([at]).catch((err: unknown) => folder.onNotice?.(`Can't undo: ${err instanceof Error ? err.message : String(err)}`))
           }
           // One step of the page's history too (S41); its undo trashes the note, so it has no redo. The toast's Undo is that step (T9e).

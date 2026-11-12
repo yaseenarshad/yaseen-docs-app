@@ -66,6 +66,7 @@
  * ⌘+ / ⌘− / ⌘0 with the mouse over the table of contents, or the focus in it, zoom the names and never
  * the note: a DOCUMENT CAPTURE listener claims the step before the note's own listener sees it.
  */
+import { useUnit } from '../../vault/unitWord'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from 'react'
 import { stepSidebarZoom, TOC_DEFAULT_W, TOC_MAX_W, type ContentWidth, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
 import { ENOUGH_ROWS, type TocChannel, type TocRow } from './tocChannel'
@@ -226,6 +227,7 @@ export interface TableOfContentsProps {
 }
 
 export function TableOfContents({ channel, mode, contentWidth, onChangeMode, width, onChangeWidth, hostRef, onReturnFocus, folds, onChangeFolds, zoom, onChangeZoom }: TableOfContentsProps) {
+  const unit = useUnit()
   const { rows: all, zoomed } = useSyncExternalStore(channel.subscribe, channel.getState)
   const listed = useMemo(() => shownRows(all), [all])
   const keys = useMemo(() => tocFoldKeys(all), [all])
@@ -633,7 +635,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
                 {ends}
                 {/* Offered only where it does something: names need `NAMES_FLOOR` of width even when pinned. */}
                 {mode === 'auto' && box.width >= NAMES_FLOOR && (
-                  <button type="button" className="toc__pin" title="Pin: keep the table of contents open beside the note" onClick={() => onChangeMode('pinned')}>
+                  <button type="button" className="toc__pin" title={unit('Pin: keep the table of contents open beside the note')} onClick={() => onChangeMode('pinned')}>
                     <PinIcon />
                     <span>Pin</span>
                   </button>

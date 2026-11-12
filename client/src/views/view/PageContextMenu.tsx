@@ -1,4 +1,5 @@
 import { Fragment, useContext, useState, type ReactNode } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { FlyoutParent, MenuFlyout, useFlyout } from '../../components/Flyout'
 import { PageActions } from '../../lib/pageActions'
 import { CopyIcon, EyeIcon, HeartIcon } from './icons'
@@ -31,6 +32,7 @@ interface PageContextMenuProps {
 
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
 export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose, extra, danger, onOpenWindow }: PageContextMenuProps) {
+  const unit = useUnit()
   // A folder row's page is its folder (YAZ-4579 D32): Copy path and Reveal name the directory, not its hidden `.folder.md`.
   const page = rowPage(path)
   // "Move to Other files" (YAZ-4597 D46): its own group, after the surface's groups and before the destructive one (C8),
@@ -124,7 +126,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
         onChoose={run(() => moveToTray(path))}
       >
         <div className="ctx-menu__group" role="group">
-          {item(<span className="ctx-menu__label"><FileIcon path={path} />{title} (note)</span>, () => moveToTray(path), undefined, true)}
+          {item(<span className="ctx-menu__label"><FileIcon path={path} />{title} ({unit('note')})</span>, () => moveToTray(path), undefined, true)}
           {item(<span className="ctx-menu__label"><FileIcon path={subfolder.dir} folder />{subfolder.name} (folder)</span>, () => folderTray.move(subfolder.dir), undefined, true)}
         </div>
       </FlyoutParent>,

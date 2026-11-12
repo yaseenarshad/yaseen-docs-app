@@ -6,6 +6,7 @@
  * folder pages' mini window editor (App's `renderNoteEditor`), so saving, renames and conflicts are the app's own.
  * In edit a link opens a layer on top too. The head's ↗ opens the note in a tab, as ⌘↵ does.
  */
+import { UnitContext, useVaultUnit } from '../vault/unitWord'
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
@@ -81,6 +82,8 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
 export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, wide, onToggleWide, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+  // The layer's vault's word for a note (YAZ-4938), for its own words and for every panel inside it.
+  const unit = useVaultUnit(vault.root)
   const bodyRef = useRef<HTMLDivElement>(null)
   /** Where the read-only Crepe mounts: its own box ABOVE the comment stream and the mentions, as the note tab stacks them. */
   const mountRef = useRef<HTMLDivElement>(null)
@@ -204,7 +207,7 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
 
   const note = fileKind(path) === 'markdown'
   return (
-    <>
+    <UnitContext.Provider value={unit}>
       <div
         className="explore__head"
         onContextMenu={(e) => {
@@ -223,7 +226,7 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
           <>
             <span className="explore__mode">Reading</span>
             {note && (
-              <button type="button" className="explore__button" onClick={onToggleEdit} title="Edit this note here (E)">
+              <button type="button" className="explore__button" onClick={onToggleEdit} title={unit('Edit this note here (E)')}>
                 Edit<kbd>E</kbd>
               </button>
             )}
@@ -265,6 +268,6 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
           )}
         </div>
       )}
-    </>
+    </UnitContext.Provider>
   )
 }

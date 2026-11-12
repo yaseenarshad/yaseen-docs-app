@@ -6,6 +6,7 @@
  * click, and Reset brings today's look back. Every default is today's look.
  */
 import { useEffect, useState } from 'react'
+import { useUnit } from '../vault/unitWord'
 import { LINK_PILL_COLORS, LINK_PILL_QUICK_PICKS, LINK_PILL_TEXT_MAX, isDefaultLinkPills, isPlainLinkPills, plainLinkPills, withLinkPills, type LinkPillColor, type LinkPills } from '@shared/linkPills'
 import { linkPillVars, pillParts } from '../editor/wikilink/linkPillLook'
 import { PillHead, PillTail } from '../editor/wikilink/LinkPillParts'
@@ -202,9 +203,10 @@ export function PillShapeControl({ look }: RowProps) {
 
 /** One pill of the preview, as a folder page's cell draws one: the editor's classes, the icon after the head piece, the pieces the look adds. */
 function PreviewPill({ pills, vault, text, path, otherVault = null, info, missing = false }: { pills: LinkPills; vault: string | null; text: string; path?: string; otherVault?: string | null; info?: { id?: string; folder: string }; missing?: boolean }) {
+  const unit = useUnit()
   const { head, tail } = pillParts(pills, { info, otherVault }, vault)
   return (
-    <span className={`wikilink view-link-pill${missing || path === undefined ? ' wikilink--unresolved' : ''}`} title={missing ? 'A link to a note that does not exist yet' : text}>
+    <span className={`wikilink view-link-pill${missing || path === undefined ? ' wikilink--unresolved' : ''}`} title={missing ? unit('A link to a note that does not exist yet') : text}>
       {head !== null && <PillHead head={head} />}
       {!missing && path !== undefined && <FileIcon path={path} />}
       {text}
@@ -218,14 +220,15 @@ function PreviewPill({ pills, vault, text, path, otherVault = null, info, missin
  * vault gives its notes IDs, so the note pill can show one.
  */
 export function LinkPillsPreview({ look, vault, ids }: RowProps & { vault: string | null; ids: boolean }) {
+  const unit = useUnit()
   const { pills, save } = look
   const plain = isPlainLinkPills(pills)
   return (
     <div className="link-pills-preview-row">
       <p className="link-pills-preview" aria-label="Link pills preview" style={linkPillVars(pills)}>
-        Read the <PreviewPill pills={pills} vault={vault} text="Roadmap" path="/preview/Roadmap.md" info={ids ? { id: 'YAS-12', folder: 'Projects/Plans' } : { folder: 'Projects/Plans' }} /> note, the{' '}
+        Read the <PreviewPill pills={pills} vault={vault} text="Roadmap" path="/preview/Roadmap.md" info={ids ? { id: 'YAS-12', folder: 'Projects/Plans' } : { folder: 'Projects/Plans' }} /> {unit('note, the')}{' '}
         <PreviewPill pills={pills} vault={vault} text="Q3 plan" path="/preview/Q3 plan.excalidraw" info={{ folder: 'Boards' }} /> board, and{' '}
-        <PreviewPill pills={pills} vault={vault} text="Budget" path="/preview/Budget.md" otherVault="Wiki" /> in another vault. <PreviewPill pills={pills} vault={vault} text="Old plan" missing /> has no note yet.
+        <PreviewPill pills={pills} vault={vault} text="Budget" path="/preview/Budget.md" otherVault="Wiki" /> in another vault. <PreviewPill pills={pills} vault={vault} text="Old plan" missing /> {unit('has no note yet.')}
       </p>
       <span className="settings__options" role="group" aria-label="Link pills quick buttons">
         <button type="button" className={`settings__option${plain ? ' settings__option--active' : ''}`} aria-pressed={plain} title="No background, the text's colour, no icon" onClick={() => save(plain ? withLinkPills(pills, { background: undefined, strength: undefined, text: undefined, icon: undefined }) : plainLinkPills(pills))}>

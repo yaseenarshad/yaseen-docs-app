@@ -97,6 +97,7 @@ import { tabOfRef, windowLabel } from './tabs/windowLabel'
 import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
 import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots, vaultRefusal } from './vault/slots'
+import { SAME_WORD, UnitContext, vaultUnit, type UnitText } from './vault/unitWord'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
@@ -201,8 +202,8 @@ const overEdge = (roots: readonly string[], oldPath: string, newPath: string): b
  * not move — "Can't undo: Plan moved again" (S36). Only the failure when nothing moved. The links that followed
  * are said after what moved, as the move's own toast says them (YAZ-3337): a note skipped there is never silent.
  */
-export function replayNotice(verb: 'undo' | 'redo', moved: readonly NamedItem[], failed: readonly string[], links: RenameRewriteSummary = { updated: 0, skipped: 0 }): string {
-  const head = moved.length === 0 ? null : renamedNotice(verb === 'undo' ? `Moved back ${namedItems(moved)}` : `Moved ${namedItems(moved)}`, links)
+export function replayNotice(verb: 'undo' | 'redo', moved: readonly NamedItem[], failed: readonly string[], links: RenameRewriteSummary = { updated: 0, skipped: 0 }, unit: UnitText = SAME_WORD): string {
+  const head = moved.length === 0 ? null : renamedNotice(verb === 'undo' ? `Moved back ${namedItems(moved)}` : `Moved ${namedItems(moved)}`, links, unit)
   return stepNotice(verb, head, failed)
 }
 
@@ -226,7 +227,7 @@ const renameReplayFailure = (name: string, taken: string, type: 'file' | 'dir', 
   err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS' ? `a ${type === 'dir' ? 'folder' : 'file'} named ${taken} is there now` : againFailure(name, err)
 
 /** A rename's toast (YAZ-3268 D18): `Renamed to "Plan v2"` or `Renamed back to "Plan"`, then the links that followed, as a rename says them. */
-const renamedNotice = (head: string, links: RenameRewriteSummary): string => (links.updated > 0 || links.skipped > 0 ? `${head}. ${renameNotice(links)}` : head)
+const renamedNotice = (head: string, links: RenameRewriteSummary, unit: UnitText = SAME_WORD): string => (links.updated > 0 || links.skipped > 0 ? `${head}. ${renameNotice(links, unit)}` : head)
 
 /** Why one item of a delete's undo stayed in the Trash (S59, S60): it left the Trash, or its old name is taken; else main's own words. */
 const putBackFailure = (name: string, item: DeleteStep['items'][number], err: unknown): string => {
@@ -241,9 +242,9 @@ const putBackFailure = (name: string, item: DeleteStep['items'][number], err: un
  * 1: Plan already exists" (S11). The links that followed are said after it, as a rename says them. Null when nothing
  * ran at all.
  */
-export function movedNotice(moved: readonly NamedItem[], failed: readonly string[], links: RenameRewriteSummary): string | null {
+export function movedNotice(moved: readonly NamedItem[], failed: readonly string[], links: RenameRewriteSummary, unit: UnitText = SAME_WORD): string | null {
   const text = gestureNotice(moved.length === 0 ? null : `Moved ${namedItems(moved)}`, failed, "Can't move")
-  return moved.length > 0 && (links.updated > 0 || links.skipped > 0) ? `${text}. ${renameNotice(links)}` : text
+  return moved.length > 0 && (links.updated > 0 || links.skipped > 0) ? `${text}. ${renameNotice(links, unit)}` : text
 }
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
@@ -2432,7 +2433,7 @@ export function App() {
         return
       }
       moveHistory.current.push({ step: 'rename', path: out.move.newPath, from, to, type: out.move.kind })
-      stepToast(renamedNotice(`Renamed to "${to.title ?? nameOf(out.move.newPath)}"`, out.links), 'info', 'undo', out.links.skipped > 0)
+      stepToast(renamedNotice(`Renamed to "${to.title ?? nameOf(out.move.newPath)}"`, out.links, vaultUnit(scopeOf(out.move.newPath).root)), 'info', 'undo', out.links.skipped > 0)
     },
     [applyRename, nameOf, notify, stepToast],
   )
@@ -2549,7 +2550,7 @@ export function App() {
         links.skipped += out.links.skipped
       }
       if (record) {
-        const text = movedNotice(names, failed, links)
+        const text = movedNotice(names, failed, links, vaultUnit(scopeOf(moves[0].newPath).root))
         if (done.moves.length > 0) recordMoves(done, text!, failed.length > 0 || links.skipped > 0)
         else if (text !== null) notify(text, 'error')
       }
@@ -2584,7 +2585,7 @@ export function App() {
     if (verb === 'undo') moveHistory.current.undone(now)
     else moveHistory.current.redone(now)
     const shown = side.title ?? nameOf(out.move.newPath)
-    stepToast(renamedNotice(verb === 'undo' ? `Renamed back to "${shown}"` : `Renamed to "${shown}"`, out.links), 'info', verb === 'undo' ? 'redo' : 'undo', out.links.skipped > 0)
+    stepToast(renamedNotice(verb === 'undo' ? `Renamed back to "${shown}"` : `Renamed to "${shown}"`, out.links, vaultUnit(scopeOf(out.move.newPath).root)), 'info', verb === 'undo' ? 'redo' : 'undo', out.links.skipped > 0)
   }, [nameOf, catalogForRename, applyRename, notify, stepToast])
 
   /**
@@ -2667,7 +2668,7 @@ export function App() {
         if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves) })
         else if (back.failed.length > back.again) moveHistory.current.redone(entry)
         // The names in the order of the gesture it undoes, as its own toast said them (YAZ-3274 D22): the moves ran newest first.
-        const text = replayNotice('undo', [...back.names].reverse(), back.failed, back.links)
+        const text = replayNotice('undo', [...back.names].reverse(), back.failed, back.links, vaultUnit(scopeOf(entry.moves[0].oldPath).root))
         // Nothing ran and nothing failed: the window's vaults changed under it, and there is nothing to say.
         if (back.moves.length === 0) {
           if (text !== '') notify(text, 'error')
@@ -2700,7 +2701,7 @@ export function App() {
         const run = await runMoves(entry.moves, { record: false })
         if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves })
         else if (run.failed.length > run.again) moveHistory.current.undone(entry)
-        const text = replayNotice('redo', run.names, run.failed, run.links)
+        const text = replayNotice('redo', run.names, run.failed, run.links, vaultUnit(scopeOf(entry.moves[0].oldPath).root))
         if (run.moves.length === 0) {
           if (text !== '') notify(text, 'error')
         }
@@ -3303,7 +3304,7 @@ export function App() {
           {dragOutAsk !== null && (
             // The box after a drag out to Finder (YAZ-3254 D9B): it stays until answered, and ✕ or Esc keeps everything (S28).
             <div className="drag-out-ask" role="alertdialog" aria-labelledby="drag-out-ask-text">
-              <span id="drag-out-ask-text" className="drag-out-ask__text">{dragOutText(dragOutAsk)}</span>
+              <span id="drag-out-ask-text" className="drag-out-ask__text">{dragOutText(dragOutAsk, vaultUnit(scopeOf(dragOutAsk.paths[0]).root))}</span>
               <button type="button" className="drag-out-ask__remove" onClick={() => void removeDraggedOut()}>
                 Remove from vault
               </button>
@@ -3328,7 +3329,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Note (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
@@ -3612,7 +3613,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  {id !== held && <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackgroundCopy} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />}
+                  {id !== held && <UnitContext.Provider value={scopeOf(path).unit.unit}><RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackgroundCopy} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} /></UnitContext.Provider>}
                 </div>
               )
             })}
@@ -3622,11 +3623,11 @@ export function App() {
                 on one path would run two autosaves, so there is never a second. */}
             {session !== null &&
               (session.path === null || (rightPanel.open && rightPanel.items.includes(session.path)) ? (
-                <ReviewMessage session={session} onClose={review.close} />
+                <UnitContext.Provider value={active.unit.unit}><ReviewMessage session={session} onClose={review.close} /></UnitContext.Provider>
               ) : (
                 reviewLayer === null && (
                   <div key={session.path} className="tabstack__layer" style={textVarsFor(session.path)}>
-                    <RetainedEditor {...editorPropsFor(session.path)} path={session.path} onOpenFile={openBackground} onOpenFileBackground={openBackground} onOpenLinkBackground={openBackgroundCopy} />
+                    <UnitContext.Provider value={scopeOf(session.path).unit.unit}><RetainedEditor {...editorPropsFor(session.path)} path={session.path} onOpenFile={openBackground} onOpenFileBackground={openBackground} onOpenLinkBackground={openBackgroundCopy} /></UnitContext.Provider>
                   </div>
                 )
               ))}
@@ -3666,12 +3667,14 @@ export function App() {
                 style={textVarsFor(path)}
                 className={path === rightPanel.expanded ? 'right-panel__editor-layer' : 'right-panel__editor-layer right-panel__editor-layer--hidden'}
               >
-                <RightWorkspaceEditor
-                  {...editorPropsFor(path)}
-                  path={path}
-                  navigate={navigateRight}
-                  onOpenFileBackground={openRightBackground}
-                />
+                <UnitContext.Provider value={scopeOf(path).unit.unit}>
+                  <RightWorkspaceEditor
+                    {...editorPropsFor(path)}
+                    path={path}
+                    navigate={navigateRight}
+                    onOpenFileBackground={openRightBackground}
+                  />
+                </UnitContext.Provider>
               </div>
             ))}
           </div>
@@ -3692,6 +3695,7 @@ export function App() {
           kind={pendingRename.kind}
           count={pendingRename.count}
           titles={titles}
+          unit={vaultUnit(scopeOf(pendingRename.oldPath).root)}
           onConfirm={confirmRename}
           onCancel={() => setPendingRename(null)}
         />

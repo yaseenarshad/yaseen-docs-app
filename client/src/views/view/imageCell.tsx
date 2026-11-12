@@ -1,4 +1,5 @@
 import './imageCell.css'
+import { useUnit } from '../../vault/unitWord'
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { IMAGE_EXTENSIONS, IMAGE_SIZE_DEFAULT, type PropertyDecl, type TreeNode } from '@shared/types'
@@ -121,6 +122,7 @@ const message = (err: unknown): string => (err instanceof Error ? err.message : 
  * Mac or a web address, each saved into `assets/images/` first. A pick answers the value to write; Remove answers null.
  */
 function ImagePicker({ anchor, root, current, label, onPick, onClose }: { anchor: HTMLElement | null; root: string | null; current: string | null; label: string; onPick: (value: string | null) => void; onClose: () => void }) {
+  const unit = useUnit()
   const [tab, setTab] = useState<'vault' | 'upload'>('vault')
   const [query, setQuery] = useState('')
   const [files, setFiles] = useState<string[] | null>(null)
@@ -166,7 +168,7 @@ function ImagePicker({ anchor, root, current, label, onPick, onClose }: { anchor
         </button>
       </div>
       {root === null ? (
-        <p className="image-picker__note">This note is not in a vault.</p>
+        <p className="image-picker__note">{unit('This note is not in a vault.')}</p>
       ) : tab === 'vault' ? (
         <>
           <input className="view-input image-picker__search" type="search" aria-label="Search images" placeholder="Search images" value={query} onChange={(e) => setQuery(e.target.value)} />

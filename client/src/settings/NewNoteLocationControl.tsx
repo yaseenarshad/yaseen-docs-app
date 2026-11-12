@@ -12,6 +12,7 @@
  * "Choose…" beside it opens the in-app place picker (YAZ-3556 D6) on the window's folders, the active tab's vault
  * first; the pick is stored by its path in the vault, as a typed one is. A window with no vault has no picker.
  */
+import { useUnit } from '../vault/unitWord'
 import { useEffect, useState } from 'react'
 import { isValidNewNoteFolder, type SettingsState } from '@shared/types'
 import { placePath, placeRel } from '../sidebar/goToPlace'
@@ -27,6 +28,7 @@ interface NewNoteLocationControlProps {
 }
 
 export function NewNoteLocationControl({ settings, onChange, vaults }: NewNoteLocationControlProps) {
+  const unit = useUnit()
   const [folderDraft, setFolderDraft] = useState(settings.newNoteFolder)
   const [picking, setPicking] = useState(false)
   const [folderInvalid, setFolderInvalid] = useState(false)
@@ -48,7 +50,7 @@ export function NewNoteLocationControl({ settings, onChange, vaults }: NewNoteLo
 
   return (
     <>
-      <Select options={NEW_NOTE_LOCATION_OPTIONS} value={settings.newNoteLocation} onChange={(newNoteLocation) => onChange({ ...settings, newNoteLocation })} ariaLabel="Default location for new notes" />
+      <Select options={NEW_NOTE_LOCATION_OPTIONS} value={settings.newNoteLocation} onChange={(newNoteLocation) => onChange({ ...settings, newNoteLocation })} ariaLabel={unit('Default location for new notes')} />
       {settings.newNoteLocation === 'folder' && vaults !== undefined && vaults.length > 0 && (
         <button type="button" className="settings__option" onClick={() => setPicking(true)}>
           Choose…
@@ -70,7 +72,7 @@ export function NewNoteLocationControl({ settings, onChange, vaults }: NewNoteLo
         <input
           type="text"
           className={`settings__input${folderInvalid ? ' settings__input--error' : ''}`}
-          aria-label="Folder to create new notes in"
+          aria-label={unit('Folder to create new notes in')}
           aria-invalid={folderInvalid}
           placeholder="Example: folder 1/folder 2"
           spellCheck={false}

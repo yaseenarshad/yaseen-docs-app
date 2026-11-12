@@ -1,3 +1,4 @@
+import { useUnit } from '../vault/unitWord'
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
 import { DEFAULT_SETTINGS, folderSettingsPath, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type FindFolds, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
@@ -522,6 +523,7 @@ function CrepeHost({
   /** The list's Pin and Unpin write the setting through this. */
   onChangeOutsideListPinned?: (pinned: boolean) => void
 }) {
+  const unit = useUnit()
   // A copied page starts at its source's text size (YAZ-2951 S5); after that it changes on its own.
   const [documentZoom, setDocumentZoom] = useState(startView?.magnification ?? 100)
   // Mirror for the ⌘ listener below, which is registered once (`[]`) and must read the live value.
@@ -1282,7 +1284,7 @@ function CrepeHost({
       if (codeBlockCount(view.state.doc) < 2) return
       // Short words (YAZ-4783 demo: "wow thats ugly"): the long button squeezed the message into a sliver.
       onNotice(`Code block: ${width} px`, 'info', undefined, {
-        label: 'Apply to all in this note',
+        label: unit('Apply to all in this note'),
         fades: true,
         run: () => {
           if (crepeRef.current !== crepe || !view.editable) return

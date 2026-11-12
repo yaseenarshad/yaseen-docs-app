@@ -16,6 +16,7 @@ import { useReviewSettings, type ReviewSettingsState } from '../review/useReview
 import { useLinkClick, type LinkClickState } from '../explore/linkClick'
 import { useShowIds, type ShowIdsState } from '../search/showIds'
 import { useLinkPills, type LinkPillsState } from '../settings/useLinkPills'
+import { useVaultUnitWord, type UnitWordState } from './unitWord'
 import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
 import { useProperties } from '../views/useProperties'
 
@@ -46,6 +47,8 @@ export interface VaultScope {
   linkClick: LinkClickState
   /** This vault's "Show IDs in search" (YAZ-4940): `.yaseendocs/show-ids.json`. */
   showIds: ShowIdsState
+  /** What this vault calls a note (YAZ-4938): `.yaseendocs/unit-word.json`, and the helper that gives each label its word. */
+  unit: UnitWordState
   /** How text looks in every note of this vault (YAZ-3066 D10): `.yaseendocs/text-formatting.json`. Each page layer of the vault reads it (D12). */
   textFormatting: TextFormattingState
   /** How every link pill of this vault looks (YAZ-4924): `.yaseendocs/link-pills.json`. Each page layer reads its CSS variables; `wikilinks` carries the pieces a pill gains. */
@@ -122,6 +125,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const reviewSettings = useReviewSettings(root, notify)
   const linkClick = useLinkClick(root)
   const showIds = useShowIds(root)
+  const unit = useVaultUnitWord(root)
   const textFormatting = useTextFormatting(root, notify)
   const linkPills = useLinkPills(root, notify)
   // The look's text pieces and the vault's name reach every editor of the vault through its resolve source (YAZ-4924):
@@ -187,6 +191,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     reviewSettings,
     linkClick,
     showIds,
+    unit,
     textFormatting,
     linkPills,
     review,

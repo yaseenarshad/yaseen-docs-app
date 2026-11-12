@@ -21,7 +21,8 @@
 import type { ReactNode } from 'react'
 import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type TextAlign } from '@shared/types'
 import { Segmented, Select, Stepper } from './controls'
-import { DIAGRAM_DARK_COLORS_OPTIONS, EMBED_REST_OPTIONS, NEW_BOARD_FOLDER_OPTIONS, ON_OFF_OPTIONS, type Option } from './options'
+import { DIAGRAM_DARK_COLORS_OPTIONS, EMBED_REST_OPTIONS, newBoardFolderOptions, ON_OFF_OPTIONS, type Option } from './options'
+import { unit } from './unitLabel'
 import type { SettingDef, SettingsSection } from './registry'
 
 const SELECT_ON_OPTIONS: readonly Option<SelectOn>[] = [
@@ -268,7 +269,7 @@ export const CANVAS_SECTION: SettingsSection = {
     {
       // YAZ-4820: a drawing or a diagram shown in a note as a window (D9), and a new one made from a note (item 3).
       // Before the draw.io group, which stays last (YAZ-4748 D11).
-      title: 'Embeds in notes',
+      title: (ctx) => unit(ctx, 'Embeds in notes'),
       items: [
         {
           id: 'embedRestSeconds',
@@ -284,8 +285,8 @@ export const CANVAS_SECTION: SettingsSection = {
           label: 'New drawings and diagrams go to',
           hint: "Where /drawing and /diagram put the new file. The file gets the note's name.",
           keywords: ['embed', 'new drawing', 'new diagram', 'folder', 'assets', 'slash', 'location'],
-          render: ({ settings, onChange }) => (
-            <Segmented options={NEW_BOARD_FOLDER_OPTIONS} value={settings.newBoardFolder} onChange={(newBoardFolder) => onChange({ ...settings, newBoardFolder })} ariaLabel="New drawings and diagrams go to" />
+          render: (ctx) => (
+            <Segmented options={newBoardFolderOptions((text) => unit(ctx, text))} value={ctx.settings.newBoardFolder} onChange={(newBoardFolder) => ctx.onChange({ ...ctx.settings, newBoardFolder })} ariaLabel="New drawings and diagrams go to" />
           ),
         },
       ],

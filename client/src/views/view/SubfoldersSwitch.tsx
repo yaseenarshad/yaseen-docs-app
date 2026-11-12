@@ -1,3 +1,4 @@
+import { useUnit } from '../../vault/unitWord'
 import { type Mutate, type SubfoldersMode, type ViewDef, showsFolderRows, subfoldersOf } from '../viewSchema'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
 import { RowLabel } from './settingRow'
@@ -26,6 +27,7 @@ interface SubfoldersSwitchProps {
  * says otherwise, YAZ-4585). Every view type has it.
  */
 export function SubfoldersSwitch({ view, own, viewIndex, onUpdate, className = 'view-settings-row' }: SubfoldersSwitchProps) {
+  const unit = useUnit()
   const defaults = useViewDefaults()
   return (
     <label className={className}>
@@ -41,7 +43,7 @@ export function SubfoldersSwitch({ view, own, viewIndex, onUpdate, className = '
       >
         {MODES.map(([mode, label]) => (
           <option key={mode} value={mode}>
-            {label}
+            {unit(label)}
           </option>
         ))}
       </select>

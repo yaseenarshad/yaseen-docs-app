@@ -1,4 +1,5 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { holdFrames } from '../../lib/colResize'
 import { openByKey, openTarget } from '../../lib/openGesture'
 import {
@@ -159,6 +160,7 @@ function gridLines(view: ViewDef | undefined): CSSProperties | undefined {
 }
 
 export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, noteDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+  const unitText = useUnit()
   // The view's "Folder icon" (YAZ-4848), through the page's folder context; on outside a folder page.
   const folderIcons = useContext(FolderPages)?.folderIcons ?? true
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
@@ -293,7 +295,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   if (dateKey === null)
     return (
       <div className="view-cal__hint">
-        <p>Calendar views place notes on a date. Add a Date column in Properties, or give a note a date such as 2026-12-03.</p>
+        <p>{unitText('Calendar views place notes on a date. Add a Date column in Properties, or give a note a date such as 2026-12-03.')}</p>
       </div>
     )
 
@@ -548,7 +550,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
    * keeps that colour.
    */
   const menuItems = (m: NonNullable<typeof menu>) => {
-    const items = cardMenuItems(noteDoors, m.path, () => setMenu(null), m.day === null || onNewOnDay === undefined ? undefined : { label: 'New note on this day', run: () => onNewOnDay(m.day!) })
+    const items = cardMenuItems(noteDoors, m.path, () => setMenu(null), m.day === null || onNewOnDay === undefined ? undefined : { label: unitText('New note on this day'), run: () => onNewOnDay(m.day!) })
     if (onStyle === undefined || m.locked) return items
     const properties = rows.find((r) => r.record.path === m.path)?.record.properties ?? {}
     return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(m.path, writes)} />] }
@@ -634,7 +636,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
                     <div className="view-cal__day-head">
                       <span className="view-cal__date">{Number(day.slice(8))}</span>
                       {onNewOnDay !== undefined && (
-                        <button type="button" className="view-cal__add" aria-label={`New note on ${day}`} title="New note on this day" onClick={() => onNewOnDay(day)}>
+                        <button type="button" className="view-cal__add" aria-label={unitText(`New note on ${day}`)} title={unitText('New note on this day')} onClick={() => onNewOnDay(day)}>
                           +
                         </button>
                       )}

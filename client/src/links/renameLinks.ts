@@ -67,6 +67,7 @@ import { exactLinkTarget, rewriteNoteLinks, type NewTarget, type ResolvesToOld }
 import { titleOf } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
+import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { targetBasename, targetKey } from '@shared/linkResolver'
 import { resolverFor } from '../views/engine'
 import { flushRenamedPath } from '../lib/renameContinuity'
@@ -118,8 +119,8 @@ export interface RenameRewriteSummary {
 }
 
 /** The ONE passive summary notice — shown only when the rename touched (or spared) anything. */
-export function renameNotice({ updated, skipped }: RenameRewriteSummary): string {
-  const head = `Updated links in ${updated} note${updated === 1 ? '' : 's'}`
+export function renameNotice({ updated, skipped }: RenameRewriteSummary, unit: UnitText = SAME_WORD): string {
+  const head = unit(`Updated links in ${updated} note${updated === 1 ? '' : 's'}`)
   return skipped > 0 ? `${head}; ${skipped} skipped (unsaved changes)` : head
 }
 

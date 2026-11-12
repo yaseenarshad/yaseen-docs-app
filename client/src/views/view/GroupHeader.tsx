@@ -1,4 +1,5 @@
 import { createContext, Fragment, useContext, useState, type CSSProperties, type ReactNode } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { ImageOf } from './imageCell'
 import { isFolderRow, isShortcut } from '../../links/shortcuts'
 import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
@@ -389,6 +390,7 @@ export interface GroupHeaderProps {
 }
 
 export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, newButton = true, resolve, level = 0, gk }: GroupHeaderProps) {
+  const unit = useUnit()
   // `level` counts the levels that group (YAZ-4544): an entry with no property is none.
   const look = groupValueLook(shownGroupLevels(view)[level])
   // A Folder level's group (YAZ-4564 D27) opens that folder's page; the page's own folder and the vault root have none.
@@ -435,7 +437,7 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
         </button>
       )}
       {onNew !== undefined && newButton && (
-        <button type="button" className="view-group__new" aria-label={`New note in group ${label}`} title="New note" onClick={onNew}>
+        <button type="button" className="view-group__new" aria-label={unit(`New note in group ${label}`)} title={unit('New note')} onClick={onNew}>
           <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M8 3v10M3 8h10" />
           </svg>

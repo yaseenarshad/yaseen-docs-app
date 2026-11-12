@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX, IMAGE_SIZE_MIN, type ImageShape, type IndexRecord, type PropertiesResponse, type PropertyFormat, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { linkColumnKeys, type ColumnDecl, type FolderSettings } from '../folderSettings'
@@ -360,6 +361,7 @@ export interface ColumnDetailProps {
  * column starts with no error.
  */
 export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, onUpdate, properties, folder, shown: on, canHide, onHide, onBack, onLeave }: ColumnDetailProps) {
+  const unit = useUnit()
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
@@ -598,7 +600,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         {/* YAZ-4772: a ◌ field says so, as a parent's column does, and can become this folder's column (the C4A ask). */}
         {loose && (
           <div className="column-detail__source" role="note">
-            <span className="column-detail__source-text">◌ Only in the notes. {folderName} has no column for it.</span>
+            <span className="column-detail__source-text">{unit('◌ Only in the notes.')} {folderName} has no column for it.</span>
             {folder.addColumn !== undefined && (
               <button type="button" className="view-menu__action" onClick={() => setAdding(true)}>
                 Add to {folderName}
@@ -741,7 +743,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
               type="checkbox"
               className="view-switch"
               aria-label={`${label}: separate value for ${folderName}`}
-              title={`${folderName} keeps its own value for each note. Other pages show the note's one value.`}
+              title={unit(`${folderName} keeps its own value for each note. Other pages show the note's one value.`)}
               checked={decl?.separate === true}
               onChange={toggleSeparate}
             />
@@ -872,7 +874,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         <ConfirmSheet
           labelId="confirm-unshare-column-text"
           text={unshareMessage(unsharing, folderName)}
-          confirmLabel="Keep the notes' values"
+          confirmLabel={unit("Keep the notes' values")}
           keys="contained"
           focusConfirm
           onConfirm={() => answerUnshare('notes')}

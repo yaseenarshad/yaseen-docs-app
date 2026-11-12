@@ -1,4 +1,5 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { ViewFind } from './viewFind'
 import type { IndexRecord } from '@shared/types'
 import { type Modifiers, openByGesture, openByKey, openTarget } from '../../lib/openGesture'
@@ -126,6 +127,7 @@ export function BoardView({
   onStyle,
   hover,
 }: BoardViewProps) {
+  const unit = useUnit()
   const levels = shownGroupLevels(view)
   const levelKeys = levels.map((_, level) => groupByKey(view, level, settings.columns))
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
@@ -253,7 +255,7 @@ export function BoardView({
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
     return (
       <div className="view-board__hint">
-        <p>Board views group notes into columns. Pick a property to group by.</p>
+        <p>{unit('Board views group notes into columns. Pick a property to group by.')}</p>
         <button
           type="button"
           className="view-menu__action"

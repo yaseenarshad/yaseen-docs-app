@@ -1,4 +1,5 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { headerRowAttrs, IMAGE_SIZE_DEFAULT, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels, groupDepthOf, groupIndentOf, groupLineStyleOf, groupLinesOf, headerRowOfView, MAX_GROUP_INDENT_LEVELS, MAX_GROUP_LEVELS } from '../viewSchema'
 import { type GroupSpan, groupLinesHover, groupSpans, groupThread, holdersOf, measureGroupGuides, stuckDistance, windowedGuide, windowedLine } from './groupGuides'
@@ -313,6 +314,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
 export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFilter, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, newRows = true, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
+  const unit = useUnit()
   /**
    * YAZ-4799: the deepest Folder group a row line is drawn in (its group and the groups above it), or null: a shortcut's
    * copy under its second folder wears ↗ there, its home copy none. The page folder otherwise (`ViewFolder`).
@@ -424,9 +426,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       const c = canonicalKey(key)
       if (sources.marks === 'off' || !c.startsWith('note.')) return null
       const bare = c.slice('note.'.length)
-      return columnMark(sources, bare, settings.columns[bare]?.separate === true)
+      return columnMark(sources, bare, settings.columns[bare]?.separate === true, unit)
     }),
-    [keys, sources, settings],
+    [keys, sources, settings, unit],
   )
   const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
@@ -1174,7 +1176,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const failed = (error: unknown) => onNotice?.(`Can't write: ${error instanceof Error ? error.message : String(error)}`)
   /** Each note's writes, one write per note, at most 8 at a time (YAZ-4612 S48); more than 20 notes say so first. */
   const writeNotes = (writes: ReadonlyMap<string, PropertyWrite[]>): Promise<void> => {
-    if (writes.size > PROGRESS_AT) onNotice?.(`Writing ${writes.size} notes…`)
+    if (writes.size > PROGRESS_AT) onNotice?.(unit(`Writing ${writes.size} notes…`))
     for (const [path, w] of writes) noteWritten(path, w)
     return inBatches(
       [...writes].map(([path, w]) => () =>

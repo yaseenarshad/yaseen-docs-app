@@ -5691,11 +5691,11 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
-      // The vault's review settings, its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json']],
+      // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a note (YAZ-4938), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
+      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json']],
       coldDiff: [['/v']],
-      // vaultConfig: review, link click (YAZ-4936), text formatting and link pills (YAZ-4924), each subscribed once for each mount effect.
-      subscriptions: [2, 2, 10],
+      // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a note (YAZ-4938), text formatting and link pills (YAZ-4924), each subscribed once for each mount effect.
+      subscriptions: [2, 2, 14],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -5809,7 +5809,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(8) // review.json, link-click.json (YAZ-4936), text-formatting.json (YAZ-3066) and link-pills.json (YAZ-4924)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(12) // review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), text-formatting.json (YAZ-3066) and link-pills.json (YAZ-4924)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')

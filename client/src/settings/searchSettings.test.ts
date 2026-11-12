@@ -158,7 +158,9 @@ describe('settingCandidates', () => {
       // Settings › Files & Links › Preview on hover (YAZ-3403): the master switch, then one row per place.
       'hoverPreview',
       ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`),
-      // This vault (YAZ-4936): Clicking a link, then the IDs rows.
+      // This vault (YAZ-4938, YAZ-4940, YAZ-4936): the word for a note, Show IDs in search, Clicking a link, then the IDs rows.
+      'unitWord',
+      'showIds',
       'linkClick',
       'ids',
       'duplicates',
@@ -258,7 +260,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'linkClick', 'ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'unitWord', 'showIds', 'linkClick', 'ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {

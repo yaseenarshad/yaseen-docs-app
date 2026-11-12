@@ -10,6 +10,7 @@
  * dropdown under the bar; a row's click, Escape or a click elsewhere closes it. Its Pin pins the list, as the table of
  * contents' Pin does.
  */
+import { useUnit } from '../../vault/unitWord'
 import { useEffect, useRef, useState, useSyncExternalStore, type MouseEvent, type RefObject } from 'react'
 import type { OutsideChangesChannel } from './outsideChangesChannel'
 import { OutsideChangeRows, useOutsideRows } from './OutsideChangesList'
@@ -21,6 +22,7 @@ const hold = (event: MouseEvent): void => event.preventDefault()
 
 /** The dropdown: the numbered rows under the bar, closed by a row's click, Escape or a press outside it. */
 function RowsDropdown({ channel, onClose, opener, onPin }: { channel: OutsideChangesChannel; onClose: () => void; opener: RefObject<HTMLElement | null>; onPin?: () => void }) {
+  const unit = useUnit()
   const rows = useOutsideRows(channel)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -48,7 +50,7 @@ function RowsDropdown({ channel, onClose, opener, onPin }: { channel: OutsideCha
       {onPin && (
         <div className="outside-list__header">
           <span className="outside-list__title">Outside changes</span>
-          <button type="button" className="toc__pin" title="Pin: keep the list open left of the note" onMouseDown={hold} onClick={onPin}>
+          <button type="button" className="toc__pin" title={unit('Pin: keep the list open left of the note')} onMouseDown={hold} onClick={onPin}>
             <PinIcon />
             <span>Pin</span>
           </button>
@@ -90,6 +92,7 @@ function FadeCountdown({ at, onKeep }: { at: number; onKeep?: () => void }) {
 }
 
 export function OutsideChangesBar({ channel, pinned = false, onPin, onKeep }: { channel: OutsideChangesChannel; pinned?: boolean; onPin?: (pinned: boolean) => void; onKeep?: () => void }) {
+  const unit = useUnit()
   const { count, wholeNote, fadesAt } = useSyncExternalStore(channel.subscribe, channel.getState)
   const [open, setOpen] = useState(false)
   const opener = useRef<HTMLButtonElement>(null)
@@ -97,12 +100,12 @@ export function OutsideChangesBar({ channel, pinned = false, onPin, onKeep }: { 
   // No count to open (the list emptied, or the whole note changed): the dropdown closes, so the next change finds it closed (4J1).
   if (open && (wholeNote || count === 0)) setOpen(false)
   if (!wholeNote && count === 0) return null
-  const words = count === 1 ? '1 outside change in this note' : `${count} outside changes in this note`
+  const words = unit(count === 1 ? '1 outside change in this note' : `${count} outside changes in this note`)
   return (
     <div className="outside-changes-bar" role="status">
       {wholeNote ? (
         <>
-          <span>Whole note changed outside the app</span>
+          <span>{unit('Whole note changed outside the app')}</span>
           {fadesAt !== null && <FadeCountdown at={fadesAt} onKeep={onKeep} />}
           <button type="button" onMouseDown={hold} onClick={() => channel.clear()}>
             Dismiss

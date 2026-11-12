@@ -1,4 +1,5 @@
 import { type ReactNode, useContext } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import { createPortal } from 'react-dom'
 import { GroupLevelStepsContext } from '../groupLevelSteps'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
@@ -25,6 +26,7 @@ interface GroupHeaderMenuProps {
  * row, not by the window.
  */
 export function GroupHeaderMenu({ x, y, collapsed, onToggle, onNew, moveFolder, branch, onClose }: GroupHeaderMenuProps) {
+  const unit = useUnit()
   // One level at a time (YAZ-3746 13AT): every group of a level, beside this one group; only with two levels or more.
   const levels = useContext(GroupLevelStepsContext)
   const step = (label: string, icon: ReactNode, run: (() => void) | undefined) => (
@@ -57,7 +59,7 @@ export function GroupHeaderMenu({ x, y, collapsed, onToggle, onNew, moveFolder, 
               onNew()
             }}
           >
-            <span className="ctx-menu__label"><PlusIcon />New note in this group</span>
+            <span className="ctx-menu__label"><PlusIcon />{unit('New note in this group')}</span>
           </button>
         )}
         <button

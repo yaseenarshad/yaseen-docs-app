@@ -14,7 +14,7 @@
  * the draw.io row (YAZ-3410), but never on a key glyph: "⌘K" stays one word, not a "k" that starts half the rows.
  */
 import { matchLinkCandidates } from '../links/completion'
-import { availableSections, groupsOf, resolveHint, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection } from './registry'
+import { availableSections, groupsOf, resolveGroupTitle, resolveHint, resolveLabel, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection } from './registry'
 
 export interface SettingHit {
   section: SettingsSection
@@ -31,7 +31,7 @@ export function settingCandidates(ctx: SettingsCtx): SettingHit[] {
   return availableSections(ctx).flatMap((section) =>
     groupsOf(section, ctx).flatMap((group) =>
       group.items.map((item) => {
-        const name = [item.label, resolveHint(item, ctx), ...(item.keywords ?? []), group.title, group.hint, section.title, ...(section.keywords ?? [])].filter((part) => part !== undefined).join(' ')
+        const name = [resolveLabel(item, ctx), resolveHint(item, ctx), ...(item.keywords ?? []), resolveGroupTitle(group, ctx), group.hint, section.title, ...(section.keywords ?? [])].filter((part) => part !== undefined).join(' ')
         const lower = name.toLowerCase()
         return { section, group, item, name, lower, words: lower.split(/[^\p{L}\p{N}]+/u).filter((w) => w !== '') }
       }),
