@@ -346,6 +346,38 @@ describe('the explore stack', () => {
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
   })
 
+  it('YAZ-4984: ⌘↵ in the search opens the HIGHLIGHTED row in a tab (the footer says so), not the note under the search', async () => {
+    await mount()
+    // Alone in the stack: the highlighted row opens in a tab, and the stack closes.
+    await typeQuery('alp')
+    key(input(), { key: 'Enter', metaKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
+    expect(props.onClose).toHaveBeenCalledOnce()
+    // A search over a note: the row ↓ highlights opens, not the note under the search.
+    vi.mocked(props.openInTab).mockClear()
+    await openResult()
+    render(2)
+    await flush()
+    await typeQuery('e')
+    const second = rows()[1]
+    expect(second).not.toBe(rows()[0])
+    key(input(), { key: 'ArrowDown' })
+    key(input(), { key: 'Enter', ctrlKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(RECORDS.find((r) => r.title === second)?.path)
+    // No layer opens on the way (the old workaround was ↵, then ⌘↵): the search, the note, the search.
+    expect(live()).toHaveLength(3)
+  })
+
+  it('YAZ-4984: ⌘↵ on a folder row opens the folder\'s page in a tab, as Enter does', async () => {
+    await mount()
+    await typeQuery('sub')
+    expect(rows()).toContain('sub')
+    while (top().querySelector('.search-results__row--active')?.classList.contains('search-results__row--dir') === false) key(input(), { key: 'ArrowDown' })
+    key(input(), { key: 'Enter', metaKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onClose).toHaveBeenCalledOnce()
+  })
+
   it('12 layers at most: a 13th says so and opens nothing; the recent notes show with no query', async () => {
     await mount()
     for (let n = 2; n <= MAX_LAYERS; n++) {
