@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import type { ShowIdsSettings } from '../search/showIds'
 import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
@@ -28,8 +29,11 @@ import { SettingsDialog } from './SettingsDialog'
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string, readOnlyVault?: { on: boolean }) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string, readOnlyVault?: { on: boolean }, showIdsSettings?: ShowIdsSettings) {
   const onChange = vi.fn()
+  // The vault's "Show IDs" (YAZ-4940): no settings handed over is no vault open, so no rows.
+  const saveShowIds = vi.fn()
+  const showIds = showIdsSettings === undefined ? undefined : { settings: showIdsSettings, save: saveShowIds, inSearch: () => showIdsSettings.search, inTitle: () => showIdsSettings.title }
   // The vault's Read only (YAZ-4939): no settings handed over is no vault open, so no row.
   const saveReadOnly = vi.fn()
   const readOnly = readOnlyVault === undefined ? undefined : { settings: readOnlyVault, save: saveReadOnly, fileActionsAllowed: () => true, allowFileActions: () => undefined }
@@ -58,10 +62,10 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   document.body.appendChild(container)
   root = createRoot(container)
   // The active vault's name (YAZ-2602 R10): App hands it only with two or more vaults in the window.
-  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName, readOnlyVault: readOnly }} onClose={onClose} />))
+  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName, readOnlyVault: readOnly, showIds }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
   const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, saveReadOnly, el: container }
+  return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, saveReadOnly, saveShowIds, el: container }
 }
 
 /** Upkeep turned on, the rest as a new vault has it. */
@@ -2167,5 +2171,42 @@ describe('This vault › Read only (YAZ-4939)', () => {
     const { el, saveReadOnly } = mountOn('Files & Links', undefined, undefined, undefined, undefined, undefined, { on: false })
     act(() => rowButtons(el, 'readOnlyVault')[0].click())
     expect(saveReadOnly).toHaveBeenCalledExactlyOnceWith({ on: true })
+  })
+})
+
+describe('SettingsDialog: Show IDs (YAZ-4940), three rows in one block under "This vault"', () => {
+  const SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: false }
+  const withShowIds = (idsOn: boolean, showIds: ShowIdsSettings = SHOW_IDS) => mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: idsOn, held: idsOn }, undefined, undefined, showIds)
+  const pressed = (el: HTMLElement, id: string) => rowButtons(el, id).map((b) => b.getAttribute('aria-pressed'))
+
+  it('in a vault with IDs: "in search", "in the title" and "in the files list", one after the other, under "This vault"; each shows the vault\'s choice', () => {
+    const { el } = withShowIds(true)
+    const ids = rowIds(el)
+    const at = ids.indexOf('showIds')
+    expect(ids.slice(at, at + 3)).toEqual(['showIds', 'showIds.title', 'showIds.files'])
+    expect(row(el, 'showIds.title')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
+    expect(row(el, 'showIds.title')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in the title')
+    expect(row(el, 'showIds.files')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in the files list')
+    expect(rowButtons(el, 'showIds.title').map((b) => b.textContent)).toEqual(['On', 'Off'])
+    expect(pressed(el, 'showIds.title')).toEqual(['true', 'false'])
+    expect(pressed(el, 'showIds.files')).toEqual(['false', 'true'])
+  })
+
+  it('a click saves the one choice with the other two as they are', () => {
+    const { el, saveShowIds } = withShowIds(true)
+    act(() => rowButtons(el, 'showIds.title')[1].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: false, files: false })
+    act(() => rowButtons(el, 'showIds.files')[0].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: true })
+    act(() => rowButtons(el, 'showIds')[1].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'match', title: true, files: false })
+  })
+
+  it('in a vault without IDs, or with no vault open, none of the three rows shows', () => {
+    const { el } = withShowIds(false)
+    expect(rowIds(el).filter((id) => id?.startsWith('showIds'))).toEqual([])
+    unmount()
+    const none = mountOn('Files & Links')
+    expect(rowIds(none.el).filter((id) => id?.startsWith('showIds'))).toEqual([])
   })
 })

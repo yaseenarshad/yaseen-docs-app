@@ -35,6 +35,8 @@ export interface SearchVault {
   files: readonly string[]
   /** This vault's "Show IDs in search" (YAZ-4940), read at each draw of a result list; absent → Always. */
   idsInSearch?: () => IdsInSearch
+  /** This vault's "Show IDs in the title" (YAZ-4940), read where the explore stack's note head draws; absent → On. */
+  idsInTitle?: () => boolean
   /** "A folder of" the vault (YAZ-4922 🔒 D3): the vault's index is read, and only the notes under this folder are found (`placeOnly`). */
   folder?: string
 }

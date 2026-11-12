@@ -1732,7 +1732,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: (ctx) => ctx.unitWord !== undefined,
             render: ({ unitWord }) => unitWord && <UnitWordControl unitWord={unitWord} />,
           },
-          // YAZ-4940: one row of its own, saved in the vault (`.yaseendocs/show-ids.json`), in a vault with IDs only.
+          // YAZ-4940: "Show IDs", three rows in one block, saved in the vault (`.yaseendocs/show-ids.json`), in a vault with IDs only.
           {
             id: 'showIds',
             label: 'Show IDs in search',
@@ -1747,10 +1747,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                     { label: 'Only when the search matches the ID', value: 'match' as const },
                   ]}
                   value={showIds.settings.search}
-                  onChange={(search) => showIds.save({ search })}
+                  onChange={(search) => showIds.save({ ...showIds.settings, search })}
                   ariaLabel="Show IDs in search"
                 />
               ),
+          },
+          {
+            id: 'showIds.title',
+            label: 'Show IDs in the title',
+            hint: (ctx) => unit(ctx, 'The note\'s ID after its title, small and muted ("DNS basics  EMB-46"), in the note and in Explore. A click on it copies the ID. It is drawn, never part of the title, and never written to the note.'),
+            keywords: ['id', 'ids', 'title', 'heading', 'show', 'copy'],
+            available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
+            render: ({ showIds }) => showIds && <Segmented options={ON_OFF_OPTIONS} value={showIds.settings.title} onChange={(title) => showIds.save({ ...showIds.settings, title })} ariaLabel="Show IDs in the title" />,
+          },
+          {
+            id: 'showIds.files',
+            label: 'Show IDs in the files list',
+            hint: (ctx) => unit(ctx, 'The ID at the right end of each note\'s row in the sidebar\'s Files, Focus and Favorites, small and muted, so the IDs line up and the names stay where they are. A long name is cut before the ID. A folder row shows none.'),
+            keywords: ['id', 'ids', 'files', 'sidebar', 'tree', 'list', 'row', 'show'],
+            available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
+            render: ({ showIds }) => showIds && <Segmented options={ON_OFF_OPTIONS} value={showIds.settings.files} onChange={(files) => showIds.save({ ...showIds.settings, files })} ariaLabel="Show IDs in the files list" />,
           },
           // YAZ-4936: one row of its own, saved in the vault (`.yaseendocs/link-click.json`).
           {

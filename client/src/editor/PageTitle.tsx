@@ -15,6 +15,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
+import type { NoticeKind, NoticeType } from '../lib/notice'
 
 interface PageTitleProps {
   /** The open page; its title is what the field edits. */
@@ -32,9 +33,16 @@ interface PageTitleProps {
    * is open when the switch turns on is put down unchanged. The sidebar still renames the file.
    */
   readOnly?: boolean
+  /**
+   * The note's ID (YAZ-4940 "In the title"): drawn after the title, small and muted, as its own element — never part
+   * of the title text, so a rename and a copy of the title never take it. A click copies it. Absent: nothing drawn.
+   */
+  id?: string
+  /** "Copied EMB-46" after the ID's click, through the window's one passive notice. */
+  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType) => void
 }
 
-export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file', readOnly = false }: PageTitleProps) {
+export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file', readOnly = false, id, onNotice }: PageTitleProps) {
   const title = pageLabel(path, kind === 'dir', titles)
   const [editing, setEditing] = useState(false)
   // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
@@ -117,6 +125,21 @@ export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file',
       >
         {title}
       </h1>
+      {id !== undefined && (
+        <button
+          type="button"
+          className="page-title__id"
+          title="Copy the ID"
+          onClick={() =>
+            void navigator.clipboard.writeText(id).then(
+              () => onNotice?.(`Copied ${id}`, 'info', 'clipboard'),
+              (error: unknown) => onNotice?.(`Can't copy the ID: ${error instanceof Error ? error.message : String(error)}`, 'error'),
+            )
+          }
+        >
+          {id}
+        </button>
+      )}
     </div>
   )
 }

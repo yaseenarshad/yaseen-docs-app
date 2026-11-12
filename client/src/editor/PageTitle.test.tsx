@@ -213,3 +213,61 @@ describe('PageTitle on a read-only note (YAZ-3076 S22)', () => {
     expect(heading(el)?.textContent).toBe('Old Note')
   })
 })
+
+describe('the ID after the title (YAZ-4940 "In the title")', () => {
+  const idButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.page-title__id')
+  /** The ID handed in, and a notice sink: the component reads neither the index nor the setting; the editor does. */
+  function mountWithId(id: string | undefined, opts: { readOnly?: boolean } = {}) {
+    const onRetitle = vi.fn()
+    const onNotice = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<PageTitle path={PATH} titles={new Map([[PATH, 'DNS basics']])} onRetitle={onRetitle} readOnly={opts.readOnly} id={id} onNotice={onNotice} />))
+    return { el: container, onRetitle, onNotice }
+  }
+
+  it('shows the ID as its own element after the heading, never in the heading\'s text; with no ID nothing is drawn', () => {
+    const { el } = mountWithId('EMB-46')
+    expect(heading(el)?.textContent).toBe('DNS basics')
+    expect(idButton(el)?.textContent).toBe('EMB-46')
+    expect(idButton(el)?.previousElementSibling).toBe(heading(el))
+    expect(idButton(el)?.getAttribute('title')).toBe('Copy the ID')
+    act(() => root?.unmount())
+    container?.remove()
+    const none = mountWithId(undefined)
+    expect(idButton(none.el)).toBeNull()
+    expect(heading(none.el)?.textContent).toBe('DNS basics')
+  })
+
+  it('a click copies the ID and says "Copied EMB-46"; the heading does not open its field', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const { el, onNotice } = mountWithId('EMB-46')
+    await act(async () => idButton(el)?.click())
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('EMB-46')
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied EMB-46', 'info', 'clipboard')
+    expect(input(el)).toBeNull()
+  })
+
+  it('a copy that fails says so', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(async () => Promise.reject(new Error('no clipboard'))) }, configurable: true })
+    const { el, onNotice } = mountWithId('EMB-46')
+    await act(async () => idButton(el)?.click())
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith("Can't copy the ID: no clipboard", 'error')
+  })
+
+  it('the open field takes the whole line: the ID is not drawn while the title is edited, and comes back after; a commit hands the title alone', () => {
+    const { el, onRetitle } = mountWithId('EMB-46')
+    act(() => heading(el)?.click())
+    expect(idButton(el)).toBeNull()
+    type(el, 'DNS basics 2')
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('DNS basics 2')
+    expect(idButton(el)?.textContent).toBe('EMB-46')
+  })
+
+  it('a read-only note shows the ID too', () => {
+    const { el } = mountWithId('EMB-46', { readOnly: true })
+    expect(idButton(el)?.textContent).toBe('EMB-46')
+  })
+})
