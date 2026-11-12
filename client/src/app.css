@@ -1,4 +1,12 @@
 :root {
+  /* THE STACKING ORDER OVER EXPLORE (YAZ-4987; `stackingOrderCss.test.ts`). The Explore window is a fixed layer over the
+     whole window; what App draws while it shows (a sheet, a toast) stands beside it in `document.body`, so these three
+     decide which is on top. A sheet (every `.confirm-overlay`: Rename, Delete, the read-only ask, ⌘N, the keys) is over
+     Explore, Settings and a drawing (70), Version history and Share (80), and under the menus (90, 1000). A toast is
+     over Explore and under a sheet's scrim. */
+  --z-explore: 70;
+  --z-notices: 72;
+  --z-sheet: 85;
   /* A menu row's padding (YAZ-3503): the app's `.ctx-menu__item` and Monaco's right-click menu
      (`code/monacoMenuLook.ts`) both read it. Each row is this padding around one line of 13 px text at
      `line-height: normal`, so the two menus' rows are the same height on every Mac and every font. */
@@ -1562,7 +1570,8 @@ button {
   left: 16px;
   /* Above the sidebar footer (the settings button) at any window height — its own variable, see `.sidebar__footer`. */
   bottom: calc(var(--sidebar-footer-h) + 12px);
-  z-index: 50;
+  /* Over the Explore window: its Undo can be clicked (YAZ-4987). */
+  z-index: var(--z-notices);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -3114,7 +3123,8 @@ body.drag-held iframe {
 .confirm-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  /* Over the Explore window and every other big window (YAZ-4987, `:root`'s stacking order). */
+  z-index: var(--z-sheet);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5567,11 +5577,7 @@ body.drag-held iframe {
 }
 
 
-/* Over the Settings dialog (z-index 70) too. */
-.confirm-overlay.place-picker-overlay {
-  z-index: 80;
-}
-
+/* Over the Settings dialog (z-index 70) too: every sheet is (`--z-sheet`, YAZ-4987). */
 .place-picker {
   width: min(420px, calc(100vw - 24px));
   padding: 0 0 6px;
@@ -5670,10 +5676,7 @@ body.drag-held iframe {
 }
 
 /* The keys of this tab (YAZ-3564 K11): two columns, the key then what it does; the list scrolls inside the sheet. */
-/* Above a drawing open over a note (z-index 70), whose ? opens it (YAZ-3564 K11). */
-.confirm-overlay:has(> .key-sheet) {
-  z-index: 80;
-}
+/* Above a drawing open over a note (z-index 70), whose ? opens it (YAZ-3564 K11): every sheet is (`--z-sheet`, YAZ-4987). */
 .confirm.key-sheet {
   width: min(520px, 92vw);
   max-height: min(640px, 86vh);
