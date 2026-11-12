@@ -5568,6 +5568,8 @@ describe('App: the note card flow from /card, through the real editor (YAZ-4965)
     await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good -->$/m), { timeout: SLOW_RUNNER_MS })
     await vi.waitFor(() => expect(getMarkdownForSave(captured.crepes.at(-1)!)).toMatch(/<!-- card: WIKI-9, \S+ good -->/))
     expect(el.querySelector('.outside-changes-bar')).toBeNull()
+    // A review is no file change (YAZ-4948 with YAZ-4985): the read-only ask never comes for the card line.
+    expect(el.querySelector('#confirm-read-only-vault-text')).toBeNull()
   }, 30_000)
 })
 
