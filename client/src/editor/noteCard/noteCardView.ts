@@ -7,7 +7,8 @@
  * `app://` image sources and every listener, it draws only once the block's CodeMirror is made (off the screen a
  * block shows its raw text), and it draws again only on a text change. "Finding (agent)" on YAZ-4961.
  *
- * THE CARD: a head (the card title, `cardTitle`; "Review off" when the line says `off`; Edit card; ⋯) and the sides,
+ * THE CARD: a head (the card title, `cardTitle`; the card ID small and grey, a click copies it, D20; "Review off" when
+ * the line says `off`; Edit card; ⋯) and the sides,
  * `renderNoteCard` (the Inbox's function too). Hidden words show highlighted (idea 21 is later). A `[[link]]` is the
  * page's pill: a click opens it in Explore, a bound gesture (⌘-click by default) in a tab, as the note's links
  * (`linkClickAction`). Images resolve as the note's do (`imageSrc`). The pills follow the index live.
@@ -133,6 +134,8 @@ const button = (className: string, label: string, text: string): HTMLButtonEleme
 export class NoteCardView implements NodeView {
   dom: HTMLElement
   private readonly title: HTMLButtonElement
+  /** The card ID after the title (D20): a click copies it. Hidden while the card has none. */
+  private readonly idButton: HTMLButtonElement
   private readonly state: HTMLElement
   private readonly editButton: HTMLButtonElement
   private readonly more: HTMLButtonElement
@@ -157,11 +160,13 @@ export class NoteCardView implements NodeView {
     head.className = 'note-card__head'
     this.title = button('note-card__title', 'Open card', '')
     this.title.title = 'Open card (⌘↵)'
+    this.idButton = button('note-card__id', 'Copy card ID', '')
+    this.idButton.title = 'Copy card ID'
     this.state = document.createElement('span')
     this.state.className = 'note-card__state'
     this.editButton = button('note-card__edit', 'Edit card', 'Edit card')
     this.more = button('note-card__more', 'Card menu', '⋯')
-    head.append(this.title, this.state, this.editButton, this.more)
+    head.append(this.title, this.idButton, this.state, this.editButton, this.more)
     this.body = document.createElement('div')
     this.body.className = 'note-card__body'
     this.dom.append(head, this.body)
@@ -195,6 +200,9 @@ export class NoteCardView implements NodeView {
     const title = cardTitle(text)
     this.title.textContent = title === '' ? 'New note card' : title
     this.title.classList.toggle('note-card__title--empty', title === '')
+    const id = cardIdOf(line)
+    this.idButton.textContent = id ?? ''
+    this.idButton.hidden = id === null
     this.state.textContent = isCardOff(line) ? 'Review off' : ''
     this.dom.classList.toggle('note-card--off', isCardOff(line))
     this.editButton.textContent = this.code === null ? 'Edit card' : 'Done'
@@ -308,6 +316,12 @@ export class NoteCardView implements NodeView {
     if (target.closest('.note-card__title') !== null) {
       event.preventDefault()
       this.open()
+      return
+    }
+    if (target.closest('.note-card__id') !== null) {
+      event.preventDefault()
+      const id = cardIdOf(noteCardLineOf(this.node))
+      if (id !== null) copyText(id, 'card ID', this.deps.onNotice ?? (() => {}), undefined, true)
       return
     }
     const pill = target.closest<HTMLElement>(`[${NOTE_CARD_LINK_ATTR}]`)

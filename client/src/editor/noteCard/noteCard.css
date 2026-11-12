@@ -49,8 +49,9 @@
   color: var(--fg);
 }
 .note-card__title {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  margin-right: auto;
   overflow: hidden;
   padding: 0 4px;
   text-align: left;
@@ -64,6 +65,34 @@
 .note-card__head .note-card__title--empty {
   color: var(--fg-muted);
   font-weight: 400;
+}
+/* The card ID (D20): small and grey after the title, a click copies it. ONE style for the card in the page, the card
+   window and the Inbox (`review/noteCardParts.tsx`), in the look of a page's ID in an Explore head (`.explore__id`). */
+.note-card__head .note-card__title:has(+ .note-card__id:not([hidden])) {
+  margin-right: 0;
+}
+.note-card__id {
+  flex: none;
+  margin: 0 auto 0 2px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.note-card__head .note-card__id {
+  font-size: 11px;
+}
+.note-card__id:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.note-card__id[hidden] {
+  display: none;
 }
 .note-card__state {
   flex: none;
