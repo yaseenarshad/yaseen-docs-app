@@ -30,3 +30,10 @@ export const READ_ONLY_MESSAGE_GAP_MS = 1000
 export function tellReadOnlyEdit(from: Element, what: ReadOnlyWhat): void {
   from.dispatchEvent(new CustomEvent<ReadOnlyWhat>(READ_ONLY_EDIT, { bubbles: true, detail: what }))
 }
+
+/**
+ * A VIEW CHANGE IN A READ ONLY NOTE (YAZ-4939: a table section collapsed or opened, `tableSubhead.ts`): the meta of its
+ * transaction, which the read-only keys let through (`readOnlyKeys.ts`), and the event on the view's DOM that tells
+ * the note's host (`Editor.tsx`): the live text is then taken as saved, so a locked note never writes it.
+ */
+export const VIEW_ONLY_CHANGE = 'mdapp:view-only-change'

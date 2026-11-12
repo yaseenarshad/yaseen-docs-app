@@ -76,6 +76,7 @@ import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
 import { writeProperties, writeProperty, writeRouted, type PropertyWrite } from './writeProperty'
 import { byFolder, declarationOf, folderName, foldersTaking, pageColumns, readOnlyRefusal, selfAndAncestors, takesFrom, withOwnerSwitch, type ColumnSources } from './columnInheritance'
 import { mergeSeparateValues, restoreSeparateValues, separateCounts, separateHolders, type SeparateKeep } from './separateValues'
+import { isViewOnlyChange } from './viewOnlyChange'
 import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { VAULT_READ_ONLY_TIP, VaultReadOnly } from '../vault/readOnlyVault'
@@ -538,6 +539,10 @@ export function FolderView({
   const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderViewSet(settings, ids)))
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [columnError, setColumnError] = useState<string | null>(null)
+  /** The red line of a refused write goes when the page unlocks (YAZ-4939 round 3); a real write error stays. */
+  useEffect(() => {
+    if (!pageEffective) setSettingsError((now) => (now === FOLDER_READ_ONLY_TIP ? null : now))
+  }, [pageEffective])
 
   /**
    * The declarations AHEAD of the index (YAZ-1549) — `parsed`'s discipline for `views`, applied to
@@ -814,10 +819,14 @@ export function FolderView({
     write.catch((err: unknown) => setSettingsError(err instanceof Error ? err.message : String(err)))
     return write
   }
-  /** Read only refuses every settings write (D36): the banner says why. */
-  const refuseLocked = (): boolean => {
-    if (pageEffective) setSettingsError(FOLDER_READ_ONLY_TIP)
-    return pageEffective
+  /**
+   * Read only refuses a settings write that changes the content (D36): the banner says why. A write that changes only
+   * the views (`viewOnly`, YAZ-4939 round 3) goes: a sort or a filter is how you look, not what is there.
+   */
+  const refuseLocked = (viewOnly = false): boolean => {
+    const refused = pageEffective && !viewOnly
+    if (refused) setSettingsError(FOLDER_READ_ONLY_TIP)
+    return refused
   }
 
   /**
@@ -854,7 +863,7 @@ export function FolderView({
     return track(write)
   }
   const commitSettings = (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']): Promise<void> => {
-    if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
+    if (refuseLocked(isViewOnlyChange({ columns: liveSettings.columns, properties: parsed.def.properties }, { columns, properties }))) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
     setSettingsError(null)
     const before = aheadRef.current
     setAhead(columns)
@@ -901,7 +910,7 @@ export function FolderView({
   }
   /** Every config change (sort, columns, widths, summaries…) is ONE settings write (🔒 D3). `false`: read only refused it (YAZ-4644 E2). */
   const onChange = (next: ParsedViews): boolean => {
-    if (refuseLocked()) return false
+    if (refuseLocked(isViewOnlyChange(parsed.def, next.def))) return false
     setParsed(next)
     setSettingsError(null)
     // What this write will stamp as when the index returns it (YAZ-1241) — formulas ride unchanged;

@@ -18,7 +18,11 @@
  * YAZ-4899 demo approved the place: ONE CSS rule, `.table-subhead-chevron`, and `chevronWidget` below), pointing down when open
  * and right when collapsed, and then "· N rows" at the end of the cell's text (an inline widget). A mousedown on the
  * chevron toggles the section, ⌥-click every section of the table, each one transaction with the history closed (one
- * ⌘Z); it goes before `tableEditing`, so the click starts no cell selection. A read-only note: the chevron does nothing.
+ * ⌘Z); it goes before `tableEditing`, so the click starts no cell selection. A note you cannot edit (YAZ-4939: a read-only
+ * note, the explore stack's reading layer) collapses and opens too, by the chevron and the keys: a collapse is how you
+ * look, not what is there. Its transaction is out of the undo history and carries `VIEW_ONLY_CHANGE` (the read-only
+ * keys let it through), and the view's DOM hears `VIEW_ONLY_CHANGE`: the note's host takes the live text as saved, so a
+ * locked note never writes the collapse. An unlocked note saves it with its next save, as before.
  *
  * DECORATIONS, as `tableFreeze.ts` / `tableFold.ts`: the table block gets `data-table-subheads`, each subheader row
  * `table-subhead-row` (and `table-subhead-collapsed`), and the stripes start again after each subheader row: the second,
@@ -53,12 +57,20 @@ import { $shortcut } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
 import { verticalScrollParent, watchNear } from '../../lib/pinnedHeader'
 import { rowShortcuts } from '../noteKeys'
+import { VIEW_ONLY_CHANGE } from '../readOnlyEdit'
 import { beforeTableEditing } from './beforeTableEditing'
 import { bodySpansRows, rowFolded, rowSubhead, sectionEnd, subheadOf, tableHasSubheads } from './cells'
 import { keepingScroll } from './tableFold'
 import { TABLE_HANDLE_PLACE, frozenRowCount } from './tableFreeze'
 import { changedTables, typingOnly } from './tableStyle'
 import { onStickySubheadersSetting, stickySubheadersSetting } from './timeFormatSetting'
+
+/** Dispatch a collapse; in a view that is not editable, as a view change (YAZ-4939, `VIEW_ONLY_CHANGE`): out of the history, and the host told. */
+function dispatchCollapse(view: EditorView, tr: Transaction): void {
+  if (view.editable) return view.dispatch(tr)
+  view.dispatch(tr.setMeta('addToHistory', false).setMeta(VIEW_ONLY_CHANGE, true))
+  view.dom.dispatchEvent(new Event(VIEW_ONLY_CHANGE))
+}
 
 /** A section: its subheader row, its last row (`end === row` for an empty section), and whether its rows are folded. */
 export interface Section {
@@ -164,7 +176,7 @@ function toggleSection(view: EditorView, tablePos: number, s: number, collapsed:
   if (collapsed && at !== null && at.tablePos === tablePos && at.row > s && at.row <= sectionEnd(at.table, s)) {
     tr.setSelection(TextSelection.near(tr.doc.resolve(rowStart(at.table, tablePos, s) + 2)))
   }
-  view.dispatch(tr)
+  dispatchCollapse(view, tr)
 }
 
 const subheadKey = new PluginKey<SubheadState>('mdapp-table-subhead')
@@ -233,13 +245,12 @@ function subheadDecorations(table: ProseNode, pos: number): Decoration[] {
   return out
 }
 
-/** A mousedown on a chevron: toggle its section, with ⌥ every section of the table; a read-only note does nothing. */
+/** A mousedown on a chevron: toggle its section, with ⌥ every section of the table; in a read-only note too (YAZ-4939). */
 function onChevron(view: EditorView, event: MouseEvent): boolean {
   if (event.button !== 0 || !(event.target instanceof Element)) return false
   const chevron = event.target.closest('.table-subhead-chevron')
   if (chevron === null || !view.dom.contains(chevron)) return false
   event.preventDefault()
-  if (!view.editable) return true
   const $at = view.state.doc.resolve(view.posAtDOM(chevron, 0))
   for (let depth = $at.depth; depth > 0; depth--) {
     if ($at.node(depth).type.spec.tableRole !== 'row') continue
@@ -248,7 +259,7 @@ function onChevron(view: EditorView, event: MouseEvent): boolean {
     const s = $at.index(depth - 1)
     const collapsed = sectionCollapsed(table, s)
     keepingScroll(view, () => {
-      if (event.altKey) view.dispatch(setAllSections(closeHistory(view.state.tr), tablePos, !collapsed))
+      if (event.altKey) dispatchCollapse(view, setAllSections(closeHistory(view.state.tr), tablePos, !collapsed))
       else toggleSection(view, tablePos, s, !collapsed)
     })
     return true
@@ -474,7 +485,7 @@ const sectionHere =
   (collapsed: boolean): Command =>
   (state, dispatch, view) => {
     const at = caretRow(state)
-    if (at === null || view?.editable === false || !tableHasSubheads(at.table)) return false
+    if (at === null || !tableHasSubheads(at.table)) return false
     const s = subheadOf(at.table, at.row)
     if (s === null) return false
     if (dispatch && view !== undefined && sectionCollapsed(at.table, s) !== collapsed) toggleSection(view, at.tablePos, s, collapsed)
@@ -485,9 +496,11 @@ const sectionHere =
 const allSections =
   (collapsed: boolean): Command =>
   (state, dispatch, view) => {
-    if (view?.editable === false) return false
     const tr = setAllSections(closeHistory(state.tr), null, collapsed)
-    if (tr.docChanged) dispatch?.(tr)
+    if (tr.docChanged && dispatch !== undefined) {
+      if (view === undefined) dispatch(tr)
+      else dispatchCollapse(view, tr)
+    }
     return false
   }
 

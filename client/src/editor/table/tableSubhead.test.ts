@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
-import { undo } from '@milkdown/kit/prose/history'
+import { undo, undoDepth } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { moveRowCommand } from '@milkdown/kit/preset/gfm'
 import { TextSelection } from '@milkdown/kit/prose/state'
@@ -20,6 +20,7 @@ import { sectionEnd, subheadOf, unfoldedRows } from './cells'
 import { tableData } from './super/superData'
 import { formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
 import { sectionsOf } from './tableSubhead'
+import { VIEW_ONLY_CHANGE } from '../readOnlyEdit'
 import { cellPos, mountNote, unmountAll } from './tableTestKit'
 import { setStickyHeaderSetting } from './timeFormatSetting'
 
@@ -234,14 +235,56 @@ describe('the chevron and the collapsed section (items 10–12, 14)', () => {
     expect(looks(view).filter((l) => l === 'hidden')).toHaveLength(0)
   })
 
-  it('a section with no rows under it has no chevron; a read-only note\'s chevron does nothing', async () => {
+  it('a section with no rows under it has no chevron', async () => {
     const { view } = await mountNote(table(['r1', 'r2'], 'subhead 3'))
     expect(looks(view)).toEqual(['-', '-', 'sub'])
     expect(chevronOf(view, 2)).toBeNull()
-    const other = await mountNote(EIGHT)
-    other.view.setProps({ editable: () => false })
-    clickChevron(other.view, 2)
-    expect(looks(other.view)[3]).toBe('-')
+  })
+
+  // YAZ-4939: a collapse is how you look, not what is there — it works in a note you cannot edit (a read-only note, the
+  // explore stack's reading layer). Out of the undo history, and said to the host (`VIEW_ONLY_CHANGE`), which never saves it while locked.
+  it('a read-only note: the chevron, ⌥-click, ⌘↑ / ⌘↓ and ⌘⇧U / ⌘⇧I collapse and open sections; each is out of the undo history and tells the host', async () => {
+    const { crepe, view } = await mountNote(EIGHT)
+    caretIn(view, 4, 1)
+    crepe.setReadonly(true)
+    const depth = undoDepth(view.state)
+    const heard = vi.fn()
+    view.dom.addEventListener(VIEW_ONLY_CHANGE, heard)
+    clickChevron(view, 2)
+    expect(looks(view)).toEqual(['-', '-', 'sub·3', 'hidden', 'hidden', 'hidden', 'sub', '-', '-'])
+    expect(getMarkdownForSave(crepe)).toBe(table(['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'], 'fold 4-6, subhead 3 7'))
+    expect(heard).toHaveBeenCalledTimes(1)
+    expect(undoDepth(view.state)).toBe(depth)
+    clickChevron(view, 2)
+    expect(looks(view)[2]).toBe('sub')
+    expect(getMarkdownForSave(crepe)).toBe(EIGHT)
+    clickChevron(view, 2, true)
+    expect(looks(view).filter((l) => l === 'hidden')).toHaveLength(5)
+    clickChevron(view, 2, true)
+    expect(looks(view).filter((l) => l === 'hidden')).toHaveLength(0)
+    caretIn(view, 4, 1)
+    expect(pressKey(crepe, 'ArrowUp', { mod: true })).toBe(true)
+    expect(looks(view)[2]).toBe('sub·3')
+    expect(pressKey(crepe, 'ArrowDown', { mod: true })).toBe(true)
+    expect(looks(view)[2]).toBe('sub')
+    pressKey(crepe, 'u', { mod: true, shift: true })
+    expect(view.dom.querySelectorAll('.table-subhead-collapsed')).toHaveLength(2)
+    pressKey(crepe, 'i', { mod: true, shift: true })
+    expect(view.dom.querySelectorAll('.table-subhead-collapsed')).toHaveLength(0)
+    expect(heard).toHaveBeenCalledTimes(8)
+    expect(undoDepth(view.state)).toBe(depth)
+    expect(getMarkdownForSave(crepe)).toBe(EIGHT)
+  })
+
+  it('an editable note: a collapse is one undo step and tells the host nothing (the autosave writes it, as before)', async () => {
+    const { view } = await mountNote(EIGHT)
+    const heard = vi.fn()
+    view.dom.addEventListener(VIEW_ONLY_CHANGE, heard)
+    clickChevron(view, 2)
+    expect(looks(view)[2]).toBe('sub·3')
+    expect(heard).not.toHaveBeenCalled()
+    undo(view.state, view.dispatch)
+    expect(looks(view)[2]).toBe('sub')
   })
 
   it('"Turn back into a normal row" on a collapsed subheader row opens its section first', async () => {

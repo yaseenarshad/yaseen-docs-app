@@ -109,6 +109,32 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     expect(folded(root)).toBe(0)
   })
 
+  // YAZ-4939: a table section's collapse is a view change, the one document change the locked keys let through.
+  it('in a table with subheader rows: ⌘↑ / ⌘↓ collapse and open the clicked section, ⌘⇧U / ⌘⇧I every section; Enter still edits nothing', async () => {
+    const TABLE = '| Name | Note |\n| ---- | ---- |\n| r1   | n1   |\n| S1   | n2   |\n| r3   | n3   |\n| r4   | n4   |\n\n<!-- table: subhead 3 -->\n'
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: TABLE, readOnlyKeys: true })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    crepe.setReadonly(true)
+    const collapsed = () => root.querySelectorAll('.table-subhead-collapsed').length
+    clickIn(root, 'r3')
+    expect(press('ArrowUp').defaultPrevented).toBe(true)
+    expect(collapsed()).toBe(1)
+    expect(getMarkdownForSave(crepe)).toContain('fold 4-5')
+    press('ArrowDown')
+    expect(collapsed()).toBe(0)
+    press('u', { shift: true })
+    expect(collapsed()).toBe(1)
+    press('i', { shift: true })
+    expect(collapsed()).toBe(0)
+    expect(getMarkdownForSave(crepe)).toBe(TABLE)
+    clickIn(root, 'r4')
+    press('Enter')
+    expect(getMarkdownForSave(crepe)).toBe(TABLE)
+  })
+
   it('⌘. zooms into the clicked bullet and ⌘⇧. zooms out', async () => {
     const { crepe, root } = await mount()
     crepe.setReadonly(true)

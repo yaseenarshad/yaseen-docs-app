@@ -11,7 +11,7 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { resolverFor } from './engine'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { createStore } from '../lib/store'
-import { click, flush, q, rec, renderFolderView, unmountFolderView } from './testFolderView'
+import { click, flush, press, q, rec, renderFolderView, setValue, unmountFolderView } from './testFolderView'
 import { FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { FolderView, type FolderViewProps } from './FolderView'
 import { hoverPreviewOf } from '@shared/folderPage'
@@ -258,15 +258,98 @@ describe('Read only (D36)', () => {
     expect(chips(el)).toEqual(['page-settings', 'document-zoom', 'read-only-chip', 'save-indicator'])
   })
 
-  it('a folder whose `.folder.md` says `readonly: true` shows the chip and refuses a settings write with the notice', async () => {
-    disk.set(SETTINGS_FILE, { content: VIEWS.replace('---\n', '---\nreadonly: true\n'), mtime: 50 })
+  // YAZ-4939 round 3: a view change is how you look, not what is there — it saves while the page is read only.
+  const LOCKED_TWO = `---
+readonly: true
+folder_settings:
+  columns:
+    priority:
+      kind: text
+  views:
+    - type: table
+      name: Pipeline
+      order:
+        - file.name
+        - note.priority
+    - type: table
+      name: Spare
+---
+`
+  const rightClick = (el: Element): void => act(() => void el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 20 })))
+  const tab = (el: ParentNode, name: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((x) => x.textContent === name)!
+  const menuItem = (el: ParentNode, text: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) => b.textContent === text)!
+  const header = (el: ParentNode, label: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-table thead th')].find((t) => t.textContent === label)!
+  const menuAction = (el: ParentNode, text: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === text)!
+  const errorLine = (el: ParentNode): string | null => el.querySelector('.views-pane__error')?.textContent ?? null
+  const settingsOnDisk = (): Record<string, unknown> => parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties
+
+  it('a folder whose `.folder.md` says `readonly: true`: view changes save — sort, filter, freeze, hide a column, rename, duplicate and delete a view tab — and `readonly` stays', async () => {
+    disk.set(SETTINGS_FILE, { content: LOCKED_TWO, mtime: 50 })
     const el = await mount()
     expect(el.querySelector('.read-only-chip')).not.toBeNull()
-    duplicateView(el)
+    const step = async (act: () => void) => {
+      act()
+      await flush()
+      feed()
+      await flush()
+    }
+    await step(() => {
+      click(q(el, '[aria-label="Sort"]'))
+      click(menuAction(el, 'Add sort'))
+    })
+    await step(() => {
+      click(q(el, '[aria-label="Filter"]'))
+      click(menuAction(el, 'Add rule'))
+    })
+    await step(() => {
+      rightClick(header(el, 'Priority'))
+      click(menuItem(el, 'Freeze up to this column'))
+    })
+    await step(() => {
+      rightClick(header(el, 'Priority'))
+      click(menuItem(el, 'Hide column'))
+    })
+    await step(() => {
+      rightClick(tab(el, 'Spare'))
+      click(menuItem(el, 'Rename'))
+      const input = q<HTMLInputElement>(el, 'input[aria-label="View name"]')
+      setValue(input, 'Deals')
+      press(input, 'Enter')
+    })
+    await step(() => duplicateView(el))
+    await step(() => {
+      rightClick(tab(el, 'Deals'))
+      click(menuItem(el, 'Delete'))
+      click(q(el, '.confirm__btn--danger'))
+    })
+    expect(writeFile).toHaveBeenCalledTimes(7)
+    expect(errorLine(el)).toBeNull()
+    const props = settingsOnDisk()
+    expect(props.readonly).toBe(true)
+    const [pipeline, copy, ...rest] = (props.folder_settings as { views: Record<string, unknown>[] }).views
+    expect(rest).toEqual([])
+    expect(pipeline.name).toBe('Pipeline')
+    expect(pipeline.sort).toBeDefined()
+    expect(pipeline.filters).toBeDefined()
+    expect(pipeline.frozenColumns).toBeDefined()
+    expect(pipeline.order).toEqual(['file.name'])
+    expect(copy.name).toBe('Pipeline copy')
+    expect((props.folder_settings as { columns: unknown }).columns).toEqual({ priority: { kind: 'text' } })
+    expect(el.querySelector('.read-only-chip')).not.toBeNull()
+  })
+
+  it('a folder whose `.folder.md` says `readonly: true` refuses a content write — a column rename — with the notice, and writes nothing', async () => {
+    disk.set(SETTINGS_FILE, { content: LOCKED_TWO, mtime: 50 })
+    const el = await mount()
+    rightClick(header(el, 'Priority'))
+    click(menuItem(el, 'Rename column…'))
+    const field = q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Rename Priority"]')
+    setValue(field, 'Importance')
+    press(field, 'Enter')
     await flush()
     expect(writeFile).not.toHaveBeenCalled()
-    expect(q(el, '.views-pane__error').textContent).toBe('Could not update the folder: This folder page is read only')
-    expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Pipeline'])
+    expect(errorLine(el)).toBe('Could not update the folder: This folder page is read only')
+    expect(header(el, 'Importance')).toBeUndefined()
   })
 
   it('"Turn Read only off" in the chip removes the key, and the settings write goes through again', async () => {
