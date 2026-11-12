@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { defaultFolderState } from '@shared/types'
-import { FolderHomeSheet, folderHome } from './FolderHomeSheet'
+import { FolderHomeSheet } from './FolderHomeSheet'
+import { folderHome } from './folderHome'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
