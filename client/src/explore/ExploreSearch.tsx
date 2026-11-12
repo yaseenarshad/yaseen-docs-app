@@ -14,6 +14,7 @@ import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { useResultKeys } from '../sidebar/hooks/useSidebarSearch'
 import { FolderIcon } from '../views/view/icons'
 import { exploreRows } from './exploreRows'
+import { shownId, type IdsInSearch } from '../search/showIds'
 
 interface ExploreSearchProps {
   candidates: readonly SearchCandidate[]
@@ -26,11 +27,13 @@ interface ExploreSearchProps {
   onOpen: (row: SearchCandidate) => void
   /** A right-click on a row (round 1, item 6): the note menu for it, at the pointer. */
   onRowMenu: (row: SearchCandidate, x: number, y: number) => void
+  /** The vault's "Show IDs in search" for a row's path (YAZ-4940): Always, or only on a row found by its ID. */
+  idsInSearch: (path: string) => IdsInSearch
   /** This layer is the top one: the input takes the caret. */
   active: boolean
 }
 
-export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, onRowMenu, active }: ExploreSearchProps) {
+export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, onRowMenu, idsInSearch, active }: ExploreSearchProps) {
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const typed = query.trim() !== ''
@@ -84,7 +87,11 @@ export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, onRow
           <p className="explore__empty">{typed ? 'No matches found' : 'Type to search the vault. The notes you open show here.'}</p>
         ) : (
           <ul className="search-results" role="listbox" aria-label="Explore results">
-            {rows.map((r, i) => (
+            {rows.map((r, i) => {
+              // The ID as a chip after the title (round 1, item 1), by the vault's rule (YAZ-4940); a row found by its ID loses the `ID — ` of its label, so the ID shows once.
+              const id = shownId(r, idsInSearch(r.path))
+              const label = id !== null && r.label.startsWith(`${id} — `) ? r.label.slice(id.length + 3) : r.label
+              return (
               <li
                 key={`${r.path}␟${r.name}`}
                 ref={i === sel ? selectedRow : null}
@@ -107,16 +114,17 @@ export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, onRow
                 <span className="search-results__label">
                   <FileIcon path={r.path} folder={r.kind === 'dir'} />
                   {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
-                  {marked(r.label, needle)}
+                  {marked(label, needle)}
                   {r.kind === 'file' && <NameEnding path={r.path} />}
                   {/* The note's or folder's id, in an ID vault (YAZ-2571 round 1): small and muted after the title; a vault without IDs has none. */}
-                  {r.id !== undefined && <span className="explore__id">{r.id}</span>}
+                  {id !== null && <span className="explore__id">{id}</span>}
                 </span>
                 {r.snippet !== undefined && <span className="explore__snippet">{marked(r.snippet, needle)}</span>}
                 {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}
                 {r.folder === '' && r.kind === 'file' && <span className="search-results__folder">{basename(r.path) === r.label ? '' : 'Vault root'}</span>}
               </li>
-            ))}
+              )
+            })}
           </ul>
         )}
       </div>

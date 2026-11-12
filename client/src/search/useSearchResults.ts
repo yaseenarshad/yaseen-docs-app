@@ -24,6 +24,7 @@ import type { WatchSource } from '../hooks/useWatch'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
 import { atOrBelow } from '../lib/treeState'
 import { fileCandidates, folderCandidates, searchCandidates, searchRows, type SearchCandidate } from './searchCandidates'
+import type { IdsInSearch } from './showIds'
 
 /** One vault the search covers: its folder, its watcher, and its folders and its files that are no notes (the Sidebar's own `allDirs` and `otherFiles`). */
 export interface SearchVault {
@@ -31,6 +32,8 @@ export interface SearchVault {
   watch: WatchSource
   dirs: readonly string[]
   files: readonly string[]
+  /** This vault's "Show IDs in search" (YAZ-4940), read at each draw of a result list; absent → Always. */
+  idsInSearch?: () => IdsInSearch
 }
 
 type Snapshot = Readonly<{ records: readonly IndexRecord[]; folders: readonly IndexRecord[]; letters?: readonly string[] }>

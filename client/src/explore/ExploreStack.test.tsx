@@ -662,6 +662,21 @@ describe('the explore stack', () => {
     expect(props.onClose).toHaveBeenCalledOnce()
   })
 
+  it('YAZ-4940: with "Only when the search matches the ID" the chip shows on a row found by its ID alone, and the title loses the "ID — " of its label; Always shows it on every row', async () => {
+    const rule = { value: 'match' as 'match' | 'always' }
+    props.vaults = [{ ...vaults[0], idsInSearch: () => rule.value }]
+    await mount()
+    await typeQuery('alp')
+    expect(top().querySelector('.search-results__row .explore__id')).toBeNull()
+    await typeQuery('emb-1')
+    expect(top().querySelector('.search-results__row .explore__id')?.textContent).toBe('EMB-1')
+    expect(rows()).toEqual(['Alpha'])
+    rule.value = 'always'
+    await typeQuery('alp')
+    expect(top().querySelector('.search-results__row .explore__id')?.textContent).toBe('EMB-1')
+    expect(rows()).toEqual(['Alpha'])
+  })
+
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {
     Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false }), configurable: true, writable: true })
     vi.useFakeTimers()

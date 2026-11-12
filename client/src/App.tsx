@@ -1329,7 +1329,7 @@ export function App() {
   // Built when the stack opens and when a tree lands, not per render: a watcher is one object for a vault's life (`live`).
   const exploreTrees = useLatestTrees(roots)
   const exploreOpen = exploreRequest > 0
-  const exploreVaults = useMemo<readonly SearchVault[]>(() => (!exploreOpen ? [] : roots.map((vault, i) => ({ root: vault, watch: live.current.vaults[i].watch, dirs: allDirs(exploreTrees[i]?.tree ?? []), files: [] }))), [exploreOpen, roots, exploreTrees])
+  const exploreVaults = useMemo<readonly SearchVault[]>(() => (!exploreOpen ? [] : roots.map((vault, i) => ({ root: vault, watch: live.current.vaults[i].watch, dirs: allDirs(exploreTrees[i]?.tree ?? []), files: [], idsInSearch: live.current.vaults[i].showIds.inSearch }))), [exploreOpen, roots, exploreTrees])
   const exploreVaultOf = useCallback((path: string) => {
     const scope = scopeOf(path)
     return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates, viewOnlyLinks: scope.viewOnlyLinks }
@@ -3328,7 +3328,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, linkPills: root === null ? undefined : active.linkPills, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Note (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
@@ -3386,7 +3386,7 @@ export function App() {
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
+          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
           lists={lists}
           icons={vaultIcons}
           recentVault={recentPick}

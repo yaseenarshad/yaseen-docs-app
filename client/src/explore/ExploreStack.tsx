@@ -93,6 +93,8 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
   // One feed for every search layer; the text rows (tags, frontmatter values) ride with the records.
   const candidates = useSearchCandidates(vaults, true, textCandidates)
   const roots = useMemo(() => vaults.map((v) => v.root), [vaults])
+  /** The vault's "Show IDs in search" for a row (YAZ-4940); a path in no vault reads Always. */
+  const idsInSearch = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInSearch?.() ?? 'always', [vaults, roots])
 
   const doors = useRef({ onNotice, onClose, openInTab, onRenameFile, linkActions })
   doors.current = { onNotice, onClose, openInTab, onRenameFile, linkActions }
@@ -336,7 +338,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
             aria-hidden={covered}
           >
             {layer.kind === 'search' ? (
-              <ExploreSearch candidates={candidates} recent={exploreRecents()} roots={roots} nameOf={nameOf} onOpen={openRow} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} active={!covered} />
+              <ExploreSearch candidates={candidates} recent={exploreRecents()} roots={roots} nameOf={nameOf} onOpen={openRow} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
             ) : (
               <ExploreNote
                 path={layer.path}

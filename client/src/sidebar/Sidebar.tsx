@@ -1,4 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
+import type { IdsInSearch } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
@@ -77,6 +78,8 @@ export interface SidebarVault {
    * feed. `records` is `[]` until the first index lands.
    */
   index: WikilinkResolveSource
+  /** This vault's "Show IDs in search" (YAZ-4940), read when the search rows draw; absent → only on a row found by its ID. */
+  idsInSearch?: () => IdsInSearch
   /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): off, it has no Inbox row and its folders no "Review this folder". */
   upkeep: boolean
   /**
@@ -904,7 +907,8 @@ export function Sidebar({
   // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own
   // watcher, its own folders and its own files that are no notes. The tree it cuts is the one Files
   // draws — the forest, with two or more vaults (A9).
-  const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i] })), [roots, watches, dirsByVault, filesByVault])
+  // Each vault's "Show IDs in search" getter rides with its search feed (YAZ-4940), read when the rows draw.
+  const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i], idsInSearch: vaults.find((v) => v.root === vault)?.idsInSearch })), [roots, watches, dirsByVault, filesByVault, vaults])
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
   // The hover preview (YAZ-3028 D11): a menu or the Info popover owns the pointer while it stands. A search

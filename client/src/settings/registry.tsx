@@ -36,6 +36,7 @@ import { SHARING_SECTION } from '../share/SharingPage'
 import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import type { LinkClickState } from '../explore/linkClick'
+import type { ShowIdsState } from '../search/showIds'
 import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
 import { FOLDER_PAGES_SECTION } from './folderPagesSection'
@@ -313,6 +314,8 @@ export interface SettingsCtx {
   review?: ReviewSettingsState
   /** This vault's "Clicking a link" (YAZ-4936); absent with no vault open. */
   linkClick?: LinkClickState
+  /** This vault's "Show IDs in search" (YAZ-4940); absent with no vault open. Shown only in a vault with IDs. */
+  showIds?: ShowIdsState
   /** This vault's link pills look (YAZ-4924, Settings › Link pills); absent with no vault open. */
   linkPills?: LinkPillsState
   /**
@@ -1712,6 +1715,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                   value={linkClick.settings.click}
                   onChange={(click) => linkClick.save({ click })}
                   ariaLabel="Clicking a link"
+                />
+              ),
+          },
+          // YAZ-4940: one row of its own, saved in the vault (`.yaseendocs/show-ids.json`), in a vault with IDs only.
+          {
+            id: 'showIds',
+            label: 'Show IDs in search',
+            hint: 'The sidebar search and Explore. Always: every result shows its ID ("WIKI-38 — S3 (AWS)"). Only when it matches: the ID shows on a result the search found by its ID.',
+            keywords: ['id', 'ids', 'search', 'explore', 'show', 'result'],
+            available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
+            render: ({ showIds }) =>
+              showIds && (
+                <Segmented
+                  options={[
+                    { label: 'Always', value: 'always' as const },
+                    { label: 'Only when the search matches the ID', value: 'match' as const },
+                  ]}
+                  value={showIds.settings.search}
+                  onChange={(search) => showIds.save({ search })}
+                  ariaLabel="Show IDs in search"
                 />
               ),
           },

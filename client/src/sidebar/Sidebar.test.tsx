@@ -228,7 +228,8 @@ const inboxOf = ({ upkeep, dueCount, reviewing }: Inbox): Partial<Vault> => ({ .
  * says otherwise. Upkeep review (YAZ-2322) is off, as in a new vault, with nothing due and no review open.
  */
 const oneVault = ({ root = '/v', watch = { subscribe: () => () => undefined }, indexSource = indexFor(true), ...over }: Partial<SidebarProps>): Vault[] => [
-  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, upkeep: false, dueCount: 0, reviewing: false, ...inboxOf(over) },
+  // `idsInSearch` (YAZ-4940) rides on the vault: a test hands it as if it were a prop.
+  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, upkeep: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}) },
 ]
 
 async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => unknown) {
@@ -2763,6 +2764,16 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
     await type(input, 'zed')
     expect(shape(el)).toEqual(['Plans', '  Zed'])
+  })
+
+  it('YAZ-4940: with the vault\'s "Show IDs in search" on Always, a note found by its title shows its ID in front too; with "Only when it matches", the title alone', async () => {
+    const records = (root: string) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Zed.md') ? { id: 'YAZ-12' } : {}))
+    const always = await search('zed', { idsInSearch: () => 'always' } as Partial<SidebarProps>, { records })
+    expect(shape(always.el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    const match = await search('zed', { idsInSearch: () => 'match' } as Partial<SidebarProps>, { records })
+    expect(shape(match.el)).toEqual(['Plans', '  Zed'])
+    await type(match.input, '12')
+    expect(shape(match.el)).toEqual(['Plans', '  YAZ-12 — Zed'])
   })
 
   it('YAZ-3748 D3: `yaseen workflow` finds `1-yaseen-engineering-workflow` by its words and marks each word; the parts between stay plain. B2: the bar draws no spelling line', async () => {
