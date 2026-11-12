@@ -41,6 +41,8 @@ export function useVaultReviewSettings(root: string | null | undefined): ReviewS
 /** `root` is nullable because App's hooks cannot be conditional: no vault, no bridge call, the defaults. */
 export function useReviewSettings(root: string | null, onNotice: (text: string, icon?: NoticeKind) => void): ReviewSettingsState {
   const [settings, setSettings] = useState(DEFAULT_REVIEW_SETTINGS)
+  const live = useRef(settings)
+  live.current = settings
   const malformed = useRef(false)
   // The file as last read: a key this build does not know is written back as it was.
   const held = useRef<Record<string, unknown>>({})
@@ -85,8 +87,12 @@ export function useReviewSettings(root: string | null, onNotice: (text: string, 
       if (root === null) return
       if (malformed.current) return onNotice(`Can't save the review settings: ${REVIEW_SETTINGS_FILE} is not valid JSON`, 'error')
       const clean = sanitizeReviewSettings(next)
+      // Only what changed goes into the file, over the file as read: a field never set keeps following the defaults.
+      const before = live.current
+      const changed = Object.fromEntries(Object.entries(clean).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(before[key as keyof ReviewSettings])))
       setSettings(clean)
-      api.vaultConfig.write(root, REVIEW_SETTINGS_FILE, { ...held.current, ...clean }).catch(() =>
+      held.current = { ...held.current, ...changed }
+      api.vaultConfig.write(root, REVIEW_SETTINGS_FILE, held.current).catch(() =>
         api.vaultConfig.read(root, REVIEW_SETTINGS_FILE).then(
           (raw) => setSettings(sanitizeReviewSettings(raw)),
           () => undefined,

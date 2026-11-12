@@ -90,13 +90,13 @@ describe('useReviewSettings', () => {
     expect(state.settings.enabled).toBe(false)
   })
 
-  it('save shows the new settings at once, and writes them over the file as read: a key this build does not know stays', async () => {
+  it('save shows the new settings at once, and writes only what changed over the file as read: a key this build does not know stays, a default never set stays out', async () => {
     read.mockResolvedValue({ later: 'kept', newPerDay: 3 })
     await mount('/vault')
     const next = { ...state.settings, maxDays: 90 }
     await act(async () => state.save(next))
     expect(state.settings).toEqual(next)
-    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { later: 'kept', ...next })
+    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { later: 'kept', newPerDay: 3, maxDays: 90 })
   })
 
   it('publishes the settings by root for the folder tables, and takes them back when the vault closes', async () => {
@@ -123,7 +123,7 @@ describe('useReviewSettings', () => {
     read.mockResolvedValue({ buttons: 4 })
     await changed()
     await act(async () => state.save({ ...on, maxDays: 10 }))
-    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', REVIEW_SETTINGS_FILE, { ...on, maxDays: 10 })
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', REVIEW_SETTINGS_FILE, { buttons: 4, maxDays: 10 })
   })
 
   it('a save that fails falls back to what the file holds', async () => {

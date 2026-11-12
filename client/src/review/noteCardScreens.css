@@ -153,6 +153,14 @@
   padding: 6px 14px;
   font-size: 13px;
 }
+/* Forgot and Remembered tell apart at a glance: a quiet colour on the word, the button stays the Explore button. */
+.note-card-inbox__answer[data-rating='again'] {
+  color: var(--danger);
+}
+.note-card-inbox__answer[data-rating='good'],
+.note-card-inbox__answer[data-rating='easy'] {
+  color: var(--ok);
+}
 .note-card-inbox__done {
   padding: 48px 0 40px;
   text-align: center;
