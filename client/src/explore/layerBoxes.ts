@@ -30,6 +30,13 @@ export interface LayerGestures {
   onGripDown: (id: number, grip: Grip, event: ReactMouseEvent) => void
   /** The double click on the head: back to the layer's stack place and size. */
   reset: (id: number, event: ReactMouseEvent) => void
+  /**
+   * Tile (YAZ-4944): these layers to these boxes, the others where they stand now (pinned, so none follows a tiled
+   * one). Style writes only; the first layer's kept box does not change.
+   */
+  arrange: (boxes: ReadonlyMap<number, LayerBox>) => void
+  /** Tile › Stack: every layer back to its stack place; the kept box does not change. */
+  restack: () => void
 }
 
 export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers: readonly ExploreLayer[], W: number, H: number): LayerGestures {
@@ -191,5 +198,25 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
     [placeAll, keep, pinAbove],
   )
 
-  return { onHeadDown, onGripDown, reset }
+  const arrange = useCallback(
+    (tiled: ReadonlyMap<number, LayerBox>) => {
+      for (const layer of layersRef.current) {
+        const box = tiled.get(layer.id) ?? boxes.current.get(layer.id)
+        if (box !== undefined) moved.current.set(layer.id, box)
+      }
+      placeAll()
+    },
+    [placeAll],
+  )
+
+  const restack = useCallback(() => {
+    moved.current.clear()
+    // The first layer's stack place is its kept box, as when the stack opened.
+    const first = layersRef.current[0]
+    const kept = first === undefined ? null : savedLayerBox(first.kind)
+    if (first !== undefined && kept !== null) moved.current.set(first.id, kept)
+    placeAll()
+  }, [placeAll])
+
+  return { onHeadDown, onGripDown, reset, arrange, restack }
 }

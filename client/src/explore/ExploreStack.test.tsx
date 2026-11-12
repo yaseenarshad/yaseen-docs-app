@@ -22,6 +22,7 @@ import { registerRenameContinuity } from '../lib/renameContinuity'
 import { requestZoom } from '../editor/zoomRequest'
 import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStack'
 import { layerPlace, MAX_LAYERS } from './layers'
+import { tileCells } from './tile'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -210,7 +211,7 @@ describe('the explore stack', () => {
     await openResult()
     expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note'])
     expect(top().querySelector('.explore__title')?.textContent).toBe('alpha')
-    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(top().querySelector('.explore__mode')).toBeNull()
     // The note's saved text, read once, in the read-only render: no editor, no caret.
     expect(readFile).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
     expect(crepes).toHaveLength(1)
@@ -411,10 +412,10 @@ describe('the explore stack', () => {
     expect(under.comments.at(-1)?.content).toContain('# /v/alpha.md')
     expect(under.backlinks).toContain('/v/alpha.md')
     expect(top().querySelector('.explore__under .comments')).not.toBeNull()
-    // The fold-all button, the note tab's own, left of "Reading": its command runs on this layer's view.
+    // The fold-all button, the note tab's own, in the head: its command runs on this layer's view.
     const fold = top().querySelector<HTMLButtonElement>('.explore__head .fold-all__trigger')
     expect(fold).not.toBeNull()
-    expect(fold?.nextElementSibling?.className).toBe('explore__mode')
+    expect(fold?.nextElementSibling?.textContent).toContain('Edit')
     act(() => fold?.click())
     await flush()
     expect(folds.runs).toEqual([true])
@@ -435,7 +436,7 @@ describe('the explore stack', () => {
     // ⌘E does nothing here (Yaseen's ⌘E is his emoji app's; in the editor it is Inline code): E alone edits.
     key(document.activeElement as Element, { key: 'e', metaKey: true })
     await flush()
-    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(top().querySelector('.explore__mode')).toBeNull()
     key(document.activeElement as Element, { key: 'e' })
     await flush()
     expect(top().querySelector('.explore__mode')?.textContent).toBe('Editing')
@@ -445,7 +446,7 @@ describe('the explore stack', () => {
     await flush()
     expect(top()).toBe(layer)
     expect(layers()).toHaveLength(2)
-    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(top().querySelector('.explore__mode')).toBeNull()
     expect(readFile).toHaveBeenCalledTimes(2)
     expect(document.activeElement).toBe(top().querySelector('.explore__body'))
     // Done, from a click.
@@ -455,7 +456,7 @@ describe('the explore stack', () => {
     expect(done).toBeDefined()
     act(() => done?.click())
     await flush()
-    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(top().querySelector('.explore__mode')).toBeNull()
     escape()
     expect(layers()).toHaveLength(1)
   })
@@ -530,7 +531,7 @@ describe('the explore stack', () => {
     for (let i = 0; i < 4; i++) await act(async () => await new Promise((r) => setTimeout(r, 0)))
     readFile.mock.calls.forEach(() => order.push('read'))
     expect(order).toEqual(['flushed', 'read'])
-    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(top().querySelector('.explore__mode')).toBeNull()
     expect(crepes.at(-1)?.opts.defaultValue).toContain('typed at once')
     expect(disk.content).toContain('typed at once')
     // A close while editing goes through the same flush door.
@@ -667,7 +668,7 @@ describe('the explore stack', () => {
     await mount()
     expect(layers().map((l) => l.dataset.kind)).toEqual(['note'])
     expect(top().querySelector('.explore__title')?.textContent).toBe('beta')
-    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(top().querySelector('.explore__mode')).toBeNull()
     escape()
     expect(props.onClose).toHaveBeenCalledOnce()
   })
@@ -1184,7 +1185,7 @@ describe('round 6: layers act like windows (YAZ-2571): a click on a layer behind
     expect(body.scrollTop).toBe(120)
     // The keys go to the front layer only: E types in the search, ← → are the field's.
     key(search.querySelector('.explore__input') as HTMLElement, { key: 'e' })
-    expect(note.querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(note.querySelector('.explore__mode')).toBeNull()
     press(body)
     await flush()
     expect(front()).toBe(note)
@@ -1396,13 +1397,13 @@ describe('YAZ-4943: drawings and diagrams open as reading layers', () => {
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/paper.pdf')
   })
 
-  it('the head: title, ‹ n/m ›, Reading, ↗, × — no Edit and no zoom pill; E does nothing; ⌘↵ and ↗ open the board in a tab', async () => {
+  it('the head: title, ‹ n/m ›, ↗, × — no Reading label (YAZ-4944), no Edit and no zoom pill; E does nothing; ⌘↵ and ↗ open the board in a tab', async () => {
     await mount()
     await typeQuery('sketch')
     await openResult()
     expect(head().querySelector('.explore__title')?.textContent).toBe('alpha-sketch')
     expect(head().querySelector('.explore__count')?.textContent).toBe('1/1')
-    expect(head().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(head().querySelector('.explore__mode')).toBeNull()
     expect(buttons()).toEqual(['Previous search result', 'Next search result', 'Open in a tab', 'Close this layer'])
     expect(head().querySelector('.document-zoom')).toBeNull()
     expect(head().textContent).not.toContain('Edit')
@@ -1410,7 +1411,7 @@ describe('YAZ-4943: drawings and diagrams open as reading layers', () => {
     await flush()
     expect(top().dataset.kind).toBe('board')
     expect(editors).toEqual([])
-    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(top().querySelector('.explore__mode')).toBeNull()
     key(board().dom, { key: 'Enter', metaKey: true })
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(SKETCH)
     expect(props.onClose).toHaveBeenCalledOnce()
@@ -1536,5 +1537,180 @@ describe('YAZ-4943: drawings and diagrams open as reading layers', () => {
     mouse(window, 'mouseup', 130, 120)
     expect(JSON.parse(localStorage.getItem('explore:box:board') ?? 'null')).toMatchObject({ width: expect.any(Number) })
     expect(localStorage.getItem('explore:box:note')).toBeNull()
+  })
+})
+
+describe('YAZ-4944: Tile arranges the Explore windows', () => {
+  const W = window.innerWidth
+  const H = window.innerHeight
+  const area = { x: 0, y: 0, width: W, height: H }
+  const boxOf = (layer: HTMLElement) => ({ x: parseFloat(layer.style.left), y: parseFloat(layer.style.top), width: parseFloat(layer.style.width), height: parseFloat(layer.style.height) })
+  const tileButton = () => el.querySelector<HTMLButtonElement>('.explore__tile') as HTMLButtonElement
+  const notes = () => layers().filter((l) => l.dataset.kind === 'note')
+  const titleOf = (layer: HTMLElement) => layer.querySelector('.explore__title')?.textContent
+  const near = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number | null }) => {
+    expect(a.x).toBeCloseTo(b.x, 3)
+    expect(a.y).toBeCloseTo(b.y, 3)
+    expect(a.width).toBeCloseTo(b.width, 3)
+    expect(a.height).toBeCloseTo(b.height ?? NaN, 3)
+  }
+  const tileKey = (digit: number, target: Element = top()) => key(target, { key: String(digit), code: `Digit${digit}`, metaKey: true, altKey: true })
+  /** A search, then `n` notes: alpha from the search, the rest by links (n2, n3, …), the newest in front. */
+  async function withNotes(n: number) {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    for (let i = 2; i <= n; i++) {
+      act(() => crepes[crepes.length - 1].opts.wikilinkNav?.openCurrent(`/v/n${i}.md`))
+      await flush()
+      await flush()
+    }
+    expect(notes()).toHaveLength(n)
+  }
+  beforeEach(() => {
+    localStorage.removeItem('explore:box:search')
+    localStorage.removeItem('explore:box:note')
+  })
+
+  it('the head has no "Reading" label (a note reading, a board); edit keeps Editing and Done', async () => {
+    await withNotes(1)
+    expect(top().querySelector('.explore__head')?.textContent).not.toContain('Reading')
+    key(top().querySelector('.explore__body') as HTMLElement, { key: 'e' })
+    await flush()
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Editing')
+  })
+
+  it('▦ Tile picks the layout by count: 2 side by side, 3 across, 4 a grid, 5 a grid + centre (the newest in the middle, on top); the search stays where it is', async () => {
+    await withNotes(1)
+    expect(tileButton().disabled).toBe(true)
+    act(() => crepes[0].opts.wikilinkNav?.openCurrent('/v/n2.md'))
+    await flush()
+    await flush()
+    const search = layers()[0]
+    const searchBox = { left: search.style.left, top: search.style.top }
+    expect(tileButton().disabled).toBe(false)
+    act(() => tileButton().click())
+    // Most recent first: n2 (front) takes the first cell.
+    const two = tileCells('two', area)
+    near(boxOf(notes()[1]), two[0])
+    near(boxOf(notes()[0]), two[1])
+    expect({ left: search.style.left, top: search.style.top }).toEqual(searchBox)
+    for (const n of [3, 4, 5]) {
+      act(() => crepes[crepes.length - 1].opts.wikilinkNav?.openCurrent(`/v/n${n}.md`))
+      await flush()
+      await flush()
+      act(() => tileButton().click())
+      const layout = n === 3 ? 'three' : n === 4 ? 'grid' : 'gridCentre'
+      const cells = tileCells(layout, area)
+      const byNewest = [...notes()].reverse()
+      if (layout === 'gridCentre') {
+        near(boxOf(byNewest[0]), cells[4])
+        byNewest.slice(1).forEach((layer, i) => near(boxOf(layer), cells[i]))
+        expect(Math.max(...layers().map((l) => Number(l.style.zIndex)))).toBe(Number(byNewest[0].style.zIndex))
+      } else byNewest.forEach((layer, i) => near(boxOf(layer), cells[i]))
+    }
+    // Tiling keeps the first layer's kept box as it was.
+    expect(localStorage.getItem('explore:box:search')).toBeNull()
+  })
+
+  it('more than 5: the 5 used last; the oldest stays where it was, behind', async () => {
+    await withNotes(6)
+    const oldest = notes()[0]
+    const before = { left: oldest.style.left, top: oldest.style.top, width: oldest.style.width }
+    act(() => tileButton().click())
+    expect({ left: oldest.style.left, top: oldest.style.top, width: oldest.style.width }).toEqual(before)
+    const tiled = notes().slice(1).map(boxOf)
+    const cells = tileCells('gridCentre', area)
+    near(tiled[4], cells[4])
+    expect(Number(oldest.style.zIndex)).toBeLessThan(Math.min(...notes().slice(1).map((l) => Number(l.style.zIndex))))
+  })
+
+  it('the keys: ⌥⌘2 tiles the two used last; ⌥⌘0 puts every window back in its stack place; a key the editor took is left to it', async () => {
+    await withNotes(3)
+    const stack = layers().map((l) => ({ left: l.style.left, top: l.style.top, width: l.style.width, height: l.style.height }))
+    tileKey(2, top().querySelector('.explore__body') as HTMLElement)
+    const two = tileCells('two', area)
+    near(boxOf(notes()[2]), two[0])
+    near(boxOf(notes()[1]), two[1])
+    tileKey(0, top().querySelector('.explore__body') as HTMLElement)
+    expect(layers().map((l) => ({ left: l.style.left, top: l.style.top, width: l.style.width, height: l.style.height }))).toEqual(stack)
+    // In edit the editor's ⌥⌘digit (a heading) wins: the stack leaves a key it took.
+    const body = top().querySelector('.explore__body') as HTMLElement
+    const taken = (e: Event) => e.preventDefault()
+    body.addEventListener('keydown', taken)
+    tileKey(3, body)
+    body.removeEventListener('keydown', taken)
+    expect(layers().map((l) => ({ left: l.style.left, top: l.style.top, width: l.style.width, height: l.style.height }))).toEqual(stack)
+  })
+
+  it('▾ Arrange: five layouts; the windows most recent first, the first places checked, the rest greyed when full; Include searches; ↵ applies; Esc closes it alone', async () => {
+    await withNotes(6)
+    act(() => (el.querySelector('.explore__tile-more') as HTMLElement).click())
+    const pop = () => el.querySelector('.explore__arrange') as HTMLElement
+    expect([...pop().querySelectorAll('.explore__layout-name')].map((n) => n.textContent)).toEqual(['Side by side', 'Three', 'Grid', 'Grid + centre', 'Stack'])
+    expect(pop().querySelector('[aria-pressed="true"] .explore__layout-name')?.textContent).toBe('Grid + centre')
+    const rows = () => [...pop().querySelectorAll<HTMLElement>('.explore__arrange-row')]
+    const boxes = () => rows().map((r) => r.querySelector('input') as HTMLInputElement)
+    expect(rows().map((r) => r.querySelector('.explore__arrange-name')?.textContent)).toEqual(['n6', 'n5', 'n4', 'n3', 'n2', 'alpha'])
+    expect(boxes().map((b) => [b.checked, b.disabled])).toEqual([[true, false], [true, false], [true, false], [true, false], [true, false], [false, true]])
+    // Side by side: the two newest checked; pick n3 and alpha instead.
+    act(() => (pop().querySelector('.explore__layout') as HTMLElement).click())
+    expect(boxes().map((b) => b.checked)).toEqual([true, true, false, false, false, false])
+    act(() => boxes()[0].click())
+    act(() => boxes()[1].click())
+    act(() => boxes()[3].click())
+    act(() => boxes()[5].click())
+    expect(pop().querySelector('.explore__arrange-count')?.textContent).toBe('2/2')
+    // Include searches: the search joins the list.
+    act(() => (pop().querySelector('.explore__arrange-searches input') as HTMLElement).click())
+    expect(rows().some((r) => r.textContent?.includes('Search'))).toBe(true)
+    act(() => (pop().querySelector('.explore__arrange-searches input') as HTMLElement).click())
+    act(() => boxes()[0].click())
+    act(() => boxes()[1].click())
+    act(() => boxes()[0].click())
+    act(() => boxes()[0].click())
+    act(() => boxes()[3].click())
+    act(() => boxes()[5].click())
+    expect(boxes().map((b) => b.checked)).toEqual([false, false, false, true, false, true])
+    // Esc in the popover closes it, never a layer.
+    const count = layers().length
+    key(pop(), { key: 'Escape' })
+    expect(el.querySelector('.explore__arrange')).toBeNull()
+    expect(layers()).toHaveLength(count)
+    // Again, then ↵ applies the picked two: n3 first (the list order), then alpha.
+    act(() => (el.querySelector('.explore__tile-more') as HTMLElement).click())
+    act(() => (pop().querySelector('.explore__layout') as HTMLElement).click())
+    act(() => boxes()[0].click())
+    act(() => boxes()[1].click())
+    act(() => boxes()[3].click())
+    act(() => boxes()[5].click())
+    key(pop(), { key: 'Enter' })
+    expect(el.querySelector('.explore__arrange')).toBeNull()
+    const two = tileCells('two', area)
+    const byTitle = (t: string) => notes().find((l) => titleOf(l) === t) as HTMLElement
+    near(boxOf(byTitle('n3')), two[0])
+    near(boxOf(byTitle('alpha')), two[1])
+  })
+
+  it('tiled windows stay windows: a drag moves one by its style, × closes one; with motion they glide (200 ms), with reduced motion not', async () => {
+    Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false }), configurable: true, writable: true })
+    await withNotes(2)
+    act(() => tileButton().click())
+    expect(el.querySelector('.explore')?.classList.contains('explore--gliding')).toBe(true)
+    await act(async () => await new Promise((r) => setTimeout(r, 300)))
+    expect(el.querySelector('.explore')?.classList.contains('explore--gliding')).toBe(false)
+    const moved = notes()[0]
+    const from = boxOf(moved)
+    const mouse = (target: EventTarget, type: string, x: number, y: number) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y })))
+    mouse(moved.querySelector('.explore__head') as Element, 'mousedown', 100, 100)
+    mouse(window, 'mousemove', 130, 110)
+    mouse(window, 'mouseup', 130, 110)
+    expect(boxOf(moved).x).toBeCloseTo(Math.min(from.x + 30, W - from.width), 3)
+    Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: true }), configurable: true, writable: true })
+    tileKey(0, moved)
+    expect(el.querySelector('.explore')?.classList.contains('explore--gliding')).toBe(false)
+    act(() => (notes()[1].querySelector('[aria-label="Close this layer"]') as HTMLElement).click())
+    await flush()
+    expect(notes()).toHaveLength(1)
   })
 })

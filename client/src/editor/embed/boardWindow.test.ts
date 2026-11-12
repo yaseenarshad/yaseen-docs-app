@@ -773,3 +773,38 @@ describe('Explore`s board layer: fill mode (YAZ-4943)', () => {
     expect(onOptions).not.toHaveBeenCalled()
   })
 })
+
+describe('Explore`s board layer: a resize of the layer (YAZ-4944 Tile)', () => {
+  it('a fitted board fits again when its box changes size (one observer, gone with the window); a board you moved keeps its view', async () => {
+    const observed: Array<{ cb: () => void; disconnect: ReturnType<typeof vi.fn> }> = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        disconnect = vi.fn()
+        constructor(cb: () => void) {
+          observed.push({ cb, disconnect: this.disconnect })
+        }
+        observe() {}
+      },
+    )
+    const { win } = mount({ editable: false, options: null, fill: true, columnWidth: () => 1000, onOptions: undefined })
+    await settle()
+    expect(observed).toHaveLength(1)
+    const before = transformOf(win).zoom
+    Object.defineProperty(win.dom, 'clientWidth', { value: 500, configurable: true })
+    Object.defineProperty(win.dom, 'clientHeight', { value: 400, configurable: true })
+    observed[0].cb()
+    await settle()
+    expect(transformOf(win).zoom).toBeCloseTo((500 - 20) / 1000, 6)
+    expect(transformOf(win).zoom).not.toBeCloseTo(before, 3)
+    wheel(win, { deltaY: 40 })
+    await settle()
+    const moved = transformOf(win)
+    Object.defineProperty(win.dom, 'clientWidth', { value: 900, configurable: true })
+    observed[0].cb()
+    await settle()
+    expect(transformOf(win)).toEqual(moved)
+    win.destroy()
+    expect(observed[0].disconnect).toHaveBeenCalled()
+  })
+})

@@ -267,9 +267,9 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
         {/* The page zoom's pill (round 4): one value for every note layer; a press on it is the pill's, not a drag. */}
         <DocumentZoom value={zoom} onChange={onZoom} />
         {foldAll}
+        {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit E" says what you can do. */}
         {mode === 'read' ? (
           <>
-            <span className="explore__mode">Reading</span>
             {note && (
               <button type="button" className="explore__button" onClick={onToggleEdit} title={unit('Edit this note here (E)')}>
                 Edit<kbd>E</kbd>

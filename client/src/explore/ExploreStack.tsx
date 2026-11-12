@@ -32,7 +32,9 @@ import { exploreNoteSections } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
 import { ExploreSearch, type SearchLink } from './ExploreSearch'
 import { textCandidates } from './exploreRows'
+import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
+import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
 import { frontOrder, layerKindOf, MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepPlace, stepResult, topNote, type ExploreLayer } from './layers'
 import './explore.css'
 
@@ -64,6 +66,15 @@ export interface ExploreStackProps {
 /** The layer a note or a board opens as (YAZ-4943): a note for reading, a board (a drawing or a diagram) for reading. */
 const fileLayer = (path: string, from?: { search: number; at: number }): ExploreLayer =>
   layerKindOf(path) === 'board' ? { id: newLayerId(), kind: 'board', path, ...(from !== undefined && { from }) } : { id: newLayerId(), kind: 'note', path, mode: 'read', ...(from !== undefined && { from }) }
+
+/** The Tile keys (YAZ-4944, `shared/keys/explore.ts`) and their layouts. */
+const TILE_KEYS: ReadonlyArray<readonly [string, ArrangeLayout]> = [
+  ['explore.tileTwo', 'two'],
+  ['explore.tileThree', 'three'],
+  ['explore.tileGrid', 'grid'],
+  ['explore.tileGridCentre', 'gridCentre'],
+  ['explore.tileStack', 'stack'],
+]
 
 /** The notice of a 13th layer. */
 export const FULL_NOTICE = `The explore stack holds ${MAX_LAYERS} layers. Close some first (Esc).`
@@ -346,6 +357,54 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     [setMode],
   )
 
+  /** Notes and boards open now: what the Tile button arranges. */
+  const fileCount = live.filter((l) => l.kind !== 'search').length
+  /**
+   * Tile (YAZ-4944): `ids` (the most recently used first; by default the layout's places of notes and boards, the
+   * front order's newest) to the layout's cells, in the window under the top bar; the others stay where they stand,
+   * behind. Stack: every layer back to its stack place. The windows glide there (`explore--gliding`, the CSS
+   * transition of their box; none with reduced motion): style writes only, plus one render for the front order.
+   */
+  const tile = useCallback(
+    (layout: ArrangeLayout, ids?: readonly number[]) => {
+      const root = rootRef.current
+      if (root === null) return
+      if (!reducedMotion()) {
+        root.classList.add('explore--gliding')
+        const timer = setTimeout(() => {
+          timers.current.delete(timer)
+          root.classList.remove('explore--gliding')
+        }, TILE_MS + 50)
+        timers.current.add(timer)
+      }
+      if (layout === 'stack') return gestures.restack()
+      const picked = ids ?? pickRecent(live, TILE_PLACES[layout], false)
+      if (picked.length === 0) return
+      const bar = root.querySelector('.explore__trail')?.getBoundingClientRect().bottom ?? 0
+      gestures.arrange(tileBoxes(layout, picked, { x: 0, y: bar, width: windowSize.width, height: windowSize.height - bar }))
+      setOrder(tileOrder(live, picked))
+    },
+    [live, gestures, windowSize],
+  )
+  /** The ▦ Tile button: the layout by how many notes and boards are open. */
+  const tileAuto = () => {
+    const layout = layoutForCount(fileCount)
+    if (layout !== null) tile(layout)
+  }
+  /** The Arrange popover (▾), and where the keyboard was when it opened: it goes back there when it closes. */
+  const [arrangeOpen, setArrangeOpen] = useState(false)
+  const arrangeFrom = useRef<Element | null>(null)
+  const openArrange = () => {
+    arrangeFrom.current = document.activeElement
+    setArrangeOpen(true)
+  }
+  const closeArrange = useCallback(() => {
+    setArrangeOpen(false)
+    const from = arrangeFrom.current
+    arrangeFrom.current = null
+    if (from instanceof HTMLElement && from.isConnected) from.focus({ preventScroll: true })
+  }, [])
+
   const toTab = useCallback(() => {
     const note = topNote(live)
     if (note === null) return
@@ -418,6 +477,17 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
       toTab()
       return
     }
+    // Tile (YAZ-4944): ⌥⌘2 … ⌥⌘5, ⌥⌘0. A key the editor took (a heading in edit) is left to it.
+    if (!event.defaultPrevented) {
+      const overrides = storage.getSettings()?.hotkeys
+      const hit = TILE_KEYS.find(([id]) => isNoteKey(event, id, overrides))
+      if (hit !== undefined) {
+        event.preventDefault()
+        event.stopPropagation()
+        tile(hit[1])
+        return
+      }
+    }
     // ‹ › (round 3): a bare key (← / →) is the caret's while a field or the editor has the keyboard, so it steps only
     // while reading; a chord (⌘⌥↓ / ⌘⌥↑) steps in any mode. A key the editor took (a cell note's own step) is left.
     if (top.kind !== 'search' && top.from !== undefined && !event.defaultPrevented) {
@@ -481,7 +551,33 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
               </button>
             </span>
           ))}
+          {/* Tile (YAZ-4944): arrange the windows; ▾ opens Arrange (the layouts and which windows). */}
+          <span className="explore__trail-tools">
+            <button type="button" className="explore__tile" disabled={fileCount < 2} title={fileCount < 2 ? 'Open two or more notes or boards to tile them' : 'Tile the notes and boards (⌥⌘2 … ⌥⌘5; ⌥⌘0: back to the stack)'} onMouseDown={(e) => e.preventDefault()} onClick={tileAuto}>
+              <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                <rect x="0.5" y="0.5" width="4.75" height="4.75" rx="1" />
+                <rect x="6.75" y="0.5" width="4.75" height="4.75" rx="1" />
+                <rect x="0.5" y="6.75" width="4.75" height="4.75" rx="1" />
+                <rect x="6.75" y="6.75" width="4.75" height="4.75" rx="1" />
+              </svg>
+              Tile
+            </button>
+            <button type="button" className="explore__tile-more" aria-label="Arrange…" title="Arrange: pick a layout and the windows" aria-expanded={arrangeOpen} onMouseDown={(e) => e.preventDefault()} onClick={() => (arrangeOpen ? closeArrange() : openArrange())}>
+              ▾
+            </button>
+          </span>
         </nav>
+      )}
+      {arrangeOpen && live.length > 1 && (
+        <ExploreArrange
+          windows={[...live].reverse().map((l) => ({ id: l.id, kind: l.kind, name: l.kind === 'search' ? 'Search' : nameOf(l.path) }))}
+          initial={(layoutForCount(fileCount) ?? 'two') satisfies TileLayout}
+          onApply={(layout, ids) => {
+            closeArrange()
+            tile(layout, ids)
+          }}
+          onClose={closeArrange}
+        />
       )}
       {layers.map((layer) => {
         const covered = layer !== top

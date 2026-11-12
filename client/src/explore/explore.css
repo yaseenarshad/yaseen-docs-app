@@ -428,3 +428,206 @@
   background: var(--bg);
   color: var(--fg);
 }
+
+/* ---------- Tile (YAZ-4944): the tools at the end of the top bar, the Arrange popover, the glide ---------- */
+.explore__trail-tools {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 1px;
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+.explore__tile,
+.explore__tile-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.explore__tile-more {
+  padding: 2px 6px;
+}
+.explore__tile svg {
+  fill: currentColor;
+}
+.explore__tile:hover:not(:disabled),
+.explore__tile-more:hover,
+.explore__tile-more[aria-expanded='true'] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.explore__tile:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The windows glide to their cells (the class lives 200 ms after a tile); never while a drag writes the box. */
+@media (prefers-reduced-motion: no-preference) {
+  .explore--gliding .explore__layer {
+    transition:
+      left 200ms cubic-bezier(0.4, 0.3, 0, 1),
+      top 200ms cubic-bezier(0.4, 0.3, 0, 1),
+      width 200ms cubic-bezier(0.4, 0.3, 0, 1),
+      height 200ms cubic-bezier(0.4, 0.3, 0, 1);
+  }
+}
+
+.explore__arrange {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  z-index: 21;
+  width: 340px;
+  max-width: calc(100% - 32px);
+  padding: 12px;
+  transform: translateX(-50%);
+  color: var(--fg);
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+}
+.explore__arrange-title {
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.explore__layouts {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.explore__layout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 2px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.explore__layout svg {
+  fill: color-mix(in srgb, var(--fg) 14%, transparent);
+  stroke: color-mix(in srgb, var(--fg) 45%, transparent);
+  stroke-width: 0.8;
+}
+.explore__layout:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.explore__layout[aria-pressed='true'] {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.explore__layout[aria-pressed='true'] svg {
+  fill: color-mix(in srgb, var(--accent) 30%, transparent);
+  stroke: var(--accent);
+}
+.explore__layout:focus-visible,
+.explore__arrange-apply:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.explore__layout-name {
+  white-space: nowrap;
+}
+.explore__arrange-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 4px;
+  color: var(--fg-muted);
+}
+.explore__arrange-count {
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.explore__arrange-searches {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.explore__arrange-list {
+  max-height: 210px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.explore__arrange-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.explore__arrange-row:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.explore__arrange-row--full {
+  color: var(--fg-muted);
+  cursor: default;
+}
+.explore__arrange-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore__arrange-kind {
+  flex: none;
+  padding: 0 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.explore__arrange-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+.explore__arrange-hint {
+  color: var(--fg-muted);
+}
+.explore__arrange-apply {
+  flex: none;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.explore__arrange-apply:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.explore__arrange-apply kbd {
+  margin-left: 4px;
+  font-family: inherit;
+  opacity: 0.8;
+}

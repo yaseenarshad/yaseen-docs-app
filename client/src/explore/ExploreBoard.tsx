@@ -4,7 +4,7 @@
  * the layer, fitted on open; the wheel, a drag, ⌘ + the wheel and the window's zoom % pan and zoom freely; nothing is
  * ever written (no `onOptions`). A diagram's pages are tabs under the board. A click on a link of the board (its
  * pills, a shape's link) opens that page on top, as a note layer's links do. No Edit, no E, no note zoom pill: ↗
- * (or ⌘↵) opens the board in a tab to edit it. The window loads the board's picture once; a covered layer keeps it.
+ * (or ⌘↵) opens the board in a tab to edit it. No "Reading" label (YAZ-4944): a board layer only reads. The window loads the board's picture once; a covered layer keeps it.
  */
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind } from '@shared/fileKind'
@@ -147,7 +147,6 @@ export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onO
         </span>
         {noteId !== undefined && <span className="explore__id">{noteId}</span>}
         {steps !== undefined && <ExploreSteps steps={steps} />}
-        <span className="explore__mode">Reading</span>
         <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} title="Open in a tab to edit it, and close the stack (⌘↵)" aria-label="Open in a tab">
           ↗
         </button>

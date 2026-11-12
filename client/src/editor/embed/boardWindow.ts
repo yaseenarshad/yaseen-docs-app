@@ -273,6 +273,8 @@ class BoardWindow implements BoardWindowHandle {
   private unwatch: (() => void) | null = null
   private endDrag: (() => void) | null = null
   private overlay: { close: () => void } | null = null
+  /** Fill (YAZ-4943/4944): the layer's box changed size (a resize, a Tile); a view still fitted fits again. */
+  private resized: ResizeObserver | null = null
   /** The scroll root whose observer watches this window (YAZ-4862), fixed at the mount. */
   private readonly nearRoot: Element | null
   /** The zoom label's percent as written (A23): a pan frame writes it only when it changes. */
@@ -330,7 +332,17 @@ class BoardWindow implements BoardWindowHandle {
     this.dom.addEventListener('keydown', this.onKey)
     this.dom.addEventListener('contextmenu', this.onContextMenu)
     this.dom.addEventListener('pointerenter', this.onPointerEnter)
-    if (host.fill === true) this.dom.addEventListener('mousemove', this.onHover)
+    if (host.fill === true) {
+      this.dom.addEventListener('mousemove', this.onHover)
+      if (typeof ResizeObserver !== 'undefined') {
+        this.resized = new ResizeObserver(() => {
+          if (!this.fitted || this.picture?.bounds == null) return
+          this.view = this.fitNow()
+          this.paint()
+        })
+        this.resized.observe(this.dom)
+      }
+    }
     this.lockButton.addEventListener('click', (e) => {
       e.stopPropagation()
       this.setLocked(!this.locked)
@@ -1086,6 +1098,8 @@ class BoardWindow implements BoardWindowHandle {
     if (this.destroyed) return
     this.overlay?.close()
     this.endDrag?.()
+    this.resized?.disconnect()
+    this.resized = null
     this.destroyed = true
     clearTimeout(this.restTimer)
     clearTimeout(this.writeTimer)
