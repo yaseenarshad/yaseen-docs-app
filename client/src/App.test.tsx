@@ -4400,7 +4400,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         trashing(b.bridge)
       })
 
-    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "Allow for 15 minutes" opens the vault’s file actions that long, then it asks again', async () => {
+    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "Allow for 10 minutes" opens the vault’s file actions that long, then it asks again', async () => {
       // "Ask before renaming" off: the rename sheet would otherwise stand between the vault's sheet and the rename.
       const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
         feed(b)
@@ -4414,28 +4414,28 @@ describe('App rename door (⚡ YAZ-888)', () => {
       // Delete asks; Cancel deletes nothing.
       act(() => void captured.sidebar?.onDeleteEntries(['/v/B.md']))
       await act(async () => {})
-      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow its file actions — rename, move, delete, new and paste — for 15 minutes?')
+      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow its file actions — rename, move, delete, new and paste — for 10 minutes?')
       expect(bridge.file.delete).not.toHaveBeenCalled()
       await act(async () => button('Cancel')?.click())
       expect(sheet()).toBeNull()
       expect(bridge.file.delete).not.toHaveBeenCalled()
-      // Rename asks too; "Allow for 15 minutes" lets it run.
+      // Rename asks too; "Allow for 10 minutes" lets it run.
       act(() => void captured.sidebar?.onRenameFile('/v/B.md', '/v/C.md', 'file'))
       await act(async () => {})
       expect(sheet()).not.toBeNull()
       expect(bridge.file.rename).not.toHaveBeenCalled()
-      await act(async () => button('Allow for 15 minutes')?.click())
+      await act(async () => button('Allow for 10 minutes')?.click())
       await act(async () => {})
       expect(sheet()).toBeNull()
       expect(renames(bridge)).toEqual([['/v/B.md', '/v/C.md']])
-      // Within the 15 minutes a Delete does not ask.
+      // Within the 10 minutes a Delete does not ask.
       const now = Date.now()
-      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 14 * 60_000)
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 9 * 60_000)
       await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md']))
       expect(sheet()).toBeNull()
       expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/A.md' }])
       // After them it asks again.
-      clock.mockReturnValue(now + 15 * 60_000 + 1)
+      clock.mockReturnValue(now + 10 * 60_000 + 1)
       act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
       await act(async () => {})
       expect(sheet()).not.toBeNull()

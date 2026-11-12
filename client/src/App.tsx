@@ -502,7 +502,7 @@ export function App() {
   const candidatesOf = useCallback((path: string) => (rootOfPath(live.current.roots, path) === null ? null : scopeOf(path).wikilinkCandidates), [scopeOf])
   /**
    * A file action in a read-only vault (YAZ-4939): Rename, Move, Delete, the sidebar's New … and Paste, a folder page's
-   * New. The vault's own allowance answers at once; else ONE sheet asks, "Allow for 15 minutes" opens the vault's file
+   * New. The vault's own allowance answers at once; else ONE sheet asks, "Allow for 10 minutes" opens the vault's file
    * actions that long, and Cancel refuses. The app's own writes never come here.
    */
   const [readOnlyAsk, setReadOnlyAsk] = useState<{ root: string; resolve: (ok: boolean) => void } | null>(null)
@@ -3763,8 +3763,8 @@ export function App() {
       {readOnlyAsk !== null && (
         <ConfirmSheet
           labelId="confirm-read-only-vault-text"
-          text={`This vault (${storage.vaultName(readOnlyAsk.root)}) is read only. Allow its file actions — rename, move, delete, new and paste — for 15 minutes?`}
-          confirmLabel="Allow for 15 minutes"
+          text={`This vault (${storage.vaultName(readOnlyAsk.root)}) is read only. Allow its file actions — rename, move, delete, new and paste — for 10 minutes?`}
+          confirmLabel="Allow for 10 minutes"
           onConfirm={() => {
             const ask = readOnlyAsk
             setReadOnlyAsk(null)

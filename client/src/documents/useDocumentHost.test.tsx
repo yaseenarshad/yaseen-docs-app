@@ -475,8 +475,8 @@ describe('the cog, the "Read only" chip and the "Allow edits?" box on a board (Y
     expect(menuIn(container)).toBeNull()
     expect(ask()).not.toBeNull()
     expect(setBoardReadOnly).not.toHaveBeenCalled()
-    // The focus is on the first time choice (YAZ-4939), so Enter unlocks for 15 minutes; the switch's off is the fourth button.
-    expect(document.activeElement?.textContent).toBe('Allow edits for 15 minutes')
+    // The focus is on the first time choice (YAZ-4939), so Enter unlocks for 1 minute; the switch's off is the fourth button.
+    expect(document.activeElement?.textContent).toBe('Allow edits for 1 minute')
     const allow = [...ask()!.querySelectorAll('button')].find((b) => b.textContent === 'Turn Read only off')!
     await act(async () => allow.click())
     await settle()
@@ -544,7 +544,7 @@ describe('Read only for the whole vault on a board (YAZ-4939)', () => {
     expect(board.switchOn).toBe(false)
     expect(chip()?.textContent).toBe('Read only')
     act(() => chip()!.click())
-    expect(labels()).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Cancel'])
+    expect(labels()).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
     act(() => button('Cancel').click())
     expect(cogRow().getAttribute('aria-pressed')).toBe('true')
     expect(setBoardReadOnly).not.toHaveBeenCalled()
@@ -553,11 +553,11 @@ describe('Read only for the whole vault on a board (YAZ-4939)', () => {
   it('a time choice unlocks this tab, the chip reads "Editing"; at zero the board saves, then locks; the file keeps its switch', async () => {
     opened({ vault: true })
     act(() => chip()!.click())
-    act(() => button('1 hour').click())
+    act(() => button('10 minutes').click())
     expect(board.readOnly).toBe(false)
-    expect(chip()?.textContent).toBe('Editing · 60:00')
+    expect(chip()?.textContent).toBe('Editing · 10:00')
     expect(lockNow()?.textContent).toBe('Lock now')
-    await after(60 * 60_000 - 100)
+    await after(10 * 60_000 - 100)
     edit(1)
     expect(write).not.toHaveBeenCalled()
     await after(100)
@@ -572,7 +572,7 @@ describe('Read only for the whole vault on a board (YAZ-4939)', () => {
   it('"Lock now" saves and locks at once', async () => {
     opened({ vault: true })
     act(() => chip()!.click())
-    act(() => button('Allow edits for 15 minutes').click())
+    act(() => button('Allow edits for 1 minute').click())
     edit(1)
     await act(async () => lockNow()!.click())
     await settle()
@@ -599,12 +599,12 @@ describe('Read only for the whole vault on a board (YAZ-4939)', () => {
     expect(board.readOnly).toBe(true)
     expect(board.switchOn).toBe(true)
     act(() => chip()!.click())
-    expect(labels()).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Cancel'])
+    expect(labels()).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
     act(() => root?.unmount())
     root = createRoot(container)
     opened({ vault: false, readOnly: true })
     act(() => chip()!.click())
-    expect(labels()).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Turn Read only off', 'Cancel'])
+    expect(labels()).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Turn Read only off', 'Cancel'])
   })
 
   it('a code file (no switch of its own) takes no chip from the host: the code tab draws its own', () => {

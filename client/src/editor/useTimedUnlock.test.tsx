@@ -45,16 +45,16 @@ describe('useTimedUnlock', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('"15 minutes" says when it ends and arms ONE timeout; at zero the page saves, then locks (fake timers)', async () => {
+  it('"1 minute" says when it ends and arms ONE timeout; at zero the page saves, then locks (fake timers)', async () => {
     mount()
     let saved: () => void = () => undefined
     save.mockImplementation(() => new Promise<void>((resolve) => (saved = resolve)))
-    act(() => state.allow('fifteen'))
-    expect(state.until).toBe(Date.now() + ALLOW_MS.fifteen)
+    act(() => state.allow('minute'))
+    expect(state.until).toBe(Date.now() + ALLOW_MS.minute)
     expect(vi.getTimerCount()).toBe(1)
     const before = renders
     // No work while it runs: the host does not render again until the end.
-    await act(async () => void vi.advanceTimersByTime(ALLOW_MS.fifteen - 1))
+    await act(async () => void vi.advanceTimersByTime(ALLOW_MS.minute - 1))
     expect(renders).toBe(before)
     expect(state.until).not.toBeNull()
     await act(async () => void vi.advanceTimersByTime(1))
@@ -67,10 +67,10 @@ describe('useTimedUnlock', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('"1 hour" is an hour', () => {
+  it('"10 minutes" is ten minutes', () => {
     mount()
-    act(() => state.allow('hour'))
-    expect(state.until).toBe(Date.now() + 60 * 60_000)
+    act(() => state.allow('ten'))
+    expect(state.until).toBe(Date.now() + 10 * 60_000)
     expect(vi.getTimerCount()).toBe(1)
   })
 
@@ -79,36 +79,36 @@ describe('useTimedUnlock', () => {
     act(() => state.allow('close'))
     expect(state.until).toBe(Infinity)
     expect(vi.getTimerCount()).toBe(0)
-    act(() => state.allow('fifteen'))
+    act(() => state.allow('minute'))
     expect(vi.getTimerCount()).toBe(1)
   })
 
   it('a second choice replaces the first: one timer, the new end', () => {
     mount()
-    act(() => state.allow('fifteen'))
-    act(() => state.allow('hour'))
+    act(() => state.allow('minute'))
+    act(() => state.allow('ten'))
     expect(vi.getTimerCount()).toBe(1)
-    expect(state.until).toBe(Date.now() + ALLOW_MS.hour)
-    act(() => void vi.advanceTimersByTime(ALLOW_MS.fifteen))
+    expect(state.until).toBe(Date.now() + ALLOW_MS.ten)
+    act(() => void vi.advanceTimersByTime(ALLOW_MS.minute))
     expect(state.until).not.toBeNull()
     expect(save).not.toHaveBeenCalled()
   })
 
   it('"Lock now" saves, then locks at once, and clears the timer', async () => {
     mount()
-    act(() => state.allow('fifteen'))
+    act(() => state.allow('minute'))
     await act(async () => state.lock())
     expect(save).toHaveBeenCalledTimes(1)
     expect(state.until).toBeNull()
     expect(vi.getTimerCount()).toBe(0)
-    act(() => void vi.advanceTimersByTime(ALLOW_MS.fifteen))
+    act(() => void vi.advanceTimersByTime(ALLOW_MS.minute))
     expect(save).toHaveBeenCalledTimes(1)
   })
 
   it('a save that fails still locks', async () => {
     mount()
     save.mockImplementation(() => Promise.reject(new Error('disk')))
-    act(() => state.allow('fifteen'))
+    act(() => state.allow('minute'))
     await act(async () => state.lock())
     expect(state.until).toBeNull()
   })
@@ -117,16 +117,16 @@ describe('useTimedUnlock', () => {
     mount()
     let saved: () => void = () => undefined
     save.mockImplementation(() => new Promise<void>((resolve) => (saved = resolve)))
-    act(() => state.allow('fifteen'))
-    await act(async () => void vi.advanceTimersByTime(ALLOW_MS.fifteen))
-    act(() => state.allow('hour'))
+    act(() => state.allow('minute'))
+    await act(async () => void vi.advanceTimersByTime(ALLOW_MS.minute))
+    act(() => state.allow('ten'))
     await act(async () => saved())
-    expect(state.until).toBe(Date.now() + ALLOW_MS.hour)
+    expect(state.until).toBe(Date.now() + ALLOW_MS.ten)
   })
 
   it('the close clears the timer', () => {
     mount()
-    act(() => state.allow('fifteen'))
+    act(() => state.allow('minute'))
     act(() => root?.unmount())
     root = null
     expect(vi.getTimerCount()).toBe(0)

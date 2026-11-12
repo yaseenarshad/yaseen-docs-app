@@ -85,7 +85,7 @@ describe('ReadOnlyChip', () => {
     click(chip()!)
     expect(box()?.getAttribute('role')).toBe('dialog')
     expect(box()?.querySelector('p')?.textContent).toBe('Allow edits?')
-    expect([...box()!.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Turn Read only off', 'Cancel'])
+    expect([...box()!.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Turn Read only off', 'Cancel'])
     expect(chip()?.getAttribute('aria-expanded')).toBe('true')
     click(chip()!)
     expect(box()).toBeNull()
@@ -95,13 +95,13 @@ describe('ReadOnlyChip', () => {
   it('YAZ-4939: a page with no switch of its own to turn (a read-only vault, a code tab) has no "Turn Read only off"', () => {
     mount({ turnOff: false })
     click(chip()!)
-    expect([...box()!.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Cancel'])
+    expect([...box()!.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
   })
 
-  it('S46: the focus goes to "Allow edits for 15 minutes", so Enter takes it', () => {
+  it('S46: the focus goes to "Allow edits for 1 minute", so Enter takes it', () => {
     mount()
     click(chip()!)
-    expect(document.activeElement).toBe(button('Allow edits for 15 minutes'))
+    expect(document.activeElement).toBe(button('Allow edits for 1 minute'))
   })
 
   it('S46: Esc cancels, keeps the key from the page, and puts the focus on the chip', () => {
@@ -109,7 +109,7 @@ describe('ReadOnlyChip', () => {
     click(chip()!)
     const beyond = vi.fn()
     document.addEventListener('keydown', beyond)
-    const esc = press(button('Allow edits for 15 minutes'), 'Escape')
+    const esc = press(button('Allow edits for 1 minute'), 'Escape')
     document.removeEventListener('keydown', beyond)
     expect(box()).toBeNull()
     expect(esc.defaultPrevented).toBe(true)
@@ -167,7 +167,7 @@ describe('ReadOnlyChip', () => {
 
   it('YAZ-4939: each time choice tells the host which, and the box closes', () => {
     mount()
-    for (const [label, choice] of [['Allow edits for 15 minutes', 'fifteen'], ['1 hour', 'hour'], ['Until I close this tab', 'close']] as const) {
+    for (const [label, choice] of [['Allow edits for 1 minute', 'minute'], ['10 minutes', 'ten'], ['Until I close this tab', 'close']] as const) {
       click(chip()!)
       click(button(label))
       expect(allowed).toHaveBeenLastCalledWith(choice)
@@ -182,17 +182,17 @@ describe('ReadOnlyChip', () => {
     mount()
     expect(vi.getTimerCount()).toBe(0)
     click(chip()!)
-    click(button('Allow edits for 15 minutes'))
-    expect(chip()?.textContent).toBe('Editing · 15:00')
+    click(button('10 minutes'))
+    expect(chip()?.textContent).toBe('Editing · 10:00')
     expect(chip()?.classList.contains('read-only-chip__button--editing')).toBe(true)
     expect(chip()?.title).toBe('Edits are allowed for now. Click for another time.')
     expect(lockNow()?.textContent).toBe('Lock now')
     // The 1-second clock: one interval, in the chip, and the chip alone renders for it.
     expect(vi.getTimerCount()).toBe(1)
     act(() => void vi.advanceTimersByTime(1000))
-    expect(chip()?.textContent).toBe('Editing · 14:59')
+    expect(chip()?.textContent).toBe('Editing · 9:59')
     act(() => void vi.advanceTimersByTime(60_000))
-    expect(chip()?.textContent).toBe('Editing · 13:59')
+    expect(chip()?.textContent).toBe('Editing · 8:59')
     click(lockNow()!)
     expect(locked).toHaveBeenCalledTimes(1)
     expect(chip()?.textContent).toBe('Read only')
@@ -214,7 +214,7 @@ describe('ReadOnlyChip', () => {
   it('YAZ-4939: the chip\'s click while editing opens the box again, for another time', () => {
     mount()
     click(chip()!)
-    click(button('1 hour'))
+    click(button('10 minutes'))
     click(chip()!)
     expect(box()).not.toBeNull()
     click(button('Until I close this tab'))
@@ -223,10 +223,10 @@ describe('ReadOnlyChip', () => {
 
   it('the words of the clock', () => {
     expect(editingLabel(Infinity, 0)).toBe('Editing · until close')
-    expect(editingLabel(ALLOW_MS.hour, 0)).toBe('Editing · 60:00')
-    expect(editingLabel(ALLOW_MS.fifteen, 0)).toBe('Editing · 15:00')
-    expect(editingLabel(ALLOW_MS.fifteen, 1)).toBe('Editing · 15:00')
-    expect(editingLabel(ALLOW_MS.fifteen, 1000)).toBe('Editing · 14:59')
+    expect(editingLabel(ALLOW_MS.ten, 0)).toBe('Editing · 10:00')
+    expect(editingLabel(ALLOW_MS.minute, 0)).toBe('Editing · 1:00')
+    expect(editingLabel(ALLOW_MS.minute, 1)).toBe('Editing · 1:00')
+    expect(editingLabel(ALLOW_MS.minute, 1000)).toBe('Editing · 0:59')
     expect(editingLabel(9_000, 0)).toBe('Editing · 0:09')
     expect(editingLabel(0, 5_000)).toBe('Editing · 0:00')
   })

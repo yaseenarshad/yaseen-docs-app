@@ -1776,7 +1776,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'readOnlyVault',
             label: 'Read only',
-            hint: 'On: every note, drawing, diagram, code file and folder page in this vault opens read only, and nothing is written to your notes for it. The Read only chip offers Allow edits for 15 minutes, 1 hour or until the tab closes. Rename, Move, Delete, New and Paste ask first.',
+            hint: 'On: every note, drawing, diagram, code file and folder page in this vault opens read only, and nothing is written to your notes for it. The Read only chip offers Allow edits for 1 minute, 10 minutes or until the tab closes. Rename, Move, Delete, New and Paste ask first.',
             keywords: ['read only', 'readonly', 'lock', 'locked', 'protect', 'allow edits', 'timer', 'vault'],
             available: (ctx) => ctx.readOnlyVault !== undefined,
             render: ({ readOnlyVault }) => readOnlyVault && <Segmented options={ON_OFF_OPTIONS} value={readOnlyVault.settings.on} onChange={(on) => readOnlyVault.save({ on })} ariaLabel="Read only for this vault" />,

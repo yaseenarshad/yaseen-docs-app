@@ -3035,7 +3035,7 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
     expect(chipButton(el)?.textContent).toBe('Read only')
     expect(lockNow(el)).toBeNull()
     act(() => chipButton(el)!.click())
-    expect(boxLabels(el)).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Cancel'])
+    expect(boxLabels(el)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
     act(() => boxButton(el, 'Cancel').click())
     clickCog(el)
     expect(menuSwitch(el, 'Read only').getAttribute('aria-pressed')).toBe('true')
@@ -3048,16 +3048,16 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
     expect(chipButton(el)).toBeNull()
   })
 
-  it('"Allow edits for 15 minutes": the page edits and the chip reads "Editing · 15:00" with "Lock now"; at zero the page saves what was typed, then locks again, and the note is never written for the switch', async () => {
+  it('"Allow edits for 1 minute": the page edits and the chip reads "Editing · 1:00" with "Lock now"; at zero the page saves what was typed, then locks again, and the note is never written for the switch', async () => {
     writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
     const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
-    await allow(el, 'Allow edits for 15 minutes')
+    await allow(el, 'Allow edits for 1 minute')
     expect(readonlyOf()).toBe(false)
-    expect(chipButton(el)?.textContent).toBe('Editing · 15:00')
+    expect(chipButton(el)?.textContent).toBe('Editing · 1:00')
     expect(chipButton(el)?.classList.contains('read-only-chip__button--editing')).toBe(true)
     expect(lockNow(el)?.textContent).toBe('Lock now')
     // The last keys land 100 ms before zero: the autosave's 500 ms is not up, so the write at zero is the unlock's own save.
-    await act(async () => void (await vi.advanceTimersByTimeAsync(15 * 60_000 - 100)))
+    await act(async () => void (await vi.advanceTimersByTimeAsync(60_000 - 100)))
     expect(readonlyOf()).toBe(false)
     type('# Hello\n\ntyped while allowed\n')
     expect(writeFile).not.toHaveBeenCalled()
@@ -3072,8 +3072,8 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
   it('"Lock now" saves what was typed and locks at once', async () => {
     writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
     const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
-    await allow(el, '1 hour')
-    expect(chipButton(el)?.textContent).toBe('Editing · 60:00')
+    await allow(el, '10 minutes')
+    expect(chipButton(el)?.textContent).toBe('Editing · 10:00')
     type('# Hello\n\nquick\n')
     await act(async () => {
       lockNow(el)!.click()
@@ -3105,15 +3105,15 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
     const el = await mount(LOCKED_FM + BODY, 1, { vaultReadOnly: true })
     expect(readonlyOf()).toBe(true)
     act(() => chipButton(el)!.click())
-    expect(boxLabels(el)).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Cancel'])
+    expect(boxLabels(el)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
     act(() => boxButton(el, 'Cancel').click())
     act(() => root?.unmount())
     const open = await mount(LOCKED_FM + BODY, 1, { vaultReadOnly: false })
     act(() => chipButton(open)!.click())
-    expect(boxLabels(open)).toEqual(['Allow edits for 15 minutes', '1 hour', 'Until I close this tab', 'Turn Read only off', 'Cancel'])
+    expect(boxLabels(open)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Turn Read only off', 'Cancel'])
     // A time choice here too: the note's own switch stays in the file.
     await act(async () => {
-      boxButton(open, 'Allow edits for 15 minutes').click()
+      boxButton(open, 'Allow edits for 1 minute').click()
       await vi.advanceTimersByTimeAsync(0)
     })
     expect(readonlyOf()).toBe(false)
@@ -3122,7 +3122,7 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
 
   it('no work per keystroke: while an unlock runs, typing changes the lock not at all (no setReadonly call), and the host arms one timeout for the unlock', async () => {
     const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
-    await allow(el, '1 hour')
+    await allow(el, '10 minutes')
     const fake = crepe() as FakeCrepe & { setReadonly: (on: boolean) => void }
     const spy = vi.spyOn(fake, 'setReadonly')
     for (let i = 0; i < 20; i++) type(`# Hello\n\nkey ${i}\n`)
