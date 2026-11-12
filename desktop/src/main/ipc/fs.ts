@@ -35,6 +35,7 @@ import type { Store } from '../store'
 import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
+import { idsHome } from '../vaultIndex/scan'
 import { dailyNote } from '../notes/daily'
 import type { WindowManager } from '../windows'
 import { broadcastAll, loggedSave, rootsOf, senderRoots } from './broadcast'
@@ -80,7 +81,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   const doorFor = async (e: IpcMainInvokeEvent, req: unknown, key = 'path'): Promise<IdDoor | null> => {
     const p = typeof req === 'string' ? req : (req as Record<string, unknown> | null)?.[key]
     const root = typeof p === 'string' ? rootOfPath(rootsOfSender(e), p) : null
-    return root === null ? null : doorOf(root)
+    // A vault inside the window's vault gives the IDs of its own notes (YAZ-4922 🔒 D1): the nearest folder that answered.
+    return root === null ? null : doorOf(await idsHome(root, p as string))
   }
   handleWithEvent(CONTRACT.createDir, async (e, req) => createDir(req, await doorFor(e, req)))
   // YAZ-4615 D10: a note the app makes carries the comment hint while Settings › Comments says so.

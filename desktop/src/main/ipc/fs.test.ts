@@ -515,6 +515,21 @@ describe('registerFsIpc', () => {
       }
     })
 
+    it('a note made inside a vault inside the window\'s vault takes the INNER vault\'s next ID (YAZ-4922 D1: the nearest folder that answered)', async () => {
+      const vault = await open(true)
+      const inner = path.join(vault, 'Plans')
+      try {
+        await mkdir(path.join(inner, '.yaseendocs'))
+        await writeFile(path.join(inner, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: true, letters: 'TECH' }))
+        expect(await call(CONTRACT.mintNoteId, path.join(inner, 'Deep'))).toEqual({ ok: true, value: 'TECH-1' })
+        expect(await call(CONTRACT.mintNoteId, vault)).toEqual({ ok: true, value: 'YAZ-1' })
+        // The inner vault's own sweep can give Plans/Name.md a number meanwhile: the next one is a TECH number either way.
+        expect(await call(CONTRACT.createFile, path.join(inner, 'Bare.md'))).toMatchObject({ ok: true, value: { id: expect.stringMatching(/^TECH-[2-9]$/) } })
+      } finally {
+        await close(vault)
+      }
+    })
+
     it('a window that is "a folder of" the vault (YAZ-4922 D3): a note made there gets the vault\'s next ID, and nothing writes an `ids.json` or any `.yaseendocs` into the folder', async () => {
       const vault = await open(true)
       const folder = path.join(vault, 'Plans')

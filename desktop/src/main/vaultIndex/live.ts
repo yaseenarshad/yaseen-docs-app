@@ -277,12 +277,16 @@ function armWait(root: string, entry: Entry): void {
 function wouldWrite(records: ReadonlyMap<string, IndexRecord>, dirs: readonly string[], letters: readonly string[]): NonNullable<IndexResponse['ask']> {
   const notes = [...records.values()].filter((r) => !isFolderSettingsPath(r.path) && vaultNoteId(r.id, letters) === undefined && r.frontmatterError === undefined)
   const groups = idGroups(records.values())
+  // The box offers to keep them (YAZ-4922 🔒 D2) when some group is not an ID of the vault yet: then a folder whose settings file holds a number ID keeps it too.
+  const keeps = groups.some((group) => vaultNoteId(numberId(group.letters, 1), letters) === undefined)
   return {
     notes: notes.length,
-    folders: dirs.filter((dir) => vaultNoteId(records.get(path.join(dir, FOLDER_SETTINGS_FILE))?.id, letters) === undefined).length,
+    folders: dirs.filter((dir) => {
+      const id = records.get(path.join(dir, FOLDER_SETTINGS_FILE))?.id
+      return vaultNoteId(id, letters) === undefined && !(keeps && isNumberId(id))
+    }).length,
     foreign: notes.filter((r) => r.properties[NOTE_ID_KEY] !== undefined).length,
-    // The box offers to keep them (YAZ-4922 🔒 D2) when some group is not an ID of the vault yet.
-    ...(groups.some((group) => vaultNoteId(numberId(group.letters, 1), letters) === undefined) && { groups, bare: notes.filter((r) => r.id === undefined).length }),
+    ...(keeps && { groups, bare: notes.filter((r) => r.id === undefined).length }),
   }
 }
 

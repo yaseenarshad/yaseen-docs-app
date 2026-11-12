@@ -67,6 +67,15 @@ export function idsOwnedBy(root: string, answers = new Map<string, Promise<boole
   }
 }
 
+/**
+ * The ID vault of `p` within the vault at `root` (YAZ-4922 🔒 D1, `idVault`'s rule): the nearest folder at or above `p`
+ * that answers for its own IDs, up to `root` itself. A note made inside a vault inside `root` takes THAT vault's IDs.
+ */
+export async function idsHome(root: string, p: string): Promise<string> {
+  for (let dir = p; dir.startsWith(root + path.sep); dir = path.dirname(dir)) if (await answersIds(dir)) return dir
+  return root
+}
+
 /** The items of `items` that `own` says yes to, in order. */
 export async function ownOnly<T>(items: readonly T[], own: (item: T) => Promise<boolean>): Promise<T[]> {
   const yes = await Promise.all(items.map(own))

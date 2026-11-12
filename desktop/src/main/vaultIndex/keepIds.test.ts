@@ -53,6 +53,12 @@ describe('the box counts the IDs the notes already hold (ask.groups)', () => {
     expect((await getIndex(root)).ask).toMatchObject({ groups: [{ letters: 'YAS', count: 5 }, { letters: 'TECH', count: 1 }] })
   })
 
+  it('what Keep writes: a number only for each note with no ID, and a settings file only for a folder whose page holds no number ID', async () => {
+    await make({ ...WIKI, 'tech-1.md': '---\nid: TECH-1\n---\n', 'plain.md': 'no id\n', 'New/a.md': 'a\n' })
+    // Hooks/.folder.md holds YAS-909, which Keep keeps: only New takes a settings file.
+    expect((await getIndex(root)).ask).toMatchObject({ bare: 2, folders: 1 })
+  })
+
   it('no number IDs: no groups, the box is the one it always was', async () => {
     await make({ 'a.md': 'a\n' })
     expect((await getIndex(root)).ask).toEqual({ notes: 1, folders: 0, foreign: 0 })
