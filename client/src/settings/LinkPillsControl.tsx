@@ -8,13 +8,15 @@
  *     never) shows only while the format has `{vault}`.
  *  2. **Preview:** a sentence with four pills (a note, a board, a pill into another vault, a missing note), drawn by
  *     the folder page's pill (`PillEnds`, the same pieces the note's widgets draw) under the look's variables.
- *  3. **Click to style:** a click on a part of a pill (the name, the ID, the vault, the folder, your own text) opens that
- *     part's toolbar under the preview — B I U, the colour (accent · same as text · muted · the ten palette colours),
- *     the size — and a click on the pill's icon, or the toolbar's own picker, the box's: Shape, Fill, Strength. Each
- *     button writes one field through `withLinkPillPart` / `withLinkPillBox`, so the file holds only changes.
+ *  3. **Click to style:** a click on a part of a pill (the name, the ID, the vault, the folder, your own text) opens the
+ *     style panel under the preview, titled "Styling: the name" (the title is a quiet dropdown: the second way to pick a
+ *     part), with three labelled rows — Text (B I U), Colour (ONE row: Accent · Text · Muted, then the ten palette
+ *     swatches), Size (Normal · Small) — and a click on the pill's icon the box's: Shape, Fill (Tint · None · the
+ *     swatches), Strength (only with a palette fill). Each button writes one field through `withLinkPillPart` /
+ *     `withLinkPillBox`, so the file holds only changes.
  * Reset brings today's look back. Every default is today's look.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useUnit } from '../vault/unitWord'
 import {
   DEFAULT_LINK_PILL_FORMAT,
@@ -47,7 +49,9 @@ import type { LinkPillsState } from './useLinkPills'
 /** What the toolbar styles: one part, or the box. */
 type Target = { kind: 'part'; part: LinkPillPart } | { kind: 'box' }
 
-const PART_LABELS: Record<LinkPillPart, string> = { name: 'Name', id: 'ID', vault: 'Vault', folder: 'Folder', path: 'Path', text: 'Your text' }
+/** What the panel's title names: "Styling: the name". */
+const PART_NAMES: Record<LinkPillPart, string> = { name: 'the name', id: 'the ID', vault: 'the vault', folder: 'the folder', path: 'the path', text: 'your text' }
+const BOX_NAME = 'the box'
 const VAULT_OPTIONS: readonly Option<'other' | 'always' | 'never'>[] = [
   { label: 'Vault name: other vaults only', value: 'other' },
   { label: 'Vault name: always', value: 'always' },
@@ -93,46 +97,71 @@ function Tool({ label, on, mark, onClick, className = '' }: { label: string; on:
   )
 }
 
-/** The toolbar of one part: B I U, the colour, the size. */
-function PartToolbar({ look, part }: { look: LinkPillsState; part: LinkPillPart }) {
+/** One row of the panel: its short label on the left, its controls after. */
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="pill-toolbar__row">
+      <span className="pill-toolbar__label">{label}</span>
+      {children}
+    </div>
+  )
+}
+
+/** The rows of one part: Text (B I U), Colour (one row: the named colours, then the swatches), Size. */
+function PartRows({ look, part }: { look: LinkPillsState; part: LinkPillPart }) {
   const { pills, save } = look
   const style = pills.parts?.[part] ?? {}
   const defaults = LINK_PILL_PART_DEFAULTS[part]
   const color: LinkPillPartColor = style.color ?? defaults.color
   const named = (c: LinkPillPartColor) => (c === defaults.color ? undefined : c)
   const toggle = (field: 'bold' | 'italic' | 'underline') => save(withLinkPillPart(pills, part, { [field]: style[field] ? undefined : true }))
+  const who = PART_NAMES[part]
   return (
     <>
-      <span className="pill-toolbar__group" role="group" aria-label={`${PART_LABELS[part]} style`}>
-        <Tool label="Bold" on={style.bold === true} mark="B" className=" pill-toolbar__b" onClick={() => toggle('bold')} />
-        <Tool label="Italic" on={style.italic === true} mark="I" className=" pill-toolbar__i" onClick={() => toggle('italic')} />
-        <Tool label="Underline" on={style.underline === true} mark="U" className=" pill-toolbar__u" onClick={() => toggle('underline')} />
-      </span>
-      <span className="pill-toolbar__group" role="group" aria-label={`${PART_LABELS[part]} colour`}>
-        <Tool label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => save(withLinkPillPart(pills, part, { color: named('accent') }))} />
-        <Tool label="Same as text" on={color === 'same'} mark="Same as text" onClick={() => save(withLinkPillPart(pills, part, { color: named('same') }))} />
-        <Tool label="Muted" on={color === 'muted'} mark="Muted" onClick={() => save(withLinkPillPart(pills, part, { color: named('muted') }))} />
-        <Swatches label={`${PART_LABELS[part]} text colour`} value={color === 'accent' || color === 'same' || color === 'muted' ? undefined : color} swatch={textSwatch} onPick={(c) => save(withLinkPillPart(pills, part, { color: named(c) }))} />
-      </span>
-      <Segmented options={SIZE_OPTIONS} value={style.size ?? defaults.size} onChange={(size) => save(withLinkPillPart(pills, part, { size: size === defaults.size ? undefined : size }))} ariaLabel={`${PART_LABELS[part]} size`} />
+      <Row label="Text">
+        <span className="pill-toolbar__group" role="group" aria-label={`Text (${who})`}>
+          <Tool label="Bold" on={style.bold === true} mark="B" className=" pill-toolbar__b" onClick={() => toggle('bold')} />
+          <Tool label="Italic" on={style.italic === true} mark="I" className=" pill-toolbar__i" onClick={() => toggle('italic')} />
+          <Tool label="Underline" on={style.underline === true} mark="U" className=" pill-toolbar__u" onClick={() => toggle('underline')} />
+        </span>
+      </Row>
+      <Row label="Colour">
+        <span className="pill-toolbar__group" role="group" aria-label={`Colour (${who})`}>
+          <Tool label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => save(withLinkPillPart(pills, part, { color: named('accent') }))} />
+          <Tool label="Same as text" on={color === 'same'} mark="Text" onClick={() => save(withLinkPillPart(pills, part, { color: named('same') }))} />
+          <Tool label="Muted" on={color === 'muted'} mark="Muted" onClick={() => save(withLinkPillPart(pills, part, { color: named('muted') }))} />
+          <Swatches label={`Palette (${who})`} value={color === 'accent' || color === 'same' || color === 'muted' ? undefined : color} swatch={textSwatch} onPick={(c) => save(withLinkPillPart(pills, part, { color: named(c) }))} />
+        </span>
+      </Row>
+      <Row label="Size">
+        <Segmented options={SIZE_OPTIONS} value={style.size ?? defaults.size} onChange={(size) => save(withLinkPillPart(pills, part, { size: size === defaults.size ? undefined : size }))} ariaLabel={`Size (${who})`} />
+      </Row>
     </>
   )
 }
 
-/** The box's toolbar: Shape, Fill, Strength. */
-function BoxToolbar({ look }: { look: LinkPillsState }) {
+/** The box's rows: Shape, Fill (Tint · None · the swatches), Strength (only with a palette fill). */
+function BoxRows({ look }: { look: LinkPillsState }) {
   const { pills, save } = look
   const box = pills.box ?? {}
   const fill = box.fill
   return (
     <>
-      <Segmented options={SHAPE_OPTIONS} value={box.shape ?? 'round'} onChange={(shape: 'round' | 'square' | 'underline') => save(withLinkPillBox(pills, { shape: shape === 'round' ? undefined : shape }))} ariaLabel="Shape" />
-      <span className="pill-toolbar__group" role="group" aria-label="Fill">
-        <Tool label="Accent tint" on={fill === undefined} mark="Tint" onClick={() => save(withLinkPillBox(pills, { fill: undefined, strength: undefined }))} />
-        <Tool label="No fill" on={fill === 'none'} mark="None" onClick={() => save(withLinkPillBox(pills, { fill: 'none', strength: undefined }))} />
-        <Swatches label="Fill colour" value={fill === undefined || fill === 'none' ? undefined : fill} swatch={fillSwatch} onPick={(c) => save(withLinkPillBox(pills, { fill: c }))} />
-      </span>
-      {fill !== undefined && fill !== 'none' && <Segmented options={STRENGTH_OPTIONS} value={box.strength ?? 'medium'} onChange={(strength: 'light' | 'medium' | 'strong') => save(withLinkPillBox(pills, { strength: strength === 'medium' ? undefined : strength }))} ariaLabel="Strength" />}
+      <Row label="Shape">
+        <Segmented options={SHAPE_OPTIONS} value={box.shape ?? 'round'} onChange={(shape: 'round' | 'square' | 'underline') => save(withLinkPillBox(pills, { shape: shape === 'round' ? undefined : shape }))} ariaLabel="Shape" />
+      </Row>
+      <Row label="Fill">
+        <span className="pill-toolbar__group" role="group" aria-label="Fill">
+          <Tool label="Accent tint" on={fill === undefined} mark="Tint" onClick={() => save(withLinkPillBox(pills, { fill: undefined, strength: undefined }))} />
+          <Tool label="No fill" on={fill === 'none'} mark="None" onClick={() => save(withLinkPillBox(pills, { fill: 'none', strength: undefined }))} />
+          <Swatches label="Palette (the box)" value={fill === undefined || fill === 'none' ? undefined : fill} swatch={fillSwatch} onPick={(c) => save(withLinkPillBox(pills, { fill: c }))} />
+        </span>
+      </Row>
+      {fill !== undefined && fill !== 'none' && (
+        <Row label="Strength">
+          <Segmented options={STRENGTH_OPTIONS} value={box.strength ?? 'medium'} onChange={(strength: 'light' | 'medium' | 'strong') => save(withLinkPillBox(pills, { strength: strength === 'medium' ? undefined : strength }))} ariaLabel="Strength" />
+        </Row>
+      )}
     </>
   )
 }
@@ -237,7 +266,7 @@ export function LinkPillsControl({ look, vault, ids }: { look: LinkPillsState; v
   const tokens = linkPillFormatTokens(format)
   // The parts the toolbar can switch to: the name, each token of the format, and your text when the format has some.
   const parts: LinkPillPart[] = ['name', ...(['id', 'vault', 'folder', 'path'] as const).filter((t) => tokens.has(t)), ...(parseLinkPillFormat(format).segments.some((s) => 'text' in s) ? (['text'] as const) : [])]
-  const pickOptions: readonly Option<string>[] = [...parts.map((p) => ({ label: PART_LABELS[p], value: p })), { label: 'Box', value: 'box' }]
+  const pickOptions: readonly Option<string>[] = [...parts.map((p) => ({ label: PART_NAMES[p], value: p })), { label: BOX_NAME, value: 'box' }]
   const picked = target === null ? 'name' : target.kind === 'box' ? 'box' : target.part
   const pick = (e: MouseEvent<HTMLElement>) => {
     const next = targetAt(e.target as Element)
@@ -257,12 +286,18 @@ export function LinkPillsControl({ look, vault, ids }: { look: LinkPillsState; v
         </p>
       </PillLook.Provider>
       {live !== null && (
-        <div className="pill-toolbar" role="toolbar" aria-label={`${live.kind === 'box' ? 'Box' : PART_LABELS[live.part]} toolbar`}>
-          <Select options={pickOptions} value={picked} onChange={(v) => setTarget(v === 'box' ? { kind: 'box' } : { kind: 'part', part: v as LinkPillPart })} ariaLabel="What to style" />
-          {live.kind === 'box' ? <BoxToolbar look={look} /> : <PartToolbar look={look} part={live.part} />}
-          <button type="button" className="settings__option pill-toolbar__item pill-toolbar__close" aria-label="Close the toolbar" title="Close" onClick={() => setTarget(null)}>
-            ×
-          </button>
+        <div className="pill-toolbar" role="toolbar" aria-label={`Styling: ${live.kind === 'box' ? BOX_NAME : PART_NAMES[live.part]}`}>
+          {/* The title says what the rows style. Its part is a quiet dropdown: the second way to pick (the click in the preview is the first). */}
+          <div className="pill-toolbar__head">
+            <label className="pill-toolbar__title">
+              Styling:
+              <Select options={pickOptions} value={picked} onChange={(v) => setTarget(v === 'box' ? { kind: 'box' } : { kind: 'part', part: v as LinkPillPart })} ariaLabel="What to style" />
+            </label>
+            <button type="button" className="settings__option pill-toolbar__item pill-toolbar__close" aria-label="Close the toolbar" title="Close" onClick={() => setTarget(null)}>
+              ×
+            </button>
+          </div>
+          {live.kind === 'box' ? <BoxRows look={look} /> : <PartRows look={look} part={live.part} />}
         </div>
       )}
       {!isDefaultLinkPills(pills) && (
