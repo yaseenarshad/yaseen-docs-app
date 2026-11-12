@@ -82,7 +82,7 @@ import { BacklinksSection } from '../links/BacklinksSection'
 import { isVaultRoot, pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
 import { namingTab } from '../lib/focusHandoff'
 import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
-import { onTwinSave } from '../lib/twinEditors'
+import { isAnnouncedWrite, onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
@@ -1156,7 +1156,8 @@ function CrepeHost({
       })
     }
     const unsubscribe = watch.subscribe((ev) => {
-      if (ev.type === 'change' && ev.path === file.path) onDiskChange(ev.mtime)
+      // An app write of this note (`announcedWrite`: an Inbox answer) is told through the twin channel, quietly.
+      if (ev.type === 'change' && ev.path === file.path && !isAnnouncedWrite(file.path, ev.mtime)) onDiskChange(ev.mtime)
     })
     const offTwin = onTwinSave(file.path, (mtime) => onDiskChange(mtime, true))
     const offRefused = onSaveRefused((mtime) => onDiskChange(mtime))

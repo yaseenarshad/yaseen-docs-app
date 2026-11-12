@@ -4,8 +4,9 @@
  * page as it is on disk now. Each write is ONE `transformFile` (`changeCard` on the bytes just read, a re-read and a
  * second try on a conflict): the page may be open in a tab, and the app merges an outside write into an open note.
  */
-import { CardNotFoundError, cardIdOf, cardReviewsOf, changeCard, isCardOff, pageCards, withCardReview, withoutCardReview, type CardReview } from '@shared/cardLine'
+import { CardNotFoundError, cardIdOf, cardReviewsOf, changeCard, isCardOff, pageCards, withCardReview, withoutCardReview, type CardLine, type CardReview } from '@shared/cardLine'
 import { BridgeRequestError, api } from '../api'
+import { announcedWrite } from '../lib/twinEditors'
 import { transformFile } from '../views/writeProperty'
 
 /** A card as its page holds it now. */
@@ -58,11 +59,17 @@ export async function readCardAt(path: string, id: string | null, index: number)
   return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line) }
 }
 
+/**
+ * Card `id`'s line changed by `change`: ONE `transformFile`, as the app's own write (`announcedWrite`), so a page open
+ * in a tab takes the new line quietly — no outside-change bar, no glow, out of its undo history. Throws `CardNotFoundError`.
+ */
+export const changeCardLine = (path: string, id: string, change: (line: CardLine) => CardLine): Promise<unknown> => announcedWrite(path, () => transformFile(path, (c) => changeCard(c, id, change)))
+
 /** Writes `review` to card `id`'s line: the answer the hover showed, as it showed it (D13). Throws `CardNotFoundError`. */
-export const writeCardReview = (path: string, id: string, review: CardReview): Promise<unknown> => transformFile(path, (c) => changeCard(c, id, (l) => withCardReview(l, review)))
+export const writeCardReview = (path: string, id: string, review: CardReview): Promise<unknown> => changeCardLine(path, id, (l) => withCardReview(l, review))
 
 /** Removes the review made at `at` from card `id` (undo, and the Reviews table's delete). An unknown `at` writes nothing. */
-export const deleteCardReview = (path: string, id: string, at: string): Promise<unknown> => transformFile(path, (c) => changeCard(c, id, (l) => withoutCardReview(l, at)))
+export const deleteCardReview = (path: string, id: string, at: string): Promise<unknown> => changeCardLine(path, id, (l) => withoutCardReview(l, at))
 
 /** A write that found no card: the page changed under the review. */
 export const isCardGone = (err: unknown): boolean => err instanceof CardNotFoundError || (err instanceof BridgeRequestError && err.code === 'NOT_FOUND')
