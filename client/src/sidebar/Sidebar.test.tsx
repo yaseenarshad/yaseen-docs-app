@@ -2770,6 +2770,8 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     const records = (root: string) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Zed.md') ? { id: 'YAZ-12' } : {}))
     const always = await search('zed', { idsInSearch: () => 'always' } as Partial<SidebarProps>, { records })
     expect(shape(always.el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    // The harness holds ONE root: the first sidebar goes before the second mounts, or its window listeners outlive the test.
+    act(() => root?.unmount())
     const match = await search('zed', { idsInSearch: () => 'match' } as Partial<SidebarProps>, { records })
     expect(shape(match.el)).toEqual(['Plans', '  Zed'])
     await type(match.input, '12')

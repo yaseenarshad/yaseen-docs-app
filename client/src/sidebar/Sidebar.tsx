@@ -908,8 +908,15 @@ export function Sidebar({
   // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own
   // watcher, its own folders and its own files that are no notes. The tree it cuts is the one Files
   // draws — the forest, with two or more vaults (A9).
-  // Each vault's "Show IDs in search" getter rides with its search feed (YAZ-4940), read when the rows draw.
-  const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i], idsInSearch: vaults.find((v) => v.root === vault)?.idsInSearch })), [roots, watches, dirsByVault, filesByVault, vaults])
+  // Each vault's "Show IDs in search" getter rides with its search feed (YAZ-4940), read when the rows draw. Through a
+  // ref: `vaults` is a new array each render of App, and the feed's list must stay the same object while nothing in
+  // it changed (YAZ-2194: a render that changes nothing for the search re-renders no row).
+  const vaultsNow = useRef(vaults)
+  vaultsNow.current = vaults
+  const searchVaults = useMemo(
+    () => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i], idsInSearch: () => vaultsNow.current.find((v) => v.root === vault)?.idsInSearch?.() ?? 'match' })),
+    [roots, watches, dirsByVault, filesByVault],
+  )
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
   // The hover preview (YAZ-3028 D11): a menu or the Info popover owns the pointer while it stands. A search

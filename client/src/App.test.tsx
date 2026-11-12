@@ -5694,7 +5694,8 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a note (YAZ-4938), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
       config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json']],
       coldDiff: [['/v']],
-      // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a note (YAZ-4938), text formatting and link pills (YAZ-4924), each subscribed once for each mount effect.
+      // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a note (YAZ-4938), text formatting and link pills (YAZ-4924), each subscribed
+      // once for each mount effect (6 × 2), plus the WikilinkIndexBridge's `useIndex`, which hears the vault's config too (2 since YAZ-2602: the count was [2, 2, 4] with review.json alone).
       subscriptions: [2, 2, 14],
     }
     expect(asked()).toEqual(boot)
