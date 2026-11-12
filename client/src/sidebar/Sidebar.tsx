@@ -54,6 +54,8 @@ import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { dropOn, hasFiles, leftTarget, PlacedCreate, Tree, type CreatePlace, type ReorderOver, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
+import { VaultLock } from './VaultLock'
+import type { FileActionsFor } from '../vault/readOnlyVault'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
 import type { ScopeState, VaultListsHere } from '../lists/useVaultListsHere'
@@ -102,6 +104,10 @@ export interface SidebarVault {
   reviewing: boolean
   /** YAZ-1801 D3 (YAZ-3039): vault-relative paths its last sync pass held back as over GitHub's limit (`GithubSyncStatus.tooLarge`). */
   tooLarge?: readonly string[]
+  /** Settings › This vault › Read only (YAZ-4939): the header shows the vault's lock (YAZ-4985). Absent: off. */
+  readOnly?: boolean
+  /** The vault's timed allowance of file changes (YAZ-4985): when it ends, or null. The lock counts it down. */
+  fileChangesUntil?: number | null
 }
 
 interface SidebarProps {
@@ -300,6 +306,10 @@ interface SidebarProps {
   onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
   /** A file action in a read-only vault asks first (YAZ-4939): App's sheet, true = go on. The sidebar's New … and Paste ask through it. */
   onFileAction?: (root: string) => Promise<boolean>
+  /** The vault lock's "1 minute" / "10 minutes" (YAZ-4985): the vault's one allowance, the ask box's too. Absent: no lock. */
+  onAllowFileChanges?: (root: string, choice: FileActionsFor) => void
+  /** The vault lock's "Lock now" (YAZ-4985). */
+  onLockFileChanges?: (root: string) => void
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
   /**
@@ -698,6 +708,8 @@ export function Sidebar({
   onRetitle,
   onDeleteEntries,
   onFileAction,
+  onAllowFileChanges,
+  onLockFileChanges,
   onNotice,
   pendingSearchFocus,
   pendingSearchClear = false,
@@ -1745,6 +1757,16 @@ export function Sidebar({
           onOpenSetHere={onOpenSetHere}
           hotkeys={settings.hotkeys}
         />
+        {/* The lock of each read-only vault (YAZ-4985), beside the vault's name: the page chip's box and countdown. */}
+        {onAllowFileChanges !== undefined && vaults.filter((vault) => vault.readOnly === true).map((vault) => (
+          <VaultLock
+            key={vault.root}
+            name={multi ? vault.name : undefined}
+            until={vault.fileChangesUntil ?? null}
+            onAllow={(choice) => onAllowFileChanges(vault.root, choice)}
+            onLock={() => onLockFileChanges?.(vault.root)}
+          />
+        ))}
         {onShowAllTabs !== undefined ? (
           // A Files window is only the sidebar (YAZ-3357 D8): there is nothing to hide it for, and the board is its way to the tabs.
           <button type="button" className="sidebar__collapse" onClick={onShowAllTabs} title={titleWithKey('Show all tabs', 'tabOverview', settings.hotkeys)} aria-label="Show all tabs">

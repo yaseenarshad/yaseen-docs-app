@@ -525,6 +525,8 @@ export function App() {
     if (scope.root !== root || scope.readOnlyVault.fileActionsAllowed()) return Promise.resolve(true)
     return new Promise((resolve) => setReadOnlyAsk({ root, resolve }))
   }, [scopeOf])
+  const allowFileChanges = useCallback((root: string, choice: FileActionsFor) => scopeOf(root).readOnlyVault.allowFileActions(choice), [scopeOf])
+  const lockFileChanges = useCallback((root: string) => scopeOf(root).readOnlyVault.lockFileActions(), [scopeOf])
   /** The sheet's answer: false = Cancel; null = Just this once (no allowance); a time = that allowance, then go on. */
   const readOnlyAskNow = useRef(readOnlyAsk)
   readOnlyAskNow.current = readOnlyAsk
@@ -3497,7 +3499,7 @@ export function App() {
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
+          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge, readOnly: vault.readOnlyVault.settings.on, fileChangesUntil: vault.readOnlyVault.allowedUntil }))}
           lists={lists}
           icons={vaultIcons}
           recentVault={recentPick}
@@ -3561,6 +3563,9 @@ export function App() {
           onRetitle={requestRetitle}
           onDeleteEntries={trashMany}
           onFileAction={allowFileAction}
+          // The vault's lock in the header (YAZ-4985): the ask box's allowance, granted and ended there too.
+          onAllowFileChanges={allowFileChanges}
+          onLockFileChanges={lockFileChanges}
           onDraggedOut={(paths) => void askAfterDragOut(paths)}
           onNotice={notify}
           // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.

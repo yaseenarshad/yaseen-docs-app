@@ -27,7 +27,7 @@ interface SidebarStubProps {
   /** The first vault of `vaults`, read off them by the stub: the vault the panel is keyed on. */
   root: string
   /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
-  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[] }[]
+  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[]; readOnly?: boolean; fileChangesUntil?: number | null }[]
   /** Right-click → "Share" on a board row (YAZ-3040). */
   onShareFile?: (path: string) => void
   /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
@@ -72,6 +72,9 @@ interface SidebarStubProps {
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
+  /** The vault lock's choices (YAZ-4985). */
+  onAllowFileChanges?: (root: string, choice: 'minute' | 'ten') => void
+  onLockFileChanges?: (root: string) => void
   onDraggedOut: (paths: string[]) => void
   pendingSearchFocus: boolean
   pendingSearchClear: boolean
@@ -4498,6 +4501,46 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Docs/R.md'], true))
       expect(sheet()).toBeNull()
       expect(bridge.file.delete).toHaveBeenCalledTimes(3)
+    })
+
+    it('YAZ-4985: the sidebar lock and the ask box share ONE allowance: "1 minute" from the lock lets a move through with no ask, the lock counts it, and at zero the vault locks again by itself; the box\'s "1 minute" shows on the lock', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      try {
+        const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+          feed(b)
+          b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+          b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+        })
+        await act(async () => {})
+        const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+        const lock = () => captured.sidebar?.vaults[0]
+        expect([lock()?.readOnly, lock()?.fileChangesUntil]).toEqual([true, null])
+        act(() => captured.sidebar?.onAllowFileChanges?.('/v', 'minute'))
+        const until = lock()?.fileChangesUntil
+        expect(until).toBeGreaterThan(Date.now() + 59_000)
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/A.md', newPath: '/v/Docs/A.md', kind: 'file' }, { oldPath: '/v/B.md', newPath: '/v/Docs/B.md', kind: 'file' }]))
+        expect(sheet()).toBeNull()
+        expect(renames(bridge)).toHaveLength(2)
+        // At zero: locked again, and the lock says so.
+        await act(async () => vi.advanceTimersByTime(60_000))
+        expect(lock()?.fileChangesUntil).toBeNull()
+        act(() => void captured.sidebar?.onMoveEntries([{ oldPath: '/v/R.md', newPath: '/v/Docs/R.md', kind: 'file' }, { oldPath: '/v/Docs/A.md', newPath: '/v/A.md', kind: 'file' }]))
+        await act(async () => {})
+        expect(sheet()).not.toBeNull()
+        // The box's "1 minute" is the same allowance: the lock shows it.
+        await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === '1 minute')?.click())
+        await act(async () => {})
+        expect(lock()?.fileChangesUntil).toBeGreaterThan(Date.now() + 59_000)
+        expect(renames(bridge)).toHaveLength(4)
+        // "Lock now" from the lock ends it for the box too.
+        act(() => captured.sidebar?.onLockFileChanges?.('/v'))
+        expect(lock()?.fileChangesUntil).toBeNull()
+        act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
+        await act(async () => {})
+        expect(sheet()).not.toBeNull()
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it('YAZ-4985: an Undo or a Redo in a read-only vault asks first — a Delete made while the vault was not read only does not come back by ⌘Z, and ⌘⇧Z does not delete it again, until "Allow for 10 minutes"', async () => {

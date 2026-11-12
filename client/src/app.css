@@ -4554,6 +4554,39 @@ body.drag-held iframe {
   outline-offset: 1px;
 }
 
+/* The vault's lock in the sidebar's header (YAZ-4985): the chip's look, smaller and quiet. Closed, it is the lock alone
+   in the muted colour, with no fill, so the header stays calm; amber with the time left while file changes are allowed.
+   The box opens under it, inside the sidebar. */
+.vault-lock {
+  align-self: center;
+  margin: 0 2px;
+}
+
+.vault-lock .vault-lock__button:not(.read-only-chip__button--editing) {
+  height: 22px;
+  padding: 0 5px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.vault-lock .vault-lock__button:not(.read-only-chip__button--editing) svg {
+  color: var(--fg-muted);
+}
+
+.vault-lock .vault-lock__button:not(.read-only-chip__button--editing):hover,
+.vault-lock .vault-lock__button:not(.read-only-chip__button--editing)[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+
+.vault-lock .vault-lock__button span {
+  font-variant-numeric: tabular-nums;
+}
+
+.vault-lock__ask {
+  z-index: 30;
+}
+
 /* The message of an edit attempt (YAZ-4446, D33): a card under the chip, a red arrow pointing up at it, and one red pulse
    of the chip. The live region is always there and draws nothing; the card is absolute in the chip's box, so nothing
    in the page moves, and it takes no pointer, so the page under it still answers. The toast's surface and shadow

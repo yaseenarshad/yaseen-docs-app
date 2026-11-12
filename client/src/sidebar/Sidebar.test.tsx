@@ -9985,6 +9985,17 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
+  it('YAZ-4985: each read-only vault of the window has its own lock in the header, named in its hover text; a vault that is not read only has none', async () => {
+    const at = pair()
+    const onAllowFileChanges = vi.fn()
+    const { el } = await mountVaults([vault(at.a, 'Notes', { readOnly: true }), vault(at.b, 'Work')], { onAllowFileChanges })
+    const locks = [...el.querySelectorAll<HTMLButtonElement>('.sidebar__header .vault-lock__button')]
+    expect(locks.map((b) => b.getAttribute('aria-label'))).toEqual(['Notes is read only'])
+    act(() => locks[0]?.click())
+    act(() => el.querySelector<HTMLButtonElement>('.vault-lock__ask button')?.click())
+    expect(onAllowFileChanges).toHaveBeenCalledExactlyOnceWith(at.a, 'minute')
+  })
+
   it('YAZ-4985: a Paste of a Cut made in a read-only vault asks THAT vault too: it would move the file out of it; refused, nothing is pasted', async () => {
     let held: ReturnType<typeof clipboard> | undefined
     const onFileAction = vi.fn(async (root: string) => !root.endsWith('/notes'))
@@ -11857,6 +11868,56 @@ describe('the sidebar in a read-only vault (YAZ-4939)', () => {
     expect(onFileAction).toHaveBeenCalledExactlyOnceWith('/v')
     expect(el.querySelector('.confirm')).toBeNull()
     expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], true)
+  })
+
+  describe('the vault lock in the header (YAZ-4985)', () => {
+    const lockOf = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__header .vault-lock__button')
+    const boxButtons = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.vault-lock__ask button')].map((b) => b.textContent)
+    const v = (over: Partial<Vault>): Vault[] => [{ ...oneVault({})[0], ...over }]
+    it('a vault that is not read only shows no lock; a read-only one shows a closed lock, and the files are drawn as always', async () => {
+      const plain = await mount({ vaults: v({}), onAllowFileChanges: vi.fn() })
+      expect(lockOf(plain.el)).toBeNull()
+      const rowClasses = fileRow(plain.el)?.className
+      act(() => root?.unmount())
+      const { el } = await mount({ vaults: v({ readOnly: true }), onAllowFileChanges: vi.fn() })
+      expect(lockOf(el)?.getAttribute('aria-label')).toBe('This vault is read only')
+      expect(lockOf(el)?.classList.contains('read-only-chip__button--editing')).toBe(false)
+      expect(el.querySelector('.read-only-chip__lock')).toBeNull()
+      expect(fileRow(el)?.className).toBe(rowClasses)
+    })
+
+    it('a click opens the chip\'s box: "Allow file changes for 1 minute" first (it has the focus, so Enter takes it), "10 minutes", Cancel; a choice grants the vault\'s allowance and closes the box; Esc closes it', async () => {
+      const onAllowFileChanges = vi.fn()
+      const { el } = await mount({ vaults: v({ readOnly: true }), onAllowFileChanges })
+      act(() => lockOf(el)?.click())
+      expect(boxButtons(el)).toEqual(['Allow file changes for 1 minute', '10 minutes', 'Cancel'])
+      expect(document.activeElement?.textContent).toBe('Allow file changes for 1 minute')
+      act(() => [...el.querySelectorAll<HTMLButtonElement>('.vault-lock__ask button')][0]?.click())
+      expect(onAllowFileChanges).toHaveBeenCalledExactlyOnceWith('/v', 'minute')
+      expect(el.querySelector('.vault-lock__ask')).toBeNull()
+      act(() => lockOf(el)?.click())
+      act(() => [...el.querySelectorAll<HTMLButtonElement>('.vault-lock__ask button')][1]?.click())
+      expect(onAllowFileChanges).toHaveBeenLastCalledWith('/v', 'ten')
+      act(() => lockOf(el)?.click())
+      act(() => void el.querySelector('.vault-lock')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+      expect(el.querySelector('.vault-lock__ask')).toBeNull()
+    })
+
+    it('while file changes are allowed the lock is amber with the time left, ticking each second, and "Lock now" ends it', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: false, now: 1_000_000 })
+      try {
+        const onLockFileChanges = vi.fn()
+        const { el } = await mount({ vaults: v({ readOnly: true, fileChangesUntil: 1_000_000 + 60_000 }), onAllowFileChanges: vi.fn(), onLockFileChanges })
+        expect(lockOf(el)?.classList.contains('read-only-chip__button--editing')).toBe(true)
+        expect(lockOf(el)?.textContent).toBe('1:00')
+        act(() => vi.advanceTimersByTime(8_000))
+        expect(lockOf(el)?.textContent).toBe('0:52')
+        act(() => el.querySelector<HTMLButtonElement>('.read-only-chip__lock')?.click())
+        expect(onLockFileChanges).toHaveBeenCalledExactlyOnceWith('/v')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   it('with no door (a vault with no Read only) the field opens at once', async () => {
