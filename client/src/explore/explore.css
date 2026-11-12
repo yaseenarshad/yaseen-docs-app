@@ -486,7 +486,8 @@
   top: 52px;
   left: 50%;
   z-index: 21;
-  width: 340px;
+  /* YAZ-4949: room for the five layout names on one line (the row needs 348 px); a narrower window shrinks it. */
+  width: 384px;
   max-width: calc(100% - 32px);
   padding: 12px;
   transform: translateX(-50%);
@@ -504,13 +505,15 @@
 }
 .explore__layouts {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  /* YAZ-4949: a 1fr track does not go below its content; minmax(0, 1fr) keeps the row inside the popover. */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
 }
 .explore__layout {
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-width: 0;
   gap: 4px;
   padding: 6px 2px;
   font: inherit;
@@ -522,6 +525,8 @@
   cursor: pointer;
 }
 .explore__layout svg {
+  max-width: 100%;
+  height: auto;
   fill: color-mix(in srgb, var(--fg) 14%, transparent);
   stroke: color-mix(in srgb, var(--fg) 45%, transparent);
   stroke-width: 0.8;
@@ -545,7 +550,9 @@
   outline-offset: 1px;
 }
 .explore__layout-name {
-  white-space: nowrap;
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 .explore__arrange-head {
   display: flex;
