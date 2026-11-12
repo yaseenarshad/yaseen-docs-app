@@ -37,7 +37,7 @@ export function keepIdsAskMessage({ folders, groups = [], bare = 0 }: Ask, vault
   const writes = [...(bare > 0 ? [`write an ID into the ${count(bare, 'note')} with none`] : []), ...(folders > 0 ? [`add a hidden settings file to ${count(folders, 'folder')}`] : []), 'name the file of each note you make or retitle']
   const will = writes.length < 3 ? writes.join(' and ') : `${writes.slice(0, -1).join(', ')}, and ${writes[writes.length - 1]}`
   // The vault's word (YAZ-4938) for every "note" in the box: one pass over the whole text.
-  return unit(`Give the notes in ${vault ?? 'this vault'} IDs? ${listed}. Keep ${main.letters}: these IDs stay as they are${kept}. The app will ${will}. Or type other letters: each ${main.letters} ID takes them, its number stays, and each link and file name follows. To undo, turn it off.`)
+  return unit(`Give the notes in ${vault ?? 'this vault'} IDs? ${listed}. Keep ${main.letters}: these IDs stay as they are${kept}. The app will ${will}. Or type other letters: each ${main.letters} ID takes them and keeps its number. Their file names follow, and so does each link to them. A link to a note outside this vault stays as it is. To undo, turn it off.`)
 }
 
 /** The line above the text field of the box that keeps the IDs (YAZ-4922 D2). */
@@ -51,7 +51,7 @@ export const idsLettersAsk = (letters: string | undefined): string => (letters =
  * `notes` counts each note and folder that holds a number ID.
  */
 export const lettersAskMessage = ({ letters, notes }: Pick<IdsState, 'letters' | 'notes'>, vault?: string, unit: UnitText = SAME_WORD): string =>
-  `Change the ID letters of ${vault ?? 'this vault'}? They are ${letters} now. The app will change the ID of ${notesCount(notes, unit)}, and each link and file name that holds one. The numbers stay, and a link with the old letters still opens. Do this on one Mac, while this vault is synced and closed on your other Macs.`
+  `Change the ID letters of ${vault ?? 'this vault'}? They are ${letters} now. The app will change the ID of ${notesCount(notes, unit)}, the file name of each, and each link to them. ${unit('A link to a note outside this vault stays as it is.')} The numbers stay, and a link with the old letters still opens. Do this on one Mac, while this vault is synced and closed on your other Macs.`
 
 /** The line above the text field of "Change letters". */
 export const NEW_LETTERS_ASK = 'Type the new ID letters: 2 to 5 letters, like BUS.'

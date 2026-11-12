@@ -1888,6 +1888,9 @@ describe('SettingsDialog: the box offers to keep the IDs the notes already hold 
     expect(keepIdsAskMessage(ASK)).toContain('120 notes and folders have an ID with YAS, and 26 with TECH')
     // The vault's word (YAZ-4938) reaches every "note" of the box.
     expect(keepIdsAskMessage(ASK, undefined, unitTextOf(UNIT_WORDS.card))).toContain('120 cards and folders have an ID with YAS')
+    // What "Use <letters>" does (YAZ-4922, "Yes, leave them"): only this vault's own links follow; a link out keeps its ID.
+    expect(keepIdsAskMessage(ASK)).toContain('Or type other letters: each YAS ID takes them and keeps its number. Their file names follow, and so does each link to them. A link to a note outside this vault stays as it is.')
+    expect(keepIdsAskMessage(ASK)).not.toContain('each link and file name follows')
     expect(el.querySelector('.confirm__letters')?.textContent).toBe(KEEP_OTHER_ASK)
     expect(buttons(el).map((b) => b.textContent)).toEqual(['Use other letters', 'Cancel', 'Keep YAS'])
     expect(document.activeElement).toBe(sheetBtn(el, 'Keep YAS'))
@@ -2022,6 +2025,8 @@ describe('SettingsDialog: ID letters (YAZ-2677 D5, S79, S80, S83, S85)', () => {
     act(() => buttons(el)[0].click())
     expect(el.querySelector('.confirm__text')?.textContent).toBe(lettersAskMessage({ letters: 'YAZ', notes: 745 }, 'Work'))
     expect(el.querySelector('.confirm__text')?.textContent).toContain('745 notes')
+    // The same pass as "Use <letters>" (YAZ-4922, "Yes, leave them"): a link to a note outside this vault keeps its letters.
+    expect(el.querySelector('.confirm__text')?.textContent).toContain('The app will change the ID of 745 notes, the file name of each, and each link to them. A link to a note outside this vault stays as it is.')
     expect(el.querySelector('.confirm__letters')?.textContent).toBe(NEW_LETTERS_ASK)
     expect(document.activeElement).toBe(field(el))
     expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Change letters'])
