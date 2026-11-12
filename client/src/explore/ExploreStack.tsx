@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { rootOfPath, type CommentsOrder, type OpenStat, type ZoomStep } from '@shared/types'
+import type { GestureAction } from '@shared/keys'
 import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { LinkActions } from '../editor/linkMenu'
 import { isNoteKey } from '../editor/noteKeys'
@@ -26,6 +27,7 @@ import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchCandidates, type SearchVault } from '../search/useSearchResults'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { ExploreBoard } from './ExploreBoard'
+import { ExploreCard } from './ExploreCard'
 import { ExploreNote, type ExploreVault } from './ExploreNote'
 import { exploreNoteSections } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
@@ -35,14 +37,17 @@ import { recentSections } from './recentSections'
 import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
-import { frontOrder, layerKindOf, MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topNote, type ExploreLayer } from './layers'
+import { frontOrder, layerKindOf, MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topNote, type ExploreLayer, type ExploreRequest } from './layers'
 import './explore.css'
 
 export interface ExploreStackProps {
   /** Bumped by each ⌘⇧F while the stack shows: one more search layer on top. */
   request: number
-  /** With the ask: a note to open as a reading layer instead of a search ("Open in Explore", YAZ-4936). */
-  requestNote?: string | null
+  /**
+   * With the ask: a layer to open instead of a search — a page for reading ("Open in Explore", YAZ-4936), landed on a
+   * note card or in edit mode (the Inbox's O and E, YAZ-4962), or a card window (`mdapp:note-card-open`, D13).
+   */
+  requestLayer?: ExploreRequest | null
   /** The window's vaults for the search: root, watcher, folders; no other files (the stack reads notes). */
   vaults: readonly SearchVault[]
   vaultOf: (path: string) => ExploreVault
@@ -54,6 +59,8 @@ export interface ExploreStackProps {
   linkActions?: LinkActions
   /** A note in a normal tab (⌘↵, ↗), a folder's page or another file (a drawing, a PDF): the stack closes. */
   openInTab: (path: string) => void
+  /** A link's bound gesture in a card window (⌘-click, YAZ-4962): App's link door; a background tab keeps the stack. */
+  openLinkIn?: (path: string, where: GestureAction) => void
   onNotice: (message: string) => void
   /** The tab menu's "Rename file" (App's `renameInSidebar`): the note menu's row (round 1, items 6 and 7). */
   onRenameFile?: (path: string) => void
@@ -72,6 +79,13 @@ const noLog = () => ({})
 /** The layer a note or a board opens as (YAZ-4943): a note for reading, a board (a drawing or a diagram) for reading. */
 const fileLayer = (path: string, from?: { search: number; at: number }): ExploreLayer =>
   layerKindOf(path) === 'board' ? { id: newLayerId(), kind: 'board', path, ...(from !== undefined && { from }) } : { id: newLayerId(), kind: 'note', path, mode: 'read', ...(from !== undefined && { from }) }
+
+/** The layer App's ask opens (YAZ-4962): a card window, or a page, landed on a card and in edit mode when asked. */
+const requestedLayer = (ask: ExploreRequest): ExploreLayer => {
+  if (ask.kind === 'card') return { id: newLayerId(), kind: 'card', path: ask.path, cardId: ask.cardId, index: ask.index }
+  const layer = fileLayer(ask.path)
+  return layer.kind === 'note' ? { ...layer, ...(ask.edit === true && { mode: 'edit' }), ...(ask.card !== undefined && { card: ask.card }) } : layer
+}
 
 /** The Tile keys (YAZ-4944, `shared/keys/explore.ts`) and their layouts. */
 const TILE_KEYS: ReadonlyArray<readonly [string, ArrangeLayout]> = [
@@ -104,7 +118,7 @@ const inField = (target: EventTarget | null): boolean => target instanceof Eleme
 /** What Tab can reach: the trail's chips and the front layer (round 6). */
 const TABBABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), [contenteditable="true"]'
 
-export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -191,8 +205,8 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
   }, [candidates])
   const rowOf = useCallback((path: string) => rowByPath.get(path), [rowByPath])
 
-  const doors = useRef({ onNotice, onClose, openInTab, onRenameFile, linkActions })
-  doors.current = { onNotice, onClose, openInTab, onRenameFile, linkActions }
+  const doors = useRef({ onNotice, onClose, openInTab, openLinkIn, onRenameFile, linkActions })
+  doors.current = { onNotice, onClose, openInTab, openLinkIn, onRenameFile, linkActions }
   /** The note menu on show (round 1, items 6 and 7): where, and for which note. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const noteSections = useCallback(
@@ -235,8 +249,8 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
         setLayers((prev) =>
           prev.map((l) => {
             if (l.kind === 'search' || !at(l.path)) return l
-            // A board that is gone says so itself (its window's "Missing …").
-            if (l.kind === 'board') return to === null ? l : { ...l, path: to + l.path.slice(from.length) }
+            // A board that is gone says so itself (its window's "Missing …"); a card reads its page again from the index.
+            if (l.kind === 'board' || l.kind === 'card') return to === null ? l : { ...l, path: to + l.path.slice(from.length) }
             return to === null ? { ...l, mode: 'read', gone: (l.gone ?? 0) + 1 } : { ...l, path: to + l.path.slice(from.length) }
           }),
         )
@@ -249,9 +263,9 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
   useEffect(() => {
     if (request === served.current) return
     served.current = request
-    if (requestNote === null) push({ id: newLayerId(), kind: 'search' })
-    else if (push(fileLayer(requestNote))) rememberExploreRecent(requestNote)
-  }, [request, requestNote, push])
+    if (requestLayer === null) push({ id: newLayerId(), kind: 'search' })
+    else if (push(requestedLayer(requestLayer)) && requestLayer.kind === 'note') rememberExploreRecent(requestLayer.path)
+  }, [request, requestLayer, push])
 
   /** A note or a board (YAZ-4943) goes on top for reading; a folder or another file opens in a tab and the stack closes. */
   const openPath = useCallback(
@@ -265,6 +279,19 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     },
     [push],
   )
+  /** A card window's page (YAZ-4962): on top, landed on the card. */
+  const openPageAt = useCallback((path: string, card: number) => {
+    const layer = fileLayer(path)
+    if (layer.kind === 'note' && push({ ...layer, card })) rememberExploreRecent(path)
+  }, [push])
+  /** A card window's link with a bound gesture: a background tab keeps the stack; any other tab closes it. */
+  const openTabFromCard = useCallback((path: string, where: GestureAction) => {
+    const { openLinkIn: linkIn, openInTab: inTab, onClose: closeAll } = doors.current
+    if (where === 'backgroundTab' && linkIn !== undefined) return linkIn(path, where)
+    flushEdits()
+    inTab(path)
+    closeAll()
+  }, [flushEdits])
   /** A row of search layer `search` at `at` (round 3): the layer remembers them, so ‹ › step through that search. */
   const openRow = useCallback(
     (search: number, row: SearchCandidate, at: number) => {
@@ -281,7 +308,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
    */
   const step = useCallback((id: number, dir: -1 | 1): boolean => {
     const layer = layersRef.current.find((l) => l.id === id)
-    if (layer === undefined || layer.kind === 'search' || layer.from === undefined) return false
+    if (layer === undefined || layer.kind === 'search' || layer.kind === 'card' || layer.from === undefined) return false
     const search = layer.from.search
     const to = stepResult(links.current.get(search)?.rows ?? [], layer.from.at, layer.path, dir)
     if (to === null) return false
@@ -291,7 +318,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     const from = { search, at: to.at }
     setLayers((prev) =>
       prev.map((l): ExploreLayer => {
-        if (l.id !== id || l.kind === 'search') return l
+        if (l.id !== id || l.kind === 'search' || l.kind === 'card') return l
         if (layerKindOf(to.path) === 'board') return { id, kind: 'board', path: to.path, from }
         return { id, kind: 'note', path: to.path, mode: l.kind === 'note' ? l.mode : 'read', from }
       }),
@@ -509,7 +536,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     }
     // ‹ › (round 3): a bare key (← / →) is the caret's while a field or the editor has the keyboard, so it steps only
     // while reading; a chord (⌘⌥↓ / ⌘⌥↑) steps in any mode. A key the editor took (a cell note's own step) is left.
-    if (top.kind !== 'search' && top.from !== undefined && !event.defaultPrevented) {
+    if ((top.kind === 'note' || top.kind === 'board') && top.from !== undefined && !event.defaultPrevented) {
       const overrides = storage.getSettings()?.hotkeys
       const dir = isNoteKey(event, 'explore.nextResult', overrides) ? 1 : isNoteKey(event, 'explore.previousResult', overrides) ? -1 : 0
       if (dir !== 0) {
@@ -540,9 +567,12 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     if (id !== top.id && !leaving.has(id)) raise(id)
   }
 
+  /** A layer's name in the trail and in Arrange: Search, the page's name, or the card's ID (YAZ-4962). */
+  const trailName = (layer: ExploreLayer): string => (layer.kind === 'search' ? 'Search' : layer.kind === 'card' ? (layer.cardId ?? 'Note card') : nameOf(layer.path))
+
   /** For each search layer, the note from it nearest the front (round 3, round 6): its row is the one marked. */
   const markedOf = new Map<number, { path: string; at: number }>()
-  for (const l of live) if (l.kind !== 'search' && l.from !== undefined) markedOf.set(l.from.search, { path: l.path, at: l.from.at })
+  for (const l of live) if ((l.kind === 'note' || l.kind === 'board') && l.from !== undefined) markedOf.set(l.from.search, { path: l.path, at: l.from.at })
 
   // A click on the dim outside every layer: the front layer closes, as Esc does.
   const onBackdropMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -568,7 +598,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
             <span key={layer.id} className="explore__trail-step">
               {i > 0 && <span className="explore__trail-sep">›</span>}
               <button type="button" className={`explore__chip${layer === top ? ' explore__chip--top' : ''}`} aria-current={layer === top ? 'true' : undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => raise(layer.id)}>
-                {layer.kind === 'search' ? 'Search' : nameOf(layer.path)}
+                {trailName(layer)}
               </button>
             </span>
           ))}
@@ -591,7 +621,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
       )}
       {arrangeOpen && live.length > 1 && (
         <ExploreArrange
-          windows={[...live].reverse().map((l) => ({ id: l.id, kind: l.kind, name: l.kind === 'search' ? 'Search' : nameOf(l.path) }))}
+          windows={[...live].reverse().map((l) => ({ id: l.id, kind: l.kind, name: trailName(l) }))}
           initial={(layoutForCount(fileCount) ?? 'two') satisfies TileLayout}
           onApply={(layout, ids) => {
             closeArrange()
@@ -609,9 +639,9 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
         /** A search layer: the note that came from it nearest the front, whose row stays marked (round 3). */
         const marked = layer.kind === 'search' ? markedOf.get(layer.id) ?? null : null
         /** A note layer from a search: its place among that search's rows, and whether a step each way exists. */
-        const rows = layer.kind !== 'search' && layer.from !== undefined ? (links.current.get(layer.from.search)?.rows ?? []) : null
+        const rows = (layer.kind === 'note' || layer.kind === 'board') && layer.from !== undefined ? (links.current.get(layer.from.search)?.rows ?? []) : null
         const steps =
-          layer.kind !== 'search' && layer.from !== undefined && rows !== null
+          (layer.kind === 'note' || layer.kind === 'board') && layer.from !== undefined && rows !== null
             ? { place: stepPlace(rows, layer.from.at, layer.path), count: stepCount(rows), prev: stepResult(rows, layer.from.at, layer.path, -1) !== null, next: stepResult(rows, layer.from.at, layer.path, 1) !== null, onStep: (dir: -1 | 1) => void step(layer.id, dir) }
             : undefined
         return (
@@ -633,6 +663,23 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
                 <div className="explore__grab" title="Drag to move; double-click to put back" onMouseDown={(e) => gestures.onHeadDown(layer.id, e)} onDoubleClick={(e) => gestures.reset(layer.id, e)} />
                 <ExploreSearch candidates={candidates} link={linkOf(layer.id)} markedRow={marked} recent={recent} rowOf={rowOf} roots={roots} nameOf={nameOf} onOpen={(row, at) => openRow(layer.id, row, at)} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
               </>
+            ) : layer.kind === 'card' ? (
+              <ExploreCard
+                path={layer.path}
+                cardId={layer.cardId}
+                index={layer.index}
+                pageName={nameOf(layer.path)}
+                vault={vaultOf(layer.path)}
+                onOpenPage={(index) => openPageAt(layer.path, index)}
+                onOpenLink={openPath}
+                onOpenTab={openTabFromCard}
+                onOpenInTab={toTab}
+                onNotice={onNotice}
+                onHeadDown={(e) => gestures.onHeadDown(layer.id, e)}
+                onHeadReset={(e) => gestures.reset(layer.id, e)}
+                onClose={() => close(layer.id)}
+                active={!covered}
+              />
             ) : layer.kind === 'board' ? (
               <ExploreBoard
                 path={layer.path}
@@ -666,6 +713,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
                 onNotice={onNotice}
                 onToggleEdit={() => toggleEdit(layer.id)}
                 editAsk={layer.editAsk}
+                card={layer.card}
                 steps={steps}
                 zoom={zoom}
                 onZoom={setZoom}

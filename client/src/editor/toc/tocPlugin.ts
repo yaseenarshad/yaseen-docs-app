@@ -286,8 +286,18 @@ const nestedListElements = (view: EditorView, itemPos: number): HTMLElement[] =>
 }
 
 /** Where `scroller` must stand for `element` to sit `LANDING_PX` below its top edge, as far as it can scroll. */
-const landingTop = (scroller: HTMLElement, element: HTMLElement): number =>
+export const landingTop = (scroller: HTMLElement, element: HTMLElement): number =>
   Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - LANDING_PX))
+
+/**
+ * The outline's landing outside the outline (YAZ-4962: a page opened at a note card): `element` placed `LANDING_PX`
+ * below the top of its scroller — a note's `.editor-host`, or an Explore read layer's `.explore__body` — then one flash.
+ */
+export function landOn(element: HTMLElement): void {
+  const scroller = element.closest<HTMLElement>('.editor-host, .explore__body')
+  if (scroller !== null) scroller.scrollTop = landingTop(scroller, element)
+  if (typeof element.animate === 'function' && !reducedMotion()) element.animate(FLASH_FRAMES, { duration: FLASH_MS, easing: 'ease-out' })
+}
 
 /** jsdom has no `matchMedia`, and the contract runs there. */
 

@@ -16,6 +16,7 @@ import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { notePageSwitches, type PageSwitches } from '@shared/pageSwitches'
 import type { CommentsOrder } from '@shared/types'
+import type { ReviewSettings } from '@shared/reviews'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { createCrepe, editorViewOf } from '../editor/createCrepe'
@@ -40,6 +41,7 @@ import { storage } from '../lib/storage'
 import { editingLabel, ReadOnlyChip } from '../editor/ReadOnlyChip'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
+import { landOn } from '../editor/toc/tocPlugin'
 
 /** The vault the note is in: what its links resolve against. */
 export interface ExploreVault {
@@ -50,6 +52,8 @@ export interface ExploreVault {
   viewOnlyLinks?: ViewOnlyLinkSource
   /** The vault's Read only (YAZ-4939): E asks with the timed "Allow edits" box before the layer edits. */
   readOnly?: boolean
+  /** The vault's card review (YAZ-4962): the card window's strip and Reviews table read the settings; its delete writes. */
+  review?: { settings: ReviewSettings; deleteReview: (path: string, id: string, at: string) => Promise<void> }
 }
 
 interface ExploreNoteProps {
@@ -78,6 +82,8 @@ interface ExploreNoteProps {
   onToggleEdit: () => void
   /** Bumped by the stack's E in a Read only vault (YAZ-4939): the layer asks first, or edits while its unlock runs. */
   editAsk?: number
+  /** The note card to land on once the page shows (YAZ-4962): its place among the page's cards. */
+  card?: number
   /**
    * ‹ › (round 3): the note's place among the rows of the search under it ("2/3"), whether a step each way exists,
    * and the step. A note opened from a link has no search under it, so no ‹ ›.
@@ -150,7 +156,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, editAsk = 0, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, editAsk = 0, card, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   // The layer's vault's word for a note (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const noteId = useNoteId(idInTitle ? vault.wikilinks : undefined, path)
@@ -271,6 +277,29 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
       keys={{ collapse: 'note.foldAll', expand: 'note.unfoldAll' }}
     />
   )
+  // Land on the card the layer opened for (YAZ-4962: the Inbox's O and E, the card window's page name), once: the
+  // outline's landing (`landOn`). Reading: once the read-only Crepe is up. Editing: the editor mounts a tick later, so
+  // ask a few frames until its card is there.
+  const landed = useRef(false)
+  const editBodyRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (card === undefined || landed.current || (mode === 'read' && ready === null)) return
+    let tries = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = () => {
+      const scope = mode === 'read' ? mountRef.current : editBodyRef.current
+      const target = scope?.querySelectorAll<HTMLElement>('.note-card')[card]
+      if (target !== undefined) {
+        landed.current = true
+        landOn(target)
+        return
+      }
+      if (++tries <= 40) timer = setTimeout(tick, 16)
+    }
+    tick()
+    return () => clearTimeout(timer)
+  }, [card, mode, ready])
+
   /** The saved text for the comment stream (round 1, item 3): what was read, until the block's own write moves it. */
   const file = content.kind === 'body' || content.kind === 'empty' ? { path, content: readRef.current } : null
 
@@ -391,7 +420,7 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
         </button>
       </div>
       {mode === 'edit' ? (
-        <div className="explore__body explore__body--edit" style={bodyStyle}>
+        <div ref={editBodyRef} className="explore__body explore__body--edit" style={bodyStyle}>
           {/* Keyed by the path: a step while editing saves this note and mounts the editor on the next (the body div stays, with the keyboard). */}
           <Fragment key={path}>{renderEditor(path, onOpenLink, unlocked)}</Fragment>
         </div>

@@ -934,20 +934,28 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
 }
 
 /** What the note cards of one editor read (YAZ-4961): the editor's own link sources, follower, images and doors. */
-function noteCardDeps(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, follow: LinkFollow | undefined): NoteCardDeps {
-  const image = opts.image
-  const nav = opts.markdownLinkNav
-  const look: NoteCardLook = {
+/**
+ * A note card's look in a vault (YAZ-4961; YAZ-4962 for the card window and the Inbox): the link pills as the note's
+ * (label, resolved, icon) and the images by the note's folder. One function for the page and the screens outside it.
+ */
+export function noteCardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, image?: ImageOptions, linkLook?: LinkLook): NoteCardLook {
+  return {
     link: (inner) => {
       const path = linkPath(inner, wikilinks, viewOnly)
       return {
         label: linksAsShown(`[[${inner}]]`, wikilinks, viewOnly),
         resolved: linkIsResolved(inner, wikilinks, viewOnly),
-        attrs: path === null || opts.linkLook === undefined ? undefined : opts.linkLook.icon(path, fileKind(basename(path)) === null),
+        attrs: path === null || linkLook === undefined ? undefined : linkLook.icon(path, fileKind(basename(path)) === null),
       }
     },
     image: image === undefined ? undefined : (src) => imageSrc(image.root, noteDirRel(image.root, image.notePath), src),
   }
+}
+
+function noteCardDeps(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, follow: LinkFollow | undefined): NoteCardDeps {
+  const image = opts.image
+  const nav = opts.markdownLinkNav
+  const look = noteCardLook(wikilinks, viewOnly, image, opts.linkLook)
   return {
     host: opts.noteCards,
     path: image?.notePath ?? null,

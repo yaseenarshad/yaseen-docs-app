@@ -665,7 +665,7 @@ describe('the explore stack', () => {
   })
 
   it('YAZ-4936: an ask with a note opens it as a reading layer with no search under it; Esc closes the stack', async () => {
-    props.requestNote = '/v/beta.md'
+    props.requestLayer = { kind: 'note', path: '/v/beta.md' }
     await mount()
     expect(layers().map((l) => l.dataset.kind)).toEqual(['note'])
     expect(top().querySelector('.explore__title')?.textContent).toBe('beta')
@@ -693,7 +693,7 @@ describe('the explore stack', () => {
     const withIds = createWikilinkResolveSource()
     withIds.update(() => null, RECORDS, [], true)
     props.vaultOf = () => ({ root: '/v', wikilinks: withIds, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly })
-    props.requestNote = '/v/alpha.md'
+    props.requestLayer = { kind: 'note', path: '/v/alpha.md' }
     props.vaults = [{ ...vaults[0], idsInTitle: () => true }]
     await mount()
     expect(top().querySelector('.explore__head .explore__title + .explore__id')?.textContent).toBe('EMB-1')
@@ -1531,7 +1531,7 @@ describe('YAZ-4943: drawings and diagrams open as reading layers', () => {
   })
 
   it('a board opened as the first layer keeps its own box: a drag of its head is saved under the board`s kind', async () => {
-    props = { ...props, requestNote: FLOW }
+    props = { ...props, requestLayer: { kind: 'note', path: FLOW } }
     await mount()
     expect(layers().map((l) => l.dataset.kind)).toEqual(['board'])
     const mouse = (target: EventTarget, type: string, x: number, y: number) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y })))
@@ -2058,7 +2058,7 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     const withIds = createWikilinkResolveSource()
     withIds.update(() => null, RECORDS, [], true)
     props.vaultOf = () => ({ root: '/v', wikilinks: withIds, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly })
-    props.requestNote = '/v/alpha.md'
+    props.requestLayer = { kind: 'note', path: '/v/alpha.md' }
     props.vaults = [{ ...vaults[0], idsInTitle: () => true }]
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })

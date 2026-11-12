@@ -61,6 +61,8 @@ import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
 import { dropNoteWindowsAt, renameNoteWindows } from './views/view/NoteWindow'
 import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
+import type { ExploreRequest } from './explore/layers'
+import { NOTE_CARD_OPEN, type NoteCardOpenRequest } from './editor/noteCard/noteCardView'
 import type { SearchVault } from './search/useSearchResults'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
@@ -1339,8 +1341,11 @@ export function App() {
 
   // The explore stack (YAZ-2571): ⌘⇧F / File › Explore Vault…. `exploreRequest` and `exploreFrom` are declared above
   // `openSearch` (⌘K closes the stack). The keyboard goes back where it was when the stack closes.
-  /** What the next ask opens: a search (⌘⇧F), or a note as a reading layer with no search under it ("Open in Explore", YAZ-4936). */
-  const exploreNote = useRef<string | null>(null)
+  /**
+   * What the next ask opens: a search (⌘⇧F), or a layer with no search under it — a note for reading ("Open in
+   * Explore", YAZ-4936), a page landed on a note card, or a card window (YAZ-4962).
+   */
+  const exploreNote = useRef<ExploreRequest | null>(null)
   // Whether the window has a vault, not which: a renamed first vault changes `root`, and a door that hung on it would
   // hand every editor of the window a new prop and render each of them again (the two-vault rename cases).
   const hasVault = root !== null
@@ -1352,14 +1357,25 @@ export function App() {
       return n + 1
     })
   }, [hasVault, filesWindow])
-  const openExploreOn = useCallback((path: string) => {
+  const openExploreWith = useCallback((ask: ExploreRequest) => {
     if (!hasVault || filesWindow) return
-    exploreNote.current = path
+    exploreNote.current = ask
     setExploreRequest((n) => {
       if (n === 0) exploreFrom.current = document.activeElement
       return n + 1
     })
   }, [hasVault, filesWindow])
+  const openExploreOn = useCallback((path: string) => openExploreWith({ kind: 'note', path }), [openExploreWith])
+  // The card window (YAZ-4962, D13): every editor sends `mdapp:note-card-open` from its card (a click on the title,
+  // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
+  useEffect(() => {
+    const onOpenCard = (event: Event) => {
+      const { path, cardId, index } = (event as CustomEvent<NoteCardOpenRequest>).detail
+      if (path !== null) openExploreWith({ kind: 'card', path, cardId, index })
+    }
+    document.addEventListener(NOTE_CARD_OPEN, onOpenCard)
+    return () => document.removeEventListener(NOTE_CARD_OPEN, onOpenCard)
+  }, [openExploreWith])
   /** This vault's "Clicking a link" (YAZ-4936), for the editors of `path`: read at each click. */
   const exploreOnClickFor = useCallback((path: string) => scopeOf(path).linkClick.isExplore, [scopeOf])
   const closeExplore = useCallback(() => {
@@ -1390,7 +1406,7 @@ export function App() {
   )
   const exploreVaultOf = useCallback((path: string) => {
     const scope = scopeOf(path)
-    return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates, viewOnlyLinks: scope.viewOnlyLinks, readOnly: scope.readOnlyVault.settings.on }
+    return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates, viewOnlyLinks: scope.viewOnlyLinks, readOnly: scope.readOnlyVault.settings.on, review: { settings: scope.review.settings, deleteReview: scope.review.deleteReview } }
   }, [scopeOf])
   // The notes opened most recently, for the stack's empty search: the active tab's note, drawing or diagram counts (YAZ-4943).
   useEffect(() => {
@@ -3392,7 +3408,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestNote={exploreNote.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} linkActions={linkActions} openInTab={openNewTabPage} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} />
+          <ExploreStack request={exploreRequest} requestLayer={exploreNote.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} />
         </Suspense>
       )}
       {whatsNewOpen && (

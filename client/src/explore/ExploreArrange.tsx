@@ -9,7 +9,7 @@ import { TILE_PLACES, type ArrangeLayout, type TileLayout } from './tile'
 
 export interface ArrangeWindow {
   id: number
-  kind: 'search' | 'note' | 'board'
+  kind: 'search' | 'note' | 'board' | 'card'
   name: string
 }
 
@@ -118,7 +118,7 @@ export function ExploreArrange({ windows, initial, onApply, onClose }: ExploreAr
                   <label className={`explore__arrange-row${!on && ids.length >= places ? ' explore__arrange-row--full' : ''}`}>
                     <input type="checkbox" checked={on} disabled={!on && ids.length >= places} onChange={() => toggle(w.id)} />
                     <span className="explore__arrange-name">{w.name}</span>
-                    {w.kind !== 'note' && <span className="explore__arrange-kind">{w.kind === 'search' ? 'Search' : 'Board'}</span>}
+                    {w.kind !== 'note' && <span className="explore__arrange-kind">{w.kind === 'search' ? 'Search' : w.kind === 'card' ? 'Card' : 'Board'}</span>}
                   </label>
                 </li>
               )

@@ -32,6 +32,32 @@ export async function readCard(path: string, id: string): Promise<CardOnPage | n
   return card === undefined ? null : { path, id, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line) }
 }
 
+/** A card found by its ID or, before it has one, by its place (the card window, YAZ-4962). */
+export interface CardAtPage extends Omit<CardOnPage, 'id'> {
+  id: string | null
+  /** Its place among the page's cards now. */
+  index: number
+}
+
+/**
+ * The card window's read (YAZ-4962): card `id` of `path`, or with no ID the card at `index`. Null when the page or the
+ * card is gone (an ID no card has; no card at `index`).
+ */
+export async function readCardAt(path: string, id: string | null, index: number): Promise<CardAtPage | null> {
+  let content: string
+  try {
+    content = (await api.readFile(path)).content
+  } catch (err) {
+    if (err instanceof BridgeRequestError && err.code === 'NOT_FOUND') return null
+    throw err
+  }
+  const cards = pageCards(content)
+  const at = id === null ? index : cards.findIndex((c) => cardIdOf(c.line) === id)
+  const card = cards[at]
+  if (card === undefined) return null
+  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line) }
+}
+
 /** Writes `review` to card `id`'s line: the answer the hover showed, as it showed it (D13). Throws `CardNotFoundError`. */
 export const writeCardReview = (path: string, id: string, review: CardReview): Promise<unknown> => transformFile(path, (c) => changeCard(c, id, (l) => withCardReview(l, review)))
 

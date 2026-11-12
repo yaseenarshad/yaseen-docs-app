@@ -19,6 +19,18 @@ export type ExploreLayer =
       gone?: number
       /** Bumped by E in a Read only vault (YAZ-4939): the layer asks with its timed "Allow edits", or edits while unlocked. */
       editAsk?: number
+      /** The note card to land on when the page opens (YAZ-4962): its place among the page's cards. */
+      card?: number
+    }
+  | {
+      id: number
+      /** One note card of a page (YAZ-4962, D13): the card read-only, its strip and its Reviews table. */
+      kind: 'card'
+      path: string
+      /** The card's ID; null while it has none yet (then `index` finds it). */
+      cardId: string | null
+      /** Its place among the page's cards (`pageCards` order). */
+      index: number
     }
   | {
       id: number
@@ -53,10 +65,13 @@ export function pushLayer(layers: readonly ExploreLayer[], layer: ExploreLayer):
   return layers.length >= MAX_LAYERS ? null : [...layers, layer]
 }
 
-/** A layer that shows a file: a note or a board. */
-export type FileLayer = Extract<ExploreLayer, { kind: 'note' | 'board' }>
+/** A layer that shows a file: a note, a board, or a card of a page (its page is the file). */
+export type FileLayer = Extract<ExploreLayer, { kind: 'note' | 'board' | 'card' }>
 
-/** The note or board layer nearest the top, or null: what ⌘↵ opens in a tab. */
+/** What App asks the stack to open (YAZ-4962): a page (landing on a card, or in edit mode), or a card window. */
+export type ExploreRequest = { kind: 'note'; path: string; card?: number; edit?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number }
+
+/** The note, board or card layer nearest the top, or null: what ⌘↵ opens in a tab (a card's page). */
 export function topNote(layers: readonly ExploreLayer[]): FileLayer | null {
   for (let i = layers.length - 1; i >= 0; i--) {
     const layer = layers[i]
