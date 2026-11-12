@@ -26,9 +26,9 @@ describe('reserved keys: the folders’ values (D19)', () => {
 })
 
 describe('reserved keys: review (YAZ-4967, D6)', () => {
-  it('`review` is an ordinary property; `reviews` stays Reserved only until the upkeep shim goes after YAZ-4961', () => {
+  it('`review` and `reviews`, the old upkeep keys, are ordinary properties', () => {
     expect(RESERVED_KEYS.has('review')).toBe(false)
-    expect(RESERVED_KEYS.has('reviews')).toBe(true)
+    expect(RESERVED_KEYS.has('reviews')).toBe(false)
   })
 })
 
@@ -51,12 +51,12 @@ describe('reserved keys: a vault that does not use IDs (YAZ-2523 V12)', () => {
   it('`id`, `title`, `also_in` and `in` are ordinary properties there; the comments store, the review log, the read-only switch and the page switches are still the app\u2019s', () => {
     const plain = reservedKeys(false)
     for (const key of [NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY]) expect(plain.has(key)).toBe(false)
-    expect([...plain].sort()).toEqual([COMMENTS_KEY, 'reviews', READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
+    expect([...plain].sort()).toEqual([COMMENTS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 
   // The folder page cog's keys (FOLDER_PAGE_KEYS) are the app's too: the cog sets them (`show_new_buttons`, YAZ-3746 13BL, the latest).
   it('a vault that uses IDs owns all twenty-two', () => {
-    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, 'reviews', TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
+    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 })
 

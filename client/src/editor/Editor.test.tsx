@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { ZOOM_EVENT } from './zoomRequest'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_UPKEEP_SETTINGS, type UpkeepSettings } from '../review/upkeepLegacy'
 import type { FileResponse, IndexRecord, PageView, TableOfContents, TocSource, TreeNode, WatchEvent } from '@shared/types'
 import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
@@ -34,7 +33,7 @@ import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
  * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
  * through a counting wrapper, so every other test sees it render exactly as before.
  */
-const renders = vi.hoisted(() => ({ frontmatter: 0, comments: 0, backlinks: 0, reviews: 0 }))
+const renders = vi.hoisted(() => ({ frontmatter: 0, comments: 0, backlinks: 0 }))
 vi.mock('./FrontmatterPanel', async (importOriginal) => {
   const real = await importOriginal<typeof import('./FrontmatterPanel')>()
   return { ...real, FrontmatterPanel: (props: Parameters<typeof real.FrontmatterPanel>[0]) => (renders.frontmatter++, real.FrontmatterPanel(props)) }
@@ -46,10 +45,6 @@ vi.mock('../comments/CommentsSection', async (importOriginal) => {
 vi.mock('../links/BacklinksSection', async (importOriginal) => {
   const real = await importOriginal<typeof import('../links/BacklinksSection')>()
   return { ...real, BacklinksSection: (props: Parameters<typeof real.BacklinksSection>[0]) => (renders.backlinks++, real.BacklinksSection(props)) }
-})
-vi.mock('../review/ReviewsSection', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../review/ReviewsSection')>()
-  return { ...real, ReviewsSection: (props: Parameters<typeof real.ReviewsSection>[0]) => (renders.reviews++, real.ReviewsSection(props)) }
 })
 
 vi.mock('../api', async (importOriginal) => {
@@ -205,7 +200,7 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: UpkeepSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean; vaultReadOnly?: boolean; onFileAction?: (root: string) => Promise<boolean> } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean; vaultReadOnly?: boolean; onFileAction?: (root: string) => Promise<boolean> } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
@@ -214,7 +209,7 @@ async function mount(content: string, mtime = 1, extra: { path?: string; wikilin
   if (extra.behind === true) container.className = 'tabstack__layer tabstack__layer--hidden'
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} bulletThreadingOnByDefault={extra.bulletThreadingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} vaultReadOnly={extra.vaultReadOnly} onFileAction={extra.onFileAction} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} bulletThreadingOnByDefault={extra.bulletThreadingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} vaultReadOnly={extra.vaultReadOnly} onFileAction={extra.onFileAction} />))
   await settle()
   await settle()
   return container
@@ -1677,8 +1672,7 @@ describe('CrepeHost empty frontmatter block (GRO-2216)', () => {
  * `page-header, editor-mount, …` where they used to read `page-title, frontmatter-panel, …`.
  * The header's two halves are pinned inside it, so nothing the old order said is given up.
  * YAZ-1472 slid the comment stream in before the backlinks (🔒 D4): always present, since its
- * composer is the door to the first comment. YAZ-2322 put "Reviews" after "Linked mentions",
- * as the LAST block — there once the vault's review settings are handed down.
+ * composer is the door to the first comment. (Page upkeep's "Reviews" block went with D6, YAZ-4962.)
  */
 describe('Editor backlinks section (Links D, GRO-2193)', () => {
   const record = (path: string, links: string[] = [], properties: Record<string, unknown> = {}): IndexRecord => {
@@ -1731,20 +1725,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(zoom?.title()).toBe('UP-001 - Abdul')
   })
 
-  it('with the review settings, "Reviews" is the last block, after "Linked mentions" (YAZ-2322)', async () => {
-    const source = createWikilinkResolveSource()
-    const el = await mount(BODY, 1, { wikilinks: source, reviewSettings: { ...DEFAULT_UPKEEP_SETTINGS, enabled: true } })
-    feed(source, [record('/vault/other.md', ['note']), record(PATH)])
-    expect([...(el.querySelector('.editor-host')?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'comments', 'backlinks', 'reviews'])
-  })
 
-  it('upkeep off: App hands no review settings, and the page has no Reviews section — even for a note with a log', async () => {
-    const source = createWikilinkResolveSource()
-    const el = await mount(`---\nreview: true\nreviews:\n  - {at: 2026-10-04T14:02:11Z, rating: keep, text: 9f3a1c2e}\n---\n${BODY}`, 1, { wikilinks: source })
-    feed(source, [record('/vault/other.md', ['note']), record(PATH)])
-    expect(el.querySelector('.reviews')).toBeNull()
-    expect([...(el.querySelector('.editor-host')?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'comments', 'backlinks'])
-  })
 })
 
 /**
@@ -2105,14 +2086,13 @@ describe('document magnification (YAZ-1410)', () => {
 })
 
 describe('a save repaints only the chips (YAZ-2196 P6)', () => {
-  it('the properties panel, comments, backlinks and reviews do not re-render through a whole unsaved → saving → saved cycle', async () => {
+  it('the properties panel, comments and backlinks do not re-render through a whole unsaved → saving → saved cycle', async () => {
     const source = createWikilinkResolveSource()
     const el = await mount(FM + BODY, 1, { wikilinks: source })
     expect(renders.frontmatter).toBeGreaterThan(0)
     expect(renders.comments).toBeGreaterThan(0)
     expect(renders.backlinks).toBeGreaterThan(0)
-    expect(renders.reviews).toBeGreaterThan(0)
-    renders.frontmatter = renders.comments = renders.backlinks = renders.reviews = 0
+    renders.frontmatter = renders.comments = renders.backlinks = 0
 
     type('# Hello\n\nedited\n')
     expect(el.querySelector('.save-indicator--unsaved')).not.toBeNull()
@@ -2120,7 +2100,7 @@ describe('a save repaints only the chips (YAZ-2196 P6)', () => {
     await settle()
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(el.querySelector('.save-indicator--saved')).not.toBeNull()
-    expect(renders).toEqual({ frontmatter: 0, comments: 0, backlinks: 0, reviews: 0 })
+    expect(renders).toEqual({ frontmatter: 0, comments: 0, backlinks: 0 })
   })
 })
 

@@ -1368,12 +1368,13 @@ Body
       expect(header(el)?.getAttribute('aria-label')).toBe('Properties (8)')
     })
 
-    it('`id`, `title` and `also_in` are ordinary; `in` is a value no editor holds; `comments` and `reviews` are still Reserved', () => {
+    it('`id`, `title` and `also_in` are ordinary; `in` is a value no editor holds; `comments` is Reserved and the old upkeep `reviews` is not', () => {
       const el = mountNote(PLAIN, plainFeed())
       for (const key of ['id', 'title', 'also_in']) expect(rowOf(el, key).querySelector('[data-edit]')).not.toBeNull()
       expect(rowOf(el, 'also_in').querySelector('.frontmatter-panel__value')?.textContent).toBe(TASKS_ID)
       expect(chipIn(rowOf(el, 'in'))).toBe('YAML')
-      for (const key of ['comments', 'reviews']) expect(chipIn(rowOf(el, key))).toBe('Reserved')
+      expect(chipIn(rowOf(el, 'comments'))).toBe('Reserved')
+      expect(chipIn(rowOf(el, 'reviews'))).not.toBe('Reserved')
     })
 
     it('an edit writes that one line: the `in:` blocks stay byte for byte', async () => {

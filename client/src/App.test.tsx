@@ -157,7 +157,7 @@ const captured = vi.hoisted(() => ({
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
     captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
     if (tabId !== undefined && onZoom !== undefined) captured.zoomDoors.set(tabId, onZoom)
     captured.editorOpeners.push({ path, open: onOpenFile })
@@ -165,7 +165,7 @@ vi.mock('./editor/Editor', () => ({
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
     return (
-      <div data-editor data-root={root} data-path={path ?? ''} data-review-settings={reviewSettings === undefined ? 'none' : 'given'}>
+      <div data-editor data-root={root} data-path={path ?? ''}>
         <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
         <button type="button" data-open-right-background onClick={() => onOpenFileBackground?.('/v/d.md')} />
       </div>
@@ -5174,8 +5174,8 @@ describe('App note card review (YAZ-4967)', () => {
     expect(bridge.readFile).not.toHaveBeenCalledWith('/v/Work/p.md')
   })
 
-  it('review off in review.json: no Inbox, nothing due, no session; and no page gets the old Reviews footer', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, (b) => {
+  it('review off in review.json: no Inbox, nothing due, no session', async () => {
+    await mount(defaultAppState(), TABS, {}, (b) => {
       b.bridge.vaultConfig.read.mockImplementation(async (_root, name) => (name === 'review.json' ? { enabled: false } : null))
       withIndex(RECORDS())(b)
     })
@@ -5183,7 +5183,6 @@ describe('App note card review (YAZ-4967)', () => {
     expect(captured.sidebar?.dueCount).toBe(0)
     openInbox()
     expect(captured.sidebar?.reviewing).toBe(false)
-    expect(el.querySelector('[data-editor][data-path="/v/b.md"]')?.getAttribute('data-review-settings')).toBe('none')
   })
 })
 
