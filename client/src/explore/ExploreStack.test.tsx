@@ -21,6 +21,7 @@ import { onNoteWindowRequest } from '../views/noteWindowRequest'
 import { registerRenameContinuity } from '../lib/renameContinuity'
 import { requestZoom } from '../editor/zoomRequest'
 import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStack'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { layerPlace, MAX_LAYERS } from './layers'
 import { tileCells } from './tile'
 import { ago } from './recentSections'
@@ -47,6 +48,8 @@ vi.mock('../editor/createCrepe', () => ({
     crepes.push(inst)
     return inst
   }),
+  // The card window's look (YAZ-4962): no pill labels or image URLs here, the card's text as written.
+  noteCardLook: () => ({}),
   // The fold-all button reads the view: the stand-in's document, a state the fold stand-ins below ignore.
   editorViewOf: (crepe: Crepe) => ({ dom: crepe.opts.root.firstChild, state: {}, dispatch: folds.dispatch }),
 }))
@@ -2132,5 +2135,110 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     act(() => more().click())
     pick('Open in a tab')
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(SKETCH)
+  })
+})
+
+/**
+ * The card window (YAZ-4962, D13): a `card` layer reads ONE card of its page — by ID, or by its place before it has
+ * one — and shows it read-only, its strip, and "Reviews (n)" with a delete on each row. It reads the page again when the
+ * index has a new version of it, so an answer or a delete elsewhere shows at once.
+ */
+describe('the card window (YAZ-4962)', () => {
+  const PAGE = '/v/cards.md'
+  const page = (line: string) => `# Cards\n\n\`\`\`card\nCapital of {{France}}\n---\n{{Paris}}\n\`\`\`\n${line}\n`
+  const files: Record<string, string> = {}
+  const deleteReview = vi.fn(async () => {})
+  const SETTINGS = { ...DEFAULT_REVIEW_SETTINGS }
+  let source: ReturnType<typeof createWikilinkResolveSource>
+  const feed = (mtime: number) => act(() => source.update(() => null, [rec(PAGE, 'Cards', { mtime })], [], true))
+
+  beforeEach(() => {
+    files[PAGE] = page('<!-- card: WIKI-9 -->')
+    readFile.mockImplementation(async (path) => (files[path] === undefined ? Promise.reject(new Error('gone')) : { path, content: files[path], mtime: 1, size: 1 }))
+    deleteReview.mockClear()
+    source = createWikilinkResolveSource()
+    source.update(() => null, [rec(PAGE, 'Cards', { mtime: 1 })], [], true)
+    props.vaultOf = () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, review: { settings: SETTINGS, deleteReview } })
+  })
+  const strip = () => [...top().querySelectorAll('.note-card-strip > *')].map((e) => e.textContent)
+  const tableRows = () => [...top().querySelectorAll('.note-card-reviews__table tbody tr')].map((tr) => [...tr.querySelectorAll('td')].slice(0, 4).map((td) => td.textContent))
+
+  it('opens from the ask with the card: its title, the grey ID that copies, everything shown; a new card says "New", and its table has only the review to come', async () => {
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['card'])
+    expect(top().querySelector('.explore__title')?.textContent).toBe('Capital of France')
+    expect(top().querySelector('.explore__head .note-card__id')?.textContent).toBe('WIKI-9')
+    expect(top().querySelectorAll('.note-card__side')).toHaveLength(2)
+    expect([...top().querySelectorAll('.note-card__hidden')].map((s) => s.textContent)).toEqual(['France', 'Paris'])
+    expect(top().querySelector('.note-card__blank')).toBeNull()
+    expect(strip()).toEqual(['cards', 'New'])
+    expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (0)')
+    expect(tableRows()).toEqual([['Next', '', 'Today', '']])
+  })
+
+  it('a card with reviews: the strip says the last answer, the wait, the next due date and the recall chance; each row of the table deletes its review', async () => {
+    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00Z good, 2026-01-10T09:00Z again, 2026-01-11T09:00Z good -->')
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    const facts = strip()
+    expect(facts[0]).toBe('cards')
+    expect(facts[1]).toBe('Remembered')
+    expect(facts[2]).toMatch(/^\d+ days?$|^today$/)
+    expect(facts[3]).toMatch(/^Due /)
+    expect(facts[4]).toMatch(/^\d+%$/)
+    expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (3)')
+    const rows = tableRows()
+    expect(rows.map((r) => r[0])).toEqual(['Remembered', 'Forgot', 'Remembered', 'Next'])
+    // Days: since the review before.
+    expect(rows.map((r) => r[1]).slice(0, 3)).toEqual(['0', '8', '1'])
+    const deletes = top().querySelectorAll<HTMLButtonElement>('.note-card-reviews__table .comments__action--danger')
+    expect(deletes).toHaveLength(3)
+    act(() => deletes[1].click())
+    expect(deleteReview).toHaveBeenCalledExactlyOnceWith(PAGE, 'WIKI-9', '2026-01-10T09:00Z')
+  })
+
+  it('stays live: a new version of the page in the index reads the card again (an answer in the Inbox shows here)', async () => {
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    expect(strip()).toEqual(['cards', 'New'])
+    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->')
+    // The same version: no read.
+    readFile.mockClear()
+    feed(1)
+    await flush()
+    expect(readFile).not.toHaveBeenCalled()
+    feed(2)
+    await flush()
+    await flush()
+    expect(strip()[1]).toBe('Remembered')
+    expect(tableRows().map((r) => r[0])).toEqual(['Remembered', 'Next'])
+  })
+
+  it('a card with no ID yet opens by its place; the strip\'s page name opens the page on top, landed on the card; ⌘↵ opens the page in a tab', async () => {
+    files[PAGE] = page('')
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: null, index: 0 }
+    await mount()
+    await flush()
+    expect(top().querySelector('.explore__title')?.textContent).toBe('Capital of France')
+    expect(top().querySelector('.note-card__id')).toBeNull()
+    act(() => top().querySelector<HTMLButtonElement>('.note-card-strip__page')?.click())
+    await flush()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['card', 'note'])
+    expect(top().querySelector('.explore__title')?.textContent).toBe('cards')
+    escape()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['card'])
+    key(document.activeElement ?? top(), { key: 'Enter', metaKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(PAGE)
+  })
+
+  it('a card that is gone says so', async () => {
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-404', index: 0 }
+    await mount()
+    await flush()
+    expect(top().querySelector('.editor-msg')?.textContent).toBe('This card is no longer there')
   })
 })

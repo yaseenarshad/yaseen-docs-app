@@ -202,6 +202,7 @@ vi.mock('./sidebar/Sidebar', () => ({
 }))
 
 import { App, preloadTabBoard, replayNotice } from './App'
+import { NOTE_CARD_OPEN } from './editor/noteCard/noteCardView'
 import { dropAllNoteWindows, keepNoteWindow, noteWindowKey, noteWindowMemory, openNoteWindow } from './views/view/NoteWindow'
 import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 
@@ -5183,6 +5184,82 @@ describe('App note card review (YAZ-4967)', () => {
     expect(captured.sidebar?.dueCount).toBe(0)
     openInbox()
     expect(captured.sidebar?.reviewing).toBe(false)
+  })
+})
+
+/**
+ * THE NOTE CARD FLOW (YAZ-4962; the App-level test YAZ-4965 names, no Playwright): a page with a card → the Inbox
+ * shows it → Space shows the hidden words, then the next side → Remembered writes the review to the card line, as
+ * the hover said → ⌘Z takes it back off the line → the done screen when nothing is due. The bridge's file store is
+ * the disk: the asserts read the Markdown the app wrote. And the card window opens from the editor's open-card hook.
+ */
+describe('App: the note card flow (YAZ-4962)', () => {
+  const PAGE = '/v/cards.md'
+  const page = (line: string) => `# Cards\n\n\`\`\`card\nCapital of {{France}}\n---\n{{Paris}}\n\`\`\`\n${line}\n`
+  const record = (): IndexRecord => ({
+    path: PAGE, name: 'cards.md', basename: 'cards', title: 'Cards', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1,
+    properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: [{ id: 'WIKI-9', off: false, reviews: [] }],
+  })
+  const TABS: IdentityFixture = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }
+  const inbox = (el: HTMLElement) => el.querySelector<HTMLElement>('.note-card-inbox')
+  const press = (el: HTMLElement, key: string, init: KeyboardEventInit = {}) =>
+    act(async () => void inbox(el)?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })))
+  const hidden = (el: HTMLElement) => [...el.querySelectorAll('.note-card-inbox .note-card__hidden')].map((s) => s.textContent)
+  const sides = (el: HTMLElement) => el.querySelectorAll('.note-card-inbox .note-card__side').length
+
+  it('a page with a card: the Inbox shows it; Space steps; Remembered writes the review the hover showed; ⌘Z removes it; nothing due: "Inbox complete."', async () => {
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9 -->'), mtime: 1 }, '/v/a.md': { content: '# A\n', mtime: 1 } }
+    const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
+    expect(captured.sidebar?.dueCount).toBe(1)
+    act(() => captured.sidebar?.onOpenInbox())
+    await vi.waitFor(() => expect(el.querySelector('.note-card-inbox .note-card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    expect(el.querySelector('.note-card-inbox .explore__title')?.textContent).toBe('Capital of France')
+    expect(el.querySelector('.note-card-inbox .note-card__id')?.textContent).toBe('WIKI-9')
+    expect(el.querySelector('.note-card-inbox__place')?.textContent).toBe('1 of 1')
+    // The page under the Inbox stays where it was: its tab layer is still mounted.
+    expect(el.querySelector('.tabstack__layer [data-editor][data-path="/v/a.md"]')).not.toBeNull()
+    // Space (D18): the hidden word of the front, then the back, then its hidden word; then the buttons.
+    expect([sides(el), hidden(el)]).toEqual([1, []])
+    await press(el, ' ')
+    expect([sides(el), hidden(el)]).toEqual([1, ['France']])
+    await press(el, ' ')
+    expect([sides(el), hidden(el)]).toEqual([2, ['France']])
+    expect(el.querySelector('.note-card-inbox__answer')).toBeNull()
+    await press(el, ' ')
+    expect([sides(el), hidden(el)]).toEqual([2, ['France', 'Paris']])
+    await vi.waitFor(() => expect(el.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2))
+    const remembered = el.querySelectorAll<HTMLButtonElement>('.note-card-inbox__answer')[1]
+    expect(remembered.title).toMatch(/^Remembered · (\d+ days?|today)$/)
+    // Remembered (2): the review lands on the card line, written as the line holds reviews.
+    await press(el, '2')
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good -->$/m))
+    expect(files[PAGE].content.replace(/, \d{4}-\d\d-\d\dT\d\d:\d\dZ good/, '')).toBe(page('<!-- card: WIKI-9 -->'))
+    // Nothing left in the session: the done screen.
+    await vi.waitFor(() => expect(el.querySelector('.note-card-inbox__done-title')?.textContent).toBe('Inbox complete.'))
+    // ⌘Z: the review comes off the line and the card shows again, from its first step.
+    await press(el, 'z', { metaKey: true })
+    await vi.waitFor(() => expect(files[PAGE].content).toBe(page('<!-- card: WIKI-9 -->')))
+    await vi.waitFor(() => expect(sides(el)).toBe(1))
+    expect(hidden(el)).toEqual([])
+    // Esc closes the review.
+    await press(el, 'Escape')
+    expect(captured.sidebar?.reviewing).toBe(false)
+    expect(inbox(el)).toBeNull()
+  })
+
+  it('the card window opens from the editor\'s open-card hook (`mdapp:note-card-open`): a card layer of the page, the card read-only; a hook with no page opens nothing', async () => {
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->'), mtime: 1 } }
+    const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
+    act(() => void document.dispatchEvent(new CustomEvent(NOTE_CARD_OPEN, { detail: { path: null, cardId: 'WIKI-9', index: 0 } })))
+    await act(async () => {})
+    expect(document.querySelector('.explore')).toBeNull()
+    act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(NOTE_CARD_OPEN, { bubbles: true, detail: { path: PAGE, cardId: 'WIKI-9', index: 0 } })))
+    await vi.waitFor(() => expect(document.querySelector('.explore__layer[data-kind="card"] .note-card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    const layer = document.querySelector<HTMLElement>('.explore__layer[data-kind="card"]')!
+    expect(layer.querySelector('.explore__title')?.textContent).toBe('Capital of France')
+    expect(layer.querySelector('.note-card__id')?.textContent).toBe('WIKI-9')
+    expect(layer.querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (1)')
+    expect(layer.querySelector('.note-card-strip__fact')?.textContent).toBe('Remembered')
   })
 })
 

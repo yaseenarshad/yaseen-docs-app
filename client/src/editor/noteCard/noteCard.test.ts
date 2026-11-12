@@ -171,6 +171,23 @@ describe('the card in the page', () => {
     ])
   })
 
+  it('D20: the head shows the card ID small and grey after the title; a click copies it and opens nothing; a card with no ID shows none', async () => {
+    const { root } = await mount(`${CARD}<!-- card: WIKI-7 -->\n`, { noteCards: { path: '/v/Page.md' } })
+    const id = root.querySelector<HTMLButtonElement>('.note-card__head .note-card__title + .note-card__id')!
+    expect([id.textContent, id.hidden]).toEqual(['WIKI-7', false])
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const opened: unknown[] = []
+    const onOpen = (e: Event) => opened.push(e)
+    document.addEventListener(NOTE_CARD_OPEN, onOpen)
+    id.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    document.removeEventListener(NOTE_CARD_OPEN, onOpen)
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('WIKI-7')
+    expect(opened).toEqual([])
+    const bare = await mount(CARD, { noteCards: { path: '/v/Page.md' } })
+    expect(bare.root.querySelector<HTMLButtonElement>('.note-card__id')?.hidden).toBe(true)
+  })
+
   it('the ⋯ menu changes the card line in one undo step each; Copy card ID; Open card sends the one hook', async () => {
     const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good, kept -->\n`, { noteCards: { path: '/v/Page.md' } })
     const run = (label: string) => {
