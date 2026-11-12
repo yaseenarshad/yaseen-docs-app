@@ -28,6 +28,9 @@
  * any edit. The ID at insert (`noteCardRow`) is a transaction out of the undo history, saved by `NOTE_CARD_ID_META`.
  */
 import { Prec, type Extension } from '@codemirror/state'
+import { isHistoryTransaction } from '@milkdown/kit/prose/history'
+import { ReplaceAroundStep, ReplaceStep } from '@milkdown/kit/prose/transform'
+import type { Fragment } from '@milkdown/kit/prose/model'
 import { EditorView as CodeMirrorView, keymap } from '@codemirror/view'
 import { LanguageDescription, LanguageSupport } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
@@ -38,7 +41,7 @@ import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState } fro
 import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstructor } from '@milkdown/kit/prose/view'
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
-import { cardIdOf, cardReviewsOf, isCardOff, withCardId, withCardOff, withoutCardReviews } from '@shared/cardLine'
+import { cardIdOf, cardReviewsOf, formatCardLine, isCardOff, withCardId, withCardOff, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import { cardTitle } from '@shared/cardText'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { codeWidthSchema } from '../code/codeWidth'
@@ -47,7 +50,7 @@ import { copyText, openMenuAt } from '../linkMenu'
 import type { MenuRow } from '../blockHandleMenu'
 import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
-import { changeNoteCardLine, isNoteCardNode, NOTE_CARD_LANGUAGE, noteCardLineOf } from './noteCardLine'
+import { CardLineStep, changeNoteCardLine, isNoteCardNode, NOTE_CARD_LANGUAGE, noteCardLineOf } from './noteCardLine'
 import { NOTE_CARD_LINK_ATTR, renderNoteCard, type NoteCardLook } from './noteCardRender'
 import './noteCard.css'
 
@@ -546,7 +549,105 @@ const NOTE_CARD_ICON = `
   </svg>
 `
 
-/** The card's plugins for one editor (`createCrepe`): its view, the caret rule, ⌘↵, and CodeMirror's way back to the editor. */
+/** Does `content` hold a note card that has an ID? A cheap look at what a step inserts. */
+function holdsCardWithId(content: Fragment): boolean {
+  let found = false
+  content.descendants((node) => {
+    if (found) return false
+    if (isNoteCardNode(node)) {
+      found = cardIdOf(noteCardLineOf(node)) !== null
+      return false
+    }
+    return !node.isTextblock
+  })
+  return found
+}
+
+/** `EXTERNAL_EDIT_META` of `external/applyExternalMarkdown.ts` (that module imports `createCrepe`, which imports this one). */
+const EXTERNAL_EDIT_META = 'external-edit'
+
+/** A copy's line (YAZ-4972): no ID and no history; every other part (`off`, unknown parts) stays. */
+const copyLine = (line: CardLine): CardLine => ({ parts: withoutCardReviews(line).parts.filter((p) => p.kind !== 'id') })
+
+/**
+ * THE COPY RULE IN THE PAGE (YAZ-4972): a card that a user edit INSERTS (a paste, a drop, Alt-drag) while another card
+ * of the page holds its ID is the copy — it loses its ID and its history in the same transaction, and asks the vault's
+ * door for a new ID (`host.mintId`, as `/card` does; no door: the sweep gives one). Which card is the copy is known
+ * here, not by its place: the card the page already held keeps its ID and history, above or below. A move (cut and
+ * paste, a drag) holds the ID once after the transaction, so it keeps it. An outside write and ⌘Z / ⇧⌘Z are not
+ * user inserts: the sweep's rule settles an agent's copy.
+ */
+function noteCardCopies(deps: NoteCardDeps) {
+  /** Positions of copies that wait for a new ID from the door, set by `appendTransaction`, taken by the plugin view. */
+  let asking: number[] = []
+  return $prose(
+    () =>
+      new Plugin({
+        key: new PluginKey('mdapp-note-card-copies'),
+        appendTransaction: (trs, _old, state) => {
+          const inserted: Array<{ from: number; to: number }> = []
+          for (const tr of trs) {
+            if (!tr.docChanged || tr.getMeta(EXTERNAL_EDIT_META) === true || tr.getMeta(NOTE_CARD_ID_META) === true || isHistoryTransaction(tr)) continue
+            tr.steps.forEach((step, i) => {
+              if (!(step instanceof ReplaceStep || step instanceof ReplaceAroundStep) || !holdsCardWithId(step.slice.content)) return
+              const from = (step as ReplaceStep).from
+              // Where the inserted content is in the final doc: through the rest of this transaction and the later ones.
+              const after = (pos: number, assoc: number) => {
+                let at = tr.mapping.slice(i + 1).map(pos, assoc)
+                for (const later of trs.slice(trs.indexOf(tr) + 1)) at = later.mapping.map(at, assoc)
+                return at
+              }
+              inserted.push({ from: after(from, -1), to: after(from + step.slice.size, 1) })
+            })
+          }
+          if (inserted.length === 0) return null
+          const isNew = (pos: number) => inserted.some((r) => pos >= r.from && pos < r.to)
+          const held = new Set<string>()
+          const fresh: Array<{ pos: number; id: string }> = []
+          state.doc.descendants((node, pos) => {
+            if (isNoteCardNode(node)) {
+              const id = cardIdOf(noteCardLineOf(node))
+              if (id !== null) (isNew(pos) ? fresh.push({ pos, id }) : held.add(id))
+              return false
+            }
+            return !node.isTextblock
+          })
+          const tr = state.tr
+          const copies: number[] = []
+          for (const { pos, id } of fresh) {
+            if (!held.has(id)) {
+              held.add(id)
+              continue
+            }
+            const node = state.doc.nodeAt(pos)!
+            const line = noteCardLineOf(node)
+            tr.step(new CardLineStep(pos, formatCardLine(line), formatCardLine(copyLine(line))))
+            copies.push(pos)
+          }
+          if (copies.length === 0) return null
+          if (deps.host?.mintId !== undefined) asking = [...asking, ...copies]
+          return tr
+        },
+        view: () => ({
+          update: (view) => {
+            const host = deps.host
+            if (asking.length === 0 || host?.mintId === undefined) return
+            const cards = asking.flatMap((pos) => noteCardViewAt(view, pos) ?? [])
+            asking = []
+            for (const card of cards)
+              host.mintId(host.path).then(
+                (id) => card.takeId(id),
+                () => {
+                  // No ID now: the sweep gives it.
+                },
+              )
+          },
+        }),
+      }),
+  )
+}
+
+/** The card's plugins for one editor (`createCrepe`): its view, the caret rule, the copy rule, ⌘↵. */
 export function noteCardPlugins(deps: NoteCardDeps) {
-  return [noteCardNodeView(deps), noteCardSelection(), noteCardKeys(deps)].flat()
+  return [noteCardNodeView(deps), noteCardSelection(), noteCardCopies(deps), noteCardKeys(deps)].flat()
 }

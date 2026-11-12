@@ -49,10 +49,10 @@ const rescan = async (records: Map<string, IndexRecord>, rel: string, content: s
 }
 
 describe('the sweep gives note cards their IDs (YAZ-4960 D2)', () => {
-  it('no ID, another vault\'s letters, a note\'s ID, a copy on the page: each gets the next number of the one counter, history kept but for the copy', async () => {
+  it('no ID, another vault\'s letters, a note\'s ID, a copy on the page: each gets the next number of the one counter, history kept but for the copy (the same text twice)', async () => {
     const records = await vault({
       // The highest number in the vault is a CARD's (YAZ-50): every number given is above it.
-      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('Fresh')}\n${card('From BUS', `BUS-12, ${HISTORY}`)}\n${card('Note ID', `YAZ-1, ${HISTORY}`)}\n${card('Mine', `YAZ-50, off, ${HISTORY}`)}\n${card('Copy of mine', `YAZ-50, off, ${HISTORY}`)}`,
+      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('Fresh')}\n${card('From BUS', `BUS-12, ${HISTORY}`)}\n${card('Note ID', `YAZ-1, ${HISTORY}`)}\n${card('Mine', `YAZ-50, off, ${HISTORY}`)}\n${card('Mine', `YAZ-50, off, ${HISTORY}`)}`,
       'plain.md': 'No ID yet.\n',
     })
     await sweepIds(root, records, [...records.values()], () => undefined)

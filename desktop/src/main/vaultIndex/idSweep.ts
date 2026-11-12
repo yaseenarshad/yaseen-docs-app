@@ -56,11 +56,17 @@ export interface SweepOptions {
 /** How long one card ID on two pages waits before the newer page's card counts as a copy (YAZ-4960): a cut and paste is done by then. */
 export const CARD_MOVE_WAIT_MS = 60 * 1000
 
-/** One note card the sweep gives a new number: its place among its page's cards, the ID it must still hold (null: none), and whether its history stays. */
+/**
+ * One note card the sweep gives a new number: its place among its page's cards, the ID it must still hold (null: none),
+ * and whether its history stays. `copyOf`: the place of the card before it on the same page that holds its ID — the
+ * history goes only when the two cards are the same text (YAZ-4972: then no history is lost; else the sweep cannot
+ * tell the original, and keeps both histories).
+ */
 export interface CardFix {
   index: number
   held: string | null
   history: boolean
+  copyOf?: number
 }
 
 /** What one sweep did about notes that share an ID. A note that only needed an ID is not reported. */
@@ -337,14 +343,14 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   for (const { record, fixes } of cardsGoing) {
     if (!(await givesIds(root))) return
     const ids = numbers.slice(next, (next += fixes.length))
-    const given = await inTurn(() => giveCardIds(record.path, fixes, ids)).catch(async (err: unknown) => {
+    const given = await inTurn(() => giveCardIds(record.path, fixes, ids)).catch(async (err: unknown): Promise<false> => {
       if (!(err instanceof BridgeFailure && err.code === 'CONFLICT')) {
         if (refused.size >= REFUSED_MAX) refused.clear()
         refused.set(record.path, (await stat(record.path).catch(() => null))?.mtimeMs)
       }
       return false
     })
-    if (given) fixes.forEach((fix, i) => fix.held !== null && !fix.history && result.copies.push({ title: `a note card on "${record.title}"`, id: ids[i] }))
+    if (given !== false) given.forEach((fix, i) => fix.held !== null && !fix.history && result.copies.push({ title: `a note card on "${record.title}"`, id: ids[i] }))
   }
   for (const [i, { file, held, record }] of going.entries()) {
     // Asked before every write, so a no stops a pass that is running (YAZ-2523 🔒 V4).
@@ -369,7 +375,9 @@ interface CardWork {
  * THE CARD RULES OF THE SWEEP (YAZ-4960 D2). For each card of the pages in `among`, in page order:
  * - no ID: the next number;
  * - an ID that is no ID of this vault (another vault's letters, `BUS-12` in a `WIKI` vault): a new number, history kept;
- * - an ID a card before it on the same page holds: a COPY — a new number and an empty history;
+ * - an ID a card before it on the same page holds: a COPY — a new number; an empty history only when its text is the
+ *   text of that card (the same card twice: the history stays on it), else its history stays too (YAZ-4972: the sweep
+ *   cannot tell which one is the original, so it never empties one; the editor settles a user's paste at paste time);
  * - an ID a note holds: a new number, history kept (links point at the note);
  * - an ID a card on ANOTHER page holds on disk: a cut and paste, or a copy. The page that took it last — the one this
  *   pass sweeps, or of two it sweeps the second in path order — waits `CARD_MOVE_WAIT_MS` (`cardWaits`), so a cut
@@ -405,18 +413,19 @@ async function cardsToFix(
   const work: CardWork[] = []
   for (const record of pages) {
     const fixes: CardFix[] = []
-    const seen = new Set<string>()
+    const seen = new Map<string, number>()
     for (const [index, card] of record.cards!.entries()) {
       const id = own(card.id ?? undefined)
       if (card.id === null || id === undefined) {
         fixes.push({ index, held: card.id, history: true })
         continue
       }
-      if (seen.has(id)) {
-        fixes.push({ index, held: card.id, history: false })
+      const first = seen.get(id)
+      if (first !== undefined) {
+        fixes.push({ index, held: card.id, history: false, copyOf: first })
         continue
       }
-      seen.add(id)
+      seen.set(id, index)
       if (notes.has(id)) {
         fixes.push({ index, held: card.id, history: true })
         continue
@@ -450,11 +459,13 @@ async function cardsToFix(
  * still holds what it held: a compare-and-set on the page's bytes and mtime, as `giveId`. A copy's card loses its
  * reviews (`history: false`); every other part of its line stays. False when nothing was written.
  */
-export async function giveCardIds(file: string, fixes: readonly CardFix[], ids: readonly string[]): Promise<boolean> {
+export async function giveCardIds(file: string, fixes: readonly CardFix[], ids: readonly string[]): Promise<CardFix[] | false> {
   const { content, mtime } = await readFile(file)
   const cards = pageCards(content)
   if (fixes.some((fix) => cards[fix.index] === undefined || cardIdOf(cards[fix.index].line) !== fix.held)) return false
-  const given = new Map(fixes.map((fix, i) => [fix.index, { fix, id: ids[i] }]))
+  // A copy whose text is not its original's keeps its history: the sweep cannot tell which of the two came first.
+  const settled = fixes.map((fix) => (fix.copyOf === undefined || cards[fix.copyOf]?.text === cards[fix.index].text ? fix : { ...fix, history: true }))
+  const given = new Map(settled.map((fix, i) => [fix.index, { fix, id: ids[i] }]))
   const next = rewritePageCards(content, (card, n) => {
     const give = given.get(n)
     if (give === undefined) return undefined
@@ -462,7 +473,7 @@ export async function giveCardIds(file: string, fixes: readonly CardFix[], ids: 
     return give.fix.history ? line : withoutCardReviews(line)
   })
   await writeFile({ path: file, content: next, expectedMtime: mtime })
-  return true
+  return settled
 }
 
 /**
