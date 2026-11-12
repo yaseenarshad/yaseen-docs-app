@@ -16,7 +16,8 @@ import { loadBoardWindow, type BoardWindowHandle } from '../editor/embed/types'
 import { hrefTarget } from '../editor/pathPaste'
 import { linkPath } from '../editor/wikilink/wikilinkPlugin'
 import { useNoteId } from '../search/showIds'
-import { ExploreSteps, keepFocus, type ExploreVault, type LayerSteps } from './ExploreNote'
+import { ExploreSteps, keepFocus, openRows, stepRows, type ExploreVault, type LayerSteps } from './ExploreNote'
+import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { NOTE_WIDTH } from './layers'
 
 interface ExploreBoardProps {
@@ -52,6 +53,10 @@ const NO_PAGES: { list: readonly DiagramPageRef[]; page: string | null } = { lis
 export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onOpenLink, onNotice, onHeadDown, onHeadReset, onOpenInTab, onHeadMenu, onClose, registerZoom, active }: ExploreBoardProps) {
   const noteId = useNoteId(idInTitle ? vault.wikilinks : undefined, path)
   const boxRef = useRef<HTMLDivElement>(null)
+  // A head narrower than it needs folds into ⋯ (YAZ-4956).
+  const headRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef<HTMLSpanElement>(null)
+  useCompactHead(headRef, titleRef)
   const handle = useRef<BoardWindowHandle | null>(null)
   const [pages, setPages] = useState(NO_PAGES)
   const [failed, setFailed] = useState(false)
@@ -134,6 +139,7 @@ export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onO
   return (
     <>
       <div
+        ref={headRef}
         className="explore__head"
         onMouseDown={onHeadDown}
         onDoubleClick={onHeadReset}
@@ -142,14 +148,18 @@ export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onO
           onHeadMenu(e.clientX, e.clientY)
         }}
       >
-        <span className="explore__title" title={path}>
+        <span ref={titleRef} className="explore__title" title={path}>
           {title}
         </span>
         {noteId !== undefined && <span className="explore__id">{noteId}</span>}
-        {steps !== undefined && <ExploreSteps steps={steps} />}
-        <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} title="Open in a tab to edit it, and close the stack (⌘↵)" aria-label="Open in a tab">
-          ↗
-        </button>
+        {/* The parts a narrow layer folds into ⋯ (YAZ-4956); `display: contents`, so a wide head is laid out as before. */}
+        <span className="explore__fold">
+          {steps !== undefined && <ExploreSteps steps={steps} />}
+          <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} title="Open in a tab to edit it, and close the stack (⌘↵)" aria-label="Open in a tab">
+            ↗
+          </button>
+        </span>
+        <HeadMore sections={() => [steps === undefined ? [] : stepRows(steps), openRows(onOpenInTab, noteId, onNotice)]} />
         <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onClose} title="Close this layer (Esc)" aria-label="Close this layer">
           ×
         </button>

@@ -19,13 +19,13 @@ import type { CommentsOrder } from '@shared/types'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { createCrepe, editorViewOf } from '../editor/createCrepe'
-import { DocumentZoom } from '../editor/DocumentZoom'
+import { DocumentZoom, stepZoom } from '../editor/DocumentZoom'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
 import { FindBar } from '../editor/find/FindBar'
 import { createFindChannel } from '../editor/find/findChannel'
 import { FoldAllButton } from '../editor/FoldAllButton'
-import type { LinkActions } from '../editor/linkMenu'
+import { copyText, type LinkActions } from '../editor/linkMenu'
 import { NoteMenu } from '../editor/noteMenu'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from '../editor/outline/foldAllHotkeys'
 import type { MenuSection } from '../sidebar/menuSections'
@@ -37,8 +37,9 @@ import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { BacklinksSection } from '../links/BacklinksSection'
 import { savedFirst } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
-import { ReadOnlyChip } from '../editor/ReadOnlyChip'
+import { editingLabel, ReadOnlyChip } from '../editor/ReadOnlyChip'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
+import { HeadMore, useCompactHead } from './ExploreHeadMore'
 
 /** The vault the note is in: what its links resolve against. */
 export interface ExploreVault {
@@ -127,6 +128,23 @@ export function ExploreSteps({ steps }: { steps: LayerSteps }) {
   )
 }
 
+/** ⋯'s ‹ › rows in a folded head (YAZ-4956): the place as a heading, then the two steps. */
+export function stepRows(steps: LayerSteps): MenuSection {
+  return [
+    ...(steps.place === 0 ? [] : [{ id: 'place', label: `Result ${steps.place}/${steps.count}`, heading: true as const, onSelect: () => {} }]),
+    { id: 'previous', label: 'Previous result', hint: '←', disabled: !steps.prev, onSelect: () => steps.onStep(-1) },
+    { id: 'next', label: 'Next result', hint: '→', disabled: !steps.next, onSelect: () => steps.onStep(1) },
+  ]
+}
+
+/** ⋯'s last rows (YAZ-4956): ↗, and the ID's copy when the head shows one. */
+export function openRows(onOpenInTab: () => void, noteId: string | undefined, onNotice: (message: string) => void): MenuSection {
+  return [
+    { id: 'open-tab', label: 'Open in a tab', hint: '⌘↵', onSelect: onOpenInTab },
+    ...(noteId === undefined ? [] : [{ id: 'copy-id', label: 'Copy ID', hint: noteId, onSelect: () => copyText(noteId, 'ID', onNotice, undefined, true) }]),
+  ]
+}
+
 /** The note editor's features minus the two that exist to edit blocks (the preview panel's set). */
 const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false }
 
@@ -137,6 +155,10 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   const unit = useVaultUnit(vault.root)
   const noteId = useNoteId(idInTitle ? vault.wikilinks : undefined, path)
   const bodyRef = useRef<HTMLDivElement>(null)
+  // A head narrower than it needs folds into ⋯ (YAZ-4956).
+  const headRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef<HTMLSpanElement>(null)
+  useCompactHead(headRef, titleRef)
   /** Where the read-only Crepe mounts: its own box ABOVE the comment stream and the mentions, as the note tab stacks them. */
   const mountRef = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState<Content>({ kind: 'loading' })
@@ -294,9 +316,33 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   )
   /** The text formatting of the vault, and the zoom as the note tab's scroller carries it (`--document-zoom`, app.css): the same rules scale the note's content. */
   const bodyStyle = { ...style, '--document-zoom': zoom / 100 } as CSSProperties
+  /** ⋯ of a folded head (YAZ-4956): what the folded parts do, built when the menu opens. */
+  const moreSections = (): MenuSection[] => {
+    const view = ready !== null && mode === 'read' ? editorViewOf(ready) : null
+    const fold = view === null ? null : nextDocumentFold(view.state)
+    const zoomIn = stepZoom(zoom, 1)
+    const zoomOut = stepZoom(zoom, -1)
+    const noteRows: MenuSection = [
+      ...(fold === null ? [] : [{ id: 'fold-all', label: fold === 'expand' ? 'Expand all' : 'Collapse all', disabled: fold === 'none', onSelect: () => view !== null && setAllDocumentFolds(fold === 'collapse')(view.state, view.dispatch) }]),
+      ...(!note || !locked ? [] : unlocked ? [{ id: 'lock', label: 'Lock now', hint: unlock.until === null ? undefined : editingLabel(unlock.until, Date.now()), onSelect: unlock.lock }] : mode === 'read' ? [{ id: 'allow', label: 'Allow edits…', onSelect: () => setAsking(true) }] : []),
+      ...(!note ? [] : mode === 'read' ? [{ id: 'edit', label: 'Edit', hint: 'E', onSelect: edit }] : [{ id: 'done', label: 'Done', hint: 'esc', onSelect: onToggleEdit }]),
+    ]
+    return [
+      steps === undefined ? [] : stepRows(steps),
+      [
+        { id: 'zoom', label: `Zoom ${zoom}%`, heading: true, onSelect: () => {} },
+        { id: 'zoom-in', label: 'Zoom in', hint: '⌘+', disabled: zoomIn === null, onSelect: () => zoomIn !== null && onZoom(zoomIn) },
+        { id: 'zoom-out', label: 'Zoom out', hint: '⌘−', disabled: zoomOut === null, onSelect: () => zoomOut !== null && onZoom(zoomOut) },
+        { id: 'zoom-reset', label: 'Zoom to 100%', hint: '⌘0', disabled: zoom === 100, onSelect: () => onZoom(100) },
+      ],
+      noteRows,
+      openRows(onOpenInTab, noteId, onNotice),
+    ]
+  }
   return (
     <UnitContext.Provider value={unit}>
       <div
+        ref={headRef}
         className="explore__head"
         onMouseDown={onHeadDown}
         onDoubleClick={onHeadReset}
@@ -305,37 +351,41 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
           onHeadMenu(e.clientX, e.clientY)
         }}
       >
-        <span className="explore__title" title={path}>
+        <span ref={titleRef} className="explore__title" title={path}>
           {title}
         </span>
         {noteId !== undefined && <span className="explore__id">{noteId}</span>}
-        {steps !== undefined && <ExploreSteps steps={steps} />}
-        {/* The page zoom's pill (round 4): one value for every note layer; a press on it is the pill's, not a drag. */}
-        <DocumentZoom value={zoom} onChange={onZoom} />
-        {foldAll}
-        {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit E" says what you can do. */}
-        {mode === 'read' ? (
-          <>
-            {note && chip}
-            {note && (
-              <button type="button" className="explore__button" onClick={edit} title={unit('Edit this note here (E)')}>
-                Edit<kbd>E</kbd>
+        {/* The parts a narrow layer folds into ⋯ (YAZ-4956); `display: contents`, so a wide head is laid out as before. */}
+        <span className="explore__fold">
+          {steps !== undefined && <ExploreSteps steps={steps} />}
+          {/* The page zoom's pill (round 4): one value for every note layer; a press on it is the pill's, not a drag. */}
+          <DocumentZoom value={zoom} onChange={onZoom} />
+          {foldAll}
+          {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit E" says what you can do. */}
+          {mode === 'read' ? (
+            <>
+              {note && chip}
+              {note && (
+                <button type="button" className="explore__button" onClick={edit} title={unit('Edit this note here (E)')}>
+                  Edit<kbd>E</kbd>
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              {/* In a Read only vault the chip says it: "Editing · 0:58" with Lock now. */}
+              {chip || <span className="explore__mode">Editing</span>}
+              {/* Done (item 5): back to reading, as Esc does; the note saved as you typed. */}
+              <button type="button" className="explore__button" onClick={onToggleEdit} title="Back to reading (Esc)">
+                Done<kbd>esc</kbd>
               </button>
-            )}
-          </>
-        ) : (
-          <>
-            {/* In a Read only vault the chip says it: "Editing · 0:58" with Lock now. */}
-            {chip || <span className="explore__mode">Editing</span>}
-            {/* Done (item 5): back to reading, as Esc does; the note saved as you typed. */}
-            <button type="button" className="explore__button" onClick={onToggleEdit} title="Back to reading (Esc)">
-              Done<kbd>esc</kbd>
-            </button>
-          </>
-        )}
-        <button type="button" className="explore__button" onClick={onOpenInTab} title="Open in a tab and close the stack (⌘↵)" aria-label="Open in a tab">
-          ↗
-        </button>
+            </>
+          )}
+          <button type="button" className="explore__button" onClick={onOpenInTab} title="Open in a tab and close the stack (⌘↵)" aria-label="Open in a tab">
+            ↗
+          </button>
+        </span>
+        <HeadMore sections={moreSections} />
         <button type="button" className="explore__button" onClick={onClose} title="Close this layer (Esc)" aria-label="Close this layer">
           ×
         </button>

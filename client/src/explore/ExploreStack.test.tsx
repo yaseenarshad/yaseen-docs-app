@@ -1405,7 +1405,8 @@ describe('YAZ-4943: drawings and diagrams open as reading layers', () => {
     expect(head().querySelector('.explore__title')?.textContent).toBe('alpha-sketch')
     expect(head().querySelector('.explore__count')?.textContent).toBe('1/1')
     expect(head().querySelector('.explore__mode')).toBeNull()
-    expect(buttons()).toEqual(['Previous search result', 'Next search result', 'Open in a tab', 'Close this layer'])
+    // ⋯ (YAZ-4956) is in the head too; CSS shows it only while a narrow layer folds the head.
+    expect(buttons()).toEqual(['Previous search result', 'Next search result', 'Open in a tab', 'More actions', 'Close this layer'])
     expect(head().querySelector('.document-zoom')).toBeNull()
     expect(head().textContent).not.toContain('Edit')
     key(board().dom, { key: 'e' })
@@ -1891,5 +1892,245 @@ describe('YAZ-4939: a note layer in a Read only vault', () => {
     await flush()
     expect(top().querySelector('.explore__mode')?.textContent).toBe('Editing')
     expect(new Set(unlockedArgs)).toEqual(new Set([false]))
+  })
+})
+
+describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () => {
+  /** The layers' observers, stood in (jsdom lays nothing out): each keeps what it watches; `layout` runs them. */
+  type FakeObserver = { run: () => void; watched: Element[] }
+  const observers: FakeObserver[] = []
+  const real = { ro: globalThis.ResizeObserver, raf: globalThis.requestAnimationFrame }
+  beforeEach(() => {
+    observers.length = 0
+    globalThis.ResizeObserver = class {
+      watched: Element[] = []
+      run: () => void
+      constructor(callback: ResizeObserverCallback) {
+        this.run = () => callback([], this as unknown as ResizeObserver)
+        observers.push(this)
+      }
+      observe(target: Element) {
+        this.watched.push(target)
+      }
+      unobserve() {}
+      disconnect() {
+        this.watched.length = 0
+      }
+    } as unknown as typeof ResizeObserver
+    // The fold is written in the next frame: here at once (id 0: it has run, there is nothing left to cancel).
+    globalThis.requestAnimationFrame = (run: FrameRequestCallback) => {
+      run(0)
+      return 0
+    }
+    localStorage.removeItem('explore:box:search')
+    localStorage.removeItem('explore:box:note')
+    localStorage.removeItem('explore:box:board')
+    localStorage.removeItem('explore:zoom')
+  })
+  afterEach(() => {
+    globalThis.ResizeObserver = real.ro
+    globalThis.requestAnimationFrame = real.raf
+  })
+  const head = (layer: HTMLElement = top()) => layer.querySelector('.explore__head') as HTMLElement
+  const titleEl = (layer: HTMLElement = top()) => head(layer).querySelector('.explore__title') as HTMLElement
+  const compact = (layer: HTMLElement = top()) => head(layer).hasAttribute('data-compact')
+  /** The head laid out `width` px wide, its parts other than the title `rest` px: the title gets what is left (0 at least). */
+  const layout = (width: number, rest: number, layer: HTMLElement = top()) => {
+    const h = head(layer)
+    const t = titleEl(layer)
+    Object.defineProperty(h, 'clientWidth', { value: width, configurable: true })
+    Object.defineProperty(h, 'scrollWidth', { value: Math.max(width, rest), configurable: true })
+    Object.defineProperty(t, 'offsetWidth', { value: Math.max(0, width - rest), configurable: true })
+    act(() => observers.filter((o) => o.watched.includes(t)).forEach((o) => o.run()))
+  }
+  const more = () => head().querySelector<HTMLButtonElement>('.explore__more') as HTMLButtonElement
+  const menu = () => el.querySelector<HTMLElement>('.explore > .ctx-overlay .ctx-menu, .explore .ctx-menu')
+  const items = () => [...(menu()?.querySelectorAll<HTMLElement>('.ctx-menu__heading, .ctx-menu__item') ?? [])].map((e) => (e.classList.contains('ctx-menu__heading') ? `# ${e.textContent}` : `${e.textContent}${e.dataset.hint ? ` [${e.dataset.hint}]` : ''}${(e as HTMLButtonElement).disabled ? ' (off)' : ''}`))
+  const pick = (label: string) => {
+    act(() => more().click())
+    const item = [...(menu()?.querySelectorAll<HTMLButtonElement>('.ctx-menu__item') ?? [])].find((b) => b.textContent === label)
+    expect(item, label).toBeDefined()
+    act(() => item?.click())
+  }
+
+  it('ONE observer per layer, on the title; a wide layer keeps the full head; a drag across the edge flips the fold twice, no more', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const note = top()
+    expect(observers.filter((o) => o.watched.includes(titleEl(note)))).toHaveLength(1)
+    expect(observers.filter((o) => o.watched.some((w) => note.contains(w)))).toHaveLength(1)
+    // Wide: 700 px, 410 px of buttons: the title has 290 px. The head is as before.
+    layout(700, 410)
+    expect(compact()).toBe(false)
+    // A drag from 800 px down to 260 px and back: the fold flips at the edge (410 + 96 px) and back, two writes in all.
+    const flips: string[] = []
+    const watch = new MutationObserver((records) => records.forEach((r) => flips.push(r.oldValue === null ? 'folded' : 'full')))
+    watch.observe(head(), { attributes: true, attributeFilter: ['data-compact'], attributeOldValue: true })
+    for (let w = 800; w >= 260; w -= 10) layout(w, compact() ? 120 : 410)
+    expect(compact()).toBe(true)
+    for (let w = 260; w <= 800; w += 10) layout(w, compact() ? 120 : 410)
+    await Promise.resolve()
+    watch.disconnect()
+    expect(flips).toEqual(['folded', 'full'])
+    expect(compact()).toBe(false)
+  })
+
+  it('Tile › Three at 1,091 px: each 348 px layer folds; the title and × stay out of the fold, the rest goes in; ⋯ shows only when folded (CSS)', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    // The head needed 499 px in the app (the Read only chip in it); the layer gives it 346.
+    layout(346, 499)
+    expect(compact()).toBe(true)
+    const h = head()
+    const fold = h.querySelector('.explore__fold') as HTMLElement
+    expect(fold).not.toBeNull()
+    // Always shown: the title and ×, outside the fold.
+    expect(fold.contains(titleEl())).toBe(false)
+    const close = h.querySelector('[aria-label="Close this layer"]') as HTMLElement
+    expect(close).not.toBeNull()
+    expect(fold.contains(close)).toBe(false)
+    // In the fold: ‹ n/m ›, the zoom pill, the fold-all button, Edit and ↗.
+    for (const sel of ['.explore__steps', '.document-zoom', '[aria-label="Open in a tab"]']) expect(fold.querySelector(sel), sel).not.toBeNull()
+    expect([...fold.querySelectorAll('.explore__button')].some((b) => b.textContent?.startsWith('Edit'))).toBe(true)
+    // ⋯ just before ×.
+    expect(more().nextElementSibling).toBe(close)
+  })
+
+  it('⋯ in a folded note head: Previous / Next result, zoom, Collapse all, Edit / Done, Open in a tab; each one works', async () => {
+    const TITLE_PATH: Record<string, string> = { Alpha: '/v/alpha.md', Beta: '/v/beta.md', 'conjecture (vocab)': '/v/conjecture.md' }
+    await mount()
+    await typeQuery('a')
+    const paths = rows().map((t) => TITLE_PATH[t])
+    await openResult()
+    layout(346, 410)
+    expect(compact()).toBe(true)
+    act(() => more().click())
+    expect(more().getAttribute('aria-expanded')).toBe('true')
+    expect(items()).toEqual([
+      '# Result 1/3',
+      'Previous result [←] (off)',
+      'Next result [→]',
+      '# Zoom 100%',
+      'Zoom in [⌘+]',
+      'Zoom out [⌘−]',
+      'Zoom to 100% [⌘0] (off)',
+      'Collapse all',
+      'Edit [E]',
+      'Open in a tab [⌘↵]',
+    ])
+    // Esc closes the menu only: the layer stays.
+    key(document.activeElement as Element, { key: 'Escape' })
+    expect(menu()).toBeNull()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note'])
+    // Next result: the same layer steps.
+    pick('Next result')
+    await flush()
+    await flush()
+    expect(readFile).toHaveBeenLastCalledWith(paths[1])
+    expect(top().querySelector('.explore__count')?.textContent).toBe('2/3')
+    // Zoom in: 100 → 125, on the body.
+    pick('Zoom in')
+    expect(top().querySelector<HTMLElement>('.explore__body')?.style.getPropertyValue('--document-zoom')).toBe('1.25')
+    pick('Zoom to 100%')
+    expect(top().querySelector<HTMLElement>('.explore__body')?.style.getPropertyValue('--document-zoom')).toBe('1')
+    // Collapse all: the note's fold-all command.
+    pick('Collapse all')
+    expect(folds.runs).toEqual([true])
+    // Edit, then Done.
+    pick('Edit')
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).not.toBeNull()
+    act(() => more().click())
+    expect(items()).toContain('Done [esc]')
+    act(() => more().click())
+    pick('Done')
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    // Open in a tab: as ↗.
+    pick('Open in a tab')
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(paths[1])
+  })
+
+  it('a note ID: Copy ID in ⋯ (the ID is folded too)', async () => {
+    const withIds = createWikilinkResolveSource()
+    withIds.update(() => null, RECORDS, [], true)
+    props.vaultOf = () => ({ root: '/v', wikilinks: withIds, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly })
+    props.requestNote = '/v/alpha.md'
+    props.vaults = [{ ...vaults[0], idsInTitle: () => true }]
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    await mount()
+    layout(300, 420)
+    expect(compact()).toBe(true)
+    act(() => more().click())
+    expect(items()).toContain('Copy ID [EMB-1]')
+    act(() => [...(menu()?.querySelectorAll<HTMLButtonElement>('.ctx-menu__item') ?? [])].find((b) => b.textContent === 'Copy ID')?.click())
+    await flush()
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('EMB-1')
+    expect(props.onNotice).toHaveBeenCalledWith('Copied: EMB-1')
+  })
+
+  it('a Read only vault: "Allow edits…" in ⋯ opens the chip\'s own box; a choice edits; ⋯ then has Lock now', async () => {
+    props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }) }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    layout(346, 499)
+    act(() => more().click())
+    expect(items()).toContain('Allow edits…')
+    expect(items()).toContain('Edit [E]')
+    act(() => more().click())
+    pick('Allow edits…')
+    const ask = head().querySelector('.read-only-chip__ask')
+    expect(ask).not.toBeNull()
+    act(() => [...(ask?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Allow edits for 1 minute')?.click())
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).not.toBeNull()
+    act(() => more().click())
+    expect(items().find((i) => i.startsWith('Lock now'))).toMatch(/^Lock now \[Editing · [01]:\d\d\]$/)
+    act(() => more().click())
+    pick('Lock now')
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+  })
+
+  it('Tab passes over a part that CSS hides (⋯ of a full head, the folded parts): it never sticks on it', async () => {
+    const proto = HTMLElement.prototype as unknown as { checkVisibility?: () => boolean }
+    const was = proto.checkVisibility
+    // A full head: ⋯ is `display: none` in the app.
+    proto.checkVisibility = function (this: HTMLElement) {
+      return !this.classList.contains('explore__more')
+    }
+    try {
+      await mount()
+      await typeQuery('alp')
+      await openResult()
+      ;(head().querySelector('[aria-label="Open in a tab"]') as HTMLElement).focus()
+      key(document.activeElement as Element, { key: 'Tab' })
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('Close this layer')
+    } finally {
+      proto.checkVisibility = was
+    }
+  })
+
+  it('a board layer folds too: ⋯ has Previous / Next result and Open in a tab', async () => {
+    const SKETCH = '/v/alpha-sketch.excalidraw'
+    props = { ...props, nameOf: (p) => p.slice(p.lastIndexOf('/') + 1).replace(/\.(md|excalidraw|drawio)$/, ''), vaults: [{ ...vaults[0], files: [SKETCH] }] }
+    await mount()
+    await typeQuery('sketch')
+    await openResult()
+    expect(top().dataset.kind).toBe('board')
+    expect(observers.filter((o) => o.watched.includes(titleEl()))).toHaveLength(1)
+    layout(220, 260)
+    expect(compact()).toBe(true)
+    act(() => more().click())
+    expect(items()).toEqual(['# Result 1/1', 'Previous result [←] (off)', 'Next result [→] (off)', 'Open in a tab [⌘↵]'])
+    act(() => more().click())
+    pick('Open in a tab')
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(SKETCH)
   })
 })

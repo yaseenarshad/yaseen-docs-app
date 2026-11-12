@@ -58,3 +58,20 @@ describe('the Arrange popover (YAZ-4949)', () => {
     expect(box['max-width']).toBe('calc(100% - 32px)')
   })
 })
+
+describe('the folded head of a narrow layer (YAZ-4956)', () => {
+  it('a full head is laid out as before: the fold box adds no box of its own, and ⋯ is hidden', () => {
+    expect(rule('.explore__fold')['display']).toBe('contents')
+    expect(rule('.explore__more')['display']).toBe('none')
+  })
+
+  it('folded: ⋯ shows; the ID and every part in the fold hide; the title keeps a least width', () => {
+    expect(rule('.explore__head[data-compact] .explore__more')['display']).toBe('block')
+    expect(rule('.explore__head[data-compact] > .explore__id,\n.explore__head[data-compact] .explore__fold > *')['display']).toBe('none')
+    expect(rule('.explore__head[data-compact] .explore__title')['min-width']).toBe('48px')
+  })
+
+  it('folded: the Read only chip shows again while its "Allow edits?" box is open or it has the keyboard', () => {
+    expect(rule('.explore__head[data-compact] .explore__fold > .explore__lock:is(:focus-within, :has(.read-only-chip__ask))')['display']).toBe('revert')
+  })
+})

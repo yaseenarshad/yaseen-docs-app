@@ -457,7 +457,8 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     // Tab (round 6): the layers behind take the pointer, not the keyboard. Tab goes round the trail and the front layer only.
     if (event.key === 'Tab' && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.altKey && el !== null) {
       const chips = rootRef.current?.querySelectorAll<HTMLElement>('.explore__trail button') ?? []
-      const reach = [...chips, ...el.querySelectorAll<HTMLElement>(TABBABLE)].filter((e) => e.closest('[hidden]') === null)
+      // A part that CSS hides (⋯ of a full head, the parts a narrow head folds, YAZ-4956) takes no focus: Tab passes it.
+      const reach = [...chips, ...el.querySelectorAll<HTMLElement>(TABBABLE)].filter((e) => e.closest('[hidden]') === null && e.checkVisibility?.() !== false)
       const from = document.activeElement
       if (reach.length === 0 || from === null) return
       event.preventDefault()

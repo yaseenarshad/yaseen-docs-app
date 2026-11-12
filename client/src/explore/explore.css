@@ -381,6 +381,30 @@
   flex: none;
 }
 
+/* YAZ-4956: a layer narrower than its head (a tiled cell, a drag) folds the head. The observer in
+   `ExploreHeadMore.tsx` writes `data-compact`. Folded: the title (cut with "…") and × stay; the ID and the parts in
+   `.explore__fold` hide, and ⋯ holds them. The fold box is `display: contents`, so a full head is laid out as before. */
+.explore__fold {
+  display: contents;
+}
+.explore__more {
+  display: none;
+}
+.explore__head[data-compact] .explore__more {
+  display: block;
+}
+.explore__head[data-compact] > .explore__id,
+.explore__head[data-compact] .explore__fold > * {
+  display: none;
+}
+.explore__head[data-compact] .explore__title {
+  min-width: 48px;
+}
+/* The Read only chip shows again while its "Allow edits?" box is open (E, or ⋯ › Allow edits…) or it has the keyboard. */
+.explore__head[data-compact] .explore__fold > .explore__lock:is(:focus-within, :has(.read-only-chip__ask)) {
+  display: revert;
+}
+
 /* A board layer (YAZ-4943): the board embed's window fills the body (no scroll, no padding: the board pans inside
    itself); a diagram's page tabs stand under it. */
 .explore__body--board {
