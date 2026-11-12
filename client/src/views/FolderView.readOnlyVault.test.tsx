@@ -61,14 +61,14 @@ function feed(): void {
   act(() => source.update((target) => resolve(target)?.record.path ?? null, records, folders, true))
 }
 
-async function mount(on: boolean, allowFileAction: (root: string) => Promise<boolean> = () => Promise.resolve(true)): Promise<HTMLElement> {
+async function mount(on: boolean, allowFileAction: (root: string) => Promise<boolean> = () => Promise.resolve(true), onDeleteEntries?: (paths: readonly string[], asked?: boolean) => Promise<void>): Promise<HTMLElement> {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   act(() =>
     root?.render(
       <VaultReadOnly.Provider value={{ on, allowFileAction }}>
-        <FolderView root="/vault" path={STAGES} source={source} onOpenFile={() => undefined} onRetitle={() => undefined} commentsOrder="oldest" onChangeCommentsOrder={() => undefined} />
+        <FolderView root="/vault" path={STAGES} source={source} onDeleteEntries={onDeleteEntries} onOpenFile={() => undefined} onRetitle={() => undefined} commentsOrder="oldest" onChangeCommentsOrder={() => undefined} />
       </VaultReadOnly.Provider>,
     ),
   )
@@ -150,6 +150,28 @@ const addColumnRight = (el: ParentNode, label: string, name: string): void => {
 }
 
 describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
+  it('YAZ-4985: a row\'s "Delete note…" asks the vault\'s door BEFORE its delete sheet; refused, no sheet; allowed, the sheet, and its Delete tells App the door was asked', async () => {
+    let allow = false
+    const ask = vi.fn(async () => allow)
+    const trash = vi.fn(async () => undefined)
+    const el = await mount(true, ask, trash)
+    const pick = async () => {
+      const row = [...el.querySelectorAll<HTMLElement>('tbody tr')].find((tr) => tr.textContent?.includes('Lead Gen'))!
+      act(() => void row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      click([...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((x) => x.textContent === 'Delete note…')!)
+      await flush()
+    }
+    await pick()
+    expect(ask).toHaveBeenCalledExactlyOnceWith('/vault')
+    expect(document.querySelector('#confirm-delete-notes-text')).toBeNull()
+    allow = true
+    await pick()
+    expect(document.querySelector('#confirm-delete-notes-text')?.textContent).toBe('Delete "Lead Gen"? It moves to the Trash.')
+    click([...document.querySelectorAll<HTMLElement>('.confirm button')].find((b) => b.textContent === 'Delete')!)
+    await flush()
+    expect(trash).toHaveBeenCalledExactlyOnceWith([LEAD], true)
+  })
+
   it('YAZ-4985: a row\'s "Duplicate note" is a New note: it asks the vault\'s door first; refused, nothing is copied; allowed, the copy is made', async () => {
     const duplicate = vi.mocked(api.file.duplicate)
     let allow = false
