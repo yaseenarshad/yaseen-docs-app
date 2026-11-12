@@ -10,8 +10,8 @@
  * Mac's sleep stops this page's timer, so a gap between two rounds of `RESUME_GAP_TICKS` or more means it slept, and
  * every stamp starts again from then. That keeps a laptop that wakes from putting all its tabs to sleep at once.
  *
- * WHO SLEEPS (D5, S21): every kind of tab, but never the tab on show, the active tab, the review's layer, a tab whose
- * strip tab is being dragged, or anything while the tab board shows (its animation layer and its card drags). The
+ * WHO SLEEPS (D5, S21): every kind of tab, but never the tab on show, the active tab, a tab whose strip tab is being
+ * dragged, or anything while the tab board shows (its animation layer and its card drags). The
  * right panel's editors are not in `mounted` at all. In a hidden or minimized window the active tab sleeps too (S10):
  * it stays in `mounted` (`active ∈ mounted` holds), and App only leaves out its editor (`held`) until the window
  * comes back or another tab becomes active.
@@ -56,12 +56,10 @@ export interface SleepWorld {
   tabs: readonly { id: string; path: string }[]
   mounted: readonly string[]
   active: string | null
-  /** The tab whose layer shows: the active one, the review's layer during a review, null under the blank tab. */
+  /** The tab whose layer shows: the active one, null under the blank tab. */
   shown: string | null
   /** The tab board shows or animates (its `overview.from` layer and card drags). */
   boardOpen: boolean
-  /** The review's layer, or null. */
-  review: string | null
   /** The window is hidden or minimized (S10). */
   away: boolean
 }
@@ -71,7 +69,7 @@ const draggedTab = (): string | null => (typeof document === 'undefined' ? null 
 
 /** Whether tab `id` may sleep now (D5, S10, S21). */
 export function maySleep(id: string, w: SleepWorld, dragging: string | null): boolean {
-  if (w.boardOpen || id === w.review || id === dragging) return false
+  if (w.boardOpen || id === dragging) return false
   return w.away || (id !== w.active && id !== w.shown)
 }
 

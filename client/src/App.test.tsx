@@ -5154,7 +5154,7 @@ describe('opening a vault creates no file (YAZ-2290)', () => {
 
 /**
  * Note card review in App (YAZ-4967): each vault counts its due cards for the sidebar's Inbox row and holds one
- * session; the Inbox screen that draws it is YAZ-4962, so App draws no review surface yet. Page upkeep is gone (D6).
+ * session, which App draws as the Inbox screen over the tab stack.
  */
 describe('App note card review (YAZ-4967)', () => {
   const H = 3_600_000
@@ -5180,14 +5180,15 @@ describe('App note card review (YAZ-4967)', () => {
     expect(captured.sidebar?.reviewing).toBe(false)
   })
 
-  it('the Inbox row opens the session and a second click closes it; App draws no review surface until YAZ-4962, and the strip stays', async () => {
+  it('the Inbox row opens the Inbox screen over the tab stack and a second click closes it; the strip stays', async () => {
     const { el } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
     openInbox()
     expect(captured.sidebar?.reviewing).toBe(true)
-    expect(el.querySelector('.review-bar, .review-answers')).toBeNull()
+    await vi.waitFor(() => expect(el.querySelector('.tabstack .note-card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
     expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['a', 'b'])
     openInbox()
     expect(captured.sidebar?.reviewing).toBe(false)
+    expect(el.querySelector('.note-card-inbox')).toBeNull()
   })
 
   it('"Review this folder" and "Review this page" start a session over that scope: its first card\'s page is read', async () => {
@@ -5240,7 +5241,8 @@ describe('App: the note card flow (YAZ-4962)', () => {
     expect(captured.sidebar?.dueCount).toBe(1)
     act(() => captured.sidebar?.onOpenInbox())
     await vi.waitFor(() => expect(el.querySelector('.note-card-inbox .note-card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
-    expect(el.querySelector('.note-card-inbox .explore__title')?.textContent).toBe('Capital of France')
+    // The head: the ID first and the page; the card's first line is not said again above the card.
+    expect(el.querySelector('.note-card-inbox .explore__title')).toBeNull()
     expect(el.querySelector('.note-card-inbox .note-card__id')?.textContent).toBe('WIKI-9')
     expect(el.querySelector('.note-card-inbox__place')?.textContent).toBe('1 of 1')
     // The page under the Inbox stays where it was: its tab layer is still mounted.
@@ -5286,7 +5288,7 @@ describe('App: the note card flow (YAZ-4962)', () => {
     expect(layer.querySelector('.explore__title')?.textContent).toBe('Capital of France')
     expect(layer.querySelector('.note-card__id')?.textContent).toBe('WIKI-9')
     expect(layer.querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (1)')
-    expect(layer.querySelector('.note-card-strip__fact')?.textContent).toBe('Remembered')
+    expect(layer.querySelector('.note-card-strip__fact')?.textContent).toBe('Last answerRemembered, Jan 2')
   })
 })
 
@@ -5317,7 +5319,9 @@ describe('App: the note card flow from /card, through the real editor (YAZ-4965)
       ;(b.bridge as unknown as { mintNoteId: (path: string) => Promise<string> }).mintNoteId = vi.fn(async () => 'WIKI-9')
     })
     // The watcher tells each write, as main's does (the editor skips its own by mtime; the index reads it again).
-    bridge.writeFile.mockImplementation(async ({ path, content }: { path: string; content: string }) => {
+    // Main's compare-and-set too: a save against bytes that changed is refused, as `fs:write` refuses it.
+    bridge.writeFile.mockImplementation(async ({ path, content, expectedMtime }: { path: string; content: string; expectedMtime?: number }) => {
+      if (expectedMtime !== undefined && files[path] !== undefined && expectedMtime !== files[path].mtime) return Promise.reject({ code: 'CONFLICT', message: 'changed on disk', path })
       files[path] = { content, mtime: (files[path]?.mtime ?? 0) + 1 }
       const mtime = files[path].mtime
       setTimeout(() => watchers.forEach((l) => l({ type: 'change', path, mtime })), 30)
@@ -5663,7 +5667,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   const feed = (byRoot: Record<string, Partial<IndexResponse>>) => (b: Bridge) =>
     void b.bridge.index.mockImplementation(async (vault) => ({ root: vault, records: [], folders: [], generatedAt: 1, ids: true, ...byRoot[vault] }))
   /** Each vault's own `review.json`: card review on, or off (YAZ-4967; no file would be on). */
-  const upkeep = (on: Record<string, boolean>) => (b: Bridge) => void b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'review.json' ? { enabled: vault !== undefined && on[vault] === true } : null))
+  const cardReview = (on: Record<string, boolean>) => (b: Bridge) => void b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'review.json' ? { enabled: vault !== undefined && on[vault] === true } : null))
   const NOTES = feed({ '/v': { records: [note('/v/a.md', { title: 'Ay' })] }, '/w': { records: [note('/w/b.md', { title: 'Bee' })] } })
   const callsFor = (spy: { mock: { calls: unknown[][] } }, vault: string) => spy.mock.calls.filter(([first]) => first === vault).length
   const editor = (path: string) => captured.editors.filter((e) => e.path === path).at(-1)
@@ -5867,7 +5871,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     const index = feed({ '/v': { ids: true, records: [note('/v/a.md', { id: 'k3m9x2pq7abc' })] }, '/w': { ids: false, records: [note('/w/b.md')] } })
     const { bridge, el, emitSettings } = await mount(defaultAppState(), TWO, {}, (b) => {
       index(b)
-      upkeep({ '/v': true })(b)
+      cardReview({ '/v': true })(b)
       b.bridge.github.status.mockImplementation(async (vault) => ({ root: vault, state: 'off' as const, enabled: vault === '/v' }))
     })
     // Each of the three rows is on the page of its own section.
@@ -5908,7 +5912,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   it('with two or more vaults the Sync, Review, IDs, Storage and shared-boards settings say which vault they act on: the active tab\'s (R10, S39; YAZ-3039, YAZ-3040)', async () => {
     const { el, emitSettings } = await mount(defaultAppState(), TWO, {}, (b) => {
       feed({ '/v': { ids: true }, '/w': { ids: false } })(b)
-      upkeep({ '/v': true, '/w': true })(b)
+      cardReview({ '/v': true, '/w': true })(b)
     })
     /** The "Vault: …" line of each page that has one: Files & Links (its "This vault" group), Review and Sync. */
     const named = () =>
@@ -5935,7 +5939,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
 
   it('a review of a folder of /w runs with /w\'s settings and /w\'s cards while the active tab is in /v; one review per window (S41, S42)', async () => {
     const { bridge } = await mount(defaultAppState(), TWO, {}, (b) => {
-      upkeep({ '/v': true, '/w': true })(b)
+      cardReview({ '/v': true, '/w': true })(b)
       feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/q.md'), due('/w/Work/p.md', 'Work')] } })(b)
     })
     const reviewing = () => captured.sidebar?.vaults.map((vault) => vault.reviewing)
@@ -5950,7 +5954,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
 
   it('the sidebar is handed each vault\'s own Inbox — review, count, state — and a row\'s click opens ITS vault\'s review, closes the other vault\'s, and closes its own when it is the one open (R5, S41)', async () => {
     await mount(defaultAppState(), { ...TWO, roots: ['/v', '/w', '/x'] }, {}, (b) => {
-      upkeep({ '/v': true, '/w': true })(b)
+      cardReview({ '/v': true, '/w': true })(b)
       feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/p.md'), due('/w/q.md')] }, '/x': { records: [due('/x/z.md')] } })(b)
     })
     const rows = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.review, vault.dueCount, vault.reviewing])

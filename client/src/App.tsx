@@ -3233,7 +3233,7 @@ export function App() {
   const minimizedHere = useWindowMinimized(storage.getWindowId())
   const away = hiddenHere || minimizedHere
   const tabSleep = useTabSleep(
-    { setting: settings.tabSleepAfter, tabs, mounted, active: activeTab, shown, boardOpen: overview.phase !== 'closed', review: null, away },
+    { setting: settings.tabSleepAfter, tabs, mounted, active: activeTab, shown, boardOpen: overview.phase !== 'closed', away },
     { startView, sleep: sleepTabs, wake: wakeTab },
   )
   const held = tabSleep.held
