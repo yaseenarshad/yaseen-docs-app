@@ -127,6 +127,8 @@ const isBoardFile = (path: string): boolean => {
   return kind === 'drawing' || kind === 'diagram'
 }
 const ExploreStack = lazy(() => import('./explore/ExploreStack').then((m) => ({ default: m.ExploreStack })))
+/** The Inbox screen (YAZ-4962): lazy, loaded with the first review. */
+const NoteCardInbox = lazy(() => import('./review/NoteCardInbox').then((m) => ({ default: m.NoteCardInbox })))
 
 /**
  * The tab board (YAZ-3343 D4): its own chunk — the canvas, its layout and its cards — loaded on idle after the
@@ -1366,6 +1368,8 @@ export function App() {
     })
   }, [hasVault, filesWindow])
   const openExploreOn = useCallback((path: string) => openExploreWith({ kind: 'note', path }), [openExploreWith])
+  /** The Inbox's O and E (YAZ-4962): the page on top, landed on the card, in edit mode for E. */
+  const openPageAtCard = useCallback((path: string, card: number, edit: boolean) => openExploreWith({ kind: 'note', path, card, edit }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:note-card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
   useEffect(() => {
@@ -3682,8 +3686,12 @@ export function App() {
                 </div>
               )
             })}
-            {/* YAZ-4962: Inbox screen. It draws `session` (`review.session`, a `CardReviewSession`) with `review`, the
-                `CardReviewApi` of the vault in review (`reviewer`; client/src/review/useCardReview.ts). Nothing draws here until then. */}
+            {/* The Inbox screen (YAZ-4962): the session of the vault in review, over the tab stack; the page under it stays as it was. */}
+            {session !== null && (
+              <Suspense fallback={null}>
+                <NoteCardInbox review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openPageAtCard} openInTab={openBackgroundCopy} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} />
+              </Suspense>
+            )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}
             {overview.phase !== 'closed' && session === null && tabBoard()}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
