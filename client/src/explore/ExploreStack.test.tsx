@@ -20,7 +20,7 @@ import { moveExploreRecent, rememberExploreRecent, resetExploreRecents } from '.
 import { onNoteWindowRequest } from '../views/noteWindowRequest'
 import { registerRenameContinuity } from '../lib/renameContinuity'
 import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStack'
-import { MAX_LAYERS } from './layers'
+import { layerPlace, MAX_LAYERS } from './layers'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -683,5 +683,196 @@ describe('the explore stack', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('round 3: ‹ › through the search, and layers that move like a cell note', () => {
+  const TITLE_PATH: Record<string, string> = { Alpha: '/v/alpha.md', Beta: '/v/beta.md', 'conjecture (vocab)': '/v/conjecture.md' }
+  const stepButtons = () => [...top().querySelectorAll<HTMLButtonElement>('.explore__step')]
+  const count = () => top().querySelector('.explore__count')?.textContent
+  const title = () => top().querySelector('.explore__title')?.textContent
+  const body = () => top().querySelector<HTMLElement>('.explore__body') as HTMLElement
+  const activeRow = () => layers()[0].querySelector('.search-results__row--active')?.getAttribute('aria-label')
+  const mouse = (target: EventTarget, type: string, x: number, y: number) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y })))
+  /** A press on `handle`, `moves` pointer moves, then the drop. */
+  const drag = (handle: Element, moves: ReadonlyArray<[number, number]>, drop = true) => {
+    mouse(handle, 'mousedown', 100, 100)
+    for (const [dx, dy] of moves) mouse(window, 'mousemove', 100 + dx, 100 + dy)
+    if (drop) mouse(window, 'mouseup', 100 + (moves[moves.length - 1]?.[0] ?? 0), 100 + (moves[moves.length - 1]?.[1] ?? 0))
+  }
+  const px = (v: string) => parseInt(v, 10)
+  beforeEach(() => {
+    localStorage.removeItem('explore:box:search')
+    localStorage.removeItem('explore:box:note')
+  })
+
+  it('a note opened from a search shows "n/m" and steps through the results in the search\'s order, in the SAME layer; Esc returns to the search with the row you stopped on selected', async () => {
+    await mount()
+    await typeQuery('a')
+    const paths = rows().map((t) => TITLE_PATH[t])
+    expect(paths).toHaveLength(3)
+    await openResult()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note'])
+    const layer = top()
+    expect(count()).toBe('1/3')
+    expect(stepButtons().map((b) => b.disabled)).toEqual([true, false])
+    // → on the reading body: the next result, the same layer, read at once; the search's row follows.
+    key(body(), { key: 'ArrowRight', code: 'ArrowRight' })
+    await flush()
+    await flush()
+    expect(top()).toBe(layer)
+    expect(layers()).toHaveLength(2)
+    expect(readFile).toHaveBeenLastCalledWith(paths[1])
+    expect(title()).toBe(props.nameOf(paths[1]))
+    expect(count()).toBe('2/3')
+    expect(activeRow()).toContain(rows.call(null) === undefined ? '' : '')
+    expect(layers()[0].querySelector('.search-results__row--active')?.getAttribute('title')).toBe(paths[1])
+    // › by the button: the last one; then nothing further.
+    act(() => stepButtons()[1].click())
+    await flush()
+    await flush()
+    expect(readFile).toHaveBeenLastCalledWith(paths[2])
+    expect(count()).toBe('3/3')
+    expect(stepButtons().map((b) => b.disabled)).toEqual([false, true])
+    key(body(), { key: 'ArrowRight', code: 'ArrowRight' })
+    await flush()
+    expect(count()).toBe('3/3')
+    // ← goes back; the trail's chip says the note now.
+    key(body(), { key: 'ArrowLeft', code: 'ArrowLeft' })
+    await flush()
+    await flush()
+    expect(count()).toBe('2/3')
+    expect([...el.querySelectorAll('.explore__chip')].map((c) => c.textContent)).toEqual(['Search', props.nameOf(paths[1])])
+    // Esc: back to the search, the row you stopped on selected, the caret in the input.
+    await escape()
+    expect(top().dataset.kind).toBe('search')
+    expect(top().querySelector('.search-results__row--active')?.getAttribute('title')).toBe(paths[1])
+    expect(document.activeElement).toBe(input())
+  })
+
+  it('← → step only while reading (the caret\'s keys in the editor or a field); ⌘⌥↓ / ⌘⌥↑ step in edit too, the pending save flushed first, the editor mounted on the next note', async () => {
+    await mount()
+    await typeQuery('a')
+    const paths = rows().map((t) => TITLE_PATH[t])
+    await openResult()
+    // In a field, → is the field's.
+    const field = document.createElement('input')
+    body().appendChild(field)
+    key(field, { key: 'ArrowRight', code: 'ArrowRight' })
+    await flush()
+    expect(count()).toBe('1/3')
+    field.remove()
+    key(body(), { key: 'e' })
+    await flush()
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Editing')
+    expect(editors[editors.length - 1]).toBe(paths[0])
+    const editor = () => top().querySelector('[data-editor]') as HTMLElement
+    key(editor(), { key: 'ArrowRight', code: 'ArrowRight' })
+    await flush()
+    expect(count()).toBe('1/3')
+    const flushed: string[] = []
+    const off = registerRenameContinuity(paths[0], { flush: async () => void flushed.push('flushed'), capture: () => null, retire: () => undefined })
+    key(editor(), { key: 'ArrowDown', code: 'ArrowDown', metaKey: true, altKey: true })
+    await flush()
+    await flush()
+    expect(flushed).toEqual(['flushed'])
+    expect(count()).toBe('2/3')
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Editing')
+    expect(editors[editors.length - 1]).toBe(paths[1])
+    expect(top().querySelector(`[data-editor="${paths[1]}"]`)).not.toBeNull()
+    key(editor(), { key: 'ArrowUp', code: 'ArrowUp', metaKey: true, altKey: true })
+    await flush()
+    await flush()
+    expect(count()).toBe('1/3')
+    off()
+  })
+
+  it('a note opened from a link has no ‹ ›; a new search on top: the next note\'s ‹ › follow that search', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    expect(top().querySelector('.explore__steps')).not.toBeNull()
+    act(() => crepes[0].opts.wikilinkNav?.openCurrent('/v/beta.md'))
+    await flush()
+    await flush()
+    expect(title()).toBe('beta')
+    expect(top().querySelector('.explore__steps')).toBeNull()
+    key(body(), { key: 'ArrowRight', code: 'ArrowRight' })
+    await flush()
+    expect(layers()).toHaveLength(3)
+    expect(title()).toBe('beta')
+    render(2)
+    await flush()
+    await typeQuery('a')
+    const paths = rows().map((t) => TITLE_PATH[t])
+    await openResult()
+    expect(count()).toBe('1/3')
+    key(body(), { key: 'ArrowRight', code: 'ArrowRight' })
+    await flush()
+    await flush()
+    expect(title()).toBe(props.nameOf(paths[1]))
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note', 'note', 'search', 'note'])
+  })
+
+  it('drag the head: the layer follows by its style only (no render, the keyboard stays); the grips resize; a double click on the head puts it back', async () => {
+    const nameOf = vi.fn((path: string) => path.slice(3, -3))
+    props = { ...props, nameOf }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const note = top()
+    const home = layerPlace('note', 1, window.innerWidth)
+    const margin = Math.round(window.innerHeight * 0.1)
+    expect([note.style.left, note.style.top, note.style.width]).toEqual([`${home.left}px`, `${margin + home.top}px`, `${home.width}px`])
+    const renders = nameOf.mock.calls.length
+    const head = note.querySelector('.explore__head') as HTMLElement
+    drag(head, [[10, 5], [25, 20], [40, 30]], false)
+    expect([note.style.left, note.style.top]).toEqual([`${home.left + 40}px`, `${margin + home.top + 30}px`])
+    expect(el.querySelector('.explore')?.classList.contains('explore--tracking')).toBe(true)
+    mouse(window, 'mouseup', 140, 130)
+    expect(el.querySelector('.explore')?.classList.contains('explore--tracking')).toBe(false)
+    expect(nameOf.mock.calls.length).toBe(renders)
+    expect(document.activeElement).toBe(body())
+    expect(note.style.height).toBe('')
+    // The south-east grip: wider and taller, the height read once at the press.
+    Object.defineProperty(note, 'offsetHeight', { value: 400, configurable: true })
+    drag(note.querySelector('[data-grip="se"]') as Element, [[50, 60]])
+    expect([note.style.left, note.style.width, note.style.height]).toEqual([`${home.left + 40}px`, '770px', '460px'])
+    expect(note.hasAttribute('data-sized')).toBe(true)
+    // The west grip moves the left edge and keeps the right one.
+    drag(note.querySelector('[data-grip="w"]') as Element, [[-20, 0]])
+    expect([note.style.left, note.style.width]).toEqual([`${home.left + 20}px`, '790px'])
+    expect(nameOf.mock.calls.length).toBe(renders)
+    // Double-click the head: back to its stack place and size.
+    act(() => void head.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect([note.style.left, note.style.top, note.style.width, note.style.height]).toEqual([`${home.left}px`, `${margin + home.top}px`, `${home.width}px`, ''])
+    expect(note.hasAttribute('data-sized')).toBe(false)
+    // A press on a head button is the button's, not a drag.
+    drag(note.querySelector('.explore__button') as Element, [[30, 30]])
+    expect(note.style.left).toBe(`${home.left}px`)
+    // The note is the second layer: nothing kept for it.
+    expect(localStorage.getItem('explore:box:note')).toBeNull()
+  })
+
+  it('the first layer\'s place and size are kept for this window: the next stack opens it there, with the layer over it next to it; a double click forgets it', async () => {
+    await mount()
+    const search = top()
+    const start = { left: px(search.style.left), top: px(search.style.top) }
+    expect(start).toEqual({ left: layerPlace('search', 0, window.innerWidth).left, top: Math.round(window.innerHeight * 0.1) })
+    drag(search.querySelector('.explore__grab') as Element, [[30, 20]])
+    expect(JSON.parse(localStorage.getItem('explore:box:search') ?? 'null')).toEqual({ x: start.left + 30, y: start.top + 20, width: 500, height: null })
+    expect(document.activeElement).toBe(input())
+    act(() => root?.unmount())
+    el.remove()
+    await mount()
+    expect([top().style.left, top().style.top]).toEqual([`${start.left + 30}px`, `${start.top + 20}px`])
+    await typeQuery('alp')
+    await openResult()
+    const home = layerPlace('note', 1, window.innerWidth)
+    expect([top().style.left, top().style.top]).toEqual([`${home.left + 30}px`, `${Math.round(window.innerHeight * 0.1) + home.top + 20}px`])
+    await escape()
+    act(() => void (top().querySelector('.explore__grab') as Element).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect([top().style.left, top().style.top]).toEqual([`${start.left}px`, `${start.top}px`])
+    expect(localStorage.getItem('explore:box:search')).toBeNull()
   })
 })

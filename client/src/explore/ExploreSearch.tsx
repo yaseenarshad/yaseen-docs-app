@@ -17,15 +17,26 @@ import { FolderIcon } from '../views/view/icons'
 import { exploreRows } from './exploreRows'
 import { shownId, type IdsInSearch } from '../search/showIds'
 
+/**
+ * The stack's side of a search layer (round 3): the layer writes its rows here at each render, so the note layer
+ * over it steps through them (‹ ›) without a render of the search. One object per search layer, held by the stack.
+ */
+export interface SearchLink {
+  rows: readonly SearchCandidate[]
+}
+
 interface ExploreSearchProps {
   candidates: readonly SearchCandidate[]
+  link: SearchLink
+  /** The note over this layer that came from it (round 3): its path and its place in the rows. The row is marked and scrolled into view, so Esc returns to it. */
+  markedRow: { path: string; at: number } | null
   /** The notes opened most recently, newest first: the list with no text. */
   recent: readonly string[]
   /** The window's vault roots: a recent row's folder is read against its vault. */
   roots: readonly string[]
   nameOf: (path: string) => string
-  /** Enter or a click on a row: a note opens over this layer; a folder or another file opens in a tab. */
-  onOpen: (row: SearchCandidate) => void
+  /** Enter or a click on a row: a note opens over this layer, with the row's place for ‹ ›; a folder or another file opens in a tab. */
+  onOpen: (row: SearchCandidate, at: number) => void
   /** A right-click on a row (round 1, item 6): the note menu for it, at the pointer. */
   onRowMenu: (row: SearchCandidate, x: number, y: number) => void
   /** The vault's "Show IDs in search" for a row's path (YAZ-4940): Always, or only on a row found by its ID. */
@@ -34,7 +45,7 @@ interface ExploreSearchProps {
   active: boolean
 }
 
-export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, onRowMenu, idsInSearch, active }: ExploreSearchProps) {
+export function ExploreSearch({ candidates, link, markedRow, recent, roots, nameOf, onOpen, onRowMenu, idsInSearch, active }: ExploreSearchProps) {
   const unit = useVaultUnit(roots[0] ?? null)
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -50,11 +61,20 @@ export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, onRow
   )
   const rows = useMemo(() => (typed ? exploreRows(candidates, query) : recentRows), [candidates, query, typed, recentRows])
   const needle = useMemo(() => (typed ? readNeedle(query) : undefined), [query, typed])
-  const { sel, setSelected, onKeys } = useResultKeys(rows, onOpen)
+  link.rows = rows
+  const { sel, setSelected, onKeys } = useResultKeys(rows, (row) => onOpen(row, rows.indexOf(row)))
   const selectedRow = useRef<HTMLLIElement | null>(null)
   useEffect(() => {
     selectedRow.current?.scrollIntoView?.({ block: 'nearest' })
   }, [sel])
+  // The note over this layer stepped (round 3): its row is the selected one, so Esc comes back to it.
+  const markedPath = markedRow?.path ?? null
+  const markedAt = markedRow?.at ?? -1
+  useEffect(() => {
+    if (markedPath === null) return
+    const at = rows[markedAt]?.path === markedPath ? markedAt : rows.findIndex((r) => r.path === markedPath)
+    if (at !== -1) setSelected(at)
+  }, [markedPath, markedAt, rows, setSelected])
   // The caret, on show and again when a child closes: the Escape that closed it left the focus nowhere.
   useEffect(() => {
     if (active) inputRef.current?.focus()
@@ -105,7 +125,7 @@ export function ExploreSearch({ candidates, recent, roots, nameOf, onOpen, onRow
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   setSelected(i)
-                  onOpen(r)
+                  onOpen(r, i)
                 }}
                 onContextMenu={(e) => {
                   e.preventDefault()

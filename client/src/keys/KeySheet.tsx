@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'react'
 import { toDisplay, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { ALL_KEYS, blockersOf, keysOf, stepsAside, type HotkeyAside, type KeyRow, type KeyScope } from '@shared/keys'
 
-const PLACE_TITLES: Record<KeyScope, string> = { app: 'App', note: 'Note', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views' }
+const PLACE_TITLES: Record<KeyScope, string> = { app: 'App', note: 'Note', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views', explore: 'Explore' }
 
 const keysText = (row: KeyRow, overrides: HotkeyOverrides): string => {
   const keys = keysOf(row, overrides).map((k) => k.split(' ').map(toDisplay).join(' '))

@@ -9,7 +9,14 @@
   background: rgba(0, 0, 0, 0.28);
 }
 
-/* One layer: placed by its index (`layerPlace`), its own scroller inside, so a covered layer keeps its scroll. */
+/* A drag of a head or a grip (round 3): its cursor on the whole stack until the drop. */
+.explore--tracking,
+.explore--tracking * {
+  cursor: var(--explore-cursor, grabbing) !important;
+  user-select: none;
+}
+
+/* One layer: placed by `useLayerBoxes` (its stack place, or where it was dragged), its own scroller inside, so a covered layer keeps its scroll. */
 .explore__layer {
   position: absolute;
   top: 10vh;
@@ -27,6 +34,23 @@
 }
 .explore__layer--note {
   height: 80vh;
+}
+/* The 8 resize grips (round 3), inside the edges (the layer clips at its rounded corners). */
+.explore__grip {
+  position: absolute;
+  z-index: 2;
+}
+.explore__grip[data-grip='n'] { top: 0; left: 8px; right: 8px; height: 5px; cursor: ns-resize; }
+.explore__grip[data-grip='s'] { bottom: 0; left: 8px; right: 8px; height: 5px; cursor: ns-resize; }
+.explore__grip[data-grip='e'] { right: 0; top: 8px; bottom: 8px; width: 5px; cursor: ew-resize; }
+.explore__grip[data-grip='w'] { left: 0; top: 8px; bottom: 8px; width: 5px; cursor: ew-resize; }
+.explore__grip[data-grip='nw'] { top: 0; left: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+.explore__grip[data-grip='se'] { bottom: 0; right: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+.explore__grip[data-grip='ne'] { top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+.explore__grip[data-grip='sw'] { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+/* A layer resized by hand has its height in its style: the search's list grows with it. */
+.explore__layer[data-sized] .explore__results {
+  max-height: none;
 }
 
 /* Under the top layer, a light dim on each covered layer: the strips behind read as behind. */
@@ -111,6 +135,24 @@
 }
 
 /* ---------- the search panel ---------- */
+/* The search's top edge (round 3): the handle that moves the layer, with a small pill in the middle. */
+.explore__grab {
+  flex: none;
+  position: relative;
+  height: 12px;
+  cursor: grab;
+}
+.explore__grab::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 28px;
+  height: 4px;
+  transform: translateX(-50%);
+  background: var(--border);
+  border-radius: 2px;
+}
 .explore__input {
   flex: none;
   box-sizing: border-box;
@@ -185,6 +227,41 @@
   gap: 8px;
   padding: 8px 10px 8px 16px;
   border-bottom: 1px solid var(--border);
+  /* The head drags the layer (round 3). */
+  cursor: grab;
+  user-select: none;
+}
+/* ‹ 2/3 › (round 3): after the title, before the head's buttons. */
+.explore__steps {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.explore__step {
+  padding: 0 6px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 20px;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.explore__step:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.explore__step:disabled {
+  color: var(--fg-muted);
+  cursor: default;
+}
+.explore__count {
+  min-width: 2.6em;
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 .explore__title {
   flex: 1;

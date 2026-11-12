@@ -120,7 +120,7 @@ function useKeyRecorder(active: boolean, inside: RefObject<HTMLElement | null>, 
 // ---------- one changeable row ----------
 
 /** Where a row's key works, as the page names it (YAZ-3564 K7): the group titles and "Blocked: App › …". */
-export const SCOPE_TITLES: Record<KeyScope, string> = { app: 'App', note: 'Note', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views' }
+export const SCOPE_TITLES: Record<KeyScope, string> = { app: 'App', note: 'Note', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views', explore: 'Explore' }
 const owned = (row: KeyRow): string => `${SCOPE_TITLES[row.scope]} › ${row.label}`
 
 /** The App command of an App row, for its Mac-standard default and its hint (YAZ-3397). */
@@ -167,7 +167,7 @@ function blockedLines(key: string, blocked: readonly KeyRow[], overrides: Hotkey
   const shownKey = toDisplay(key)
   const lines: string[] = []
   const all: KeyRow[] = []
-  for (const scope of ['note', 'drawing', 'diagram', 'code', 'views'] as const) {
+  for (const scope of ['note', 'drawing', 'diagram', 'code', 'views', 'explore'] as const) {
     const rows = blocked.filter((o) => o.scope === scope)
     if (rows.length === 0) continue
     if (rows.length === 1) {
@@ -480,7 +480,7 @@ function inFilter(row: KeyRow, ctx: SettingsCtx): boolean {
 }
 
 // "Clicks" (YAZ-3747 demo): only the click and drag cards. "Press keys to search" hears keys only.
-const CHIPS: readonly HotkeyFilter['scope'][] = ['all', 'app', 'note', 'drawing', 'diagram', 'code', 'views', 'clicks']
+const CHIPS: readonly HotkeyFilter['scope'][] = ['all', 'app', 'note', 'drawing', 'diagram', 'code', 'views', 'explore', 'clicks']
 
 /** The group chips and the two switches at the top of the page (K7). */
 function FilterBar({ filter, onFilter }: { filter: HotkeyFilter; onFilter: (next: HotkeyFilter) => void }) {
@@ -687,7 +687,7 @@ interface KeyCard {
   picks: number
 }
 
-const ORDER: readonly KeyScope[] = ['app', 'note', 'drawing', 'diagram', 'code', 'views']
+const ORDER: readonly KeyScope[] = ['app', 'note', 'drawing', 'diagram', 'code', 'views', 'explore']
 const KIND_ORDER = { shared: 0, app: 1, tab: 2 } as const
 
 /** The tabs where an App command's key can go either way (K9): the rows of each that have it, or begin with it. */
@@ -742,7 +742,7 @@ const keyText = (key: string): string => key.split(' ').map(toDisplay).join(' ')
 /** A card's DOM id, for a link to it. */
 const cardAnchor = (key: string): string => `hotkeys-key-${normal(key).replace(/[^A-Za-z0-9]/g, (c) => `_${c.charCodeAt(0).toString(16)}`)}`
 
-const PLACE_WORDS: Record<KeyScope, string> = { app: 'every tab', note: 'notes', drawing: 'drawings', diagram: 'diagrams', code: 'code', views: 'folder views' }
+const PLACE_WORDS: Record<KeyScope, string> = { app: 'every tab', note: 'notes', drawing: 'drawings', diagram: 'diagrams', code: 'code', views: 'folder views', explore: 'the explore stack' }
 
 /** Under a row whose key an App key always takes in its tab: what the key does there, and a link to the card that decides it. */
 function LostLine({ row, blocker, overrides }: { row: KeyRow; blocker: KeyRow; overrides: HotkeyOverrides }) {

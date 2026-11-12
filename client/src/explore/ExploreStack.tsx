@@ -7,15 +7,19 @@
  * One stack per window, in its own chunk (App lazy-loads it on the first ⌘⇧F). The list of layers is state
  * (`layers.ts`); the DOM keeps each layer's scroll. The rows of every search layer come from ONE candidate
  * feed (`useSearchCandidates`): a nested search adds no index read. The keys are read on the stack's root: Esc,
- * E (read → edit), ⌘↵ (the top note in a tab, the stack closes). A menu, a picker or a pop-up that takes Esc keeps
- * it (the mini window's rule, YAZ-4547). At most 12 layers; a 13th says so and opens nothing.
+ * E (read → edit), ⌘↵ (the top note in a tab, the stack closes), and ‹ › (round 3: a note opened from a search
+ * steps through that search's rows in place, ← / → while reading, ⌘⌥↑ / ⌘⌥↓ in any mode; `shared/keys/explore.ts`).
+ * A menu, a picker or a pop-up that takes Esc keeps it (the mini window's rule, YAZ-4547). At most 12 layers; a
+ * 13th says so and opens nothing. Each layer moves like a cell note (round 3, `layerBoxes.ts`).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { rootOfPath, type CommentsOrder } from '@shared/types'
 import type { LinkActions } from '../editor/linkMenu'
+import { isNoteKey } from '../editor/noteKeys'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { flushRenamedPath } from '../lib/renameContinuity'
+import { storage } from '../lib/storage'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchCandidates, type SearchVault } from '../search/useSearchResults'
 import { ContextMenu } from '../sidebar/ContextMenu'
@@ -23,9 +27,10 @@ import { inPlace } from '../vault/placeScope'
 import { ExploreNote, type ExploreVault } from './ExploreNote'
 import { exploreNoteSections } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
-import { ExploreSearch } from './ExploreSearch'
+import { ExploreSearch, type SearchLink } from './ExploreSearch'
 import { textCandidates } from './exploreRows'
-import { layerPlace, MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, SEARCH_MS, topNote, type ExploreLayer } from './layers'
+import { GRIPS, useLayerBoxes } from './layerBoxes'
+import { MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, SEARCH_MS, stepPlace, stepResult, topNote, type ExploreLayer } from './layers'
 import './explore.css'
 
 export interface ExploreStackProps {
@@ -56,15 +61,15 @@ export interface ExploreStackProps {
 /** The notice of a 13th layer. */
 export const FULL_NOTICE = `The explore stack holds ${MAX_LAYERS} layers. Close some first (Esc).`
 
-/** The window's width, for the offsets: read on mount and on each resize, never per render. */
-function useWindowWidth(): number {
-  const [width, setWidth] = useState(() => window.innerWidth)
+/** The window's size, for the places: read on mount and on each resize, never per render. */
+function useWindowSize(): { width: number; height: number } {
+  const [size, setSize] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }))
   useEffect(() => {
-    const onResize = () => setWidth(window.innerWidth)
+    const onResize = () => setSize({ width: window.innerWidth, height: window.innerHeight })
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-  return width
+  return size
 }
 
 const reducedMotion = (): boolean => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -90,7 +95,23 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
   const rootRef = useRef<HTMLDivElement>(null)
-  const windowWidth = useWindowWidth()
+  const windowSize = useWindowSize()
+  // Where each layer stands (round 3): written to the layers' style, never rendered; the head drags, the grips resize.
+  const gestures = useLayerBoxes(rootRef, layers, windowSize.width, windowSize.height)
+  /** Each search layer's rows (round 3), by layer id: what the note over it steps through. Dropped with the layer. */
+  const links = useRef(new Map<number, SearchLink>())
+  const linkOf = (id: number): SearchLink => {
+    let link = links.current.get(id)
+    if (link === undefined) {
+      link = { rows: [] }
+      links.current.set(id, link)
+    }
+    return link
+  }
+  useEffect(() => {
+    const ids = new Set(layers.map((l) => l.id))
+    for (const id of [...links.current.keys()]) if (!ids.has(id)) links.current.delete(id)
+  }, [layers])
   // One feed for every search layer; the text rows (tags, frontmatter values) ride with the records.
   const candidates = useSearchCandidates(vaults, true, textCandidates)
   const roots = useMemo(() => vaults.map((v) => v.root), [vaults])
@@ -168,7 +189,31 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     },
     [push],
   )
-  const openRow = useCallback((row: SearchCandidate) => openPath(row.path), [openPath])
+  /** A row of search layer `search` at `at` (round 3): the note layer remembers them, so ‹ › step through that search. */
+  const openRow = useCallback(
+    (search: number, row: SearchCandidate, at: number) => {
+      if (fileKind(row.path) !== 'markdown') return openPath(row.path)
+      if (push({ id: newLayerId(), kind: 'note', path: row.path, mode: 'read', from: { search, at } })) rememberExploreRecent(row.path)
+    },
+    [push, openPath],
+  )
+
+  /**
+   * ‹ › (round 3): the note layer `id` goes to the next (`dir` 1) or the previous note row of the search under it,
+   * in place: no layer is added. In edit the note's pending save flushes first (a cell note's step), and the editor
+   * mounts on the next note. False at the end of the rows, or for a note that came from a link.
+   */
+  const step = useCallback((id: number, dir: -1 | 1): boolean => {
+    const layer = layersRef.current.find((l) => l.id === id)
+    if (layer === undefined || layer.kind !== 'note' || layer.from === undefined) return false
+    const search = layer.from.search
+    const to = stepResult(links.current.get(search)?.rows ?? [], layer.from.at, layer.path, dir)
+    if (to === null) return false
+    if (layer.mode === 'edit') void flushRenamedPath(layer.path)
+    setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'note' ? { ...l, path: to.path, from: { search, at: to.at } } : l)))
+    rememberExploreRecent(to.path)
+    return true
+  }, [])
 
   /** The top layer leaves: the exit motion, then it is gone; the last one closes the stack. */
   const pop = useCallback(() => {
@@ -287,6 +332,21 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
       toTab()
       return
     }
+    // ‹ › (round 3): a bare key (← / →) is the caret's while a field or the editor has the keyboard, so it steps only
+    // while reading; a chord (⌘⌥↓ / ⌘⌥↑) steps in any mode. A key the editor took (a cell note's own step) is left.
+    if (top.kind === 'note' && top.from !== undefined && !event.defaultPrevented) {
+      const overrides = storage.getSettings()?.hotkeys
+      const dir = isNoteKey(event, 'explore.nextResult', overrides) ? 1 : isNoteKey(event, 'explore.previousResult', overrides) ? -1 : 0
+      if (dir !== 0) {
+        const bare = !event.metaKey && !event.ctrlKey && !event.altKey
+        if (bare && (top.mode === 'edit' || inField(event.target))) return
+        if (step(top.id, dir)) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        return
+      }
+    }
     // E on the reading surface edits (item 5); Esc and Done leave edit. No ⌘E: it is the note's Inline code, and
     // Yaseen's own ⌘E goes to his emoji app ("i thought leaving edit was esc?").
     if ((event.key === 'e' || event.key === 'E') && !event.metaKey && !event.ctrlKey && !event.altKey && top.kind === 'note' && top.mode === 'read' && !inField(event.target)) {
@@ -318,10 +378,19 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
         </nav>
       )}
       {layers.map((layer, index) => {
-        const place = layerPlace(layer.kind, index, windowWidth)
         const covered = layer !== top
         const out = leaving.has(layer.id)
-        const style = { left: place.left, top: `calc(10vh + ${place.top}px)`, width: place.width, '--explore-ms': `${layer.kind === 'search' ? SEARCH_MS : NOTE_MS}ms` } as CSSProperties
+        // The place and size come from `useLayerBoxes`, written to the style; only the motion's length is rendered.
+        const style = { '--explore-ms': `${layer.kind === 'search' ? SEARCH_MS : NOTE_MS}ms` } as CSSProperties
+        /** A search layer: the note over it that came from it, whose row stays marked (round 3). */
+        const above = layers[index + 1]
+        const marked = layer.kind === 'search' && above !== undefined && above.kind === 'note' && above.from?.search === layer.id ? { path: above.path, at: above.from.at } : null
+        /** A note layer from a search: its place among that search's rows, and whether a step each way exists. */
+        const rows = layer.kind === 'note' && layer.from !== undefined ? (links.current.get(layer.from.search)?.rows ?? []) : null
+        const steps =
+          layer.kind === 'note' && layer.from !== undefined && rows !== null
+            ? { place: stepPlace(rows, layer.from.at, layer.path), count: rows.length, prev: stepResult(rows, layer.from.at, layer.path, -1) !== null, next: stepResult(rows, layer.from.at, layer.path, 1) !== null, onStep: (dir: -1 | 1) => void step(layer.id, dir) }
+            : undefined
         return (
           <div
             key={layer.id}
@@ -334,7 +403,11 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
             aria-hidden={covered}
           >
             {layer.kind === 'search' ? (
-              <ExploreSearch candidates={candidates} recent={recent} roots={roots} nameOf={nameOf} onOpen={openRow} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
+              <>
+                {/* The search moves by its top edge (round 3): the input keeps its text selection. */}
+                <div className="explore__grab" title="Drag to move; double-click to put back" onMouseDown={(e) => gestures.onHeadDown(layer.id, e)} onDoubleClick={(e) => gestures.reset(layer.id, e)} />
+                <ExploreSearch candidates={candidates} link={linkOf(layer.id)} markedRow={marked} recent={recent} roots={roots} nameOf={nameOf} onOpen={(row, at) => openRow(layer.id, row, at)} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
+              </>
             ) : (
               <ExploreNote
                 path={layer.path}
@@ -349,6 +422,9 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
                 linkActions={linkActions}
                 onNotice={onNotice}
                 onToggleEdit={() => toggleEdit(layer.id)}
+                steps={steps}
+                onHeadDown={(e) => gestures.onHeadDown(layer.id, e)}
+                onHeadReset={(e) => gestures.reset(layer.id, e)}
                 commentsOrder={commentsOrder}
                 onChangeCommentsOrder={onChangeCommentsOrder}
                 onOpenInTab={toTab}
@@ -358,6 +434,9 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
                 active={!covered}
               />
             )}
+            {GRIPS.map((grip) => (
+              <span key={grip.name} className="explore__grip" data-grip={grip.name} onMouseDown={(e) => gestures.onGripDown(layer.id, grip, e)} />
+            ))}
           </div>
         )
       })}

@@ -7,7 +7,7 @@
  * In edit a link opens a layer on top too. The head's ↗ opens the note in a tab, as ⌘↵ does.
  */
 import { UnitContext, useVaultUnit } from '../vault/unitWord'
-import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { notePageSwitches, type PageSwitches } from '@shared/pageSwitches'
@@ -61,6 +61,14 @@ interface ExploreNoteProps {
   onNotice: (message: string) => void
   /** Edit (reading) / Done (editing): the layer's mode flips; E and Esc reach it too (`ExploreStack`). */
   onToggleEdit: () => void
+  /**
+   * ‹ › (round 3): the note's place among the rows of the search under it ("2/3"), whether a step each way exists,
+   * and the step. A note opened from a link has no search under it, so no ‹ ›.
+   */
+  steps?: { place: number; count: number; prev: boolean; next: boolean; onStep: (dir: -1 | 1) => void }
+  /** The head's drag (round 3): the layer moves with the pointer; a double click puts it back in its stack place. */
+  onHeadDown?: (event: ReactMouseEvent) => void
+  onHeadReset?: (event: ReactMouseEvent) => void
   /** The comment stream's order (YAZ-1515), the setting, and its toggle: as every page layer has them. */
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
@@ -78,7 +86,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, steps, onHeadDown, onHeadReset, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   // The layer's vault's word for a note (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -203,10 +211,14 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
   }, [active, mode])
 
   const note = fileKind(path) === 'markdown'
+  /** A press on a head button keeps the keyboard where it is (the reading body, the editor). */
+  const keep = (event: ReactMouseEvent) => event.preventDefault()
   return (
     <UnitContext.Provider value={unit}>
       <div
         className="explore__head"
+        onMouseDown={onHeadDown}
+        onDoubleClick={onHeadReset}
         onContextMenu={(e) => {
           e.preventDefault()
           onHeadMenu(e.clientX, e.clientY)
@@ -215,6 +227,18 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
         <span className="explore__title" title={path}>
           {title}
         </span>
+        {/* YAZ-4940: the note's ID goes here, right after the title, when the vault shows IDs in titles. */}
+        {steps !== undefined && (
+          <span className="explore__steps">
+            <button type="button" className="explore__step" title="Previous search result (← or ⌘⌥↑)" aria-label="Previous search result" disabled={!steps.prev} onMouseDown={keep} onClick={() => steps.onStep(-1)}>
+              ‹
+            </button>
+            <span className="explore__count">{steps.place === 0 ? '' : `${steps.place}/${steps.count}`}</span>
+            <button type="button" className="explore__step" title="Next search result (→ or ⌘⌥↓)" aria-label="Next search result" disabled={!steps.next} onMouseDown={keep} onClick={() => steps.onStep(1)}>
+              ›
+            </button>
+          </span>
+        )}
         {foldAll}
         {mode === 'read' ? (
           <>
@@ -243,7 +267,8 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
       </div>
       {mode === 'edit' ? (
         <div className="explore__body explore__body--edit" style={style}>
-          {renderEditor(path, onOpenLink)}
+          {/* Keyed by the path: a step while editing saves this note and mounts the editor on the next (the body div stays, with the keyboard). */}
+          <Fragment key={path}>{renderEditor(path, onOpenLink)}</Fragment>
         </div>
       ) : (
         <div ref={bodyRef} className="explore__body" style={style} tabIndex={-1} data-explore-read>
