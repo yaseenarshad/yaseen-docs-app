@@ -2175,7 +2175,7 @@ describe('This vault › Read only (YAZ-4939)', () => {
 })
 
 describe('SettingsDialog: Show IDs (YAZ-4940), three rows in one block under "This vault"', () => {
-  const SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: false }
+  const SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: 'off' }
   const withShowIds = (idsOn: boolean, showIds: ShowIdsSettings = SHOW_IDS) => mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: idsOn, held: idsOn }, undefined, undefined, showIds)
   const pressed = (el: HTMLElement, id: string) => rowButtons(el, id).map((b) => b.getAttribute('aria-pressed'))
 
@@ -2189,17 +2189,27 @@ describe('SettingsDialog: Show IDs (YAZ-4940), three rows in one block under "Th
     expect(row(el, 'showIds.files')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in the files list')
     expect(rowButtons(el, 'showIds.title').map((b) => b.textContent)).toEqual(['On', 'Off'])
     expect(pressed(el, 'showIds.title')).toEqual(['true', 'false'])
-    expect(pressed(el, 'showIds.files')).toEqual(['false', 'true'])
+    expect(rowButtons(el, 'showIds.files').map((b) => b.textContent)).toEqual(['Off', 'Number (#12)', 'Full ID (EMB-12)'])
+    expect(pressed(el, 'showIds.files')).toEqual(['true', 'false', 'false'])
+  })
+
+  it('"in the files list" shows the vault\'s choice of three, and each saves its own', () => {
+    const { el, saveShowIds } = withShowIds(true, { ...SHOW_IDS, files: 'number' })
+    expect(pressed(el, 'showIds.files')).toEqual(['false', 'true', 'false'])
+    act(() => rowButtons(el, 'showIds.files')[2].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'full' })
+    act(() => rowButtons(el, 'showIds.files')[0].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'off' })
   })
 
   it('a click saves the one choice with the other two as they are', () => {
     const { el, saveShowIds } = withShowIds(true)
     act(() => rowButtons(el, 'showIds.title')[1].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: false, files: false })
-    act(() => rowButtons(el, 'showIds.files')[0].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: true })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: false, files: 'off' })
+    act(() => rowButtons(el, 'showIds.files')[1].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'number' })
     act(() => rowButtons(el, 'showIds')[1].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'match', title: true, files: false })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'match', title: true, files: 'off' })
   })
 
   it('in a vault without IDs, or with no vault open, none of the three rows shows', () => {

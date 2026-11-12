@@ -3695,7 +3695,10 @@ body.drag-held iframe {
   z-index: 1000;
 }
 
+/* The name is the one item of a row that shrinks (YAZ-4940): a long one is cut with "…", and the ID, the date and the
+   marks after it keep their width. */
 .tree__label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

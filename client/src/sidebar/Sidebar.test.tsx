@@ -229,7 +229,7 @@ const inboxOf = ({ upkeep, dueCount, reviewing }: Inbox): Partial<Vault> => ({ .
  */
 const oneVault = ({ root = '/v', watch = { subscribe: () => () => undefined }, indexSource = indexFor(true), ...over }: Partial<SidebarProps>): Vault[] => [
   // `idsInSearch` and `idsInFiles` (YAZ-4940) ride on the vault: a test hands them as if they were props.
-  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, upkeep: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}), ...('idsInFiles' in over ? { idsInFiles: (over as { idsInFiles?: boolean }).idsInFiles } : {}) },
+  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, upkeep: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}), ...('idsInFiles' in over ? { idsInFiles: (over as { idsInFiles?: Vault['idsInFiles'] }).idsInFiles } : {}) },
 ]
 
 async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => unknown) {
@@ -11793,41 +11793,50 @@ describe('the sidebar in a read-only vault (YAZ-4939)', () => {
 
 describe('Show IDs in the files list (YAZ-4940 part 2)', () => {
   /** The `/v` vault's index: `a.md` holds an ID, and the folder `sub` holds one through its settings file. */
-  const withIds = (on: boolean | undefined, ids = true) => {
+  const withIds = (on: Vault['idsInFiles'], ids = true) => {
     const indexSource = createWikilinkResolveSource()
     indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), ...(ids && { id: 'EMB-46' }) }], [{ ...indexRecord('/v/sub/.folder.md'), ...(ids && { id: 'EMB-3' }) }], ids)
     return mount({ indexSource, ...(on !== undefined && ({ idsInFiles: on } as Partial<SidebarProps>)) })
   }
   const idOf = (el: HTMLElement, path: string) => el.querySelector(`.tree__row[data-path="${path}"] .tree__id`)?.textContent ?? null
 
-  it('On: a note row ends with its ID, after the label and as the row\'s last child; a folder row shows none; the label keeps the name alone', async () => {
-    const { el } = await withIds(true)
+  it('Number: a note row ends with "#" and its ID\'s number, after the label and as the row\'s last child; a folder row shows none; the label keeps the name alone', async () => {
+    const { el } = await withIds('number')
     const row = fileRow(el)!
-    expect(idOf(el, '/v/a.md')).toBe('EMB-46')
+    expect(idOf(el, '/v/a.md')).toBe('#46')
     expect(row.lastElementChild?.className).toBe('tree__id')
     expect(row.querySelector('.tree__label')?.textContent).toBe('a')
     expect(idOf(el, '/v/sub')).toBeNull()
   })
 
+  it('Full ID: the row ends with the whole ID', async () => {
+    const { el } = await withIds('full')
+    expect(idOf(el, '/v/a.md')).toBe('EMB-46')
+    expect(idOf(el, '/v/sub')).toBeNull()
+  })
+
   it('Off, or not said (the default): no row shows an ID', async () => {
-    const off = await withIds(false)
+    const off = await withIds('off')
     expect(off.el.querySelector('.tree__id')).toBeNull()
     act(() => root?.unmount())
     const unsaid = await withIds(undefined)
     expect(unsaid.el.querySelector('.tree__id')).toBeNull()
   })
 
-  it('a vault without IDs shows none even with the choice On: its records hold no `id`', async () => {
-    const { el } = await withIds(true, false)
-    expect(el.querySelector('.tree__id')).toBeNull()
+  it('a vault without IDs shows none even with the choice Number or Full ID: its records hold no `id`', async () => {
+    const number = await withIds('number', false)
+    expect(number.el.querySelector('.tree__id')).toBeNull()
+    act(() => root?.unmount())
+    const full = await withIds('full', false)
+    expect(full.el.querySelector('.tree__id')).toBeNull()
   })
 
   it('a snapshot that gives the note a new ID redraws the row; one that changes a title alone does not change the map', async () => {
     const indexSource = createWikilinkResolveSource()
     indexSource.update(() => null, [indexRecord('/v/a.md')], [], true)
-    const { el } = await mount({ indexSource, idsInFiles: true } as Partial<SidebarProps>)
+    const { el } = await mount({ indexSource, idsInFiles: 'number' } as Partial<SidebarProps>)
     expect(idOf(el, '/v/a.md')).toBeNull()
     act(() => indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), id: 'EMB-46' }], [], true))
-    expect(idOf(el, '/v/a.md')).toBe('EMB-46')
+    expect(idOf(el, '/v/a.md')).toBe('#46')
   })
 })

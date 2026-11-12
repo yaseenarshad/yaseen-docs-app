@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { DEFAULT_SHOW_IDS, sanitizeShowIds, shownId, useAllPathIds, useNoteId, type PathIds } from './showIds'
+import { DEFAULT_SHOW_IDS, idNumber, sanitizeShowIds, shownId, useAllPathIds, useNoteId, type PathIds } from './showIds'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { IndexRecord } from '@shared/types'
 
@@ -10,11 +10,11 @@ import type { IndexRecord } from '@shared/types'
 
 describe('Show IDs in search', () => {
   it('reads the vault file; Always is the default, and anything else reads as Always', () => {
-    expect(DEFAULT_SHOW_IDS).toEqual({ search: 'always', title: true, files: false })
-    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: false })
-    expect(sanitizeShowIds({ search: 'always' })).toEqual({ search: 'always', title: true, files: false })
-    expect(sanitizeShowIds({ search: 'sometimes' })).toEqual({ search: 'always', title: true, files: false })
-    expect(sanitizeShowIds(null)).toEqual({ search: 'always', title: true, files: false })
+    expect(DEFAULT_SHOW_IDS).toEqual({ search: 'always', title: true, files: 'off' })
+    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off' })
+    expect(sanitizeShowIds({ search: 'always' })).toEqual({ search: 'always', title: true, files: 'off' })
+    expect(sanitizeShowIds({ search: 'sometimes' })).toEqual({ search: 'always', title: true, files: 'off' })
+    expect(sanitizeShowIds(null)).toEqual({ search: 'always', title: true, files: 'off' })
   })
 
   it('a row shows its ID always, or only when the search found it by its ID (`searchRows` put "ID — " in front of its label); a row with no ID shows none', () => {
@@ -30,10 +30,30 @@ describe('Show IDs in search', () => {
 
 describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => {
   it('an old file with `search` alone reads as title On, files list Off; the two fields round-trip; anything else is the default', () => {
-    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: false })
-    expect(sanitizeShowIds({ search: 'always', title: false, files: true })).toEqual({ search: 'always', title: false, files: true })
-    expect(sanitizeShowIds({ title: 'off', files: 'on' })).toEqual({ search: 'always', title: true, files: false })
-    expect(sanitizeShowIds({ title: false })).toEqual({ search: 'always', title: false, files: false })
+    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off' })
+    expect(sanitizeShowIds({ search: 'always', title: false, files: 'full' })).toEqual({ search: 'always', title: false, files: 'full' })
+    expect(sanitizeShowIds({ title: 'off', files: 'on' })).toEqual({ search: 'always', title: true, files: 'off' })
+    expect(sanitizeShowIds({ title: false })).toEqual({ search: 'always', title: false, files: 'off' })
+  })
+
+  it('"In the files list" has three choices; the old file\'s `true` (round 2\'s On) reads as Number, `false` or nothing as Off', () => {
+    expect(sanitizeShowIds({ search: 'always', files: true })).toEqual({ search: 'always', title: true, files: 'number' })
+    expect(sanitizeShowIds({ search: 'always', files: false })).toEqual({ search: 'always', title: true, files: 'off' })
+    expect(sanitizeShowIds({ search: 'always' }).files).toBe('off')
+    expect(sanitizeShowIds({ files: 'number' }).files).toBe('number')
+    expect(sanitizeShowIds({ files: 'full' }).files).toBe('full')
+    expect(sanitizeShowIds({ files: 'off' }).files).toBe('off')
+    expect(sanitizeShowIds({ files: 'all' }).files).toBe('off')
+  })
+
+  it('the number is "#" and the digits after the ID\'s last "-"; an ID with no such digits shows in full', () => {
+    expect(idNumber('EMB-12')).toBe('#12')
+    expect(idNumber('WIKI-7')).toBe('#7')
+    expect(idNumber('AB-CD-305')).toBe('#305')
+    expect(idNumber('EMB-012')).toBe('#012')
+    expect(idNumber('EMB12')).toBe('EMB12')
+    expect(idNumber('EMB-')).toBe('EMB-')
+    expect(idNumber('EMB-12a')).toBe('EMB-12a')
   })
 
   const record = (path: string, id?: string): IndexRecord => {
@@ -73,18 +93,21 @@ describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => 
     off.unmount()
   })
 
-  it('`useAllPathIds` is undefined with no source, else one Map over the vaults that chose it, kept while no ID changed', () => {
+  it('`useAllPathIds` is undefined with no source, else one Map over the vaults that chose it, each in its form, kept while no ID changed', () => {
     const one = createWikilinkResolveSource()
     one.update(() => null, [record('/v/a.md', 'EMB-1'), record('/v/plain.md')], [], true)
     const two = createWikilinkResolveSource()
     two.update(() => null, [record('/w/x.md', 'WIKI-7')], [], true)
     const none = probe(() => useAllPathIds([]))
     expect(none.seen.at(-1)).toBeUndefined()
-    const sources = [one, two]
+    const sources = [
+      { index: one, form: 'number' as const },
+      { index: two, form: 'full' as const },
+    ]
     const both = probe(() => useAllPathIds(sources))
     const first = both.seen.at(-1) as PathIds
     expect([...first]).toEqual([
-      ['/v/a.md', 'EMB-1'],
+      ['/v/a.md', '#1'],
       ['/w/x.md', 'WIKI-7'],
     ])
     // A snapshot that changed no ID (a title edit) keeps the Map: the memo tree re-renders nothing for it.
@@ -95,5 +118,22 @@ describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => 
     expect(both.seen.at(-1)?.get('/w/x.md')).toBe('WIKI-8')
     none.unmount()
     both.unmount()
+  })
+
+  it('`useAllPathIds` follows a change of form on the same index: Number to Full ID redraws the map', () => {
+    const one = createWikilinkResolveSource()
+    one.update(() => null, [record('/v/a.md', 'EMB-12')], [], true)
+    const seen: (PathIds | undefined)[] = []
+    const Probe = ({ form }: { form: 'number' | 'full' }) => {
+      seen.push(useAllPathIds([{ index: one, form }]))
+      return null
+    }
+    const el = document.createElement('div')
+    const root = createRoot(el)
+    act(() => root.render(<Probe form="number" />))
+    expect(seen.at(-1)?.get('/v/a.md')).toBe('#12')
+    act(() => root.render(<Probe form="full" />))
+    expect(seen.at(-1)?.get('/v/a.md')).toBe('EMB-12')
+    act(() => root.unmount())
   })
 })

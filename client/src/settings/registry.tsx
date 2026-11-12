@@ -1751,10 +1751,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'showIds.files',
             label: 'Show IDs in the files list',
-            hint: (ctx) => unit(ctx, 'The ID at the right end of each note\'s row in the sidebar\'s Files, Focus and Favorites, small and muted, so the IDs line up and the names stay where they are. A long name is cut before the ID. A folder row shows none.'),
-            keywords: ['id', 'ids', 'files', 'sidebar', 'tree', 'list', 'row', 'show'],
+            hint: (ctx) => unit(ctx, 'The ID at the right end of each note\'s row in the sidebar\'s Files, Focus and Favorites, small and muted, so the IDs line up and the names stay where they are. Number shows "#12" (the letters are the same on every row; the title and search keep the full ID). A long name is cut before the ID. A folder row shows none.'),
+            keywords: ['id', 'ids', 'files', 'sidebar', 'tree', 'list', 'row', 'show', 'number', 'full'],
             available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
-            render: ({ showIds }) => showIds && <Segmented options={ON_OFF_OPTIONS} value={showIds.settings.files} onChange={(files) => showIds.save({ ...showIds.settings, files })} ariaLabel="Show IDs in the files list" />,
+            render: ({ showIds }) =>
+              showIds && (
+                <Segmented
+                  options={[
+                    { label: 'Off', value: 'off' as const },
+                    { label: 'Number (#12)', value: 'number' as const },
+                    { label: 'Full ID (EMB-12)', value: 'full' as const },
+                  ]}
+                  value={showIds.settings.files}
+                  onChange={(files) => showIds.save({ ...showIds.settings, files })}
+                  ariaLabel="Show IDs in the files list"
+                />
+              ),
           },
           // YAZ-4936: one row of its own, saved in the vault (`.yaseendocs/link-click.json`).
           {
