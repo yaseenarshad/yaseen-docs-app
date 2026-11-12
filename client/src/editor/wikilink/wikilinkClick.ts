@@ -75,6 +75,11 @@ export interface WikilinkNav extends LinkActions {
   hotkeys?: () => HotkeyOverrides | undefined
   /** Create failure: the passive in-window notice (App's link-notice style), never a dialog. */
   onNotice: (message: string) => void
+  /**
+   * App's one read-only door (`allowFileAction`, YAZ-4985), asked with `root` before a missing page is MADE: a read-only
+   * vault asks first ("Just this once" · 1 minute · 10 minutes · Cancel); false makes nothing. Absent: it makes the page.
+   */
+  allowFileAction?: (root: string) => Promise<boolean>
 }
 
 const wikilinkClickKey = new PluginKey('mdapp-wikilink-click')
@@ -173,7 +178,8 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
     else if ((other = otherVaultId(inner, source, vaultsOf)) !== null) nav.onNotice(`This ID belongs to ${other.vault === null ? 'another vault' : `the ${other.vault} vault`}. Use a link to that vault.`)
     else if (made === undefined) {
       making.set(page, null)
-      void createFromLink(nav.root, inner, source.ids, nav.createFolder(), undefined, source.folders).then((result) => {
+      const create = async (): Promise<void> => {
+        const result = await createFromLink(nav.root, inner, source.ids, nav.createFolder(), undefined, source.folders)
         if (result.status === 'created') making.set(page, result.path)
         else making.delete(page)
         if (result.status === 'error') nav.onNotice(result.message)
@@ -183,7 +189,10 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
           // ruling — never activated), so name what just appeared (GRO-2197).
           if (background) nav.onNotice(`Created "${page}" in a background tab`)
         }
-      })
+      }
+      // A read-only vault asks before the page is made (YAZ-4985); a Cancel makes nothing, and the next click asks again.
+      if (nav.allowFileAction === undefined) void create()
+      else void nav.allowFileAction(nav.root).then((ok) => (ok ? create() : void making.delete(page)))
     } else if (made !== null) open(made)
   }
 }

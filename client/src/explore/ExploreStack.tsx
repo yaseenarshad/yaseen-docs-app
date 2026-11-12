@@ -56,6 +56,8 @@ export interface ExploreStackProps {
   /** `unlocked` (YAZ-4939): the layer's timed "Allow edits" runs, so the vault's Read only does not lock this editor. */
   renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean) => ReactNode
   createFolder: (sourcePath: string) => string
+  /** App's read-only door (YAZ-4985), for a reading layer's link to a missing page. */
+  onFileAction?: (root: string) => Promise<boolean>
   linkActions?: LinkActions
   /** A note in a normal tab (⌘↵, ↗), a folder's page or another file (a drawing, a PDF): the stack closes. */
   openInTab: (path: string) => void
@@ -118,7 +120,7 @@ const inField = (target: EventTarget | null): boolean => target instanceof Eleme
 /** What Tab can reach: the trail's chips and the front layer (round 6). */
 const TABBABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), [contenteditable="true"]'
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -709,6 +711,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 onOpenLink={openPath}
                 renderEditor={renderEditor}
                 createFolder={createFolder}
+                onFileAction={onFileAction}
                 linkActions={linkActions}
                 onNotice={onNotice}
                 onToggleEdit={() => toggleEdit(layer.id)}

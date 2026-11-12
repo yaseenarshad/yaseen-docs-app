@@ -19,6 +19,7 @@ import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { VaultLinksContext } from '../links/vaultLinks'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { IconsContext, fileIconDecoration } from '../sidebar/FileIcon'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { useCardPreview, type PreviewScope } from '../tabs/cardPreview'
@@ -97,6 +98,10 @@ export function useDrawingLinks(host: DrawingLinkHost) {
   const icons = useRef(iconsHere)
   icons.current = iconsHere
   // The window's vaults: a pasted path of another of them is that vault's link.
+  // The vault's read-only door, read at the click (YAZ-4985).
+  const fileDoorHere = useContext(VaultReadOnly).allowFileAction
+  const fileDoor = useRef(fileDoorHere)
+  fileDoor.current = fileDoorHere
   const vaultLinksHere = useContext(VaultLinksContext)
   const vaultLinks = useRef(vaultLinksHere)
   vaultLinks.current = vaultLinksHere
@@ -123,6 +128,8 @@ export function useDrawingLinks(host: DrawingLinkHost) {
       exploreClick: () => live.current.props.exploreOnClick?.() === true,
       hotkeys: () => live.current.hotkeys,
       onNotice: (message) => live.current.onNotice?.(message),
+      // A link to a missing page asks the vault's read-only door before the page is made (YAZ-4985).
+      allowFileAction: (vault) => fileDoor.current(vault),
     }
     const follow = windowFollow(wikilinks, nav, wikilinkFollower(wikilinks, nav, viewOnlyLinks))
     const picker = createDrawingLinkPicker(

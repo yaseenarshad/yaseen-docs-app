@@ -57,6 +57,8 @@ interface NavMocks {
   /** Settings › Hotkeys' changes (YAZ-3936): set by a test, read at each click. */
   hotkeys?: () => HotkeyOverrides | undefined
   onNotice: Mock
+  /** App's read-only door (YAZ-4985): set by a test, asked before a missing page is made. */
+  allowFileAction?: Mock
 }
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
@@ -264,6 +266,27 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/missing-${born().id.toLowerCase()}.md`, content: '---\ntitle: Missing\n---\n', id: born().id })
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
     expect(nav.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4985: in a read-only vault the open of a link to a missing page asks the door first: Cancel makes no page and opens nothing; the next click asks again, and an allow makes and opens it', async () => {
+    const { root, nav } = await mount('pad [[Missing]] and [[Known]] tail\n', resolveKnown)
+    nav.allowFileAction = vi.fn(async () => false)
+    open(linkSpan(root, 'Missing'))
+    await vi.waitFor(() => expect(nav.allowFileAction).toHaveBeenCalledExactlyOnceWith('/vault'))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(createFile).not.toHaveBeenCalled()
+    expect(createDir).not.toHaveBeenCalled()
+    expectNoNav(nav)
+    nav.allowFileAction.mockResolvedValueOnce(true)
+    open(linkSpan(root, 'Missing'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path))
+    expect(nav.allowFileAction).toHaveBeenCalledTimes(2)
+    expect(createFile).toHaveBeenCalledOnce()
+    // A link to a page that is there opens with no ask.
+    open(linkSpan(root, 'Known'))
+    expect(nav.openCurrent).toHaveBeenLastCalledWith('/vault/Known.md')
+    expect(nav.allowFileAction).toHaveBeenCalledTimes(2)
   })
 
   it('⌘-click on an unresolved link creates it and opens it in a BACKGROUND tab (same gesture after create)', async () => {

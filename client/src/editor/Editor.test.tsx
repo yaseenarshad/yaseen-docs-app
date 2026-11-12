@@ -316,6 +316,15 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     expect(newNoteFolderFor).toHaveBeenCalledExactlyOnceWith('/vault/Panels/Side.md')
   })
 
+  it("YAZ-4985: wikilinkNav asks App's read-only door (`onFileAction`) before a missing page is made, read at the click", async () => {
+    const onFileAction = vi.fn(async () => false)
+    await mount(BODY, 1, { path: '/vault/Panels/Side.md', onOpenFileBackground: noop, onFileAction })
+    const nav = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.wikilinkNav
+    if (nav?.allowFileAction === undefined) throw new Error('the read-only door was not wired')
+    await expect(nav.allowFileAction('/vault')).resolves.toBe(false)
+    expect(onFileAction).toHaveBeenCalledExactlyOnceWith('/vault')
+  })
+
   it('routes mixed-case view-only text around every Markdown-only owner', async () => {
     const source = createWikilinkResolveSource()
     const subscribe = vi.spyOn(source, 'subscribe')

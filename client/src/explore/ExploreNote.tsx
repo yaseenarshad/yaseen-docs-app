@@ -77,6 +77,8 @@ interface ExploreNoteProps {
   renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean) => ReactNode
   /** Where a bare unresolved `[[link]]` makes its note (App's `newNoteFolderFor`), root-relative. */
   createFolder: (sourcePath: string) => string
+  /** App's read-only door (YAZ-4985): a link to a missing page asks it before the page is made. Absent: the page is made. */
+  onFileAction?: (root: string) => Promise<boolean>
   linkActions?: LinkActions
   onNotice: (message: string) => void
   /** Edit (reading) / Done (editing): the layer's mode flips; E and Esc reach it too (`ExploreStack`). */
@@ -157,7 +159,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, editAsk = 0, card, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, card, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   // The layer's vault's word for a note (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const noteId = useNoteId(idInTitle ? vault.wikilinks : undefined, path)
@@ -175,8 +177,8 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   /** ⌘F in the reading layer finds in THIS note (check 11): the note's own find plugin on this Crepe, and its bar. */
   const findChannel = useMemo(() => createFindChannel(), [])
   // The doors, read at click time: a layer's Crepe is built once, and the stack's callbacks may change identity.
-  const doors = useRef({ onOpenLink, createFolder, linkActions, onNotice })
-  doors.current = { onOpenLink, createFolder, linkActions, onNotice }
+  const doors = useRef({ onOpenLink, createFolder, onFileAction, linkActions, onNotice })
+  doors.current = { onOpenLink, createFolder, onFileAction, linkActions, onNotice }
 
   /** The whole file as read, frontmatter included: the comment stream's truth. */
   const readRef = useRef('')
@@ -231,7 +233,7 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
       linkLook: { icon: (target, folder) => fileIconDecoration(icons, target, folder) },
       boardEmbeds: { root },
       // The note's links, live (the read-only rule: a plain click opens, YAZ-3879 point 6). An unresolved link is made first, as everywhere.
-      wikilinkNav: { ...doors.current.linkActions, root, createFolder: () => doors.current.createFolder(path), openCurrent: open, openNewTab: open, openBackground: open, onNotice: (m) => doors.current.onNotice(m) },
+      wikilinkNav: { ...doors.current.linkActions, root, createFolder: () => doors.current.createFolder(path), openCurrent: open, openNewTab: open, openBackground: open, onNotice: (m) => doors.current.onNotice(m), allowFileAction: (vault) => doors.current.onFileAction?.(vault) ?? Promise.resolve(true) },
       markdownLinkNav: {
         ...doors.current.linkActions,
         open: (href) => api.shell.openLink({ href, sourcePath: path }),

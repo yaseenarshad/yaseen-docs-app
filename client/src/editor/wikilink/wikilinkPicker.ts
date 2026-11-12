@@ -245,6 +245,8 @@ function session(state: EditorState, prev: PickerState | null, tr: Transaction |
  */
 async function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string, ids: boolean, wait?: number): Promise<void> {
   const page = name.split('#', 1)[0]
+  // A read-only vault asks before the page is made (YAZ-4985): a Cancel leaves the link as it was typed, with no page.
+  if (nav.allowFileAction !== undefined && !(await nav.allowFileAction(nav.root))) return
   /** The id the note is born with, and the id the LINK holds: a note that is not born gives the link its typed name back. */
   let id: string | undefined
   let linked: string | undefined

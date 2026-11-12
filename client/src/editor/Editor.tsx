@@ -731,7 +731,11 @@ function CrepeHost({
   /** A read-only folder page (YAZ-3746 D36) keeps its Page read only, whatever the `.folder.md` bytes say yet. */
   const folderLocked = useSyncExternalStore(folderChips?.subscribe ?? noSubscribe, () => folderChips?.getState().readOnly ?? false)
   /** The vault's Read only (YAZ-4939). A folder page's Page tab takes it through the folder's store above: one unlock for the whole tab. */
-  const vaultLocked = useContext(VaultReadOnly).on && !inFolderPage
+  const vaultScope = useContext(VaultReadOnly)
+  const vaultLocked = vaultScope.on && !inFolderPage
+  /** The read-only door at click time (YAZ-4985): a link to a missing page asks it before the page is made. */
+  const fileDoor = useRef(vaultScope.allowFileAction)
+  fileDoor.current = vaultScope.allowFileAction
   /** The page is under Read only: its own switch, its folder page's, or the vault's. The chip shows while this is true. */
   const lockedBase = diskReadOnly || folderLocked || vaultLocked
   /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves, then locks again. */
@@ -934,6 +938,7 @@ function CrepeHost({
               exploreClick: exploreOnClick,
               hotkeys: hotkeysNow,
               onNotice: onNotice ?? (() => undefined),
+              allowFileAction: (vault) => fileDoor.current(vault),
             },
       // The window's vaults by their ID letters (YAZ-3905 S23): an unresolved `[[INL-4]]` names its vault.
       vaultsOfLetters: (letters) => vaultLinks.current?.vaultsOfLetters?.(letters) ?? [],

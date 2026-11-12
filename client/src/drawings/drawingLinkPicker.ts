@@ -46,6 +46,8 @@ interface Session {
  * user types meanwhile lands after it.
  */
 export async function createLinkedPage(editor: PickerEditor, name: string, links: WikilinkResolveSource, nav: WikilinkNav): Promise<void> {
+  // A read-only vault asks before the page is made (YAZ-4985): a Cancel leaves the link as it was typed, with no page.
+  if (nav.allowFileAction !== undefined && !(await nav.allowFileAction(nav.root))) return
   const page = name.split('#', 1)[0]!
   const rest = name.slice(page.length)
   let id: string | undefined
