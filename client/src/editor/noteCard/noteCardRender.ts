@@ -139,15 +139,29 @@ function fillHidden(root: Node, words: readonly string[], shown: number): void {
   }
 }
 
+/**
+ * The pills of `root` drawn again by `look`: each pill is made new — `wikilink`, `wikilink--unresolved` when it does
+ * not resolve, and the icon's attributes, its `class` ADDED to those (YAZ-4974: it replaced `wikilink`, so the pill
+ * lost its look). A pill made new drops the icon of the page it no longer opens.
+ */
+export function refreshNoteCardLook(root: ParentNode, look: NoteCardLook | undefined): void {
+  if (look?.link === undefined) return
+  for (const pill of root.querySelectorAll<HTMLElement>(`[${NOTE_CARD_LINK_ATTR}]`)) {
+    const inner = pill.getAttribute(NOTE_CARD_LINK_ATTR) ?? ''
+    const shown = look.link(inner)
+    const { class: icon, ...attrs } = shown.attrs ?? {}
+    const next = document.createElement('span')
+    for (const [name, value] of Object.entries(attrs)) next.setAttribute(name, value)
+    next.setAttribute(NOTE_CARD_LINK_ATTR, inner)
+    next.className = ['wikilink', shown.resolved ? '' : 'wikilink--unresolved', icon ?? ''].filter((c) => c !== '').join(' ')
+    next.textContent = shown.label
+    pill.replaceWith(next)
+  }
+}
+
 /** The pills' labels and looks, and the images' URLs and widths, by `look`. */
 function applyLook(root: ParentNode, look: NoteCardLook | undefined): void {
-  for (const pill of root.querySelectorAll<HTMLElement>(`[${NOTE_CARD_LINK_ATTR}]`)) {
-    const shown = look?.link?.(pill.getAttribute(NOTE_CARD_LINK_ATTR) ?? '')
-    if (shown === undefined) continue
-    pill.textContent = shown.label
-    pill.classList.toggle('wikilink--unresolved', !shown.resolved)
-    for (const [name, value] of Object.entries(shown.attrs ?? {})) pill.setAttribute(name, value)
-  }
+  refreshNoteCardLook(root, look)
   for (const img of root.querySelectorAll('img')) {
     const src = img.getAttribute('src')
     if (src !== null && look?.image !== undefined) img.setAttribute('src', look.image(src))

@@ -8,13 +8,13 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { undo } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { createCrepe, getMarkdownForSave, noteCardLook, type CreateCrepeOptions } from '../createCrepe'
 import { applyExternalMarkdown } from '../external/applyExternalMarkdown'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { CrepeFeature } from '../crepe'
 import { features } from '../featureConfig'
 import { NOTE_CARD_OPEN, noteCardViewAt, type NoteCardOpenRequest } from './noteCardView'
-import { renderNoteCard } from './noteCardRender'
+import { refreshNoteCardLook, renderNoteCard } from './noteCardRender'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -300,6 +300,25 @@ describe('renderNoteCard (the page and the Inbox, D18)', () => {
     expect(step.textContent).not.toContain('three')
     const last = renderNoteCard(text, { sides: 2, shown: 3 })
     expect([...last.querySelectorAll('.note-card__blank')].map((b) => (b as HTMLElement).dataset.hidden)).toEqual(['3'])
+  })
+
+  it('YAZ-4974: a pill drawn through the page`s look keeps `wikilink` (and `wikilink--unresolved`) beside the icon`s class; a refresh draws the new look', () => {
+    const source = vault(true)
+    const linkLook = { icon: (path: string) => ({ class: 'file-icon file-icon--file', 'data-icon-path': path }) }
+    const card = renderNoteCard('[[France]] and [[Gone]]', {}, noteCardLook(source, undefined, undefined, linkLook))
+    const [found, gone] = [...card.querySelectorAll<HTMLElement>('[data-note-card-link]')]
+    expect([...found.classList]).toEqual(['wikilink', 'file-icon', 'file-icon--file'])
+    expect(found.getAttribute('data-icon-path')).toBe('/v/France.md')
+    expect([...gone.classList]).toEqual(['wikilink', 'wikilink--unresolved'])
+    // The index changes: "Gone" now resolves and "France" does not. Only the pills draw again.
+    source.update((target) => (target === 'Gone' ? '/v/Gone.md' : null), [], [], true, ['WIKI'])
+    const side = card.querySelector('.note-card__side')!
+    refreshNoteCardLook(card, noteCardLook(source, undefined, undefined, linkLook))
+    expect(card.querySelector('.note-card__side')).toBe(side)
+    const [france, now] = [...card.querySelectorAll<HTMLElement>('[data-note-card-link]')]
+    expect([...france.classList]).toEqual(['wikilink', 'wikilink--unresolved'])
+    expect(france.hasAttribute('data-icon-path')).toBe(false)
+    expect(now.getAttribute('data-icon-path')).toBe('/v/Gone.md')
   })
 
   it('sanitises: no script, no form control, and an image takes the vault URL from the look', () => {
