@@ -416,7 +416,15 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
 
   // A click on the dim outside every layer: the front layer closes, as Esc does.
   const onBackdropMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget) return
+    if (event.target !== event.currentTarget) {
+      // A press on a blank part of a layer (a search's footer, its empty list) takes no focus away (round 6): the
+      // keyboard stays in the layer, where its raise put it, and the stack's keys are still heard.
+      const target = event.target instanceof Element ? event.target : null
+      const layer = target?.closest('[data-layer]') ?? null
+      const taker = target?.closest('input, textarea, select, button, a[href], [tabindex], [contenteditable="true"]') ?? null
+      if (layer !== null && (taker === null || !layer.contains(taker))) event.preventDefault()
+      return
+    }
     event.preventDefault()
     pop()
   }

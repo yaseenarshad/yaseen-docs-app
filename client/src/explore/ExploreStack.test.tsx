@@ -1232,6 +1232,25 @@ describe('round 6: layers act like windows (YAZ-2571): a click on a layer behind
     expect(front()).toBe(search)
   })
 
+  it('a press on a blank part of a layer (the search\'s footer) brings it to the front and keeps the keyboard in it: the mousedown takes no focus away', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const [search] = layers()
+    const foot = search.querySelector('.explore__foot') as HTMLElement
+    press(foot)
+    await flush()
+    expect(front()).toBe(search)
+    expect(document.activeElement).toBe(search.querySelector('.explore__input'))
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })
+    act(() => void foot.dispatchEvent(down))
+    expect(down.defaultPrevented).toBe(true)
+    // A press on something that takes the focus keeps its own way: the input, the reading body.
+    const inField = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })
+    act(() => void (search.querySelector('.explore__input') as HTMLElement).dispatchEvent(inField))
+    expect(inField.defaultPrevented).toBe(false)
+  })
+
   it('Tab stays in the front layer and the trail: it never lands in a layer behind', async () => {
     await mount()
     await typeQuery('alp')
