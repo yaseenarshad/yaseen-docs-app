@@ -235,6 +235,14 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
     if (event.key === 'Escape') {
       // The note menu's own Esc (the `ContextMenu` closes itself) and a menu's: nothing else closes.
       if (event.target instanceof Element && event.target.closest('.ctx-menu') !== null) return
+      // ⇧Esc closes every layer in one key (YAZ-4926): a note in edit saves first; App gives the keyboard back.
+      if (event.shiftKey) {
+        event.preventDefault()
+        event.stopPropagation()
+        flushEdits()
+        doors.current.onClose()
+        return
+      }
       // A pop-up of the editor (the `[[` picker, a menu) took this Esc while the caret stays in the layer: it closed
       // the pop-up, nothing more. The editor's own Esc (to the sidebar) moves the focus out: the layer closes then.
       if (event.defaultPrevented && el !== null && el.contains(document.activeElement)) return

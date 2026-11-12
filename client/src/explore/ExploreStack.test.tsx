@@ -529,6 +529,27 @@ describe('the explore stack', () => {
     expect(el.querySelector('.explore__trail')).toBeNull()
   })
 
+  it('YAZ-4926: ⇧Esc closes every layer from any depth, a note in edit flushed first; plain Esc still goes back one', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    render(2)
+    await flush()
+    await typeQuery('beta')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(layers()).toHaveLength(4)
+    const flushed: string[] = []
+    const off = registerRenameContinuity('/v/beta.md', { flush: async () => void flushed.push('beta'), capture: () => null, retire: () => undefined })
+    key(document.activeElement as Element, { key: 'Escape', shiftKey: true })
+    off()
+    expect(props.onClose).toHaveBeenCalledOnce()
+    expect(flushed).toEqual(['beta'])
+    // The stack itself is App's to unmount: its layers are still here until then, none popped by the ⇧Esc.
+    expect(layers()).toHaveLength(4)
+  })
+
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {
     Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false }), configurable: true, writable: true })
     vi.useFakeTimers()
