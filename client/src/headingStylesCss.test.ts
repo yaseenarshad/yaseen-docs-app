@@ -19,6 +19,13 @@ const ruleBody = (css: string, selector: string): string | undefined => {
   return css.match(new RegExp(`(?:^|(?<!,)\\n)${escaped}\\s*\\{([^}]*)\\}`, 's'))?.[1]
 }
 
+/**
+ * A link pill's span in a heading (YAZ-4924): the heading-text decoration and the pill's merge on ONE span, so the heading
+ * rules skip a resolved pill's pieces (`wikilink.css` draws their box). A missing link and a heading part (` > Q1`) have no
+ * box: they keep the wash.
+ */
+const NOT_PILL = ':not(.wikilink:not(.wikilink--unresolved, .wikilink__sub))'
+
 describe('heading styles CSS contract (YAZ-3049 D2, D7)', () => {
   it('each h1-h6 rule reads its three variables, with the look of 1.0.14 as each fallback, and stays full width', () => {
     for (const { n, em, weight } of LEVELS) {
@@ -37,7 +44,7 @@ describe('heading styles CSS contract (YAZ-3049 D2, D7)', () => {
   })
 
   it('the wash is on the heading text (headingText.ts), one per line, and its edge takes no room', () => {
-    const span = ruleBody(appCss, '.milkdown .ProseMirror .heading-text')
+    const span = ruleBody(appCss, `.milkdown .ProseMirror .heading-text${NOT_PILL}`)
     expect(span).toMatch(/background:\s*var\(--heading-bg,\s*none\);/)
     // Top and bottom: at most half the room between two lines (1.3 line height), so the washes of a wrapped heading never overlap.
     expect(span).toMatch(/padding-top:\s*0\.05em;/)
@@ -45,12 +52,17 @@ describe('heading styles CSS contract (YAZ-3049 D2, D7)', () => {
     expect(span).toMatch(/-webkit-box-decoration-break:\s*clone;/)
     expect(span).toMatch(/(?<!-)box-decoration-break:\s*clone;/)
     // Only the first and the last span draw the side edges, and a negative margin takes each back.
-    const first = ruleBody(appCss, '.milkdown .ProseMirror .heading-text--first:not(.heading-text--first ~ .heading-text--first)')
+    const first = ruleBody(appCss, `.milkdown .ProseMirror .heading-text--first${NOT_PILL}:not(.heading-text--first ~ .heading-text--first)`)
     expect(first).toMatch(/padding-left:\s*3px;/)
     expect(first).toMatch(/margin-left:\s*-3px;/)
-    const last = ruleBody(appCss, '.milkdown .ProseMirror .heading-text--last:not(:has(~ .heading-text--last))')
+    const last = ruleBody(appCss, `.milkdown .ProseMirror .heading-text--last${NOT_PILL}:not(:has(~ .heading-text--last))`)
     expect(last).toMatch(/padding-right:\s*3px;/)
     expect(last).toMatch(/margin-right:\s*-3px;/)
+    // A pill in a heading keeps the box it has in a paragraph (YAZ-4924): no heading rule sets a pill span's fill, padding,
+    // margin or corners, so its name is filled and shaped as its head and tail are. Every rule on a heading-text span skips it.
+    const headingRules = [...appCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]*\.heading-text[^{}]*)\{/g)].map((m) => m[1].trim())
+    expect(headingRules).toHaveLength(3)
+    for (const selector of headingRules) expect(selector, selector).toContain(NOT_PILL)
     // No ring: two spans side by side would lay their see-through edges one over the other.
     expect(appCss).not.toMatch(/box-shadow:\s*0 0 0 3px var\(--h\d-bg/)
   })

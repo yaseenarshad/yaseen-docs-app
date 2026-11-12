@@ -1120,8 +1120,11 @@ button {
    are the 4px radius plus the 3px edge of the first look. Each h1-h6 rule hands its `--hN-bg` to
    its spans as `--heading-bg`; `--hN-bg` exists only for a highlighted level, so the other spans
    paint nothing (in the other editors too: the spans are in every one, and their padding takes no
-   room). The wash starts at the words, so Section indent's indent (a border) needs no rule. */
-.milkdown .ProseMirror .heading-text {
+   room). The wash starts at the words, so Section indent's indent (a border) needs no rule.
+   A link pill's name in a heading is ONE span with the heading text (the two decorations merge): these rules skip
+   a resolved pill's pieces, so the pill keeps the fill, padding and corners it has in a paragraph (wikilink.css),
+   its name as its head and tail (YAZ-4924). A missing link and a heading part (` > Q1`) have no box: they keep the wash. */
+.milkdown .ProseMirror .heading-text:not(.wikilink:not(.wikilink--unresolved, .wikilink__sub)) {
   padding-top: 0.05em;
   padding-bottom: 0.05em;
   -webkit-box-decoration-break: clone;
@@ -1129,14 +1132,14 @@ button {
   background: var(--heading-bg, none);
 }
 
-.milkdown .ProseMirror .heading-text--first:not(.heading-text--first ~ .heading-text--first) {
+.milkdown .ProseMirror .heading-text--first:not(.wikilink:not(.wikilink--unresolved, .wikilink__sub)):not(.heading-text--first ~ .heading-text--first) {
   padding-left: 3px;
   margin-left: -3px;
   border-top-left-radius: 7px;
   border-bottom-left-radius: 7px;
 }
 
-.milkdown .ProseMirror .heading-text--last:not(:has(~ .heading-text--last)) {
+.milkdown .ProseMirror .heading-text--last:not(.wikilink:not(.wikilink--unresolved, .wikilink__sub)):not(:has(~ .heading-text--last)) {
   padding-right: 3px;
   margin-right: -3px;
   border-top-right-radius: 7px;
