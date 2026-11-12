@@ -5691,10 +5691,11 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
-      // The vault's review settings and its text formatting (YAZ-3066), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'text-formatting.json'], ['/v', 'review.json'], ['/v', 'text-formatting.json']],
+      // The vault's review settings, its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
+      config: [['/v', 'review.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'review.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json']],
       coldDiff: [['/v']],
-      subscriptions: [2, 2, 6],
+      // vaultConfig: review, text formatting and link pills (YAZ-4924), each subscribed once for each mount effect.
+      subscriptions: [2, 2, 8],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -5808,7 +5809,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(4) // review.json and text-formatting.json (YAZ-3066)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(6) // review.json, text-formatting.json (YAZ-3066) and link-pills.json (YAZ-4924)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
@@ -5979,11 +5980,12 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
           return [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: ')).map((text) => [title, text])
         })
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
+    // Files & Links names it twice: its "This vault" group and its "Link pills" group (YAZ-4924).
+    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {

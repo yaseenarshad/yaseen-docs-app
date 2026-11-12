@@ -12,6 +12,8 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
+// Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
+const LINK_PILL_ROWS = ['linkPills', 'linkPillBackground', 'linkPillTextColour', 'linkPillIcon', 'linkPillStyle', 'linkPillBeforeAfter', 'linkPillVault', 'linkPillId', 'linkPillFolder', 'linkPillShape']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and
 // their style (YAZ-4798) after Group indent.
@@ -160,6 +162,8 @@ describe('settingCandidates', () => {
       'duplicates',
       'idLetters',
       'oldIds',
+      // Settings › Link pills (YAZ-4924), after This vault.
+      ...LINK_PILL_ROWS,
       // Settings › Folder pages (YAZ-4585): the folder views' hover row moved here from Files & Links.
       ...FOLDER_PAGES_ROWS,
       // Settings › Memory (YAZ-3737 D9, D10): the report, then the two settings that save memory.
@@ -191,7 +195,7 @@ describe('settingCandidates', () => {
 
   it('includes the Review section only with a vault open, between Files & Links and Sync (YAZ-2322)', () => {
     const all = ids(settingCandidates(ctx({ status: null, setEnabled: () => undefined }, REVIEW)))
-    expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', 'duplicates', 'idLetters', 'oldIds', ...FOLDER_PAGES_ROWS, ...REVIEW_ROWS, 'githubSync'])
+    expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS, ...FOLDER_PAGES_ROWS, ...REVIEW_ROWS, 'githubSync'])
     expect(ids(settingCandidates(ctx())).filter((id) => REVIEW_ROWS.includes(id))).toEqual([])
   })
 
@@ -252,7 +256,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'ids', 'duplicates', 'idLetters', 'oldIds'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
@@ -356,7 +360,7 @@ describe('searchSettings', () => {
     // "underline" is also a word of Appearance › Text formatting (YAZ-3068); a note and a draw.io diagram both
     // underline with ⌘U (YAZ-3037): both rows answer, the note's first (its label is the word). The Selection toolbar
     // row has the word among its keywords (YAZ-3806 T7), and so do the two "Enter keeps the text style" rows (YAZ-3746 13AB).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar', 'enterKeepsStyleNotes', 'enterKeepsStyleBoxes'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar', 'enterKeepsStyleNotes', 'enterKeepsStyleBoxes', 'linkPillStyle', 'linkPillShape'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-app-menuExportExcalidrawDrawing', 'hotkey-drawing-saveAs'])
     // A changed key is searched by the key it has NOW.
     const moved = { ...ctx(), settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K' } } }

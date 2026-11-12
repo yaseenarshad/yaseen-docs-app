@@ -764,7 +764,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.(), exploreClick)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
-  if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav)).config(noPreviewOnPills)
+  if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav, wikilinks)).config(noPreviewOnPills)
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
   if (opts.boardEmbeds !== undefined) {
     // The same sources as the pills (YAZ-4827): a board's path and icon, its open, and its link's menu rows.

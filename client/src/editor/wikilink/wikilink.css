@@ -7,10 +7,20 @@
  * Hiding is `display: none` on TEXT SPANS inside a line (the tabs-layer scroll caveat is about
  * hiding whole layers, not inline spans); the caret never has to cross hidden text because every
  * link is one unit (`idLinkCaret.ts` steps the caret over it).
+ *
+ * The vault's link pills look (YAZ-4924, Settings › Link pills, `.yaseendocs/link-pills.json`) is the `--pill-*`
+ * variables App puts on the vault's page layers (`linkPillLook.ts` `linkPillVars`), each read with today's look as its
+ * fallback: a vault that changed nothing sets none, and a change costs one style update, never a redraw. `--pill-bg`
+ * and `--pill-pad` (the box), `--pill-fg` (the name's colour; a missing note keeps its own), `--pill-icon-display`,
+ * `--pill-weight`, `--pill-style`, `--pill-decoration`, `--pill-radius` (the shape). The text a pill gains at its ends
+ * (before / after, the vault's name, the ID, the folder) is two pieces, `link-pill__head` and `link-pill__tail`.
  */
 
 .wikilink {
-  color: var(--accent);
+  color: var(--pill-fg, var(--accent));
+  font-weight: var(--pill-weight, inherit);
+  font-style: var(--pill-style, inherit);
+  text-decoration-line: var(--pill-decoration, none);
   cursor: text;
 }
 .milkdown .ProseMirror a {
@@ -25,9 +35,13 @@
 
 /* A resolved link is a pill with its file's icon (YAZ-3609 D13): icon and text in one span, so one box. */
 .wikilink:not(.wikilink--unresolved) {
-  padding: 0 4px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  padding: 0 var(--pill-pad, 4px);
+  border-radius: var(--pill-radius, 4px);
+  background: var(--pill-bg, color-mix(in srgb, var(--accent) 10%, transparent));
+}
+/* The icon hides under the look (`--pill-icon-display: none`); before the sibling rule below, which hides a later piece's. */
+.wikilink.file-icon::before {
+  display: var(--pill-icon-display, inline-block) !important;
 }
 /* A heading part (` > Q1`) follows its pill as plain link text. */
 .wikilink.wikilink__sub {
@@ -66,9 +80,9 @@
 /* A drawing's or a diagram's extension is the pill's last piece, hidden while the icon says the kind (YAZ-3924):
    the name before it keeps its right edge unless File icons are Off and the piece shows. */
 .wikilink:has(+ .wikilink.name-ending) {
-  padding-right: 4px;
-  border-top-right-radius: 4px;
-  border-bottom-right-radius: 4px;
+  padding-right: var(--pill-pad, 4px);
+  border-top-right-radius: var(--pill-radius, 4px);
+  border-bottom-right-radius: var(--pill-radius, 4px);
 }
 .app[data-sidebar-file-icons='off'] .wikilink:has(+ .wikilink.name-ending) {
   padding-right: 0;
@@ -80,16 +94,30 @@
   content: none !important;
   display: none !important;
 }
+/* The piece after a head (YAZ-4924) is the pill's first text: it keeps its icon, under the look's say. */
+.wikilink.link-pill__head + .wikilink.file-icon::before {
+  content: '' !important;
+  display: var(--pill-icon-display, inline-block) !important;
+}
 /* On a Markdown link pill the page preview says where it goes (YAZ-3609 D20): Crepe's address bar stays away.
    Its rows are on the pill's right-click menu, the one link menu (D23). */
 .milkdown[data-pill-hover] .milkdown-link-preview {
   display: none;
 }
-/* A pill into another vault names that vault in brackets after its text, quietly (YAZ-3609 D22): its own piece at the
-   pill's end, so the caret at the link's end shows after it (YAZ-3738 D4). The piece rules above join it to the pill. */
-.wikilink.link-pill__vault {
+/* A pill into another vault names that vault in brackets after its text, quietly (YAZ-3609 D22): inside the pill's tail
+   piece at its end, so the caret at the link's end shows after it (YAZ-3738 D4). The piece rules above join the head and
+   the tail to the pill. The ID and the folder (YAZ-4924) are as quiet, a small gap after the name; the Before and After
+   text is the pill's own text. */
+.link-pill__vault,
+.link-pill__id,
+.link-pill__folder {
   color: var(--fg-muted);
   font-size: 0.85em;
+}
+/* Two classes deep: Crepe's reset (`.milkdown *`) zeroes every margin at one class. */
+.wikilink .link-pill__id,
+.wikilink .link-pill__folder {
+  margin-left: 0.35em;
 }
 /* A find match inside a pill shows the find colour over the pill's tint (YAZ-3657). */
 .wikilink.find-match {

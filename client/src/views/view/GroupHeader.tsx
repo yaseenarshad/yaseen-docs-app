@@ -7,11 +7,13 @@ import { type Row, propertyLabel } from '../engine'
 import { isFolderSettingsPath, type PropertyDecl } from '@shared/types'
 import { basename, dirname } from '../../lib/paths'
 import { fileKind } from '@shared/fileKind'
-import { IconsContext, fileIconAttrs } from '../../sidebar/FileIcon'
+import { FileIcon } from '../../sidebar/FileIcon'
 import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value, fromYaml, linkText, render } from '../expr'
 import { formatDateValue, formatNumber } from '../columnFormat'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import '../../editor/wikilink/wikilink.css'
+import { pillParts, type PathInfo } from '../../editor/wikilink/linkPillLook'
+import { PillHead, PillLook, PillTail } from '../../editor/wikilink/LinkPillParts'
 import { summarize } from '../summaries'
 import { FolderIcon, ShortcutIcon } from './icons'
 import { HoverTip } from '../../components/HoverTip'
@@ -82,30 +84,47 @@ function LinkChip({ link, resolve }: { link: LinkValue | FileValue; resolve?: Re
         {text}
       </span>
     )
-  const path = link instanceof FileValue ? link.record.path : resolve?.(link.target)?.record.path
-  return path === undefined ? (
+  const record = link instanceof FileValue ? link.record : resolve?.(link.target)?.record
+  return record === undefined ? (
     <span className="wikilink wikilink--unresolved view-link-pill" title={text}>
-      {text}
+      <PillEnds text={text} />
     </span>
   ) : (
-    <PillWithIcon path={path} text={text} />
+    <PillWithIcon path={record.path} text={text} info={record.id === undefined ? { folder: record.folder } : { id: record.id, folder: record.folder }} />
+  )
+}
+
+/**
+ * A pill's text with the pieces the vault's look adds at its ends (YAZ-4924, `pillParts`): the text before and after,
+ * the vault's name, the ID and the folder, as the note editor's widgets draw them. A cell's pill is the vault's own, so
+ * it is never a pill into another vault.
+ */
+function PillEnds({ text, info, icon }: { text: string; info?: PathInfo; icon?: ReactNode }) {
+  const { pills, vault } = useContext(PillLook)
+  const { head, tail } = pillParts(pills, { info, otherVault: null }, vault)
+  return (
+    <>
+      {head !== null && <PillHead head={head} />}
+      {icon}
+      {text}
+      {tail !== null && <PillTail tail={tail} />}
+    </>
   )
 }
 
 /**
  * A resolved pill with the icon its page has in the sidebar (YAZ-4544 4G), as the note editor's pill has (YAZ-3609
- * D13): the icon's attributes on the pill, drawn on its `::before`. Settings › File icons reach it through the app's
- * CSS (`data-sidebar-file-icons`) and `IconsContext`, as they reach the note's pills.
+ * D13): a `FileIcon` inside the pill, before the name and after the head piece (YAZ-4924), so the pill reads as the
+ * note's. Settings › File icons reach it through the app's CSS (`data-sidebar-file-icons`) and `IconsContext`, as
+ * they reach the note's pills.
  */
-function PillWithIcon({ path, text }: { path: string; text: string }) {
-  const icons = useContext(IconsContext)
+function PillWithIcon({ path, text, info }: { path: string; text: string; info?: PathInfo }) {
   // A folder resolves to its directory, the editor's rule (no file kind); a folder row's page is its `.folder.md`.
   const settings = isFolderSettingsPath(path)
   const folder = settings || fileKind(basename(path)) === null
-  const { style, ...attrs } = fileIconAttrs(icons, settings ? dirname(path) : path, folder)
   return (
-    <span {...attrs} style={style} className={`wikilink view-link-pill file-icon file-icon--${folder ? 'dir' : 'file'}`} data-link-path={path} title={text}>
-      {text}
+    <span className="wikilink view-link-pill" data-link-path={path} title={text}>
+      <PillEnds text={text} info={info} icon={<FileIcon path={settings ? dirname(path) : path} folder={folder} />} />
     </span>
   )
 }

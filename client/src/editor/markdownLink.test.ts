@@ -11,10 +11,12 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { addLinkOn, type MarkdownLinkNav } from './markdownLink'
+import type { IndexRecord } from '@shared/types'
+import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
 const mounted: Array<{ crepe: ReturnType<typeof createCrepe>; root: HTMLElement }> = []
 
-async function mount(markdown = '[Example](https://example.com)\n', overrides: Partial<MarkdownLinkNav> = {}) {
+async function mount(markdown = '[Example](https://example.com)\n', overrides: Partial<MarkdownLinkNav> = {}, wikilinks?: MutableWikilinkResolveSource) {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const nav: MarkdownLinkNav = {
@@ -24,7 +26,7 @@ async function mount(markdown = '[Example](https://example.com)\n', overrides: P
     hotkeys: () => SUITE_KEYS,
     ...overrides,
   }
-  const crepe = createCrepe({ root, defaultValue: markdown, markdownLinkNav: nav })
+  const crepe = createCrepe({ root, defaultValue: markdown, markdownLinkNav: nav, wikilinks })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, nav, root, view: crepe.editor.ctx.get(editorViewCtx) }
@@ -203,8 +205,9 @@ describe('a Markdown link into a vault of the window is a pill (YAZ-3609 D19)', 
     const vaultTag = (path: string) => (path.startsWith('/v/other/') ? 'Other Vault' : null)
     const { crepe, root } = await mount('[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n', { vaultPath, icon, vaultTag })
     // The vault's name is the pill's own last piece, inside the link and after its text (YAZ-3738 D4).
-    const tagged = Array.from(root.querySelectorAll<HTMLElement>('.link-pill__vault'))
-    expect(tagged.map((el) => [el.textContent, el.closest('a') !== null, el.previousElementSibling?.textContent])).toEqual([[' (Other Vault)', true, ' end']])
+    // Since YAZ-4924 the name is inside the pill's tail piece (`link-pill__tail`), which is the last piece.
+    const tagged = Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail'))
+    expect(tagged.map((el) => [el.textContent, el.closest('a') !== null, el.previousElementSibling?.textContent, el.querySelector('.link-pill__vault')?.textContent])).toEqual([[' (Other Vault)', true, ' end', ' (Other Vault)']])
     // A widget: the saved note does not change.
     expect(getMarkdownForSave(crepe)).toBe('[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n')
   })
@@ -419,5 +422,34 @@ describe('ownership and cleanup', () => {
     mounted.splice(0)
     expect(parent.querySelector('.ctx-menu--editor')).toBeNull()
     expect(mouse(anchor, 'contextmenu', { button: 2 }).defaultPrevented).toBe(false)
+  })
+})
+
+describe("the vault's link pills look on a Markdown link pill (YAZ-4924)", () => {
+  it('the head and the tail are the pill\'s first and last pieces, inside the link; the vault name, the ID and the folder as on a [[link]]; the note keeps every byte', async () => {
+    const vaultTag = (path: string) => (path.startsWith('/v/other/') ? 'Other Vault' : null)
+    const icon = (path: string, folder: boolean) => ({ class: 'probe-icon', 'data-path': path, 'data-folder': String(folder) })
+    const vaultPath = (href: string) => (href.startsWith('../') ? `/v/${href.slice(3)}` : null)
+    const source = createWikilinkResolveSource()
+    const record = { path: '/v/here.md', id: 'YAZ-7', name: 'here.md', basename: 'here', title: 'Here', folder: 'Top', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] } as unknown as IndexRecord
+    source.update(() => null, [record], [], true, ['YAZ'])
+    const md = '[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n'
+    const { crepe, root } = await mount(md, { vaultPath, icon, vaultTag }, source)
+    source.setLook({ before: '[', after: ']', vault: 'always', id: 'show', folder: 'parent' }, 'Mine')
+    const pills = Array.from(root.querySelectorAll<HTMLElement>('.link-pill')).map((el) => [el.textContent, el.classList.contains('link-pill--first'), el.classList.contains('link-pill--last'), el.closest('a') !== null])
+    expect(pills).toEqual([
+      ['[', true, false, true],
+      ['Plan ', false, false, true],
+      ['bold', false, false, true],
+      [' end', false, false, true],
+      [' (Other Vault)]', false, true, true],
+      ['[', true, false, true],
+      ['Here', false, false, true],
+      ['YAZ-7Top (Mine)]', false, true, true],
+    ])
+    expect(getMarkdownForSave(crepe)).toBe(md)
+    // Never: the other vault's name goes too, and a tail with nothing left is not drawn.
+    source.setLook({ vault: 'never' }, 'Mine')
+    expect(root.querySelectorAll('.link-pill__tail, .link-pill__head')).toHaveLength(0)
   })
 })

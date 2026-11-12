@@ -14,6 +14,7 @@ import { useExternalRenames, type ExternalRenames } from '../links/useExternalRe
 import { useReview, type ReviewApi } from '../review/useReview'
 import { useReviewSettings, type ReviewSettingsState } from '../review/useReviewSettings'
 import { useLinkClick, type LinkClickState } from '../explore/linkClick'
+import { useLinkPills, type LinkPillsState } from '../settings/useLinkPills'
 import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
 import { useProperties } from '../views/useProperties'
 
@@ -44,6 +45,8 @@ export interface VaultScope {
   linkClick: LinkClickState
   /** How text looks in every note of this vault (YAZ-3066 D10): `.yaseendocs/text-formatting.json`. Each page layer of the vault reads it (D12). */
   textFormatting: TextFormattingState
+  /** How every link pill of this vault looks (YAZ-4924): `.yaseendocs/link-pills.json`. Each page layer reads its CSS variables; `wikilinks` carries the pieces a pill gains. */
+  linkPills: LinkPillsState
   review: ReviewApi
   renames: ExternalRenames
   /**
@@ -116,6 +119,10 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const reviewSettings = useReviewSettings(root, notify)
   const linkClick = useLinkClick(root)
   const textFormatting = useTextFormatting(root, notify)
+  const linkPills = useLinkPills(root, notify)
+  // The look's text pieces and the vault's name reach every editor of the vault through its resolve source (YAZ-4924):
+  // one object the editors already subscribe to, so a change draws the pills again without a prop on each editor.
+  useEffect(() => wikilinks.setLook(linkPills.pills, name), [wikilinks, linkPills.pills, name])
   // Upkeep review (YAZ-2322): the Inbox count and the vault's review session, read off the SAME
   // index source the wikilinks use. The window shows one session at a time; `App` sees to that.
   const review = useReview(root, wikilinks, reviewSettings.settings, notify)
@@ -176,6 +183,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     reviewSettings,
     linkClick,
     textFormatting,
+    linkPills,
     review,
     renames,
     ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, set: saveIds, check: checkIds, old: vaultIds.old, unfinished: vaultIds.unfinished, state: idsState, reletter, backfill },

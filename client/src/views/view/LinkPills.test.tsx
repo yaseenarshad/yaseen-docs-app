@@ -113,9 +113,25 @@ describe('D47: a link value is a pill', () => {
 
   it('a pill wears its page’s file icon, as a note’s pill does (YAZ-4544 4G)', () => {
     const { el } = mount(TABLE)
+    // The icon is a `FileIcon` inside the pill, before the name (YAZ-4924: after the head piece the look may add).
     const pill = pills(cell(el, 1))[0]
-    expect([pill.classList.contains('file-icon'), pill.classList.contains('file-icon--file'), pill.dataset.kind]).toEqual([true, true, 'markdown'])
+    const icon = pill.firstElementChild as HTMLElement
+    expect([icon.classList.contains('file-icon'), icon.classList.contains('file-icon--file'), icon.dataset.kind, icon.textContent]).toEqual([true, true, 'markdown', ''])
     expect(pill.textContent).toBe('Bob')
+  })
+
+  it("the vault's link pills look reaches a cell's pill (YAZ-4924): the pieces at its ends, inside the pill, from the vault's source; a change draws them live", () => {
+    const wikilinks = createWikilinkResolveSource()
+    const { el } = mount(TABLE, { folder: testFolderHost({ vaultRecords: VAULT, wikilinks }) })
+    expect(pills(cell(el, 1))[0].querySelector('.link-pill__head, .link-pill__tail')).toBeNull()
+    act(() => wikilinks.setLook({ before: '(', after: ')', vault: 'always', folder: 'parent' }, 'Mine'))
+    const pill = pills(cell(el, 1))[0]
+    expect(pill.textContent).toBe('(BobPeople (Mine))')
+    expect([...pill.querySelectorAll('span')].map((s) => `${s.className.replace(/file-icon.*/, 'file-icon')}:${s.textContent}`)).toEqual(['link-pill__head:(', 'file-icon:', 'link-pill__tail:People (Mine))', 'link-pill__folder:People', 'link-pill__vault: (Mine)'])
+    // The text cell's inline [[link]] (D48) and the Multi-link cell's pills wear it too.
+    expect(pills(cell(el, 3)).map((p) => p.textContent)).toEqual(['(BobPeople (Mine))'])
+    act(() => wikilinks.setLook({}, 'Mine'))
+    expect(pills(cell(el, 1))[0].textContent).toBe('Bob')
   })
 
   it('a click opens the linked page and does not edit; ⌘-click opens a background tab', () => {
