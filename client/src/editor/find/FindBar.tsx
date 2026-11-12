@@ -105,6 +105,8 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
       const otherNote = (): boolean => [...document.querySelectorAll('.editor-mount .ProseMirror')].some((el) => !host?.contains(el) && shown(el))
       /** In a folder page's own find: its Page tab, or its views (`[data-find-host]`, YAZ-4613). */
       const inPage = active instanceof Element && active.closest('.folder-page-doc, [data-find-host]') !== null
+      /** In the explore stack (YAZ-2571): only the layer's own bar answers; the tab's behind the stack stays shut. */
+      const inExplore = active instanceof Element && active.closest('.explore') !== null && !(host?.contains(active) ?? false)
       const claims =
         scope === 'page'
           ? shown(host) && ((active !== null && host !== null && host.contains(active)) || (!inCode && !otherNote()))
@@ -115,7 +117,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
               (active !== null && host !== null && host.contains(active)
                 ? active.closest('.editor-mount') === null
                 : !inPage && !otherNote() && [...document.querySelectorAll('[data-find-host]')].find(shown) === host)
-            : shown(host) && !inCode && !inPage
+            : shown(host) && !inCode && !inPage && !inExplore
       if (!claims) return
       event.preventDefault()
       event.stopPropagation()

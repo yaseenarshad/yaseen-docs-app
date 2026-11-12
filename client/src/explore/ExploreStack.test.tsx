@@ -13,6 +13,8 @@ import { CrepeFeature } from '../editor/crepe'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import type { SearchVault } from '../search/useSearchResults'
+import { FindBar } from '../editor/find/FindBar'
+import { createFindChannel } from '../editor/find/findChannel'
 import { NO_FOLDER_PAGE_NOTICE } from './exploreMenu'
 import { moveExploreRecent, resetExploreRecents } from './exploreRecents'
 import { onNoteWindowRequest } from '../views/noteWindowRequest'
@@ -620,6 +622,31 @@ describe('the explore stack', () => {
     await flush()
     await flush()
     expect(note.querySelector('.editor-msg')?.textContent).toContain('no longer there')
+  })
+
+  it('check 11: ⌘F inside a reading layer finds in THAT note, and the tab\'s find bar behind the stack stays shut', async () => {
+    // The tab behind: a note editor's find bar on its own mount, as `Editor.tsx` mounts it.
+    const tabRoot = document.createElement('div')
+    tabRoot.innerHTML = '<div class="editor-mount"><div class="ProseMirror"></div></div>'
+    document.body.appendChild(tabRoot)
+    const tabChannel = createFindChannel()
+    const tabHost = { current: tabRoot.querySelector<HTMLElement>('.editor-mount') }
+    const tab = createRoot(tabRoot)
+    act(() => tab.render(<FindBar channel={tabChannel} scope="note" hostRef={tabHost} />))
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    expect(document.activeElement).toBe(top().querySelector('.explore__body'))
+    act(() => void (document.activeElement as Element).dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })))
+    await flush()
+    expect(tabChannel.getState().open).toBe(false)
+    expect(top().querySelector('.find-bar')).not.toBeNull()
+    expect(crepes[0].opts.find).toBeDefined()
+    // Esc in the bar closes the bar alone (it takes the key with the focus still in the layer).
+    const bar = top().querySelector<HTMLInputElement>('.find-bar__input') as HTMLInputElement
+    expect(document.activeElement).toBe(bar)
+    act(() => tab.unmount())
+    tabRoot.remove()
   })
 
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {

@@ -248,6 +248,13 @@
 .explore__body:focus {
   outline: none;
 }
+/* ⌘F's bar in a reading layer (check 11): at the top of the scroller, under the head, over the text. */
+.explore__body > .find-bar-dock--note {
+  position: sticky;
+  top: 0;
+  right: 0;
+  left: 0;
+}
 .explore__body--edit {
   display: flex;
   flex-direction: column;

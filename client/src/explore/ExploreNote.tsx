@@ -6,7 +6,7 @@
  * folder pages' mini window editor (App's `renderNoteEditor`), so saving, renames and conflicts are the app's own.
  * In edit a link opens a layer on top too. The head's ↗ opens the note in a tab, as ⌘↵ does.
  */
-import { useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { notePageSwitches, type PageSwitches } from '@shared/pageSwitches'
@@ -16,6 +16,8 @@ import { CommentsSection } from '../comments/CommentsSection'
 import { createCrepe, editorViewOf } from '../editor/createCrepe'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
+import { FindBar } from '../editor/find/FindBar'
+import { createFindChannel } from '../editor/find/findChannel'
 import { FoldAllButton } from '../editor/FoldAllButton'
 import type { LinkActions } from '../editor/linkMenu'
 import { NoteMenu } from '../editor/noteMenu'
@@ -83,6 +85,8 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
   /** The read-only Crepe once it is up, for the fold-all button (round 1, item 4); null while loading or editing. */
   const [ready, setReady] = useState<ReturnType<typeof createCrepe> | null>(null)
   const icons = useContext(IconsContext)
+  /** ⌘F in the reading layer finds in THIS note (check 11): the note's own find plugin on this Crepe, and its bar. */
+  const findChannel = useMemo(() => createFindChannel(), [])
   // The doors, read at click time: a layer's Crepe is built once, and the stack's callbacks may change identity.
   const doors = useRef({ onOpenLink, createFolder, linkActions, onNotice })
   doors.current = { onOpenLink, createFolder, linkActions, onNotice }
@@ -133,6 +137,7 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
       features: readFeatures,
       wikilinks,
       foldingOn: () => foldingOn,
+      find: findChannel,
       // The pills' icons, and a board embed as its window, read only (round 1, item 2): what the note tab draws.
       linkLook: { icon: (target, folder) => fileIconDecoration(icons, target, folder) },
       boardEmbeds: { root },
@@ -160,7 +165,7 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
     }
     // `icons` is read at each link draw; a change of the icon rules redraws no preview (the preview panel's rule).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [body, switches, path, root, wikilinks, wikilinkCandidates])
+  }, [body, switches, path, root, wikilinks, wikilinkCandidates, findChannel])
 
   // The fold-all button (round 1, item 4): the note tab's own button and command on this layer's Crepe.
   const subscribeFolds = useCallback(
@@ -240,6 +245,7 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
         </div>
       ) : (
         <div ref={bodyRef} className="explore__body" style={style} tabIndex={-1} data-explore-read>
+          <FindBar channel={findChannel} scope="note" hostRef={bodyRef} />
           <div ref={mountRef} className="explore__mount" />
           {content.kind === 'gone' && <p className="editor-msg">Can&apos;t read &quot;{title}&quot; — it is no longer there</p>}
           {content.kind === 'empty' && <p className="editor-msg">Empty page</p>}
