@@ -68,7 +68,7 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(formatBox(row).value).toBe(DEFAULT_LINK_PILL_FORMAT)
     expect(formatBox(row).maxLength).toBe(60)
     expect(select(row, 'Vault name on a link pill')?.selectedOptions[0]?.textContent).toBe('Vault name: other vaults only')
-    expect([...row.querySelectorAll<HTMLButtonElement>('.link-pills-chip')].map((b) => b.textContent)).toEqual(['{icon}', '{name}', '{id}', '{vault}', '{folder}', '{path}'])
+    expect([...row.querySelectorAll<HTMLButtonElement>('.link-pills-chip')].map((b) => b.textContent)).toEqual(['{icon}', '{name}', '{id}', '{number}', '{vault}', '{folder}', '{path}', '{mark}'])
     // The preview (round 4): a muted "Preview" label and ONE sample pill, found, with its icon; the format has {vault},
     // so the sample shows its vault's name even under "other vaults only". No sentence around it.
     expect(preview(row).querySelector('.link-pills-preview__label')?.textContent).toBe('Preview')
@@ -115,7 +115,7 @@ describe('Settings › Link pills (YAZ-4924)', () => {
   it('a ready format sets the format, with its text style where it has one; Plain is a look', () => {
     const { row, save } = mount({ parts: { name: { bold: true } } })
     const ready = select(row, 'Ready formats') as HTMLSelectElement
-    expect([...ready.options].map((o) => o.textContent)).toEqual(['Ready formats…', 'Name', 'Name (ID)', 'Name · Folder', 'Vault › Name', '(Name)', '→ Name', 'Plain'])
+    expect([...ready.options].map((o) => o.textContent)).toEqual(['Ready formats…', 'Name', 'Name (ID)', 'Name #Number', 'Name · Folder', 'Vault › Name', '(Name)', '→ Name', 'Name ↗', 'Plain'])
     pick(ready, 'Name (ID)')
     expect(save).toHaveBeenLastCalledWith({ parts: { name: { bold: true } }, format: '{icon}{name} ({id})' })
     pick(ready, '(Name)')
@@ -254,6 +254,72 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     // The label is no part: a click on it changes nothing.
     click(preview(row).querySelector('.link-pills-preview__label') as Element)
     expect(title(toolbar(row) as HTMLElement)).toBe('Styling: the box')
+  })
+
+  it('the chips: {number} next to {id}, {mark} last; each puts its token in', () => {
+    const { row, save } = mount({ format: '{name}' })
+    expect([...row.querySelectorAll('.link-pills-chip')].map((b) => b.textContent)).toEqual(['{icon}', '{name}', '{id}', '{number}', '{vault}', '{folder}', '{path}', '{mark}'])
+    const box = formatBox(row)
+    act(() => box.setSelectionRange(6, 6))
+    click(button(row, 'Add {number}'))
+    expect(save).toHaveBeenLastCalledWith({ format: '{name}{number}' })
+    click(button(row, 'Add {mark}'))
+    expect(save).toHaveBeenLastCalledWith({ format: '{name}{number}{mark}' })
+  })
+
+  it('the preview shows both: the sample YAS-12 gives #12, and the mark is a small icon after the name', () => {
+    const { row } = mount({ format: '{icon}{name} #{number}{mark}' })
+    expect(pillTexts(row)).toEqual(['Roadmap #12'])
+    expect(preview(row).querySelector('.link-pill__number')?.textContent).toBe('12')
+    const mark = preview(row).querySelector('.link-pill__mark') as HTMLElement
+    expect(mark.querySelector('svg')).not.toBeNull()
+    expect(mark.dataset.mark).toBe('arrow-up-right')
+    expect((mount({ format: '{name}{mark}', parts: { mark: { icon: 'bookmark' } } }).row.querySelector('.link-pills-preview .link-pill__mark') as HTMLElement).dataset.mark).toBe('bookmark')
+  })
+
+  it("a click on the number opens 'Styling: the number' with the usual rows; a click on the mark 'Styling: the mark' with an Icon row of eight icons, then Colour and Size", () => {
+    const { row, save } = mount({ format: '{icon}{name} #{number}{mark}' })
+    click(preview(row).querySelector('.link-pill__number') as Element)
+    let bar = toolbar(row) as HTMLElement
+    expect(title(bar)).toBe('Styling: the number')
+    expect(rows(bar)).toEqual(['Text', 'Colour', 'Size'])
+    expect([button(bar, 'Muted').getAttribute('aria-pressed'), button(bar, 'Small').getAttribute('aria-pressed')]).toEqual(['true', 'true'])
+    expect([...(select(bar, 'What to style') as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(['the name', 'the number', 'the mark', 'your text', 'the box'])
+    // A click on the mark's drawing (a path inside its svg) lands on the mark.
+    act(() => void (preview(row).querySelector('.link-pill__mark svg')?.firstElementChild as Element).dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    bar = toolbar(row) as HTMLElement
+    expect(title(bar)).toBe('Styling: the mark')
+    expect(rows(bar)).toEqual(['Icon', 'Colour', 'Size'])
+    const icons = [...rowOf(bar, 'Icon').querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+    expect(icons.map((b) => b.getAttribute('aria-label'))).toEqual(['Arrow up-right', 'Arrow right', 'Link', 'Return arrow', 'Dot', 'Diamond', 'Star', 'Bookmark'])
+    // Each is the small icon itself, no letter.
+    expect(icons.map((b) => [b.textContent, b.querySelector('svg') !== null])).toEqual(icons.map(() => ['', true]))
+    expect(icons.filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.getAttribute('aria-label'))).toEqual(['Arrow up-right'])
+    click(icons[6]!)
+    expect(save).toHaveBeenLastCalledWith({ format: '{icon}{name} #{number}{mark}', parts: { mark: { icon: 'star' } } })
+    click(icons[0]!)
+    expect(save).toHaveBeenLastCalledWith({ format: '{icon}{name} #{number}{mark}' })
+    // The mark's own colour and size; Normal by default.
+    expect(button(bar, 'Normal').getAttribute('aria-pressed')).toBe('true')
+    click(rowOf(bar, 'Colour').querySelector('[role="radio"][title="Red"]') as Element)
+    expect(save).toHaveBeenLastCalledWith({ format: '{icon}{name} #{number}{mark}', parts: { mark: { color: 'red' } } })
+    click(button(bar, 'Small'))
+    expect(save).toHaveBeenLastCalledWith({ format: '{icon}{name} #{number}{mark}', parts: { mark: { size: 'small' } } })
+  })
+
+  it("the mark's Icon row shows the saved icon; its colour is the name's until it has its own", () => {
+    const { row, save } = mount({ format: '{name}{mark}', parts: { name: { color: 'blue' }, mark: { icon: 'diamond' } } })
+    click(preview(row).querySelector('.link-pill__mark') as Element)
+    const bar = toolbar(row) as HTMLElement
+    expect(rowOf(bar, 'Icon').querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('aria-label')).toBe('Diamond')
+    expect(rowOf(bar, 'Colour').querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('title')).toBe('Blue')
+    click(button(bar, 'Accent colour'))
+    expect(save).toHaveBeenLastCalledWith({ format: '{name}{mark}', parts: { name: { color: 'blue' }, mark: { icon: 'diamond', color: 'accent' } } })
+  })
+
+  it("the row says it is the default, and where one link is styled (round 5): \"The default look of every link in this vault. Right-click a link to style that one.\"", () => {
+    const { row } = mount(NO_LINK_PILLS)
+    expect(row.textContent).toContain('The default look of every link in this vault. Right-click a link to style that one.')
   })
 
   it('an old look reaches the row converted: the format box shows version 1 as a format', () => {

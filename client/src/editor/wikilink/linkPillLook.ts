@@ -7,13 +7,15 @@
  *    update on the layers, never a redraw of a note.
  *  - `pillParts`: the PIECES a pill gains under its FORMAT, drawn by the two link plugins as widgets at the pill's
  *    ends (`headSpan`, `tailSpan`) and by a folder page's cells as spans (`LinkPillParts.tsx`): what the format puts
- *    before `{name}` is the head, what it puts after is the tail — your own text, the ID, the vault's name, the folder,
- *    the path, and the icon where `{icon}` does not stand right before `{name}`. Look only: the file keeps `[[Name]]`,
+ *    before `{name}` is the head, what it puts after is the tail — your own text, the ID, the ID's number, the vault's
+ *    name, the folder, the path, the mark (a small static SVG icon, `LINK_PILL_MARK_SVG`), and the icon where `{icon}`
+ *    does not stand right before `{name}`. Look only: the file keeps `[[Name]]`,
  *    a copy keeps the link as written. The format is parsed ONCE per look object (`compiled`, a WeakMap): a pill's
  *    draw reads the pieces, never the string. The ID and the folder come from the index snapshot through `pathInfo`,
  *    a Map built once per snapshot, as `pathTitles` is.
  */
-import { DEFAULT_LINK_PILL_FORMAT, LINK_PILL_PARTS, parseLinkPillFormat, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
+import { DEFAULT_LINK_PILL_FORMAT, DEFAULT_LINK_PILL_MARK, LINK_PILL_PARTS, parseLinkPillFormat, type LinkPillMark, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
+import { idNumber } from '@shared/noteId'
 import type { IndexRecord } from '@shared/types'
 import { dirname } from '../../lib/paths'
 
@@ -53,6 +55,24 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
   return vars
 }
 
+/**
+ * The mark's icons (`{mark}`, round 5): small static SVG, built once at load, 1em square so the mark is its line's
+ * size (a heading's in a heading), stroked or filled in `currentColor` so it takes the mark's colour. No text: a screen
+ * reader skips it. Drawn by `endSpan` and `LinkPillParts.tsx`, and by the style panel's Icon row.
+ */
+const svg = (inner: string): string =>
+  `<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`
+export const LINK_PILL_MARK_SVG: Readonly<Record<LinkPillMark, string>> = {
+  'arrow-up-right': svg('<path d="M7 17 17 7M8 7h9v9"/>'),
+  'arrow-right': svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+  link: svg('<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5"/>'),
+  return: svg('<path d="M9 10l-5 5 5 5M20 4v7a4 4 0 0 1-4 4H4"/>'),
+  dot: svg('<circle cx="12" cy="12" r="4" fill="currentColor"/>'),
+  diamond: svg('<path d="M12 5l7 7-7 7-7-7z" fill="currentColor"/>'),
+  star: svg('<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>'),
+  bookmark: svg('<path d="M6 3.5h12V21l-6-4-6 4z"/>'),
+}
+
 /** What the index knows of a page: its ID (a note with one) and its root-relative folder ('' at the root). */
 export interface PathInfo {
   id?: string
@@ -86,7 +106,7 @@ export type PillIconPlace = 'name' | 'piece' | 'none'
 interface Compiled {
   segments: readonly LinkPillSegment[]
   icon: PillIconPlace
-  /** Whether a pill needs the index: `{id}`, `{folder}` or `{path}` in the format. Else no lookup is paid. */
+  /** Whether a pill needs the index: `{id}`, `{number}`, `{folder}` or `{path}` in the format. Else no lookup is paid. */
   needsInfo: boolean
   hasVault: boolean
 }
@@ -98,7 +118,7 @@ function compile(format: string): Compiled {
   const iconAt = segments.findIndex((s) => 'token' in s && s.token === 'icon')
   const next = segments[iconAt + 1]
   const icon: PillIconPlace = iconAt < 0 ? 'none' : next !== undefined && 'token' in next && next.token === 'name' ? 'name' : 'piece'
-  return { segments, icon, needsInfo: tokens.has('id') || tokens.has('folder') || tokens.has('path'), hasVault: tokens.has('vault') }
+  return { segments, icon, needsInfo: tokens.has('id') || tokens.has('number') || tokens.has('folder') || tokens.has('path'), hasVault: tokens.has('vault') }
 }
 
 const DEFAULT_COMPILED = compile(DEFAULT_LINK_PILL_FORMAT)
@@ -122,8 +142,8 @@ export interface PillMeta {
   otherVault: string | null
 }
 
-/** One piece of a pill's head or tail: a text part with its text, or the icon. */
-export type PillPiece = { part: 'text' | 'id' | 'vault' | 'folder' | 'path'; text: string } | { part: 'icon' }
+/** One piece of a pill's head or tail: a text part with its text, the icon, or the mark with its icon. */
+export type PillPiece = { part: 'text' | 'id' | 'number' | 'vault' | 'folder' | 'path'; text: string } | { part: 'icon' } | { part: 'mark'; icon: LinkPillMark }
 /** A pill's head or tail: its pieces in order, never empty. */
 export interface PillEnd {
   pieces: readonly PillPiece[]
@@ -135,14 +155,19 @@ function vaultShown(pills: LinkPills, meta: PillMeta, ownVault: string | null): 
   return meta.otherVault ?? (pills.vault === 'always' ? ownVault ?? '' : '')
 }
 
-/** A token's text on this pill; '' when the pill has none (no ID, the root, this vault). The name and the icon are markers. */
+/** A token's text on this pill; '' when the pill has none (no ID, the root, this vault). The name, the icon and the mark are markers. */
 function tokenText(token: LinkPillToken, pills: LinkPills, meta: PillMeta, ownVault: string | null): string {
   switch (token) {
     case 'name':
     case 'icon':
+    case 'mark':
       return token
     case 'id':
       return meta.info?.id ?? ''
+    case 'number': {
+      const id = meta.info?.id
+      return id === undefined ? '' : idNumber(id) ?? id
+    }
     case 'vault':
       return vaultShown(pills, meta, ownVault)
     case 'folder':
@@ -182,7 +207,10 @@ export function pillParts(pills: LinkPills, meta: PillMeta, ownVault: string | n
     const blank = after !== undefined && 'text' in after.seg && isBlank(after.text) ? at + 1 : before !== undefined && 'text' in before.seg && isBlank(before.text) ? at - 1 : -1
     items = items.filter((_, i) => i !== at && i !== blank)
   }
-  const shown = (it: Item) => 'token' in it.seg && it.text !== ''
+  // The mark is no part for the rule (round 5): it always draws, and a run of text and empty parts reaches across it,
+  // so `{name} #{number}{mark}` with no ID is the name and the mark, the "#" gone with its number.
+  const isMark = (it: Item) => 'token' in it.seg && it.seg.token === 'mark'
+  const shown = (it: Item) => 'token' in it.seg && it.text !== '' && !isMark(it)
   const literal = (i: number) => 'text' in items[i].seg
   // Which characters of each piece of text stay: all of a text beside shown parts only, none of a dropped one.
   const keep: boolean[][] = items.map((it) => ('text' in it.seg ? [...it.text].map(() => false) : []))
@@ -217,7 +245,7 @@ export function pillParts(pills: LinkPills, meta: PillMeta, ownVault: string | n
     let j = i
     let hasEmpty = false
     while (j < items.length && !shown(items[j])) {
-      if ('token' in items[j].seg) hasEmpty = true
+      if ('token' in items[j].seg && !isMark(items[j])) hasEmpty = true
       j++
     }
     if (!hasEmpty) for (let k = i; k < j; k++) keepAll(k)
@@ -238,6 +266,7 @@ export function pillParts(pills: LinkPills, meta: PillMeta, ownVault: string | n
     }
     i = j
   }
+  items.forEach((it, i) => isMark(it) && (kept[i] = true))
   // A bracket pair stays together: a bracket whose partner stays is kept out of a dropped piece, so `[{name} {id}]`
   // with no ID is "[Name]", while `{name} ({id})` loses both brackets.
   for (const [a, b] of pairs) {
@@ -257,24 +286,25 @@ export function pillParts(pills: LinkPills, meta: PillMeta, ownVault: string | n
     if (it.seg.token === 'name') into = tail
     else if (it.seg.token === 'icon') {
       if (c.icon === 'piece') into.push({ part: 'icon' })
-    } else into.push({ part: it.seg.token, text: it.text })
+    } else if (it.seg.token === 'mark') into.push({ part: 'mark', icon: pills.parts?.mark?.icon ?? DEFAULT_LINK_PILL_MARK })
+    else into.push({ part: it.seg.token, text: it.text })
   })
   return { head: head.length === 0 ? null : { pieces: head }, tail: tail.length === 0 ? null : { pieces: tail } }
 }
 
 /** A widget's key: the same pieces draw the same DOM, so a rebuild that changes nothing redraws nothing. */
-export const endKey = (end: PillEnd): string => end.pieces.map((p) => (p.part === 'icon' ? 'icon' : `${p.part}:${p.text}`)).join('|')
+export const endKey = (end: PillEnd): string => end.pieces.map((p) => (p.part === 'icon' ? 'icon' : p.part === 'mark' ? `mark:${p.icon}` : `${p.part}:${p.text}`)).join('|')
 export const headKey = (head: PillEnd): string => `head:${endKey(head)}`
 export const tailKey = (tail: PillEnd): string => `tail:${endKey(tail)}`
 
 /** The whole text of an end, as a cell's `textContent` reads it. */
-export const endText = (end: PillEnd): string => end.pieces.map((p) => (p.part === 'icon' ? '' : p.text)).join('')
+export const endText = (end: PillEnd): string => end.pieces.map((p) => (p.part === 'icon' || p.part === 'mark' ? '' : p.text)).join('')
 
 /**
  * The DOM of a pill's head or tail, a piece of the pill (`cls` is the pill's own classes): each text piece in its
- * part's class (`link-pill__text`, `link-pill__id`, `link-pill__vault`, `link-pill__folder`, `link-pill__path`), the
- * icon as a `file-icon` span with `icon`'s attributes (the decoration's, `fileIconDecoration`). Spellcheck off: no word
- * to check.
+ * part's class (`link-pill__text`, `link-pill__id`, `link-pill__number`, `link-pill__vault`, `link-pill__folder`,
+ * `link-pill__path`), the icon as a `file-icon` span with `icon`'s attributes (the decoration's, `fileIconDecoration`),
+ * the mark as `link-pill__mark` holding its static SVG. Spellcheck off: no word to check.
  */
 function endSpan(cls: string, end: PillEnd, icon: Record<string, string> | undefined, doc: Document): HTMLElement {
   const span = doc.createElement('span')
@@ -285,6 +315,10 @@ function endSpan(cls: string, end: PillEnd, icon: Record<string, string> | undef
     if (piece.part === 'icon') {
       for (const [name, value] of Object.entries(icon ?? {})) el.setAttribute(name, value)
       el.className = `${icon?.class ?? 'file-icon'} link-pill__icon`
+    } else if (piece.part === 'mark') {
+      el.className = 'link-pill__mark'
+      el.dataset.mark = piece.icon
+      el.innerHTML = LINK_PILL_MARK_SVG[piece.icon]
     } else {
       el.className = `link-pill__${piece.part}`
       el.textContent = piece.text

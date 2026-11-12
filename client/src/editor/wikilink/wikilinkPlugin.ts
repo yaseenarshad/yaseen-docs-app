@@ -436,7 +436,8 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const first = (pos: number) => {
     if (lastShown >= 0) return
     const { head } = ends
-    if (head !== null) out.push(Decoration.widget(pos, () => headSpan(cls, head, found?.attrs), { side: -1, key: headKey(head) }))
+    // The key holds the pill's classes: a pill whose note goes missing (or comes back) draws its end again in the new class.
+    if (head !== null) out.push(Decoration.widget(pos, () => headSpan(cls, head, found?.attrs), { side: -1, key: `${cls}|${headKey(head)}` }))
     lastShown = pos
   }
   /**
@@ -508,7 +509,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   }
   hide(out, end - 2, end) // ]]
   const { tail } = ends
-  if (tail !== null && lastShown >= 0) out.push(Decoration.widget(lastShown, () => tailSpan(cls, tail, found?.attrs), { side: -1, key: tailKey(tail) }))
+  if (tail !== null && lastShown >= 0) out.push(Decoration.widget(lastShown, () => tailSpan(cls, tail, found?.attrs), { side: -1, key: `${cls}|${tailKey(tail)}` }))
 }
 
 /** True when the selection touches [from, to] with inclusive boundaries — the reveal rule. */

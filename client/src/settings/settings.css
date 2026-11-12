@@ -2026,6 +2026,13 @@
   padding: 5px 8px;
   font-size: 13px;
 }
+/* The mark's Icon row (YAZ-4924 round 5): each button is the small icon itself, centred, a little bigger than the words. */
+.pill-toolbar .pill-toolbar__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
 .pill-toolbar__b {
   font-weight: 700;
 }

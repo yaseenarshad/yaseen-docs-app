@@ -7,8 +7,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_LINK_PILL_FORMAT,
+  DEFAULT_LINK_PILL_MARK,
   LINK_PILLS_VERSION,
+  LINK_PILL_MARKS,
   LINK_PILL_READY,
+  LINK_PILL_TOKENS,
   fromV1,
   isDefaultLinkPills,
   linkPillFormatProblem,
@@ -51,6 +54,49 @@ describe('parseLinkPillFormat (YAZ-4924)', () => {
   })
 })
 
+describe('the {number} and {mark} tokens (YAZ-4924 round 5)', () => {
+  it('both are tokens: {number} chips next to {id}, {mark} last; a format with them can be saved', () => {
+    expect(LINK_PILL_TOKENS).toEqual(['icon', 'name', 'id', 'number', 'vault', 'folder', 'path', 'mark'])
+    expect(parseLinkPillFormat('{name} #{number}{mark}')).toEqual({ segments: [{ token: 'name' }, { text: ' #' }, { token: 'number' }, { token: 'mark' }], unknown: [] })
+    expect(linkPillFormatProblem('{mark} {icon}{name} #{number}')).toBeNull()
+    expect([...linkPillFormatTokens('{icon}{name} #{number}{mark}')]).toEqual(['icon', 'name', 'number', 'mark'])
+  })
+
+  it('the mark has eight icons, the arrow up-right the default; its icon is saved as the part\'s style only when not the default, and only on the mark', () => {
+    expect(LINK_PILL_MARKS).toEqual(['arrow-up-right', 'arrow-right', 'link', 'return', 'dot', 'diamond', 'star', 'bookmark'])
+    expect(DEFAULT_LINK_PILL_MARK).toBe('arrow-up-right')
+    expect(sanitizeLinkPills({ version: 2, format: '{name}{mark}', parts: { mark: { icon: 'star' } } })).toEqual({ format: '{name}{mark}', parts: { mark: { icon: 'star' } } })
+    for (const icon of LINK_PILL_MARKS) expect(withLinkPillPart({}, 'mark', { icon })).toEqual(icon === DEFAULT_LINK_PILL_MARK ? {} : { parts: { mark: { icon } } })
+    expect(sanitizeLinkPills({ version: 2, parts: { mark: { icon: 'arrow-up-right' } } })).toEqual({})
+    expect(sanitizeLinkPills({ version: 2, parts: { mark: { icon: 'rocket' } } })).toEqual({})
+    expect(sanitizeLinkPills({ version: 2, parts: { name: { icon: 'star' }, number: { icon: 'star' } } })).toEqual({})
+    expect(withLinkPillPart({ parts: { mark: { icon: 'star', size: 'small' } } }, 'mark', { icon: undefined })).toEqual({ parts: { mark: { size: 'small' } } })
+    expect(linkPillsFile({ format: '{name}{mark}', parts: { mark: { icon: 'bookmark' } } })).toEqual({ version: 2, format: '{name}{mark}', parts: { mark: { icon: 'bookmark' } } })
+  })
+
+  it("the number is a quiet part (muted, small); the mark takes the name's colour until it has its own, and is normal size", () => {
+    expect(sanitizeLinkPills({ version: 2, parts: { number: { color: 'muted', size: 'small' } } })).toEqual({})
+    expect(sanitizeLinkPills({ version: 2, parts: { number: { color: 'accent', bold: true } } })).toEqual({ parts: { number: { color: 'accent', bold: true } } })
+    expect(sanitizeLinkPills({ version: 2, parts: { mark: { size: 'normal', color: 'accent' } } })).toEqual({})
+    expect(sanitizeLinkPills({ version: 2, parts: { mark: { size: 'small', color: 'red' } } })).toEqual({ parts: { mark: { size: 'small', color: 'red' } } })
+    // A red name: the mark follows it, so red is no change; the accent on the mark is one.
+    expect(sanitizeLinkPills({ version: 2, parts: { name: { color: 'red' }, mark: { color: 'red' } } })).toEqual({ parts: { name: { color: 'red' } } })
+    expect(sanitizeLinkPills({ version: 2, parts: { name: { color: 'red' }, mark: { color: 'accent' } } })).toEqual({ parts: { name: { color: 'red' }, mark: { color: 'accent' } } })
+  })
+
+  it('two more ready formats: Name #Number and Name ↗', () => {
+    expect(LINK_PILL_READY.map((r) => r.label)).toEqual(['Name', 'Name (ID)', 'Name #Number', 'Name · Folder', 'Vault › Name', '(Name)', '→ Name', 'Name ↗', 'Plain'])
+    expect(LINK_PILL_READY.find((r) => r.label === 'Name #Number')?.format).toBe('{icon}{name} #{number}')
+    expect(LINK_PILL_READY.find((r) => r.label === 'Name ↗')?.format).toBe('{name}{mark}')
+  })
+
+  it('the pill: {number} is the number alone, {mark} a mark piece with its icon', () => {
+    expect(drawn({ format: '{icon}{name} #{number}' })).toEqual({ head: null, tail: ['text: #', 'number:12'], icon: 'name' })
+    expect(drawn({ format: '{name}{mark}' })).toEqual({ head: null, tail: ['mark:arrow-up-right'], icon: 'none' })
+    expect(drawn({ format: '{mark} {name}', parts: { mark: { icon: 'link' } } })).toEqual({ head: ['mark:link', 'text: '], tail: null, icon: 'none' })
+  })
+})
+
 describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
   it('a good file loads as it is, without its version', () => {
     const file = { version: 2, format: '{name} ({id})', box: { shape: 'square', fill: 'blue', strength: 'strong' }, parts: { name: { bold: true, italic: true, underline: true, color: 'same', size: 'small' }, id: { color: 'red', size: 'normal' }, text: { color: 'accent' } }, vault: 'always' }
@@ -86,7 +132,7 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
   })
 
   it('a ready format sets the format and lays its parts and box over the current ones; Plain is a look', () => {
-    const [name, nameId, , , brackets, , plain] = LINK_PILL_READY
+    const [name, nameId, , , , brackets, , , plain] = LINK_PILL_READY
     const current: LinkPills = { parts: { name: { bold: true } }, box: { shape: 'square' } }
     expect(withLinkPillReady(current, nameId!)).toEqual({ ...current, format: '{icon}{name} ({id})' })
     expect(withLinkPillReady(current, brackets!)).toEqual({ ...current, format: '({icon}{name})', parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } } })
@@ -102,7 +148,7 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
 })
 
 /** The pieces of an end as `part:text`, the icon as `icon`. */
-const texts = (end: PillEnd | null) => (end === null ? null : end.pieces.map((p) => (p.part === 'icon' ? 'icon' : `${p.part}:${p.text}`)))
+const texts = (end: PillEnd | null) => (end === null ? null : end.pieces.map((p) => (p.part === 'icon' ? 'icon' : p.part === 'mark' ? `mark:${p.icon}` : `${p.part}:${p.text}`)))
 const info = { id: 'YAS-12', folder: 'Projects/Plans' }
 /** The pill of a note of this vault, with an ID, in Projects/Plans, under `pills`. */
 const drawn = (pills: LinkPills, otherVault: string | null = null) => {

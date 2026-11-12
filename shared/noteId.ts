@@ -33,6 +33,15 @@ export const isNoteId = (value: unknown): value is string => isOldId(value) || i
 /** `letters` and `number` as the app writes an ID (R2). */
 export const numberId = (letters: string, number: number): string => `${letters}-${number}`
 
+/**
+ * An ID's number as it shows alone: the digits after its last "-" ("EMB-12" → "12"), or undefined for an ID with no
+ * such digits (an old ID), which then shows in full. One rule for the files list's "#12" (YAZ-4940) and a link pill's
+ * `{number}` (YAZ-4924).
+ */
+export function idNumber(id: string): string | undefined {
+  return /-(\d+)$/.exec(id)?.[1]
+}
+
 /** `id` as the app writes and indexes it (R2): a number ID with capital letters, an old ID as it is. */
 export function canonicalNoteId(id: string): string {
   const dash = id.indexOf('-')

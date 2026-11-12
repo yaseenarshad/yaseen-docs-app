@@ -51,13 +51,13 @@ const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTML
 const rowsOf = (popup: HTMLElement) => Array.from(popup.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
 const rowNamed = (view: EditorView, label: string) => rowsOf(popupOf(view)!).find((row) => row.textContent === label)!
 /** The one link menu's rows (D23, YAZ-3740), with no App doors: an id link's, its top line the ID alone (YAZ-3747 demo), with Copy ID. */
-const idMenu = (id: string) => [`ID: ${id}`, 'Open', 'Open in new tab', 'Copy name and ID', 'Copy ID', 'Copy path', 'Edit link', 'Remove link']
+const idMenu = (id: string) => [`ID: ${id}`, 'Open', 'Open in new tab', 'Copy name and ID', 'Copy ID', 'Copy path', 'Pill style', 'Edit link', 'Remove link']
 /** A found name link's: no top line, it would repeat the pill (YAZ-3747 demo); no Copy ID. */
-const nameMenu = () => ['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Edit link', 'Remove link']
+const nameMenu = () => ['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Edit link', 'Remove link']
 /** A name link that finds nothing: no top line, no path to copy. */
-const deadNameMenu = () => ['Open', 'Open in new tab', 'Copy name', 'Edit link', 'Remove link']
+const deadNameMenu = () => ['Open', 'Open in new tab', 'Copy name', 'Pill style', 'Edit link', 'Remove link']
 /** A note that is gone (YAZ-3905 S10): what can be said, its ID to copy, Edit and Remove. */
-const missingMenu = (id: string) => [`Missing note · ${id}`, 'Copy ID', 'Edit link', 'Remove link']
+const missingMenu = (id: string) => [`Missing note · ${id}`, 'Copy ID', 'Pill style', 'Edit link', 'Remove link']
 
 /** jsdom has no clipboard; the menu's only job is to hand the id to it, so spy on writeText. */
 let writeText: Mock
@@ -82,7 +82,7 @@ describe('right-click on a rendered id link', () => {
     expect(mouse(linkSpan(root, 'Road Map'), 'contextmenu').defaultPrevented).toBe(true)
     const rows = rowsOf(popupOf(view)!)
     expect(rows.map((row) => row.textContent)).toEqual(idMenu(ID))
-    expect(rows.map((row) => row.disabled)).toEqual([true, false, false, false, false, false, false, false])
+    expect(rows.map((row) => row.disabled)).toEqual([true, false, false, false, false, false, false, false, false])
   })
 
   it('Copy ID copies exactly the id, says so, closes — and the document keeps every byte', async () => {
@@ -293,7 +293,7 @@ describe('a name link gets the same menu (YAZ-3609 D23)', () => {
     const { crepe, root, view } = await mount('pad [[Known]] tail\n')
     crepe.setReadonly(true)
     mouse(linkSpan(root, 'Known'), 'contextmenu')
-    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path'])
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style'])
   })
 
 })
