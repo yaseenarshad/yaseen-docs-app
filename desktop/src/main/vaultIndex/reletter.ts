@@ -144,13 +144,40 @@ export const isKept = (letters: readonly string[], to: string): boolean => lette
  * Each number ID with letters the vault had before becomes the same number with the letters of
  * now (`letters`, the current ones first). `ids.json` already holds them: this is the second step
  * of "Change letters", and the whole of "Finish" (S83).
+ *
+ * 🔒 ONLY THE VAULT'S OWN NOTES (YAZ-4922, Yaseen: "Yes, leave them"): a link follows only when a note, a folder or a
+ * board of this vault holds that ID — read off the disk (`heldIds`) and from the index (`known`: the boards' IDs). A
+ * link to a note the vault does not hold (a note of the vault around this folder, say) keeps its ID as written. Held
+ * IDs are compared in the letters of now, so a run that stopped after a note took them still draws its links.
  */
-export async function reletter(root: string, letters: readonly string[], renamed?: Renamed): Promise<Pass> {
+export async function reletter(root: string, letters: readonly string[], renamed?: Renamed, known: Iterable<string | undefined> = []): Promise<Pass> {
   const pass = newPass()
   if (lettersOwn(letters).length < 2) return pass
-  const change = (id: string): string | undefined => vaultNoteId(id, letters)
-  await rewriteFiles(root, await markdownFiles(root), () => change, (id) => formerLetters(id, letters), renamed, pass)
+  const files = await markdownFiles(root)
+  const held = await heldIds(files, letters, known)
+  const change = (id: string): string | undefined => {
+    const to = vaultNoteId(id, letters)
+    return to !== undefined && held.has(to) ? to : undefined
+  }
+  await rewriteFiles(root, files, () => change, (id) => formerLetters(id, letters), renamed, pass)
   return pass
+}
+
+/** Each ID that a file of `files` holds on its own `id:` line, or that `known` names, as an ID of the vault in the letters of now. */
+async function heldIds(files: readonly string[], letters: readonly string[], known: Iterable<string | undefined>): Promise<Set<string>> {
+  const held = new Set<string>()
+  const add = (id: unknown): void => {
+    const own = isNoteId(id) ? vaultNoteId(canonicalNoteId(id), letters) : undefined
+    if (own !== undefined) held.add(own)
+  }
+  for (const id of known) add(id)
+  for (const file of files) {
+    const page = await readFile(file).catch(() => null)
+    if (page === null) continue
+    const { properties, error } = parseFrontmatter(splitFrontmatter(page.content).frontmatter)
+    if (error === undefined) add(properties[NOTE_ID_KEY])
+  }
+  return held
 }
 
 /** `id` with each of the letters the vault had before. An old ID had none. */

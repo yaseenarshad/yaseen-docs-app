@@ -174,7 +174,7 @@ A note's ID is the vault's letters and a number, like `YAZ-12`: the next number 
 
 With IDs on, the same group of Settings has three more rows.
 
-- **ID letters**: "Change letters" changes the letters in every note's ID, in each link and in each file name. The numbers stay, and a link with the old letters still opens its note. Do it on one Mac, while the vault is synced and closed on the others.
+- **ID letters**: "Change letters" changes the letters in every note's ID, in each link to a note of this vault and in each file name. A link to a note this vault does not hold keeps its letters. The numbers stay, and a link with the old letters still opens its note. Do it on one Mac, while the vault is synced and closed on the others.
 - **Duplicate IDs**: two Macs that have not synced yet can give two notes the same number. The app fixes that by itself after the sync: the older note keeps the number, the Mac that made the newer note gives it the next one and updates the links it wrote, and a notice says what changed (`YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 1 link updated.`). "Check for duplicates" runs the same check now.
 - **Old IDs**: shown while a note still has a 12-character ID, or while a run that gives them numbers stopped before its end. "Give them numbers" gives each such note the next number, oldest file first, and its links and its file name follow. Sync the vault and close it on the other Macs first.
 

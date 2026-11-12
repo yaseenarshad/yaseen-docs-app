@@ -680,7 +680,10 @@ export async function changeLetters(root: unknown, letters: unknown, renamed?: R
   if (isKept(held, to)) throw new BridgeFailure('BAD_REQUEST', `${to} are the letters of a group this vault keeps as it is`)
   // A vault with no letters in its file saves them here, and keeps its default in `was` (R11): a note that carries the default follows.
   if (to !== held[0] || !saved) await saveIds(r, (config) => configWithLetters(config, held, to))
-  return stateAfter(r, entry, await reletter(r, (await vaultIds(r)).letters, renamed))
+  // The boards' IDs come from the index (their heads), the vault's own only (D1); the notes' are read off the disk by the pass itself.
+  const mine = idsOwnedBy(r, entry.answers)
+  const boards = (await ownOnly([...entry.boards], ([p]) => mine(p))).map(([, id]) => id)
+  return stateAfter(r, entry, await reletter(r, (await vaultIds(r)).letters, renamed, boards))
 }
 
 /**

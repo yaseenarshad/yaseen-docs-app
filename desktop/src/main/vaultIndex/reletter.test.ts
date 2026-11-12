@@ -79,6 +79,20 @@ describe('Change letters: each ID of the vault follows (S81, S86, S87)', () => {
     expect(state).toEqual({ letters: 'DOC', notes: 4, stale: 0, old: 2, unfinished: false })
   })
 
+  it('a link to a note the vault does not hold keeps its ID as written (YAZ-4922, Yaseen: "Yes, leave them"): only links to the vault\'s own notes follow', async () => {
+    // `[[YAZ-500]]` names a note of another vault (the vault around this folder); `[[YAZ-12]]` names a note of this one.
+    await make(root, { ...VAULT, 'link-out.md': '---\nrelated: "[[YAZ-500]]"\nalso_in:\n  - YAZ-501\n---\n[[YAZ-500]] [[YAZ-500|Home]] [[YAZ-12]]\n' })
+    await changeLetters(root, 'DOC')
+    expect(await files(root)).toEqual({ ...CHANGED, 'link-out.md': '---\nrelated: "[[YAZ-500]]"\nalso_in:\n  - YAZ-501\n---\n[[YAZ-500]] [[YAZ-500|Home]] [[DOC-12]]\n' })
+  })
+
+  it('a run that stopped: a note that already took the new letters still draws its old-letter links after it', async () => {
+    // `foo` took DOC-1 in the run that stopped; `bar` still links to YAZ-1. The next run finds DOC-1 held, so the link follows.
+    await make(root, { ...VAULT, [CONFIG]: config({ enabled: true, letters: 'DOC', other: 'kept', was: ['YAZ'] }), 'foo-yaz-1.md': '---\nid: DOC-1\ntitle: Foo\n---\nFoo\n' })
+    await changeLetters(root, 'DOC')
+    expect(await files(root)).toEqual(CHANGED)
+  })
+
   it('a second run changes no byte', async () => {
     await make(root)
     await changeLetters(root, 'DOC')
