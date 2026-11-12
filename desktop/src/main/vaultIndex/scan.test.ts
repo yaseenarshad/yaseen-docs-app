@@ -92,6 +92,16 @@ describe('extractLinks / extractEmbeds', () => {
     expect(extractLinks({}, '[[A|alias]] [[B#Heading]] [[C#^blk]] [[ D ]]')).toEqual(['A', 'B', 'C', 'D'])
   })
 
+  it('YAZ-4935: the page is the one side that is an ID, in either order — so Linked mentions find both', () => {
+    expect(extractLinks({}, '[[WIKI-116|staging]] and [[staging|WIKI-116]]')).toEqual(['WIKI-116'])
+    expect(extractLinks({}, '[[staging|WIKI-116#Intro]] [[WIKI-116#Intro|staging]]')).toEqual(['WIKI-116'])
+    expect(extractLinks({}, '[[the plan|k3m9x2pq7abc]]')).toEqual(['k3m9x2pq7abc'])
+    expect(extractLinks({}, '[[|WIKI-116]]')).toEqual(['WIKI-116'])
+    expect(extractLinks({}, '[[Postgres|database]] [[WIKI-116|WIKI-117]]')).toEqual(['Postgres', 'WIKI-116'])
+    expect(extractLinks({ related: '[[staging|WIKI-116]]' }, '')).toEqual(['WIKI-116'])
+    expect(extractEmbeds('![[EMB-40|640x360 view=120,-40,0.8]]')).toEqual(['EMB-40'])
+  })
+
   it('embeds are not links and vice versa', () => {
     const body = '![[img.png]] [[Note]] ![[Other#sec|x]]'
     expect(extractLinks({}, body)).toEqual(['Note'])

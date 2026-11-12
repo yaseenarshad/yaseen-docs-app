@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { TreeNode } from '@shared/types'
 import { buildViewOnlyCatalog } from '../../links/viewOnlyCatalog'
-import { createViewOnlyLinkSource } from './viewOnlyLinkSource'
+import { createViewOnlyLinkSource, viewOnlyLinkTarget } from './viewOnlyLinkSource'
 
 const node = (path: string, kind: 'text' | 'pdf'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind, size: 1, mtime: 1 })
 
@@ -44,5 +44,17 @@ describe('ViewOnlyLinkSource (YAZ-1310)', () => {
     expect(source.resolve).toBeNull()
     expect(source.targets).toEqual([])
     expect(wake).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('viewOnlyLinkTarget: the page side of the link (YAZ-4935)', () => {
+  it('reads the page before the |, with its heading apart', () => {
+    expect(viewOnlyLinkTarget('deep/report.pdf|the report')).toEqual({ page: 'deep/report.pdf', raw: 'deep/report.pdf', hasSubtarget: false })
+    expect(viewOnlyLinkTarget(' report.pdf#p2 |the report')).toEqual({ page: 'report.pdf', raw: 'report.pdf#p2', hasSubtarget: true })
+    expect(viewOnlyLinkTarget('Note|words')).toBeNull()
+  })
+
+  it('a view-only name is no ID, so words first keep the left side as the page: null, as for any name', () => {
+    expect(viewOnlyLinkTarget('the report|report.pdf')).toBeNull()
   })
 })

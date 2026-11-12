@@ -270,6 +270,16 @@ describe('a name link gets the same menu (YAZ-3609 D23)', () => {
     expect(root.querySelector(`.${WIKILINK_CLASS}`)).toBeNull()
   })
 
+  it('YAZ-4935: a words-first ID link has the ID menu, and Edit link selects the ID on the right of the |', async () => {
+    const { root, view } = await mount(`pad [[the plan|${ID}]] tail\n`)
+    mouse(linkSpan(root, 'the plan'), 'contextmenu')
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu(ID))
+    rowNamed(view, 'Edit link').click()
+    const { from, to } = view.state.selection
+    expect(view.state.doc.textBetween(from, to)).toBe(ID)
+    expect(view.state.doc.textBetween(from - 1, from)).toBe('|')
+  })
+
   it('Remove link keeps the text the link shows: an alias, an id link\'s title, a heading part', async () => {
     const { crepe, root, view } = await mount(`a [[Known|the plan]] b [[${ID}]] c [[Known#Q1]] d\n`)
     for (const shown of ['the plan', 'Road Map', 'Q1']) {

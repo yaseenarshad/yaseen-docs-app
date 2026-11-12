@@ -1,20 +1,19 @@
 import { isViewOnly } from '@shared/fileKind'
+import { splitLink } from '@shared/linkParts'
 import type { ViewOnlyCatalog, ViewOnlyEntry } from '../../links/viewOnlyCatalog'
 
 export interface ViewOnlyLinkTarget {
   /** Recognized view-only page target, without an optional heading/block suffix. */
   page: string
-  /** Full target before `|display`, retained for an honest unsupported-suffix notice. */
+  /** Full target without the `|display` (the page side, `splitLink`), retained for an honest unsupported-suffix notice. */
   raw: string
   hasSubtarget: boolean
 }
 
 /** Recognized explicit-extension view-only target, or null for every semantic Markdown target. */
 export function viewOnlyLinkTarget(inner: string): ViewOnlyLinkTarget | null {
-  const raw = inner.split('|', 1)[0].trim()
-  const hash = raw.indexOf('#')
-  const page = (hash < 0 ? raw : raw.slice(0, hash)).trim()
-  return isViewOnly(page) ? { page, raw, hasSubtarget: hash >= 0 } : null
+  const { page, head, hash } = splitLink(inner)
+  return isViewOnly(page) ? { page, raw: head.trim(), hasSubtarget: hash !== '' } : null
 }
 
 export interface ViewOnlyLinkSource {

@@ -58,6 +58,7 @@ import { SlashProvider } from '@milkdown/kit/plugin/slash'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { isBoardTarget } from '@shared/embedOptions'
 import { boardBaseName, fileKind, isViewOnly } from '@shared/fileKind'
+import { splitLink } from '@shared/linkParts'
 import { basename } from '@shared/types'
 import { api } from '../../api'
 import { fileLabel } from '../../lib/pageLabel'
@@ -155,7 +156,7 @@ let waits = 0
 
 const pickerKey = new PluginKey<PickerState>('mdapp-wikilink-picker')
 
-/** The unclosed `[[fragment` ending at the caret, or null (no cursor / code / alias `|`). */
+/** The unclosed `[[fragment` ending at the caret, or null (no cursor / code / a `|` with words on either side, `splitLink`). */
 function findContext(state: EditorState): { from: number; to: number; fragment: string } | null {
   const sel = state.selection
   if (!(sel instanceof TextSelection) || !sel.empty) return null
@@ -166,7 +167,7 @@ function findContext(state: EditorState): { from: number; to: number; fragment: 
   // Leaf nodes become one object-replacement char, so offsets in `before` = parent offsets.
   const before = parent.textBetween(0, $from.parentOffset, undefined, '￼')
   const fragment = trailingLinkFragment(before)
-  if (fragment === null || fragment.includes('|')) return null
+  if (fragment === null || splitLink(fragment).words !== null) return null
   return { from: $from.pos - fragment.length - 2, to: $from.pos, fragment }
 }
 

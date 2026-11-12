@@ -24,6 +24,7 @@ import {
   WIKILINK_UNRESOLVED_CLASS,
   createWikilinkResolveSource,
   linkDisplayText,
+  linkPath,
   type MutableWikilinkResolveSource,
   type VaultsOfLetters,
 } from './wikilinkPlugin'
@@ -109,6 +110,37 @@ describe('wikilink decorations: collapsed display (GRO-2190)', () => {
     const { root } = await mount('X [[a#h|alias]] y\n')
     expect(links(root)).toEqual(['alias'])
     expect(syntax(root)).toBe('[[a#h|]]')
+  })
+
+  it('YAZ-4935: the words can stand on either side of the | — the one side that is an ID is the page, and hides', async () => {
+    const { root } = await mount('A [[WIKI-116|staging]] b [[staging|WIKI-116]] c\n')
+    expect(links(root)).toEqual(['staging', 'staging'])
+    expect(syntax(root)).toBe('[[WIKI-116|]][[|WIKI-116]]')
+  })
+
+  it('YAZ-4935: a #heading goes with the page side, in both orders; an old ID is an ID too', async () => {
+    const { root } = await mount('A [[WIKI-116#Intro|staging]] b [[staging|WIKI-116#Intro]] c [[the plan|k3m9x2pq7abc]]\n')
+    expect(links(root)).toEqual(['staging', 'staging', 'the plan'])
+    expect(syntax(root)).toBe('[[WIKI-116#Intro|]][[|WIKI-116#Intro]][[|k3m9x2pq7abc]]')
+  })
+
+  it('YAZ-4935: two plain words and two IDs keep the left side as the page; an empty words side stays raw (FN12)', async () => {
+    const { crepe, root } = await mount('A [[Postgres|database]] b [[WIKI-116|WIKI-117]] c [[|WIKI-116]] d\n')
+    expect(links(root)).toEqual(['database', 'WIKI-117'])
+    expect(syntax(root)).toBe('[[Postgres|]][[WIKI-116|]]')
+    expect(viewOf(crepe).dom.textContent).toContain('[[|WIKI-116]]')
+    expect(linkDisplayText('Postgres|database')).toBe('database')
+    expect(linkDisplayText('staging|WIKI-116')).toBe('staging')
+    expect(linkDisplayText('|WIKI-116')).toBe('')
+  })
+
+  it('YAZ-4935: a words-first ID link resolves by its ID: the pill is found, not dimmed, and opens the note', async () => {
+    const source = createWikilinkResolveSource()
+    source.update((target) => (target === 'WIKI-116' ? '/vault/Staging vs Production.md' : null))
+    const { root } = await mount('A [[staging|WIKI-116]] b [[WIKI-116|staging]] c [[staging|WIKI-999]]\n', source)
+    expect(links(root)).toEqual(['staging', 'staging', 'staging'])
+    expect(Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => el.classList.contains(WIKILINK_UNRESOLVED_CLASS))).toEqual([false, false, true])
+    expect(linkPath('staging|WIKI-116', source, undefined)).toBe('/vault/Staging vs Production.md')
   })
 
   it('embeds (![[…]]) are never decorated', async () => {
