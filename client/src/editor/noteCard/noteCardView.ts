@@ -7,11 +7,16 @@
  * `app://` image sources and every listener, it draws only once the block's CodeMirror is made (off the screen a
  * block shows its raw text), and it draws again only on a text change. "Finding (agent)" on YAZ-4961.
  *
- * THE CARD: a head (the card title, `cardTitle`; the card ID small and grey, a click copies it, D20; "Review off" when
- * the line says `off`; Edit card; ⋯) and the sides,
- * `renderNoteCard` (the Inbox's function too). Hidden words show highlighted (idea 21 is later). A `[[link]]` is the
- * page's pill: a click opens it in Explore, a bound gesture (⌘-click by default) in a tab, as the note's links
- * (`linkClickAction`). Images resolve as the note's do (`imageSrc`). The pills follow the index live.
+ * THE CARD: a head (the card ID first, small and grey, a click copies it, D20; "Review off" when the line says `off`;
+ * Edit card; ⋯) and the sides, `renderNoteCard` (the Inbox's function too). The head does not repeat the card's first
+ * line: the text is right below it (say each thing once). Hidden words show highlighted (idea 21 is later). A
+ * `[[link]]` is the page's pill: a click opens it in Explore, a bound gesture (⌘-click by default) in a tab, as the
+ * note's links (`noteCardLinkWhere`). Images resolve as the note's do (`imageSrc`). On an index change only the pills
+ * draw again (`refreshNoteCardLook`). In a vault that gives no IDs a ```` ```card ```` block is a code block (D8).
+
+ * READ ONLY (a read-only page or vault): the card's TEXT is locked — no Edit card — but its review is not. The ⋯
+ * menu's Turn review off / on and Reset history write the card line to the FILE (`changeCardLine`, the app's own
+ * write), as the Inbox does; the open page takes it quietly.
  *
  * EDIT CARD (idea 8, idea 25): Crepe's own `CodeMirrorBlock`, made only then, from Crepe's factory in `nodeViewCtx`,
  * so the code editor, its keys, theme and extensions are every code block's; the `card` language is Markdown with
@@ -19,9 +24,9 @@
  * is not being edited has no CodeMirror at all, and a caret that arrives in its text becomes the card's node
  * selection (`noteCardSelection`), so no key types into text that does not show.
  *
- * OPEN CARD (D13): a click on the head's title, the ⋯ menu's "Open card", or ⌘↵ with the card selected or the caret in
- * it. The card window is YAZ-4962: the editor sends ONE bubbling DOM event, `NOTE_CARD_OPEN` (`mdapp:note-card-open`,
- * detail `NoteCardOpenRequest`), from its `.ProseMirror`. Nobody listening is a no-op. ⌘↵ anywhere else is unchanged.
+ * OPEN CARD (D13): the ⋯ menu's "Open card", or ⌘↵ with the card selected or the caret in it. The editor sends ONE
+ * bubbling DOM event, `NOTE_CARD_OPEN` (`mdapp:note-card-open`, detail `NoteCardOpenRequest`), from its
+ * `.ProseMirror`; App's listener opens the card window. ⌘↵ anywhere else is unchanged.
  *
  * THE ⋯ MENU (D13): Turn review off / on (`withCardOff`), Reset history (`withoutCardReviews`), Copy card ID, Open
  * card. Each change is ONE transaction on the node's `cardLine` attribute (`changeNoteCardLine`): one ⌘Z, saved as
@@ -42,19 +47,17 @@ import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstr
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
 import { cardIdOf, cardReviewsOf, formatCardLine, isCardOff, withCardId, withCardOff, withoutCardReviews, type CardLine } from '@shared/cardLine'
-import { cardTitle } from '@shared/cardText'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { codeWidthSchema } from '../code/codeWidth'
-import { linkClickAction } from '../linkGesture'
 import { copyText, openMenuAt } from '../linkMenu'
 import type { MenuRow } from '../blockHandleMenu'
 import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, changeNoteCardLine, isNoteCardNode, NOTE_CARD_LANGUAGE, noteCardLineOf } from './noteCardLine'
-import { NOTE_CARD_LINK_ATTR, renderNoteCard, type NoteCardLook } from './noteCardRender'
+import { NOTE_CARD_LINK_ATTR, noteCardLinkWhere, refreshNoteCardLook, renderNoteCard, type NoteCardLook } from './noteCardRender'
 import './noteCard.css'
 
-/** The open hook (D13): sent from the editor's `.ProseMirror`, it bubbles. The card window (YAZ-4962) listens. */
+/** The open hook (D13): sent from the editor's `.ProseMirror`, it bubbles. App listens and opens the card window. */
 export const NOTE_CARD_OPEN = 'mdapp:note-card-open'
 export interface NoteCardOpenRequest {
   /** The page's absolute path, or null in a preview that does not know it. */
@@ -81,6 +84,10 @@ export interface NoteCardDeps {
   host?: NoteCardHost
   /** The page's path when the host gives no `host` (a read layer's image options). */
   path?: string | null
+  /** Does the vault give IDs? False: a ```` ```card ```` block is a code block (D8). Absent: it does. */
+  ids?: () => boolean
+  /** A card line change written to the page's FILE (read only: the card's review is not locked). Absent: none. */
+  writeLine?: (path: string, id: string, change: (line: CardLine) => CardLine, index: number) => Promise<unknown>
   /** The link pills' labels and icons, and the images' URLs. */
   look: () => NoteCardLook
   /** Wakes the cards when the index changes: their pills draw again. */
@@ -118,7 +125,7 @@ function cardIndex(doc: ProseNode, pos: number): number {
 }
 
 /** Sends the open hook for the card at `pos` (D13). */
-export function openNoteCard(view: EditorView, pos: number, path: string | null): void {
+function openNoteCard(view: EditorView, pos: number, path: string | null): void {
   const node = view.state.doc.nodeAt(pos)
   if (node === null || !isNoteCardNode(node)) return
   const detail: NoteCardOpenRequest = { path, cardId: cardIdOf(noteCardLineOf(node)), index: cardIndex(view.state.doc, pos) }
@@ -136,8 +143,7 @@ const button = (className: string, label: string, text: string): HTMLButtonEleme
 
 export class NoteCardView implements NodeView {
   dom: HTMLElement
-  private readonly title: HTMLButtonElement
-  /** The card ID after the title (D20): a click copies it. Hidden while the card has none. */
+  /** The card ID, first in the head (D20): a click copies it. Hidden while the card has none. */
   private readonly idButton: HTMLButtonElement
   private readonly state: HTMLElement
   private readonly editButton: HTMLButtonElement
@@ -161,15 +167,12 @@ export class NoteCardView implements NodeView {
     this.dom.className = 'note-card'
     const head = document.createElement('div')
     head.className = 'note-card__head'
-    this.title = button('note-card__title', 'Open card', '')
-    this.title.title = 'Open card (⌘↵)'
     this.idButton = button('note-card__id', 'Copy card ID', '')
-    this.idButton.title = 'Copy card ID'
     this.state = document.createElement('span')
     this.state.className = 'note-card__state'
     this.editButton = button('note-card__edit', 'Edit card', 'Edit card')
     this.more = button('note-card__more', 'Card menu', '⋯')
-    head.append(this.title, this.idButton, this.state, this.editButton, this.more)
+    head.append(this.idButton, this.state, this.editButton, this.more)
     this.body = document.createElement('div')
     this.body.className = 'note-card__body'
     this.dom.append(head, this.body)
@@ -179,8 +182,8 @@ export class NoteCardView implements NodeView {
     views.set(this.dom, this)
     this.draw()
     this.unsubscribe = deps.subscribe?.(() => {
-      // Only a card with a link draws again when the index changes.
-      if (this.code === null && this.node.textContent.includes('[[')) this.draw(true)
+      // An index change redraws only the pills of a card with a link: no Markdown render again.
+      if (this.code === null && this.node.textContent.includes('[[')) refreshNoteCardLook(this.body, this.deps.look())
     })
   }
 
@@ -196,13 +199,10 @@ export class NoteCardView implements NodeView {
     return this.deps.host?.path ?? this.deps.path ?? null
   }
 
-  /** The head and, while the card is not edited, the body. `force` draws the body again with the same text (the index changed). */
-  private draw(force = false): void {
+  /** The head and, while the card is not edited, the body (drawn again only when the text changed). */
+  private draw(): void {
     const text = this.node.textContent
     const line = noteCardLineOf(this.node)
-    const title = cardTitle(text)
-    this.title.textContent = title === '' ? 'New note card' : title
-    this.title.classList.toggle('note-card__title--empty', title === '')
     const id = cardIdOf(line)
     this.idButton.textContent = id ?? ''
     this.idButton.hidden = id === null
@@ -211,7 +211,7 @@ export class NoteCardView implements NodeView {
     this.editButton.textContent = this.code === null ? 'Edit card' : 'Done'
     this.editButton.setAttribute('aria-label', this.code === null ? 'Edit card' : 'Done')
     this.dom.classList.toggle('note-card--editing', this.code !== null)
-    if (this.code !== null || (!force && this.drawn === text)) return
+    if (this.code !== null || this.drawn === text) return
     this.drawn = text
     this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderNoteCard(text, {}, this.deps.look()))
   }
@@ -263,10 +263,27 @@ export class NoteCardView implements NodeView {
     if (pos !== null) openNoteCard(this.view, pos, this.path)
   }
 
+  /**
+   * One change of the card line: a transaction (one ⌘Z) in a page that can be edited; in a read-only page a write to
+   * the file (`deps.writeLine`), which the page takes quietly — read only locks the card's text, not its review.
+   */
   private change(change: Parameters<typeof changeNoteCardLine>[2]): void {
     const pos = this.pos
-    const tr = pos === null ? null : changeNoteCardLine(this.view.state, pos, change)
-    if (tr !== null) this.view.dispatch(tr)
+    if (pos === null) return
+    if (this.view.editable) {
+      const tr = changeNoteCardLine(this.view.state, pos, change)
+      if (tr !== null) this.view.dispatch(tr)
+      return
+    }
+    const id = cardIdOf(noteCardLineOf(this.node))
+    const path = this.path
+    if (id === null || path === null || this.deps.writeLine === undefined) return
+    this.deps.writeLine(path, id, change, cardIndex(this.view.state.doc, pos)).catch((err: unknown) => this.deps.onNotice?.(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`))
+  }
+
+  /** Can the ⋯ menu change the card line? In an editable page, yes; read only, through the file, for a card with an ID. */
+  private get canChangeLine(): boolean {
+    return this.view.editable || (cardIdOf(noteCardLineOf(this.node)) !== null && this.path !== null && this.deps.writeLine !== undefined)
   }
 
   /** The ID the door gave this new card, unless it has one by now. Out of the undo history; saved by `NOTE_CARD_ID_META`. */
@@ -281,7 +298,7 @@ export class NoteCardView implements NodeView {
   menuRows(): MenuRow[] {
     const line = noteCardLineOf(this.node)
     const id = cardIdOf(line)
-    const editable = this.view.editable
+    const editable = this.canChangeLine
     const onNotice = this.deps.onNotice ?? (() => {})
     return [
       { label: 'Open card', hint: '⌘↵', run: () => this.open() },
@@ -316,11 +333,6 @@ export class NoteCardView implements NodeView {
       else this.done()
       return
     }
-    if (target.closest('.note-card__title') !== null) {
-      event.preventDefault()
-      this.open()
-      return
-    }
     if (target.closest('.note-card__id') !== null) {
       event.preventDefault()
       const id = cardIdOf(noteCardLineOf(this.node))
@@ -329,8 +341,7 @@ export class NoteCardView implements NodeView {
     }
     const pill = target.closest<HTMLElement>(`[${NOTE_CARD_LINK_ATTR}]`)
     if (pill !== null && this.deps.follow !== undefined) {
-      // A plain click opens the page on top (Explore); a bound gesture (⌘-click) in a tab, as the note's links (idea 6).
-      const where = linkClickAction({ editable: true }, event, this.deps.hotkeys?.()) ?? (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey ? null : 'explore')
+      const where = noteCardLinkWhere(event, this.deps.hotkeys?.())
       event.preventDefault()
       if (where !== null) this.deps.follow(pill.getAttribute(NOTE_CARD_LINK_ATTR) ?? '', where)
       return
@@ -402,7 +413,8 @@ function noteCardNodeView(deps: NoteCardDeps) {
     const ours: NodeViewConstructor = (node, editor, getPos, decorations, inner) => {
       // Crepe's factory, registered before this one (`Object.fromEntries` takes the last, ours).
       const crepe = ctx.get(nodeViewCtx).find(([id, make]) => id === 'code_block' && make !== ours)?.[1] ?? null
-      if (!isNoteCardNode(node)) return crepe === null ? (undefined as unknown as NodeView) : crepe(node, editor, getPos, decorations, inner)
+      // A vault that gives no IDs has no cards (D8): its ```card block is a code block, as the index reads it.
+      if (!isNoteCardNode(node) || deps.ids?.() === false) return crepe === null ? (undefined as unknown as NodeView) : crepe(node, editor, getPos, decorations, inner)
       const makeCode = crepe === null ? null : (n: ProseNode) => crepe(n, editor, getPos, decorations, inner)
       return new NoteCardView(node, editor, getPos, deps, makeCode)
     }
@@ -509,7 +521,7 @@ export const noteCardLanguage = LanguageDescription.of({
 })
 
 /** The words the slash filter finds "Note card" by, besides its label (idea 9). */
-export const NOTE_CARD_KEYWORDS = ['card', 'notecard', 'flashcard']
+const NOTE_CARD_KEYWORDS = ['card', 'notecard', 'flashcard']
 
 /**
  * The "Note card" slash row (D1, idea 9): the `/query` cleared, the line made an empty card, and the card edited at

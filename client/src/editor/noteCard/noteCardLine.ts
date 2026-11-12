@@ -15,7 +15,7 @@
  * the ⌘Z of "Turn review on" after an Inbox answer landed from outside turns review off again and keeps the answer.
  * A plain attribute step would write back the whole old line, and the answer would go.
  */
-import type { Node as ProseNode, Schema } from '@milkdown/kit/prose/model'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { AttrStep, Step, StepMap, StepResult, type Mappable } from '@milkdown/kit/prose/transform'
 import { EMPTY_CARD_LINE, cardIdOf, cardReviewsOf, formatCardLine, isCardOff, parseCardLine, withCardId, withCardOff, type CardLine, type CardReview } from '@shared/cardLine'
@@ -133,12 +133,8 @@ export class CardLineStep extends Step {
     return pos.deletedAfter ? null : new CardLineStep(pos.pos, this.before, this.after)
   }
 
+  /** No `Step.jsonID`: nothing in the app reads a step back from JSON (no collab), and a second load would clash. */
   toJSON(): { stepType: string; pos: number; before: string | null; after: string | null } {
     return { stepType: 'noteCardLine', pos: this.pos, before: this.before, after: this.after }
   }
-
-  static fromJSON(_schema: Schema, json: { pos: number; before: string | null; after: string | null }): CardLineStep {
-    return new CardLineStep(json.pos, json.before, json.after)
-  }
 }
-Step.jsonID('noteCardLine', CardLineStep)

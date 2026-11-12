@@ -55,32 +55,11 @@
   background: var(--bg-hover);
   color: var(--fg);
 }
-.note-card__head .note-card__title {
-  flex: 0 1 auto;
-  min-width: 0;
-  margin-right: auto;
-  overflow: hidden;
-  padding: 0 4px;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-}
-.note-card__head .note-card__title {
-  color: var(--fg);
-}
-.note-card__head .note-card__title--empty {
-  color: var(--fg-muted);
-  font-weight: 400;
-}
-/* The card ID (D20): small and grey after the title, a click copies it. ONE style for the card in the page, the card
-   window and the Inbox (`review/noteCardParts.tsx`), in the look of a page's ID in an Explore head (`.explore__id`). */
-.note-card__head .note-card__title:has(+ .note-card__id:not([hidden])) {
-  margin-right: 0;
-}
+/* The card ID (D20): small and grey, FIRST in the head — the same place in the page, the card window and the Inbox
+   (`review/noteCardParts.tsx`), in the look of a page's ID in an Explore head (`.explore__id`). A click copies it. */
 :is(.note-card, .explore__head) .note-card__id {
   flex: none;
-  margin: 0 auto 0 2px;
+  margin: 0 2px 0 0;
   padding: 0 4px;
   border: 0;
   border-radius: 4px;
@@ -113,13 +92,21 @@
   flex: none;
   padding: 0 6px;
 }
+.note-card__head .note-card__edit {
+  margin-left: auto;
+}
 .note-card__more {
   font-size: 1.2em;
   line-height: 1.3;
 }
-/* A read-only page: no Edit card. */
-.ProseMirror[contenteditable='false'] .note-card__edit {
+/* A read-only page (a preview, or Read only with its caret, `data-read-only`): no Edit card — its review still works. */
+.ProseMirror[contenteditable='false'] .note-card__edit,
+.ProseMirror[data-read-only] .note-card__edit {
   display: none;
+}
+.ProseMirror[contenteditable='false'] .note-card__more,
+.ProseMirror[data-read-only] .note-card__more {
+  margin-left: auto;
 }
 
 .note-card .note-card__body {

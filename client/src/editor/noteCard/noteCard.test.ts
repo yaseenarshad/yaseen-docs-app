@@ -16,6 +16,16 @@ import { features } from '../featureConfig'
 import { NOTE_CARD_OPEN, noteCardViewAt, type NoteCardOpenRequest } from './noteCardView'
 import { refreshNoteCardLook, renderNoteCard } from './noteCardRender'
 
+/** A read-only page's ⋯ writes the card line to the file (`changeCardLine`): here it is only heard. */
+const fileWrites = vi.hoisted(() => [] as Array<{ path: string; id: string; index: number | undefined; line: string | null }>)
+vi.mock('../../review/cardFile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../review/cardFile')>()),
+  changeCardLine: async (path: string, id: string, change: (l: import('@shared/cardLine').CardLine) => import('@shared/cardLine').CardLine, index?: number) => {
+    const { formatCardLine, parseCardLine } = await import('@shared/cardLine')
+    fileWrites.push({ path, id, index, line: formatCardLine(change(parseCardLine('<!-- card: WIKI-7, 2026-11-12T14:05Z good -->')!)) })
+  },
+}))
+
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
 afterEach(async () => {
@@ -103,6 +113,12 @@ describe('the "Note card" slash row (D1, idea 9)', () => {
     await vi.waitFor(() => expect(slashRows(noHost.root)).toContain('Code'))
     expect(slashRows(noHost.root)).not.toContain('Note card')
   })
+
+  it('D8: in a vault without IDs a ```card block is a plain code block: no card head, no ⋯, no Edit card', async () => {
+    const { root } = await mount(`${CARD}<!-- card: WIKI-7 -->\n`, { wikilinks: vault(false), noteCards: { path: '/v/Page.md' } })
+    expect(root.querySelector('.note-card')).toBeNull()
+    expect(root.querySelector('.milkdown-code-block')).not.toBeNull()
+  })
 })
 
 describe('the card line (load and save)', () => {
@@ -154,7 +170,9 @@ describe('the card in the page', () => {
       wikilinkNav: { root: '/v', createFolder: () => '', openCurrent: (p) => follow.push(['thisTab', p]), openBackground: (p) => follow.push(['backgroundTab', p]), openExplore: (p) => follow.push(['explore', p]), onNotice: () => {} },
     })
     const card = view.dom.querySelector<HTMLElement>('.note-card')!
-    expect(card.querySelector('.note-card__title')?.textContent).toBe('What is the capital of France (France, Gone)?')
+    // The head does not repeat the card's first line: the text is right below it.
+    expect(card.querySelector('.note-card__title')).toBeNull()
+    expect(card.querySelector('.note-card__head')?.textContent).toBe('Edit card⋯')
     expect([...card.querySelectorAll('.note-card__side')].map((side) => side.textContent?.trim())).toEqual(['What is the capital of France (France, Gone)?', 'Paris'])
     expect(card.querySelector('.note-card__rule')).not.toBeNull()
     expect(card.querySelector('.note-card__hidden')?.textContent).toBe('France')
@@ -171,9 +189,9 @@ describe('the card in the page', () => {
     ])
   })
 
-  it('D20: the head shows the card ID small and grey after the title; a click copies it and opens nothing; a card with no ID shows none', async () => {
+  it('D20: the head shows the card ID first, small and grey; a click copies it and opens nothing; a card with no ID shows none', async () => {
     const { root } = await mount(`${CARD}<!-- card: WIKI-7 -->\n`, { noteCards: { path: '/v/Page.md' } })
-    const id = root.querySelector<HTMLButtonElement>('.note-card__head .note-card__title + .note-card__id')!
+    const id = root.querySelector<HTMLButtonElement>('.note-card__head > .note-card__id:first-child')!
     expect([id.textContent, id.hidden]).toEqual(['WIKI-7', false])
     const writeText = vi.fn(() => Promise.resolve())
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
@@ -213,6 +231,27 @@ describe('the card in the page', () => {
     document.addEventListener(NOTE_CARD_OPEN, (e) => opened.push((e as CustomEvent<NoteCardOpenRequest>).detail), { once: true })
     run('Open card')
     expect(opened).toEqual([{ path: '/v/Page.md', cardId: 'WIKI-7', index: 0 }])
+  })
+
+  it('read only locks the card`s text, not its review: no Edit card; ⋯ Turn review off and Reset history write the FILE', async () => {
+    fileWrites.length = 0
+    const { crepe, root } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good -->\n`, { noteCards: { path: '/v/Page.md' } })
+    crepe.setReadonly(true)
+    const run = (label: string) => {
+      root.querySelector<HTMLElement>('.note-card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith(label))!
+      expect(row.disabled).toBe(false)
+      row.click()
+    }
+    run('Turn review off')
+    run('Reset history')
+    await tick()
+    expect(fileWrites).toEqual([
+      { path: '/v/Page.md', id: 'WIKI-7', index: 0, line: '<!-- card: WIKI-7, off, 2026-11-12T14:05Z good -->' },
+      { path: '/v/Page.md', id: 'WIKI-7', index: 0, line: '<!-- card: WIKI-7 -->' },
+    ])
+    // The editor's own text is untouched: the file write comes back as an outside change.
+    expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-7, 2026-11-12T14:05Z good -->')
   })
 
   it('Edit card is Crepe\'s code editor (made only then); ⌘↵ there opens the card, while ⌘↵ in another code block still adds a line; Done draws again', async () => {

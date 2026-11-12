@@ -22,7 +22,10 @@
 import DOMPurify from 'dompurify'
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
 import { cardSides, hiddenCount, markHidden } from '@shared/cardText'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { GestureAction, MouseMods } from '@shared/keys'
 import { parseAlt } from '../image/imageSrc'
+import { linkClickAction } from '../linkGesture'
 
 /** How much of the card shows (the Inbox's steps, D18). Absent: everything, as in the page. */
 export interface NoteCardShow {
@@ -45,10 +48,15 @@ export interface NoteCardLook {
   image?: (src: string) => string
 }
 
-/** On a pill: the raw `inner` of its `[[inner]]`, for the click (`noteCardView.ts`). */
+/** On a pill: the raw `inner` of its `[[inner]]`, for the click (`noteCardView.ts`, `review/noteCardParts.tsx`). */
 export const NOTE_CARD_LINK_ATTR = 'data-note-card-link'
-export const NOTE_CARD_HIDDEN_CLASS = 'note-card__hidden'
-export const NOTE_CARD_BLANK_CLASS = 'note-card__blank'
+
+/**
+ * Where a press on a pill in a card opens its page (idea 6), for the page and the screens alike: a plain click on top
+ * (Explore), a bound gesture (⌘-click by default) as the note's links; another modifier, nowhere (null).
+ */
+export const noteCardLinkWhere = (event: MouseMods, hotkeys: HotkeyOverrides | undefined): GestureAction | 'explore' | null =>
+  linkClickAction({ editable: true }, event, hotkeys) ?? (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey ? null : 'explore')
 
 const OPEN = ''
 const CLOSE = ''
@@ -115,10 +123,10 @@ function fillHidden(root: Node, words: readonly string[], shown: number): void {
       const word = words[n] ?? ''
       const span = document.createElement('span')
       if (n < shown) {
-        span.className = NOTE_CARD_HIDDEN_CLASS
+        span.className = 'note-card__hidden'
         span.append(fragmentOf(word, true))
       } else {
-        span.className = NOTE_CARD_BLANK_CLASS
+        span.className = 'note-card__blank'
         span.setAttribute('aria-label', 'Hidden word')
         // About the word's width, never its text (D18: a selection cannot read it).
         span.style.width = `${Math.min(24, Math.max(3, word.trim().length))}ch`

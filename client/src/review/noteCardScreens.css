@@ -163,3 +163,9 @@
   flex-wrap: wrap;
   justify-content: center;
 }
+
+/* A card window of an empty card: "New note card", quiet. */
+.explore__title.note-card__title--empty {
+  color: var(--fg-muted);
+  font-weight: 400;
+}

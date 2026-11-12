@@ -361,6 +361,7 @@ import { basename } from '@shared/types'
 import { imageSrc, noteDirRel } from './image/imageSrc'
 import { NOTE_CARD_ID_META, noteCardCodeKeys, noteCardLanguage, noteCardPlugins, noteCardRow, type NoteCardDeps, type NoteCardHost } from './noteCard/noteCardView'
 import type { NoteCardLook } from './noteCard/noteCardRender'
+import { changeCardLine } from '../review/cardFile'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createPillSelection } from './wikilink/pillSelection'
 import { createMarkdownLink, noPreviewOnPills, type MarkdownLinkNav } from './markdownLink'
@@ -933,7 +934,6 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   return crepe
 }
 
-/** What the note cards of one editor read (YAZ-4961): the editor's own link sources, follower, images and doors. */
 /**
  * A note card's look in a vault (YAZ-4961; YAZ-4962 for the card window and the Inbox): the link pills as the note's
  * (label, resolved, icon) and the images by the note's folder. One function for the page and the screens outside it.
@@ -952,6 +952,7 @@ export function noteCardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnl
   }
 }
 
+/** What the note cards of one editor read (YAZ-4961): the editor's own link sources, follower, images and doors. */
 function noteCardDeps(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, follow: LinkFollow | undefined): NoteCardDeps {
   const image = opts.image
   const nav = opts.markdownLinkNav
@@ -959,6 +960,8 @@ function noteCardDeps(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource
   return {
     host: opts.noteCards,
     path: image?.notePath ?? null,
+    ids: () => opts.wikilinks?.ids ?? true,
+    writeLine: changeCardLine,
     look: () => look,
     subscribe: (listener) => wikilinks.subscribe(listener),
     follow,
