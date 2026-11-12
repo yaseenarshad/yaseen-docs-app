@@ -55,7 +55,7 @@ export function KeepIdsSheet({ text, main, onConfirm, onCancel }: { text: string
       onConfirm={() => onConfirm(main)}
       onCancel={onCancel}
       other={
-        <button type="button" className="confirm__btn" disabled={!valid} onClick={use}>
+        <button type="button" className="confirm__btn confirm__btn--other" disabled={!valid} onClick={use}>
           {valid ? `Use ${typed.toUpperCase()}` : 'Use other letters'}
         </button>
       }

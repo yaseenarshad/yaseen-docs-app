@@ -1882,6 +1882,7 @@ describe('SettingsDialog: the box offers to keep the IDs the notes already hold 
     expect(buttons(el).map((b) => b.textContent)).toEqual(['Use other letters', 'Cancel', 'Keep YAS'])
     expect(document.activeElement).toBe(sheetBtn(el, 'Keep YAS'))
     expect(sheetBtn(el, 'Use other letters').disabled).toBe(true)
+    expect(sheetBtn(el, 'Use other letters').classList.contains('confirm__btn--other')).toBe(true)
     expect(setIds).not.toHaveBeenCalled()
   })
 

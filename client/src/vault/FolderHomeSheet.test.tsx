@@ -50,6 +50,9 @@ describe('FolderHomeSheet (D4): one box, "Open as a folder of <vault>" first', (
     expect(box.querySelector('.confirm__text')?.textContent).toBe('This folder is inside Main. Open it as a folder of Main?')
     expect(buttons().map((b) => b.textContent)).toEqual(['Open as its own vault', 'Cancel', 'Open as a folder of Main'])
     expect(document.activeElement).toBe(buttons()[2])
+    // The third answer takes the shared class that widens the box for three buttons on one row: without it the
+    // left button stood outside the box (the demo vault, on screen).
+    expect(buttons()[0].classList.contains('confirm__btn--other')).toBe(true)
   })
 
   it.each([

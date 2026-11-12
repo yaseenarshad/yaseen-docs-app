@@ -37,7 +37,7 @@ export function FolderHomeSheet({ folder, vault, onAnswer }: { folder: string; v
       onConfirm={() => onAnswer('folder')}
       onCancel={() => onAnswer(null)}
       other={
-        <button type="button" className="confirm__btn" onClick={() => onAnswer('vault')} title={`${folder} gets its own IDs, links and settings.`}>
+        <button type="button" className="confirm__btn confirm__btn--other" onClick={() => onAnswer('vault')} title={`${folder} gets its own IDs, links and settings.`}>
           Open as its own vault
         </button>
       }
