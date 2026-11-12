@@ -503,6 +503,32 @@ describe('the explore stack', () => {
     off()
   })
 
+  it('YAZ-4925: a trail of chips from two layers on, the top one bold; a click goes back to that layer, the layers above close, and the ones below keep their scroll', async () => {
+    await mount()
+    expect(el.querySelector('.explore__trail')).toBeNull()
+    await typeQuery('alp')
+    await openResult()
+    const bodyA = top().querySelector<HTMLElement>('.explore__body') as HTMLElement
+    bodyA.scrollTop = 210
+    render(2)
+    await flush()
+    await typeQuery('beta')
+    await openResult()
+    const chips = () => [...el.querySelectorAll<HTMLButtonElement>('.explore__chip')]
+    expect(chips().map((c) => [c.textContent, c.classList.contains('explore__chip--top')])).toEqual([['Search', false], ['alpha', false], ['Search', false], ['beta', true]])
+    act(() => chips()[1].click())
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note'])
+    expect(top().querySelector('.explore__body')).toBe(bodyA)
+    expect(bodyA.scrollTop).toBe(210)
+    expect(chips().map((c) => c.textContent)).toEqual(['Search', 'alpha'])
+    expect(chips()[1].classList.contains('explore__chip--top')).toBe(true)
+    // The top chip does nothing; the first search alone shows no trail.
+    act(() => chips()[1].click())
+    expect(layers()).toHaveLength(2)
+    escape()
+    expect(el.querySelector('.explore__trail')).toBeNull()
+  })
+
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {
     Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false }), configurable: true, writable: true })
     vi.useFakeTimers()

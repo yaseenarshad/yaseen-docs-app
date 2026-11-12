@@ -176,6 +176,17 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
   const live = useMemo(() => layers.filter((l) => !leaving.has(l.id)), [layers, leaving])
   const top = live[live.length - 1]
 
+  /** The trail's click (YAZ-4925): back to `id`; the layers above it close at once, a note in edit among them saved first. */
+  const backTo = useCallback(
+    (id: number) => {
+      const at = layersRef.current.findIndex((l) => l.id === id)
+      if (at === -1 || at === layersRef.current.length - 1) return
+      for (const l of layersRef.current.slice(at + 1)) if (l.kind === 'note' && l.mode === 'edit') void flushRenamedPath(l.path)
+      setLayers((prev) => prev.slice(0, prev.findIndex((l) => l.id === id) + 1))
+    },
+    [],
+  )
+
   const setMode = useCallback((id: number, mode: 'read' | 'edit') => setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'note' && l.mode !== mode ? { ...l, mode } : l))), [])
   /**
    * A note layer's mode flips (item 5): Edit / E to edit; Done / Esc back to reading. Leaving edit FIRST flushes the
@@ -258,6 +269,19 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
 
   return (
     <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" onKeyDown={onKeyDown} onMouseDown={onBackdropMouseDown}>
+      {/* The trail (YAZ-4925): one chip per layer from two layers on, the top one bold; a click goes back to that layer. */}
+      {live.length > 1 && (
+        <nav className="explore__trail" aria-label="Layers">
+          {live.map((layer, i) => (
+            <span key={layer.id} className="explore__trail-step">
+              {i > 0 && <span className="explore__trail-sep">›</span>}
+              <button type="button" className={`explore__chip${layer === top ? ' explore__chip--top' : ''}`} aria-current={layer === top ? 'true' : undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => backTo(layer.id)}>
+                {layer.kind === 'search' ? 'Search' : nameOf(layer.path)}
+              </button>
+            </span>
+          ))}
+        </nav>
+      )}
       {layers.map((layer, index) => {
         const place = layerPlace(layer.kind, index, windowWidth)
         const covered = layer !== top
